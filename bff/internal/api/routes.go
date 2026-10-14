@@ -5,6 +5,9 @@ import "net/http"
 // registerRoutes attaches every authenticated endpoint. Keep this list in sync
 // with docs/plan/bff-api.md.
 func (a *App) registerRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET "+APIPrefix+"/user", a.getUser)
+	mux.HandleFunc("GET "+APIPrefix+"/config", a.getConfig)
+
 	// Unknown API paths get a JSON 404 instead of the SPA fallback.
 	mux.HandleFunc(APIPrefix+"/", a.notFound)
 }

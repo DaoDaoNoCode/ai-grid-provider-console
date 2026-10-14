@@ -6,6 +6,11 @@ import (
 	"strconv"
 )
 
+// envelope wraps every successful JSON response.
+type envelope struct {
+	Data any `json:"data"`
+}
+
 // errorBody is the JSON shape of every error response.
 type errorBody struct {
 	Error errorPayload `json:"error"`
@@ -21,6 +26,10 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+func writeData(w http.ResponseWriter, status int, v any) {
+	writeJSON(w, status, envelope{Data: v})
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {
