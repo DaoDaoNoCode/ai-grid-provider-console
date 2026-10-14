@@ -39,6 +39,10 @@ func classify(err error) (int, string) {
 	if errors.As(err, &se) {
 		return se.status, se.message
 	}
+	var hs interface{ HTTPStatus() int }
+	if errors.As(err, &hs) {
+		return hs.HTTPStatus(), err.Error()
+	}
 
 	var apiErr *apierrors.StatusError
 	if errors.As(err, &apiErr) {
