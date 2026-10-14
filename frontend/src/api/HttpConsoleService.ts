@@ -1,0 +1,60 @@
+import type { ConsoleService } from './ConsoleService';
+import { ServiceError } from './ConsoleService';
+import type { ClusterUpdate, ConsoleConfig, GridCluster, User } from './types';
+
+const API_PREFIX = '/api/v1';
+
+type Envelope<T> = { data: T };
+type ErrorBody = { error?: { code?: string; message?: string } };
+
+export class HttpConsoleService implements ConsoleService {
+  constructor(private readonly fetchFn: typeof fetch = (...args) => fetch(...args)) {}
+
+  getUser(): Promise<User> {
+    return this.request<User>('GET', '/user');
+  }
+
+  getConfig(): Promise<ConsoleConfig> {
+    return this.request<ConsoleConfig>('GET', '/config');
+  }
+
+  listClusters(): Promise<GridCluster[]> {
+    return this.request<GridCluster[]>('GET', '/clusters');
+  }
+
+  updateCluster(name: string, update: ClusterUpdate): Promise<GridCluster> {
+    return this.request<GridCluster>('PATCH', `/clusters/${encodeURIComponent(name)}`, update);
+  }
+
+  listLocations(): Promise<string[]> {
+    return this.request<string[]>('GET', '/locations');
+  }
+
+  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+    let response: Response;
+    try {
+      response = await this.fetchFn(`${API_PREFIX}${path}`, {
+        method,
+        headers: body === undefined ? { Accept: 'application/json' } : { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        credentials: 'same-origin',
+      });
+    } catch (cause) {
+      throw new ServiceError(0, 'The console backend could not be reached.');
+    }
+    if (!response.ok) {
+      let message = `Request failed with status ${response.status}.`;
+      try {
+        const payload = (await response.json()) as ErrorBody;
+        if (payload.error?.message) {
+          message = payload.error.message;
+        }
+      } catch {
+        // keep the generic message
+      }
+      throw new ServiceError(response.status, message);
+    }
+    const payload = (await response.json()) as Envelope<T>;
+    return payload.data;
+  }
+}
