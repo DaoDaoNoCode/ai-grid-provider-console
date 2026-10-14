@@ -106,7 +106,7 @@ and a `ManagedClusterSetBinding` in the hub namespace. The dev hub
 
 | Situation | Status | `code` |
 |---|---|---|
-| Missing or empty token header | 400 | `400` |
+| Missing or empty token header | 401 | `401` |
 | Kubernetes returns 401 | 401 | `401` |
 | Kubernetes returns 403 | 403 | `403` |
 | Resource not found | 404 | `404` |
