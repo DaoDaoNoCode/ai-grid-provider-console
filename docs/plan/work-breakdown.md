@@ -52,10 +52,24 @@ Owns `manifests/`, `hack/`, `.github/`, `bff/internal/grid`, `bff/internal/fleet
    through the Route; fix anything the first real deployment surfaces (OAuthClient redirect,
    TLS, cookie flags). Add a `make deploy` target.
 2. `GET /api/v1/config` reports hub prerequisites: feature gate, `ManagedClusterSetBinding`,
-   presence of the `grid.praxis.fast` CRDs, OSAC URL configured.
-3. Read-only `GET /api/v1/grid` from the AGN CRDs (feature plan Step 10a).
+   presence of the `grid.praxis.fast` CRDs, tenant API URL configured.
+3. Read-only `GET /api/v1/grid` from the AGN CRDs (feature plan Step 10a). The CRDs, grid
+   operator and Praxis gateways come from the RHOAI AI Gateway component
+   (`aigateway.aiGrid` in the DataScienceCluster; odh-gitops PR 181, opendatahub-operator
+   PR 4186, ai-gateway-operator PR 148, all open on 2026-10-14). Do not install them with
+   Helm on the dev hub; wait for an operator build that has the component and enable it.
 4. Fleet proxy (Step 5a) once a fleet dashboard URL exists.
-5. Tenants against OSAC (Step 6) once OSAC is reachable.
+5. Tenants (Step 6) against the tenant API layer defined with Swati's team, not OSAC.
+   Blocked until that API has a spec; keep the page on the mock service meanwhile.
+
+## Open questions (owners outside this repo)
+
+| Question | Who | Why it matters |
+|---|---|---|
+| Auth setup for AI Grid: OpenShift OAuth as assumed here, or an identity provider from the tenant layer? | Lindani Phiri, Andrew Ballantyne | Decides the kube-auth-proxy provider and whether `isProviderAdmin` stays a Kubernetes access review |
+| Shape of the OSAC-like tenant API | Swati's team, kick-off 2026-10-15 | Unblocks Package C item 5 and the Tenants page |
+| Is there a cost or spend view for AI Grid at all? | Myriam Fentanes, Jenny Yi, Daniele Zonca (thread in wg-rhai-ai-grid) | Decides whether `billingUrl` ever points anywhere |
+| When does a RHOAI build with `aigateway.aiGrid` reach the dev hub? | Kevin Howell | Unblocks Package C items 2 and 3 |
 
 ## Shared rules
 

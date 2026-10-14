@@ -14,7 +14,7 @@ its Node backend is replaced by the Go BFF described here.
 | Topic | Decision | Why |
 |---|---|---|
 | Language | Go, standard library `net/http` router, `client-go` | Matches the odh-dashboard BFFs (`packages/*/bff`) the team already maintains; no framework to learn. |
-| Identity | Every request carries the caller's OpenShift token in `x-forwarded-access-token`. The BFF builds a Kubernetes client with that token per request. | Same model as the odh-dashboard BFFs. The cluster's RBAC decides what the user may do; the BFF holds no privileged credential. Replaces the POC's single service-account token (Step 1 of the feature plan). |
+| Identity | Every request carries the caller's OpenShift token in `x-forwarded-access-token`. The BFF builds a Kubernetes client with that token per request. | Same model as the odh-dashboard BFFs. The cluster's RBAC decides what the user may do; the BFF holds no privileged credential. Replaces the POC's single service-account token (Step 1 of the feature plan). Open: the auth setup for AI Grid is not yet aligned (Andrew Ballantyne asked Lindani Phiri on 2026-10-14); if the tenant API layer brings its own identity provider, the proxy's provider changes, not the BFF. |
 | Login in cluster | `kube-auth-proxy` sidecar (`quay.io/opendatahub/odh-kube-auth-proxy`) with `--provider=openshift --pass-access-token`. | It is the proxy RHOAI uses; it performs the OpenShift OAuth flow and sets `X-Forwarded-Access-Token` for the BFF. See `manifests/`. |
 | Login in development | The frontend dev server and `hack/api.sh` inject `oc whoami -t`. The BFF reads the API server URL and CA from the kubeconfig, never its token. | Lets any developer who has run `oc login` work against a real hub with their own permissions. |
 | Hub namespace | Portal-owned hub resources (Placement, ManifestWorkReplicaSet, LLMInferenceService template, MaaSModelRef) live in one namespace, flag `--hub-namespace`, default `ai-grid`. | The POC used `maas`; the name is configurable so a hub can pick. |
@@ -97,10 +97,10 @@ and a `ManagedClusterSetBinding` in the hub namespace. The dev hub
 |---|---|---|
 | GET/POST | `/api/v1/subscriptions` | `MaaSSubscription` + `sub-<name>` Placement and ManifestWorkReplicaSet (Step 8) |
 | GET/PUT/DELETE | `/api/v1/subscriptions/{name}` | |
-| GET | `/api/v1/grid` | `GridNetwork`, `GridSite[]`, `InferenceProvider[]` from `grid.praxis.fast/v1alpha1`; empty when the CRDs are absent |
+| GET | `/api/v1/grid` | `GridNetwork`, `GridSite[]`, `InferenceProvider[]` from `grid.praxis.fast/v1alpha1`; empty when the CRDs are absent. The CRDs and the Praxis gateways are installed by the RHOAI AI Gateway component (`DataScienceCluster.spec.components.aigateway.aiGrid`, odh-gitops PR 181 / RHAISTRAT-2845, RHOAI 3.6), not by hand |
 | PATCH | `/api/v1/grid/network`, `/api/v1/grid/providers/{name}` | |
 | GET | `/api/v1/fleet`, `/api/v1/fleet/sites/{name}` | proxy to `FLEET_DASHBOARD_URL` |
-| GET/POST/PUT/DELETE | `/api/v1/tenants[/{name}]` | OSAC private API when `OSAC_API_URL` is set |
+| GET/POST/PUT/DELETE | `/api/v1/tenants[/{name}]` | Against the tenant API layer being defined with Swati's team (kick-off 2026-10-15). It is "OSAC-like" and will later migrate into OSAC outside RHOAI (Dana Gutride, 2026-10-14). OSAC itself is not used in this round. Until a spec exists the frontend uses the mock service; the BFF gets a `tenants.Repository` interface with no implementation |
 
 ## Errors
 
@@ -118,4 +118,8 @@ and a `ManagedClusterSetBinding` in the hub namespace. The dev hub
 
 - No Git store. Hub resources are the source of truth.
 - No per-tenant usage totals (feature plan: deliberately excluded until a source exists).
+- No billing data. Nothing in the platform stores it (Andrew Ballantyne, 2026-10-14), and whether
+  AI Grid gets a cost or spend view at all is an open product question. `billingUrl` in
+  `/api/v1/config` is a plain external link that stays empty until a page exists.
+- No OSAC integration in this round (see tenants above).
 - No session handling. The proxy owns login and cookies.
