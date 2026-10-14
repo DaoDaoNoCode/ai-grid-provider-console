@@ -1,0 +1,15 @@
+# kube-auth-proxy validates bearer tokens with TokenReviews
+# (--enable-k8s-token-validation), which needs system:auth-delegator.
+# The BFF itself acts with the caller's token and needs no rights of its own.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ai-grid-provider-console-auth-delegator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+  - kind: ServiceAccount
+    name: ai-grid-provider-console
+    namespace: ai-grid
