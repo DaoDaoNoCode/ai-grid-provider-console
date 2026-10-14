@@ -1,0 +1,16 @@
+# Go
+bff/bin/
+bff/coverage.out
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.vite/
+*.tsbuildinfo
+
+# Local tooling
+.playwright-cli/
+.env
+.env.*
+!.env.example
+.DS_Store
