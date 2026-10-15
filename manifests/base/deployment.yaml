@@ -20,7 +20,8 @@ spec:
       containers:
         # Login: OpenShift OAuth via kube-auth-proxy, the proxy RHOAI uses.
         # Flags follow the opendatahub-operator gateway template. The proxy
-        # forwards the user's access token to the BFF in X-Forwarded-Access-Token.
+        # forwards the user's access token and name to the BFF in
+        # X-Forwarded-Access-Token and X-Forwarded-User.
         - name: kube-auth-proxy
           image: kube-auth-proxy
           args:
@@ -101,19 +102,18 @@ spec:
             - name: tmp
               mountPath: /tmp
 
-        # The console: BFF plus the built frontend. Only reachable through the
-        # proxy; API calls without a token header are refused anyway.
+        # The console: a thin BFF plus the built frontend. It translates the
+        # frontend's JSON calls into gRPC on the backend container over
+        # loopback and forwards the caller's identity in request metadata.
         - name: bff
           image: ai-grid-provider-console
           args:
             - --port=8080
             - --static-assets-dir=/static
-            - --auth-token-header=x-forwarded-access-token
+            - --backend-address=127.0.0.1:9090
           env:
-            - name: HUB_NAMESPACE
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.namespace
+            - name: PROVIDER_ADMIN_GROUPS
+              value: ""
             - name: GRID_CONSUMER_URL
               value: ""
             - name: MAP_TILE_URL
@@ -127,13 +127,64 @@ spec:
               containerPort: 8080
           readinessProbe:
             httpGet:
-              path: /healthcheck
+              path: /readyz
               port: http
             periodSeconds: 5
           livenessProbe:
             httpGet:
               path: /healthcheck
               port: http
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+
+        # ai-grid-backend: owns every call to the hub API, Keycloak and
+        # metrics using the pod's ServiceAccount. Only the BFF talks to it. It
+        # listens on all interfaces so the kubelet can probe it; restrict
+        # access with a NetworkPolicy once it moves to its own Deployment.
+        - name: ai-grid-backend
+          image: ai-grid-backend
+          args:
+            - --listen-address=:9090
+          env:
+            - name: KEYCLOAK_URL
+              value: http://keycloak.grid-sso.svc:8080
+            - name: KEYCLOAK_ADMIN_REALM
+              value: master
+            - name: KEYCLOAK_REALM
+              value: ai-grid
+            # Optional: created by hack/deploy.sh when KEYCLOAK_ADMIN_PASSWORD is set.
+            - name: KEYCLOAK_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: ai-grid-backend-keycloak
+                  key: username
+                  optional: true
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ai-grid-backend-keycloak
+                  key: password
+                  optional: true
+          ports:
+            - name: grpc
+              containerPort: 9090
+          readinessProbe:
+            grpc:
+              port: 9090
+            periodSeconds: 5
+          livenessProbe:
+            grpc:
+              port: 9090
             periodSeconds: 10
           resources:
             requests:

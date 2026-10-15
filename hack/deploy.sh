@@ -1,21 +1,37 @@
 #!/usr/bin/env bash
-# Deploy the console to the current cluster and wire OpenShift OAuth login.
+# Deploy the console pod (kube-auth-proxy, BFF, ai-grid-backend) to the
+# current cluster and wire OpenShift OAuth login.
 #
 # Usage: hack/deploy.sh [image[:tag]]
+#
+# Environment:
+#   BACKEND_IMAGE            ai-grid-backend image (default quay.io/ai-grid-cloud/ai-grid-backend:latest)
+#   KEYCLOAK_ADMIN_USERNAME  with KEYCLOAK_ADMIN_PASSWORD, creates the secret the
+#   KEYCLOAK_ADMIN_PASSWORD  backend uses to list tenants; otherwise tenants fail
 #
 # Needs cluster-admin: the OAuthClient is cluster scoped. Idempotent.
 set -euo pipefail
 
 IMAGE="${1:-quay.io/cfchase/ai-grid-provider-console:latest}"
+BACKEND_IMAGE="${BACKEND_IMAGE:-quay.io/ai-grid-cloud/ai-grid-backend:latest}"
 NAMESPACE="${NAMESPACE:-ai-grid}"
 NAME=ai-grid-provider-console
 SECRET="${NAME}-oauth"
 MANIFESTS="$(cd "$(dirname "$0")/.." && pwd)/manifests/base"
 
-echo "==> applying manifests to namespace ${NAMESPACE} with image ${IMAGE}"
+echo "==> applying manifests to namespace ${NAMESPACE} with images ${IMAGE} and ${BACKEND_IMAGE}"
 kustomize build "${MANIFESTS}" \
-  | sed "s#quay.io/cfchase/ai-grid-provider-console:latest#${IMAGE}#" \
+  | sed -e "s#quay.io/cfchase/ai-grid-provider-console:latest#${IMAGE}#" \
+        -e "s#quay.io/ai-grid-cloud/ai-grid-backend:latest#${BACKEND_IMAGE}#" \
   | oc apply -f -
+
+if [[ -n "${KEYCLOAK_ADMIN_PASSWORD:-}" ]]; then
+  echo "==> creating secret ai-grid-backend-keycloak"
+  oc create secret generic ai-grid-backend-keycloak -n "${NAMESPACE}" \
+    --from-literal=username="${KEYCLOAK_ADMIN_USERNAME:-admin}" \
+    --from-literal=password="${KEYCLOAK_ADMIN_PASSWORD}" \
+    --dry-run=client -o yaml | oc apply -f -
+fi
 
 echo "==> waiting for the route host"
 for _ in $(seq 1 30); do
