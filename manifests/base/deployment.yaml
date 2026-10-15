@@ -148,13 +148,14 @@ spec:
               drop: [ALL]
 
         # ai-grid-backend: owns every call to the hub API, Keycloak and
-        # metrics using the pod's ServiceAccount. Only the BFF talks to it. It
-        # listens on all interfaces so the kubelet can probe it; restrict
-        # access with a NetworkPolicy once it moves to its own Deployment.
+        # metrics using the pod's ServiceAccount. It binds to loopback so only
+        # the BFF can reach it; nothing on the pod network can. The kubelet
+        # therefore cannot probe it directly: the BFF's /readyz pings it and
+        # takes the pod out of the Service when it does not answer.
         - name: ai-grid-backend
           image: ai-grid-backend
           args:
-            - --listen-address=:9090
+            - --listen-address=127.0.0.1:9090
           env:
             - name: KEYCLOAK_URL
               value: http://keycloak.grid-sso.svc:8080
@@ -175,17 +176,6 @@ spec:
                   name: ai-grid-backend-keycloak
                   key: password
                   optional: true
-          ports:
-            - name: grpc
-              containerPort: 9090
-          readinessProbe:
-            grpc:
-              port: 9090
-            periodSeconds: 5
-          livenessProbe:
-            grpc:
-              port: 9090
-            periodSeconds: 10
           resources:
             requests:
               cpu: 50m

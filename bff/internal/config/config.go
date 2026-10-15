@@ -47,6 +47,7 @@ type Config struct {
 	BackendAddress    string
 	BackendCAFile     string
 	BackendServerName string
+	BackendInsecure   bool
 	BackendTimeout    time.Duration
 
 	// StaticAssetsDir holds the built frontend. Empty disables static serving.
@@ -83,6 +84,7 @@ func Parse(args []string, lookupEnv func(string) (string, bool)) (Config, error)
 	fs.StringVar(&cfg.BackendAddress, "backend-address", env.str("BACKEND_ADDRESS", DefaultBackendAddress), "ai-grid-backend gRPC address")
 	fs.StringVar(&cfg.BackendCAFile, "backend-ca-file", env.str("BACKEND_CA_FILE", ""), "CA for TLS to the backend; empty for plaintext")
 	fs.StringVar(&cfg.BackendServerName, "backend-server-name", env.str("BACKEND_SERVER_NAME", ""), "Expected TLS server name of the backend")
+	fs.BoolVar(&cfg.BackendInsecure, "backend-insecure", env.boolean("BACKEND_INSECURE", false), "Allow plaintext to a non-loopback backend (development only)")
 	fs.DurationVar(&cfg.BackendTimeout, "backend-timeout", env.duration("BACKEND_TIMEOUT", 10*time.Second), "Per-RPC timeout towards the backend")
 	fs.StringVar(&cfg.StaticAssetsDir, "static-assets-dir", env.str("STATIC_ASSETS_DIR", ""), "Directory with the built frontend; empty disables")
 	fs.StringVar(&cfg.GridEndpoint, "grid-endpoint", env.str("GRID_CONSUMER_URL", ""), "Consumer-facing AI Grid inference URL")
@@ -145,6 +147,15 @@ func (e envReader) int(key string, fallback int) int {
 	if v, ok := e.lookup(key); ok && v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			return n
+		}
+	}
+	return fallback
+}
+
+func (e envReader) boolean(key string, fallback bool) bool {
+	if v, ok := e.lookup(key); ok && v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			return b
 		}
 	}
 	return fallback

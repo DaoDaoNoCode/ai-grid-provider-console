@@ -8,6 +8,7 @@ package backend
 import (
 	"context"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -33,9 +34,11 @@ type Config struct {
 	// Address is host:port. In the single-pod deployment it is the loopback
 	// address of the backend container.
 	Address string
-	// CAFile enables TLS with this CA. Empty means plaintext, which is only
-	// acceptable over loopback.
+	// CAFile enables TLS with this CA. Empty means plaintext, which Dial only
+	// accepts for loopback addresses unless Insecure is set.
 	CAFile string
+	// Insecure allows plaintext to a non-loopback address (development only).
+	Insecure bool
 	// ServerName overrides the expected TLS server name.
 	ServerName string
 	// Timeout bounds every RPC.
@@ -58,6 +61,9 @@ func Dial(cfg Config, extra ...grpc.DialOption) (*Client, error) {
 		return nil, fmt.Errorf("backend address must not be empty")
 	}
 	creds := insecure.NewCredentials()
+	if cfg.CAFile == "" && !cfg.Insecure && !isLoopback(cfg.Address) {
+		return nil, fmt.Errorf("backend address %s is not loopback: set a CA file for TLS or allow insecure explicitly", cfg.Address)
+	}
 	if cfg.CAFile != "" {
 		tls, err := credentials.NewClientTLSFromFile(cfg.CAFile, cfg.ServerName)
 		if err != nil {
@@ -84,6 +90,19 @@ func Dial(cfg Config, extra ...grpc.DialOption) (*Client, error) {
 		Clusters: aigridv1.NewManagedClustersClient(conn),
 		Tenants:  aigridv1.NewTenantsClient(conn),
 	}, nil
+}
+
+// isLoopback reports whether a host:port target names the local machine.
+func isLoopback(address string) bool {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		host = address
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	return ip != nil && ip.IsLoopback()
 }
 
 // Close releases the connection.

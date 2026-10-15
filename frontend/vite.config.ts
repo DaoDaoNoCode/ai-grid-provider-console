@@ -34,15 +34,23 @@ const caller = (): Caller => {
   if (cached) {
     return cached;
   }
-  try {
-    const token = process.env.AUTH_TOKEN ?? oc('whoami', '-t');
-    const user = process.env.AUTH_USER ?? oc('whoami');
-    cached = { token, user };
-    console.info(`[dev-proxy] forwarding API calls to ${bffUrl} as ${user}`);
-  } catch {
+  const whoami = (...args: string[]): string | undefined => {
+    try {
+      return oc('whoami', ...args);
+    } catch {
+      return undefined;
+    }
+  };
+  const token = process.env.AUTH_TOKEN ?? whoami('-t');
+  if (!token) {
     cached = { token: '', user: '' };
-    console.warn('[dev-proxy] no oc login found; API calls will fail with 401 until you run `oc login`');
+    console.warn('[dev-proxy] no oc login found; API calls will fail with 401 until you run `oc login` or set AUTH_TOKEN');
+    return cached;
   }
+  // With AUTH_TOKEN set, `oc` may not be logged in; fall back to a fixed name.
+  const user = process.env.AUTH_USER ?? whoami() ?? 'dev-user';
+  cached = { token, user };
+  console.info(`[dev-proxy] forwarding API calls to ${bffUrl} as ${user}`);
   return cached;
 };
 

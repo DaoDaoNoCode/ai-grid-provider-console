@@ -74,7 +74,7 @@ func Start(t *testing.T, fake *Fake) *backend.Client {
 	aigridv1.RegisterTenantsServer(srv, fake)
 	go func() { _ = srv.Serve(lis) }()
 
-	client, err := backend.Dial(backend.Config{Address: "passthrough:///bufconn"},
+	client, err := backend.Dial(backend.Config{Address: "passthrough:///bufconn", Insecure: true},
 		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return lis.DialContext(ctx) }))
 	if err != nil {
 		t.Fatal(err)

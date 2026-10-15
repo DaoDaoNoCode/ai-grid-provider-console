@@ -19,6 +19,21 @@ func TestDialValidation(t *testing.T) {
 	if _, err := backend.Dial(backend.Config{Address: "127.0.0.1:9090", CAFile: "/nonexistent/ca.crt"}); err == nil || !strings.Contains(err.Error(), "backend CA") {
 		t.Fatalf("missing CA file not reported: %v", err)
 	}
+	if _, err := backend.Dial(backend.Config{Address: "ai-grid-backend.ai-grid.svc:8080"}); err == nil || !strings.Contains(err.Error(), "not loopback") {
+		t.Fatalf("plaintext to a remote host accepted: %v", err)
+	}
+	for _, addr := range []string{"127.0.0.1:9090", "localhost:9090", "[::1]:9090"} {
+		c, err := backend.Dial(backend.Config{Address: addr})
+		if err != nil {
+			t.Fatalf("loopback %s rejected: %v", addr, err)
+		}
+		_ = c.Close()
+	}
+	c, err := backend.Dial(backend.Config{Address: "ai-grid-backend.ai-grid.svc:8080", Insecure: true})
+	if err != nil {
+		t.Fatalf("explicit insecure rejected: %v", err)
+	}
+	_ = c.Close()
 }
 
 func TestForwardsIdentity(t *testing.T) {

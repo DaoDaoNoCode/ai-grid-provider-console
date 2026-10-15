@@ -53,7 +53,7 @@ curl -s http://127.0.0.1:8080/readyz
 checks the read-only endpoints.
 
 Environment variables the BFF reads (all optional): `PORT`, `BACKEND_ADDRESS`,
-`BACKEND_CA_FILE`, `BACKEND_SERVER_NAME`, `BACKEND_TIMEOUT`, `PROVIDER_ADMIN_GROUPS`,
+`BACKEND_CA_FILE`, `BACKEND_SERVER_NAME`, `BACKEND_INSECURE`, `BACKEND_TIMEOUT`, `PROVIDER_ADMIN_GROUPS`,
 `AUTH_TOKEN_HEADER`, `AUTH_USER_HEADER`, `AUTH_EMAIL_HEADER`, `AUTH_GROUPS_HEADER`,
 `GRID_CONSUMER_URL`, `MAP_TILE_URL`, `BILLING_URL`, `LOG_LEVEL`. Run `go run ./cmd --help`
 in `bff/` for the flags.
@@ -72,7 +72,8 @@ CI runs the same plus `kustomize build` and a container image build.
 
 One pod with three containers: kube-auth-proxy (`quay.io/opendatahub/odh-kube-auth-proxy`,
 OpenShift OAuth, the proxy RHOAI uses), the console image (BFF plus frontend) and
-`ai-grid-backend`. The BFF reaches the backend over loopback; nothing else can.
+`ai-grid-backend`. The backend binds to loopback, so only the BFF can reach it; the BFF's
+`/readyz` is the pod's readiness signal for both.
 
 ```sh
 make image IMAGE=quay.io/<you>/ai-grid-provider-console TAG=dev

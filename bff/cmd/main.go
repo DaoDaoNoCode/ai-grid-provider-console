@@ -37,6 +37,7 @@ func run() error {
 		Address:    cfg.BackendAddress,
 		CAFile:     cfg.BackendCAFile,
 		ServerName: cfg.BackendServerName,
+		Insecure:   cfg.BackendInsecure,
 		Timeout:    cfg.BackendTimeout,
 	})
 	if err != nil {
