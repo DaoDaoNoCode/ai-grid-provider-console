@@ -2,34 +2,33 @@
 
 export type User = {
   username: string;
+  email?: string;
   groups: string[];
+  /** UI hint only; the backend enforces authorization. */
   isProviderAdmin: boolean;
 };
 
 export type ConsoleConfig = {
-  hubNamespace: string;
   gridEndpoint: string;
   mapTileUrl: string;
   billingUrl: string;
   version: string;
 };
 
-export type ClusterStatus = 'Ready' | 'Offline' | 'Unknown';
-export type ProvisioningStatus = 'Provisioned' | 'Provisioning' | 'Not provisioned';
-
 export type GridCluster = {
   name: string;
-  status: ClusterStatus;
   aiGridEnabled: boolean;
   provisioned: boolean;
-  provisioningStatus: ProvisioningStatus;
+  hubAcceptsClient: boolean;
   location?: string;
-  consoleUrl?: string;
+  site?: string;
+  region?: string;
   openshiftVersion?: string;
-  resourceVersion: string;
+  labels: Record<string, string>;
 };
 
-export type ClusterUpdate = {
-  aiGridEnabled?: boolean;
-  location?: string;
+export type Tenant = {
+  id: string;
+  name: string;
+  domains: string[];
 };

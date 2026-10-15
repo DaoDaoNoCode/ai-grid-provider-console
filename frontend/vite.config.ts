@@ -6,38 +6,44 @@ import { defineConfig } from 'vite';
 /**
  * Local development against a real cluster.
  *
- * The BFF expects the caller's OpenShift token in `x-forwarded-access-token`,
- * which kube-auth-proxy sets in a deployed console. Here the dev proxy sets it
- * from `oc whoami -t`, so whoever ran `oc login` is the console user. The token
- * is re-read after a 401 so a fresh `oc login` is picked up without a restart.
+ * The BFF expects the caller's identity in the headers kube-auth-proxy sets in a
+ * deployed console: the OpenShift token in `x-forwarded-access-token` and the
+ * user name in `x-forwarded-user`. Here the dev proxy sets them from `oc whoami`,
+ * so whoever ran `oc login` is the console user. They are re-read after a 401 so
+ * a fresh `oc login` is picked up without a restart.
  *
  * Environment:
- *   BFF_URL     BFF base URL (default http://127.0.0.1:8080)
- *   AUTH_TOKEN  use this token instead of running `oc whoami -t`
+ *   BFF_URL      BFF base URL (default http://127.0.0.1:8080)
+ *   AUTH_TOKEN   use this token instead of running `oc whoami -t`
+ *   AUTH_USER    use this user name instead of running `oc whoami`
+ *   AUTH_GROUPS  comma-separated groups to send in `x-forwarded-groups`
  */
 const bffUrl = process.env.BFF_URL ?? 'http://127.0.0.1:8080';
 const tokenHeader = process.env.AUTH_TOKEN_HEADER ?? 'x-forwarded-access-token';
+const userHeader = process.env.AUTH_USER_HEADER ?? 'x-forwarded-user';
+const groupsHeader = process.env.AUTH_GROUPS_HEADER ?? 'x-forwarded-groups';
 
-let cachedToken: string | undefined;
+type Caller = { token: string; user: string };
 
-const readToken = (): string => {
-  if (process.env.AUTH_TOKEN) {
-    return process.env.AUTH_TOKEN;
-  }
-  if (cachedToken) {
-    return cachedToken;
+let cached: Caller | undefined;
+
+const oc = (...args: string[]): string =>
+  execFileSync('oc', args, { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+
+const caller = (): Caller => {
+  if (cached) {
+    return cached;
   }
   try {
-    cachedToken = execFileSync('oc', ['whoami', '-t'], { stdio: ['ignore', 'pipe', 'ignore'] })
-      .toString()
-      .trim();
-    const user = execFileSync('oc', ['whoami'], { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    const token = process.env.AUTH_TOKEN ?? oc('whoami', '-t');
+    const user = process.env.AUTH_USER ?? oc('whoami');
+    cached = { token, user };
     console.info(`[dev-proxy] forwarding API calls to ${bffUrl} as ${user}`);
   } catch {
-    cachedToken = '';
+    cached = { token: '', user: '' };
     console.warn('[dev-proxy] no oc login found; API calls will fail with 401 until you run `oc login`');
   }
-  return cachedToken;
+  return cached;
 };
 
 export default defineConfig({
@@ -51,14 +57,18 @@ export default defineConfig({
         changeOrigin: true,
         configure: (proxy) => {
           proxy.on('proxyReq', (proxyReq) => {
-            const token = readToken();
+            const { token, user } = caller();
             if (token) {
               proxyReq.setHeader(tokenHeader, token);
+              proxyReq.setHeader(userHeader, user);
+              if (process.env.AUTH_GROUPS) {
+                proxyReq.setHeader(groupsHeader, process.env.AUTH_GROUPS);
+              }
             }
           });
           proxy.on('proxyRes', (proxyRes) => {
             if (proxyRes.statusCode === 401) {
-              cachedToken = undefined;
+              cached = undefined;
             }
           });
         },

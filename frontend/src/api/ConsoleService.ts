@@ -1,4 +1,4 @@
-import type { ClusterUpdate, ConsoleConfig, GridCluster, User } from './types';
+import type { ConsoleConfig, GridCluster, Tenant, User } from './types';
 
 /**
  * Every page talks to the BFF through this interface only. The HTTP
@@ -8,8 +8,7 @@ export interface ConsoleService {
   getUser(): Promise<User>;
   getConfig(): Promise<ConsoleConfig>;
   listClusters(): Promise<GridCluster[]>;
-  updateCluster(name: string, update: ClusterUpdate): Promise<GridCluster>;
-  listLocations(): Promise<string[]>;
+  listTenants(): Promise<Tenant[]>;
 }
 
 export class ServiceError extends Error {
