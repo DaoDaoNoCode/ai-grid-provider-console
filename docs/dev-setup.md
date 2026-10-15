@@ -88,15 +88,18 @@ backend, so it is the readiness signal for all three containers.
 make image IMAGE=quay.io/<you>/ai-grid-provider-console TAG=dev
 make push  IMAGE=quay.io/<you>/ai-grid-provider-console TAG=dev
 # build the backend image from its repository: podman build -f Containerfile -t quay.io/<you>/ai-grid-backend:dev . && podman push ...
-make deploy IMAGE=quay.io/<you>/ai-grid-provider-console TAG=dev BACKEND_IMAGE=quay.io/<you>/ai-grid-backend:dev
+KEYCLOAK_ADMIN_USERNAME=... KEYCLOAK_ADMIN_PASSWORD=... \
+  make deploy IMAGE=quay.io/<you>/ai-grid-provider-console TAG=dev BACKEND_IMAGE=quay.io/<you>/ai-grid-backend:dev
 ```
 
 `hack/deploy.sh` applies `manifests/base` (namespace `ai-grid`, ServiceAccount, a
 `system:auth-delegator` binding for token validation, the backend's ManagedCluster
 ClusterRole, Deployment, Service with an OpenShift serving certificate, reencrypt Route),
 waits for the Route host, then creates the cluster-scoped `OAuthClient` and the secret the
-proxy reads. Set `KEYCLOAK_ADMIN_USERNAME` and `KEYCLOAK_ADMIN_PASSWORD` to also create the
-secret the backend uses for tenants. Creating the `OAuthClient` needs cluster-admin.
+proxy reads. `KEYCLOAK_ADMIN_USERNAME` and `KEYCLOAK_ADMIN_PASSWORD` are required: they
+become the secret the backend container mounts, and the pod does not start without it, so
+the backend can never run on its built-in default credentials. Creating the `OAuthClient`
+needs cluster-admin.
 `make undeploy` removes everything but the namespace.
 
 To call the deployed API from a script, send your token as a bearer token; the proxy

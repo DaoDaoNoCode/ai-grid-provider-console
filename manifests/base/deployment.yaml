@@ -170,19 +170,20 @@ spec:
               value: master
             - name: KEYCLOAK_REALM
               value: ai-grid
-            # Optional: created by hack/deploy.sh when KEYCLOAK_ADMIN_PASSWORD is set.
+            # Required: hack/deploy.sh creates it from KEYCLOAK_ADMIN_USERNAME and
+            # KEYCLOAK_ADMIN_PASSWORD. Without the secret the container does not
+            # start, which is the point: the backend would otherwise fall back
+            # to its built-in admin/admin default and run with it.
             - name: KEYCLOAK_ADMIN_USERNAME
               valueFrom:
                 secretKeyRef:
                   name: ai-grid-backend-keycloak
                   key: username
-                  optional: true
             - name: KEYCLOAK_ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: ai-grid-backend-keycloak
                   key: password
-                  optional: true
           resources:
             requests:
               cpu: 50m

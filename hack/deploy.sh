@@ -6,11 +6,17 @@
 #
 # Environment:
 #   BACKEND_IMAGE            ai-grid-backend image (default quay.io/ai-grid-cloud/ai-grid-backend:latest)
-#   KEYCLOAK_ADMIN_USERNAME  with KEYCLOAK_ADMIN_PASSWORD, creates the secret the
-#   KEYCLOAK_ADMIN_PASSWORD  backend uses to list tenants; otherwise tenants fail
+#   KEYCLOAK_ADMIN_USERNAME  required: the Keycloak credentials the backend uses to
+#   KEYCLOAK_ADMIN_PASSWORD  list tenants, stored in secret ai-grid-backend-keycloak
 #
 # Needs cluster-admin: the OAuthClient is cluster scoped. Idempotent.
 set -euo pipefail
+
+if [[ -z "${KEYCLOAK_ADMIN_USERNAME:-}" || -z "${KEYCLOAK_ADMIN_PASSWORD:-}" ]]; then
+  echo "KEYCLOAK_ADMIN_USERNAME and KEYCLOAK_ADMIN_PASSWORD must be set: the backend" >&2
+  echo "container requires secret ai-grid-backend-keycloak and will not start without it." >&2
+  exit 1
+fi
 
 IMAGE="${1:-quay.io/cfchase/ai-grid-provider-console:latest}"
 BACKEND_IMAGE="${BACKEND_IMAGE:-quay.io/ai-grid-cloud/ai-grid-backend:latest}"
@@ -25,13 +31,11 @@ kustomize build "${MANIFESTS}" \
         -e "s#quay.io/ai-grid-cloud/ai-grid-backend:latest#${BACKEND_IMAGE}#" \
   | oc apply -f -
 
-if [[ -n "${KEYCLOAK_ADMIN_PASSWORD:-}" ]]; then
-  echo "==> creating secret ai-grid-backend-keycloak"
-  oc create secret generic ai-grid-backend-keycloak -n "${NAMESPACE}" \
-    --from-literal=username="${KEYCLOAK_ADMIN_USERNAME:-admin}" \
-    --from-literal=password="${KEYCLOAK_ADMIN_PASSWORD}" \
-    --dry-run=client -o yaml | oc apply -f -
-fi
+echo "==> creating secret ai-grid-backend-keycloak"
+oc create secret generic ai-grid-backend-keycloak -n "${NAMESPACE}" \
+  --from-literal=username="${KEYCLOAK_ADMIN_USERNAME}" \
+  --from-literal=password="${KEYCLOAK_ADMIN_PASSWORD}" \
+  --dry-run=client -o yaml | oc apply -f -
 
 echo "==> waiting for the route host"
 for _ in $(seq 1 30); do
