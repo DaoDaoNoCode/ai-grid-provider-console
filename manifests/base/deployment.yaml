@@ -164,16 +164,28 @@ spec:
           args:
             - --listen-address=127.0.0.1:9090
           env:
+            # Keycloak settings and credentials all come from one secret that
+            # hack/deploy.sh creates from KEYCLOAK_URL, KEYCLOAK_REALM,
+            # KEYCLOAK_ADMIN_REALM, KEYCLOAK_ADMIN_USERNAME and
+            # KEYCLOAK_ADMIN_PASSWORD, so this manifest carries no values of
+            # any one environment. Every key is required: without the secret
+            # the container does not start, which is the point, because the
+            # backend would otherwise fall back to its built-in admin/admin.
             - name: KEYCLOAK_URL
-              value: http://keycloak.grid-sso.svc:8080
+              valueFrom:
+                secretKeyRef:
+                  name: ai-grid-backend-keycloak
+                  key: url
             - name: KEYCLOAK_ADMIN_REALM
-              value: master
+              valueFrom:
+                secretKeyRef:
+                  name: ai-grid-backend-keycloak
+                  key: admin-realm
             - name: KEYCLOAK_REALM
-              value: ai-grid
-            # Required: hack/deploy.sh creates it from KEYCLOAK_ADMIN_USERNAME and
-            # KEYCLOAK_ADMIN_PASSWORD. Without the secret the container does not
-            # start, which is the point: the backend would otherwise fall back
-            # to its built-in admin/admin default and run with it.
+              valueFrom:
+                secretKeyRef:
+                  name: ai-grid-backend-keycloak
+                  key: realm
             - name: KEYCLOAK_ADMIN_USERNAME
               valueFrom:
                 secretKeyRef:

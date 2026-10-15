@@ -88,7 +88,7 @@ backend, so it is the readiness signal for all three containers.
 make image IMAGE=quay.io/<you>/ai-grid-provider-console TAG=dev
 make push  IMAGE=quay.io/<you>/ai-grid-provider-console TAG=dev
 # build the backend image from its repository: podman build -f Containerfile -t quay.io/<you>/ai-grid-backend:dev . && podman push ...
-KEYCLOAK_ADMIN_USERNAME=... KEYCLOAK_ADMIN_PASSWORD=... \
+KEYCLOAK_URL=https://<keycloak-route-host> KEYCLOAK_ADMIN_USERNAME=... KEYCLOAK_ADMIN_PASSWORD=... \
   make deploy IMAGE=quay.io/<you>/ai-grid-provider-console TAG=dev BACKEND_IMAGE=quay.io/<you>/ai-grid-backend:dev
 ```
 
@@ -96,10 +96,14 @@ KEYCLOAK_ADMIN_USERNAME=... KEYCLOAK_ADMIN_PASSWORD=... \
 `system:auth-delegator` binding for token validation, the backend's ManagedCluster
 ClusterRole, Deployment, Service with an OpenShift serving certificate, reencrypt Route),
 waits for the Route host, then creates the cluster-scoped `OAuthClient` and the secret the
-proxy reads. `KEYCLOAK_ADMIN_USERNAME` and `KEYCLOAK_ADMIN_PASSWORD` are required: they
-become the secret the backend container mounts, and the pod does not start without it, so
-the backend can never run on its built-in default credentials. Creating the `OAuthClient`
-needs cluster-admin.
+proxy reads. `KEYCLOAK_URL`, `KEYCLOAK_ADMIN_USERNAME` and `KEYCLOAK_ADMIN_PASSWORD` are
+required, with `KEYCLOAK_REALM` (default `ai-grid`) and `KEYCLOAK_ADMIN_REALM` (default
+`master`) optional: all five become the secret the backend container mounts, so the
+manifests carry no environment's values and the pod does not start without the secret,
+which keeps the backend off its built-in default credentials. Use an `https://` URL where
+the cluster offers one, since the admin password travels with every call; on the dev hub
+that is the Keycloak Route in `grid-sso`, as its Service is plain HTTP. Creating the
+`OAuthClient` needs cluster-admin.
 `make undeploy` removes everything but the namespace.
 
 To call the deployed API from a script, send your token as a bearer token; the proxy
