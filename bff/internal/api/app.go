@@ -5,8 +5,9 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/backend"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/config"
-	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/kube"
+	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/identity"
 )
 
 // Version is set at build time with -ldflags "-X ...api.Version=<v>".
@@ -17,19 +18,25 @@ const APIPrefix = "/api/v1"
 
 // App holds the dependencies shared by all handlers.
 type App struct {
-	cfg       config.Config
-	logger    *slog.Logger
-	clients   kube.ClientFactory
-	extractor kube.HeaderExtractor
+	cfg     config.Config
+	logger  *slog.Logger
+	backend *backend.Client
+	headers identity.Headers
 }
 
 // NewApp assembles the application.
-func NewApp(cfg config.Config, logger *slog.Logger, clients kube.ClientFactory) *App {
+func NewApp(cfg config.Config, logger *slog.Logger, client *backend.Client) *App {
 	return &App{
-		cfg:       cfg,
-		logger:    logger,
-		clients:   clients,
-		extractor: kube.HeaderExtractor{Header: cfg.AuthTokenHeader, Prefix: cfg.AuthTokenPrefix},
+		cfg:     cfg,
+		logger:  logger,
+		backend: client,
+		headers: identity.Headers{
+			User:        cfg.AuthUserHeader,
+			Email:       cfg.AuthEmailHeader,
+			Groups:      cfg.AuthGroupsHeader,
+			Token:       cfg.AuthTokenHeader,
+			TokenPrefix: cfg.AuthTokenPrefix,
+		},
 	}
 }
 
@@ -40,6 +47,7 @@ func (a *App) Handler() http.Handler {
 
 	root := http.NewServeMux()
 	root.HandleFunc("GET /healthcheck", a.healthcheck)
+	root.HandleFunc("GET /readyz", a.readyz)
 	root.Handle(APIPrefix+"/", a.requireIdentity(api))
 	if a.cfg.StaticAssetsDir != "" {
 		root.Handle("/", newSPAHandler(a.cfg.StaticAssetsDir))

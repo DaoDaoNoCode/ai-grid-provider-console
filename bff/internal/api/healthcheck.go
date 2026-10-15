@@ -1,13 +1,34 @@
 package api
 
-import "net/http"
+import (
+	"context"
+	"net/http"
+	"time"
+
+	aigridv1 "github.com/osac-project/ai-grid-backend/gen/ai_grid/v1"
+)
 
 type healthStatus struct {
 	Status  string `json:"status"`
 	Version string `json:"version"`
+	Backend string `json:"backend,omitempty"`
 }
 
-// healthcheck needs no identity; the kubelet calls it.
-func (a *App) healthcheck(w http.ResponseWriter, r *http.Request) {
+// healthcheck is the liveness probe: the process serves HTTP. It needs no
+// identity and does not depend on the backend.
+func (a *App) healthcheck(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, healthStatus{Status: "ok", Version: Version})
+}
+
+// readyz is the readiness probe: the backend answers Ping. A console without
+// its backend should not receive traffic.
+func (a *App) readyz(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+	if _, err := a.backend.Health.Ping(ctx, &aigridv1.PingRequest{Name: "bff"}); err != nil {
+		a.logger.Warn("backend not ready", "error", err)
+		writeJSON(w, http.StatusServiceUnavailable, healthStatus{Status: "unavailable", Version: Version, Backend: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, healthStatus{Status: "ok", Version: Version, Backend: "ok"})
 }

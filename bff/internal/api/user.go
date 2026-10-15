@@ -2,21 +2,40 @@ package api
 
 import (
 	"net/http"
+	"slices"
 
-	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/users"
+	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/identity"
 )
 
-// getUser answers GET /api/v1/user.
+// User is the signed-in caller as the UI shows it.
+type User struct {
+	Username string   `json:"username"`
+	Email    string   `json:"email,omitempty"`
+	Groups   []string `json:"groups"`
+	// IsProviderAdmin tells the UI whether to offer provider-admin actions.
+	// It is a hint derived from the proxy's group header; the backend decides.
+	IsProviderAdmin bool `json:"isProviderAdmin"`
+}
+
+// getUser answers GET /api/v1/user from the proxy headers. No backend call is
+// needed: the proxy already authenticated the caller.
 func (a *App) getUser(w http.ResponseWriter, r *http.Request) {
-	c, err := a.clients.ClientFor(r.Context())
-	if err != nil {
-		a.respondError(w, r, err)
-		return
+	id, _ := identity.FromContext(r.Context())
+	groups := id.Groups
+	if groups == nil {
+		groups = []string{}
 	}
-	u, err := users.Current(r.Context(), c)
-	if err != nil {
-		a.respondError(w, r, err)
-		return
+	writeData(w, http.StatusOK, User{
+		Username:        id.Username,
+		Email:           id.Email,
+		Groups:          groups,
+		IsProviderAdmin: a.isProviderAdmin(id),
+	})
+}
+
+func (a *App) isProviderAdmin(id identity.Identity) bool {
+	if len(a.cfg.ProviderAdminGroups) == 0 {
+		return true
 	}
-	writeData(w, http.StatusOK, u)
+	return slices.ContainsFunc(id.Groups, func(g string) bool { return slices.Contains(a.cfg.ProviderAdminGroups, g) })
 }

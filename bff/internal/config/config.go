@@ -9,15 +9,18 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
+// Header names set by kube-auth-proxy (--pass-access-token, --pass-user-headers).
+// The frontend dev proxy sets the same headers from `oc whoami`.
 const (
-	// DefaultAuthTokenHeader is the header kube-auth-proxy uses when started with
-	// --pass-access-token. The frontend dev proxy sets the same header.
-	DefaultAuthTokenHeader = "x-forwarded-access-token"
-	// DefaultHubNamespace is where the console writes its own hub resources
-	// (Placements, ManifestWorkReplicaSets, MaaSModelRefs).
-	DefaultHubNamespace = "ai-grid"
+	DefaultAuthTokenHeader  = "x-forwarded-access-token"
+	DefaultAuthUserHeader   = "x-forwarded-user"
+	DefaultAuthEmailHeader  = "x-forwarded-email"
+	DefaultAuthGroupsHeader = "x-forwarded-groups"
+	// DefaultBackendAddress is the backend container in the same pod.
+	DefaultBackendAddress = "127.0.0.1:9090"
 )
 
 // Config is the fully resolved BFF configuration.
@@ -29,16 +32,26 @@ type Config struct {
 	CertFile string
 	KeyFile  string
 
-	// AuthTokenHeader carries the caller's OpenShift bearer token.
-	AuthTokenHeader string
-	// AuthTokenPrefix is stripped from the header value, for example "Bearer ".
-	AuthTokenPrefix string
+	// Proxy headers carrying the caller's identity.
+	AuthTokenHeader  string
+	AuthTokenPrefix  string
+	AuthUserHeader   string
+	AuthEmailHeader  string
+	AuthGroupsHeader string
+	// ProviderAdminGroups marks callers in any of these groups as provider
+	// admins for the UI. Empty means every signed-in user. The backend
+	// enforces authorization regardless; this only drives what the UI offers.
+	ProviderAdminGroups []string
+
+	// Backend connection.
+	BackendAddress    string
+	BackendCAFile     string
+	BackendServerName string
+	BackendTimeout    time.Duration
 
 	// StaticAssetsDir holds the built frontend. Empty disables static serving.
 	StaticAssetsDir string
 
-	// HubNamespace is the namespace for console-owned hub resources.
-	HubNamespace string
 	// GridEndpoint is the consumer-facing inference URL shown to admins.
 	GridEndpoint string
 	// MapTileURL is the tile server for the fleet map; empty hides the map.
@@ -46,9 +59,7 @@ type Config struct {
 	// BillingURL is an external billing UI link; empty hides the menu item.
 	BillingURL string
 
-	// InsecureSkipVerify disables TLS verification towards the API server (dev only).
-	InsecureSkipVerify bool
-	LogLevel           slog.Level
+	LogLevel slog.Level
 }
 
 // Parse reads flags from args (without the program name) and environment variables.
@@ -57,7 +68,7 @@ func Parse(args []string, lookupEnv func(string) (string, bool)) (Config, error)
 	env := envReader{lookup: lookupEnv}
 
 	var cfg Config
-	var logLevel string
+	var logLevel, adminGroups string
 
 	fs.StringVar(&cfg.BindAddress, "bind-address", env.str("BIND_ADDRESS", ""), "Interface to listen on; empty for all")
 	fs.IntVar(&cfg.Port, "port", env.int("PORT", 8080), "Listen port")
@@ -65,12 +76,18 @@ func Parse(args []string, lookupEnv func(string) (string, bool)) (Config, error)
 	fs.StringVar(&cfg.KeyFile, "key-file", env.str("KEY_FILE", ""), "TLS private key file")
 	fs.StringVar(&cfg.AuthTokenHeader, "auth-token-header", env.str("AUTH_TOKEN_HEADER", DefaultAuthTokenHeader), "Header carrying the caller's bearer token")
 	fs.StringVar(&cfg.AuthTokenPrefix, "auth-token-prefix", env.str("AUTH_TOKEN_PREFIX", ""), "Prefix to strip from the token header value")
+	fs.StringVar(&cfg.AuthUserHeader, "auth-user-header", env.str("AUTH_USER_HEADER", DefaultAuthUserHeader), "Header carrying the caller's user name")
+	fs.StringVar(&cfg.AuthEmailHeader, "auth-email-header", env.str("AUTH_EMAIL_HEADER", DefaultAuthEmailHeader), "Header carrying the caller's email")
+	fs.StringVar(&cfg.AuthGroupsHeader, "auth-groups-header", env.str("AUTH_GROUPS_HEADER", DefaultAuthGroupsHeader), "Header carrying the caller's groups")
+	fs.StringVar(&adminGroups, "provider-admin-groups", env.str("PROVIDER_ADMIN_GROUPS", ""), "Comma-separated groups shown provider-admin actions; empty for everyone")
+	fs.StringVar(&cfg.BackendAddress, "backend-address", env.str("BACKEND_ADDRESS", DefaultBackendAddress), "ai-grid-backend gRPC address")
+	fs.StringVar(&cfg.BackendCAFile, "backend-ca-file", env.str("BACKEND_CA_FILE", ""), "CA for TLS to the backend; empty for plaintext")
+	fs.StringVar(&cfg.BackendServerName, "backend-server-name", env.str("BACKEND_SERVER_NAME", ""), "Expected TLS server name of the backend")
+	fs.DurationVar(&cfg.BackendTimeout, "backend-timeout", env.duration("BACKEND_TIMEOUT", 10*time.Second), "Per-RPC timeout towards the backend")
 	fs.StringVar(&cfg.StaticAssetsDir, "static-assets-dir", env.str("STATIC_ASSETS_DIR", ""), "Directory with the built frontend; empty disables")
-	fs.StringVar(&cfg.HubNamespace, "hub-namespace", env.str("HUB_NAMESPACE", DefaultHubNamespace), "Namespace for console-owned hub resources")
 	fs.StringVar(&cfg.GridEndpoint, "grid-endpoint", env.str("GRID_CONSUMER_URL", ""), "Consumer-facing AI Grid inference URL")
 	fs.StringVar(&cfg.MapTileURL, "map-tile-url", env.str("MAP_TILE_URL", ""), "Tile server URL template for the fleet map")
 	fs.StringVar(&cfg.BillingURL, "billing-url", env.str("BILLING_URL", ""), "External billing UI URL")
-	fs.BoolVar(&cfg.InsecureSkipVerify, "insecure-skip-verify", env.boolean("INSECURE_SKIP_VERIFY", false), "Skip TLS verification towards the API server (development only)")
 	fs.StringVar(&logLevel, "log-level", env.str("LOG_LEVEL", "info"), "Log level: debug, info, warn, error")
 
 	if err := fs.Parse(args); err != nil {
@@ -79,17 +96,20 @@ func Parse(args []string, lookupEnv func(string) (string, bool)) (Config, error)
 	if err := cfg.LogLevel.UnmarshalText([]byte(logLevel)); err != nil {
 		return Config{}, fmt.Errorf("invalid log level %q: %w", logLevel, err)
 	}
+	cfg.ProviderAdminGroups = splitList(adminGroups)
 	if cfg.Port <= 0 || cfg.Port > 65535 {
 		return Config{}, fmt.Errorf("invalid port %d", cfg.Port)
 	}
 	if (cfg.CertFile == "") != (cfg.KeyFile == "") {
 		return Config{}, fmt.Errorf("cert-file and key-file must be set together")
 	}
-	if strings.TrimSpace(cfg.AuthTokenHeader) == "" {
-		return Config{}, fmt.Errorf("auth-token-header must not be empty")
+	for name, v := range map[string]string{"auth-token-header": cfg.AuthTokenHeader, "auth-user-header": cfg.AuthUserHeader, "backend-address": cfg.BackendAddress} {
+		if strings.TrimSpace(v) == "" {
+			return Config{}, fmt.Errorf("%s must not be empty", name)
+		}
 	}
-	if strings.TrimSpace(cfg.HubNamespace) == "" {
-		return Config{}, fmt.Errorf("hub-namespace must not be empty")
+	if cfg.BackendTimeout <= 0 {
+		return Config{}, fmt.Errorf("backend-timeout must be positive")
 	}
 	return cfg, nil
 }
@@ -99,6 +119,16 @@ func (c Config) TLSEnabled() bool { return c.CertFile != "" && c.KeyFile != "" }
 
 // ListenAddr is the address passed to the HTTP server.
 func (c Config) ListenAddr() string { return fmt.Sprintf("%s:%d", c.BindAddress, c.Port) }
+
+func splitList(s string) []string {
+	var out []string
+	for part := range strings.SplitSeq(s, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
 
 type envReader struct {
 	lookup func(string) (string, bool)
@@ -120,10 +150,10 @@ func (e envReader) int(key string, fallback int) int {
 	return fallback
 }
 
-func (e envReader) boolean(key string, fallback bool) bool {
+func (e envReader) duration(key string, fallback time.Duration) time.Duration {
 	if v, ok := e.lookup(key); ok && v != "" {
-		if b, err := strconv.ParseBool(v); err == nil {
-			return b
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
 		}
 	}
 	return fallback

@@ -8,19 +8,19 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/kube"
+	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/identity"
 )
 
 // requireIdentity rejects API calls without a caller token and stores the
-// identity on the context for the client factory.
+// identity on the context so the backend client can forward it.
 func (a *App) requireIdentity(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		id, err := a.extractor.Extract(r.Header)
+		id, err := a.headers.Extract(r.Header)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, err.Error())
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(kube.WithIdentity(r.Context(), id)))
+		next.ServeHTTP(w, r.WithContext(identity.WithIdentity(r.Context(), id)))
 	})
 }
 

@@ -1,5 +1,5 @@
 // Command bff serves the AI Grid provider console API and, when configured, the
-// built frontend.
+// built frontend. Every API call is translated into an RPC on ai-grid-backend.
 package main
 
 import (
@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/api"
+	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/backend"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/config"
-	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/kube"
 )
 
 func main() {
@@ -33,12 +33,18 @@ func run() error {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	slog.SetDefault(logger)
 
-	clients, err := kube.NewTokenClientFactory(logger, kube.Options{InsecureSkipVerify: cfg.InsecureSkipVerify})
+	client, err := backend.Dial(backend.Config{
+		Address:    cfg.BackendAddress,
+		CAFile:     cfg.BackendCAFile,
+		ServerName: cfg.BackendServerName,
+		Timeout:    cfg.BackendTimeout,
+	})
 	if err != nil {
 		return err
 	}
+	defer func() { _ = client.Close() }()
 
-	app := api.NewApp(cfg, logger, clients)
+	app := api.NewApp(cfg, logger, client)
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr(),
 		Handler:           app.Handler(),
@@ -51,7 +57,7 @@ func run() error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		logger.Info("starting server", "addr", srv.Addr, "tls", cfg.TLSEnabled(), "version", api.Version, "hubNamespace", cfg.HubNamespace, "authTokenHeader", cfg.AuthTokenHeader)
+		logger.Info("starting server", "addr", srv.Addr, "tls", cfg.TLSEnabled(), "version", api.Version, "backend", cfg.BackendAddress, "backendTLS", cfg.BackendCAFile != "")
 		var serveErr error
 		if cfg.TLSEnabled() {
 			serveErr = srv.ListenAndServeTLS(cfg.CertFile, cfg.KeyFile)
