@@ -1,0 +1,58 @@
+# Root developer targets. See docs/dev-setup.md.
+IMAGE ?= quay.io/cfchase/ai-grid-provider-console
+TAG ?= dev
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+CONTAINER_ENGINE ?= $(shell command -v podman 2>/dev/null || command -v docker)
+
+.PHONY: help dev dev-bff dev-frontend install lint test build image manifests deploy undeploy
+
+help: ## Show targets
+	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+
+##@ Development against the cluster from your kubeconfig (run `oc login` first)
+
+dev: ## Run the BFF on :8080 and the frontend on :9000 together
+	@trap 'kill 0' INT TERM; \
+	$(MAKE) -s dev-bff & \
+	$(MAKE) -s dev-frontend & \
+	wait
+
+dev-bff: ## Run the BFF; callers must send the token header (see hack/api.sh)
+	$(MAKE) -C bff run
+
+dev-frontend: ## Run the Vite dev server, which injects `oc whoami -t`
+	cd frontend && pnpm dev
+
+install: ## Install frontend dependencies
+	cd frontend && pnpm install
+
+##@ Quality
+
+lint: ## Lint the BFF and typecheck the frontend
+	$(MAKE) -C bff vet lint
+	cd frontend && pnpm typecheck
+
+test: ## Run all tests
+	$(MAKE) -C bff test
+	cd frontend && pnpm test
+
+build: ## Build the BFF binary and the frontend bundle
+	$(MAKE) -C bff build
+	cd frontend && pnpm build
+
+##@ Packaging and deployment
+
+image: ## Build the container image
+	$(CONTAINER_ENGINE) build --build-arg VERSION=$(VERSION) -t $(IMAGE):$(TAG) .
+
+push: ## Push the container image
+	$(CONTAINER_ENGINE) push $(IMAGE):$(TAG)
+
+manifests: ## Render the kustomize manifests
+	kustomize build manifests/base
+
+deploy: ## Deploy to the current cluster (needs cluster-admin for the OAuthClient)
+	hack/deploy.sh $(IMAGE):$(TAG)
+
+undeploy: ## Remove the deployment and its OAuthClient
+	hack/undeploy.sh

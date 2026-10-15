@@ -1,0 +1,10 @@
+.git
+.github
+.playwright-cli
+docs
+hack
+manifests
+**/node_modules
+frontend/dist
+bff/bin
+**/*.md
