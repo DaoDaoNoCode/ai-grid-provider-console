@@ -11,14 +11,11 @@ describe('HttpConsoleService', () => {
     expect(fetchFn).toHaveBeenCalledWith('/api/v1/user', expect.objectContaining({ method: 'GET' }));
   });
 
-  it('sends PATCH bodies as JSON and escapes names', async () => {
-    const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, { data: { name: 'a/b' } }));
+  it('lists tenants', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, { data: [{ id: '1', name: 't', domains: [] }] }));
     const service = new HttpConsoleService(fetchFn);
-    await service.updateCluster('a/b', { aiGridEnabled: true });
-    expect(fetchFn).toHaveBeenCalledWith(
-      '/api/v1/clusters/a%2Fb',
-      expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ aiGridEnabled: true }) }),
-    );
+    await expect(service.listTenants()).resolves.toEqual([{ id: '1', name: 't', domains: [] }]);
+    expect(fetchFn).toHaveBeenCalledWith('/api/v1/tenants', expect.objectContaining({ method: 'GET' }));
   });
 
   it('surfaces the BFF error message and status', async () => {

@@ -1,23 +1,28 @@
 # Root developer targets. See docs/dev-setup.md.
 IMAGE ?= quay.io/cfchase/ai-grid-provider-console
+BACKEND_IMAGE ?= quay.io/ai-grid-cloud/ai-grid-backend:latest
 TAG ?= dev
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 CONTAINER_ENGINE ?= $(shell command -v podman 2>/dev/null || command -v docker)
 
-.PHONY: help dev dev-bff dev-frontend install lint test build image manifests deploy undeploy
+.PHONY: help dev dev-backend dev-bff dev-frontend install lint test build image manifests deploy undeploy
 
 help: ## Show targets
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
 ##@ Development against the cluster from your kubeconfig (run `oc login` first)
 
-dev: ## Run the BFF on :8080 and the frontend on :9000 together
+dev: ## Run the backend on :9090, the BFF on :8080 and the frontend on :9000 together
 	@trap 'kill 0' INT TERM; \
+	$(MAKE) -s dev-backend & \
 	$(MAKE) -s dev-bff & \
 	$(MAKE) -s dev-frontend & \
 	wait
 
-dev-bff: ## Run the BFF; callers must send the token header (see hack/api.sh)
+dev-backend: ## Run ai-grid-backend locally against your kubeconfig (clones it on first use)
+	hack/dev-backend.sh
+
+dev-bff: ## Run the BFF; callers must send the identity headers (see hack/api.sh)
 	$(MAKE) -C bff run
 
 dev-frontend: ## Run the Vite dev server, which injects `oc whoami -t`
@@ -52,7 +57,7 @@ manifests: ## Render the kustomize manifests
 	kustomize build manifests/base
 
 deploy: ## Deploy to the current cluster (needs cluster-admin for the OAuthClient)
-	hack/deploy.sh $(IMAGE):$(TAG)
+	BACKEND_IMAGE=$(BACKEND_IMAGE) hack/deploy.sh $(IMAGE):$(TAG)
 
 undeploy: ## Remove the deployment and its OAuthClient
 	hack/undeploy.sh

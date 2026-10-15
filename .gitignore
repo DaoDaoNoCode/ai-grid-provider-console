@@ -14,3 +14,6 @@ frontend/.vite/
 .env.*
 !.env.example
 .DS_Store
+
+# local checkout of ai-grid-backend (hack/dev-backend.sh)
+.cache/

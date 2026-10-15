@@ -1,22 +1,47 @@
 package api
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 
-	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/users"
+	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/hub"
+	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/identity"
 )
 
-// getUser answers GET /api/v1/user.
+// User is the signed-in caller as the UI shows it.
+type User struct {
+	Username string   `json:"username"`
+	Email    string   `json:"email,omitempty"`
+	Groups   []string `json:"groups"`
+	// IsProviderAdmin tells the UI whether to offer provider-admin actions. It
+	// comes from the hub's own answer to "may this user patch ManagedClusters?",
+	// asked with the caller's token, so it reflects the user's RBAC and nothing
+	// the console decides. The backend still authorizes every call.
+	IsProviderAdmin bool `json:"isProviderAdmin"`
+}
+
+// getUser answers GET /api/v1/user: name, email and groups from the proxy
+// headers, isProviderAdmin from a SelfSubjectAccessReview on the hub.
 func (a *App) getUser(w http.ResponseWriter, r *http.Request) {
-	c, err := a.clients.ClientFor(r.Context())
+	id, _ := identity.FromContext(r.Context())
+	groups := id.Groups
+	if groups == nil {
+		groups = []string{}
+	}
+	isAdmin, err := a.hub.CanI(r.Context(), id.Token(), hub.ProviderAdminCheck)
 	if err != nil {
-		a.respondError(w, r, err)
+		if errors.Is(err, hub.ErrUnauthorized) {
+			a.respondError(w, r, Errorf(http.StatusUnauthorized, "the hub rejected the credentials; log in again"))
+			return
+		}
+		a.respondError(w, r, fmt.Errorf("%w: provider-admin check for %s: %w", errHub, id.Username, err))
 		return
 	}
-	u, err := users.Current(r.Context(), c)
-	if err != nil {
-		a.respondError(w, r, err)
-		return
-	}
-	writeData(w, http.StatusOK, u)
+	writeData(w, http.StatusOK, User{
+		Username:        id.Username,
+		Email:           id.Email,
+		Groups:          groups,
+		IsProviderAdmin: isAdmin,
+	})
 }

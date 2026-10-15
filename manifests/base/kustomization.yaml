@@ -22,3 +22,8 @@ images:
   - name: kube-auth-proxy
     newName: quay.io/opendatahub/odh-kube-auth-proxy
     newTag: latest
+  # Built from https://github.com/yuvalturg/ai-grid-backend (Containerfile);
+  # no published image yet, so hack/deploy.sh takes BACKEND_IMAGE.
+  - name: ai-grid-backend
+    newName: quay.io/ai-grid-cloud/ai-grid-backend
+    newTag: latest

@@ -3,13 +3,13 @@ package api
 import (
 	"context"
 	"errors"
-	"net"
 	"net/http"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
-// statusError carries an HTTP status chosen by the handler or repository.
+// statusError carries an HTTP status chosen by the handler.
 type statusError struct {
 	status  int
 	message string
@@ -17,56 +17,66 @@ type statusError struct {
 
 func (e *statusError) Error() string { return e.message }
 
+// errHub marks a failed call to the hub API; the detail stays in the log.
+var errHub = errors.New("hub request failed")
+
 // Errorf builds an error that maps to a specific HTTP status.
 func Errorf(status int, message string) error {
 	return &statusError{status: status, message: message}
 }
 
-// respondError maps an error to a status and writes it. Kubernetes API errors keep
-// their status so the user sees exactly what the cluster said about their request.
+// respondError maps an error to a status and writes it.
 func (a *App) respondError(w http.ResponseWriter, r *http.Request, err error) {
-	status, message := classify(err)
-	if status >= http.StatusInternalServerError {
-		a.logger.Error("request failed", "method", r.Method, "path", r.URL.Path, "status", status, "error", err)
+	code, message := classify(err)
+	if code >= http.StatusInternalServerError {
+		a.logger.Error("request failed", "method", r.Method, "path", r.URL.Path, "status", code, "error", err)
 	} else {
-		a.logger.Debug("request rejected", "method", r.Method, "path", r.URL.Path, "status", status, "error", err)
+		a.logger.Debug("request rejected", "method", r.Method, "path", r.URL.Path, "status", code, "error", err)
 	}
-	writeError(w, status, message)
+	writeError(w, code, message)
 }
 
+// classify maps handler and gRPC errors to HTTP. The backend's message is kept
+// for client-caused failures so the user sees what it said; infrastructure
+// failures get a generic message and the detail goes to the log.
 func classify(err error) (int, string) {
 	var se *statusError
 	if errors.As(err, &se) {
 		return se.status, se.message
 	}
-	var hs interface{ HTTPStatus() int }
-	if errors.As(err, &hs) {
-		return hs.HTTPStatus(), err.Error()
+	if errors.Is(err, context.DeadlineExceeded) {
+		return http.StatusGatewayTimeout, "the AI Grid backend did not answer in time"
 	}
-
-	var apiErr *apierrors.StatusError
-	if errors.As(err, &apiErr) {
-		code := int(apiErr.ErrStatus.Code)
-		switch {
-		case code == http.StatusUnauthorized:
-			return code, "the cluster rejected the credentials; log in again"
-		case code == http.StatusForbidden:
-			return code, apiErr.ErrStatus.Message
-		case code == http.StatusNotFound, code == http.StatusConflict, code == http.StatusGone, code == http.StatusPreconditionFailed:
-			return code, apiErr.ErrStatus.Message
-		case code == http.StatusBadRequest, code == http.StatusUnprocessableEntity:
-			return http.StatusUnprocessableEntity, apiErr.ErrStatus.Message
-		case code == http.StatusTooManyRequests:
-			return code, "the cluster is rate limiting requests; try again shortly"
-		case code >= http.StatusInternalServerError, code == 0:
-			return http.StatusServiceUnavailable, "the cluster API is unavailable; try again"
+	if errors.Is(err, errHub) {
+		return http.StatusBadGateway, "the hub could not confirm the caller's permissions; try again"
+	}
+	if st, ok := status.FromError(err); ok {
+		msg := st.Message()
+		switch st.Code() {
+		case codes.InvalidArgument, codes.OutOfRange:
+			return http.StatusUnprocessableEntity, msg
+		case codes.Unauthenticated:
+			return http.StatusUnauthorized, "the AI Grid backend rejected the credentials; log in again"
+		case codes.PermissionDenied:
+			return http.StatusForbidden, msg
+		case codes.NotFound:
+			return http.StatusNotFound, msg
+		case codes.AlreadyExists, codes.Aborted:
+			return http.StatusConflict, msg
+		case codes.FailedPrecondition:
+			return http.StatusPreconditionFailed, msg
+		case codes.ResourceExhausted:
+			return http.StatusTooManyRequests, "the AI Grid backend is rate limiting requests; try again shortly"
+		case codes.Unimplemented:
+			return http.StatusNotImplemented, "the AI Grid backend does not support this operation yet"
+		case codes.DeadlineExceeded:
+			return http.StatusGatewayTimeout, "the AI Grid backend did not answer in time"
+		case codes.Unavailable, codes.Canceled:
+			return http.StatusServiceUnavailable, "the AI Grid backend is unavailable; try again"
+		case codes.OK:
+			return http.StatusInternalServerError, "internal server error"
 		}
-		return code, apiErr.ErrStatus.Message
-	}
-
-	var netErr net.Error
-	if errors.As(err, &netErr) || errors.Is(err, context.DeadlineExceeded) {
-		return http.StatusServiceUnavailable, "the cluster API could not be reached"
+		return http.StatusBadGateway, "the AI Grid backend failed to process the request"
 	}
 	return http.StatusInternalServerError, "internal server error"
 }

@@ -1,6 +1,5 @@
 # kube-auth-proxy validates bearer tokens with TokenReviews
 # (--enable-k8s-token-validation), which needs system:auth-delegator.
-# The BFF itself acts with the caller's token and needs no rights of its own.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
@@ -9,6 +8,37 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: system:auth-delegator
+subjects:
+  - kind: ServiceAccount
+    name: ai-grid-provider-console
+    namespace: ai-grid
+---
+# ai-grid-backend reads ManagedClusters with the pod's ServiceAccount. These
+# rules mirror deploy/kind/ai-grid-backend.yaml in the backend repository; grow
+# them there first when the backend needs more.
+#
+# TODO(backend-as-caller): delete this ClusterRole and its binding once the
+# backend builds its hub client from the forwarded user token (work-breakdown
+# backend item 2). The ServiceAccount then only needs system:auth-delegator
+# for the proxy's TokenReviews. Order matters: pin the new backend commit in
+# bff/go.mod and the backend image first, or the Clusters page stops working.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ai-grid-provider-console-backend
+rules:
+  - apiGroups: ["cluster.open-cluster-management.io"]
+    resources: ["managedclusters"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ai-grid-provider-console-backend
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ai-grid-provider-console-backend
 subjects:
   - kind: ServiceAccount
     name: ai-grid-provider-console

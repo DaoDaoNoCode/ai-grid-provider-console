@@ -1,6 +1,7 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { App } from '../App';
 import { MockConsoleService } from '../api/MockConsoleService';
+import { ServiceError } from '../api/ConsoleService';
 
 describe('App', () => {
   it('shows the signed-in user and the clusters from the service', async () => {
@@ -9,14 +10,35 @@ describe('App', () => {
 
     await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('dev-user (provider admin)'));
     expect(await screen.findByText('local-cluster')).toBeInTheDocument();
-    expect(screen.getByText('site-1')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Add local-cluster to AI Grid' })).toBeEnabled();
+    expect(screen.getByText('brussels-dc1')).toBeInTheDocument();
+    expect(screen.getAllByText('Member')).toHaveLength(2);
   });
 
-  it('disables enrolment for users who are not provider admins', async () => {
+  it('does not call a viewer a provider admin', async () => {
     const service = new MockConsoleService({ username: 'viewer', groups: [], isProviderAdmin: false });
     render(<App service={service} />);
 
-    expect(await screen.findByRole('button', { name: 'Add local-cluster to AI Grid' })).toBeDisabled();
+    await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('viewer'));
+    expect(screen.getByTestId('masthead-user')).not.toHaveTextContent('provider admin');
+  });
+
+  it('navigates to tenants and shows them', async () => {
+    render(<App service={new MockConsoleService()} />);
+    fireEvent.click(await screen.findByRole('link', { name: 'Tenants' }));
+
+    expect(await screen.findByText('tenant-a')).toBeInTheDocument();
+    expect(screen.getByText('a.example.com')).toBeInTheDocument();
+  });
+
+  it('shows the backend error when tenants cannot be loaded', async () => {
+    const service = new MockConsoleService();
+    service.listTenants = async () => {
+      throw new ServiceError(502, 'the AI Grid backend failed to process the request');
+    };
+    render(<App service={service} />);
+    fireEvent.click(await screen.findByRole('link', { name: 'Tenants' }));
+
+    expect(await screen.findByText('Tenants could not be loaded')).toBeInTheDocument();
+    expect(screen.getByText('the AI Grid backend failed to process the request')).toBeInTheDocument();
   });
 });

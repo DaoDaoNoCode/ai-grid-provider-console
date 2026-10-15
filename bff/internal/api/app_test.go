@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -8,29 +9,66 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
+	aigridv1 "github.com/osac-project/ai-grid-backend/gen/ai_grid/v1"
+	"google.golang.org/grpc/codes"
 
+	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/backend/backendtest"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/config"
-	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/kube/kubetest"
+	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/hub"
 )
 
 func testConfig(t *testing.T) config.Config {
 	t.Helper()
-	cfg, err := config.Parse(nil, func(string) (string, bool) { return "", false })
+	cfg, err := config.Parse([]string{"--hub-api-url=https://hub.invalid"}, func(string) (string, bool) { return "", false })
 	if err != nil {
 		t.Fatal(err)
 	}
 	return cfg
 }
 
-func newTestApp(t *testing.T, cfg config.Config) *App {
+// fakeHub stands in for the hub API server: it answers every
+// SelfSubjectAccessReview with allowed, or fails with status when set.
+type fakeHub struct {
+	allowed bool
+	status  int
+	auth    string
+}
+
+func (f *fakeHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	f.auth = r.Header.Get("Authorization")
+	if f.status != 0 {
+		http.Error(w, http.StatusText(f.status), f.status)
+		return
+	}
+	w.WriteHeader(http.StatusCreated)
+	_, _ = w.Write([]byte(`{"status":{"allowed":` + strconv.FormatBool(f.allowed) + `}}`))
+}
+
+func startHub(t *testing.T, f *fakeHub) *hub.Client {
 	t.Helper()
-	factory := kubetest.NewFactory(runtime.NewScheme(), map[schema.GroupVersionResource]string{})
-	return NewApp(cfg, slog.New(slog.DiscardHandler), factory)
+	srv := httptest.NewServer(f)
+	t.Cleanup(srv.Close)
+	c, err := hub.New(hub.Config{URL: srv.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+func newTestApp(t *testing.T, cfg config.Config, fake *backendtest.Fake) *App {
+	t.Helper()
+	return newTestAppWithHub(t, cfg, fake, &fakeHub{allowed: true})
+}
+
+func newTestAppWithHub(t *testing.T, cfg config.Config, fake *backendtest.Fake, h *fakeHub) *App {
+	t.Helper()
+	if fake == nil {
+		fake = &backendtest.Fake{}
+	}
+	return NewApp(cfg, slog.New(slog.DiscardHandler), backendtest.Start(t, fake), startHub(t, h))
 }
 
 func decodeError(t *testing.T, rec *httptest.ResponseRecorder) errorBody {
@@ -42,10 +80,36 @@ func decodeError(t *testing.T, rec *httptest.ResponseRecorder) errorBody {
 	return body
 }
 
-func TestHealthcheckNeedsNoToken(t *testing.T) {
-	app := newTestApp(t, testConfig(t))
+func decodeData(t *testing.T, rec *httptest.ResponseRecorder, into any) {
+	t.Helper()
+	var env struct{ Data json.RawMessage }
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode envelope %q: %v", rec.Body.String(), err)
+	}
+	if err := json.Unmarshal(env.Data, into); err != nil {
+		t.Fatalf("decode data %q: %v", env.Data, err)
+	}
+}
+
+// asUser builds an authenticated request the way kube-auth-proxy would.
+func asUser(method, path string) *http.Request {
+	req := httptest.NewRequest(method, path, nil)
+	req.Header.Set(config.DefaultAuthTokenHeader, "sha256~token")
+	req.Header.Set(config.DefaultAuthUserHeader, "alice")
+	req.Header.Set(config.DefaultAuthEmailHeader, "alice@example.com")
+	req.Header.Set(config.DefaultAuthGroupsHeader, "system:authenticated,cluster-admins")
+	return req
+}
+
+func serve(app *App, req *http.Request) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
-	app.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthcheck", nil))
+	app.Handler().ServeHTTP(rec, req)
+	return rec
+}
+
+func TestHealthcheckNeedsNoToken(t *testing.T) {
+	app := newTestApp(t, testConfig(t), nil)
+	rec := serve(app, httptest.NewRequest(http.MethodGet, "/healthcheck", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
 	}
@@ -58,10 +122,25 @@ func TestHealthcheckNeedsNoToken(t *testing.T) {
 	}
 }
 
+func TestReadyzReflectsBackend(t *testing.T) {
+	fake := &backendtest.Fake{}
+	app := newTestApp(t, testConfig(t), fake)
+	if rec := serve(app, httptest.NewRequest(http.MethodGet, "/readyz", nil)); rec.Code != http.StatusOK {
+		t.Fatalf("ready status = %d %s", rec.Code, rec.Body.String())
+	}
+	if fake.Metadata.Get("authorization") != nil {
+		t.Fatal("readiness probe must not forward credentials")
+	}
+	fake.Err = backendtest.Status(codes.Unavailable, "down")
+	rec := serve(app, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("not-ready status = %d", rec.Code)
+	}
+}
+
 func TestAPIRequiresToken(t *testing.T) {
-	app := newTestApp(t, testConfig(t))
-	rec := httptest.NewRecorder()
-	app.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/anything", nil))
+	app := newTestApp(t, testConfig(t), nil)
+	rec := serve(app, httptest.NewRequest(http.MethodGet, "/api/v1/clusters", nil))
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", rec.Code)
 	}
@@ -71,11 +150,7 @@ func TestAPIRequiresToken(t *testing.T) {
 }
 
 func TestUnknownAPIPathIsJSON404(t *testing.T) {
-	app := newTestApp(t, testConfig(t))
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/nope", nil)
-	req.Header.Set(config.DefaultAuthTokenHeader, "sha256~token")
-	app.Handler().ServeHTTP(rec, req)
+	rec := serve(newTestApp(t, testConfig(t), nil), asUser(http.MethodGet, "/api/v1/nope"))
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d", rec.Code)
 	}
@@ -84,8 +159,130 @@ func TestUnknownAPIPathIsJSON404(t *testing.T) {
 	}
 }
 
+func TestUserFromProxyHeaders(t *testing.T) {
+	cfg := testConfig(t)
+	h := &fakeHub{allowed: true}
+	var u User
+	rec := serve(newTestAppWithHub(t, cfg, nil, h), asUser(http.MethodGet, "/api/v1/user"))
+	decodeData(t, rec, &u)
+	if u.Username != "alice" || u.Email != "alice@example.com" || len(u.Groups) != 2 || !u.IsProviderAdmin {
+		t.Fatalf("user = %+v", u)
+	}
+	if h.auth != "Bearer sha256~token" {
+		t.Fatalf("the access review must carry the caller's own token, got %q", h.auth)
+	}
+
+	rec = serve(newTestAppWithHub(t, cfg, nil, &fakeHub{allowed: false}), asUser(http.MethodGet, "/api/v1/user"))
+	decodeData(t, rec, &u)
+	if u.IsProviderAdmin {
+		t.Fatal("the hub denied patch on managedclusters; alice is not a provider admin")
+	}
+
+	rec = serve(newTestAppWithHub(t, cfg, nil, &fakeHub{status: http.StatusUnauthorized}), asUser(http.MethodGet, "/api/v1/user"))
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expired token should give 401, got %d %s", rec.Code, rec.Body.String())
+	}
+
+	rec = serve(newTestAppWithHub(t, cfg, nil, &fakeHub{status: http.StatusBadGateway}), asUser(http.MethodGet, "/api/v1/user"))
+	if rec.Code != http.StatusBadGateway || decodeError(t, rec).Error.Message == "" {
+		t.Fatalf("hub failure should give 502 with a message, got %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestConfigEndpoint(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.GridEndpoint = "https://grid.example.com"
+	var out ConsoleConfig
+	decodeData(t, serve(newTestApp(t, cfg, nil), asUser(http.MethodGet, "/api/v1/config")), &out)
+	if out.GridEndpoint != cfg.GridEndpoint || out.Version != Version {
+		t.Fatalf("config = %+v", out)
+	}
+}
+
+func TestClustersFromBackend(t *testing.T) {
+	fake := &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{
+		{Name: "site-1", HubAcceptsClient: true, Labels: map[string]string{LabelEnabled: "true", LabelProvisioned: "true", LabelLocation: "brussels", LabelSite: "brussels-dc1", LabelRegion: "europe-west"}},
+		{Name: "local-cluster", HubAcceptsClient: true, Labels: map[string]string{LabelOpenShiftVersion: "4.22.15"}},
+	}}
+	app := newTestApp(t, testConfig(t), fake)
+
+	var list []GridCluster
+	rec := serve(app, asUser(http.MethodGet, "/api/v1/clusters"))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
+	}
+	decodeData(t, rec, &list)
+	if len(list) != 2 || list[0].Name != "local-cluster" || list[1].Name != "site-1" {
+		t.Fatalf("list = %+v", list)
+	}
+	if c := list[1]; !c.AIGridEnabled || !c.Provisioned || c.Location != "brussels" || c.Site != "brussels-dc1" || c.Region != "europe-west" {
+		t.Fatalf("site-1 = %+v", c)
+	}
+	if c := list[0]; c.AIGridEnabled || c.OpenShiftVersion != "4.22.15" {
+		t.Fatalf("local-cluster = %+v", c)
+	}
+	if got := fake.Metadata.Get("authorization"); len(got) != 1 || got[0] != "Bearer sha256~token" {
+		t.Fatalf("token not forwarded: %v", fake.Metadata)
+	}
+	if got := fake.Metadata.Get("x-forwarded-user"); len(got) != 1 || got[0] != "alice" {
+		t.Fatalf("user not forwarded: %v", fake.Metadata)
+	}
+
+	var one GridCluster
+	decodeData(t, serve(app, asUser(http.MethodGet, "/api/v1/clusters/site-1")), &one)
+	if one.Name != "site-1" {
+		t.Fatalf("get = %+v", one)
+	}
+	if rec := serve(app, asUser(http.MethodGet, "/api/v1/clusters/missing")); rec.Code != http.StatusNotFound {
+		t.Fatalf("missing cluster status = %d", rec.Code)
+	}
+}
+
+func TestTenantsFromBackend(t *testing.T) {
+	fake := &backendtest.Fake{Tenants: []*aigridv1.Tenant{
+		{Id: "2", Name: "tenant-b", Domains: []string{"b.example.com"}},
+		{Id: "1", Name: "tenant-a"},
+	}}
+	var out []Tenant
+	rec := serve(newTestApp(t, testConfig(t), fake), asUser(http.MethodGet, "/api/v1/tenants"))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
+	}
+	decodeData(t, rec, &out)
+	if len(out) != 2 || out[0].Name != "tenant-a" || out[0].Domains == nil || out[1].Domains[0] != "b.example.com" {
+		t.Fatalf("tenants = %+v", out)
+	}
+}
+
+func TestBackendErrorsMapToHTTP(t *testing.T) {
+	cases := []struct {
+		code codes.Code
+		want int
+	}{
+		{codes.PermissionDenied, http.StatusForbidden},
+		{codes.Unauthenticated, http.StatusUnauthorized},
+		{codes.NotFound, http.StatusNotFound},
+		{codes.Unimplemented, http.StatusNotImplemented},
+		{codes.Unavailable, http.StatusServiceUnavailable},
+		{codes.Internal, http.StatusBadGateway},
+	}
+	for _, tc := range cases {
+		fake := &backendtest.Fake{Err: backendtest.Status(tc.code, "backend said no")}
+		rec := serve(newTestApp(t, testConfig(t), fake), asUser(http.MethodGet, "/api/v1/tenants"))
+		if rec.Code != tc.want {
+			t.Errorf("%s -> %d, want %d (%s)", tc.code, rec.Code, tc.want, rec.Body.String())
+		}
+	}
+	// Client-caused failures keep the backend's message.
+	fake := &backendtest.Fake{Err: backendtest.Status(codes.PermissionDenied, "alice may not list tenants")}
+	body := decodeError(t, serve(newTestApp(t, testConfig(t), fake), asUser(http.MethodGet, "/api/v1/tenants")))
+	if body.Error.Message != "alice may not list tenants" {
+		t.Fatalf("message = %q", body.Error.Message)
+	}
+}
+
 func TestPanicBecomes500(t *testing.T) {
-	app := newTestApp(t, testConfig(t))
+	app := newTestApp(t, testConfig(t), nil)
 	h := app.recoverPanic(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic("boom") }))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
@@ -95,20 +292,17 @@ func TestPanicBecomes500(t *testing.T) {
 }
 
 func TestClassify(t *testing.T) {
-	gr := schema.GroupResource{Group: "cluster.open-cluster-management.io", Resource: "managedclusters"}
 	cases := []struct {
 		err  error
 		want int
 	}{
 		{Errorf(http.StatusTeapot, "x"), http.StatusTeapot},
-		{apierrors.NewUnauthorized("no"), http.StatusUnauthorized},
-		{apierrors.NewForbidden(gr, "a", errors.New("denied")), http.StatusForbidden},
-		{apierrors.NewNotFound(gr, "a"), http.StatusNotFound},
-		{apierrors.NewConflict(gr, "a", errors.New("c")), http.StatusConflict},
-		{apierrors.NewBadRequest("bad"), http.StatusUnprocessableEntity},
-		{apierrors.NewInternalError(errors.New("x")), http.StatusServiceUnavailable},
-		{apierrors.NewServiceUnavailable("x"), http.StatusServiceUnavailable},
-		{apierrors.NewTooManyRequests("x", 1), http.StatusTooManyRequests},
+		{context.DeadlineExceeded, http.StatusGatewayTimeout},
+		{backendtest.Status(codes.InvalidArgument, "x"), http.StatusUnprocessableEntity},
+		{backendtest.Status(codes.AlreadyExists, "x"), http.StatusConflict},
+		{backendtest.Status(codes.FailedPrecondition, "x"), http.StatusPreconditionFailed},
+		{backendtest.Status(codes.ResourceExhausted, "x"), http.StatusTooManyRequests},
+		{backendtest.Status(codes.DeadlineExceeded, "x"), http.StatusGatewayTimeout},
 		{errors.New("plain"), http.StatusInternalServerError},
 	}
 	for _, tc := range cases {
@@ -131,7 +325,7 @@ func TestSPAHandler(t *testing.T) {
 
 	cfg := testConfig(t)
 	cfg.StaticAssetsDir = dir
-	h := newTestApp(t, cfg).Handler()
+	h := newTestApp(t, cfg, nil).Handler()
 
 	get := func(p string) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
@@ -150,7 +344,6 @@ func TestSPAHandler(t *testing.T) {
 	if rec := get("/assets/missing.js"); rec.Code != 404 {
 		t.Fatalf("missing asset -> %d", rec.Code)
 	}
-	// Bypass the mux (which redirects unclean paths) to check the handler itself.
 	raw := httptest.NewRequest(http.MethodGet, "/", nil)
 	raw.URL.Path = "/../../etc/passwd"
 	rec := httptest.NewRecorder()

@@ -1,23 +1,75 @@
 package api
 
 import (
-	"encoding/json"
-	"errors"
-	"io"
+	"fmt"
 	"net/http"
+	"sort"
 
-	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/clusters"
+	aigridv1 "github.com/osac-project/ai-grid-backend/gen/ai_grid/v1"
 )
 
-const maxBodyBytes = 1 << 20
+// Labels on a ManagedCluster that the console reads. They are the conventions
+// from the provider portal POC: `ai-grid/*` marks grid membership and site
+// identity, `location` drives model placement.
+const (
+	LabelEnabled     = "ai-grid/enabled"
+	LabelProvisioned = "ai-grid/provisioned"
+	LabelLocation    = "location"
+	LabelSite        = "ai-grid/site"
+	LabelRegion      = "ai-grid/region"
+	// LabelOpenShiftVersion is set by ACM on every ManagedCluster.
+	LabelOpenShiftVersion = "openshiftVersion"
+)
 
+// GridCluster is a ManagedCluster as the console shows it.
+type GridCluster struct {
+	Name             string            `json:"name"`
+	AIGridEnabled    bool              `json:"aiGridEnabled"`
+	Provisioned      bool              `json:"provisioned"`
+	HubAcceptsClient bool              `json:"hubAcceptsClient"`
+	Location         string            `json:"location,omitempty"`
+	Site             string            `json:"site,omitempty"`
+	Region           string            `json:"region,omitempty"`
+	OpenShiftVersion string            `json:"openshiftVersion,omitempty"`
+	Labels           map[string]string `json:"labels"`
+}
+
+func toGridCluster(mc *aigridv1.ManagedCluster) GridCluster {
+	labels := mc.GetLabels()
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	return GridCluster{
+		Name:             mc.GetName(),
+		AIGridEnabled:    labels[LabelEnabled] == "true",
+		Provisioned:      labels[LabelProvisioned] == "true",
+		HubAcceptsClient: mc.GetHubAcceptsClient(),
+		Location:         labels[LabelLocation],
+		Site:             labels[LabelSite],
+		Region:           labels[LabelRegion],
+		OpenShiftVersion: labels[LabelOpenShiftVersion],
+		Labels:           labels,
+	}
+}
+
+func (a *App) fetchClusters(r *http.Request) ([]GridCluster, error) {
+	ctx, cancel := a.backend.Context(r.Context())
+	defer cancel()
+	resp, err := a.backend.Clusters.ListManagedClusters(ctx, &aigridv1.ListManagedClustersRequest{})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]GridCluster, 0, len(resp.GetClusters()))
+	for _, mc := range resp.GetClusters() {
+		out = append(out, toGridCluster(mc))
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+// listClusters answers GET /api/v1/clusters.
 func (a *App) listClusters(w http.ResponseWriter, r *http.Request) {
-	c, err := a.clients.ClientFor(r.Context())
-	if err != nil {
-		a.respondError(w, r, err)
-		return
-	}
-	out, err := clusters.List(r.Context(), c)
+	out, err := a.fetchClusters(r)
 	if err != nil {
 		a.respondError(w, r, err)
 		return
@@ -25,66 +77,20 @@ func (a *App) listClusters(w http.ResponseWriter, r *http.Request) {
 	writeData(w, http.StatusOK, out)
 }
 
+// getCluster answers GET /api/v1/clusters/{name}. The backend has no Get RPC
+// yet, so this filters the list.
 func (a *App) getCluster(w http.ResponseWriter, r *http.Request) {
-	c, err := a.clients.ClientFor(r.Context())
+	name := r.PathValue("name")
+	out, err := a.fetchClusters(r)
 	if err != nil {
 		a.respondError(w, r, err)
 		return
 	}
-	out, err := clusters.Get(r.Context(), c, r.PathValue("name"))
-	if err != nil {
-		a.respondError(w, r, err)
-		return
-	}
-	writeData(w, http.StatusOK, out)
-}
-
-func (a *App) patchCluster(w http.ResponseWriter, r *http.Request) {
-	var update clusters.Update
-	if err := decodeBody(r, &update); err != nil {
-		a.respondError(w, r, err)
-		return
-	}
-	c, err := a.clients.ClientFor(r.Context())
-	if err != nil {
-		a.respondError(w, r, err)
-		return
-	}
-	out, err := clusters.Patch(r.Context(), c, r.PathValue("name"), update)
-	if err != nil {
-		a.respondError(w, r, err)
-		return
-	}
-	writeData(w, http.StatusOK, out)
-}
-
-func (a *App) listLocations(w http.ResponseWriter, r *http.Request) {
-	c, err := a.clients.ClientFor(r.Context())
-	if err != nil {
-		a.respondError(w, r, err)
-		return
-	}
-	out, err := clusters.Locations(r.Context(), c)
-	if err != nil {
-		a.respondError(w, r, err)
-		return
-	}
-	writeData(w, http.StatusOK, out)
-}
-
-// decodeBody reads a JSON body strictly: unknown fields and trailing data are
-// rejected with 422.
-func decodeBody(r *http.Request, into any) error {
-	dec := json.NewDecoder(io.LimitReader(r.Body, maxBodyBytes))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(into); err != nil {
-		if errors.Is(err, io.EOF) {
-			return Errorf(http.StatusUnprocessableEntity, "request body is required")
+	for _, c := range out {
+		if c.Name == name {
+			writeData(w, http.StatusOK, c)
+			return
 		}
-		return Errorf(http.StatusUnprocessableEntity, "invalid request body: "+err.Error())
 	}
-	if dec.More() {
-		return Errorf(http.StatusUnprocessableEntity, "request body must contain a single JSON object")
-	}
-	return nil
+	a.respondError(w, r, Errorf(http.StatusNotFound, fmt.Sprintf("cluster %q not found", name)))
 }
