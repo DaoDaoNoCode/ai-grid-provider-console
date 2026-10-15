@@ -16,7 +16,6 @@ import (
 	"testing"
 	"time"
 
-	aigridv1 "github.com/osac-project/ai-grid-backend/gen/ai_grid/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -24,7 +23,11 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/dynamicpb"
+
+	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
 )
 
 // repoFixtures is the directory the console ships; the test proves it loads
@@ -316,12 +319,53 @@ func TestHubAccessReview(t *testing.T) {
 	}
 }
 
-// TestFakeImplementsEveryProtoMethod fails when the pinned proto gains a
+// intentionallyUnimplemented lists the methods of the draft proto the fake
+// answers Unimplemented on purpose, keyed by full method name, with the reason.
+// TestFakeImplementsEveryProtoMethod fails on an Unimplemented answer from any
+// method not listed here, and on a listed method that answers anything else
+// (a stale entry), so this list is exactly the set of stubs at any time. When
+// an area implements a method, its entry goes.
+var intentionallyUnimplemented = map[string]string{
+	"/ai_grid.v1.AiGrid/GetCurrentUser": "GetCurrentUser not implemented yet; the BFF derives isProviderAdmin itself",
+
+	"/ai_grid.v1.ManagedClusters/GetManagedCluster":    "implemented in the clusters area",
+	"/ai_grid.v1.ManagedClusters/UpdateManagedCluster": "implemented in the clusters area",
+
+	"/ai_grid.v1.Tenants/GetTenant":    "implemented in the tenants area",
+	"/ai_grid.v1.Tenants/CreateTenant": "implemented in the tenants area",
+	"/ai_grid.v1.Tenants/UpdateTenant": "implemented in the tenants area",
+	"/ai_grid.v1.Tenants/DeleteTenant": "implemented in the tenants area",
+
+	"/ai_grid.v1.Grid/GetOverview": "placeholder until agreed with the backend team, see mock/README.md",
+	"/ai_grid.v1.Grid/GetNetwork":  "placeholder until agreed with the backend team, see mock/README.md",
+
+	"/ai_grid.v1.Models/ListModels":  "placeholder until agreed with the backend team, see mock/README.md",
+	"/ai_grid.v1.Models/GetModel":    "placeholder until agreed with the backend team, see mock/README.md",
+	"/ai_grid.v1.Models/CreateModel": "placeholder until agreed with the backend team, see mock/README.md",
+	"/ai_grid.v1.Models/UpdateModel": "placeholder until agreed with the backend team, see mock/README.md",
+	"/ai_grid.v1.Models/DeleteModel": "placeholder until agreed with the backend team, see mock/README.md",
+
+	"/ai_grid.v1.CatalogItems/ListCatalogItems":  "placeholder until agreed with the backend team, see mock/README.md",
+	"/ai_grid.v1.CatalogItems/GetCatalogItem":    "placeholder until agreed with the backend team, see mock/README.md",
+	"/ai_grid.v1.CatalogItems/CreateCatalogItem": "placeholder until agreed with the backend team, see mock/README.md",
+	"/ai_grid.v1.CatalogItems/UpdateCatalogItem": "placeholder until agreed with the backend team, see mock/README.md",
+	"/ai_grid.v1.CatalogItems/DeleteCatalogItem": "placeholder until agreed with the backend team, see mock/README.md",
+
+	"/ai_grid.v1.Subscriptions/ListSubscriptions":  "placeholder until agreed with the backend team, see mock/README.md",
+	"/ai_grid.v1.Subscriptions/GetSubscription":    "placeholder until agreed with the backend team, see mock/README.md",
+	"/ai_grid.v1.Subscriptions/CreateSubscription": "placeholder until agreed with the backend team, see mock/README.md",
+	"/ai_grid.v1.Subscriptions/UpdateSubscription": "placeholder until agreed with the backend team, see mock/README.md",
+	"/ai_grid.v1.Subscriptions/DeleteSubscription": "placeholder until agreed with the backend team, see mock/README.md",
+}
+
+// TestFakeImplementsEveryProtoMethod fails when the draft proto gains a
 // service or a method the fake does not implement: the signal to extend the
-// fake the same day the backend changes. Registration alone proves nothing,
-// because the embedded Unimplemented*Server structs register every method in
-// the generated ServiceDesc, so the test calls each method and requires an
-// answer other than Unimplemented.
+// fake (or to list the method in intentionallyUnimplemented with a reason) the
+// same day the proto changes. Registration alone proves nothing, because the
+// embedded Unimplemented*Server structs register every method in the generated
+// ServiceDesc, so the test calls each method and requires an answer other than
+// Unimplemented. It also fails when a listed method starts answering, so the
+// allowlist cannot go stale.
 func TestFakeImplementsEveryProtoMethod(t *testing.T) {
 	s, err := New(&Fixtures{}, slog.New(slog.DiscardHandler))
 	if err != nil {
@@ -329,59 +373,103 @@ func TestFakeImplementsEveryProtoMethod(t *testing.T) {
 	}
 	srv := grpc.NewServer()
 	s.Register(srv)
-	if missing, _ := unimplementedMethods(t, srv); len(missing) > 0 {
-		t.Errorf("the fake does not implement: %s", strings.Join(missing, ", "))
+	missing, called := unimplementedMethods(t, srv)
+	stubs := map[string]bool{}
+	for _, m := range missing {
+		stubs[m] = true
+		if _, listed := intentionallyUnimplemented[m]; !listed {
+			t.Errorf("the fake does not implement %s; implement it, or list it in intentionallyUnimplemented with the reason", m)
+		}
+	}
+	methods := map[string]bool{}
+	for _, m := range called {
+		methods[m] = true
+	}
+	for m, reason := range intentionallyUnimplemented {
+		switch {
+		case !methods[m]:
+			t.Errorf("intentionallyUnimplemented lists %s, which is not a method of the draft proto", m)
+		case !stubs[m]:
+			t.Errorf("intentionallyUnimplemented lists %s (%q) but the fake now answers it: remove the stale entry", m, reason)
+		}
 	}
 }
 
+// draftMethods is every method of every service in package ai_grid.v1 linked
+// into the binary (all files of the draft proto, not just ai_grid.proto),
+// sorted by full name so failures read the same every run.
+func draftMethods(t *testing.T) []protoreflect.MethodDescriptor {
+	t.Helper()
+	var methods []protoreflect.MethodDescriptor
+	protoregistry.GlobalFiles.RangeFilesByPackage("ai_grid.v1", func(file protoreflect.FileDescriptor) bool {
+		for i := 0; i < file.Services().Len(); i++ {
+			svc := file.Services().Get(i)
+			for j := 0; j < svc.Methods().Len(); j++ {
+				methods = append(methods, svc.Methods().Get(j))
+			}
+		}
+		return true
+	})
+	slices.SortFunc(methods, func(a, b protoreflect.MethodDescriptor) int {
+		return strings.Compare(string(a.FullName()), string(b.FullName()))
+	})
+	if len(methods) == 0 {
+		t.Fatal("no ai_grid.v1 services are linked into the test binary")
+	}
+	return methods
+}
+
+// methodPath is the gRPC path of a method, "/ai_grid.v1.AiGrid/Ping".
+func methodPath(m protoreflect.MethodDescriptor) string {
+	return fmt.Sprintf("/%s/%s", m.Parent().FullName(), m.Name())
+}
+
 // unimplementedMethods serves srv over bufconn, calls every method of every
-// service in the pinned proto with an empty request, and returns the full
+// service in the draft proto with an empty request, and returns the full
 // names of the methods with no handler, then every method it called. A method
 // has no handler when it answers Unimplemented, which an unregistered service
-// does too. Each call gets its own deadline, and an answer that can come from
-// the client side (DeadlineExceeded, Unavailable, Canceled) also counts as no
-// handler, so a timeout can't pass a method unchecked. Any other answer, such
-// as InvalidArgument or NotFound for the empty request, means a handler ran.
+// does too. Each call gets its own deadline; an answer that can come from the
+// client side (DeadlineExceeded, Unavailable, Canceled) means the probe itself
+// failed and nothing is known about the method, so it fails the test rather
+// than count as a stub. Any other answer, such as InvalidArgument or NotFound
+// for the empty request, means a handler ran.
 func unimplementedMethods(t *testing.T, srv *grpc.Server) (missing, called []string) {
 	t.Helper()
 	conn := dialServer(t, srv)
-	file := aigridv1.File_proto_ai_grid_v1_ai_grid_proto
-	for i := 0; i < file.Services().Len(); i++ {
-		svc := file.Services().Get(i)
-		for j := 0; j < svc.Methods().Len(); j++ {
-			m := svc.Methods().Get(j)
-			full := fmt.Sprintf("/%s/%s", svc.FullName(), m.Name())
-			if m.IsStreamingClient() || m.IsStreamingServer() {
-				t.Fatalf("%s is a streaming method; extend unimplementedMethods to call it", full)
-			}
-			called = append(called, full)
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer test-token", "x-forwarded-user", "test-user")
-			err := conn.Invoke(ctx, full, dynamicpb.NewMessage(m.Input()), dynamicpb.NewMessage(m.Output()))
-			cancel()
-			switch code := status.Code(err); code {
-			case codes.Unimplemented, codes.DeadlineExceeded, codes.Unavailable, codes.Canceled:
-				missing = append(missing, fmt.Sprintf("%s (%s)", full, code))
-			}
+	for _, m := range draftMethods(t) {
+		full := methodPath(m)
+		if m.IsStreamingClient() || m.IsStreamingServer() {
+			t.Fatalf("%s is a streaming method; extend unimplementedMethods to call it", full)
+		}
+		called = append(called, full)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer test-token", "x-forwarded-user", "test-user")
+		err := conn.Invoke(ctx, full, dynamicpb.NewMessage(m.Input()), dynamicpb.NewMessage(m.Output()))
+		cancel()
+		switch code := status.Code(err); code {
+		case codes.Unimplemented:
+			missing = append(missing, full)
+		case codes.DeadlineExceeded, codes.Unavailable, codes.Canceled:
+			t.Errorf("probe of %s failed with %s: the server did not answer, so nothing is known about this method", full, code)
 		}
 	}
 	return missing, called
 }
 
 // TestUnimplementedMethodsCatchesStubs proves the guard bites: a server built
-// only from the generated stubs registers every service and method, and the
-// check still reports every method as missing.
+// only from the generated stubs registers every service and method of the
+// draft, and the check still reports every method as missing.
 func TestUnimplementedMethodsCatchesStubs(t *testing.T) {
 	srv := grpc.NewServer()
 	aigridv1.RegisterAiGridServer(srv, aigridv1.UnimplementedAiGridServer{})
 	aigridv1.RegisterManagedClustersServer(srv, aigridv1.UnimplementedManagedClustersServer{})
 	aigridv1.RegisterTenantsServer(srv, aigridv1.UnimplementedTenantsServer{})
+	aigridv1.RegisterGridServer(srv, aigridv1.UnimplementedGridServer{})
+	aigridv1.RegisterModelsServer(srv, aigridv1.UnimplementedModelsServer{})
+	aigridv1.RegisterCatalogItemsServer(srv, aigridv1.UnimplementedCatalogItemsServer{})
+	aigridv1.RegisterSubscriptionsServer(srv, aigridv1.UnimplementedSubscriptionsServer{})
 	missing, called := unimplementedMethods(t, srv)
-	want := make([]string, len(called))
-	for i, m := range called {
-		want[i] = m + " (Unimplemented)"
-	}
-	if len(called) == 0 || !slices.Equal(missing, want) {
-		t.Errorf("stub-only server: got missing %v, want every method %v", missing, want)
+	if len(called) == 0 || !slices.Equal(missing, called) {
+		t.Errorf("stub-only server: got missing %v, want every method %v", missing, called)
 	}
 }
