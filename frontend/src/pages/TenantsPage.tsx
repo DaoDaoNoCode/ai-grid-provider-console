@@ -1,7 +1,8 @@
-import { Alert, EmptyState, EmptyStateBody, Spinner, Stack, StackItem, Title } from '@patternfly/react-core';
+import { EmptyState, EmptyStateBody, Spinner, Stack, StackItem, Title } from '@patternfly/react-core';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { ConsoleService } from '../api/ConsoleService';
 import type { Tenant } from '../api/types';
+import { LoadError } from '../components/LoadError';
 import { useServiceData } from '../hooks/useServiceData';
 
 type Props = { service: ConsoleService };
@@ -16,9 +17,7 @@ export const TenantsPage: React.FC<Props> = ({ service }) => {
       </StackItem>
       {error && (
         <StackItem>
-          <Alert variant="danger" isInline title="Tenants could not be loaded">
-            {error.message}
-          </Alert>
+          <LoadError subject="Tenants" error={error} />
         </StackItem>
       )}
       <StackItem>

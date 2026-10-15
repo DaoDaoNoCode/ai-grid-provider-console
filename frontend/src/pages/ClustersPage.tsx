@@ -1,7 +1,8 @@
-import { Alert, EmptyState, EmptyStateBody, Label, Spinner, Stack, StackItem, Title } from '@patternfly/react-core';
+import { EmptyState, EmptyStateBody, Label, Spinner, Stack, StackItem, Title } from '@patternfly/react-core';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { ConsoleService } from '../api/ConsoleService';
 import type { GridCluster } from '../api/types';
+import { LoadError } from '../components/LoadError';
 import { useServiceData } from '../hooks/useServiceData';
 
 type Props = { service: ConsoleService };
@@ -16,9 +17,7 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
       </StackItem>
       {error && (
         <StackItem>
-          <Alert variant="danger" isInline title="Clusters could not be loaded">
-            {error.message}
-          </Alert>
+          <LoadError subject="Clusters" error={error} />
         </StackItem>
       )}
       <StackItem>
