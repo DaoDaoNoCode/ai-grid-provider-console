@@ -1,79 +1,85 @@
 # Work breakdown
 
-The foundation branch delivers the repository layout, the BFF with its first endpoints, a
-frontend dev shell, deployment manifests and CI. The remaining work is grouped into three
-packages that can proceed in parallel. Each package owns distinct directories so that pull
-requests do not conflict.
+Three repositories, three owners, one contract. The backend's proto file is the contract;
+`docs/plan/bff-api.md` records how each RPC appears to the browser.
 
-Read `docs/plan/bff-api.md` first. Every endpoint's request and response shape is fixed
-there; change that document in the same pull request if a shape has to change.
+```
+frontend (this repo)  --JSON-->  bff (this repo)  --gRPC-->  ai-grid-backend (yuvalturg/ai-grid-backend)
+```
 
-## Package A: models fan-out (BFF)
+The foundation and the thin-BFF branches delivered: login through kube-auth-proxy, a BFF
+that maps the backend's three RPCs to JSON, Clusters and Tenants pages, a single-pod
+deployment with the backend container, CI, and local development against a real hub with
+the backend running from a local checkout.
 
-Owns `bff/internal/models`, `bff/internal/catalog`, their handlers in `bff/internal/api`.
+## Backend (ai-grid-backend)
 
-1. `GET /api/v1/models`: list Placements and ManifestWorkReplicaSets in the hub namespace
-   labelled `ai-grid.opendatahub.io/model=<name>`, project `ManagedModel`.
-2. `POST /api/v1/models`: validate (`createModelSchema` fields from the POC), write the
-   `LLMInferenceService` template, `MaaSModelRef`, Placement and ManifestWorkReplicaSet.
-   Follow feature plan 3a exactly: `Namespace` manifest first, `feedbackRules` on the
-   `LLMInferenceService` `Ready` condition, `deleteOption.propagationPolicy: SelectivelyOrphan`
-   for the namespace, model names capped at 58 characters.
-3. Status reader: `status.summary` and conditions of the ReplicaSet, PlacementDecisions,
-   per-cluster ManifestWorks selected by label, `statusFeedback` values. Phase derivation from
-   feature plan 3c.
-4. `PATCH` locations, `PUT` settings, `DELETE` with subscription reference check.
-5. Catalog CRUD on ConfigMaps.
-6. Tests with fake dynamic clients built from fixtures of real objects (`oc get -o json`).
-7. Verify on the hub: enable the `ManifestWorkReplicaSet` feature gate and create a
-   `ManagedClusterSetBinding` in the hub namespace first, then deploy the existing
-   `facebook-opt-125m` model to `local-cluster`.
+Owner: Yuval Turgeman. Everything that touches the hub, Keycloak or metrics.
 
-## Package B: frontend
+1. Publish a container image and manifests for OpenShift (the Kind manifests already
+   apply; only the image reference and the Keycloak values differ). Keycloak credentials
+   belong in a Secret with a dedicated service account holding `query-organizations`.
+2. Accept the caller's identity: read `authorization`, `x-forwarded-user` and
+   `x-forwarded-groups` from gRPC metadata and authorize per RPC. Add `AiGrid/GetCurrentUser`
+   so the UI can stop guessing `isProviderAdmin` from groups.
+3. Grow `ManagedCluster`: Available condition as `status`, the `consoleurl` claim,
+   annotations (`ai-grid/site-name`, `ai-grid/latitude`, `ai-grid/longitude`). Add
+   `UpdateManagedCluster` for enrol and location, with `patch` in the ClusterRole.
+4. `Grid/GetOverview` with the POC's metric contract (`docs/grid-monitoring.md` in the POC):
+   Thanos query_range for request rate, 5xx rate, p95 latency and GPU utilisation scoped by
+   `cluster`, explicit `metricsSource: demo` when Thanos is not configured. Verify the real
+   metric names Praxis and Kuadrant export before wiring queries.
+5. Models over Placement and ManifestWorkReplicaSet (feature plan 3a to 3d), then
+   subscriptions and catalog. Needs the `ManifestWorkReplicaSet` feature gate and a
+   `ManagedClusterSetBinding` on the hub.
+6. Tenant create, update and delete on Keycloak Organizations; create the `ai-grid` realm
+   on the dev hub's Keycloak (`grid-sso`).
 
-Owns `frontend/`.
+## BFF (this repo, `bff/`)
 
-1. Port the POC pages (Clusters, Models, Deploy wizard, Subscriptions, Tenants) onto the new
-   BFF. Keep the POC's service interface pattern: one `ConsoleService` interface, an HTTP
-   implementation and a mock implementation; pages never call `fetch`.
-2. Masthead shows the user from `/api/v1/user`; actions that need provider-admin rights are
-   disabled when `isProviderAdmin` is false.
-3. Add the Models detail page and per-site status table (feature plan 3d) against Package A's
-   endpoints; use the mock service until they land.
-4. Tests with Vitest and Testing Library; component tests use the mock service.
-5. Check pages in a browser with `playwright-cli` against the dev proxy.
+Owner: console team. A handler per RPC, nothing else.
 
-## Package C: deployment and integrations
+1. Bump the backend pseudo-version in `bff/go.mod` as RPCs land and map each one in
+   `internal/api`: `UpdateManagedCluster` to `PATCH /clusters/{name}`, `GetOverview` to
+   `GET /grid/overview`, `GetCurrentUser` into `/user`, models, catalog, subscriptions,
+   tenant mutations. Keep the error table in `bff-api.md` true.
+2. When the backend moves to its own Deployment: `BACKEND_ADDRESS` to its Service,
+   `BACKEND_CA_FILE` to its serving CA, a NetworkPolicy, and drop the backend container and
+   its ClusterRole from `manifests/`.
+3. Deploy to the dev hub once a backend image exists; log in through the Route; fix what
+   the first real deployment surfaces (OAuthClient redirect, cookie flags, header names from
+   kube-auth-proxy).
+4. If the auth setup changes to a Keycloak realm (open question for Lindani Phiri and
+   Andrew Ballantyne), switch the proxy provider in `manifests/` and the header names in
+   `config`; nothing else changes.
 
-Owns `manifests/`, `hack/`, `.github/`, `bff/internal/grid`, `bff/internal/fleet`,
-`bff/internal/tenants`.
+## Frontend (this repo, `frontend/`)
 
-1. Deploy the image to the hub with `manifests/` and the kube-auth-proxy sidecar; log in
-   through the Route; fix anything the first real deployment surfaces (OAuthClient redirect,
-   TLS, cookie flags). Add a `make deploy` target.
-2. `GET /api/v1/config` reports hub prerequisites: feature gate, `ManagedClusterSetBinding`,
-   presence of the `grid.praxis.fast` CRDs, tenant API URL configured.
-3. Read-only `GET /api/v1/grid` from the AGN CRDs (feature plan Step 10a). The CRDs, grid
-   operator and Praxis gateways come from the RHOAI AI Gateway component
-   (`aigateway.aiGrid` in the DataScienceCluster; odh-gitops PR 181, opendatahub-operator
-   PR 4186, ai-gateway-operator PR 148, all open on 2026-10-14). Do not install them with
-   Helm on the dev hub; wait for an operator build that has the component and enable it.
-4. Fleet proxy (Step 5a) once a fleet dashboard URL exists.
-5. Tenants (Step 6) against the tenant API layer defined with Swati's team, not OSAC.
-   Blocked until that API has a spec; keep the page on the mock service meanwhile.
+Owner: console team.
+
+1. Port the POC pages onto PatternFly 6 against the mock service: Clusters with enrol and
+   location editing, Models with the deploy wizard and per-site status, Subscriptions,
+   Tenants, the AI Grid map (Leaflet, site and coordinate conventions from the POC) and
+   Monitoring (Cluster, Models and Usage tabs with demo banners). Pages never call `fetch`;
+   `ConsoleService` grows one method per endpoint.
+2. Switch each page from the mock to the HTTP service as the BFF endpoint lands.
+3. Tests with Vitest and Testing Library on the mock service; `playwright-cli` screenshots
+   against the dev proxy before a PR.
 
 ## Open questions (owners outside this repo)
 
 | Question | Who | Why it matters |
 |---|---|---|
-| Auth setup for AI Grid: OpenShift OAuth as assumed here, or an identity provider from the tenant layer? | Lindani Phiri, Andrew Ballantyne | Decides the kube-auth-proxy provider and whether `isProviderAdmin` stays a Kubernetes access review |
-| Shape of the OSAC-like tenant API | Swati's team, kick-off 2026-10-15 | Unblocks Package C item 5 and the Tenants page |
-| Is there a cost or spend view for AI Grid at all? | Myriam Fentanes, Jenny Yi, Daniele Zonca (thread in wg-rhai-ai-grid) | Decides whether `billingUrl` ever points anywhere |
-| When does a RHOAI build with `aigateway.aiGrid` reach the dev hub? | Kevin Howell | Unblocks Package C items 2 and 3 |
+| Does the backend authorize per caller, or does everyone with console access get the pod ServiceAccount's rights? | Yuval Turgeman, Lindani Phiri | Decides whether `isProviderAdmin` can mean anything and whether the BFF must restrict who reaches the backend |
+| Auth setup for AI Grid: OpenShift OAuth as deployed here, or a Keycloak realm shared with tenants? | Lindani Phiri, Andrew Ballantyne | Decides the kube-auth-proxy provider; the dev hub already has Keycloak in `grid-sso` |
+| Are Keycloak Organizations the tenant model, or will the tenant layer defined with Swati's team look different? | Swati's team, Yuval Turgeman | The backend's `ListTenants` already assumes Organizations |
+| Which Thanos (ACM observability or user-workload monitoring) and which metric names? | Kevin Howell, Praxis team | Unblocks `GetOverview` with real data; the POC's names are assumptions |
+| Where does the backend's image get published, and does the repository move to `osac-project`? | Yuval Turgeman | Removes the `replace` in `bff/go.mod` and the placeholder image in `manifests/` |
+| Is there a cost or spend view for AI Grid at all? | Myriam Fentanes, Jenny Yi, Daniele Zonca | Decides whether `billingUrl` ever points anywhere |
 
 ## Shared rules
 
 - Run `make lint test` at the root before opening a pull request; CI runs the same.
 - Commits are small and describe the change; no AI attribution trailers.
-- New hub resources carry the label `app.kubernetes.io/managed-by: ai-grid-provider-console`
-  and `ai-grid.opendatahub.io/<kind>: <name>` so that they can be listed and cleaned up.
+- A new endpoint is a proto change first. Do not add a Kubernetes client to the BFF to
+  work around a missing RPC.

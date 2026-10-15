@@ -1,125 +1,136 @@
 # BFF plan
 
-The console is a React and PatternFly frontend served by a Go backend-for-frontend (BFF)
-that runs on the ACM hub. This document fixes the BFF's shape so that work can be split
-across people and agents without re-deciding the basics.
+The console is a React and PatternFly frontend served by a thin Go backend-for-frontend
+(BFF). The BFF owns login, static assets and the JSON API the browser uses. Everything
+else, every call to the ACM hub, to Keycloak and to metrics, is the job of
+`ai-grid-backend`, a gRPC service in its own repository.
+
+```
+browser --JSON--> kube-auth-proxy + bff --gRPC--> ai-grid-backend --> hub API, Keycloak, Thanos
+```
 
 The feature plan that this implements is `ai-grid-provider-portal-ui-plan.md` (Steps 0 to
-11). That plan was written against Kris Verlaenen's Node POC
-(`krisv/ai-grid-cloud-provider-poc`). Its API shapes and ACM resource conventions are kept;
-its Node backend is replaced by the Go BFF described here.
+11), written against Kris Verlaenen's Node POC (`krisv/ai-grid-cloud-provider-poc`). Its
+page designs and ACM conventions are kept. Its backend is replaced by two pieces: the
+backend service for cluster access and this BFF for the browser.
+
+## The backend
+
+- Repository: https://github.com/yuvalturg/ai-grid-backend (Yuval Turgeman). The Go module
+  path is `github.com/osac-project/ai-grid-backend`, so `bff/go.mod` carries a `replace` to
+  the yuvalturg repository pinned by pseudo-version until it moves. Bump the pseudo-version
+  to pick up new RPCs.
+- Contract: `proto/ai_grid/v1/ai_grid.proto`. The generated Go client in `gen/ai_grid/v1`
+  is what the BFF imports. Nothing else from the backend module is used.
+- Runs with its own ServiceAccount (`get/list/watch` on `ManagedCluster`) and Keycloak admin
+  credentials. It is aligned with OSAC's fulfillment-service and is the "OSAC-like API
+  layer" from the 2026-10-14 thread.
+- RPCs on 2026-10-15: `AiGrid/Ping`, `ManagedClusters/ListManagedClusters` (name, labels,
+  hubAcceptsClient), `Tenants/ListTenants` (Keycloak Organizations in the `ai-grid` realm).
 
 ## Decisions
 
 | Topic | Decision | Why |
 |---|---|---|
-| Language | Go, standard library `net/http` router, `client-go` | Matches the odh-dashboard BFFs (`packages/*/bff`) the team already maintains; no framework to learn. |
-| Identity | Every request carries the caller's OpenShift token in `x-forwarded-access-token`. The BFF builds a Kubernetes client with that token per request. | Same model as the odh-dashboard BFFs. The cluster's RBAC decides what the user may do; the BFF holds no privileged credential. Replaces the POC's single service-account token (Step 1 of the feature plan). Open: the auth setup for AI Grid is not yet aligned (Andrew Ballantyne asked Lindani Phiri on 2026-10-14); if the tenant API layer brings its own identity provider, the proxy's provider changes, not the BFF. |
-| Login in cluster | `kube-auth-proxy` sidecar (`quay.io/opendatahub/odh-kube-auth-proxy`) with `--provider=openshift --pass-access-token`. | It is the proxy RHOAI uses; it performs the OpenShift OAuth flow and sets `X-Forwarded-Access-Token` for the BFF. See `manifests/`. |
-| Login in development | The frontend dev server and `hack/api.sh` inject `oc whoami -t`. The BFF reads the API server URL and CA from the kubeconfig, never its token. | Lets any developer who has run `oc login` work against a real hub with their own permissions. |
-| Hub namespace | Portal-owned hub resources (Placement, ManifestWorkReplicaSet, LLMInferenceService template, MaaSModelRef) live in one namespace, flag `--hub-namespace`, default `ai-grid`. | The POC used `maas`; the name is configurable so a hub can pick. |
-| Cluster labels | `ai-grid/enabled`, `ai-grid/provisioned`, `location` on `ManagedCluster`. | Kept from the POC so Placements written by either tool select the same clusters. |
-| Response envelope | Success: `{"data": ...}`. Error: `{"error": {"code": "<http status>", "message": "..."}}`. | Same as the odh-dashboard BFFs; the frontend code there can be reused. |
-| Concurrency | Mutations of a hub resource send `If-Match: <resourceVersion>`; a stale version returns 412, a missing header on delete returns 428. | Kubernetes already gives us `resourceVersion`; no Git revisions as in the POC. |
-| Tests | `client-go` fake clientsets and `httptest`; no envtest. | Fast, no binaries to download. A `hack/smoke.sh` script checks the live cluster. |
+| Language | Go, standard library `net/http` router, `google.golang.org/grpc` client. No `client-go`. | The BFF never talks to Kubernetes. One dependency less to keep in step with the hub. |
+| Identity | kube-auth-proxy authenticates the browser and sets `x-forwarded-user`, `x-forwarded-email`, `x-forwarded-groups` and `x-forwarded-access-token`. The BFF reads them (`internal/identity`) and forwards the token as `authorization: Bearer` plus the user, email and groups as gRPC metadata on every RPC (`internal/backend`). | The backend decides what the caller may do; the BFF has no credential of its own and no authorization logic. The proxy's provider can change (OpenShift OAuth today, a Keycloak realm later) without touching the BFF. |
+| `isProviderAdmin` | A UI hint: true for every signed-in user unless `PROVIDER_ADMIN_GROUPS` lists groups, then true when the caller is in one of them. | The backend has no "who am I" RPC yet. Replace with a `GetCurrentUser` RPC when it exists; the UI only uses it to show or hide actions. |
+| Login in development | The Vite dev server and `hack/api.sh` set the same headers from `oc whoami` and `oc whoami -t`. The backend runs locally with `--kubeconfig` (`hack/dev-backend.sh`). | Any developer who has run `oc login` works against a real hub. |
+| Deployment | One pod: kube-auth-proxy (:8443), bff (:8080), ai-grid-backend (:9090). The BFF dials the backend over loopback in plaintext (`--backend-address=127.0.0.1:9090`). | Simplest MVP; no Service, TLS or NetworkPolicy for the backend. When the backend gets its own Deployment, set `BACKEND_ADDRESS` to its Service and `BACKEND_CA_FILE` to its serving CA. |
+| Cluster labels | `ai-grid/enabled`, `ai-grid/provisioned`, `location`, `ai-grid/site`, `ai-grid/region`, and ACM's `openshiftVersion`. | The POC's conventions (site and region were added to the POC on 2026-10-14) so that Placements written by either tool select the same clusters. The BFF derives fields from the labels the backend returns. |
+| Response envelope | Success: `{"data": ...}`. Error: `{"error": {"code": "<http status>", "message": "..."}}`. | Same as the odh-dashboard BFFs. |
+| Tests | `httptest` against an in-memory backend (`internal/backend/backendtest`, gRPC over `bufconn`). | No cluster, no binaries; the fake records incoming metadata so identity forwarding is tested. `hack/smoke.sh` checks a live backend. |
 
 ## Modules
 
 ```
 bff/
   cmd/                  flags, server start and graceful stop
-  internal/config       EnvConfig (flags and env vars)
-  internal/api          App, routes, middleware, error responses, handlers
-  internal/kube         ClientFactory (per-request token clients), RequestIdentity
-  internal/clusters     ManagedCluster projection (GridCluster), list, enroll, locations
-  internal/models       (next) Placement + ManifestWorkReplicaSet writer and status reader
-  internal/subscriptions (later) MaaSSubscription fan-out
+  internal/config       flags and env vars
+  internal/identity     Identity from proxy headers, context helpers
+  internal/backend      gRPC client, identity-forwarding interceptor; backendtest/ fake server
+  internal/api          App, routes, middleware, gRPC-to-HTTP error mapping, handlers, SPA
 ```
 
-Each domain package exposes a `Repository` interface taking a `kube.Client` so handlers are
-tested with fakes and the live client is only wired in `api.NewApp`.
+Adding an endpoint: ask for the RPC in the backend proto first, bump the pseudo-version,
+map it in a handler under `internal/api`, add it to the table below and to
+`frontend/src/api/ConsoleService.ts`.
 
 ## Endpoints
 
-Paths are under `/api/v1`. Resource shapes follow the POC's `docs/openapi.json` unless noted.
+Paths are under `/api/v1`.
 
-### Slice 1: foundation (this branch)
+### Implemented
 
-| Method | Path | Returns | Source |
+| Method | Path | Returns | Backend RPC |
 |---|---|---|---|
-| GET | `/healthcheck` | `{status, version}` | none, no auth |
-| GET | `/api/v1/user` | `{username, groups, isProviderAdmin}` | `SelfSubjectReview`; admin = `SelfSubjectAccessReview` for `patch managedclusters.cluster.open-cluster-management.io` |
-| GET | `/api/v1/config` | `{hubNamespace, gridEndpoint, mapTileUrl, billingUrl}` | flags / env `GRID_CONSUMER_URL`, `MAP_TILE_URL`, `BILLING_URL` |
-| GET | `/api/v1/clusters` | `GridCluster[]` | list `ManagedCluster` (paged, `limit=500`) |
-| GET | `/api/v1/clusters/{name}` | `GridCluster` | get `ManagedCluster` |
-| PATCH | `/api/v1/clusters/{name}` | `GridCluster` | merge-patch labels; body `{aiGridEnabled: true}` and/or `{location: "<label value>"}` |
-| GET | `/api/v1/locations` | `string[]` | distinct `location` of clusters that are Ready, enabled and provisioned |
+| GET | `/healthcheck` | `{status, version}` | none; liveness, no auth |
+| GET | `/readyz` | `{status, version, backend}` | `AiGrid/Ping`; readiness, 503 when the backend does not answer |
+| GET | `/api/v1/user` | `{username, email, groups, isProviderAdmin}` | none; from the proxy headers |
+| GET | `/api/v1/config` | `{gridEndpoint, mapTileUrl, billingUrl, version}` | none; env `GRID_CONSUMER_URL`, `MAP_TILE_URL`, `BILLING_URL` |
+| GET | `/api/v1/clusters` | `GridCluster[]` sorted by name | `ManagedClusters/ListManagedClusters` |
+| GET | `/api/v1/clusters/{name}` | `GridCluster` | same RPC, filtered; 404 when absent |
+| GET | `/api/v1/tenants` | `Tenant[]` sorted by name | `Tenants/ListTenants` |
 
 `GridCluster`:
 
 ```json
 {
-  "name": "local-cluster",
-  "status": "Ready | Offline | Unknown",
+  "name": "site-1",
   "aiGridEnabled": true,
-  "provisioned": false,
-  "provisioningStatus": "Provisioned | Provisioning | Not provisioned",
-  "location": "us-east-1",
-  "consoleUrl": "https://console-openshift-console.apps...",
+  "provisioned": true,
+  "hubAcceptsClient": true,
+  "location": "brussels",
+  "site": "brussels-dc1",
+  "region": "europe-west",
   "openshiftVersion": "4.22.15",
-  "resourceVersion": "12345"
+  "labels": {"ai-grid/enabled": "true", "...": "..."}
 }
 ```
 
-`status` comes from the `ManagedClusterConditionAvailable` condition. `consoleUrl` comes from
-the `consoleurl.cluster.open-cluster-management.io` cluster claim (feature plan Step 11).
+`Tenant`: `{"id": "<keycloak org id>", "name": "tenant-a", "domains": ["a.example.com"]}`.
 
-### Slice 2: models (feature plan Steps 3, 4, 9)
+### Waiting on backend RPCs
 
-| Method | Path | Notes |
-|---|---|---|
-| GET | `/api/v1/models` | `ManagedModel[]` with `locations`, `sites[]`, `rollout` |
-| POST | `/api/v1/models` | writes Namespace-safe ManifestWorkReplicaSet + Placement + MaaSModelRef in the hub namespace; see feature plan 3a for `feedbackRules` and `deleteOption: SelectivelyOrphan` |
-| GET | `/api/v1/models/{name}` | adds per-site status from PlacementDecisions and generated ManifestWorks (selected by the `work.open-cluster-management.io/manifestworkreplicaset` label, never by name) |
-| PATCH | `/api/v1/models/{name}` | `{locations}` rewrites the Placement |
-| PUT | `/api/v1/models/{name}` | settings change rolled out to all sites |
-| DELETE | `/api/v1/models/{name}` | refuses while a subscription references the model |
-| GET/POST/PUT/DELETE | `/api/v1/catalog[/{name}]` | portal-private `ModelCatalogEntry`, stored as a ConfigMap in the hub namespace (the POC stored it in Git) |
+Each row is a request to the backend repository. The BFF mapping is small once the RPC
+exists; the frontend uses the mock service meanwhile.
 
-Prerequisites on the hub, to be checked by `GET /api/v1/config` once implemented:
-`ManifestWorkReplicaSet` feature gate on `ClusterManager.spec.workConfiguration.featureGates`
-and a `ManagedClusterSetBinding` in the hub namespace. The dev hub
-`ai-grid-tenant` has the CRD but not the feature gate today.
-
-### Slice 3: subscriptions, grid, fleet, tenants (feature plan Steps 5, 6, 8, 10)
-
-| Method | Path | Notes |
-|---|---|---|
-| GET/POST | `/api/v1/subscriptions` | `MaaSSubscription` + `sub-<name>` Placement and ManifestWorkReplicaSet (Step 8) |
-| GET/PUT/DELETE | `/api/v1/subscriptions/{name}` | |
-| GET | `/api/v1/grid` | `GridNetwork`, `GridSite[]`, `InferenceProvider[]` from `grid.praxis.fast/v1alpha1`; empty when the CRDs are absent. The CRDs and the Praxis gateways are installed by the RHOAI AI Gateway component (`DataScienceCluster.spec.components.aigateway.aiGrid`, odh-gitops PR 181 / RHAISTRAT-2845, RHOAI 3.6), not by hand |
-| PATCH | `/api/v1/grid/network`, `/api/v1/grid/providers/{name}` | |
-| GET | `/api/v1/fleet`, `/api/v1/fleet/sites/{name}` | proxy to `FLEET_DASHBOARD_URL` |
-| GET/POST/PUT/DELETE | `/api/v1/tenants[/{name}]` | Against the tenant API layer being defined with Swati's team (kick-off 2026-10-15). It is "OSAC-like" and will later migrate into OSAC outside RHOAI (Dana Gutride, 2026-10-14). OSAC itself is not used in this round. Until a spec exists the frontend uses the mock service; the BFF gets a `tenants.Repository` interface with no implementation |
+| Method | Path | Needs in the proto | Feature plan |
+|---|---|---|---|
+| GET | `/api/v1/user` (`isProviderAdmin`) | `AiGrid/GetCurrentUser` returning roles | Step 1 |
+| GET | `/api/v1/clusters` (`status`, `consoleUrl`, `siteName`, `latitude`, `longitude`) | `ManagedCluster` gains the Available condition, the `consoleurl` claim and annotations | Steps 2, 10 |
+| PATCH | `/api/v1/clusters/{name}` | `ManagedClusters/UpdateManagedCluster` for `ai-grid/enabled` and `location`; `patch` in the backend's ClusterRole | Step 2 |
+| GET | `/api/v1/grid/overview?range=1h|6h|24h&site=&metrics=false` | `Grid/GetOverview` with the POC's metric contract: requests, errors, latency, gpu from Thanos with a `cluster` label; `metricsSource: thanos|demo` | Steps 5, 10 |
+| GET/POST/PATCH/PUT/DELETE | `/api/v1/models[/{name}]` | `Models/*` over Placement and ManifestWorkReplicaSet (feature plan 3a: `feedbackRules`, `SelectivelyOrphan`); needs the `ManifestWorkReplicaSet` feature gate on the hub | Steps 3, 4 |
+| GET/POST/PUT/DELETE | `/api/v1/catalog[/{name}]` | `Catalog/*` on ConfigMaps | Step 9 |
+| GET/POST/PUT/DELETE | `/api/v1/subscriptions[/{name}]` | `Subscriptions/*` over MaaSSubscription | Step 8 |
+| POST/PUT/DELETE | `/api/v1/tenants[/{name}]` | `Tenants/CreateTenant`, `UpdateTenant`, `DeleteTenant` on Keycloak Organizations | Step 6 |
+| GET | `/api/v1/grid` | `Grid/GetNetwork` from `grid.praxis.fast/v1alpha1` once the RHOAI AI Gateway component installs the CRDs | Step 10a |
 
 ## Errors
 
-| Situation | Status | `code` |
-|---|---|---|
-| Missing or empty token header | 401 | `401` |
-| Kubernetes returns 401 | 401 | `401` |
-| Kubernetes returns 403 | 403 | `403` |
-| Resource not found | 404 | `404` |
-| Body fails validation | 422 | `422` |
-| `If-Match` stale / missing on delete | 412 / 428 | `412` / `428` |
-| Kubernetes unreachable or 5xx | 503 | `503` |
+| Situation | Status |
+|---|---|
+| Missing or malformed token header | 401 |
+| Backend `Unauthenticated` | 401 |
+| Backend `PermissionDenied` | 403, backend message kept |
+| Backend `NotFound`, or cluster not in the list | 404 |
+| Backend `InvalidArgument`, `OutOfRange` | 422, backend message kept |
+| Backend `AlreadyExists`, `Aborted` | 409 |
+| Backend `FailedPrecondition` | 412 |
+| Backend `ResourceExhausted` | 429 |
+| Backend `Unimplemented` | 501 |
+| Backend `Unavailable`, `Canceled` | 503 |
+| Backend `DeadlineExceeded` or BFF timeout (`BACKEND_TIMEOUT`, 10s) | 504 |
+| Any other backend code | 502, generic message, detail in the BFF log |
 
 ## Out of scope for the BFF
 
-- No Git store. Hub resources are the source of truth.
-- No per-tenant usage totals (feature plan: deliberately excluded until a source exists).
-- No billing data. Nothing in the platform stores it (Andrew Ballantyne, 2026-10-14), and whether
-  AI Grid gets a cost or spend view at all is an open product question. `billingUrl` in
-  `/api/v1/config` is a plain external link that stays empty until a page exists.
-- No OSAC integration in this round (see tenants above).
+- No Kubernetes client, no hub resources, no RBAC checks. The backend owns them.
 - No session handling. The proxy owns login and cookies.
+- No billing data. Nothing in the platform stores it (Andrew Ballantyne, 2026-10-14) and
+  whether AI Grid gets a cost or spend view is an open product question. `billingUrl` in
+  `/api/v1/config` is a plain external link that stays empty until a page exists.
+- No metering. Praxis AI's `external_metering` filter emits CloudEvents to a metering
+  service; nothing on the dev hub receives them yet.
+- No OSAC integration in this round; the backend is the OSAC-like layer.

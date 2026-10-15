@@ -1,36 +1,41 @@
 # ai-grid-provider-console
 
-AI Grid cloud provider admin console: a React and PatternFly frontend with a Go BFF,
-running on an ACM hub. Provider admins use it to enrol clusters into the grid, deploy
-models across sites, manage subscriptions and tenants, and watch the fleet.
+AI Grid cloud provider admin console: a React and PatternFly frontend with a thin Go BFF,
+running on an ACM hub next to `ai-grid-backend`. Provider admins use it to see and enrol
+clusters, deploy models across sites, manage subscriptions and tenants, and watch the fleet.
 
-The console acts as the signed-in user on every call. Locally that is your `oc login`;
-in a cluster it is the OpenShift OAuth session from the kube-auth-proxy sidecar.
+```
+browser --JSON--> kube-auth-proxy + bff --gRPC--> ai-grid-backend --> hub API, Keycloak, metrics
+```
+
+The BFF owns login, the browser API and the static frontend. Every call to the cluster
+goes through [ai-grid-backend](https://github.com/yuvalturg/ai-grid-backend), which runs in
+the same pod and acts with its own ServiceAccount. The BFF forwards who is calling.
 
 ## Layout
 
 | Path | What |
 |---|---|
-| `bff/` | Go backend-for-frontend: `/api/v1/*` and the built frontend |
+| `bff/` | Go backend-for-frontend: `/api/v1/*` as JSON over the backend's gRPC, plus the built frontend |
 | `frontend/` | Vite, React 18, PatternFly 6 |
-| `manifests/` | Kustomize deployment with the kube-auth-proxy sidecar |
-| `hack/` | `deploy.sh`, `undeploy.sh`, `api.sh` (curl with your token), `smoke.sh` |
+| `manifests/` | Kustomize deployment: kube-auth-proxy, bff and ai-grid-backend in one pod |
+| `hack/` | `dev-backend.sh`, `deploy.sh`, `undeploy.sh`, `api.sh` (curl as you), `smoke.sh` |
 | `docs/dev-setup.md` | Running against a real cluster, checks, deploying |
-| `docs/plan/bff-api.md` | API decisions and endpoint list per slice |
-| `docs/plan/work-breakdown.md` | Remaining work split into parallel packages |
+| `docs/plan/bff-api.md` | API decisions, endpoint list, RPCs still needed from the backend |
+| `docs/plan/work-breakdown.md` | Work split across backend, BFF and frontend |
 
 ## Quick start
 
 ```sh
 oc login ...
 make install
-make dev          # BFF :8080, frontend :9000
+make dev          # backend :9090, BFF :8080, frontend :9000
 ```
 
 Then open http://127.0.0.1:9000. See `docs/dev-setup.md` for details.
 
 ## Status
 
-Implemented: healthcheck, user, config, clusters (list, get, enrol/withdraw, location),
-locations. Next: models fan-out through ACM Placements and ManifestWorkReplicaSets,
-subscriptions, catalog, grid routing, fleet, tenants (see the plan documents).
+Implemented: login, user, config, clusters (list, get), tenants (list), readiness tied to
+the backend. Next: whatever RPC the backend adds next; see the "Waiting on backend RPCs"
+table in `docs/plan/bff-api.md`.
