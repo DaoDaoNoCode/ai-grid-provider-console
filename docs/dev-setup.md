@@ -11,7 +11,8 @@ way kube-auth-proxy would, and the BFF forwards them to the backend.
 - Node 22 and pnpm 11 (`npm install -g pnpm@11.22.0`)
 - `oc`, `kustomize`, `jq`
 - `oc login` to an ACM hub. The backend lists `ManagedClusters` with your kubeconfig
-  locally; in a cluster it uses its ServiceAccount.
+  locally; in a cluster it uses its ServiceAccount. The BFF asks the same hub whether you
+  may patch `ManagedClusters` (`isProviderAdmin`), using your token.
 
 ## Run against a real cluster
 
@@ -31,12 +32,15 @@ How the pieces connect:
 1. `hack/dev-backend.sh` clones `ai-grid-backend` into `.cache/` at the commit pinned in
    `bff/go.mod` and runs it with `--kubeconfig` on `127.0.0.1:9090`. Set `BACKEND_DIR` to
    use your own checkout.
-2. The BFF dials `BACKEND_ADDRESS` (default `127.0.0.1:9090`, plaintext) and forwards the
-   caller's token as `authorization` metadata (`bff/internal/backend`).
+2. The BFF listens on `127.0.0.1:8080`, dials `BACKEND_ADDRESS` (default `127.0.0.1:9090`,
+   plaintext) and forwards the caller's token as `authorization` metadata
+   (`bff/internal/backend`). For `/api/v1/user` it posts a `SelfSubjectAccessReview` to
+   `HUB_API_URL` with the caller's token (`bff/internal/hub`); `make dev-bff` sets it from
+   `oc whoami --show-server`.
 3. The Vite dev server proxies `/api` to the BFF and sets `x-forwarded-access-token` and
    `x-forwarded-user` from `oc whoami` (`frontend/vite.config.ts`). After a 401 they are
    re-read, so a new `oc login` is picked up without restarting. `AUTH_GROUPS` adds a
-   groups header for testing `PROVIDER_ADMIN_GROUPS`.
+   groups header, which the BFF only forwards to the backend.
 
 Without the frontend:
 
@@ -52,8 +56,10 @@ curl -s http://127.0.0.1:8080/readyz
 `hack/smoke.sh` builds the BFF, starts it on a spare port against the backend on :9090 and
 checks the read-only endpoints.
 
-Environment variables the BFF reads (all optional): `PORT`, `BACKEND_ADDRESS`,
-`BACKEND_CA_FILE`, `BACKEND_SERVER_NAME`, `BACKEND_INSECURE`, `BACKEND_TIMEOUT`, `PROVIDER_ADMIN_GROUPS`,
+Environment variables the BFF reads: `HUB_API_URL` (required outside a pod; in a pod it
+defaults to the in-cluster API server), `HUB_CA_FILE`, `BIND_ADDRESS` (default `127.0.0.1`;
+`0.0.0.0` exposes the BFF without a proxy in front), `PORT`, `BACKEND_ADDRESS`,
+`BACKEND_CA_FILE`, `BACKEND_SERVER_NAME`, `BACKEND_INSECURE`, `BACKEND_TIMEOUT`,
 `AUTH_TOKEN_HEADER`, `AUTH_USER_HEADER`, `AUTH_EMAIL_HEADER`, `AUTH_GROUPS_HEADER`,
 `GRID_CONSUMER_URL`, `MAP_TILE_URL`, `BILLING_URL`, `LOG_LEVEL`. Run `go run ./cmd --help`
 in `bff/` for the flags.
@@ -72,8 +78,10 @@ CI runs the same plus `kustomize build` and a container image build.
 
 One pod with three containers: kube-auth-proxy (`quay.io/opendatahub/odh-kube-auth-proxy`,
 OpenShift OAuth, the proxy RHOAI uses), the console image (BFF plus frontend) and
-`ai-grid-backend`. The backend binds to loopback, so only the BFF can reach it; the BFF's
-`/readyz` is the pod's readiness signal for both.
+`ai-grid-backend`. The BFF and the backend both bind to loopback, so nothing on the pod
+network can reach either of them without going through the proxy. The kubelet probes the
+BFF's `/readyz` through the proxy, which passes that one path without login; it pings the
+backend, so it is the readiness signal for all three containers.
 
 ```sh
 make image IMAGE=quay.io/<you>/ai-grid-provider-console TAG=dev

@@ -17,6 +17,9 @@ type statusError struct {
 
 func (e *statusError) Error() string { return e.message }
 
+// errHub marks a failed call to the hub API; the detail stays in the log.
+var errHub = errors.New("hub request failed")
+
 // Errorf builds an error that maps to a specific HTTP status.
 func Errorf(status int, message string) error {
 	return &statusError{status: status, message: message}
@@ -43,6 +46,9 @@ func classify(err error) (int, string) {
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return http.StatusGatewayTimeout, "the AI Grid backend did not answer in time"
+	}
+	if errors.Is(err, errHub) {
+		return http.StatusBadGateway, "the hub could not confirm the caller's permissions; try again"
 	}
 	if st, ok := status.FromError(err); ok {
 		msg := st.Message()

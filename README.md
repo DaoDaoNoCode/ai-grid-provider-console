@@ -10,7 +10,8 @@ browser --JSON--> kube-auth-proxy + bff --gRPC--> ai-grid-backend --> hub API, K
 
 The BFF owns login, the browser API and the static frontend. Every call to the cluster
 goes through [ai-grid-backend](https://github.com/yuvalturg/ai-grid-backend), which runs in
-the same pod and acts with its own ServiceAccount. The BFF forwards who is calling.
+the same pod. The BFF forwards who is calling, and asks the hub one question itself with
+the caller's own token: may this user patch ManagedClusters? That answer is `isProviderAdmin`.
 
 ## Layout
 

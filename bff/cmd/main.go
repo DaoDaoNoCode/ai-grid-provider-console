@@ -16,6 +16,7 @@ import (
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/api"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/backend"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/config"
+	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/hub"
 )
 
 func main() {
@@ -45,7 +46,12 @@ func run() error {
 	}
 	defer func() { _ = client.Close() }()
 
-	app := api.NewApp(cfg, logger, client)
+	hubClient, err := hub.New(hub.Config{URL: cfg.HubAPIURL, CAFile: cfg.HubCAFile})
+	if err != nil {
+		return err
+	}
+
+	app := api.NewApp(cfg, logger, client, hubClient)
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr(),
 		Handler:           app.Handler(),
@@ -58,7 +64,7 @@ func run() error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		logger.Info("starting server", "addr", srv.Addr, "tls", cfg.TLSEnabled(), "version", api.Version, "backend", cfg.BackendAddress, "backendTLS", cfg.BackendCAFile != "")
+		logger.Info("starting server", "addr", srv.Addr, "tls", cfg.TLSEnabled(), "version", api.Version, "backend", cfg.BackendAddress, "backendTLS", cfg.BackendCAFile != "", "hub", hubClient.URL())
 		var serveErr error
 		if cfg.TLSEnabled() {
 			serveErr = srv.ListenAndServeTLS(cfg.CertFile, cfg.KeyFile)

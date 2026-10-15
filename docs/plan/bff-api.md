@@ -32,11 +32,11 @@ backend service for cluster access and this BFF for the browser.
 
 | Topic | Decision | Why |
 |---|---|---|
-| Language | Go, standard library `net/http` router, `google.golang.org/grpc` client. No `client-go`. | The BFF never talks to Kubernetes. One dependency less to keep in step with the hub. |
+| Language | Go, standard library `net/http` router, `google.golang.org/grpc` client. No `client-go`. | The BFF reads nothing from the hub; its one Kubernetes call is a `SelfSubjectAccessReview` over plain HTTPS (`internal/hub`). One dependency less to keep in step with the hub. |
 | Identity | kube-auth-proxy authenticates the browser and sets `x-forwarded-user`, `x-forwarded-email`, `x-forwarded-groups` and `x-forwarded-access-token`. The BFF reads them (`internal/identity`) and forwards the token as `authorization: Bearer` plus the user, email and groups as gRPC metadata on every RPC (`internal/backend`). | The backend decides what the caller may do; the BFF has no credential of its own and no authorization logic. The proxy's provider can change (OpenShift OAuth today, a Keycloak realm later) without touching the BFF. |
-| `isProviderAdmin` | A UI hint: true for every signed-in user unless `PROVIDER_ADMIN_GROUPS` lists groups, then true when the caller is in one of them. | The backend has no "who am I" RPC yet. Replace with a `GetCurrentUser` RPC when it exists; the UI only uses it to show or hide actions. |
+| `isProviderAdmin` | The hub's answer to a `SelfSubjectAccessReview` for `patch` on `managedclusters`, asked with the caller's own token (`HUB_API_URL`, in-cluster by default). | The user's RBAC decides, not a console setting, as PR 1 did (review of 2026-10-15). The UI only uses it to show or hide actions; the backend authorizes every call. A `GetCurrentUser` RPC can take this over once the backend acts as the caller. |
 | Login in development | The Vite dev server and `hack/api.sh` set the same headers from `oc whoami` and `oc whoami -t`. The backend runs locally with `--kubeconfig` (`hack/dev-backend.sh`). | Any developer who has run `oc login` works against a real hub. |
-| Deployment | One pod: kube-auth-proxy (:8443), bff (:8080), ai-grid-backend bound to `127.0.0.1:9090`. The BFF dials it in plaintext over loopback; plaintext to any other address is refused unless `BACKEND_INSECURE=true`. The backend has no kubelet probes; the BFF's `/readyz` stands in for them. | Simplest MVP; nothing on the pod network can reach the backend. When the backend gets its own Deployment, set `BACKEND_ADDRESS` to its Service and `BACKEND_CA_FILE` to its serving CA. |
+| Deployment | One pod: kube-auth-proxy (:8443), bff on `127.0.0.1:8080`, ai-grid-backend on `127.0.0.1:9090`. The BFF dials the backend in plaintext over loopback; plaintext to any other address is refused unless `BACKEND_INSECURE=true`. The kubelet probes `/readyz` through the proxy (`--skip-auth-route=^/readyz$`); neither the BFF nor the backend has a probe of its own. | Nothing on the pod network can reach the BFF with forged identity headers or the backend at all. When the backend gets its own Deployment, set `BACKEND_ADDRESS` to its Service and `BACKEND_CA_FILE` to its serving CA. |
 | Cluster labels | `ai-grid/enabled`, `ai-grid/provisioned`, `location`, `ai-grid/site`, `ai-grid/region`, and ACM's `openshiftVersion`. | The POC's conventions (site and region were added to the POC on 2026-10-14) so that Placements written by either tool select the same clusters. The BFF derives fields from the labels the backend returns. |
 | Response envelope | Success: `{"data": ...}`. Error: `{"error": {"code": "<http status>", "message": "..."}}`. | Same as the odh-dashboard BFFs. |
 | Tests | `httptest` against an in-memory backend (`internal/backend/backendtest`, gRPC over `bufconn`). | No cluster, no binaries; the fake records incoming metadata so identity forwarding is tested. `hack/smoke.sh` checks a live backend. |
@@ -97,7 +97,7 @@ exists; the frontend uses the mock service meanwhile.
 
 | Method | Path | Needs in the proto | Feature plan |
 |---|---|---|---|
-| GET | `/api/v1/user` (`isProviderAdmin`) | `AiGrid/GetCurrentUser` returning roles | Step 1 |
+| GET | `/api/v1/user` (`isProviderAdmin`) | Optional: `AiGrid/GetCurrentUser` returning roles, once the backend acts as the caller; today the BFF asks the hub directly | Step 1 |
 | GET | `/api/v1/clusters` (`status`, `consoleUrl`, `siteName`, `latitude`, `longitude`) | `ManagedCluster` gains the Available condition, the `consoleurl` claim and annotations | Steps 2, 10 |
 | PATCH | `/api/v1/clusters/{name}` | `ManagedClusters/UpdateManagedCluster` for `ai-grid/enabled` and `location`; `patch` in the backend's ClusterRole | Step 2 |
 | GET | `/api/v1/grid/overview?range=1h|6h|24h&site=&metrics=false` | `Grid/GetOverview` with the POC's metric contract: requests, errors, latency, gpu from Thanos with a `cluster` label; `metricsSource: thanos|demo` | Steps 5, 10 |
@@ -112,6 +112,8 @@ exists; the frontend uses the mock service meanwhile.
 | Situation | Status |
 |---|---|
 | Missing or malformed token header | 401 |
+| Hub rejects the token in the access review | 401 |
+| Hub unreachable or failing during the access review | 502, generic message, detail in the BFF log |
 | Backend `Unauthenticated` | 401 |
 | Backend `PermissionDenied` | 403, backend message kept |
 | Backend `NotFound`, or cluster not in the list | 404 |
@@ -126,7 +128,9 @@ exists; the frontend uses the mock service meanwhile.
 
 ## Out of scope for the BFF
 
-- No Kubernetes client, no hub resources, no RBAC checks. The backend owns them.
+- No Kubernetes client and no hub resources. The backend owns them. The one exception is
+  the `SelfSubjectAccessReview` behind `isProviderAdmin`, which asks the hub about the
+  caller with the caller's own token and reads nothing.
 - No session handling. The proxy owns login and cookies.
 - No billing data. Nothing in the platform stores it (Andrew Ballantyne, 2026-10-14) and
   whether AI Grid gets a cost or spend view is an open product question. `billingUrl` in

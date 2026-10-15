@@ -47,6 +47,9 @@ spec:
             - --cookie-samesite=lax
             - --cookie-expire=24h
             - --cookie-refresh=1h
+            # The BFF listens on loopback, so the kubelet probes it through
+            # the proxy. /readyz carries no user data and needs no login.
+            - --skip-auth-route=^/readyz$
           env:
             # Created by hack/deploy.sh together with the OAuthClient.
             - name: OAUTH2_PROXY_CLIENT_ID
@@ -105,15 +108,19 @@ spec:
         # The console: a thin BFF plus the built frontend. It translates the
         # frontend's JSON calls into gRPC on the backend container over
         # loopback and forwards the caller's identity in request metadata.
+        # It binds to loopback so that nothing on the pod network can reach
+        # it with forged identity headers: every request comes through the
+        # proxy. The only hub call it makes is a SelfSubjectAccessReview with
+        # the caller's token (isProviderAdmin), using the in-cluster API
+        # address and CA that every pod gets.
         - name: bff
           image: ai-grid-provider-console
           args:
+            - --bind-address=127.0.0.1
             - --port=8080
             - --static-assets-dir=/static
             - --backend-address=127.0.0.1:9090
           env:
-            - name: PROVIDER_ADMIN_GROUPS
-              value: ""
             - name: GRID_CONSUMER_URL
               value: ""
             - name: MAP_TILE_URL
@@ -122,19 +129,16 @@ spec:
               value: ""
             - name: LOG_LEVEL
               value: info
-          ports:
-            - name: http
-              containerPort: 8080
+          # Probed through the proxy (same pod, port 8443): the kubelet cannot
+          # reach a loopback port. /readyz also pings the backend, so this one
+          # probe gates traffic for all three containers. No liveness probe:
+          # it would restart the BFF whenever the proxy is down.
           readinessProbe:
             httpGet:
               path: /readyz
-              port: http
+              port: 8443
+              scheme: HTTPS
             periodSeconds: 5
-          livenessProbe:
-            httpGet:
-              path: /healthcheck
-              port: http
-            periodSeconds: 10
           resources:
             requests:
               cpu: 50m

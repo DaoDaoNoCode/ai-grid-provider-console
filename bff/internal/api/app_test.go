@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	aigridv1 "github.com/osac-project/ai-grid-backend/gen/ai_grid/v1"
@@ -16,23 +17,58 @@ import (
 
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/backend/backendtest"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/config"
+	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/hub"
 )
 
 func testConfig(t *testing.T) config.Config {
 	t.Helper()
-	cfg, err := config.Parse(nil, func(string) (string, bool) { return "", false })
+	cfg, err := config.Parse([]string{"--hub-api-url=https://hub.invalid"}, func(string) (string, bool) { return "", false })
 	if err != nil {
 		t.Fatal(err)
 	}
 	return cfg
 }
 
+// fakeHub stands in for the hub API server: it answers every
+// SelfSubjectAccessReview with allowed, or fails with status when set.
+type fakeHub struct {
+	allowed bool
+	status  int
+	auth    string
+}
+
+func (f *fakeHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	f.auth = r.Header.Get("Authorization")
+	if f.status != 0 {
+		http.Error(w, http.StatusText(f.status), f.status)
+		return
+	}
+	w.WriteHeader(http.StatusCreated)
+	_, _ = w.Write([]byte(`{"status":{"allowed":` + strconv.FormatBool(f.allowed) + `}}`))
+}
+
+func startHub(t *testing.T, f *fakeHub) *hub.Client {
+	t.Helper()
+	srv := httptest.NewServer(f)
+	t.Cleanup(srv.Close)
+	c, err := hub.New(hub.Config{URL: srv.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
 func newTestApp(t *testing.T, cfg config.Config, fake *backendtest.Fake) *App {
+	t.Helper()
+	return newTestAppWithHub(t, cfg, fake, &fakeHub{allowed: true})
+}
+
+func newTestAppWithHub(t *testing.T, cfg config.Config, fake *backendtest.Fake, h *fakeHub) *App {
 	t.Helper()
 	if fake == nil {
 		fake = &backendtest.Fake{}
 	}
-	return NewApp(cfg, slog.New(slog.DiscardHandler), backendtest.Start(t, fake))
+	return NewApp(cfg, slog.New(slog.DiscardHandler), backendtest.Start(t, fake), startHub(t, h))
 }
 
 func decodeError(t *testing.T, rec *httptest.ResponseRecorder) errorBody {
@@ -125,25 +161,31 @@ func TestUnknownAPIPathIsJSON404(t *testing.T) {
 
 func TestUserFromProxyHeaders(t *testing.T) {
 	cfg := testConfig(t)
-	app := newTestApp(t, cfg, nil)
+	h := &fakeHub{allowed: true}
 	var u User
-	rec := serve(app, asUser(http.MethodGet, "/api/v1/user"))
+	rec := serve(newTestAppWithHub(t, cfg, nil, h), asUser(http.MethodGet, "/api/v1/user"))
 	decodeData(t, rec, &u)
 	if u.Username != "alice" || u.Email != "alice@example.com" || len(u.Groups) != 2 || !u.IsProviderAdmin {
 		t.Fatalf("user = %+v", u)
 	}
+	if h.auth != "Bearer sha256~token" {
+		t.Fatalf("the access review must carry the caller's own token, got %q", h.auth)
+	}
 
-	cfg.ProviderAdminGroups = []string{"ai-grid-admins"}
-	rec = serve(newTestApp(t, cfg, nil), asUser(http.MethodGet, "/api/v1/user"))
+	rec = serve(newTestAppWithHub(t, cfg, nil, &fakeHub{allowed: false}), asUser(http.MethodGet, "/api/v1/user"))
 	decodeData(t, rec, &u)
 	if u.IsProviderAdmin {
-		t.Fatal("alice is not in ai-grid-admins")
+		t.Fatal("the hub denied patch on managedclusters; alice is not a provider admin")
 	}
-	cfg.ProviderAdminGroups = []string{"cluster-admins"}
-	rec = serve(newTestApp(t, cfg, nil), asUser(http.MethodGet, "/api/v1/user"))
-	decodeData(t, rec, &u)
-	if !u.IsProviderAdmin {
-		t.Fatal("alice is in cluster-admins")
+
+	rec = serve(newTestAppWithHub(t, cfg, nil, &fakeHub{status: http.StatusUnauthorized}), asUser(http.MethodGet, "/api/v1/user"))
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expired token should give 401, got %d %s", rec.Code, rec.Body.String())
+	}
+
+	rec = serve(newTestAppWithHub(t, cfg, nil, &fakeHub{status: http.StatusBadGateway}), asUser(http.MethodGet, "/api/v1/user"))
+	if rec.Code != http.StatusBadGateway || decodeError(t, rec).Error.Message == "" {
+		t.Fatalf("hub failure should give 502 with a message, got %d %s", rec.Code, rec.Body.String())
 	}
 }
 

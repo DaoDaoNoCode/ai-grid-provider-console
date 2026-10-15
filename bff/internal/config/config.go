@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -21,11 +22,17 @@ const (
 	DefaultAuthGroupsHeader = "x-forwarded-groups"
 	// DefaultBackendAddress is the backend container in the same pod.
 	DefaultBackendAddress = "127.0.0.1:9090"
+	// DefaultBindAddress keeps the BFF off the pod network: only kube-auth-proxy
+	// in the same pod (and the kubelet through it) can reach it.
+	DefaultBindAddress = "127.0.0.1"
+	// DefaultHubCAFile is the API server CA mounted into every pod.
+	DefaultHubCAFile = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 )
 
 // Config is the fully resolved BFF configuration.
 type Config struct {
-	// BindAddress is the host part of the listen address. Empty binds all interfaces.
+	// BindAddress is the host part of the listen address. Loopback by default;
+	// "0.0.0.0" exposes the BFF without the proxy in front of it.
 	BindAddress string
 	Port        int
 	// CertFile and KeyFile enable TLS when both are set.
@@ -38,10 +45,12 @@ type Config struct {
 	AuthUserHeader   string
 	AuthEmailHeader  string
 	AuthGroupsHeader string
-	// ProviderAdminGroups marks callers in any of these groups as provider
-	// admins for the UI. Empty means every signed-in user. The backend
-	// enforces authorization regardless; this only drives what the UI offers.
-	ProviderAdminGroups []string
+	// HubAPIURL is the hub's Kubernetes API server, used for one call only: a
+	// SelfSubjectAccessReview with the caller's own token that decides
+	// isProviderAdmin. In a pod it defaults to the in-cluster address.
+	HubAPIURL string
+	// HubCAFile verifies the hub's serving certificate; empty uses system roots.
+	HubCAFile string
 
 	// Backend connection.
 	BackendAddress    string
@@ -69,9 +78,9 @@ func Parse(args []string, lookupEnv func(string) (string, bool)) (Config, error)
 	env := envReader{lookup: lookupEnv}
 
 	var cfg Config
-	var logLevel, adminGroups string
+	var logLevel string
 
-	fs.StringVar(&cfg.BindAddress, "bind-address", env.str("BIND_ADDRESS", ""), "Interface to listen on; empty for all")
+	fs.StringVar(&cfg.BindAddress, "bind-address", env.str("BIND_ADDRESS", DefaultBindAddress), "Interface to listen on; 0.0.0.0 for all")
 	fs.IntVar(&cfg.Port, "port", env.int("PORT", 8080), "Listen port")
 	fs.StringVar(&cfg.CertFile, "cert-file", env.str("CERT_FILE", ""), "TLS certificate file; enables TLS with key-file")
 	fs.StringVar(&cfg.KeyFile, "key-file", env.str("KEY_FILE", ""), "TLS private key file")
@@ -80,7 +89,8 @@ func Parse(args []string, lookupEnv func(string) (string, bool)) (Config, error)
 	fs.StringVar(&cfg.AuthUserHeader, "auth-user-header", env.str("AUTH_USER_HEADER", DefaultAuthUserHeader), "Header carrying the caller's user name")
 	fs.StringVar(&cfg.AuthEmailHeader, "auth-email-header", env.str("AUTH_EMAIL_HEADER", DefaultAuthEmailHeader), "Header carrying the caller's email")
 	fs.StringVar(&cfg.AuthGroupsHeader, "auth-groups-header", env.str("AUTH_GROUPS_HEADER", DefaultAuthGroupsHeader), "Header carrying the caller's groups")
-	fs.StringVar(&adminGroups, "provider-admin-groups", env.str("PROVIDER_ADMIN_GROUPS", ""), "Comma-separated groups shown provider-admin actions; empty for everyone")
+	fs.StringVar(&cfg.HubAPIURL, "hub-api-url", env.str("HUB_API_URL", inClusterAPIURL(env)), "Hub API server for the provider-admin access review; defaults to the in-cluster address in a pod")
+	fs.StringVar(&cfg.HubCAFile, "hub-ca-file", env.str("HUB_CA_FILE", inClusterCAFile(env)), "CA for the hub API server; empty for system roots")
 	fs.StringVar(&cfg.BackendAddress, "backend-address", env.str("BACKEND_ADDRESS", DefaultBackendAddress), "ai-grid-backend gRPC address")
 	fs.StringVar(&cfg.BackendCAFile, "backend-ca-file", env.str("BACKEND_CA_FILE", ""), "CA for TLS to the backend; empty for plaintext")
 	fs.StringVar(&cfg.BackendServerName, "backend-server-name", env.str("BACKEND_SERVER_NAME", ""), "Expected TLS server name of the backend")
@@ -98,14 +108,13 @@ func Parse(args []string, lookupEnv func(string) (string, bool)) (Config, error)
 	if err := cfg.LogLevel.UnmarshalText([]byte(logLevel)); err != nil {
 		return Config{}, fmt.Errorf("invalid log level %q: %w", logLevel, err)
 	}
-	cfg.ProviderAdminGroups = splitList(adminGroups)
 	if cfg.Port <= 0 || cfg.Port > 65535 {
 		return Config{}, fmt.Errorf("invalid port %d", cfg.Port)
 	}
 	if (cfg.CertFile == "") != (cfg.KeyFile == "") {
 		return Config{}, fmt.Errorf("cert-file and key-file must be set together")
 	}
-	for name, v := range map[string]string{"auth-token-header": cfg.AuthTokenHeader, "auth-user-header": cfg.AuthUserHeader, "backend-address": cfg.BackendAddress} {
+	for name, v := range map[string]string{"auth-token-header": cfg.AuthTokenHeader, "auth-user-header": cfg.AuthUserHeader, "backend-address": cfg.BackendAddress, "hub-api-url": cfg.HubAPIURL} {
 		if strings.TrimSpace(v) == "" {
 			return Config{}, fmt.Errorf("%s must not be empty", name)
 		}
@@ -122,14 +131,21 @@ func (c Config) TLSEnabled() bool { return c.CertFile != "" && c.KeyFile != "" }
 // ListenAddr is the address passed to the HTTP server.
 func (c Config) ListenAddr() string { return fmt.Sprintf("%s:%d", c.BindAddress, c.Port) }
 
-func splitList(s string) []string {
-	var out []string
-	for part := range strings.SplitSeq(s, ",") {
-		if part = strings.TrimSpace(part); part != "" {
-			out = append(out, part)
-		}
+// inClusterAPIURL mirrors client-go's in-cluster discovery: the kubelet injects
+// KUBERNETES_SERVICE_HOST and KUBERNETES_SERVICE_PORT into every pod.
+func inClusterAPIURL(env envReader) string {
+	host, port := env.str("KUBERNETES_SERVICE_HOST", ""), env.str("KUBERNETES_SERVICE_PORT", "")
+	if host == "" || port == "" {
+		return ""
 	}
-	return out
+	return "https://" + net.JoinHostPort(host, port)
+}
+
+func inClusterCAFile(env envReader) string {
+	if inClusterAPIURL(env) == "" {
+		return ""
+	}
+	return DefaultHubCAFile
 }
 
 type envReader struct {

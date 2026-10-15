@@ -19,9 +19,12 @@ Owner: Yuval Turgeman. Everything that touches the hub, Keycloak or metrics.
 1. Publish a container image and manifests for OpenShift (the Kind manifests already
    apply; only the image reference and the Keycloak values differ). Keycloak credentials
    belong in a Secret with a dedicated service account holding `query-organizations`.
-2. Accept the caller's identity: read `authorization`, `x-forwarded-user` and
-   `x-forwarded-groups` from gRPC metadata and authorize per RPC. Add `AiGrid/GetCurrentUser`
-   so the UI can stop guessing `isProviderAdmin` from groups.
+2. Act as the caller: build the hub client per request from the bearer token in the
+   `authorization` metadata the BFF already sends, so the hub's RBAC decides what each
+   user sees. Today the backend calls the hub as its own ServiceAccount, so every
+   signed-in user sees everything that ServiceAccount can (review of 2026-10-15). Once
+   done, the `ai-grid-provider-console-backend` ClusterRole in `manifests/` goes away, and
+   Keycloak stays on a service credential used only after a provider-admin check.
 3. Grow `ManagedCluster`: Available condition as `status`, the `consoleurl` claim,
    annotations (`ai-grid/site-name`, `ai-grid/latitude`, `ai-grid/longitude`). Add
    `UpdateManagedCluster` for enrol and location, with `patch` in the ClusterRole.

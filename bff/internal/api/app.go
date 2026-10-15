@@ -7,6 +7,7 @@ import (
 
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/backend"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/config"
+	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/hub"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/identity"
 )
 
@@ -21,15 +22,18 @@ type App struct {
 	cfg     config.Config
 	logger  *slog.Logger
 	backend *backend.Client
+	// hub answers the provider-admin access review with the caller's token.
+	hub     *hub.Client
 	headers identity.Headers
 }
 
 // NewApp assembles the application.
-func NewApp(cfg config.Config, logger *slog.Logger, client *backend.Client) *App {
+func NewApp(cfg config.Config, logger *slog.Logger, client *backend.Client, hubClient *hub.Client) *App {
 	return &App{
 		cfg:     cfg,
 		logger:  logger,
 		backend: client,
+		hub:     hubClient,
 		headers: identity.Headers{
 			User:        cfg.AuthUserHeader,
 			Email:       cfg.AuthEmailHeader,
