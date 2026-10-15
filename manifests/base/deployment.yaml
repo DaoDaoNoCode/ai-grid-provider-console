@@ -139,6 +139,9 @@ spec:
               port: 8443
               scheme: HTTPS
             periodSeconds: 5
+            # /readyz waits up to 3s for the backend's Ping; leave room for it
+            # plus the hop through the proxy, or a slow ping flaps readiness.
+            timeoutSeconds: 5
           resources:
             requests:
               cpu: 50m

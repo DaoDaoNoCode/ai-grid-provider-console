@@ -36,7 +36,8 @@ How the pieces connect:
    plaintext) and forwards the caller's token as `authorization` metadata
    (`bff/internal/backend`). For `/api/v1/user` it posts a `SelfSubjectAccessReview` to
    `HUB_API_URL` with the caller's token (`bff/internal/hub`); `make dev-bff` sets it from
-   `oc whoami --show-server`.
+   `oc whoami --show-server`, and `HUB_CA_FILE` from the kubeconfig's cluster CA when it has
+   one (`hack/hub-ca.sh`). Plaintext `http://` is accepted for loopback only.
 3. The Vite dev server proxies `/api` to the BFF and sets `x-forwarded-access-token` and
    `x-forwarded-user` from `oc whoami` (`frontend/vite.config.ts`). After a 401 they are
    re-read, so a new `oc login` is picked up without restarting. `AUTH_GROUPS` adds a

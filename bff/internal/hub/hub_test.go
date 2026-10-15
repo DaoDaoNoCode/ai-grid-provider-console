@@ -94,6 +94,14 @@ func TestNewValidates(t *testing.T) {
 	if _, err := New(Config{URL: "api.example.com"}); err == nil {
 		t.Error("URL without scheme should fail")
 	}
+	if _, err := New(Config{URL: "http://api.example.com"}); err == nil {
+		t.Error("plaintext to a remote host must be refused; the token travels with every review")
+	}
+	for _, local := range []string{"http://127.0.0.1:8001", "http://localhost:8001", "http://[::1]:8001"} {
+		if _, err := New(Config{URL: local}); err != nil {
+			t.Errorf("plaintext to loopback %s should be allowed: %v", local, err)
+		}
+	}
 	if _, err := New(Config{URL: "https://api.example.com", CAFile: "/nonexistent/ca.crt"}); err == nil {
 		t.Error("missing CA file should fail")
 	}

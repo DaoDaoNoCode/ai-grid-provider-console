@@ -13,7 +13,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"strings"
 	"time"
@@ -59,8 +61,15 @@ func New(cfg Config) (*Client, error) {
 	if url == "" {
 		return nil, errors.New("hub API URL must not be empty")
 	}
-	if !strings.HasPrefix(url, "https://") && !strings.HasPrefix(url, "http://") {
-		return nil, fmt.Errorf("hub API URL %q must start with https://", url)
+	// The caller's token travels with every review, so plaintext is only
+	// acceptable to loopback (a local proxy or a test server).
+	if !strings.HasPrefix(url, "https://") {
+		if !strings.HasPrefix(url, "http://") {
+			return nil, fmt.Errorf("hub API URL %q must start with https://", url)
+		}
+		if !isLoopback(url) {
+			return nil, fmt.Errorf("hub API URL %q is plaintext; only https:// is accepted for non-loopback hosts", url)
+		}
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	if cfg.CAFile != "" {
@@ -79,6 +88,20 @@ func New(cfg Config) (*Client, error) {
 		timeout = 5 * time.Second
 	}
 	return &Client{baseURL: url, http: &http.Client{Transport: transport, Timeout: timeout}}, nil
+}
+
+// isLoopback reports whether an http:// URL points at the local machine.
+func isLoopback(rawURL string) bool {
+	u, err := neturl.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // URL returns the API server the client talks to.
