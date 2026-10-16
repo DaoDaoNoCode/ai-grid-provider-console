@@ -6,6 +6,7 @@ points to the detail:
 
 | For | Read |
 |---|---|
+| What the BFF may do (transport only) and what belongs to the backend and so to the fake | [../AGENTS.md](../AGENTS.md) |
 | Every endpoint, JSON shape, body rule and error mapping | [docs/plan/bff-api.md](../docs/plan/bff-api.md) |
 | The draft proto the BFF and the fake compile against, and the deliberate stubs | [proto/README.md](proto/README.md) |
 | The fixture files and what each one seeds | [fixtures/README.md](fixtures/README.md) |

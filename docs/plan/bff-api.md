@@ -61,6 +61,8 @@ bff/
 Adding an endpoint: draft the RPC in `mock/proto/ai_grid/v1` (and propose it to the backend),
 `make -C bff generate`, implement or stub it in the fake, map it in a handler under `internal/api`, add it to the table below and to
 `frontend/src/api/ConsoleService.ts`.
+The handler does transport only; validation, defaults, versions, filtering and derived fields
+belong to the backend (the root `AGENTS.md`, which also lists the exceptions the BFF still has).
 
 ## Endpoints
 
