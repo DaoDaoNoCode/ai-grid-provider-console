@@ -179,10 +179,10 @@ func TestGetModel(t *testing.T) {
 func TestCreateModel(t *testing.T) {
 	fake := &backendtest.Fake{Models: seedModels()}
 	app := newTestApp(t, testConfig(t), fake)
-	body := `{"name": "mistral-7b", "namespace": "ai-grid-models", "displayName": "Mistral 7B", "description": "EU sites", "modelUri": "oci://registry.example.com/models/mistral:v0.3", "modelName": "example-org/mistral-7b",
+	body := `{"name": "mistral-7b", "namespace": "ai-grid-models", "modelUri": "oci://registry.example.com/models/mistral:v0.3", "modelName": "example-org/mistral-7b",
 	  "runtimeImage": "quay.io/example/vllm-cuda:v0.11.0", "replicas": 2, "baseRefs": ["v3-6-0-kserve-config-llm-template"], "cpu": "8", "memory": "32Gi", "gpuCount": 1, "env": [{"name": "VLLM_ADDITIONAL_ARGS", "value": "--max-model-len 8192"}],
 	  "placement": {"matchLabels": {"ai-grid/enabled": "true"}, "matchExpressions": [{"key": "location", "operator": "In", "values": ["paris", "madrid"]}], "tolerations": [{"key": "cluster.open-cluster-management.io/unreachable", "operator": "Exists", "tolerationSeconds": 600}], "numberOfClusters": 2},
-	  "rollout": {"strategy": "Progressive", "maxConcurrency": "1", "progressDeadline": "15m"}, "labels": {"ai-grid/family": "mistral"}}`
+	  "rollout": {"strategy": "Progressive", "maxConcurrency": "1", "progressDeadline": "15m"}, "labels": {"ai-grid/family": "mistral"}, "annotations": {"openshift.io/display-name": "Mistral 7B", "openshift.io/description": "EU sites"}}`
 	rec := serve(app, jsonRequest(http.MethodPost, "/api/v1/models", body))
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
@@ -324,17 +324,19 @@ func TestPatchModel(t *testing.T) {
 		t.Errorf("placement: null removes it: %d %v", rec.Code, fake.LastUpdateModel)
 	}
 
-	// An empty body answers like GET, without a write and whatever If-Match says.
+	// An empty body is 422 and calls nothing, so a stale If-Match is never
+	// answered with the current object.
 	fake.Calls = nil
 	rec = serve(app, withIfMatch(jsonRequest(http.MethodPatch, tiny, `{}`), `"1"`))
-	if rec.Code != http.StatusOK || strings.Join(fake.Calls, ",") != "GetModel" || rec.Header().Get("ETag") != `"11"` {
-		t.Errorf("empty patch = %d, calls %v, ETag %q", rec.Code, fake.Calls, rec.Header().Get("ETag"))
+	if rec.Code != http.StatusUnprocessableEntity || len(fake.Calls) != 0 || decodeError(t, rec).Error.Message != "the request body names no field to change" {
+		t.Errorf("empty patch = %d %s, calls %v", rec.Code, rec.Body.String(), fake.Calls)
 	}
 	fake.Calls = nil
 	for _, tc := range []struct{ body, message string }{
 		{`{"nope": 1}`, `invalid request body: json: unknown field "nope"`},
 		// The display name and description are annotation keys now.
 		{`{"displayName": "Tiny"}`, `invalid request body: json: unknown field "displayName"`},
+		{`{"replicas": "2"}`, `invalid request body: field "replicas" must be a whole number`},
 		{`{"description": "x"}`, `invalid request body: json: unknown field "description"`},
 		{`{"rollout": {"strategy": "Blue"}}`, "rollout.strategy must be All, Progressive or ProgressivePerGroup"},
 		{`{"placement": {"nope": 1}}`, `invalid request body: json: unknown field "nope"`},
@@ -482,5 +484,19 @@ func TestPatchModelSendsEveryPresentField(t *testing.T) {
 	rec := serve(app, withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/models/ns/bare", `{"replicas": 1, "runtimeImage": "img", "env": [], "placement": null, "rollout": {}, "labels": {}, "annotations": {}}`), `"1"`))
 	if rec.Code != http.StatusOK || strings.Join(fake.LastUpdateModel.GetUpdateMask().GetPaths(), ",") != "spec.replicas,spec.main.image,spec.main.env,spec.placement,spec.rollout,metadata.labels,metadata.annotations" {
 		t.Errorf("bare model = %d %s, mask %v", rec.Code, rec.Body.String(), fake.LastUpdateModel.GetUpdateMask().GetPaths())
+	}
+}
+
+// The display name and description travel as annotations on create too,
+// so a client sets them one way on both POST and PATCH.
+func TestCreateModelTakesNoDisplayNameField(t *testing.T) {
+	fake := &backendtest.Fake{Models: seedModels()}
+	app := newTestApp(t, testConfig(t), fake)
+	for _, field := range []string{"displayName", "description"} {
+		body := `{"name": "m", "namespace": "ai-grid-models", "modelUri": "hf://example-org/m", "` + field + `": "x"}`
+		rec := serve(app, jsonRequest(http.MethodPost, "/api/v1/models", body))
+		if rec.Code != http.StatusUnprocessableEntity || decodeError(t, rec).Error.Message != `invalid request body: json: unknown field "`+field+`"` || fake.Reached("CreateModel") {
+			t.Errorf("%s on create = %d %s", field, rec.Code, rec.Body.String())
+		}
 	}
 }

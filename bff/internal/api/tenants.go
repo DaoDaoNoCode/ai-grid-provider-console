@@ -120,7 +120,10 @@ func listFilter(r *http.Request, removed ...string) (*string, error) {
 			return nil, Errorf(http.StatusUnprocessableEntity, fmt.Sprintf(`query parameter %q is not supported; send a CEL filter in "filter"`, name))
 		}
 	}
-	if f := q.Get("filter"); f != "" {
+	if len(q["filter"]) > 1 {
+		return nil, Errorf(http.StatusUnprocessableEntity, `query parameter "filter" must be sent once; join the conditions with && in one expression`)
+	}
+	if f := strings.TrimSpace(q.Get("filter")); f != "" {
 		return proto.String(f), nil
 	}
 	return nil, nil
@@ -181,10 +184,9 @@ func pagedOrFiltered(offset, limit *int, filtered bool) bool {
 	return filtered || limit != nil || (offset != nil && *offset > 0)
 }
 
-// getTenant answers GET /api/v1/tenants/{id}, and a PATCH that names no
-// field. Unlike GET /clusters/{name} it has no list fallback: the shipped
-// backend has no GetTenant RPC, so against it this is 501 (Unimplemented),
-// like every tenant write.
+// getTenant answers GET /api/v1/tenants/{id}. Unlike GET /clusters/{name} it
+// has no list fallback: the shipped backend has no GetTenant RPC, so against
+// it this is 501 (Unimplemented), like every tenant write.
 func (a *App) getTenant(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := a.backend.Context(r.Context())
 	defer cancel()
@@ -255,7 +257,7 @@ type TenantPatch struct {
 // PUT that changes nothing. The If-Match version, which the client must send
 // (requireIfMatch), travels as `object.resource_version`, which the backend
 // compares with the version it keeps (a stale tab gets 409). A body that
-// names no field is answered like GET (getTenant), with no write.
+// names no field is 422.
 func (a *App) patchTenant(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := requireJSON(r); err != nil {
@@ -305,7 +307,7 @@ func (a *App) patchTenant(w http.ResponseWriter, r *http.Request) {
 		paths = append(paths, maskAttributes)
 	}
 	if len(paths) == 0 {
-		a.getTenant(w, r)
+		a.respondError(w, r, Errorf(http.StatusUnprocessableEntity, "the request body names no field to change"))
 		return
 	}
 	ctx, cancel := a.backend.Context(r.Context())

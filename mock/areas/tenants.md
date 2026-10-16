@@ -122,9 +122,10 @@ Invented here, because nothing in Keycloak or the conventions fixes a text, and 
 the backend so they become the contract (`mock/research/keycloak.md` 8.2 has the
 permission, realm, unavailable and request-shape texts; the `update_mask` and list texts are
 proposed here). A client only displays them. Fake backend (gRPC status messages):
-- `PermissionDenied`: `User "<user>" is not a provider admin: cannot patch resource
-  "managedclusters" in API group "cluster.open-cluster-management.io" at the cluster scope`
-  (`authorizeProviderAdmin`, `server.go`).
+- `PermissionDenied`: `User "<user>" is not a provider admin, and only provider admins can
+  change tenants (a provider admin may patch ManagedClusters on the hub)` (`models` for a model
+  write; `authorizeProviderAdmin`, `server.go`). It names what the caller tried to change, then
+  the rule, so a viewer creating a tenant is not told about ManagedClusters alone.
 - `FailedPrecondition`: the wrapper `Keycloak realm "ai-grid": ` before Keycloak's "Realm not
   found." or "Organizations not enabled for this realm.".
 - `Unavailable`: the prefix `Keycloak is unavailable: ` before the fixture's text (the text
@@ -158,16 +159,15 @@ body-decoding (`invalid request body: ...`) and status texts (`errors.go`) are s
 other areas.
 BFF: `GET /api/v1/tenants?offset=&limit=&filter=` with a `meta` page and the client's
 `filter` forwarded unchanged (the BFF no longer builds an expression from a `search` term),
-`GET/PATCH/DELETE /api/v1/tenants/{id}` (a PATCH body that names no field is answered like the
-GET), `POST /api/v1/tenants` (201 + Location); Keycloak's messages reach the client as 422 and
+`GET/PATCH/DELETE /api/v1/tenants/{id}` (a PATCH body that names no field is 422),
+`POST /api/v1/tenants` (201 + Location); Keycloak's messages reach the client as 422 and
 409 (a blank name on PATCH is 409,
 see above); an absent `enabled` from today's backend (fields 1-3 only) reads as enabled; the
 JSON has no `redirectUrl` and carries `resourceVersion` (also the `ETag` of a single tenant);
 PATCH and DELETE need `If-Match` (428 without it) and map it to the version fields above (409
 when stale). Against the shipped backend, which has only `ListTenants`, `GET
 /api/v1/tenants/{id}` has no list fallback (unlike `GET /api/v1/clusters/{name}`) and answers
-501, as do every tenant write and a PATCH that sets no field (it reads with `GetTenant`), and
-so does a list with `filter`, `limit` or an `offset` above 0: the shipped `ListTenantsRequest`
+501, as does every tenant write, and so does a list with `filter`, `limit` or an `offset` above 0: the shipped `ListTenantsRequest`
 is empty and its response has no `total`, so the BFF cannot tell a filtered result from the
 unfiltered list and refuses it (`docs/plan/bff-api.md`).
 UI: main already has a basic, read-only Tenants page (`frontend/src/pages/TenantsPage.tsx`:

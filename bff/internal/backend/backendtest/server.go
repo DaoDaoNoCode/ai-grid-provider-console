@@ -147,8 +147,9 @@ func (f *Fake) GetManagedCluster(ctx context.Context, req *aigridv1.GetManagedCl
 	return &aigridv1.GetManagedClusterResponse{Object: proto.Clone(c).(*aigridv1.ManagedCluster)}, nil
 }
 
-// UpdateManagedCluster implements ManagedClusters: mask paths `labels`,
-// `annotations`, `hub_accepts_client`; `lock` compares `resource_version`
+// UpdateManagedCluster implements ManagedClusters: mask paths `labels` and
+// `annotations` (the fake also refuses keys outside the console's; this
+// stand-in does not); `lock` compares `resource_version`
 // and answers Aborted on a mismatch; an update that changes nothing keeps
 // the version.
 func (f *Fake) UpdateManagedCluster(ctx context.Context, req *aigridv1.UpdateManagedClusterRequest) (*aigridv1.UpdateManagedClusterResponse, error) {
@@ -170,8 +171,6 @@ func (f *Fake) UpdateManagedCluster(ctx context.Context, req *aigridv1.UpdateMan
 			next.Labels = maps.Clone(req.GetObject().GetLabels())
 		case "annotations":
 			next.Annotations = maps.Clone(req.GetObject().GetAnnotations())
-		case "hub_accepts_client":
-			next.HubAcceptsClient = req.GetObject().GetHubAcceptsClient()
 		default:
 			return nil, status.Errorf(codes.InvalidArgument, "update_mask path %q is not supported", p)
 		}
@@ -179,7 +178,7 @@ func (f *Fake) UpdateManagedCluster(ctx context.Context, req *aigridv1.UpdateMan
 	if proto.Equal(next, c) {
 		return &aigridv1.UpdateManagedClusterResponse{Object: c}, nil
 	}
-	c.Labels, c.Annotations, c.HubAcceptsClient = next.Labels, next.Annotations, next.HubAcceptsClient
+	c.Labels, c.Annotations = next.Labels, next.Annotations
 	rv, err := strconv.Atoi(c.GetResourceVersion())
 	if err != nil {
 		rv = 0 // a fixture without a numeric version starts counting here

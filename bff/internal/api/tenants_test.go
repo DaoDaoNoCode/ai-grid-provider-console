@@ -115,9 +115,22 @@ func TestListTenantsPagesAndFilters(t *testing.T) {
 	} {
 		rec = serve(app, asUser(http.MethodGet, "/api/v1/tenants?filter="+url.QueryEscape(filter)))
 		meta = decodeList(t, rec, &list)
-		if rec.Code != http.StatusOK || len(list) != 1 || list[0].Name != want || total(meta) != 1 || fake.LastListTenants.GetFilter() != filter {
+		// Forwarded as written, only the surrounding whitespace trimmed.
+		if rec.Code != http.StatusOK || len(list) != 1 || list[0].Name != want || total(meta) != 1 || fake.LastListTenants.GetFilter() != strings.TrimSpace(filter) {
 			t.Errorf("filter %q = %d %+v %+v, request %q", filter, rec.Code, list, meta, fake.LastListTenants.GetFilter())
 		}
+	}
+	// A repeated filter is 422: only one expression is evaluated, so the
+	// second would be silently dropped.
+	if rec := serve(app, asUser(http.MethodGet, "/api/v1/tenants?filter=true&filter=false")); rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("repeated filter = %d %s", rec.Code, rec.Body.String())
+	}
+	// A whitespace-only parameter is no filter, so the shipped backend's 501
+	// is not triggered by it.
+	rec = serve(app, asUser(http.MethodGet, "/api/v1/tenants?filter=%20%20"))
+	meta = decodeList(t, rec, &list)
+	if rec.Code != http.StatusOK || fake.LastListTenants.Filter != nil || total(meta) != 3 {
+		t.Errorf("whitespace filter = %d, request %v", rec.Code, fake.LastListTenants)
 	}
 	// An empty parameter is no filter.
 	rec = serve(app, asUser(http.MethodGet, "/api/v1/tenants?filter="))
@@ -341,11 +354,11 @@ func TestPatchTenant(t *testing.T) {
 		}
 	})
 
-	t.Run("an empty body answers like GET; the alias goes to the backend", func(t *testing.T) {
+	t.Run("an empty body is 422; the alias goes to the backend", func(t *testing.T) {
 		fake := &backendtest.Fake{Tenants: seedTenants()}
 		app := newTestApp(t, testConfig(t), fake)
 		rec := serve(app, patchTenant("t-2", "9", `{}`))
-		if rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"1"` || strings.Join(fake.Calls, ",") != "GetTenant" {
+		if rec.Code != http.StatusUnprocessableEntity || len(fake.Calls) != 0 {
 			t.Errorf("empty patch = %d, calls %v", rec.Code, fake.Calls)
 		}
 		// The alias is a mask path like the others; the backend keeps the
@@ -371,9 +384,9 @@ func TestPatchTenant(t *testing.T) {
 			t.Errorf("missing = %d", rec.Code)
 		}
 		for body, want := range map[string]string{
-			`{"enabled": "yes"}`: `invalid request body: field "enabled" must be a bool`,
+			`{"enabled": "yes"}`: `invalid request body: field "enabled" must be true or false`,
 			`{"version": 3}`:     `invalid request body: json: unknown field "version"`,
-			`{"domains": "a"}`:   `invalid request body: field "domains" must be a []string`,
+			`{"domains": "a"}`:   `invalid request body: field "domains" must be an array`,
 			`{"enabled": true}}`: "invalid request body: unexpected content after the JSON object",
 			`null`:               "invalid request body: must be a JSON object",
 		} {
@@ -463,8 +476,9 @@ func TestTenantVersions(t *testing.T) {
 	if rec.Code != http.StatusPreconditionRequired || decodeError(t, rec).Error.Code != "428" || len(fake.Calls) != 0 {
 		t.Errorf("PATCH without If-Match = %d %s, calls %v", rec.Code, rec.Body.String(), fake.Calls)
 	}
-	// A PATCH that sets no field writes nothing, so it does not check a version.
-	if rec := serve(app, withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/tenants/t-1", `{}`), `"1"`)); rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"5"` {
+	// A PATCH that sets no field is 422, so a stale If-Match is never
+	// answered with the current object.
+	if rec := serve(app, withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/tenants/t-1", `{}`), `"1"`)); rec.Code != http.StatusUnprocessableEntity || rec.Header().Get("ETag") != "" {
 		t.Errorf("empty PATCH with a stale If-Match = %d, ETag %q", rec.Code, rec.Header().Get("ETag"))
 	}
 	if rec := serve(app, withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/tenants/t-1", `{"enabled": false}`), `5`)); rec.Code != http.StatusUnprocessableEntity {

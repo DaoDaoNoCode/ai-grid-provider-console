@@ -46,7 +46,7 @@ func TestUnchangedClusterUpdateIsNotWritten(t *testing.T) {
 		obj   *aigridv1.ManagedCluster
 		paths []string
 	}{
-		{"the stored maps", &aigridv1.ManagedCluster{Labels: stored.GetLabels(), Annotations: stored.GetAnnotations(), HubAcceptsClient: stored.GetHubAcceptsClient()}, []string{PathLabels, PathAnnotations, PathHubAcceptsClient}},
+		{"the stored maps", &aigridv1.ManagedCluster{Labels: stored.GetLabels(), Annotations: stored.GetAnnotations()}, []string{PathLabels, PathAnnotations}},
 		{"without a hub-owned label", &aigridv1.ManagedCluster{Labels: withoutName}, []string{PathLabels}},
 	} {
 		tc.obj.Name, tc.obj.ResourceVersion = "a", rv
@@ -80,13 +80,11 @@ func TestClusterCoordinatesAreChecked(t *testing.T) {
 		return resp.GetObject(), err
 	}
 	for annotations, want := range map[[2]string]string{
-		{AnnotationLatitude, "91"}:       `annotation "ai-grid/latitude" must be a number between -90 and 90, got "91"`,
-		{AnnotationLatitude, "north"}:    `annotation "ai-grid/latitude" must be a number between -90 and 90, got "north"`,
-		{AnnotationLatitude, ""}:         `annotation "ai-grid/latitude" must be a number between -90 and 90, got ""`,
-		{AnnotationLatitude, "NaN"}:      `annotation "ai-grid/latitude" must be a number between -90 and 90, got "NaN"`,
-		{AnnotationLongitude, "-180.5"}:  `annotation "ai-grid/longitude" must be a number between -180 and 180, got "-180.5"`,
-		{AnnotationLongitude, "+Inf"}:    `annotation "ai-grid/longitude" must be a number between -180 and 180, got "+Inf"`,
-		{AnnotationLongitude, " 2.3522"}: `annotation "ai-grid/longitude" must be a number between -180 and 180, got " 2.3522"`,
+		{AnnotationLatitude, "91"}:      `annotation "ai-grid/latitude" must be a number between -90 and 90, got "91"`,
+		{AnnotationLatitude, "north"}:   `annotation "ai-grid/latitude" must be a number between -90 and 90, got "north"`,
+		{AnnotationLatitude, "NaN"}:     `annotation "ai-grid/latitude" must be a number between -90 and 90, got "NaN"`,
+		{AnnotationLongitude, "-180.5"}: `annotation "ai-grid/longitude" must be a number between -180 and 180, got "-180.5"`,
+		{AnnotationLongitude, "+Inf"}:   `annotation "ai-grid/longitude" must be a number between -180 and 180, got "+Inf"`,
 	} {
 		_, err := update(map[string]string{annotations[0]: annotations[1]})
 		mustCode(t, err, codes.InvalidArgument, want)
@@ -95,8 +93,16 @@ func TestClusterCoordinatesAreChecked(t *testing.T) {
 	if err != nil || got.GetAnnotations()[AnnotationLatitude] != "-90" {
 		t.Errorf("valid coordinates = %v, %v", got, err)
 	}
+	// What the read side shows fine passes: it trims the value and shows an
+	// empty one as no coordinate, so a client sending the map it loaded back
+	// is not refused for a key it never touched.
+	for _, v := range []string{" 2.3522", "2.3522\n", ""} {
+		if _, err := update(map[string]string{AnnotationLongitude: v}); err != nil {
+			t.Errorf("longitude %q = %v", v, err)
+		}
+	}
 	// Labels alone are not checked against annotations the fixtures carry.
-	if _, err := s.UpdateManagedCluster(ctx, &aigridv1.UpdateManagedClusterRequest{Object: &aigridv1.ManagedCluster{Name: "a", Labels: map[string]string{"x": "y"}}, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{PathLabels}}}); err != nil {
+	if _, err := s.UpdateManagedCluster(ctx, &aigridv1.UpdateManagedClusterRequest{Object: &aigridv1.ManagedCluster{Name: "a", Labels: labelsWith(readyCluster("a"), "ai-grid/x", "y")}, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{PathLabels}}}); err != nil {
 		t.Errorf("labels update = %v", err)
 	}
 }

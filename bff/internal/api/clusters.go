@@ -11,6 +11,7 @@ import (
 	"math"
 	"mime"
 	"net/http"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -266,20 +267,20 @@ func (a *App) fetchCluster(ctx context.Context, name string) (*aigridv1.ManagedC
 // paths), so a client that changes one label sends the `labels` map it
 // loaded with that label set, and removes a label by leaving it out. The BFF
 // neither merges, compares nor validates the maps: the backend applies them
-// under optimistic locking, puts back what the hub owns, checks the AI Grid
-// annotations it understands (`ai-grid/latitude`, `ai-grid/longitude`) and
-// does not write an update that changes nothing.
+// under optimistic locking, puts back what the hub owns, refuses a change to
+// any key outside `ai-grid/*` and `location`, checks the AI Grid annotations
+// it understands (`ai-grid/latitude`, `ai-grid/longitude`) and does not
+// write an update that changes nothing. Hub acceptance is not writable here:
+// no page needs it, and a mistake would make the hub drop a live site.
 type ClusterPatch struct {
-	Labels           *map[string]string `json:"labels"`
-	Annotations      *map[string]string `json:"annotations"`
-	HubAcceptsClient *bool              `json:"hubAcceptsClient"`
+	Labels      *map[string]string `json:"labels"`
+	Annotations *map[string]string `json:"annotations"`
 }
 
 // Field-mask paths of UpdateManagedCluster.
 const (
 	maskClusterLabels      = "labels"
 	maskClusterAnnotations = "annotations"
-	maskHubAcceptsClient   = "hub_accepts_client"
 )
 
 // maxBodyBytes bounds a JSON request body; a patch or a tenant is a handful
@@ -353,8 +354,8 @@ func decodeObject(dec *json.Decoder, into any) error {
 // field mask, the If-Match version (required, requireIfMatch) the object's
 // `resource_version` with `lock: true`, so a stale tab or a concurrent
 // change is the backend's Aborted, 409. The BFF does not read the cluster
-// first. A body that names no field is answered like GET (getCluster), with
-// no write: a transport shortcut, not a comparison.
+// first. A body that names no field is 422: there is nothing to send, and
+// answering it like GET would skip the If-Match check.
 func (a *App) patchCluster(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if err := requireJSON(r); err != nil {
@@ -383,12 +384,8 @@ func (a *App) patchCluster(w http.ResponseWriter, r *http.Request) {
 		obj.Annotations = *patch.Annotations
 		paths = append(paths, maskClusterAnnotations)
 	}
-	if patch.HubAcceptsClient != nil {
-		obj.HubAcceptsClient = *patch.HubAcceptsClient
-		paths = append(paths, maskHubAcceptsClient)
-	}
 	if len(paths) == 0 {
-		a.getCluster(w, r)
+		a.respondError(w, r, Errorf(http.StatusUnprocessableEntity, "the request body names no field to change"))
 		return
 	}
 	ctx, cancel := a.backend.Context(r.Context())
@@ -417,6 +414,30 @@ func copyMap(m map[string]string) map[string]string {
 }
 
 // decodeErrorMessage keeps the useful part of a JSON decoding error.
+// jsonKind names a Go type the way a JSON client knows it ("an object", "a
+// string"), so a type error never shows the BFF's internal type names.
+func jsonKind(t reflect.Type) string {
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	switch t.Kind() {
+	case reflect.Struct, reflect.Map:
+		return "an object"
+	case reflect.Slice, reflect.Array:
+		return "an array"
+	case reflect.String:
+		return "a string"
+	case reflect.Bool:
+		return "true or false"
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return "a whole number"
+	case reflect.Float32, reflect.Float64:
+		return "a number"
+	}
+	return "a different JSON type"
+}
+
 func decodeErrorMessage(err error) string {
 	var syntax *json.SyntaxError
 	var typ *json.UnmarshalTypeError
@@ -424,7 +445,7 @@ func decodeErrorMessage(err error) string {
 	case errors.As(err, &syntax), errors.Is(err, io.ErrUnexpectedEOF):
 		return "malformed JSON"
 	case errors.As(err, &typ):
-		return fmt.Sprintf("field %q must be a %s", typ.Field, typ.Type)
+		return fmt.Sprintf("field %q must be %s", typ.Field, jsonKind(typ.Type))
 	case errors.Is(err, io.EOF):
 		return "empty body"
 	}

@@ -85,8 +85,9 @@ Failure modes:
   message (`workload_single_node.go:418-443`, :442), before its one status write
   (`controller.go:246-262`); and the deployment controller writes `Available` on every status
   sync (Kubernetes `pkg/controller/deployment/sync.go:525-531`, v1.35.8), so only a Deployment
-  without any status yet reads `Progressing`. `url` and `addresses` are present, `readyReplicas` stays 0. On a hub the
-  phase is FAILED/`MinimumReplicasUnavailable`; on a spoke see the rollout below.
+  without any status yet reads `Progressing`. `url` and `addresses` are present, `readyReplicas`
+  stays 0. On a hub the phase is PENDING/`MinimumReplicasUnavailable` for good (no condition
+  tells it from a slow start); on a spoke see the rollout below.
 - A referenced Gateway that does not exist (anything but
   `openshift-ingress/{openshift-ai-inference,maas-default-gateway}`, the product-default names):
   `GatewaysReady`, `RouterReady` and `Ready` False/`RefsInvalid` "Gateway <ns>/<name> does not
@@ -206,7 +207,12 @@ out of the summary, and its cluster is to apply again like a new one.
   area will wire up (nothing references a model today).
 
 Phase (a console derivation, see `ModelPhase` in `model_type.proto`): a hub deployment is READY
-when `Ready` is True, FAILED when it is False (also while starting), PENDING otherwise. A placed
+when `Ready` is True, FAILED when it is False with a reason that does not recover on its own
+(`terminalReadyReasons`: `ConfigNotFound`, `RefsInvalid`, `GatewaysNotReady`, the set the
+ManifestWork template's Degraded rule uses), PENDING otherwise, with the condition's reason:
+KServe reports `Ready` False with `WaitingForGateway`, `Progressing` and
+`MinimumReplicasUnavailable` while a healthy model starts, so "False means failed" showed every
+new model as failed for its first 45 s. A placed
 model is READY when `PlacementRolledOut` and `ManifestworkApplied` are True; FAILED when
 `ManifestworkApplied` is `NotAsExpected` and a work is degraded or failed to apply; otherwise
 PENDING with the reason of `PlacementVerified` when it is False, of `PlacementRolledOut` when
@@ -301,9 +307,9 @@ inventions, plus `placement` (selector, selected clusters, `PlacementSatisfied`)
 (strategy, summary without `updated`, per-site works with their condition statuses and the
 `ready` and `url` feedback); `url` is omitted when empty; PATCH is one `UpdateModel` with every
 present field in the mask (no read first, no comparison; `labels` and `annotations` are whole
-maps, and the display name and description are their `openshift.io/*` annotation keys, not PATCH
-fields), locked on the `If-Match` version the client must send (428 without it), and a body that
-names no field is answered like the GET; DELETE needs `If-Match` too and passes
+maps, and the display name and description are their `openshift.io/*` annotation keys, not body
+fields on PATCH or POST), locked on the `If-Match` version the client must send (428 without it),
+and a body that names no field is 422; DELETE needs `If-Match` too and passes
 it as `DeleteModelRequest.resource_version`, which the fake checks like a Kubernetes
 delete precondition (`Aborted` with the update's wording when stale); GET, POST and PATCH send
 the `resourceVersion` as the `ETag`.

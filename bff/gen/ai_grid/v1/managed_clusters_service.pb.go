@@ -275,7 +275,7 @@ type UpdateManagedClusterRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The cluster with the new values. `name` identifies it.
 	Object *ManagedCluster `protobuf:"bytes,1,opt,name=object,proto3" json:"object,omitempty"`
-	// Paths to update. Supported: `labels`, `annotations`, `hub_accepts_client`.
+	// Paths to update. Supported: `labels`, `annotations`.
 	// A map path replaces the whole map (FieldMask semantics, as in OSAC); to
 	// change one key, send the full map as returned by Get with that key
 	// changed. Per-key paths such as `labels.ai-grid/enabled` are not

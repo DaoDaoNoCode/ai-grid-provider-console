@@ -202,7 +202,7 @@ status:
     - {type: Ready, status: "False", reason: GatewaysNotReady}
 ```
 
-While the workload is starting, conditions that have not been evaluated are simply absent or `Unknown`; `Ready` is `Unknown` until all three dependents are set (Knative semantics). There is no `phase` field on LLMISvc; the UI's "Pending/Ready/Failed" has to be derived (`Ready=True` -> Ready; `Ready=False` -> Failed/NotReady with reason; otherwise Pending).
+While the workload is starting, conditions that have not been evaluated are simply absent or `Unknown`; `Ready` is `Unknown` until all three dependents are set (Knative semantics). There is no `phase` field on LLMISvc; the UI's "Pending/Ready/Failed" has to be derived. `Ready=False` does not mean failed: KServe also reports it with `WaitingForGateway`, `Progressing` or `MinimumReplicasUnavailable` while a healthy model starts (`mock/areas/models.md`, lifecycle), so the console's rule is `Ready=True` -> Ready; `Ready=False` with a reason that does not recover on its own (`ConfigNotFound`, `RefsInvalid`, `GatewaysNotReady`) -> Failed with that reason; anything else -> Pending with the condition's reason. (Corrected 2026-10-16: the earlier rule mapped every `Ready=False` to Failed.)
 
 ### 2.2 InferenceService (`serving.kserve.io/v1beta1`, alias `isvc`) - no instances on the hub
 
@@ -659,7 +659,7 @@ message Container { string image = 1; map<string,string> requests = 2; map<strin
 message Scaling { int32 min_replicas = 1; int32 max_replicas = 2; }
 message LLMInferenceServiceStatus { string url = 1; repeated Address addresses = 2; repeated Condition conditions = 3;
   repeated AppliedConfig applied_configs = 4; Workloads workloads = 5; RouterStatus router = 6; int64 observed_generation = 7;
-  ModelPhase phase = 8; /* derived: PENDING (Ready absent/Unknown) | READY | FAILED (Ready=False), reason = Ready.reason */ }
+  ModelPhase phase = 8; /* derived: READY (Ready=True) | FAILED (Ready=False with ConfigNotFound, RefsInvalid or GatewaysNotReady) | PENDING (anything else), reason = Ready.reason */ }
 message Address { string name = 1; string url = 2; ObjectRef origin = 3; repeated string models = 4; }
 message AppliedConfig { string name = 1; string namespace = 2; string source = 3; /* Preset|UserRef|ServingRuntime */ }
 message Workloads { WorkloadRef primary = 1; WorkloadRef prefill = 2; WorkloadRef scheduler = 3; }

@@ -532,8 +532,7 @@ func (a *App) listModels(w http.ResponseWriter, r *http.Request) {
 	writeList(w, http.StatusOK, out, listMeta(offset, limit, len(out), resp.Total))
 }
 
-// getModel answers GET /api/v1/models/{namespace}/{name}, and a PATCH that
-// names no field.
+// getModel answers GET /api/v1/models/{namespace}/{name}.
 func (a *App) getModel(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := a.backend.Context(r.Context())
 	defer cancel()
@@ -547,7 +546,9 @@ func (a *App) getModel(w http.ResponseWriter, r *http.Request) {
 }
 
 // ModelCreate is the body of POST /api/v1/models: the POC deploy wizard's
-// inputs mapped to the LLMInferenceService spec (models-maas.md 7.3).
+// inputs mapped to the LLMInferenceService spec (models-maas.md 7.3). The
+// display name and description travel in `annotations`
+// (`openshift.io/display-name`, `openshift.io/description`), as on PATCH.
 // `cpu`, `memory` and `gpuCount` become the main container's requests (and
 // the GPU its limit); `scaling` (exclusive with `replicas`) becomes a
 // `spec.scaling.keda` block; `gateway` defaults to the hub's AI inference
@@ -555,8 +556,6 @@ func (a *App) getModel(w http.ResponseWriter, r *http.Request) {
 type ModelCreate struct {
 	Name         string            `json:"name"`
 	Namespace    string            `json:"namespace"`
-	DisplayName  string            `json:"displayName"`
-	Description  string            `json:"description"`
 	ModelURI     string            `json:"modelUri"`
 	ModelName    string            `json:"modelName"`
 	RuntimeImage string            `json:"runtimeImage"`
@@ -589,12 +588,6 @@ func (a *App) createModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	annotations := copyMap(body.Annotations)
-	if body.DisplayName != "" {
-		annotations[AnnotationDisplayName] = body.DisplayName
-	}
-	if body.Description != "" {
-		annotations[AnnotationDescription] = body.Description
-	}
 	main := &aigridv1.Container{Image: body.RuntimeImage, Requests: map[string]string{}, Limits: map[string]string{}, Env: fromEnv(body.Env)}
 	if body.CPU != "" {
 		main.Requests[ResourceCPU] = body.CPU
@@ -698,7 +691,7 @@ type ModelPatch struct {
 // optimistic locking on the If-Match version the client must send
 // (requireIfMatch), so a stale tab or a concurrent change surfaces as 409.
 // The BFF does not read the model first. A body that names no field is
-// answered like GET (getModel), with no write.
+// 422.
 func (a *App) patchModel(w http.ResponseWriter, r *http.Request) {
 	namespace, name := r.PathValue("namespace"), r.PathValue("name")
 	if err := requireJSON(r); err != nil {
@@ -753,7 +746,7 @@ func (a *App) patchModel(w http.ResponseWriter, r *http.Request) {
 		paths = append(paths, maskAnnotations)
 	}
 	if len(paths) == 0 {
-		a.getModel(w, r)
+		a.respondError(w, r, Errorf(http.StatusUnprocessableEntity, "the request body names no field to change"))
 		return
 	}
 	ctx, cancel := a.backend.Context(r.Context())

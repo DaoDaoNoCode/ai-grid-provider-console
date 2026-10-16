@@ -334,7 +334,9 @@ func TestLLMISvcLifecycle(t *testing.T) {
 	if len(conds) != 9 {
 		t.Errorf("%d conditions at T1, want 9", len(conds))
 	}
-	wantPhase(t, m, aigridv1.ModelPhase_MODEL_PHASE_FAILED, ReasonWaitingForGateway)
+	// Ready False with a starting reason is PENDING, not FAILED: the model is
+	// coming up (deriveHubPhase).
+	wantPhase(t, m, aigridv1.ModelPhase_MODEL_PHASE_PENDING, ReasonWaitingForGateway)
 	if m.GetStatus().GetObservedGeneration() != 1 {
 		t.Errorf("observedGeneration = %d", m.GetStatus().GetObservedGeneration())
 	}
@@ -565,7 +567,9 @@ func TestLLMISvcFailureModes(t *testing.T) {
 		if !ready.GetLastTransitionTime().AsTime().Equal(testStart.Add(llmisvcT2b)) {
 			t.Errorf("at %s: Ready has not changed since T2b, got %s", d, ready.GetLastTransitionTime().AsTime())
 		}
-		wantPhase(t, m, aigridv1.ModelPhase_MODEL_PHASE_FAILED, ReasonMinimumReplicasUnavailable)
+		// No condition tells this from a slow start, so it stays PENDING with
+		// the reason, as a stuck spoke does.
+		wantPhase(t, m, aigridv1.ModelPhase_MODEL_PHASE_PENDING, ReasonMinimumReplicasUnavailable)
 		if m.GetStatus().GetUrl() == "" || m.GetStatus().GetWorkloads().GetPrimary().GetReadyReplicas() != 0 {
 			t.Errorf("at %s: the route exists, the pods are not ready: %v", d, m.GetStatus())
 		}
@@ -576,7 +580,7 @@ func TestSpeedScalesTheModelLifecycle(t *testing.T) {
 	s, advance := modelServer(t, &Fixtures{Speed: 10})
 	createModel(t, s, hubModel("fast"))
 	advance(4 * time.Second) // 40 scenario seconds
-	wantPhase(t, getModel(t, s, "fast"), aigridv1.ModelPhase_MODEL_PHASE_FAILED, ReasonMinimumReplicasUnavailable)
+	wantPhase(t, getModel(t, s, "fast"), aigridv1.ModelPhase_MODEL_PHASE_PENDING, ReasonMinimumReplicasUnavailable)
 	advance(5 * time.Second) // 50 scenario seconds
 	m := getModel(t, s, "fast")
 	wantPhase(t, m, aigridv1.ModelPhase_MODEL_PHASE_READY, "")
@@ -733,7 +737,7 @@ func TestModelMutationsNeedAProviderAdmin(t *testing.T) {
 	if _, err := s.ListModels(viewer, &aigridv1.ListModelsRequest{}); err != nil {
 		t.Errorf("a viewer reads: %v", err)
 	}
-	wantDenied := `User "viewer" is not a provider admin: cannot patch resource "managedclusters" in API group "cluster.open-cluster-management.io" at the cluster scope`
+	wantDenied := `User "viewer" is not a provider admin, and only provider admins can change models (a provider admin may patch ManagedClusters on the hub)`
 	_, err := s.CreateModel(viewer, &aigridv1.CreateModelRequest{Object: hubModel("new")})
 	mustCode(t, err, codes.PermissionDenied, wantDenied)
 	_, err = s.UpdateModel(viewer, &aigridv1.UpdateModelRequest{Object: hubModel("seeded"), UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{PathSpecReplicas}}})
@@ -1654,7 +1658,7 @@ func TestUpdatesAcrossGenerations(t *testing.T) {
 		t.Errorf("observedGeneration = %d", m.GetStatus().GetObservedGeneration())
 	}
 	advance(200*time.Second + llmisvcT2 + 600*time.Second + time.Second)
-	wantPhase(t, getModel(t, s, "gen"), aigridv1.ModelPhase_MODEL_PHASE_FAILED, ReasonMinimumReplicasUnavailable)
+	wantPhase(t, getModel(t, s, "gen"), aigridv1.ModelPhase_MODEL_PHASE_PENDING, ReasonMinimumReplicasUnavailable)
 
 	// Recovery: generation 3 with a healthy image rolls out and becomes Ready
 	// and stays Ready.
@@ -1665,7 +1669,7 @@ func TestUpdatesAcrossGenerations(t *testing.T) {
 		t.Fatal(err)
 	}
 	advance2(160 * time.Second)
-	wantPhase(t, getModel(t, s2, "rec"), aigridv1.ModelPhase_MODEL_PHASE_FAILED, ReasonMinimumReplicasUnavailable)
+	wantPhase(t, getModel(t, s2, "rec"), aigridv1.ModelPhase_MODEL_PHASE_PENDING, ReasonMinimumReplicasUnavailable)
 	if _, err := s2.UpdateModel(ctx, &aigridv1.UpdateModelRequest{Object: &aigridv1.Model{Name: "rec", Metadata: &aigridv1.ObjectMeta{Namespace: testNS}, Spec: &aigridv1.ModelSpec{Main: &aigridv1.Container{Image: "quay.io/example/vllm:fixed"}}}, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{PathSpecMainImage}}}); err != nil {
 		t.Fatal(err)
 	}

@@ -204,7 +204,7 @@ func (s *Server) CreateTenant(ctx context.Context, req *aigridv1.CreateTenantReq
 	if err != nil {
 		return nil, err
 	}
-	if err := s.authorizeProviderAdmin(ctx, token); err != nil {
+	if err := s.authorizeProviderAdmin(ctx, token, "tenants"); err != nil {
 		return nil, err
 	}
 	obj := req.GetObject()
@@ -338,7 +338,7 @@ func (s *Server) UpdateTenant(ctx context.Context, req *aigridv1.UpdateTenantReq
 	if err != nil {
 		return nil, err
 	}
-	if err := s.authorizeProviderAdmin(ctx, token); err != nil {
+	if err := s.authorizeProviderAdmin(ctx, token, "tenants"); err != nil {
 		return nil, err
 	}
 	obj := req.GetObject()
@@ -465,7 +465,7 @@ func (s *Server) DeleteTenant(ctx context.Context, req *aigridv1.DeleteTenantReq
 	if err != nil {
 		return nil, err
 	}
-	if err := s.authorizeProviderAdmin(ctx, token); err != nil {
+	if err := s.authorizeProviderAdmin(ctx, token, "tenants"); err != nil {
 		return nil, err
 	}
 	if req.GetId() == "" {

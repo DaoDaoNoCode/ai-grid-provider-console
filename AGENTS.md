@@ -32,7 +32,9 @@ What the BFF does:
 What belongs in the backend, and so in the fake (`bff/internal/fakebackend`) until the backend
 ships it: validation of values, normalization and defaults, resource versions and the
 precondition check, list filtering, ordering and counting, deciding whether an update changes
-anything, and every field derived from other fields.
+anything, which keys a caller may change, and every field derived from other fields. Every object
+the backend returns carries a non-empty `resource_version`: with `If-Match` required, an object
+without one could never be updated or deleted.
 
 ## Adding a feature
 
@@ -73,10 +75,10 @@ when the RPCs allow it.
   values; `rollout.strategy` shown as `All` when unset.
 - `fromRolloutSpec`: parses the rollout strategy name into the enum and answers 422 for an
   unknown one.
-- The model create (`createModel`): `displayName` and `description` become the two annotations;
-  `cpu`, `memory` and `gpuCount` become the main container's requests (the GPU also its limit,
-  a negative `gpuCount` is 422); `scaling` becomes a KEDA block; the gateway defaults to
-  `openshift-ingress/openshift-ai-inference`; the managed route and the scheduler are always on.
+- The model create (`createModel`): `cpu`, `memory` and `gpuCount` become the main container's
+  requests (the GPU also its limit, a negative `gpuCount` is 422); `scaling` becomes a KEDA
+  block; the gateway defaults to `openshift-ingress/openshift-ai-inference`; the managed route
+  and the scheduler are always on.
 - `requireTotal` (`bff/internal/api/respond.go`): a list answer without `total` comes from a
   backend that ignored `filter`, `offset` and `limit` (the shipped one), so the BFF answers 501
   when the caller sent any of them; without them `listMeta` falls back to a total it can prove.

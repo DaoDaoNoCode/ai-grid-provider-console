@@ -96,9 +96,13 @@ func (RolloutStrategy) EnumDescriptor() ([]byte, []int) {
 // (mock/research/models-maas.md 2.1), so the server derives one:
 //
 //	Hub deployment (no `spec.placement`): from the `Ready` condition,
-//	True -> READY; False -> FAILED with its reason and message (also while
-//	the workload is still starting, as KServe reports a False dependent on
-//	`Ready`); absent or Unknown -> PENDING.
+//	True -> READY; False with a reason that does not recover on its own
+//	(`ConfigNotFound`, `RefsInvalid`, `GatewaysNotReady`) -> FAILED with its
+//	reason and message; False with any other reason (KServe's starting
+//	reasons `WaitingForGateway`, `Progressing`, `MinimumReplicasUnavailable`),
+//	absent or Unknown -> PENDING with the condition's reason and message. A
+//	workload that never becomes available keeps `MinimumReplicasUnavailable`
+//	and so stays PENDING, as a stuck spoke does below.
 //
 //	Placed model: from the ManifestWorkReplicaSet conditions,
 //	`PlacementRolledOut` True and `ManifestworkApplied` True -> READY;
@@ -121,7 +125,8 @@ const (
 	ModelPhase_MODEL_PHASE_PENDING ModelPhase = 1
 	// Serving.
 	ModelPhase_MODEL_PHASE_READY ModelPhase = 2
-	// `Ready` is False (hub), or a work is degraded or failed to apply.
+	// `Ready` is False with a terminal reason (hub), or a work is degraded or
+	// failed to apply.
 	ModelPhase_MODEL_PHASE_FAILED ModelPhase = 3
 )
 

@@ -78,16 +78,16 @@ Paths are under `/api/v1`, except `/healthcheck` and `/readyz` at the root.
 | GET | `/api/v1/config` | `{gridEndpoint, mapTileUrl, billingUrl, version}` | none; env `GRID_CONSUMER_URL`, `MAP_TILE_URL`, `BILLING_URL` |
 | GET | `/api/v1/clusters` | `GridCluster[]` sorted by name | `ManagedClusters/ListManagedClusters` |
 | GET | `/api/v1/clusters/{name}` | `GridCluster`, `ETag: "<resourceVersion>"` | `ManagedClusters/GetManagedCluster`; 404 with the backend's message when absent. Against a backend without that RPC (the shipped one answers `Unimplemented`) the BFF filters `ListManagedClusters` by name instead, so the detail works either way |
-| PATCH | `/api/v1/clusters/{name}` | `GridCluster` after the write, with its `ETag` | `UpdateManagedCluster` (no read first) with the present body fields as the object and the mask (`labels`, `annotations`, `hub_accepts_client`) and `lock: true` on the `If-Match` version; an empty body answers like GET; 409 when the hub object is not at that version, 428 without `If-Match`, 422 on a bad body or `If-Match` or a coordinate annotation the backend refuses, 413 over 1 MiB, 415 when the body is not `application/json` |
+| PATCH | `/api/v1/clusters/{name}` | `GridCluster` after the write, with its `ETag` | `UpdateManagedCluster` (no read first) with the present body fields as the object and the mask (`labels`, `annotations`) and `lock: true` on the `If-Match` version; an empty body is 422; 409 when the hub object is not at that version, 428 without `If-Match`, 422 on a bad body or `If-Match`, a coordinate annotation the backend refuses or a change to a key outside the console's (`ai-grid/*`, `location`), 413 over 1 MiB, 415 when the body is not `application/json` |
 | GET | `/api/v1/tenants?offset=&limit=&filter=` | `Tenant[]` in Keycloak's order (by name, the realm database's collation) plus `meta`; `filter` is a CEL expression the client writes, over `this` (a Tenant), see "Writes, versions and lists"; `limit` omitted returns everything; the removed `search` is 422 | `Tenants/ListTenants` with `offset`, `limit` and `filter` exactly as sent |
 | GET | `/api/v1/tenants/{id}` | `Tenant`, `ETag: "<resourceVersion>"` | `Tenants/GetTenant`; 404 with the backend's message when absent |
 | POST | `/api/v1/tenants` | 201, `Tenant` as created, `Location: /api/v1/tenants/{id}`, `ETag` | `Tenants/CreateTenant`; 422 with Keycloak's message on a bad name, alias or domain, 409 on a taken name or alias |
-| PATCH | `/api/v1/tenants/{id}` | `Tenant` after the write, with its `ETag` | `Tenants/UpdateTenant` with the present body fields as the mask (`alias` included) and the `If-Match` version as `object.resource_version`; an empty body answers like GET; 422 "Cannot change the alias", 409 on a taken or blank name (Keycloak's own answer to a blank one) or a stale `If-Match`, 428 without `If-Match` |
+| PATCH | `/api/v1/tenants/{id}` | `Tenant` after the write, with its `ETag` | `Tenants/UpdateTenant` with the present body fields as the mask (`alias` included) and the `If-Match` version as `object.resource_version`; an empty body is 422; 422 "Cannot change the alias", 409 on a taken or blank name (Keycloak's own answer to a blank one) or a stale `If-Match`, 428 without `If-Match` |
 | DELETE | `/api/v1/tenants/{id}` | 204 | `Tenants/DeleteTenant` with the `If-Match` version as `resource_version`; 404 when absent, 409 on a stale `If-Match`, 428 without `If-Match` |
 | GET | `/api/v1/models?offset=&limit=&filter=` | `Model[]` by namespace and name plus `meta`; `filter` is CEL over `this` (a Model) as for tenants; the removed `namespace` and `label` are 422 | `Models/ListModels` with `offset`, `limit` and `filter` exactly as sent |
 | GET | `/api/v1/models/{namespace}/{name}` | `Model`, `ETag: "<resourceVersion>"` | `Models/GetModel`; 404 with the backend's message (`object with identifier '<ns>/<name>' not found`) |
 | POST | `/api/v1/models` | 201, `Model` with no conditions yet, `Location: /api/v1/models/{namespace}/{name}`, `ETag` | `Models/CreateModel`; 422 with the API server's or the CRD's message (a name that is not a DNS-1123 subdomain, a negative `replicas`, `replicas` with `scaling`, `scaling` without `maxReplicas`, without a trigger, with `maxReplicas` below 1 or a negative `minReplicas` (`minReplicas: 0` counts as unset and defaults to 1) or with `minReplicas` above `maxReplicas`) or the console's own (URI scheme, Placement operators, rollout fields, `rollout` without `placement`), 409 on a taken name, 412 `ManifestWorkReplicaSet feature gate disabled on hub` when `placement` is set on a hub without the controller |
-| PATCH | `/api/v1/models/{namespace}/{name}` | `Model` after the write, with its `ETag` | `UpdateModel` (no read first) with every present field as the mask (`spec.replicas`, `spec.main.image`, `spec.main.env`, `spec.placement`, `spec.rollout`, `metadata.labels`, `metadata.annotations`) and `lock: true` on the `If-Match` version; an empty body answers like GET; 409 when the object is not at that version, 428 without `If-Match`, 412 when a placement is added on a gated hub |
+| PATCH | `/api/v1/models/{namespace}/{name}` | `Model` after the write, with its `ETag` | `UpdateModel` (no read first) with every present field as the mask (`spec.replicas`, `spec.main.image`, `spec.main.env`, `spec.placement`, `spec.rollout`, `metadata.labels`, `metadata.annotations`) and `lock: true` on the `If-Match` version; an empty body is 422; 409 when the object is not at that version, 428 without `If-Match`, 412 when a placement is added on a gated hub |
 | DELETE | `/api/v1/models/{namespace}/{name}` | 204; the model is gone at once (the MWRS cascades `Background`, its works drain out of sight) | `Models/DeleteModel` with the `If-Match` version as `resource_version`; 404 when absent, 409 on a stale `If-Match`, 428 without `If-Match`, 412 while a catalog entry or a subscription references the model (not reachable on the fake yet: nothing references a model until the catalog and subscriptions exist) |
 | GET | `/api/v1/capabilities` | `{manifestWorkReplicaSetEnabled, observabilityInstalled, acmVersion}` | `AiGrid/GetHubCapabilities`; 501 against a backend without the RPC, which a client reads as "unknown" |
 
@@ -143,8 +143,7 @@ also works against a backend that only returns `name`, `labels`, `hubAcceptsClie
 
 ```json
 {"labels": {"name": "site-paris-1", "ai-grid/enabled": "true", "location": "paris", "...": "..."},
- "annotations": {"ai-grid/site-name": "Paris DC1", "ai-grid/latitude": "48.8566", "...": "..."},
- "hubAcceptsClient": true}
+ "annotations": {"ai-grid/site-name": "Paris DC1", "ai-grid/latitude": "48.8566", "...": "..."}}
 ```
 
 A present map replaces the stored one as a whole (FieldMask semantics, as in OSAC; there are no
@@ -153,17 +152,31 @@ per-key paths), so a page that enrols a cluster sends the `labels` map it loaded
 map; an absent field or `null` is left alone. The BFF writes the present fields into one
 `UpdateManagedCluster` (object, mask, `lock: true` on `If-Match`) without reading the cluster
 first and without merging, comparing or validating the maps; unknown fields, wrong types and
-anything after the object are 422, more than 1 MiB is 413. A body that names no field is
-answered like `GET /clusters/{name}` (200 and its `ETag`), with no write. The backend does the
-rest: the hub's webhook and controllers put back what they own (the `name` and default
-clusterset labels, the add-on labels, `clusterID`, `openshiftVersion*` and the
-`open-cluster-management/created-via` annotation; not a removed `cloud` or `vendor`), and the
-fake does the same before `UpdateManagedCluster` answers, so the response shows the labels as
-the hub keeps them; an `ai-grid/latitude` or `ai-grid/longitude` annotation must be a number
-within -90..90 or -180..180 (422 `annotation "ai-grid/latitude" must be a number between -90 and
-90, got "<v>"`, a console proposal for the backend, which owns the convention); and an update
-that leaves labels, annotations and `hubAcceptsClient` as stored is not written (the response
+anything after the object are 422, more than 1 MiB is 413. A body that names no field is 422
+`the request body names no field to change`, before any call. Hub acceptance
+(`hubAcceptsClient`) is read-only here: no page needs to write it, and turning it off makes the
+hub drop a live site. The backend does the rest: the hub's webhook and controllers put back what
+they own (the `name` and default clusterset labels, the add-on labels, `clusterID`,
+`openshiftVersion*` and the `open-cluster-management/created-via` annotation; not a removed
+`cloud` or `vendor`), and the fake does the same before `UpdateManagedCluster` answers, so the
+response shows the labels as the hub keeps them; an `ai-grid/latitude` or `ai-grid/longitude`
+annotation must be a number within -90..90 or -180..180 when it is present and not blank,
+surrounding whitespace allowed as on the read side (422 `annotation "ai-grid/latitude" must be a
+number between -90 and 90, got "<v>"`, a console proposal for the backend, which owns the
+convention); only the console's keys may change: adding, changing or removing a label or
+annotation outside `ai-grid/*`, `ai-grid-mock/*` (the fake's test switches) and the `location`
+label is 422 `label "<k>" cannot be changed through the console; only ai-grid/* labels and
+annotations and the location label can` (compared after the hub has put back its own labels, so
+leaving one of those out is fine; a console proposal, the hub lets a provider admin patch any
+label); and an update that leaves labels and annotations as stored is not written (the response
 keeps the stored `resourceVersion`, as the API server's does).
+
+The lock is on the ManagedCluster's `resourceVersion`, which the hub also moves when its
+registration agent or controllers write the cluster (conditions, capacity, add-on labels). On a
+busy hub a page that waits before saving can get 409 although nobody edited its labels; the
+page reloads and retries. Whether the backend should instead retry once by itself when the
+stored labels and annotations still equal what the client loaded is an open question for the
+backend team (`mock/areas/clusters.md`, "What remains").
 
 `Tenant` (a Keycloak Organization in the `ai-grid` realm, `mock/research/keycloak.md` section 4;
 the collections are always present even though Keycloak omits an empty `domains`):
@@ -206,15 +219,14 @@ validated by the backend, whose Keycloak message comes back as the 422 or 409 me
 `PATCH /api/v1/tenants/{id}` body, every field optional: `{"name": "...", "description": "...",
 "enabled": false, "domains": ["..."], "attributes": {"k": "v"}, "alias": "<unchanged>"}`. An
 absent field is left alone; a present field replaces the stored one as a whole (`domains: []`
-removes every domain, `attributes: {}` every attribute; a domain that stays keeps its
-`verified` and identity-provider metadata); `null` is the same as absent. The present fields
-become the field mask of one `UpdateTenant` call, `alias` included: the backend keeps the stored
-alias and answers a different one with Keycloak's 422 "Cannot change the alias", so a form can
-send back the alias it loaded. A body that names no field is answered like `GET /tenants/{id}`
-(200 and its `ETag`), with no write. The backend skips a PUT that would change nothing (console
-proposal, so Keycloak writes no admin event) and answers the tenant with its stored
-`resourceVersion`. Keycloak Organizations carry no version; the backend keeps one for them (see
-"Writes, versions and lists").
+removes every domain, `attributes: {}` every attribute; a domain that stays keeps its `verified`
+and identity-provider metadata); `null` is the same as absent. The present fields become the
+field mask of one `UpdateTenant` call, `alias` included: the backend keeps the stored alias and
+answers a different one with Keycloak's 422 "Cannot change the alias", so a form can send back
+the alias it loaded. A body that names no field is 422, before any call. The backend skips a PUT
+that would change nothing (console proposal, so Keycloak writes no admin event) and answers the
+tenant with its stored `resourceVersion`. Keycloak Organizations carry no version; the backend
+keeps one for them (see "Writes, versions and lists").
 
 `Model` (a KServe `LLMInferenceService`, `mock/research/models-maas.md` 2.1, with the ACM
 `Placement` and `ManifestWorkReplicaSet` the backend keeps for a multi-site model,
@@ -257,13 +269,16 @@ no `revision`, `status: Saved`, `hasDeployment`; collections are always present)
 ```
 
 - `phase` is the backend's derivation (`ModelPhase` in `mock/proto/ai_grid/v1/model_type.proto`):
-  for a hub deployment from the `Ready` condition (True `ready`, False `failed` with its reason
-  and message, absent or Unknown `pending`); for a placed model from the
-  ManifestWorkReplicaSet conditions (`PlacementRolledOut` and `ManifestworkApplied` True
-  `ready`; `ManifestworkApplied` False/`NotAsExpected` with a degraded or unapplied work
-  `failed`; otherwise `pending` with the deciding reason). KServe reports `Ready=False`
-  with `WaitingForGateway`, `Progressing` or `MinimumReplicasUnavailable` while a healthy
-  model starts, so a client should treat those reasons as starting, not failed.
+  for a hub deployment from the `Ready` condition (True `ready`; False with a reason that does
+  not recover on its own, `ConfigNotFound`, `RefsInvalid` or `GatewaysNotReady`, `failed` with
+  its reason and message; False with any other reason, absent or Unknown `pending` with the
+  condition's reason); for a placed model from the ManifestWorkReplicaSet conditions
+  (`PlacementRolledOut` and `ManifestworkApplied` True `ready`; `ManifestworkApplied`
+  False/`NotAsExpected` with a degraded or unapplied work `failed`; otherwise `pending` with the
+  deciding reason). KServe reports `Ready=False` with `WaitingForGateway`, `Progressing` or
+  `MinimumReplicasUnavailable` while a healthy model starts, so those read `pending`. A
+  workload that never becomes available keeps `MinimumReplicasUnavailable`, which no condition
+  tells apart from a slow start, so it stays `pending` with that reason, as a stuck spoke does.
 - `url`, `addresses`, `conditions` and `appliedConfigs` are the hub LLMInferenceService's
   and stay empty for a placed model (`url` is then omitted, as it is for a hub model until
   KServe has written its route, about 5 s after creation, or when its Gateway does not
@@ -278,37 +293,39 @@ no `revision`, `status: Saved`, `hasDeployment`; collections are always present)
   `Progressive` only (`All` and `ProgressivePerGroup` have no such field; the backend refuses
   it there).
 - `displayName` and `description` are the `openshift.io/display-name` and
-  `openshift.io/description` annotations.
+  `openshift.io/description` annotations; a client sets them through `annotations`, on
+  create and on PATCH alike.
 
 `POST /api/v1/models` body (the POC deploy wizard's inputs mapped to the spec,
-`mock/research/models-maas.md` 7.3): `{"name", "namespace", "displayName", "description",
-"modelUri", "modelName", "runtimeImage", "runtime", "replicas" | "scaling": {"minReplicas", "maxReplicas",
-"triggers": [{"type", "metadata"}]}, "baseRefs": ["..."], "cpu": "8",
-"memory": "32Gi", "gpuCount": 1, "env": [{"name", "value"}], "gateway": {"name", "namespace"},
-"placement": {"clusterSets", "matchLabels", "matchExpressions": [{"key", "operator", "values"}],
-"claimExpressions", "tolerations": [{"key", "operator", "value", "effect", "tolerationSeconds"}],
-"numberOfClusters"}, "rollout": {"strategy": "All|Progressive|ProgressivePerGroup", "maxConcurrency",
-"maxFailures", "progressDeadline", "minSuccessTime"}, "labels", "annotations"}`. `name`, `namespace`
-and `modelUri` are required by the backend; `cpu`, `memory` and `gpuCount` become the main
-container's requests (the GPU also its limit); `scaling` becomes a `spec.scaling.keda` block
-and is refused with the CRD's own messages when it comes with `replicas`, without
-`maxReplicas`, without a trigger, with `maxReplicas` below 1 or a negative `minReplicas`
-(`minReplicas: 0` counts as unset and defaults to 1) or with `minReplicas` above
-`maxReplicas`; the gateway defaults to
-`openshift-ingress/openshift-ai-inference`, the route and the scheduler are always managed;
-`rollout` without `placement` is 422. The same body rules as the other POSTs apply (unknown
-fields 422, over 1 MiB 413).
+`mock/research/models-maas.md` 7.3): `{"name", "namespace", "modelUri", "modelName",
+"runtimeImage", "runtime", "replicas" | "scaling": {"minReplicas", "maxReplicas", "triggers":
+[{"type", "metadata"}]}, "baseRefs": ["..."], "cpu": "8", "memory": "32Gi", "gpuCount": 1,
+"env": [{"name", "value"}], "gateway": {"name", "namespace"}, "placement": {"clusterSets",
+"matchLabels", "matchExpressions": [{"key", "operator", "values"}], "claimExpressions",
+"tolerations": [{"key", "operator", "value", "effect", "tolerationSeconds"}],
+"numberOfClusters"}, "rollout": {"strategy": "All|Progressive|ProgressivePerGroup",
+"maxConcurrency", "maxFailures", "progressDeadline", "minSuccessTime"}, "labels",
+"annotations"}`. `name`, `namespace` and `modelUri` are required by the backend; `cpu`, `memory`
+and `gpuCount` become the main container's requests (the GPU also its limit); `scaling` becomes
+a `spec.scaling.keda` block and is refused with the CRD's own messages when it comes with
+`replicas`, without `maxReplicas`, without a trigger, with `maxReplicas` below 1 or a negative
+`minReplicas` (`minReplicas: 0` counts as unset and defaults to 1) or with `minReplicas` above
+`maxReplicas`; the gateway defaults to `openshift-ingress/openshift-ai-inference`, the route and
+the scheduler are always managed; `rollout` without `placement` is 422. The display name and
+description go in `annotations` (`openshift.io/display-name`, `openshift.io/description`), as on
+PATCH; `displayName` and `description` are not body fields (422 unknown field). The same body
+rules as the other POSTs apply (unknown fields 422, over 1 MiB 413).
 
 `PATCH /api/v1/models/{namespace}/{name}` body, every field optional: `{"replicas", "runtimeImage",
 "env": [...], "placement": {...} | null, "rollout": {...}, "labels", "annotations"}`. A present
 field replaces the stored one as a whole (`env: []` removes every variable, `placement: null`
 makes the model a hub deployment again, `labels` and `annotations` are whole maps) and goes into
 the mask whatever the stored value; the BFF does not read the model first. `displayName` and
-`description` are not PATCH fields (422 unknown field): a page edits the
+`description` are not body fields (422 unknown field), here as on POST: a page edits the
 `openshift.io/display-name` and `openshift.io/description` keys of the `annotations` map it
 loaded. A rollout is sent only when the client sends one; the backend drops the stored rollout
-when the placement is removed without a new one. A body that names no field is answered like
-`GET /models/{namespace}/{name}`, with no write. A spec change bumps `generation`; a change of
+when the placement is removed without a new one. A body that names no field is 422, before any
+call. A spec change bumps `generation`; a change of
 anything but `placement` and `rollout` also rolls the Deployment out again and makes a placed
 model re-apply its works, while a change of only `rollout` or `placement` re-applies none (a new
 placement adds and removes the works of clusters entering and leaving the decision). An update
@@ -335,6 +352,8 @@ decides.
 - **`ETag` and `If-Match`.** `GET` of one cluster, tenant or model, and the answer to its POST
   or PATCH, carry `ETag: "<resourceVersion>"` (the same value as `resourceVersion` in the
   JSON; no header when the backend reports no version, as today's backend does for tenants).
+  The draft's backend must return a non-empty `resource_version` on every object it serves:
+  with If-Match required, an object without one could never be updated or deleted.
   Every PATCH and DELETE must send it back as `If-Match`; the BFF passes it to the backend as
   the request's expected version and the backend refuses a stale one with `Aborted`, 409, so a
   tab opened before a colleague's change cannot overwrite or delete it:
@@ -350,33 +369,32 @@ decides.
   A PATCH or DELETE without `If-Match` is 428 Precondition Required (RFC 6585) before the body
   is read and before any call: `this write needs an If-Match header: send the ETag that GET
   answered (the object's resourceVersion), for example If-Match: "42"`; `If-Match: *`, which
-  names no version, is 428 too (`If-Match: * names no version: ...`). So every write carries
-  the version its client read. The checks run in this order: 415 for a body that is not JSON,
-  then 428, then the body (422, 413). `If-Match` must be one strong entity tag exactly as
-  `ETag` sent it (`"42"`); a bare value, a weak tag (`W/"42"`) or a list is 422 `If-Match must
-  be one entity tag as the ETag header sent it, for example "42"` before any call. A PATCH whose
-  body names no field (below) does not reach an update, so its version is not checked. The tenant version is the backend's (`Tenant.resource_version`, kept in an
-  organization attribute; `mock/areas/tenants.md`, "Version"), so it changes only on writes
-  through the backend.
-- **Every PATCH is one update; the backend decides what changes.** The BFF reads nothing
-  before a PATCH: each field present in the body goes into the update's object and its mask,
-  whatever the stored value, and the backend applies the mask under optimistic locking. A
-  body that names no field is the one shortcut: the BFF answers it like the GET of the object
-  (200, the current object and its `ETag`) and writes nothing, for a caller without write
-  rights too and whatever `If-Match` says (a transport shortcut, not a comparison; RFC 9110
-  would answer a stale one 412, but nothing is written). Whether an update changes anything is
-  the backend's answer: a cluster or model update that leaves the object as stored is not
-  written and comes back with the stored `resourceVersion` (the Kubernetes API server does the
-  same with an unchanged update), and a tenant update that changes nothing is not PUT to
-  Keycloak (console proposal). The version is still checked first, so a stale `If-Match` is
+  names no version, is 428 too (`If-Match: * names no version: ...`). So every write carries the
+  version its client read. The checks run in this order: 415 for a body that is not JSON, then
+  428, then the body (422, 413). `If-Match` must be one strong entity tag exactly as `ETag` sent
+  it (`"42"`); a bare value, a weak tag (`W/"42"`) or a list is 422 `If-Match must be one entity
+  tag as the ETag header sent it, for example "42"` before any call. The tenant version is the
+  backend's (`Tenant.resource_version`, kept in an organization attribute;
+  `mock/areas/tenants.md`, "Version"), so it changes only on writes through the backend.
+- **Every PATCH is one update; the backend decides what changes.** The BFF reads nothing before
+  a PATCH: each field present in the body goes into the update's object and its mask, whatever
+  the stored value, and the backend applies the mask under optimistic locking. A body that names
+  no field is 422 `the request body names no field to change` before any call (there is nothing
+  to send; answering it like the GET would skip the version check). Whether an update changes
+  anything is the backend's answer: a cluster or model update that leaves the object as stored
+  is not written and comes back with the stored `resourceVersion` (the Kubernetes API server
+  does the same with an unchanged update), and a tenant update that changes nothing is not PUT
+  to Keycloak (console proposal). The version is still checked first, so a stale `If-Match` is
   409 even when nothing would change, and a viewer's update is 403.
 - **`filter` is the client's CEL.** `GET /tenants` and `GET /models` take `filter`, a CEL
   expression over `this` (the proto message, `ai_grid.v1.Tenant` or `ai_grid.v1.Model` with its
   status, fields by their proto names) and `now` (the backend's time), in cel-go's standard
   library plus its strings extension (`ext.Strings()`). The BFF puts the decoded query value in
-  the request's `filter` unchanged (an empty `filter=` is no filter) and never builds, rewrites
-  or checks it; the backend evaluates it over the whole list before paging, so `meta.total`
-  counts the matches. The client writes it, for example:
+  the request's `filter` with surrounding whitespace trimmed (an empty or whitespace-only
+  `filter=` is no filter; a repeated `filter` is 422 `query parameter "filter" must be sent
+  once; join the conditions with && in one expression`) and never builds, rewrites or checks it;
+  the backend evaluates it over the whole list before paging, so `meta.total` counts the
+  matches. The client writes it, for example:
 
   | The page wants | `filter` |
   |---|---|
@@ -387,15 +405,18 @@ decides.
   | failed models | `this.status.phase == ai_grid.v1.ModelPhase.MODEL_PHASE_FAILED` |
 
   Values are CEL string literals (escape `"` and `\`), and the whole expression is URL-encoded
-  in the query. CEL is strict: `contains` is a literal substring (`%` and `_` match
-  themselves), and indexing a missing map key is a `no such key` error, not false, so a label
-  term without the `in` guard fails on the first model that lacks the label. A filter that does
-  not compile, is not a bool or fails on an object is the backend's `InvalidArgument`, 422 with
-  its message: `filter <f> is not a valid CEL expression: <cel-go's error>`, `filter <f> must
-  evaluate to a bool, not <type>`, `filter <f> failed on '<id>': no such key: <key>`. The
-  parameters earlier versions of the BFF turned into CEL themselves, `search` on tenants and
-  `namespace` and `label` on models, are 422 `query parameter "<name>" is not supported; send a
-  CEL filter in "filter"`, so a client written for them gets an error, not the unfiltered list.
+  in the query. The field names are the proto's (`this.metadata.labels`, `this.domains`), so
+  they are part of this HTTP contract: renaming a proto field breaks the filters clients have
+  written. `GET /clusters` takes no `filter` yet. CEL is strict: `contains` is a literal
+  substring (`%` and `_` match themselves), and indexing a missing map key is a `no such key`
+  error, not false, so a label term without the `in` guard fails on the first model that lacks
+  the label. A filter that does not compile, is not a bool or fails on an object is the
+  backend's `InvalidArgument`, 422 with its message: `filter <f> is not a valid CEL expression:
+  <cel-go's error>`, `filter <f> must evaluate to a bool, not <type>`, `filter <f> failed on
+  '<id>': no such key: <key>`. The parameters earlier versions of the BFF turned into CEL
+  themselves, `search` on tenants and `namespace` and `label` on models, are 422 `query
+  parameter "<name>" is not supported; send a CEL filter in "filter"`, so a client written for
+  them gets an error, not the unfiltered list.
 - **`meta.total` and backends that do not page.** `total` is the backend's count over the whole
   filtered list. The list responses carry it as an optional field: the draft's backends always
   set it, and a backend without it (today's: its `ListTenantsRequest` is empty, so `offset`,

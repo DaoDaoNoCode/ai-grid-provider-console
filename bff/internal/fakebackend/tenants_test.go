@@ -670,7 +670,7 @@ func TestTenantMutationsNeedAProviderAdmin(t *testing.T) {
 		return metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+token, "x-forwarded-user", user))
 	}
 	viewer := as("viewer-token", "viewer")
-	want := `User "viewer" is not a provider admin: cannot patch resource "managedclusters" in API group "cluster.open-cluster-management.io" at the cluster scope`
+	want := `User "viewer" is not a provider admin, and only provider admins can change tenants (a provider admin may patch ManagedClusters on the hub)`
 	_, err := s.CreateTenant(viewer, &aigridv1.CreateTenantRequest{Object: &aigridv1.Tenant{Name: "x"}})
 	mustCode(t, err, codes.PermissionDenied, want)
 	_, err = s.UpdateTenant(viewer, &aigridv1.UpdateTenantRequest{Object: &aigridv1.Tenant{Id: idAcme, Enabled: proto.Bool(false)}, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{PathEnabled}}})

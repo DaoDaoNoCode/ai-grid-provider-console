@@ -162,7 +162,7 @@ func TestUpdateHonoursHubRBAC(t *testing.T) {
 		return metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+token, "x-forwarded-user", user))
 	}
 	upd := func() *aigridv1.UpdateManagedClusterRequest {
-		return &aigridv1.UpdateManagedClusterRequest{Object: &aigridv1.ManagedCluster{Name: "a", Labels: map[string]string{"ai-grid/enabled": "true"}}, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"labels"}}}
+		return &aigridv1.UpdateManagedClusterRequest{Object: &aigridv1.ManagedCluster{Name: "a", Labels: labelsWith(readyCluster("a"), "ai-grid/enabled", "true")}, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"labels"}}}
 	}
 	_, err := s.UpdateManagedCluster(as("viewer-token", "viewer"), upd())
 	if status.Code(err) != codes.PermissionDenied {
@@ -242,7 +242,7 @@ func TestConcurrentLockedUpdatesAdmitOne(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			_, results[i] = s.UpdateManagedCluster(ctx, &aigridv1.UpdateManagedClusterRequest{
-				Object:     &aigridv1.ManagedCluster{Name: "a", ResourceVersion: "100", Labels: map[string]string{"writer": strconv.Itoa(i)}},
+				Object:     &aigridv1.ManagedCluster{Name: "a", ResourceVersion: "100", Labels: labelsWith(readyCluster("a"), "ai-grid/writer", strconv.Itoa(i))},
 				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"labels"}},
 				Lock:       true,
 			})
@@ -271,7 +271,7 @@ func TestUpdateDetachingClusterKeepsState(t *testing.T) {
 	setCondition(c, time.Now(), CondImportSucceeded, cFalse, ReasonDetaching, MessageDetaching)
 	s := newServer(t, &Fixtures{Clusters: []*aigridv1.ManagedCluster{c}})
 	resp, err := s.UpdateManagedCluster(authed(context.Background()), &aigridv1.UpdateManagedClusterRequest{
-		Object: &aigridv1.ManagedCluster{Name: "a", Labels: map[string]string{"ai-grid/enabled": "true"}}, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"labels"}},
+		Object: &aigridv1.ManagedCluster{Name: "a", Labels: labelsWith(c, "ai-grid/enabled", "true")}, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"labels"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -341,18 +341,27 @@ func TestUpdateManagedCluster(t *testing.T) {
 
 	t.Run("whole-map replacement and version bump", func(t *testing.T) {
 		s := newServer(t, &Fixtures{Clusters: []*aigridv1.ManagedCluster{readyCluster("a")}})
-		got, err := update(s, &aigridv1.UpdateManagedClusterRequest{
+		// A map that drops cloud and vendor would remove labels the hub does
+		// not put back (autodetect fills them only while they read
+		// auto-detect): outside the console's keys, so refused.
+		_, err := update(s, &aigridv1.UpdateManagedClusterRequest{
 			Object:     &aigridv1.ManagedCluster{Name: "a", Labels: map[string]string{"ai-grid/enabled": "true"}},
+			UpdateMask: mask("labels"),
+		})
+		mustCode(t, err, codes.InvalidArgument, `label "cloud" cannot be changed through the console; only ai-grid/* labels and annotations and the location label can`)
+		// The stored map with one key added, `name` left out: the map is
+		// replaced as a whole, then the hub puts back what its webhook and
+		// controllers own (name, the default clusterset, the add-on labels).
+		sent := labelsWith(readyCluster("a"), "ai-grid/enabled", "true")
+		delete(sent, LabelName)
+		got, err := update(s, &aigridv1.UpdateManagedClusterRequest{
+			Object:     &aigridv1.ManagedCluster{Name: "a", Labels: sent},
 			UpdateMask: mask("labels"),
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
-		// The map is replaced as a whole; then the hub puts back what its
-		// webhook and controllers own (name, the default clusterset, the
-		// add-on labels) but not cloud or vendor, which autodetect only fills
-		// while they read auto-detect.
-		wantLabels := map[string]string{"ai-grid/enabled": "true", LabelName: "a", LabelClusterSet: ClusterSetDefault, LabelAddonPrefix + "work-manager": AddonAvailable}
+		wantLabels := map[string]string{"ai-grid/enabled": "true", LabelName: "a", LabelCloud: "BareMetal", LabelVendor: "OpenShift", LabelClusterSet: ClusterSetDefault, LabelAddonPrefix + "work-manager": AddonAvailable}
 		if !maps.Equal(got.GetLabels(), wantLabels) {
 			t.Errorf("labels = %v, want %v", got.GetLabels(), wantLabels)
 		}
@@ -368,12 +377,15 @@ func TestUpdateManagedCluster(t *testing.T) {
 		if got.GetStatus().GetState() != aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_AVAILABLE {
 			t.Errorf("response carries the derived state, got %s", got.GetStatus().GetState())
 		}
-		got2, err := update(s, &aigridv1.UpdateManagedClusterRequest{Object: &aigridv1.ManagedCluster{Name: "a", Annotations: map[string]string{"x": "y"}}, UpdateMask: mask("annotations")})
-		wantAnn := map[string]string{"x": "y", AnnotationCreatedVia: AnnotationCreatedViaOther}
+		_, err = update(s, &aigridv1.UpdateManagedClusterRequest{Object: &aigridv1.ManagedCluster{Name: "a", Annotations: map[string]string{"x": "y"}}, UpdateMask: mask("annotations")})
+		mustCode(t, err, codes.InvalidArgument, `annotation "x" cannot be changed through the console; only ai-grid/* labels and annotations and the location label can`)
+		got2, err := update(s, &aigridv1.UpdateManagedClusterRequest{Object: &aigridv1.ManagedCluster{Name: "a", Annotations: map[string]string{"ai-grid/site-name": "Site A"}}, UpdateMask: mask("annotations")})
+		wantAnn := map[string]string{"ai-grid/site-name": "Site A", AnnotationCreatedVia: AnnotationCreatedViaOther}
 		if err != nil || !maps.Equal(got2.GetAnnotations(), wantAnn) || !maps.Equal(got2.GetLabels(), wantLabels) {
 			t.Errorf("annotations replaced (created-via restored by the import controller), labels untouched: %v, %v", got2, err)
 		}
-		got3, err := update(s, &aigridv1.UpdateManagedClusterRequest{Object: &aigridv1.ManagedCluster{Name: "a", Labels: map[string]string{LabelAddonPrefix + "work-manager": AddonUnhealthy, LabelAddonPrefix + "made-up": AddonAvailable}}, UpdateMask: mask("labels")})
+		addons := labelsWith(got2, LabelAddonPrefix+"work-manager", AddonUnhealthy, LabelAddonPrefix+"made-up", AddonAvailable)
+		got3, err := update(s, &aigridv1.UpdateManagedClusterRequest{Object: &aigridv1.ManagedCluster{Name: "a", Labels: addons}, UpdateMask: mask("labels")})
 		if err != nil || got3.GetLabels()[LabelAddonPrefix+"work-manager"] != AddonAvailable || got3.GetLabels()[LabelAddonPrefix+"made-up"] != "" {
 			t.Errorf("add-on labels follow the add-ons, not the client: %v, %v", got3.GetLabels(), err)
 		}
@@ -388,9 +400,9 @@ func TestUpdateManagedCluster(t *testing.T) {
 			t.Fatalf("stale version = %v, want Aborted", err)
 		}
 		got, err := update(s, &aigridv1.UpdateManagedClusterRequest{
-			Object: &aigridv1.ManagedCluster{Name: "a", ResourceVersion: "100", Labels: map[string]string{"x": "y"}}, UpdateMask: mask("labels"), Lock: true,
+			Object: &aigridv1.ManagedCluster{Name: "a", ResourceVersion: "100", Labels: labelsWith(readyCluster("a"), "ai-grid/x", "y")}, UpdateMask: mask("labels"), Lock: true,
 		})
-		if err != nil || got.GetLabels()["x"] != "y" {
+		if err != nil || got.GetLabels()["ai-grid/x"] != "y" {
 			t.Fatalf("matching version = %v, %v", got, err)
 		}
 		_, err = update(s, &aigridv1.UpdateManagedClusterRequest{
@@ -399,50 +411,25 @@ func TestUpdateManagedCluster(t *testing.T) {
 		if status.Code(err) != codes.Aborted {
 			t.Errorf("the version used once is stale afterwards, got %v", err)
 		}
-		if _, err := update(s, &aigridv1.UpdateManagedClusterRequest{Object: &aigridv1.ManagedCluster{Name: "a", ResourceVersion: "1"}, UpdateMask: mask("labels")}); err != nil {
+		if _, err := update(s, &aigridv1.UpdateManagedClusterRequest{Object: &aigridv1.ManagedCluster{Name: "a", ResourceVersion: "1", Labels: labelsWith(readyCluster("a"), "ai-grid/x", "z")}, UpdateMask: mask("labels")}); err != nil {
 			t.Errorf("without lock the version is ignored, got %v", err)
 		}
 	})
 
-	t.Run("hub_accepts_client drives HubAcceptedManagedCluster", func(t *testing.T) {
+	t.Run("only the console's keys may change", func(t *testing.T) {
 		s := newServer(t, &Fixtures{Clusters: []*aigridv1.ManagedCluster{readyCluster("a")}})
-		now := time.Date(2026, 10, 15, 13, 0, 0, 0, time.UTC)
-		s.SetClock(func() time.Time { return now })
-		got, err := update(s, &aigridv1.UpdateManagedClusterRequest{Object: &aigridv1.ManagedCluster{Name: "a", HubAcceptsClient: false}, UpdateMask: mask("hub_accepts_client")})
-		if err != nil {
-			t.Fatal(err)
+		// Moving the site to another cluster set changes Placements and RBAC
+		// scope; the hub keeps a non-empty clusterset label as it is.
+		_, err := update(s, &aigridv1.UpdateManagedClusterRequest{Object: &aigridv1.ManagedCluster{Name: "a", Labels: labelsWith(readyCluster("a"), LabelClusterSet, "other")}, UpdateMask: mask("labels")})
+		mustCode(t, err, codes.InvalidArgument, `label "cluster.open-cluster-management.io/clusterset" cannot be changed through the console; only ai-grid/* labels and annotations and the location label can`)
+		// location and the fake's own ai-grid-mock/* switches are writable.
+		got, err := update(s, &aigridv1.UpdateManagedClusterRequest{Object: &aigridv1.ManagedCluster{Name: "a", Labels: labelsWith(readyCluster("a"), "location", "paris", "ai-grid-mock/fail-apply", "true")}, UpdateMask: mask("labels")})
+		if err != nil || got.GetLabels()["location"] != "paris" || got.GetLabels()["ai-grid-mock/fail-apply"] != "true" {
+			t.Errorf("console keys = %v, %v", got.GetLabels(), err)
 		}
-		c := findCondition(got, CondHubAccepted)
-		if got.GetHubAcceptsClient() || c.GetStatus() != cFalse || c.GetReason() != ReasonHubDenied || c.GetMessage() != MessageHubDenied || !c.GetLastTransitionTime().AsTime().Equal(now) {
-			t.Errorf("denied condition = %v", c)
-		}
-		if got.GetStatus().GetState() != aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_NOT_ACCEPTED || got.GetStatus().GetStateMessage() != MessageHubDenied {
-			t.Errorf("state = %s %q", got.GetStatus().GetState(), got.GetStatus().GetStateMessage())
-		}
-		if got.GetGeneration() != 1 {
-			t.Errorf("a spec change bumps generation, got %d", got.GetGeneration())
-		}
-		got, err = update(s, &aigridv1.UpdateManagedClusterRequest{Object: &aigridv1.ManagedCluster{Name: "a", HubAcceptsClient: true}, UpdateMask: mask("hub_accepts_client")})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if c := findCondition(got, CondHubAccepted); c.GetReason() != ReasonHubAccepted || c.GetMessage() != MessageHubAccepted || got.GetStatus().GetState() != aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_AVAILABLE {
-			t.Errorf("re-accepted = %v, state %s", c, got.GetStatus().GetState())
-		}
-	})
-
-	t.Run("denying a cluster that was never accepted writes no condition", func(t *testing.T) {
-		// ocm:pkg/registration/hub/managedcluster/controller.go L164-167.
-		never := withConditions()
-		never.Name = "fresh"
-		s := newServer(t, &Fixtures{Clusters: []*aigridv1.ManagedCluster{never}})
-		got, err := update(s, &aigridv1.UpdateManagedClusterRequest{Object: &aigridv1.ManagedCluster{Name: "fresh", HubAcceptsClient: false}, UpdateMask: mask("hub_accepts_client")})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if findCondition(got, CondHubAccepted) != nil || got.GetGeneration() != 1 {
-			t.Errorf("no HubAccepted condition, generation bumped: %v", got)
-		}
+		// Hub acceptance is not writable: turning it off drops a live site.
+		_, err = update(s, &aigridv1.UpdateManagedClusterRequest{Object: &aigridv1.ManagedCluster{Name: "a", HubAcceptsClient: false}, UpdateMask: mask("hub_accepts_client")})
+		mustCode(t, err, codes.InvalidArgument, `update_mask path "hub_accepts_client" is not supported; supported paths: labels, annotations`)
 	})
 }
 
@@ -720,4 +707,14 @@ func TestScenariosAreValidated(t *testing.T) {
 	if _, err := New(&Fixtures{Clusters: []*aigridv1.ManagedCluster{readyCluster("a")}, Scenarios: []ScenarioEvent{{Cluster: "a", Event: EventJoined, Spoke: []byte(`{"nope":1}`)}}}, nil); err == nil {
 		t.Error("bad spoke payload must fail at load")
 	}
+}
+
+// labelsWith is c's labels with the given key/value pairs set: a whole map
+// as a client that loaded c and changed some keys would send it.
+func labelsWith(c *aigridv1.ManagedCluster, kv ...string) map[string]string {
+	m := copyMap(c.GetLabels())
+	for i := 0; i+1 < len(kv); i += 2 {
+		m[kv[i]] = kv[i+1]
+	}
+	return m
 }

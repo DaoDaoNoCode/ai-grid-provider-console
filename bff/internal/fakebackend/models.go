@@ -914,7 +914,7 @@ func (s *Server) CreateModel(ctx context.Context, req *aigridv1.CreateModelReque
 	if err != nil {
 		return nil, err
 	}
-	if err := s.authorizeProviderAdmin(ctx, token); err != nil {
+	if err := s.authorizeProviderAdmin(ctx, token, "models"); err != nil {
 		return nil, err
 	}
 	obj := req.GetObject()
@@ -970,7 +970,7 @@ func (s *Server) UpdateModel(ctx context.Context, req *aigridv1.UpdateModelReque
 	if err != nil {
 		return nil, err
 	}
-	if err := s.authorizeProviderAdmin(ctx, token); err != nil {
+	if err := s.authorizeProviderAdmin(ctx, token, "models"); err != nil {
 		return nil, err
 	}
 	obj := req.GetObject()
@@ -1093,7 +1093,7 @@ func (s *Server) DeleteModel(ctx context.Context, req *aigridv1.DeleteModelReque
 	if err != nil {
 		return nil, err
 	}
-	if err := s.authorizeProviderAdmin(ctx, token); err != nil {
+	if err := s.authorizeProviderAdmin(ctx, token, "models"); err != nil {
 		return nil, err
 	}
 	if req.GetName() == "" || req.GetNamespace() == "" {

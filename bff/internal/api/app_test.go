@@ -648,26 +648,24 @@ func TestPatchCluster(t *testing.T) {
 		}
 	})
 
-	t.Run("hubAcceptsClient, an empty map clears, null is absent", func(t *testing.T) {
+	t.Run("an empty map clears, null is absent", func(t *testing.T) {
 		fake := site()
 		app := newTestApp(t, testConfig(t), fake)
-		rec := serve(app, withIfMatch(patchRequest("site-1", `{"hubAcceptsClient": false, "labels": {}, "annotations": null}`), `"7"`))
+		rec := serve(app, withIfMatch(patchRequest("site-1", `{"labels": {}, "annotations": null}`), `"7"`))
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
 		}
 		up := fake.LastUpdate
-		if strings.Join(up.GetUpdateMask().GetPaths(), ",") != "labels,hub_accepts_client" || len(up.GetObject().GetLabels()) != 0 || up.GetObject().GetHubAcceptsClient() {
+		if strings.Join(up.GetUpdateMask().GetPaths(), ",") != "labels" || len(up.GetObject().GetLabels()) != 0 {
 			t.Errorf("update = %v", up)
 		}
 	})
 
-	t.Run("an empty body answers the current cluster without a write", func(t *testing.T) {
-		for _, body := range []string{`{}`, `{"labels": null, "annotations": null, "hubAcceptsClient": null}`} {
+	t.Run("an empty body is 422 and calls nothing, even with a stale If-Match", func(t *testing.T) {
+		for _, body := range []string{`{}`, `{"labels": null, "annotations": null}`} {
 			fake := site()
 			rec := serve(newTestApp(t, testConfig(t), fake), withIfMatch(patchRequest("site-1", body), `"3"`))
-			var c GridCluster
-			decodeData(t, rec, &c)
-			if rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"7"` || c.Name != "site-1" || strings.Join(fake.Calls, ",") != "GetManagedCluster" {
+			if rec.Code != http.StatusUnprocessableEntity || decodeError(t, rec).Error.Message != "the request body names no field to change" || len(fake.Calls) != 0 {
 				t.Errorf("%s = %d %s, calls %v", body, rec.Code, rec.Body.String(), fake.Calls)
 			}
 		}
@@ -686,11 +684,11 @@ func TestPatchCluster(t *testing.T) {
 		app := newTestApp(t, testConfig(t), fake)
 		for body, want := range map[string]string{
 			// The typed fields are gone; a client sends the maps.
-			`{"aiGridEnabled": true}`: `invalid request body: json: unknown field "aiGridEnabled"`,
-			`{"latitude": 91}`:        `invalid request body: json: unknown field "latitude"`,
-			`{"labels": "x"}`:         `invalid request body: field "labels" must be a map[string]string`,
-			`{"hubAcceptsClient": 1}`: `invalid request body: field "hubAcceptsClient" must be a bool`,
-			`{`:                       "invalid request body: malformed JSON",
+			`{"aiGridEnabled": true}`:     `invalid request body: json: unknown field "aiGridEnabled"`,
+			`{"latitude": 91}`:            `invalid request body: json: unknown field "latitude"`,
+			`{"labels": "x"}`:             `invalid request body: field "labels" must be an object`,
+			`{"hubAcceptsClient": false}`: `invalid request body: json: unknown field "hubAcceptsClient"`,
+			`{`:                           "invalid request body: malformed JSON",
 			// The body is an object: null would otherwise read as an empty patch.
 			`null`:    "invalid request body: must be a JSON object",
 			` null `:  "invalid request body: must be a JSON object",
