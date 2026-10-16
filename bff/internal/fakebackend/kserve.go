@@ -758,14 +758,23 @@ func conditionStatusString(st aigridv1.ConditionStatus) string {
 }
 
 // deriveHubPhase is the phase derivation for a hub deployment
-// (models-maas.md 2.1): Ready True -> READY, False -> FAILED with its reason
-// and message, absent or Unknown -> PENDING.
+// (models-maas.md 2.1, refined): Ready True -> READY; False with a reason
+// that does not recover on its own (terminalReadyReasons: a missing preset,
+// a missing or unprogrammed Gateway) -> FAILED with its reason and message;
+// False with any other reason, and absent or Unknown -> PENDING, reason and
+// message kept. KServe reports Ready False while a healthy model starts
+// (`WaitingForGateway`, `Progressing`, `MinimumReplicasUnavailable`), so
+// "False means failed" would show every new model as failed for its first
+// seconds. The cost is the one the placed path already has (see
+// terminalReadyReasons): a workload that never becomes available keeps
+// `MinimumReplicasUnavailable` for good, which no condition tells apart from
+// a slow start, so it stays PENDING with that reason.
 func deriveHubPhase(st *aigridv1.ModelStatus) (aigridv1.ModelPhase, string, string) {
 	ready := condition(st.GetConditions(), CondReady)
-	switch ready.GetStatus() {
-	case cTrue:
+	switch {
+	case ready.GetStatus() == cTrue:
 		return aigridv1.ModelPhase_MODEL_PHASE_READY, "", ""
-	case cFalse:
+	case isTerminalFailure(ready):
 		return aigridv1.ModelPhase_MODEL_PHASE_FAILED, ready.GetReason(), ready.GetMessage()
 	default:
 		return aigridv1.ModelPhase_MODEL_PHASE_PENDING, ready.GetReason(), ready.GetMessage()

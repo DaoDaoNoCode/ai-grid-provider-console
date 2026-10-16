@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -122,17 +123,38 @@ func TestListModels(t *testing.T) {
 		t.Errorf("other = %+v (collections are always present)", other)
 	}
 
-	rec = serve(app, asUser(http.MethodGet, "/api/v1/models?namespace=ai-grid-models&label=ai-grid/family%3Dtiny&offset=0&limit=5"))
+	// The client writes the CEL (the guarded label form, so a model without
+	// the label is false instead of a `no such key` error); the BFF forwards it.
+	const tinyFamily = `this.metadata.namespace == "ai-grid-models" && "ai-grid/family" in this.metadata.labels && this.metadata.labels["ai-grid/family"] == "tiny"`
+	rec = serve(app, asUser(http.MethodGet, "/api/v1/models?offset=0&limit=5&filter="+url.QueryEscape(tinyFamily)))
 	meta = decodeList(t, rec, &list)
-	if fake.LastListModels.GetFilter() != `this.metadata.namespace == "ai-grid-models" && "ai-grid/family" in this.metadata.labels && this.metadata.labels["ai-grid/family"] == "tiny"` || fake.LastListModels.GetLimit() != 5 {
+	if fake.LastListModels.GetFilter() != tinyFamily || fake.LastListModels.GetLimit() != 5 {
 		t.Errorf("query not mapped: %v", fake.LastListModels)
 	}
-	if len(list) != 1 || list[0].Name != "tiny-llm" || meta.Limit == nil || *meta.Limit != 5 {
+	if len(list) != 1 || list[0].Name != "tiny-llm" || meta.Limit == nil || *meta.Limit != 5 || total(meta) != 1 {
 		t.Errorf("filtered = %+v %+v", list, meta)
 	}
-	for _, q := range []string{"label=nokey", "offset=-1", "limit=x"} {
-		if rec := serve(app, asUser(http.MethodGet, "/api/v1/models?"+q)); rec.Code != http.StatusUnprocessableEntity {
-			t.Errorf("%s -> %d, want 422", q, rec.Code)
+	rec = serve(app, asUser(http.MethodGet, "/api/v1/models?filter="+url.QueryEscape(`this.status.phase == ai_grid.v1.ModelPhase.MODEL_PHASE_FAILED`)))
+	if decodeList(t, rec, &list); rec.Code != http.StatusOK || len(list) != 1 || list[0].Name != "other" {
+		t.Errorf("any CEL over the model = %d %+v", rec.Code, list)
+	}
+	// An unguarded index fails on a model without the key: the backend's
+	// InvalidArgument, 422.
+	rec = serve(app, asUser(http.MethodGet, "/api/v1/models?filter="+url.QueryEscape(`this.metadata.labels["ai-grid/family"] == "tiny"`)))
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(decodeError(t, rec).Error.Message, "no such key") {
+		t.Errorf("unguarded index = %d %s", rec.Code, rec.Body.String())
+	}
+	for q, want := range map[string]string{
+		"namespace=team-b":             `query parameter "namespace" is not supported; send a CEL filter in "filter"`,
+		"label=ai-grid/family%3Dtiny":  `query parameter "label" is not supported; send a CEL filter in "filter"`,
+		"label=nokey":                  `query parameter "label" is not supported; send a CEL filter in "filter"`,
+		"offset=-1":                    `query parameter "offset" must be an integer between 0 and 2147483647`,
+		"limit=x":                      `query parameter "limit" must be an integer between 0 and 2147483647`,
+		"filter=true&namespace=team-b": `query parameter "namespace" is not supported; send a CEL filter in "filter"`,
+	} {
+		fake.Calls = nil
+		if rec := serve(app, asUser(http.MethodGet, "/api/v1/models?"+q)); rec.Code != http.StatusUnprocessableEntity || decodeError(t, rec).Error.Message != want || len(fake.Calls) != 0 {
+			t.Errorf("%s -> %d %s, calls %v; want 422 %q", q, rec.Code, rec.Body.String(), fake.Calls, want)
 		}
 	}
 }
@@ -157,10 +179,10 @@ func TestGetModel(t *testing.T) {
 func TestCreateModel(t *testing.T) {
 	fake := &backendtest.Fake{Models: seedModels()}
 	app := newTestApp(t, testConfig(t), fake)
-	body := `{"name": "mistral-7b", "namespace": "ai-grid-models", "displayName": "Mistral 7B", "description": "EU sites", "modelUri": "oci://registry.example.com/models/mistral:v0.3", "modelName": "example-org/mistral-7b",
+	body := `{"name": "mistral-7b", "namespace": "ai-grid-models", "modelUri": "oci://registry.example.com/models/mistral:v0.3", "modelName": "example-org/mistral-7b",
 	  "runtimeImage": "quay.io/example/vllm-cuda:v0.11.0", "replicas": 2, "baseRefs": ["v3-6-0-kserve-config-llm-template"], "cpu": "8", "memory": "32Gi", "gpuCount": 1, "env": [{"name": "VLLM_ADDITIONAL_ARGS", "value": "--max-model-len 8192"}],
 	  "placement": {"matchLabels": {"ai-grid/enabled": "true"}, "matchExpressions": [{"key": "location", "operator": "In", "values": ["paris", "madrid"]}], "tolerations": [{"key": "cluster.open-cluster-management.io/unreachable", "operator": "Exists", "tolerationSeconds": 600}], "numberOfClusters": 2},
-	  "rollout": {"strategy": "Progressive", "maxConcurrency": "1", "progressDeadline": "15m"}, "labels": {"ai-grid/family": "mistral"}}`
+	  "rollout": {"strategy": "Progressive", "maxConcurrency": "1", "progressDeadline": "15m"}, "labels": {"ai-grid/family": "mistral"}, "annotations": {"openshift.io/display-name": "Mistral 7B", "openshift.io/description": "EU sites"}}`
 	rec := serve(app, jsonRequest(http.MethodPost, "/api/v1/models", body))
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
@@ -262,64 +284,78 @@ func TestCreateModel(t *testing.T) {
 func TestPatchModel(t *testing.T) {
 	fake := &backendtest.Fake{Models: seedModels()}
 	app := newTestApp(t, testConfig(t), fake)
-	rec := serve(app, jsonRequest(http.MethodPatch, "/api/v1/models/ai-grid-models/tiny-llm", `{"replicas": 3, "runtimeImage": "quay.io/example/vllm:v2", "env": [], "displayName": "Tiny LLM v2", "labels": {"team": "a"}}`))
+	const tiny = "/api/v1/models/ai-grid-models/tiny-llm"
+	rec := serve(app, withIfMatch(jsonRequest(http.MethodPatch, tiny, `{"replicas": 3, "runtimeImage": "quay.io/example/vllm:v2", "env": [], "labels": {"team": "a"}, "annotations": {"openshift.io/display-name": "Tiny LLM v2"}}`), `"7"`))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
 	}
 	var m Model
 	decodeData(t, rec, &m)
-	if m.Replicas == nil || *m.Replicas != 3 || m.RuntimeImage != "quay.io/example/vllm:v2" || len(m.Env) != 0 || m.DisplayName != "Tiny LLM v2" || m.Description != "CPU smoke test" || m.Labels["team"] != "a" || m.ResourceVersion != "8" {
+	// The annotations are a whole map: the description the client left out is gone.
+	if m.Replicas == nil || *m.Replicas != 3 || m.RuntimeImage != "quay.io/example/vllm:v2" || len(m.Env) != 0 || m.DisplayName != "Tiny LLM v2" || m.Description != "" || m.Labels["team"] != "a" || m.ResourceVersion != "8" {
 		t.Errorf("patched = %+v", m)
+	}
+	if strings.Join(fake.Calls, ",") != "UpdateModel" {
+		t.Errorf("the BFF must not read the model first: calls %v", fake.Calls)
 	}
 	req := fake.LastUpdateModel
 	if !req.GetLock() || req.GetObject().GetMetadata().GetResourceVersion() != "7" || strings.Join(req.GetUpdateMask().GetPaths(), ",") != "spec.replicas,spec.main.image,spec.main.env,metadata.labels,metadata.annotations" {
 		t.Errorf("update request = %v", req)
 	}
-	if ann := req.GetObject().GetMetadata().GetAnnotations(); ann[AnnotationDisplayName] != "Tiny LLM v2" || ann[AnnotationDescription] != "CPU smoke test" {
-		t.Errorf("display name merged into the stored annotations: %v", ann)
+	if ann := req.GetObject().GetMetadata().GetAnnotations(); len(ann) != 1 || ann[AnnotationDisplayName] != "Tiny LLM v2" {
+		t.Errorf("annotations go as sent, nothing merged: %v", ann)
 	}
 	if len(req.GetObject().GetSpec().GetMain().GetEnv()) != 0 {
 		t.Errorf("env: [] clears the variables (the mask path carries the intent), sent %v", req.GetObject().GetSpec().GetMain())
 	}
 
-	// Placement and rollout, then placement removed.
-	rec = serve(app, jsonRequest(http.MethodPatch, "/api/v1/models/ai-grid-models/tiny-llm", `{"placement": {"matchLabels": {"ai-grid/enabled": "true"}}, "rollout": {"strategy": "All", "progressDeadline": "10m"}}`))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
+	// A placement alone is only spec.placement: the BFF adds no rollout.
+	rec = serve(app, withIfMatch(jsonRequest(http.MethodPatch, tiny, `{"placement": {"matchLabels": {"ai-grid/enabled": "true"}}}`), `"8"`))
+	if rec.Code != http.StatusOK || strings.Join(fake.LastUpdateModel.GetUpdateMask().GetPaths(), ",") != "spec.placement" || fake.LastUpdateModel.GetObject().GetSpec().GetRollout() != nil {
+		t.Errorf("placement only = %d %v", rec.Code, fake.LastUpdateModel)
 	}
+	rec = serve(app, withIfMatch(jsonRequest(http.MethodPatch, tiny, `{"placement": {"matchLabels": {"ai-grid/enabled": "true"}}, "rollout": {"strategy": "All", "progressDeadline": "10m"}}`), `"9"`))
 	req = fake.LastUpdateModel
-	if strings.Join(req.GetUpdateMask().GetPaths(), ",") != "spec.placement,spec.rollout" || req.GetObject().GetSpec().GetPlacement().GetLabelSelector().GetMatchLabels()["ai-grid/enabled"] != "true" || req.GetObject().GetSpec().GetRollout().GetProgressDeadline() != "10m" {
-		t.Errorf("placement update = %v", req)
+	if rec.Code != http.StatusOK || strings.Join(req.GetUpdateMask().GetPaths(), ",") != "spec.placement,spec.rollout" || req.GetObject().GetSpec().GetPlacement().GetLabelSelector().GetMatchLabels()["ai-grid/enabled"] != "true" || req.GetObject().GetSpec().GetRollout().GetProgressDeadline() != "10m" {
+		t.Errorf("placement update = %d %v", rec.Code, req)
 	}
-	rec = serve(app, jsonRequest(http.MethodPatch, "/api/v1/models/ai-grid-models/tiny-llm", `{"placement": null}`))
+	rec = serve(app, withIfMatch(jsonRequest(http.MethodPatch, tiny, `{"placement": null}`), `"10"`))
 	if rec.Code != http.StatusOK || fake.LastUpdateModel.GetObject().GetSpec().GetPlacement() != nil || strings.Join(fake.LastUpdateModel.GetUpdateMask().GetPaths(), ",") != "spec.placement" {
 		t.Errorf("placement: null removes it: %d %v", rec.Code, fake.LastUpdateModel)
 	}
 
-	// An empty patch reads and answers without a write.
-	calls := len(fake.Calls)
-	rec = serve(app, jsonRequest(http.MethodPatch, "/api/v1/models/ai-grid-models/tiny-llm", `{}`))
-	if rec.Code != http.StatusOK || len(fake.Calls) != calls+1 || fake.Calls[calls] != "GetModel" {
-		t.Errorf("empty patch = %d, calls %v", rec.Code, fake.Calls[calls:])
+	// An empty body is 422 and calls nothing, so a stale If-Match is never
+	// answered with the current object.
+	fake.Calls = nil
+	rec = serve(app, withIfMatch(jsonRequest(http.MethodPatch, tiny, `{}`), `"1"`))
+	if rec.Code != http.StatusUnprocessableEntity || len(fake.Calls) != 0 || decodeError(t, rec).Error.Message != "the request body names no field to change" {
+		t.Errorf("empty patch = %d %s, calls %v", rec.Code, rec.Body.String(), fake.Calls)
 	}
+	fake.Calls = nil
 	for _, tc := range []struct{ body, message string }{
 		{`{"nope": 1}`, `invalid request body: json: unknown field "nope"`},
+		// The display name and description are annotation keys now.
+		{`{"displayName": "Tiny"}`, `invalid request body: json: unknown field "displayName"`},
+		{`{"replicas": "2"}`, `invalid request body: field "replicas" must be a whole number`},
+		{`{"description": "x"}`, `invalid request body: json: unknown field "description"`},
 		{`{"rollout": {"strategy": "Blue"}}`, "rollout.strategy must be All, Progressive or ProgressivePerGroup"},
 		{`{"placement": {"nope": 1}}`, `invalid request body: json: unknown field "nope"`},
 	} {
-		rec := serve(app, jsonRequest(http.MethodPatch, "/api/v1/models/ai-grid-models/tiny-llm", tc.body))
+		rec := serve(app, withIfMatch(jsonRequest(http.MethodPatch, tiny, tc.body), `"11"`))
 		if rec.Code != http.StatusUnprocessableEntity || decodeError(t, rec).Error.Message != tc.message {
 			t.Errorf("%s: %d %s", tc.body, rec.Code, rec.Body.String())
 		}
 	}
-	rec = serve(app, jsonRequest(http.MethodPatch, "/api/v1/models/ai-grid-models/nope", `{"replicas": 1}`))
+	if len(fake.Calls) != 0 {
+		t.Errorf("invalid patches reached the backend: %v", fake.Calls)
+	}
+	rec = serve(app, withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/models/ai-grid-models/nope", `{"replicas": 1}`), `"1"`))
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("unknown model = %d", rec.Code)
 	}
-	// A write that lands between the read and the update is a 409.
-	fake.AfterGetModel = func(stored *aigridv1.Model) { stored.Metadata.ResourceVersion = "99" }
-	rec = serve(app, jsonRequest(http.MethodPatch, "/api/v1/models/ai-grid-models/tiny-llm", `{"replicas": 4}`))
-	if rec.Code != http.StatusConflict {
+	// A write that landed since the client read is the backend's Aborted, 409.
+	rec = serve(app, withIfMatch(jsonRequest(http.MethodPatch, tiny, `{"replicas": 4}`), `"10"`))
+	if rec.Code != http.StatusConflict || !strings.Contains(decodeError(t, rec).Error.Message, `carries "10"`) {
 		t.Errorf("stale write = %d %s", rec.Code, rec.Body.String())
 	}
 }
@@ -327,15 +363,15 @@ func TestPatchModel(t *testing.T) {
 func TestDeleteModel(t *testing.T) {
 	fake := &backendtest.Fake{Models: seedModels()}
 	app := newTestApp(t, testConfig(t), fake)
-	rec := serve(app, asUser(http.MethodDelete, "/api/v1/models/team-b/other"))
+	rec := serve(app, withIfMatch(asUser(http.MethodDelete, "/api/v1/models/team-b/other"), `"3"`))
 	if rec.Code != http.StatusNoContent || rec.Body.Len() != 0 || fake.LastDeleteModel.GetNamespace() != "team-b" || fake.LastDeleteModel.GetName() != "other" {
 		t.Errorf("delete = %d %q %v", rec.Code, rec.Body.String(), fake.LastDeleteModel)
 	}
-	if rec := serve(app, asUser(http.MethodDelete, "/api/v1/models/team-b/other")); rec.Code != http.StatusNotFound {
+	if rec := serve(app, withIfMatch(asUser(http.MethodDelete, "/api/v1/models/team-b/other"), `"3"`)); rec.Code != http.StatusNotFound {
 		t.Errorf("second delete = %d", rec.Code)
 	}
 	fake.Errs = map[string]error{"DeleteModel": backendtest.Status(codes.FailedPrecondition, "model ai-grid-models/tiny-llm is referenced by subscription acme/gold; remove those references first")}
-	rec = serve(app, asUser(http.MethodDelete, "/api/v1/models/ai-grid-models/tiny-llm"))
+	rec = serve(app, withIfMatch(asUser(http.MethodDelete, "/api/v1/models/ai-grid-models/tiny-llm"), `"7"`))
 	if rec.Code != http.StatusPreconditionFailed || !strings.Contains(decodeError(t, rec).Error.Message, "referenced by") {
 		t.Errorf("referenced = %d %s", rec.Code, rec.Body.String())
 	}
@@ -381,7 +417,6 @@ func TestModelFromTodaysShapes(t *testing.T) {
 func TestModelVersions(t *testing.T) {
 	fake := &backendtest.Fake{Models: seedModels()}
 	app := newTestApp(t, testConfig(t), fake)
-	withIfMatch := func(req *http.Request, v string) *http.Request { req.Header.Set("If-Match", v); return req }
 	const path = "/api/v1/models/ai-grid-models/tiny-llm"
 
 	if rec := serve(app, asUser(http.MethodGet, path)); rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"7"` {
@@ -408,44 +443,29 @@ func TestModelVersions(t *testing.T) {
 	if rec := serve(app, withIfMatch(asUser(http.MethodDelete, "/api/v1/models/team-b/other"), `W/"3"`)); rec.Code != http.StatusUnprocessableEntity || len(fake.Models) != 2 {
 		t.Errorf("weak If-Match on DELETE = %d", rec.Code)
 	}
-	if rec := serve(app, asUser(http.MethodDelete, "/api/v1/models/team-b/other")); rec.Code != http.StatusNoContent || fake.LastDeleteModel.GetResourceVersion() != "" {
-		t.Errorf("DELETE without If-Match = %d, request %v", rec.Code, fake.LastDeleteModel)
+	fake.Calls = nil
+	if rec := serve(app, asUser(http.MethodDelete, "/api/v1/models/team-b/other")); rec.Code != http.StatusPreconditionRequired || len(fake.Calls) != 0 || len(fake.Models) != 2 {
+		t.Errorf("DELETE without If-Match = %d, calls %v; want 428 and no call", rec.Code, fake.Calls)
 	}
 }
 
-// Resending what the page loaded is not a write; only changed fields go in
-// the mask.
-func TestNoOpModelPatchDoesNotWrite(t *testing.T) {
+// Resending what the page loaded goes to the backend with every present
+// path; the backend sees that nothing changes and keeps the version.
+func TestRepeatedModelPatchReachesTheBackend(t *testing.T) {
 	fake := &backendtest.Fake{Models: seedModels()}
 	app := newTestApp(t, testConfig(t), fake)
-	const tiny = "/api/v1/models/ai-grid-models/tiny-llm"
-	for _, body := range []string{
-		`{"replicas": 1, "runtimeImage": "", "env": [{"name": "VLLM_CPU_KVCACHE_SPACE", "value": "8"}]}`,
-		`{"labels": {"ai-grid/family": "tiny"}, "displayName": "Tiny LLM", "description": "CPU smoke test"}`,
-		`{"annotations": {"openshift.io/display-name": "Tiny LLM", "openshift.io/description": "CPU smoke test"}}`,
-		`{"placement": null}`,
-	} {
-		fake.Calls = nil
-		if rec := serve(app, jsonRequest(http.MethodPatch, tiny, body)); rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"7"` || fake.Reached("UpdateModel") {
-			t.Errorf("%s = %d, calls %v; want 200 without a write", body, rec.Code, fake.Calls)
-		}
-	}
-	const granite = "/api/v1/models/ai-grid-models/granite-8b-instruct"
-	fake.Calls = nil
-	if rec := serve(app, jsonRequest(http.MethodPatch, granite, `{"rollout": {"strategy": "Progressive", "maxConcurrency": "1", "progressDeadline": "15m"}}`)); rec.Code != http.StatusOK || fake.Reached("UpdateModel") {
-		t.Errorf("unchanged rollout = %d, calls %v", rec.Code, fake.Calls)
-	}
-	if rec := serve(app, jsonRequest(http.MethodPatch, tiny, `{"replicas": 1, "displayName": "Tiny"}`)); rec.Code != http.StatusOK || strings.Join(fake.LastUpdateModel.GetUpdateMask().GetPaths(), ",") != "metadata.annotations" {
-		t.Errorf("only the changed field is in the mask: %d %v", rec.Code, fake.LastUpdateModel.GetUpdateMask().GetPaths())
+	rec := serve(app, withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/models/ai-grid-models/tiny-llm", `{"replicas": 1, "env": [{"name": "VLLM_CPU_KVCACHE_SPACE", "value": "8"}], "labels": {"ai-grid/family": "tiny"}}`), `"7"`))
+	if rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"7"` || strings.Join(fake.LastUpdateModel.GetUpdateMask().GetPaths(), ",") != "spec.replicas,spec.main.env,metadata.labels" {
+		t.Errorf("repeat = %d, ETag %q, mask %v", rec.Code, rec.Header().Get("ETag"), fake.LastUpdateModel.GetUpdateMask().GetPaths())
 	}
 }
 
 func TestModelFilterOnTheShippedBackend(t *testing.T) {
 	fake := &backendtest.Fake{Models: seedModels(), ShippedLists: true}
 	app := newTestApp(t, testConfig(t), fake)
-	for _, q := range []string{"namespace=team-b", "label=ai-grid/family%3Dtiny", "limit=1", "offset=2"} {
+	for _, q := range []string{"filter=" + url.QueryEscape(`this.metadata.namespace == "team-b"`), "limit=1", "offset=2"} {
 		rec := serve(app, asUser(http.MethodGet, "/api/v1/models?"+q))
-		if rec.Code != http.StatusNotImplemented || !strings.Contains(decodeError(t, rec).Error.Message, "searching or paging models") {
+		if rec.Code != http.StatusNotImplemented || !strings.Contains(decodeError(t, rec).Error.Message, "filtering or paging models") {
 			t.Errorf("%s = %d %s, want 501", q, rec.Code, rec.Body.String())
 		}
 	}
@@ -456,12 +476,27 @@ func TestModelFilterOnTheShippedBackend(t *testing.T) {
 	}
 }
 
-// A backend model without a spec must not break the comparison.
-func TestPatchModelWithoutStoredSpec(t *testing.T) {
+// Every present field goes in the mask, also for a model whose backend sent
+// no spec: the BFF has nothing to compare with.
+func TestPatchModelSendsEveryPresentField(t *testing.T) {
 	fake := &backendtest.Fake{Models: []*aigridv1.Model{{Name: "bare", Metadata: &aigridv1.ObjectMeta{Namespace: "ns", ResourceVersion: "1"}}}}
 	app := newTestApp(t, testConfig(t), fake)
-	rec := serve(app, jsonRequest(http.MethodPatch, "/api/v1/models/ns/bare", `{"replicas": 1, "runtimeImage": "img", "env": [], "placement": null, "labels": {}, "annotations": {}}`))
-	if rec.Code != http.StatusOK || strings.Join(fake.LastUpdateModel.GetUpdateMask().GetPaths(), ",") != "spec.replicas,spec.main.image" {
+	rec := serve(app, withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/models/ns/bare", `{"replicas": 1, "runtimeImage": "img", "env": [], "placement": null, "rollout": {}, "labels": {}, "annotations": {}}`), `"1"`))
+	if rec.Code != http.StatusOK || strings.Join(fake.LastUpdateModel.GetUpdateMask().GetPaths(), ",") != "spec.replicas,spec.main.image,spec.main.env,spec.placement,spec.rollout,metadata.labels,metadata.annotations" {
 		t.Errorf("bare model = %d %s, mask %v", rec.Code, rec.Body.String(), fake.LastUpdateModel.GetUpdateMask().GetPaths())
+	}
+}
+
+// The display name and description travel as annotations on create too,
+// so a client sets them one way on both POST and PATCH.
+func TestCreateModelTakesNoDisplayNameField(t *testing.T) {
+	fake := &backendtest.Fake{Models: seedModels()}
+	app := newTestApp(t, testConfig(t), fake)
+	for _, field := range []string{"displayName", "description"} {
+		body := `{"name": "m", "namespace": "ai-grid-models", "modelUri": "hf://example-org/m", "` + field + `": "x"}`
+		rec := serve(app, jsonRequest(http.MethodPost, "/api/v1/models", body))
+		if rec.Code != http.StatusUnprocessableEntity || decodeError(t, rec).Error.Message != `invalid request body: json: unknown field "`+field+`"` || fake.Reached("CreateModel") {
+			t.Errorf("%s on create = %d %s", field, rec.Code, rec.Body.String())
+		}
 	}
 }

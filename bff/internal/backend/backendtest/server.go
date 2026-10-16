@@ -5,12 +5,12 @@ import (
 	"context"
 	"maps"
 	"net"
-	"regexp"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -21,6 +21,7 @@ import (
 
 	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/backend"
+	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/fakebackend/celfilter"
 )
 
 // Fake answers the ManagedClusters, Tenants and AiGrid services from fixed
@@ -31,10 +32,9 @@ import (
 // incoming metadata of the last call so tests can assert on identity
 // forwarding. Clusters are served as given: the derived `status.state` is
 // whatever the test put there, so handler tests control it directly.
-// GetManagedCluster hands out a copy and then runs AfterGet on the stored
-// object, so a test can simulate a write that lands between the BFF's read
-// and its update. Updates mutate the slice in place and bump
-// `resource_version`; LastUpdate keeps the last request, reached or refused.
+// Updates mutate the slice in place and bump `resource_version`, except an
+// update that changes nothing, which keeps it (as the fake backend and the
+// API server do); LastUpdate keeps the last request, reached or refused.
 // Tenants follow the same idea with the few Keycloak rules a handler test
 // needs (ids `t-<n>`, duplicate name 409, NotFound); the Last*Tenant fields
 // keep the last request of each tenant RPC, reached or refused; a tenant's
@@ -64,7 +64,6 @@ type Fake struct {
 	Calls      []string
 	Metadata   metadata.MD
 	LastUpdate *aigridv1.UpdateManagedClusterRequest
-	AfterGet   func(stored *aigridv1.ManagedCluster)
 
 	LastListTenants  *aigridv1.ListTenantsRequest
 	LastCreateTenant *aigridv1.CreateTenantRequest
@@ -80,9 +79,6 @@ type Fake struct {
 	LastCreateModel *aigridv1.CreateModelRequest
 	LastUpdateModel *aigridv1.UpdateModelRequest
 	LastDeleteModel *aigridv1.DeleteModelRequest
-	// AfterGetModel runs on the stored model after GetModel copied it, to
-	// simulate a write between the BFF's read and its update.
-	AfterGetModel func(stored *aigridv1.Model)
 
 	// ShippedLists serves the lists without paging, filtering or counts.
 	ShippedLists bool
@@ -148,16 +144,14 @@ func (f *Fake) GetManagedCluster(ctx context.Context, req *aigridv1.GetManagedCl
 	if c == nil {
 		return nil, status.Errorf(codes.NotFound, "object with identifier '%s' not found", req.GetName())
 	}
-	out := proto.Clone(c).(*aigridv1.ManagedCluster)
-	if f.AfterGet != nil {
-		f.AfterGet(c)
-	}
-	return &aigridv1.GetManagedClusterResponse{Object: out}, nil
+	return &aigridv1.GetManagedClusterResponse{Object: proto.Clone(c).(*aigridv1.ManagedCluster)}, nil
 }
 
-// UpdateManagedCluster implements ManagedClusters: mask paths `labels`,
-// `annotations`, `hub_accepts_client`; `lock` compares `resource_version`
-// and answers Aborted on a mismatch.
+// UpdateManagedCluster implements ManagedClusters: mask paths `labels` and
+// `annotations` (the fake also refuses keys outside the console's; this
+// stand-in does not); `lock` compares `resource_version`
+// and answers Aborted on a mismatch; an update that changes nothing keeps
+// the version.
 func (f *Fake) UpdateManagedCluster(ctx context.Context, req *aigridv1.UpdateManagedClusterRequest) (*aigridv1.UpdateManagedClusterResponse, error) {
 	f.LastUpdate = req
 	if err := f.begin(ctx, "UpdateManagedCluster"); err != nil {
@@ -170,18 +164,21 @@ func (f *Fake) UpdateManagedCluster(ctx context.Context, req *aigridv1.UpdateMan
 	if req.GetLock() && req.GetObject().GetResourceVersion() != c.GetResourceVersion() {
 		return nil, status.Errorf(codes.Aborted, "object with identifier '%s' has resource version %s, the request carries %q", c.GetName(), c.GetResourceVersion(), req.GetObject().GetResourceVersion())
 	}
+	next := proto.Clone(c).(*aigridv1.ManagedCluster)
 	for _, p := range req.GetUpdateMask().GetPaths() {
 		switch p {
 		case "labels":
-			c.Labels = maps.Clone(req.GetObject().GetLabels())
+			next.Labels = maps.Clone(req.GetObject().GetLabels())
 		case "annotations":
-			c.Annotations = maps.Clone(req.GetObject().GetAnnotations())
-		case "hub_accepts_client":
-			c.HubAcceptsClient = req.GetObject().GetHubAcceptsClient()
+			next.Annotations = maps.Clone(req.GetObject().GetAnnotations())
 		default:
 			return nil, status.Errorf(codes.InvalidArgument, "update_mask path %q is not supported", p)
 		}
 	}
+	if proto.Equal(next, c) {
+		return &aigridv1.UpdateManagedClusterResponse{Object: c}, nil
+	}
+	c.Labels, c.Annotations = next.Labels, next.Annotations
 	rv, err := strconv.Atoi(c.GetResourceVersion())
 	if err != nil {
 		rv = 0 // a fixture without a numeric version starts counting here
@@ -199,13 +196,11 @@ func (f *Fake) find(name string) *aigridv1.ManagedCluster {
 	return nil
 }
 
-// tenantFilter is the one filter form the draft supports (see
-// ListTenantsRequest.filter): the same term in both halves.
-var tenantFilter = regexp.MustCompile(`^this\.name\.lowerAscii\(\)\.contains\("((?:[^"\\]|\\.)*)"\) \|\| this\.domains\.exists\(d, d\.lowerAscii\(\)\.contains\("((?:[^"\\]|\\.)*)"\)\)$`)
-
 // ListTenants implements Tenants: name order, `offset`/`limit` paging and
-// the name-or-domain contains filter (case-insensitive), with `total`
-// counted over the filtered set.
+// `filter` evaluated as CEL over `this` (a Tenant) with the fake backend's
+// evaluator (celfilter: cel-go plus its strings extension), so a handler test
+// sees the same matches and the same InvalidArgument answers; `total` counts
+// the filtered set.
 func (f *Fake) ListTenants(ctx context.Context, req *aigridv1.ListTenantsRequest) (*aigridv1.ListTenantsResponse, error) {
 	if err := f.begin(ctx, "ListTenants"); err != nil {
 		return nil, err
@@ -214,29 +209,22 @@ func (f *Fake) ListTenants(ctx context.Context, req *aigridv1.ListTenantsRequest
 	if f.ShippedLists {
 		return &aigridv1.ListTenantsResponse{Tenants: f.Tenants}, nil
 	}
-	term := ""
-	if filter := req.GetFilter(); filter != "" {
-		m := tenantFilter.FindStringSubmatch(filter)
-		if m == nil || m[1] != m[2] {
-			return nil, status.Errorf(codes.InvalidArgument, "filter %s is not supported", filter)
-		}
-		unquoted, err := strconv.Unquote(`"` + m[1] + `"`)
-		if err != nil {
-			return nil, status.Errorf(codes.InvalidArgument, "filter %s is not supported", filter)
-		}
-		term = strings.ToLower(unquoted)
+	filter, err := celfilter.Compile(req.GetFilter(), &aigridv1.Tenant{})
+	if err != nil {
+		return nil, err
 	}
-	all := make([]*aigridv1.Tenant, 0, len(f.Tenants))
-	for _, t := range f.Tenants {
-		match := strings.Contains(strings.ToLower(t.GetName()), term)
-		for _, d := range t.GetDomains() {
-			match = match || strings.Contains(strings.ToLower(d), term)
+	sorted := slices.Clone(f.Tenants)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].GetName() < sorted[j].GetName() })
+	var all []*aigridv1.Tenant
+	for _, t := range sorted {
+		ok, err := filter.Match(ctx, t, t.GetId(), time.Now())
+		if err != nil {
+			return nil, err
 		}
-		if match {
+		if ok {
 			all = append(all, t)
 		}
 	}
-	sort.Slice(all, func(i, j int) bool { return all[i].GetName() < all[j].GetName() })
 	total := len(all)
 	page := all[min(int(req.GetOffset()), total):]
 	if req.Limit != nil && int(req.GetLimit()) < len(page) {
@@ -292,7 +280,10 @@ func (f *Fake) CreateTenant(ctx context.Context, req *aigridv1.CreateTenantReque
 	return &aigridv1.CreateTenantResponse{Object: t}, nil
 }
 
-// UpdateTenant implements Tenants: applies the mask paths in place.
+// UpdateTenant implements Tenants: applies the mask paths in place. `alias`
+// keeps the stored alias (a different non-blank one is Keycloak's
+// InvalidArgument, whatever the mask); an update that changes nothing keeps
+// the version, as the fake backend skips the PUT.
 func (f *Fake) UpdateTenant(ctx context.Context, req *aigridv1.UpdateTenantRequest) (*aigridv1.UpdateTenantResponse, error) {
 	f.LastUpdateTenant = req
 	if err := f.begin(ctx, "UpdateTenant"); err != nil {
@@ -309,8 +300,10 @@ func (f *Fake) UpdateTenant(ctx context.Context, req *aigridv1.UpdateTenantReque
 		return nil, status.Error(codes.InvalidArgument, "Cannot change the alias")
 	}
 	obj := req.GetObject()
+	before := proto.Clone(t).(*aigridv1.Tenant)
 	for _, p := range req.GetUpdateMask().GetPaths() {
 		switch p {
+		case "alias":
 		case "name":
 			// Keycloak's PUT answers a blank name with 409: its exact name
 			// search treats a blank term as no filter and finds the
@@ -343,7 +336,9 @@ func (f *Fake) UpdateTenant(ctx context.Context, req *aigridv1.UpdateTenantReque
 			return nil, status.Errorf(codes.InvalidArgument, "update_mask path %q is not supported", p)
 		}
 	}
-	t.ResourceVersion = nextVersion(t.GetResourceVersion())
+	if !proto.Equal(before, t) {
+		t.ResourceVersion = nextVersion(t.GetResourceVersion())
+	}
 	return &aigridv1.UpdateTenantResponse{Object: t}, nil
 }
 
@@ -403,62 +398,9 @@ func (f *Fake) GetHubCapabilities(ctx context.Context, _ *aigridv1.GetHubCapabil
 	return &aigridv1.GetHubCapabilitiesResponse{Capabilities: f.Capabilities}, nil
 }
 
-// Model filter terms the draft supports (see ListModelsRequest.filter), read
-// from the front of the filter so a quoted ` && ` stays in its literal.
-var (
-	modelFilterLiteral   = `"(?:[^"\\]|\\.)*"`
-	modelFilterNamespace = regexp.MustCompile(`^this\.metadata\.namespace == (` + modelFilterLiteral + `)`)
-	modelFilterLabel     = regexp.MustCompile(`^(` + modelFilterLiteral + `) in this\.metadata\.labels && this\.metadata\.labels\[(` + modelFilterLiteral + `)\] == (` + modelFilterLiteral + `)`)
-)
-
-// modelFilterChecks parses a ListModels filter into its term checks.
-func modelFilterChecks(filter string) ([]func(*aigridv1.Model) bool, bool) {
-	var checks []func(*aigridv1.Model) bool
-	unquote := func(literals []string) ([]string, bool) {
-		out := make([]string, len(literals))
-		for i, l := range literals {
-			v, err := strconv.Unquote(l)
-			if err != nil {
-				return nil, false
-			}
-			out[i] = v
-		}
-		return out, true
-	}
-	for rest := filter; ; {
-		if m := modelFilterNamespace.FindStringSubmatch(rest); m != nil {
-			v, ok := unquote(m[1:])
-			if !ok {
-				return nil, false
-			}
-			checks = append(checks, func(x *aigridv1.Model) bool { return x.GetMetadata().GetNamespace() == v[0] })
-			rest = rest[len(m[0]):]
-		} else if m := modelFilterLabel.FindStringSubmatch(rest); m != nil {
-			v, ok := unquote(m[1:])
-			if !ok || v[0] != v[1] {
-				return nil, false
-			}
-			checks = append(checks, func(x *aigridv1.Model) bool {
-				got, ok := x.GetMetadata().GetLabels()[v[1]]
-				return ok && got == v[2]
-			})
-			rest = rest[len(m[0]):]
-		} else {
-			return nil, false
-		}
-		if rest == "" {
-			return checks, true
-		}
-		after, ok := strings.CutPrefix(rest, " && ")
-		if !ok {
-			return nil, false
-		}
-		rest = after
-	}
-}
-
-// ListModels implements Models: namespace then name order, the two filter
-// term forms joined with ` && `, offset/limit paging.
+// ListModels implements Models: namespace then name order, `filter`
+// evaluated as CEL over `this` (a Model, as stored) like ListTenants,
+// offset/limit paging.
 func (f *Fake) ListModels(ctx context.Context, req *aigridv1.ListModelsRequest) (*aigridv1.ListModelsResponse, error) {
 	f.LastListModels = req
 	if err := f.begin(ctx, "ListModels"); err != nil {
@@ -467,29 +409,27 @@ func (f *Fake) ListModels(ctx context.Context, req *aigridv1.ListModelsRequest) 
 	if f.ShippedLists {
 		return &aigridv1.ListModelsResponse{Items: f.Models}, nil
 	}
-	var checks []func(*aigridv1.Model) bool
-	if filter := req.GetFilter(); filter != "" {
-		var ok bool
-		if checks, ok = modelFilterChecks(filter); !ok {
-			return nil, status.Errorf(codes.InvalidArgument, "filter %s is not supported", filter)
-		}
+	filter, err := celfilter.Compile(req.GetFilter(), &aigridv1.Model{})
+	if err != nil {
+		return nil, err
 	}
+	sorted := slices.Clone(f.Models)
+	sort.Slice(sorted, func(i, j int) bool {
+		if a, b := sorted[i].GetMetadata().GetNamespace(), sorted[j].GetMetadata().GetNamespace(); a != b {
+			return a < b
+		}
+		return sorted[i].GetName() < sorted[j].GetName()
+	})
 	var all []*aigridv1.Model
-	for _, m := range f.Models {
-		ok := true
-		for _, check := range checks {
-			ok = ok && check(m)
+	for _, m := range sorted {
+		ok, err := filter.Match(ctx, m, m.GetMetadata().GetNamespace()+"/"+m.GetName(), time.Now())
+		if err != nil {
+			return nil, err
 		}
 		if ok {
 			all = append(all, m)
 		}
 	}
-	sort.Slice(all, func(i, j int) bool {
-		if a, b := all[i].GetMetadata().GetNamespace(), all[j].GetMetadata().GetNamespace(); a != b {
-			return a < b
-		}
-		return all[i].GetName() < all[j].GetName()
-	})
 	total := len(all)
 	page := all[min(int(req.GetOffset()), total):]
 	if req.Limit != nil && int(req.GetLimit()) < len(page) {
@@ -507,11 +447,7 @@ func (f *Fake) GetModel(ctx context.Context, req *aigridv1.GetModelRequest) (*ai
 	if m == nil {
 		return nil, status.Errorf(codes.NotFound, "object with identifier '%s/%s' not found", req.GetNamespace(), req.GetName())
 	}
-	out := proto.Clone(m).(*aigridv1.Model)
-	if f.AfterGetModel != nil {
-		f.AfterGetModel(m)
-	}
-	return &aigridv1.GetModelResponse{Object: out}, nil
+	return &aigridv1.GetModelResponse{Object: proto.Clone(m).(*aigridv1.Model)}, nil
 }
 
 // CreateModel implements Models: AlreadyExists on a taken namespace/name,
@@ -537,7 +473,8 @@ func (f *Fake) CreateModel(ctx context.Context, req *aigridv1.CreateModelRequest
 }
 
 // UpdateModel implements Models: the supported mask paths applied in place,
-// `lock` against `metadata.resource_version` with Aborted on a mismatch.
+// `lock` against `metadata.resource_version` with Aborted on a mismatch; an
+// update that changes nothing keeps the version.
 func (f *Fake) UpdateModel(ctx context.Context, req *aigridv1.UpdateModelRequest) (*aigridv1.UpdateModelResponse, error) {
 	f.LastUpdateModel = req
 	if err := f.begin(ctx, "UpdateModel"); err != nil {
@@ -551,6 +488,7 @@ func (f *Fake) UpdateModel(ctx context.Context, req *aigridv1.UpdateModelRequest
 	if req.GetLock() && obj.GetMetadata().GetResourceVersion() != m.GetMetadata().GetResourceVersion() {
 		return nil, status.Errorf(codes.Aborted, "object with identifier '%s/%s' has resource version %s, the request carries %q", m.GetMetadata().GetNamespace(), m.GetName(), m.GetMetadata().GetResourceVersion(), obj.GetMetadata().GetResourceVersion())
 	}
+	before := proto.Clone(m).(*aigridv1.Model)
 	if m.Spec == nil {
 		m.Spec = &aigridv1.ModelSpec{}
 	}
@@ -579,6 +517,9 @@ func (f *Fake) UpdateModel(ctx context.Context, req *aigridv1.UpdateModelRequest
 		default:
 			return nil, status.Errorf(codes.InvalidArgument, "update_mask path %q is not supported", p)
 		}
+	}
+	if proto.Equal(before.GetSpec(), m.GetSpec()) && maps.Equal(before.GetMetadata().GetLabels(), m.GetMetadata().GetLabels()) && maps.Equal(before.GetMetadata().GetAnnotations(), m.GetMetadata().GetAnnotations()) {
+		return &aigridv1.UpdateModelResponse{Object: m}, nil
 	}
 	rv, _ := strconv.Atoi(m.GetMetadata().GetResourceVersion())
 	m.Metadata.ResourceVersion = strconv.Itoa(rv + 1)

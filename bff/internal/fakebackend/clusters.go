@@ -3,7 +3,10 @@ package fakebackend
 import (
 	"context"
 	"maps"
+	"math"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"google.golang.org/grpc/codes"
@@ -12,13 +15,113 @@ import (
 	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
 )
 
-// Field-mask paths UpdateManagedCluster accepts (the mutable fields of the
-// hub object a provider admin may patch). Anything else is InvalidArgument.
+// Field-mask paths UpdateManagedCluster accepts. Anything else is
+// InvalidArgument; `hub_accepts_client` is not writable through the console
+// (checkConsoleKeys explains why).
 const (
-	PathLabels           = "labels"
-	PathAnnotations      = "annotations"
-	PathHubAcceptsClient = "hub_accepts_client"
+	PathLabels      = "labels"
+	PathAnnotations = "annotations"
 )
+
+// consoleKeyPrefixes and consoleLabels are the label and annotation keys the
+// console may change on a ManagedCluster: its own `ai-grid/*` conventions
+// (enrolment, site, region, map position), the `location` label, and
+// `ai-grid-mock/*`, the fake's own test switches (`ai-grid-mock/fail-apply`).
+var (
+	consoleKeyPrefixes = []string{"ai-grid/", "ai-grid-mock/"}
+	consoleLabels      = map[string]bool{"location": true}
+)
+
+func isConsoleKey(key string, extra map[string]bool) bool {
+	for _, p := range consoleKeyPrefixes {
+		if strings.HasPrefix(key, p) {
+			return true
+		}
+	}
+	return extra[key]
+}
+
+// checkConsoleKeys is the console's proposal for the backend, not hub
+// behaviour (a provider admin may patch any label on the hub): a provider
+// console writes only what the POC writes, so an update that adds, changes or
+// removes a label or annotation outside those keys is InvalidArgument. That
+// keeps a buggy page or script from moving a site to another cluster set (the
+// `cluster.open-cluster-management.io/clusterset` label decides Placements
+// and RBAC scope) or stripping labels the hub does not put back. It compares
+// both sides after the hub has put back the labels it owns
+// (reconcileMetadata), so a client that leaves one of those out still
+// passes, and a label the hub adds on any write is not the client's change. For the same reason `hub_accepts_client` is not writable: turning it
+// off makes the hub drop a live site, and no page needs it yet. Console text,
+// listed in mock/areas/clusters.md.
+func checkConsoleKeys(next, cur *aigridv1.ManagedCluster) error {
+	for _, m := range []struct {
+		kind       string
+		next, cur  map[string]string
+		extraAllow map[string]bool
+	}{{"label", next.GetLabels(), cur.GetLabels(), consoleLabels}, {"annotation", next.GetAnnotations(), cur.GetAnnotations(), nil}} {
+		keys := make([]string, 0, len(m.next)+len(m.cur))
+		for k := range m.next {
+			keys = append(keys, k)
+		}
+		for k := range m.cur {
+			if _, ok := m.next[k]; !ok {
+				keys = append(keys, k)
+			}
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			if isConsoleKey(k, m.extraAllow) {
+				continue
+			}
+			nv, nok := m.next[k]
+			cv, cok := m.cur[k]
+			if nok != cok || nv != cv {
+				return status.Errorf(codes.InvalidArgument, "%s %q cannot be changed through the console; only ai-grid/* labels and annotations and the location label can", m.kind, k)
+			}
+		}
+	}
+	return nil
+}
+
+// The AI Grid annotations the backend owns the convention of: the map
+// position of a site (mock/research/acm.md, the console's labels and
+// annotations). UpdateManagedCluster checks them (checkCoordinates).
+const (
+	AnnotationLatitude  = "ai-grid/latitude"
+	AnnotationLongitude = "ai-grid/longitude"
+)
+
+// checkCoordinates is the console's proposal for the backend, not
+// API-server behaviour (the hub stores any annotation string): an
+// `ai-grid/latitude` or `ai-grid/longitude` annotation that is present must
+// be a finite decimal number within -90..90 or -180..180 (surrounding
+// whitespace and an empty value are allowed, as the read side ignores them),
+// so a bad value is
+// refused on write instead of vanishing from the map on read (the BFF omits a
+// coordinate it cannot parse). Console text, listed in mock/areas/clusters.md.
+func checkCoordinates(annotations map[string]string) error {
+	for _, c := range []struct {
+		key   string
+		limit float64
+	}{{AnnotationLatitude, 90}, {AnnotationLongitude, 180}} {
+		v, ok := annotations[c.key]
+		if !ok {
+			continue
+		}
+		// The read side (the BFF's parseCoordinate) trims the value and shows
+		// an empty one as no coordinate, so a value it displays fine must not
+		// fail here when a client sends the map it loaded back.
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil || math.IsNaN(f) || math.IsInf(f, 0) || f < -c.limit || f > c.limit {
+			return status.Errorf(codes.InvalidArgument, "annotation %q must be a number between %v and %v, got %q", c.key, -c.limit, c.limit, v)
+		}
+	}
+	return nil
+}
 
 // notFound is the NotFound message shape from the conventions' error table
 // (`object with identifier '<x>' not found`).
@@ -88,8 +191,18 @@ func (s *Server) GetManagedCluster(ctx context.Context, req *aigridv1.GetManaged
 // `resource_version` and fails with Aborted, and every write bumps the
 // version. The hub's webhook and controllers then react as reconcileMetadata
 // describes (default clusterset, `name`, created-via, add-on and autodetect
-// labels come back). Flipping `hub_accepts_client` makes the registration
-// controller rewrite `HubAcceptedManagedCluster` as the hub would.
+// labels come back). Only the console's keys may change (checkConsoleKeys).
+//
+// An update that changes nothing is not written: when the object after the
+// update, with the hub-owned labels put back, has the stored labels and
+// annotations, the stored cluster comes back with its
+// `resource_version` and `generation` unchanged, as the Kubernetes API server
+// answers an unchanged update (k8s.io/apiserver v0.35.8
+// pkg/storage/etcd3/store.go:553-577, GuaranteedUpdate skips the write when the
+// new object encodes to the stored bytes). The `lock` precondition is checked
+// before, as the API server checks the resource version before it gets there
+// (pkg/registry/generic/registry/store.go:735-736), and so is the console's
+// coordinate check (checkCoordinates), so a stale or invalid no-op still fails.
 func (s *Server) UpdateManagedCluster(ctx context.Context, req *aigridv1.UpdateManagedClusterRequest) (*aigridv1.UpdateManagedClusterResponse, error) {
 	token, err := s.begin(ctx)
 	if err != nil {
@@ -104,13 +217,18 @@ func (s *Server) UpdateManagedCluster(ctx context.Context, req *aigridv1.UpdateM
 	}
 	paths := req.GetUpdateMask().GetPaths()
 	if len(paths) == 0 {
-		return nil, status.Errorf(codes.InvalidArgument, "update_mask must name at least one of %s", strings.Join([]string{PathLabels, PathAnnotations, PathHubAcceptsClient}, ", "))
+		return nil, status.Errorf(codes.InvalidArgument, "update_mask must name at least one of %s", strings.Join([]string{PathLabels, PathAnnotations}, ", "))
 	}
 	for _, p := range paths {
 		switch p {
-		case PathLabels, PathAnnotations, PathHubAcceptsClient:
+		case PathLabels, PathAnnotations:
 		default:
-			return nil, status.Errorf(codes.InvalidArgument, "update_mask path %q is not supported; supported paths: %s", p, strings.Join([]string{PathLabels, PathAnnotations, PathHubAcceptsClient}, ", "))
+			return nil, status.Errorf(codes.InvalidArgument, "update_mask path %q is not supported; supported paths: %s", p, strings.Join([]string{PathLabels, PathAnnotations}, ", "))
+		}
+	}
+	if slices.Contains(paths, PathAnnotations) {
+		if err := checkCoordinates(obj.GetAnnotations()); err != nil {
+			return nil, err
 		}
 	}
 
@@ -124,7 +242,30 @@ func (s *Server) UpdateManagedCluster(ctx context.Context, req *aigridv1.UpdateM
 	if req.GetLock() && obj.GetResourceVersion() != c.GetResourceVersion() {
 		return nil, status.Errorf(codes.Aborted, "object with identifier '%s' has resource version %s, the request carries %q; fetch it again and retry", obj.GetName(), c.GetResourceVersion(), obj.GetResourceVersion())
 	}
-	now := s.clock()
+	// The no-op check runs the update on a copy first, the webhook's and
+	// controllers' follow-up included, and compares what a write could change.
+	probe := cloneCluster(c)
+	for _, p := range paths {
+		switch p {
+		case PathLabels:
+			probe.Labels = copyMap(obj.GetLabels())
+		case PathAnnotations:
+			probe.Annotations = copyMap(obj.GetAnnotations())
+		}
+	}
+	reconcileMetadata(probe, c)
+	// Compared with the stored object as the hub would leave it after any
+	// write, so a label the hub fills in itself (the default clusterset on a
+	// cluster that has none) is not counted as the client's change.
+	base := cloneCluster(c)
+	reconcileMetadata(base, c)
+	if err := checkConsoleKeys(probe, base); err != nil {
+		return nil, err
+	}
+	if maps.Equal(probe.GetLabels(), c.GetLabels()) && maps.Equal(probe.GetAnnotations(), c.GetAnnotations()) {
+		s.logger.Debug("cluster update changes nothing", "name", c.GetName(), "paths", paths, "resourceVersion", c.GetResourceVersion())
+		return &aigridv1.UpdateManagedClusterResponse{Object: withDerivedState(c)}, nil
+	}
 	before := cloneCluster(c)
 	for _, p := range paths {
 		switch p {
@@ -132,24 +273,6 @@ func (s *Server) UpdateManagedCluster(ctx context.Context, req *aigridv1.UpdateM
 			c.Labels = copyMap(obj.GetLabels())
 		case PathAnnotations:
 			c.Annotations = copyMap(obj.GetAnnotations())
-		case PathHubAcceptsClient:
-			if c.GetHubAcceptsClient() == obj.GetHubAcceptsClient() {
-				continue
-			}
-			c.HubAcceptsClient = obj.GetHubAcceptsClient()
-			c.Generation++ // a spec change
-			// The registration controller
-			// (ocm:pkg/registration/hub/managedcluster/controller.go): accepting
-			// writes True (L264-270), or False/`Error` when applying the
-			// cluster's RBAC fails (L272-277, not simulated); denying writes False only for a
-			// cluster that was accepted, and does nothing for one that never
-			// was (L164-167).
-			switch {
-			case c.HubAcceptsClient:
-				setCondition(c, now, CondHubAccepted, aigridv1.ConditionStatus_CONDITION_STATUS_TRUE, ReasonHubAccepted, MessageHubAccepted)
-			case isTrue(c, CondHubAccepted):
-				setCondition(c, now, CondHubAccepted, aigridv1.ConditionStatus_CONDITION_STATUS_FALSE, ReasonHubDenied, MessageHubDenied)
-			}
 		}
 	}
 	reconcileMetadata(c, before)

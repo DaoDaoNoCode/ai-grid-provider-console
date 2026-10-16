@@ -47,27 +47,23 @@ type ListTenantsRequest struct {
 	// Keycloak's: its `max` defaults to 10 and a negative value is ignored,
 	// so the backend sends an explicit `max` when `limit` is omitted.
 	Limit *int32 `protobuf:"varint,2,opt,name=limit,proto3,oneof" json:"limit,omitempty"`
-	// CEL over `this` (a Tenant). The only form supported today is the one
-	// that means what Keycloak's `search` parameter does, a case-insensitive
-	// contains on the name or on any domain,
-	// `this.name.lowerAscii().contains("<term>") || this.domains.exists(d, d.lowerAscii().contains("<term>"))`,
-	// with the same string literal in both places (CEL escapes `"` and `\`).
-	// `lowerAscii()` is cel-go's strings extension (`ext.Strings()`), which a
-	// backend evaluating the expression must enable; the BFF writes the term
-	// lower-cased (ASCII), and `contains` without it would be case-sensitive.
-	// The fake, like the Keycloak database search it stands in for, also folds
-	// non-ASCII letters, so a term with a non-ASCII capital (`É`) matches a
-	// lower-case `é` in the fake and through Keycloak but not under strict CEL
-	// `lowerAscii()`, which folds A-Z only.
-	// The term is a literal substring: `%` and `_` match themselves, never act
-	// as wildcards. A blank term (empty or whitespace only) matches every
-	// tenant, as Keycloak's `search` does. The backend may evaluate the
-	// expression in memory or push the term down to Keycloak's `search`
-	// parameter, which is a SQL LIKE built without escaping and without an
-	// ESCAPE clause (so the database's default escape character, backslash on
-	// PostgreSQL, applies), so it MUST escape `%`, `_` and `\` in the term
-	// first; the fake's literal match is the reference behaviour. Any other
-	// expression is InvalidArgument naming it.
+	// CEL over `this` (a Tenant, fields by their proto names) and `now` (the
+	// server's time, a timestamp), as OSAC's filters are; empty means all. The
+	// language is cel-go's standard library plus its strings extension
+	// (`ext.Strings()`, which gives `lowerAscii()`), and the backend evaluates
+	// the expression over the whole realm list before paging, so `total`
+	// counts the matches. A case-insensitive search on the name or any domain,
+	// with the caller lowering the term (`lowerAscii()` folds A-Z only):
+	// `this.name.lowerAscii().contains("acme") || this.domains.exists(d, d.lowerAscii().contains("acme"))`.
+	// Evaluation is strict CEL: `contains` is a literal substring (`%` and `_`
+	// match themselves) and a whitespace-only term is a substring like any
+	// other, not Keycloak's blank search. A backend may push a simple term down
+	// to Keycloak's `search` instead, but only where the result is the same,
+	// and must then escape `%`, `_` and `\` first (Keycloak builds a SQL LIKE
+	// without escaping or an ESCAPE clause). A filter that does not compile or
+	// is not a bool is InvalidArgument naming it, and so is one that fails on a
+	// tenant (indexing a missing attribute, `no such key`; guard it with
+	// `"k" in this.attributes && this.attributes["k"] == "v"`).
 	Filter *string `protobuf:"bytes,3,opt,name=filter,proto3,oneof" json:"filter,omitempty"`
 	// Sort order, `<field> [asc|desc]`. Keycloak only orders by name
 	// ascending, so a non-empty value is InvalidArgument today.
@@ -402,10 +398,14 @@ type UpdateTenantRequest struct {
 	// caller last read: the update fails with Aborted unless it equals the
 	// stored `resource_version` (the same check `lock` makes on
 	// UpdateManagedCluster and UpdateModel; empty skips it). It is never
-	// written: every successful update bumps the stored version.
+	// written: an update that changes the tenant bumps the stored version, and
+	// one that changes nothing keeps it.
 	Object *Tenant `protobuf:"bytes,1,opt,name=object,proto3" json:"object,omitempty"`
-	// Supported paths: `name`, `domains`, `enabled`, `description`,
-	// `attributes`, `domain_details`. The backend reads the full Keycloak
+	// Supported paths: `name`, `alias`, `domains`, `enabled`, `description`,
+	// `attributes`, `domain_details`. `alias` writes nothing, because the
+	// alias is immutable: it lets a client send back the alias it loaded, and
+	// a different non-blank `object.alias` is InvalidArgument "Cannot change
+	// the alias" (Keycloak's text) with or without the path. The backend reads the full Keycloak
 	// representation, overwrites the named fields and PUTs the whole result,
 	// so everything else, `alias` and `redirectUrl` included, is written back
 	// as stored. This matters: Keycloak's PUT replaces `description` and

@@ -66,7 +66,9 @@ type TenantsClient interface {
 	// included, is AlreadyExists, and so is a blank name (Keycloak's exact
 	// search treats a blank name as no filter and finds the tenant itself).
 	// Aborted when `object.resource_version` is set and is not the stored
-	// version.
+	// version. A merge that changes nothing is not PUT (the console's
+	// proposal: no Keycloak admin event is written): the tenant comes back
+	// with its stored `resource_version`.
 	UpdateTenant(ctx context.Context, in *UpdateTenantRequest, opts ...grpc.CallOption) (*UpdateTenantResponse, error)
 	// Deletes a tenant and its memberships; unmanaged members stay realm
 	// users. NotFound when absent; Aborted when `resource_version` is set and
@@ -160,7 +162,9 @@ type TenantsServer interface {
 	// included, is AlreadyExists, and so is a blank name (Keycloak's exact
 	// search treats a blank name as no filter and finds the tenant itself).
 	// Aborted when `object.resource_version` is set and is not the stored
-	// version.
+	// version. A merge that changes nothing is not PUT (the console's
+	// proposal: no Keycloak admin event is written): the tenant comes back
+	// with its stored `resource_version`.
 	UpdateTenant(context.Context, *UpdateTenantRequest) (*UpdateTenantResponse, error)
 	// Deletes a tenant and its memberships; unmanaged members stay realm
 	// users. NotFound when absent; Aborted when `resource_version` is set and

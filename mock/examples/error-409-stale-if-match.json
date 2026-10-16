@@ -4,7 +4,13 @@
     "If-Match": "\"48811203\""
   },
   "requestBody": {
-    "location": "rome"
+    "annotations": {
+      "installer.multicluster.openshift.io/release-version": "2.17.3",
+      "open-cluster-management/created-via": "other",
+      "ai-grid/site-name": "Paris DC2",
+      "ai-grid/latitude": "48.8566",
+      "ai-grid/longitude": "2.3522"
+    }
   },
   "token": "dev-token",
   "user": "dev-user",

@@ -309,7 +309,7 @@ Message texts the Keycloak outcomes above do not fix, proposed here so the backe
 
 | Situation | Proposed gRPC message |
 |---|---|
-| Caller is not a provider admin | `User "<x-forwarded-user>" is not a provider admin: cannot patch resource "managedclusters" in API group "cluster.open-cluster-management.io" at the cluster scope` |
+| Caller is not a provider admin | `User "<x-forwarded-user>" is not a provider admin, and only provider admins can change tenants (a provider admin may patch ManagedClusters on the hub)` |
 | Realm missing / organizations disabled (`FailedPrecondition`) | `Keycloak realm "<realm>": Realm not found.` / `Keycloak realm "<realm>": Organizations not enabled for this realm.` (Keycloak's text after the realm) |
 | Keycloak unreachable (`Unavailable`) | `Keycloak is unavailable: <transport error>` |
 | Request-shape checks before Keycloak is called (`InvalidArgument`; console proposals, Keycloak never sees these requests; the fake's current texts in `bff/internal/fakebackend/tenants.go` and `keycloak.go`; search for the texts, line numbers move) | `filter %s is not supported; this server only evaluates %s`, `order is not supported by this server yet; Keycloak returns organizations by name`, `offset must not be negative, got %d`, `limit must not be negative, got %d`, `update_mask path %q is not supported; supported paths: ...`, `object is required`, `object.id must be empty; Keycloak assigns it` (the draft rejects a client id although Keycloak would ignore it), `id is required`, `object.id is required`, `domains and domain_details name different domains` |

@@ -3,10 +3,8 @@ package api
 import (
 	"encoding/json"
 	"fmt"
-	"maps"
 	"net/http"
 	"net/url"
-	"slices"
 	"strings"
 	"time"
 
@@ -488,9 +486,9 @@ func fromEnv(env []EnvVar) []*aigridv1.EnvVar {
 	return out
 }
 
-// listModels answers GET /api/v1/models?namespace=&label=k=v&offset=&limit=.
-// `namespace` and each `label` become filter terms; the backend returns the
-// models by namespace and name.
+// listModels answers GET /api/v1/models?offset=&limit=&filter=: the backend
+// evaluates `filter` (listFilter) and returns the models by namespace and
+// name.
 func (a *App) listModels(w http.ResponseWriter, r *http.Request) {
 	offset, err := queryInt(r, "offset")
 	if err != nil {
@@ -502,31 +500,17 @@ func (a *App) listModels(w http.ResponseWriter, r *http.Request) {
 		a.respondError(w, r, err)
 		return
 	}
-	var terms []string
-	if ns := strings.TrimSpace(r.URL.Query().Get("namespace")); ns != "" {
-		terms = append(terms, "this.metadata.namespace == "+celString(ns))
+	filter, err := listFilter(r, "namespace", "label")
+	if err != nil {
+		a.respondError(w, r, err)
+		return
 	}
-	for _, label := range r.URL.Query()["label"] {
-		k, v, ok := strings.Cut(label, "=")
-		if !ok || strings.TrimSpace(k) == "" {
-			a.respondError(w, r, Errorf(http.StatusUnprocessableEntity, `query parameter "label" must be key=value`))
-			return
-		}
-		// Guarded with `in`: in CEL a missing map key is a `no such key`
-		// error, not false, so an unguarded index fails on every model
-		// without the label.
-		key := celString(strings.TrimSpace(k))
-		terms = append(terms, key+" in this.metadata.labels && this.metadata.labels["+key+"] == "+celString(v))
-	}
-	req := &aigridv1.ListModelsRequest{}
+	req := &aigridv1.ListModelsRequest{Filter: filter}
 	if offset != nil {
 		req.Offset = proto.Int32(int32(*offset))
 	}
 	if limit != nil {
 		req.Limit = proto.Int32(int32(*limit))
-	}
-	if len(terms) > 0 {
-		req.Filter = proto.String(strings.Join(terms, " && "))
 	}
 	ctx, cancel := a.backend.Context(r.Context())
 	defer cancel()
@@ -562,7 +546,9 @@ func (a *App) getModel(w http.ResponseWriter, r *http.Request) {
 }
 
 // ModelCreate is the body of POST /api/v1/models: the POC deploy wizard's
-// inputs mapped to the LLMInferenceService spec (models-maas.md 7.3).
+// inputs mapped to the LLMInferenceService spec (models-maas.md 7.3). The
+// display name and description travel in `annotations`
+// (`openshift.io/display-name`, `openshift.io/description`), as on PATCH.
 // `cpu`, `memory` and `gpuCount` become the main container's requests (and
 // the GPU its limit); `scaling` (exclusive with `replicas`) becomes a
 // `spec.scaling.keda` block; `gateway` defaults to the hub's AI inference
@@ -570,8 +556,6 @@ func (a *App) getModel(w http.ResponseWriter, r *http.Request) {
 type ModelCreate struct {
 	Name         string            `json:"name"`
 	Namespace    string            `json:"namespace"`
-	DisplayName  string            `json:"displayName"`
-	Description  string            `json:"description"`
 	ModelURI     string            `json:"modelUri"`
 	ModelName    string            `json:"modelName"`
 	RuntimeImage string            `json:"runtimeImage"`
@@ -604,12 +588,6 @@ func (a *App) createModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	annotations := copyMap(body.Annotations)
-	if body.DisplayName != "" {
-		annotations[AnnotationDisplayName] = body.DisplayName
-	}
-	if body.Description != "" {
-		annotations[AnnotationDescription] = body.Description
-	}
 	main := &aigridv1.Container{Image: body.RuntimeImage, Requests: map[string]string{}, Limits: map[string]string{}, Env: fromEnv(body.Env)}
 	if body.CPU != "" {
 		main.Requests[ResourceCPU] = body.CPU
@@ -692,8 +670,10 @@ func (o *optionalPlacement) UnmarshalJSON(b []byte) error {
 // ModelPatch is the body of PATCH /api/v1/models/{namespace}/{name}. Every
 // field is optional and an absent field is left alone; a present field
 // replaces the stored one as a whole (`env: []` removes every variable,
-// `placement: null` makes the model a hub deployment again). `displayName`
-// and `description` are written into the annotations.
+// `placement: null` makes the model a hub deployment again, `labels` and
+// `annotations` are whole maps). The display name and description are the
+// `openshift.io/display-name` and `openshift.io/description` keys of
+// `annotations`, which the client edits like any other key.
 type ModelPatch struct {
 	Replicas     *int32             `json:"replicas"`
 	RuntimeImage *string            `json:"runtimeImage"`
@@ -702,108 +682,75 @@ type ModelPatch struct {
 	Rollout      *RolloutSpec       `json:"rollout"`
 	Labels       *map[string]string `json:"labels"`
 	Annotations  *map[string]string `json:"annotations"`
-	DisplayName  *string            `json:"displayName"`
-	Description  *string            `json:"description"`
 }
 
-// patchModel answers PATCH /api/v1/models/{namespace}/{name}: reads the
-// model, applies the patch and writes it back with `UpdateModel` under
-// optimistic locking, so a concurrent change surfaces as 409. The lock is on
-// the If-Match version when the client sent one (a stale tab gets 409), else
-// on the version just read. Only fields whose value differs from the stored
-// one go in the mask; a patch that changes nothing writes nothing.
+// patchModel answers PATCH /api/v1/models/{namespace}/{name} with one
+// UpdateModel: each present field goes into the object and its path into
+// the mask, whatever the stored value (the backend skips an update that
+// changes nothing, and drops a rollout whose placement goes), under
+// optimistic locking on the If-Match version the client must send
+// (requireIfMatch), so a stale tab or a concurrent change surfaces as 409.
+// The BFF does not read the model first. A body that names no field is
+// 422.
 func (a *App) patchModel(w http.ResponseWriter, r *http.Request) {
 	namespace, name := r.PathValue("namespace"), r.PathValue("name")
+	if err := requireJSON(r); err != nil {
+		a.respondError(w, r, err)
+		return
+	}
+	expected, err := requireIfMatch(r)
+	if err != nil {
+		a.respondError(w, r, err)
+		return
+	}
 	var patch ModelPatch
 	if err := decodeBody(w, r, &patch); err != nil {
 		a.respondError(w, r, err)
 		return
 	}
-	expected, err := ifMatch(r)
-	if err != nil {
-		a.respondError(w, r, err)
-		return
-	}
-	var rollout *aigridv1.Rollout
-	if patch.Rollout != nil {
-		if rollout, err = fromRolloutSpec(patch.Rollout); err != nil {
-			a.respondError(w, r, err)
-			return
-		}
-	}
-	ctx, cancel := a.backend.Context(r.Context())
-	defer cancel()
-	current, err := a.backend.Models.GetModel(ctx, &aigridv1.GetModelRequest{Namespace: namespace, Name: name})
-	if err != nil {
-		a.respondError(w, r, err)
-		return
-	}
-	cur := current.GetObject()
-	curSpec := cur.GetSpec()
-	version := cur.GetMetadata().GetResourceVersion()
-	if expected != "" {
-		version = expected
-	}
-	obj := &aigridv1.Model{Name: name, Metadata: &aigridv1.ObjectMeta{Namespace: namespace, ResourceVersion: version}, Spec: &aigridv1.ModelSpec{Main: &aigridv1.Container{}}}
-	// Each present field is compared with the stored value and only a
-	// change goes in the mask, so resending what the page loaded is no write.
+	obj := &aigridv1.Model{Name: name, Metadata: &aigridv1.ObjectMeta{Namespace: namespace, ResourceVersion: expected}, Spec: &aigridv1.ModelSpec{Main: &aigridv1.Container{}}}
 	var paths []string
-	if patch.Replicas != nil && (curSpec == nil || curSpec.Replicas == nil || curSpec.GetReplicas() != *patch.Replicas) {
+	if patch.Replicas != nil {
 		obj.Spec.Replicas = proto.Int32(*patch.Replicas)
 		paths = append(paths, maskReplicas)
 	}
-	if patch.RuntimeImage != nil && *patch.RuntimeImage != curSpec.GetMain().GetImage() {
+	if patch.RuntimeImage != nil {
 		obj.Spec.Main.Image = *patch.RuntimeImage
 		paths = append(paths, maskImage)
 	}
 	if patch.Env != nil {
-		if env := fromEnv(*patch.Env); !slices.EqualFunc(env, curSpec.GetMain().GetEnv(), func(a, b *aigridv1.EnvVar) bool { return proto.Equal(a, b) }) {
-			obj.Spec.Main.Env = env
-			paths = append(paths, maskEnv)
-		}
+		obj.Spec.Main.Env = fromEnv(*patch.Env)
+		paths = append(paths, maskEnv)
 	}
 	if patch.Placement.Set {
 		if patch.Placement.Value != nil {
 			obj.Spec.Placement = fromPlacementSpec(patch.Placement.Value)
 		}
-		if !proto.Equal(obj.Spec.Placement, curSpec.GetPlacement()) {
-			paths = append(paths, maskPlacement)
-		}
+		paths = append(paths, maskPlacement)
 	}
-	// A rollout sent with a placement change stays in the mask even when it
-	// equals the stored one, so the backend sees the pair the client meant.
-	if rollout != nil && (slices.Contains(paths, maskPlacement) || !proto.Equal(rollout, curSpec.GetRollout())) {
+	if patch.Rollout != nil {
+		rollout, err := fromRolloutSpec(patch.Rollout)
+		if err != nil {
+			a.respondError(w, r, err)
+			return
+		}
 		obj.Spec.Rollout = rollout
 		paths = append(paths, maskRollout)
 	}
-	if patch.Labels != nil && !maps.Equal(*patch.Labels, cur.GetMetadata().GetLabels()) {
-		obj.Metadata.Labels = copyMap(*patch.Labels)
+	if patch.Labels != nil {
+		obj.Metadata.Labels = *patch.Labels
 		paths = append(paths, maskLabels)
 	}
-	annotations := copyMap(cur.GetMetadata().GetAnnotations())
 	if patch.Annotations != nil {
-		annotations = copyMap(*patch.Annotations)
-	}
-	setAnnotation := func(key string, v *string) {
-		switch {
-		case v == nil:
-		case *v == "":
-			delete(annotations, key)
-		default:
-			annotations[key] = *v
-		}
-	}
-	setAnnotation(AnnotationDisplayName, patch.DisplayName)
-	setAnnotation(AnnotationDescription, patch.Description)
-	if !maps.Equal(annotations, cur.GetMetadata().GetAnnotations()) {
-		obj.Metadata.Annotations = annotations
+		obj.Metadata.Annotations = *patch.Annotations
 		paths = append(paths, maskAnnotations)
 	}
 	if len(paths) == 0 {
-		setETag(w, cur.GetMetadata().GetResourceVersion())
-		writeData(w, http.StatusOK, toModel(cur)) // nothing to change: no write
+		a.respondError(w, r, Errorf(http.StatusUnprocessableEntity, "the request body names no field to change"))
 		return
 	}
+	ctx, cancel := a.backend.Context(r.Context())
+	defer cancel()
 	updated, err := a.backend.Models.UpdateModel(ctx, &aigridv1.UpdateModelRequest{Object: obj, UpdateMask: &fieldmaskpb.FieldMask{Paths: paths}, Lock: true})
 	if err != nil {
 		a.respondError(w, r, err)
@@ -815,12 +762,12 @@ func (a *App) patchModel(w http.ResponseWriter, r *http.Request) {
 }
 
 // deleteModel answers DELETE /api/v1/models/{namespace}/{name} with 204; 412
-// while a catalog entry or a subscription references the model. An If-Match
-// version is the request's `resource_version` precondition (409 when the
-// model changed since); without it the delete is unconditional.
+// while a catalog entry or a subscription references the model. The
+// If-Match version (required, requireIfMatch) is the request's
+// `resource_version` precondition: 409 when the model changed since.
 func (a *App) deleteModel(w http.ResponseWriter, r *http.Request) {
 	namespace, name := r.PathValue("namespace"), r.PathValue("name")
-	expected, err := ifMatch(r)
+	expected, err := requireIfMatch(r)
 	if err != nil {
 		a.respondError(w, r, err)
 		return

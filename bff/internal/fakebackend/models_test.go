@@ -334,7 +334,9 @@ func TestLLMISvcLifecycle(t *testing.T) {
 	if len(conds) != 9 {
 		t.Errorf("%d conditions at T1, want 9", len(conds))
 	}
-	wantPhase(t, m, aigridv1.ModelPhase_MODEL_PHASE_FAILED, ReasonWaitingForGateway)
+	// Ready False with a starting reason is PENDING, not FAILED: the model is
+	// coming up (deriveHubPhase).
+	wantPhase(t, m, aigridv1.ModelPhase_MODEL_PHASE_PENDING, ReasonWaitingForGateway)
 	if m.GetStatus().GetObservedGeneration() != 1 {
 		t.Errorf("observedGeneration = %d", m.GetStatus().GetObservedGeneration())
 	}
@@ -565,7 +567,9 @@ func TestLLMISvcFailureModes(t *testing.T) {
 		if !ready.GetLastTransitionTime().AsTime().Equal(testStart.Add(llmisvcT2b)) {
 			t.Errorf("at %s: Ready has not changed since T2b, got %s", d, ready.GetLastTransitionTime().AsTime())
 		}
-		wantPhase(t, m, aigridv1.ModelPhase_MODEL_PHASE_FAILED, ReasonMinimumReplicasUnavailable)
+		// No condition tells this from a slow start, so it stays PENDING with
+		// the reason, as a stuck spoke does.
+		wantPhase(t, m, aigridv1.ModelPhase_MODEL_PHASE_PENDING, ReasonMinimumReplicasUnavailable)
 		if m.GetStatus().GetUrl() == "" || m.GetStatus().GetWorkloads().GetPrimary().GetReadyReplicas() != 0 {
 			t.Errorf("at %s: the route exists, the pods are not ready: %v", d, m.GetStatus())
 		}
@@ -576,7 +580,7 @@ func TestSpeedScalesTheModelLifecycle(t *testing.T) {
 	s, advance := modelServer(t, &Fixtures{Speed: 10})
 	createModel(t, s, hubModel("fast"))
 	advance(4 * time.Second) // 40 scenario seconds
-	wantPhase(t, getModel(t, s, "fast"), aigridv1.ModelPhase_MODEL_PHASE_FAILED, ReasonMinimumReplicasUnavailable)
+	wantPhase(t, getModel(t, s, "fast"), aigridv1.ModelPhase_MODEL_PHASE_PENDING, ReasonMinimumReplicasUnavailable)
 	advance(5 * time.Second) // 50 scenario seconds
 	m := getModel(t, s, "fast")
 	wantPhase(t, m, aigridv1.ModelPhase_MODEL_PHASE_READY, "")
@@ -733,7 +737,7 @@ func TestModelMutationsNeedAProviderAdmin(t *testing.T) {
 	if _, err := s.ListModels(viewer, &aigridv1.ListModelsRequest{}); err != nil {
 		t.Errorf("a viewer reads: %v", err)
 	}
-	wantDenied := `User "viewer" is not a provider admin: cannot patch resource "managedclusters" in API group "cluster.open-cluster-management.io" at the cluster scope`
+	wantDenied := `User "viewer" is not a provider admin, and only provider admins can change models (a provider admin may patch ManagedClusters on the hub)`
 	_, err := s.CreateModel(viewer, &aigridv1.CreateModelRequest{Object: hubModel("new")})
 	mustCode(t, err, codes.PermissionDenied, wantDenied)
 	_, err = s.UpdateModel(viewer, &aigridv1.UpdateModelRequest{Object: hubModel("seeded"), UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{PathSpecReplicas}}})
@@ -1305,8 +1309,8 @@ func TestDeleteModel(t *testing.T) {
 }
 
 // TestListModelsFilterDecodesLiterals: the filter's values are CEL string
-// literals as the BFF's celString writes them, so escaped quotes and
-// backslashes are decoded and a quoted ` && ` does not split a term.
+// literals, so escaped quotes and backslashes are decoded and a quoted ` && `
+// does not split a term (CEL parses it; nothing splits the text).
 func TestListModelsFilterDecodesLiterals(t *testing.T) {
 	s, _ := modelServer(t, &Fixtures{})
 	for name, v := range map[string]string{"quote": `say "hi"`, "slash": `a\b`, "and": `x && y`, "plain": "x"} {
@@ -1324,7 +1328,9 @@ func TestListModelsFilterDecodesLiterals(t *testing.T) {
 	}
 	bad := `"k" in this.metadata.labels && this.metadata.labels["k"] == "\q"`
 	_, err := s.ListModels(ctx, &aigridv1.ListModelsRequest{Filter: proto.String(bad)})
-	mustCode(t, err, codes.InvalidArgument, "filter "+bad+" is not a valid CEL string literal")
+	if status.Code(err) != codes.InvalidArgument || !strings.HasPrefix(status.Convert(err).Message(), "filter "+bad+" is not a valid CEL expression: ") {
+		t.Errorf("malformed escape = %v", err)
+	}
 }
 
 func TestListModelsFilterAndPaging(t *testing.T) {
@@ -1364,6 +1370,24 @@ func TestListModelsFilterAndPaging(t *testing.T) {
 	if got := list(&aigridv1.ListModelsRequest{Filter: proto.String(`"absent" in this.metadata.labels && this.metadata.labels["absent"] == "x"`)}); len(got) != 0 {
 		t.Errorf("missing label = %v", got)
 	}
+	// Any CEL over the Model message as the read derives it, status included.
+	for expr, want := range map[string][]string{
+		`this.name == "a"`:        {"alpha/a"},
+		`this.name in ["a", "b"]`: {"alpha/a", "zeta/b"},
+		`this.metadata.namespace.startsWith("al") && this.metadata.labels["team"] == "x"`: {"alpha/z"},
+		`"other" in this.metadata.labels && this.metadata.labels["team"] == "x"`:          nil, // the guard names another key: false, no error
+		`this.spec.replicas == 1 && !has(this.spec.placement)`:                            {"alpha/a", "alpha/z", "zeta/b"},
+		`this.status.phase == ai_grid.v1.ModelPhase.MODEL_PHASE_PENDING`:                  {"alpha/a", "alpha/z", "zeta/b"},
+		`this.metadata.creation_timestamp <= now`:                                         {"alpha/a", "alpha/z", "zeta/b"},
+	} {
+		if got := list(&aigridv1.ListModelsRequest{Filter: proto.String(expr)}); !slices.Equal(got, want) {
+			t.Errorf("%s = %v, want %v", expr, got, want)
+		}
+	}
+	// Paging applies to the filtered list; total counts it.
+	if resp, err := s.ListModels(ctx, &aigridv1.ListModelsRequest{Filter: proto.String(`this.metadata.labels["team"] == "x"`), Offset: proto.Int32(1), Limit: proto.Int32(5)}); err != nil || resp.GetTotal() != 2 || resp.GetSize() != 1 || resp.GetItems()[0].GetName() != "b" {
+		t.Errorf("page of the filtered list = %v, %v", resp, err)
+	}
 	if got := list(&aigridv1.ListModelsRequest{Offset: proto.Int32(1), Limit: proto.Int32(1)}); !slices.Equal(got, []string{"alpha/z"}) {
 		t.Errorf("page = %v", got)
 	}
@@ -1372,12 +1396,12 @@ func TestListModelsFilterAndPaging(t *testing.T) {
 		t.Errorf("count only = %v", resp)
 	}
 	for _, req := range []*aigridv1.ListModelsRequest{
-		{Filter: proto.String(`this.name == "a"`)},
-		{Filter: proto.String(`this.metadata.labels["team"] == "x"`)},                                    // unguarded index
-		{Filter: proto.String(`"other" in this.metadata.labels && this.metadata.labels["team"] == "x"`)}, // guard names another key
-		{Filter: proto.String(`this.metadata.namespace == "alpha" &&`)},                                  // dangling &&
-		{Filter: proto.String(`this.metadata.namespace == "alpha" this.metadata.namespace == "alpha"`)},  // no &&
-		{Filter: proto.String(`this.metadata.namespace == "a\q"`)},                                       // malformed escape
+		{Filter: proto.String(`this.metadata.labels["absent"] == "x"`)},                                 // unguarded index of a missing key
+		{Filter: proto.String(`this.metadata.namespace == "alpha" &&`)},                                 // dangling &&
+		{Filter: proto.String(`this.metadata.namespace == "alpha" this.metadata.namespace == "alpha"`)}, // no operator
+		{Filter: proto.String(`this.metadata.namespace == "a\q"`)},                                      // malformed escape
+		{Filter: proto.String(`this.metadata.namespace`)},                                               // not a bool
+		{Filter: proto.String(`this.namespace == "alpha"`)},                                             // no such field on Model
 		{Order: proto.String("name desc")},
 		{Offset: proto.Int32(-1)},
 		{Limit: proto.Int32(-1)},
@@ -1386,6 +1410,8 @@ func TestListModelsFilterAndPaging(t *testing.T) {
 			t.Errorf("%v: %v, want InvalidArgument", req, err)
 		}
 	}
+	_, err := s.ListModels(ctx, &aigridv1.ListModelsRequest{Filter: proto.String(`this.metadata.labels["absent"] == "x"`)})
+	mustCode(t, err, codes.InvalidArgument, `filter this.metadata.labels["absent"] == "x" failed on 'alpha/a': no such key: absent`)
 	if _, err := s.GetModel(ctx, &aigridv1.GetModelRequest{Name: "a"}); status.Code(err) != codes.InvalidArgument {
 		t.Errorf("Get without namespace = %v", err)
 	}
@@ -1632,7 +1658,7 @@ func TestUpdatesAcrossGenerations(t *testing.T) {
 		t.Errorf("observedGeneration = %d", m.GetStatus().GetObservedGeneration())
 	}
 	advance(200*time.Second + llmisvcT2 + 600*time.Second + time.Second)
-	wantPhase(t, getModel(t, s, "gen"), aigridv1.ModelPhase_MODEL_PHASE_FAILED, ReasonMinimumReplicasUnavailable)
+	wantPhase(t, getModel(t, s, "gen"), aigridv1.ModelPhase_MODEL_PHASE_PENDING, ReasonMinimumReplicasUnavailable)
 
 	// Recovery: generation 3 with a healthy image rolls out and becomes Ready
 	// and stays Ready.
@@ -1643,7 +1669,7 @@ func TestUpdatesAcrossGenerations(t *testing.T) {
 		t.Fatal(err)
 	}
 	advance2(160 * time.Second)
-	wantPhase(t, getModel(t, s2, "rec"), aigridv1.ModelPhase_MODEL_PHASE_FAILED, ReasonMinimumReplicasUnavailable)
+	wantPhase(t, getModel(t, s2, "rec"), aigridv1.ModelPhase_MODEL_PHASE_PENDING, ReasonMinimumReplicasUnavailable)
 	if _, err := s2.UpdateModel(ctx, &aigridv1.UpdateModelRequest{Object: &aigridv1.Model{Name: "rec", Metadata: &aigridv1.ObjectMeta{Namespace: testNS}, Spec: &aigridv1.ModelSpec{Main: &aigridv1.Container{Image: "quay.io/example/vllm:fixed"}}}, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{PathSpecMainImage}}}); err != nil {
 		t.Fatal(err)
 	}

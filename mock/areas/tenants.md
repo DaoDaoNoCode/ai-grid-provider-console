@@ -32,7 +32,13 @@ and in `tenants.json` (the fake refuses to start). Keycloak's other answer, "Ide
 cannot occur. `autoRedirect` is stored without a check, as in Keycloak.
 `UpdateTenant` is the backend's GET, merge, PUT (the console's proposal): mask paths `name`,
 `domains`, `enabled`, `description`, `attributes`, `domain_details` replace the field as a
-whole and everything else, `alias` included, goes back as stored. Without a mask `name`,
+whole and everything else, `alias` included, goes back as stored. The path `alias` changes
+nothing: the stored alias is kept, and a different non-blank one is "Cannot change the alias"
+as below, so a client can send back the alias it loaded. A merge that leaves the organization
+as stored is not PUT (console proposal: the backend compares its GET with the merged
+representation, so Keycloak writes no admin event and the version is not bumped; Keycloak
+itself would accept the PUT and write the event); the version precondition and Keycloak's
+checks run first. Without a mask `name`,
 `enabled` (true when unset, Keycloak's default) and `description` come from the request and
 `attributes` and the domains stay, which is what a Keycloak PUT does with a body that lacks
 those two keys. The `domains` path keeps the `verified`, identity provider and `autoRedirect`
@@ -48,19 +54,26 @@ an omitted one on the no-mask path included: Keycloak's search treats a blank te
 filter, finds the organization itself and answers 409 "A organization with the same name
 already exists.", not "Name can not be null".
 `ListTenants` orders by name (byte order; Keycloak's `ORDER BY name` follows the realm
-database's collation, not checked on the hub), pages with `offset`/`limit` (`total` from the
-whole search like `/count`), includes disabled organizations and evaluates the one filter
-form `this.name.lowerAscii().contains("<term>") || this.domains.exists(d, d.lowerAscii().contains("<term>"))`
-(`lowerAscii()` from cel-go's strings extension, `ext.Strings()`; the BFF lowers the term), the
-expression that means what Keycloak's `search` does (a case-insensitive contains on name or any domain; a blank
-or whitespace-only term matches everything, as in Keycloak). The BFF lowers the term for ASCII only,
-but the fake, like Keycloak's database search it stands in for, folds non-ASCII letters too
-(`strings.ToLower`), so a term with a non-ASCII capital (`É`) matches a lower-case `é` in the
-fake and through Keycloak but not under strict CEL `lowerAscii()`, which folds A-Z only. The paging rules are the
+database's collation, not checked on the hub), includes disabled organizations and evaluates
+`filter` as CEL over `this` (an `ai_grid.v1.Tenant`, proto field names) and `now`, with cel-go
+and its strings extension (`ext.Strings()`, for `lowerAscii()`), in memory over the whole realm
+list and before paging, as `mock/research/backend-conventions.md` 5.3 says for List (a realm's
+organizations are few), so `total` counts the matches (`bff/internal/fakebackend/celfilter`).
+Any expression works; the one the BFF used to write, `this.name.lowerAscii().contains("<term>")
+|| this.domains.exists(d, d.lowerAscii().contains("<term>"))`, is the case-insensitive contains
+on the name or any domain that Keycloak's `search` means, provided the caller lowers the term.
+The evaluation is strict CEL, with no Keycloak folding: `lowerAscii()` lowers A-Z only, so a
+term with a capital letter matches nothing, a non-ASCII letter is compared exactly, a
+whitespace-only term is a substring like any other (Keycloak's search treats it as no filter),
+and `%` and `_` are literal characters. A filter that does not compile or is not a bool is
+`InvalidArgument` before Keycloak is asked; one that fails on an organization (an unguarded
+`this.attributes["k"]` on one without `k`, CEL's `no such key`) is `InvalidArgument` after the
+Keycloak gate, because it needs the organizations. The paging rules are the
 contract's, not Keycloak's: Keycloak's `max` defaults to 10 and it ignores a negative `first`
 or `max`, so the backend must send an explicit `max` for an omitted `limit` and reject
-negatives itself; Keycloak's `search` is a SQL LIKE without escaping or an ESCAPE clause, so a
-backend that pushes the term down must escape `%`, `_` and `\`. `Get`, `Update` and `Delete`
+negatives itself. A backend that pushes a simple term down to Keycloak's `search` instead of
+evaluating in memory must get the same answer, and must escape `%`, `_` and `\` first,
+because that `search` is a SQL LIKE without escaping or an ESCAPE clause. `Get`, `Update` and `Delete`
 of an unknown id answer `NotFound` with the conventions' message `object with identifier
 '<id>' not found` (the tenant id, not a name) and log Keycloak's "Organization not found.".
 Everything Keycloak would decide is answered only after the Keycloak gate, so with Keycloak
@@ -109,9 +122,10 @@ Invented here, because nothing in Keycloak or the conventions fixes a text, and 
 the backend so they become the contract (`mock/research/keycloak.md` 8.2 has the
 permission, realm, unavailable and request-shape texts; the `update_mask` and list texts are
 proposed here). A client only displays them. Fake backend (gRPC status messages):
-- `PermissionDenied`: `User "<user>" is not a provider admin: cannot patch resource
-  "managedclusters" in API group "cluster.open-cluster-management.io" at the cluster scope`
-  (`authorizeProviderAdmin`, `server.go`).
+- `PermissionDenied`: `User "<user>" is not a provider admin, and only provider admins can
+  change tenants (a provider admin may patch ManagedClusters on the hub)` (`models` for a model
+  write; `authorizeProviderAdmin`, `server.go`). It names what the caller tried to change, then
+  the rule, so a viewer creating a tenant is not told about ManagedClusters alone.
 - `FailedPrecondition`: the wrapper `Keycloak realm "ai-grid": ` before Keycloak's "Realm not
   found." or "Organizations not enabled for this realm.".
 - `Unavailable`: the prefix `Keycloak is unavailable: ` before the fixture's text (the text
@@ -120,13 +134,12 @@ proposed here). A client only displays them. Fake backend (gRPC status messages)
   be null."), `object.id must be empty; Keycloak assigns it` (Keycloak ignores a client id;
   the draft rejects it), `object.id is required` (update), `id is required` (get, delete;
   Keycloak: "Id cannot be null."), `update_mask path "<p>" is not supported; supported paths:
-  name, domains, enabled, description, attributes, domain_details`, `domains and
+  name, alias, domains, enabled, description, attributes, domain_details`, `domains and
   domain_details name different domains`.
-- List, all `InvalidArgument`: `filter <filter> is not supported; this server only evaluates
-  this.name.lowerAscii().contains("<term>") || this.domains.exists(d, d.lowerAscii().contains("<term>"))`, `filter
-  <filter> is not a valid CEL string literal` (the term's escapes are decoded with Go's
-  string-literal rules, which agree with CEL's for `\"`, `\\`, `\n`, `\r`, `\t` and `\uXXXX`,
-  the escapes the BFF writes), `order is not supported by this server yet; Keycloak returns
+- List, all `InvalidArgument`: `filter <filter> is not a valid CEL expression: <cel-go's
+  error>`, `filter <filter> must evaluate to a bool, not <type>`, `filter <filter> failed on
+  '<id>': <cel-go's error>` (the wrapper is the console's, the error after the colon cel-go's,
+  for example `no such key: k`), `order is not supported by this server yet; Keycloak returns
   organizations by name`, `offset must not be negative, got <n>`, `limit must not be
   negative, got <n>`.
 - Version: `Aborted` `object with identifier '<id>' has resource version <v>, the request
@@ -139,22 +152,23 @@ proposed here). A client only displays them. Fake backend (gRPC status messages)
   metadata`, `authorization metadata must be 'Bearer <token>'`, `the hub rejected the token:
   Unauthorized`.
 BFF (`bff/internal/api/tenants.go`): `query parameter "offset"` (or `"limit"`) `must be an
-integer between 0 and 2147483647` (422); an alias-only PATCH with a different alias is
-answered by the BFF itself with Keycloak's "Cannot change the alias" (422) and no write, the
-alias compared with the one the BFF shows (the name when the backend sends none); the
+integer between 0 and 2147483647` (422); `query parameter "search" is not supported; send a CEL
+filter in "filter"` (422); the 428 for a write without `If-Match`; the alias is sent to the
+backend like any other field (the `alias` path), which answers a changed one; the
 body-decoding (`invalid request body: ...`) and status texts (`errors.go`) are shared with the
 other areas.
-BFF: `GET /api/v1/tenants?offset=&limit=&search=` with a `meta` page (a whitespace-only
-`search` is no filter), `GET/PATCH/DELETE /api/v1/tenants/{id}`, `POST /api/v1/tenants` (201 +
-Location); Keycloak's messages reach the client as 422 and 409 (a blank name on PATCH is 409,
+BFF: `GET /api/v1/tenants?offset=&limit=&filter=` with a `meta` page and the client's
+`filter` forwarded unchanged (the BFF no longer builds an expression from a `search` term),
+`GET/PATCH/DELETE /api/v1/tenants/{id}` (a PATCH body that names no field is 422),
+`POST /api/v1/tenants` (201 + Location); Keycloak's messages reach the client as 422 and
+409 (a blank name on PATCH is 409,
 see above); an absent `enabled` from today's backend (fields 1-3 only) reads as enabled; the
 JSON has no `redirectUrl` and carries `resourceVersion` (also the `ETag` of a single tenant);
-PATCH and DELETE map `If-Match` to the version fields above (409 when stale; without it, no
-check). Against the shipped backend, which has only `ListTenants`, `GET
+PATCH and DELETE need `If-Match` (428 without it) and map it to the version fields above (409
+when stale). Against the shipped backend, which has only `ListTenants`, `GET
 /api/v1/tenants/{id}` has no list fallback (unlike `GET /api/v1/clusters/{name}`) and answers
-501, as do every tenant write and a PATCH that sets no field (it reads with `GetTenant`), and
-so does a list with `search`, `limit` or an `offset` above 0: the shipped `ListTenantsRequest`
-is empty and its response has no `total`, so the BFF cannot tell a search result from the
+501, as does every tenant write, and so does a list with `filter`, `limit` or an `offset` above 0: the shipped `ListTenantsRequest`
+is empty and its response has no `total`, so the BFF cannot tell a filtered result from the
 unfiltered list and refuses it (`docs/plan/bff-api.md`).
 UI: main already has a basic, read-only Tenants page (`frontend/src/pages/TenantsPage.tsx`:
 name, domains, id), which keeps working because the list's `data` is still an array of
@@ -163,8 +177,9 @@ enable and delete) is out of scope here; it builds on the HTTP contract in
 `docs/plan/bff-api.md`.
 Remaining here: members (list, add, remove, invite; the draft has no member RPCs yet, open
 question 3 in `mock/research/keycloak.md`), identity providers (the fake realm has none, so no
-domain can be routed to one), the realm and service-account bootstrap (section 9) and the
-`exact` search form.
+domain can be routed to one), the realm and service-account bootstrap (section 9), and
+for the real backend the choice between evaluating `filter` in memory (as the fake does) and
+pushing simple terms down to Keycloak's `search` and `exact`.
 Backend ask: the `Tenants` CRUD proto as now drafted in `mock/proto/ai_grid/v1/tenant*.proto`
 (`resource_version` kept in an organization attribute as above, `domain_details`, `optional
 bool enabled`, an optional `ListTenantsResponse.total`), keyed by `id`;

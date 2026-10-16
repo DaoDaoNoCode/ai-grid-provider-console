@@ -49,6 +49,10 @@ service Models {
   // `rollout` or `placement` re-applies none, as the ManifestWorkReplicaSet
   // controller compares each work with its template alone (a new placement
   // adds and removes the works of clusters entering and leaving the decision).
+  // An update after which the spec, labels and annotations equal the stored
+  // ones is not written: the stored model comes back with `resource_version`
+  // and `generation` unchanged, as the Kubernetes API server answers an
+  // unchanged update; the lock and the validation still apply.
   rpc UpdateModel(UpdateModelRequest) returns (UpdateModelResponse);
   // Deletes a model and, for a placed model, its Placement and
   // ManifestWorkReplicaSet. The console's template uses the CRD default,
@@ -67,13 +71,15 @@ message ListModelsRequest {
   // Maximum number of results. Omitted means all; zero means count only;
   // negative is InvalidArgument.
   optional int32 limit = 2;
-  // CEL over `this` (a Model). Supported today: terms of the form
-  // `this.metadata.namespace == "<ns>"` and
-  // `"<key>" in this.metadata.labels && this.metadata.labels["<key>"] == "<value>"`,
-  // joined with `&&`. The label term is guarded with `in` because indexing a
-  // missing map key is a CEL `no such key` error, not false; both literals name
-  // the same key. Values are CEL string literals (escapes `\"` and `\\`). Any
-  // other expression is InvalidArgument naming it.
+  // CEL over `this` (a Model as Get returns it, status included, fields by
+  // their proto names) and `now` (the server's time, a timestamp), as OSAC's
+  // filters are; empty means all. The language is cel-go's standard library
+  // plus its strings extension (`ext.Strings()`), evaluated over every model
+  // before paging, so `total` counts the matches. Indexing a missing map key
+  // is a CEL `no such key` error, not false, so a label term needs the `in`
+  // guard: `this.metadata.namespace == "ai-grid-models" && "ai-grid/family" in this.metadata.labels && this.metadata.labels["ai-grid/family"] == "granite"`.
+  // A filter that does not compile or is not a bool is InvalidArgument
+  // naming it, and so is one that fails on a model (the unguarded index).
   optional string filter = 3;
   // Sort order. Only the default (namespace, then name) is supported; a
   // non-empty value is InvalidArgument.

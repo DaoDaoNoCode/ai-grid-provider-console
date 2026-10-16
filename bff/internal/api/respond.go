@@ -32,7 +32,7 @@ type ListMeta struct {
 // prove, the items before this page plus this page (offset+size), and omits
 // the total when the page is full (size == limit), because more may follow.
 // The handlers only get here without a total when the caller asked for no
-// search, offset or limit (see requireTotal), so today that bound is the size.
+// filter, offset or limit (see requireTotal), so today that bound is the size.
 func listMeta(offset, limit *int, size int, total *int32) ListMeta {
 	meta := ListMeta{Size: size, Limit: limit}
 	if offset != nil {
@@ -49,16 +49,18 @@ func listMeta(offset, limit *int, size int, total *int32) ListMeta {
 
 func intPtr(v int) *int { return &v }
 
-// requireTotal refuses a search or a page the backend did not honour. A list
+// requireTotal refuses a filter or a page the backend did not honour. A list
 // response without `total` comes from a backend that ignores `offset`,
 // `limit` and `filter` (the shipped one: its ListTenantsRequest is empty, so
 // the fields are dropped as unknown on the wire), and its rows are the
 // unfiltered first page, not the result the caller asked for. Showing them
-// as search results would be wrong data, so the answer is 501 with a message
-// that says which feature is missing.
+// as filtered results would be wrong data, so the answer is 501 with a
+// message that says which feature is missing. This is transport
+// compatibility with the shipped backend, not a check of the filter: the BFF
+// only notices that the answer carries no count.
 func requireTotal(asked bool, total *int32, what string) error {
 	if asked && total == nil {
-		return Errorf(http.StatusNotImplemented, fmt.Sprintf("the AI Grid backend does not support searching or paging %s yet; list them without search, filter, offset or limit", what))
+		return Errorf(http.StatusNotImplemented, fmt.Sprintf("the AI Grid backend does not support filtering or paging %s yet; list them without filter, offset or limit", what))
 	}
 	return nil
 }
@@ -74,29 +76,32 @@ func setETag(w http.ResponseWriter, version string) {
 	w.Header().Set("ETag", `"`+version+`"`)
 }
 
-// ifMatch reads the If-Match header: the version the client last read, which
-// the handler passes to the backend as the request's expected version, so a
-// write from a stale tab is Aborted (409) instead of overwriting a newer
-// change. "" means no precondition: the header is absent, or `*` (any
-// current representation; the read or the write already answers 404 for a
-// missing object). Only one strong entity tag is accepted, as the ETag
+// requireIfMatch reads the If-Match header every PATCH and DELETE must send:
+// the version the client last read, which the handler passes to the backend
+// as the request's expected version, so a write from a stale tab is Aborted
+// (409) instead of overwriting a newer change. The header is required, so
+// every write carries a version: without it the answer is 428 Precondition
+// Required (RFC 6585 section 3) naming the header and the value to send, and
+// so is `*`, which names no version (RFC 9110 13.1.1: any current
+// representation). Only one strong entity tag is accepted, as the ETag
 // header sends it; a weak tag, a list or a bare value is 422, because the
-// backend compares one exact version.
-func ifMatch(r *http.Request) (string, error) {
+// backend compares one exact version. Handlers call it after the 415
+// content-type check and before they decode the body.
+func requireIfMatch(r *http.Request) (string, error) {
 	values := r.Header.Values("If-Match")
 	if len(values) == 0 {
-		return "", nil
+		return "", Errorf(http.StatusPreconditionRequired, `this write needs an If-Match header: send the ETag that GET answered (the object's resourceVersion), for example If-Match: "42"`)
 	}
 	raw := strings.TrimSpace(values[0])
 	if len(values) == 1 && raw == "*" {
-		return "", nil
+		return "", Errorf(http.StatusPreconditionRequired, `If-Match: * names no version: send the ETag that GET answered (the object's resourceVersion), for example If-Match: "42"`)
 	}
 	if len(values) == 1 && len(raw) > 2 && raw[0] == '"' && raw[len(raw)-1] == '"' {
 		if v := raw[1 : len(raw)-1]; !strings.ContainsFunc(v, func(r rune) bool { return r <= ' ' || r == '"' || r == 0x7f }) {
 			return v, nil
 		}
 	}
-	return "", Errorf(http.StatusUnprocessableEntity, `If-Match must be one entity tag as the ETag header sent it, for example "42", or *`)
+	return "", Errorf(http.StatusUnprocessableEntity, `If-Match must be one entity tag as the ETag header sent it, for example "42"`)
 }
 
 // errorBody is the JSON shape of every error response.

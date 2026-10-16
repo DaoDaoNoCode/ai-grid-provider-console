@@ -1,0 +1,15 @@
+{
+  "request": "PATCH /api/v1/tenants/3f1c9a72-5b6e-4d2a-8c01-2d3e4f5a6b7c",
+  "requestBody": {
+    "enabled": false
+  },
+  "token": "dev-token",
+  "user": "dev-user",
+  "status": 428,
+  "body": {
+    "error": {
+      "code": "428",
+      "message": "this write needs an If-Match header: send the ETag that GET answered (the object's resourceVersion), for example If-Match: \"42\""
+    }
+  }
+}

@@ -6,6 +6,7 @@ points to the detail:
 
 | For | Read |
 |---|---|
+| What the BFF may do (transport only) and what belongs to the backend and so to the fake | [../AGENTS.md](../AGENTS.md) |
 | Every endpoint, JSON shape, body rule and error mapping | [docs/plan/bff-api.md](../docs/plan/bff-api.md) |
 | The draft proto the BFF and the fake compile against, and the deliberate stubs | [proto/README.md](proto/README.md) |
 | The fixture files and what each one seeds | [fixtures/README.md](fixtures/README.md) |
@@ -70,16 +71,16 @@ adds `"meta": {"size", "total", "offset", "limit"}` (`limit` only when the reque
 | GET | `/api/v1/config` | | `{gridEndpoint, mapTileUrl, billingUrl, version}` |
 | GET | `/api/v1/clusters` | | `GridCluster[]` by name |
 | GET | `/api/v1/clusters/{name}` | | `GridCluster`, `ETag` |
-| PATCH | `/api/v1/clusters/{name}` | `{aiGridEnabled?, provisioned?, location?, site?, region?, siteName?, latitude?, longitude?}` | `GridCluster` after the write, `ETag` |
-| GET | `/api/v1/tenants?offset=&limit=&search=` | | `Tenant[]` by name, plus `meta` |
+| PATCH | `/api/v1/clusters/{name}` | `{labels?, annotations?}` (whole maps; only `ai-grid/*` keys and the `location` label may change) | `GridCluster` after the write, `ETag` |
+| GET | `/api/v1/tenants?offset=&limit=&filter=` | | `Tenant[]` by name, plus `meta` |
 | GET | `/api/v1/tenants/{id}` | | `Tenant`, `ETag` |
 | POST | `/api/v1/tenants` | `{name, alias?, description?, enabled?, domains?, attributes?}` | 201, `Tenant`, `Location` and `ETag` headers |
-| PATCH | `/api/v1/tenants/{id}` | `{name?, description?, enabled?, domains?, attributes?, alias?}` (alias must be unchanged) | `Tenant` after the write, `ETag` |
+| PATCH | `/api/v1/tenants/{id}` | `{name?, description?, enabled?, domains?, attributes?, alias?}` (the backend refuses a changed alias) | `Tenant` after the write, `ETag` |
 | DELETE | `/api/v1/tenants/{id}` | | 204 |
-| GET | `/api/v1/models?namespace=&label=k=v&offset=&limit=` | | `Model[]` by namespace and name, plus `meta` |
+| GET | `/api/v1/models?offset=&limit=&filter=` | | `Model[]` by namespace and name, plus `meta` |
 | GET | `/api/v1/models/{namespace}/{name}` | | `Model`, `ETag` |
-| POST | `/api/v1/models` | `{name, namespace, modelUri, displayName?, description?, modelName?, runtimeImage?, runtime?, replicas? or scaling?, baseRefs?, cpu?, memory?, gpuCount?, env?, gateway?, placement?, rollout?, labels?, annotations?}` | 201, `Model` with no conditions yet, `Location` and `ETag` headers |
-| PATCH | `/api/v1/models/{namespace}/{name}` | `{replicas?, runtimeImage?, env?, placement? (null removes it), rollout?, labels?, annotations?, displayName?, description?}` | `Model` after the write, `ETag` |
+| POST | `/api/v1/models` | `{name, namespace, modelUri, modelName?, runtimeImage?, runtime?, replicas? or scaling?, baseRefs?, cpu?, memory?, gpuCount?, env?, gateway?, placement?, rollout?, labels?, annotations?}` | 201, `Model` with no conditions yet, `Location` and `ETag` headers |
+| PATCH | `/api/v1/models/{namespace}/{name}` | `{replicas?, runtimeImage?, env?, placement? (null removes it), rollout?, labels?, annotations?}` (whole maps) | `Model` after the write, `ETag` |
 | DELETE | `/api/v1/models/{namespace}/{name}` | | 204 |
 | GET | `/api/v1/capabilities` | | `{manifestWorkReplicaSetEnabled, observabilityInstalled, acmVersion}` |
 
@@ -91,22 +92,39 @@ the object, and a larger body is 413. The BFF checks the body before it calls th
 backend. Field semantics (what an absent field, an empty string or `null` inside the object
 means) are in `bff-api.md`.
 
-What a PATCH writes. A cluster or model PATCH reads the object first and writes only what
-differs from it: a body that sets no field, or only fields that already have those values
-(`{"aiGridEnabled": true}` on an enrolled cluster), writes nothing and answers the object with
-200, for `viewer-token` too. A cluster label that is absent is not the same as `"false"`:
-`{"aiGridEnabled": false}` on `site-frankfurt-1`, which has no `ai-grid/enabled` label, adds
-one and so writes. A tenant PATCH is not read first: any field but `alias` writes, even with
-the stored value; `{}` or only the unchanged `alias` writes nothing.
+List filters. `GET /tenants` and `GET /models` take `filter`, a CEL expression over `this` (the
+proto message, proto field names) that the page writes and the BFF forwards unchanged; the fake
+evaluates it with cel-go and its strings extension before paging, so `meta.total` counts the
+matches. For example `this.name.lowerAscii().contains("acme") || this.domains.exists(d,
+d.lowerAscii().contains("acme"))` (lower the term yourself) or `"ai-grid/family" in
+this.metadata.labels && this.metadata.labels["ai-grid/family"] == "granite"` (the `in` guard is
+needed: CEL fails on a missing key instead of answering false). `bff-api.md`, "Writes, versions
+and lists", has more examples and the error texts.
+
+What a PATCH writes. One update, with every field the body names, and nothing read first: the
+BFF does not merge, compare or validate. `labels` and `annotations` are whole maps that replace
+the stored ones, so a page edits the map it loaded and sends all of it: to enrol
+`site-frankfurt-1`, send its `labels` with `"ai-grid/enabled": "true"` added; to remove a label,
+leave it out. Only the console's keys may change: a cluster PATCH that adds, changes or removes
+a label or annotation outside `ai-grid/*`, `ai-grid-mock/*` and the `location` label is 422
+(keys the hub puts back by itself, such as `name`, may be left out), and hub acceptance is not
+writable. The display name and description of a model are its `openshift.io/display-name` and
+`openshift.io/description` annotations, on create as on PATCH; the cluster's site name and
+coordinates are its `ai-grid/site-name`, `ai-grid/latitude` and `ai-grid/longitude` annotations,
+and the fake refuses a coordinate that is not a number in range (422; surrounding whitespace and
+an empty value pass, as the read side ignores them). A body that names no field (`{}`) is 422
+before any call. The fake decides what an update changes: one that leaves the object as stored
+(the stored maps sent back, or a tenant's unchanged `alias`) is not written and keeps the
+`resourceVersion`, like the API server.
 
 Stale tabs (`ETag`, `If-Match`). `GET` of one cluster, tenant or model and the answer to its
-POST or PATCH carry `ETag: "<resourceVersion>"`. Send it back as `If-Match` on PATCH or DELETE
-and a write against an object that changed since is 409 (the backend's `Aborted`) instead of
-overwriting it; `If-Match: *` or no `If-Match` keeps the old behaviour (a cluster or model
-PATCH is then only protected against a write between the BFF's own read and its update, a
-tenant PATCH and every DELETE not at all). Anything but one quoted tag or `*` is 422. A tenant's
-`resourceVersion` is kept by the backend (Keycloak has none); every tenant starts at `"1"` in
-the fixtures. Details in `bff-api.md`, "Writes, versions and lists".
+POST or PATCH carry `ETag: "<resourceVersion>"`. Every PATCH and DELETE must send it back as
+`If-Match`: a write against an object that changed since is 409 (the backend's `Aborted`)
+instead of overwriting it, and a PATCH or DELETE without `If-Match` (or with `If-Match: *`,
+which names no version) is 428 before anything is called. The BFF checks a write in this
+order: 415 for a body that is not JSON, 428, then the body (422, 413). Anything but one quoted
+tag is 422. A tenant's `resourceVersion` is kept by the backend (Keycloak has none); every
+tenant starts at `"1"` in the fixtures. Details in `bff-api.md`, "Writes, versions and lists".
 
 ## Golden responses (`examples/`)
 
@@ -129,9 +147,10 @@ when the BFF set them.
 | `get-model.json` | `GET /api/v1/models/ai-grid-models/mistral-7b-instruct`, a placed model selected for two sites at the start of its rollout: the first work applied, not yet available |
 | `get-capabilities.json` | `GET /api/v1/capabilities` |
 | `error-401-expired-token.json` | `GET /api/v1/user` with `expired-token` |
-| `error-403-viewer-patch.json` | `PATCH /api/v1/clusters/site-frankfurt-1` with `viewer-token` |
+| `error-403-viewer-patch.json` | `PATCH /api/v1/clusters/site-frankfurt-1` with `viewer-token` and the cluster's `If-Match` |
 | `error-404-unknown-cluster.json` | `GET /api/v1/clusters/site-unknown-1` |
 | `error-409-stale-if-match.json` | `PATCH /api/v1/clusters/site-paris-1` with an `If-Match` older than the cluster |
+| `error-428-missing-if-match.json` | `PATCH /api/v1/tenants/{id}` for `acme-robotics` without `If-Match` |
 | `error-415-not-json.json` | `POST /api/v1/tenants` with `Content-Type: text/plain` |
 
 They are produced by `bff/internal/examples/golden_test.go`: the fake backend loaded from
@@ -223,39 +242,42 @@ KServe's conditions, counted from its creation:
 | 20 s | `False/MinimumReplicasUnavailable` |
 | 45 s | `True`, so `phase` reads `ready` (the Deployment's ready replica count is in the gRPC `status.workloads` only; the BFF does not return it yet) |
 
-A hub deployment's `phase` follows `Ready`, so while it starts it reads `failed` with reason
-`WaitingForGateway`, `Progressing` or `MinimumReplicasUnavailable`: those three reasons mean
-starting, not failed. A placed model's sites follow the same table, counted from the moment
-the site's agent reports its work: `Applied` at once, `Available` 2 s later, the spoke ready at
-45 s; `Progressive` moves to the next site once the current one is ready and `minSuccessTime`
-has passed. Failures on demand: an unknown `baseRefs` entry stops at 5 s with
-`ConfigNotFound` (no `url`); a gateway other than `openshift-ingress/openshift-ai-inference`
-or `openshift-ingress/maas-default-gateway` is `RefsInvalid` "Gateway <ns>/<name> does not
-exist" from 5 s, with no `url`, while the workload still deploys; a `runtimeImage` or
-`modelName` (default: the model's `name`) containing `oom` or `fail` stays at
-`MinimumReplicasUnavailable` from 20 s for good, as KServe does (it never turns into
-`ProgressDeadlineExceeded`; `mock/areas/models.md` has the source lines); on a spoke such a
-model keeps its work `Progressing` and the placed model reads `pending`/`Processing` for good;
-the rollout's `progressDeadline` times that cluster out (a `Progressive` rollout moves on to the
-next one), which no condition shows; a cluster labelled
+A hub deployment's `phase` reads `pending` while it starts, with the reason KServe reports
+(`WaitingForGateway`, `Progressing`, `MinimumReplicasUnavailable`), and `failed` only for a
+reason that does not recover on its own (`ConfigNotFound`, `RefsInvalid`, `GatewaysNotReady`). A
+placed model's sites follow the same table, counted from the moment the site's agent reports its
+work: `Applied` at once, `Available` 2 s later, the spoke ready at 45 s; `Progressive` moves to
+the next site once the current one is ready and `minSuccessTime` has passed. Failures on demand:
+an unknown `baseRefs` entry stops at 5 s with `ConfigNotFound` (no `url`); a gateway other than
+`openshift-ingress/openshift-ai-inference` or `openshift-ingress/maas-default-gateway` is
+`RefsInvalid` "Gateway <ns>/<name> does not exist" from 5 s, with no `url`, while the workload
+still deploys; a `runtimeImage` or `modelName` (default: the model's `name`) containing `oom` or
+`fail` stays at `MinimumReplicasUnavailable` from 20 s for good, as KServe does (it never turns
+into `ProgressDeadlineExceeded`; `mock/areas/models.md` has the source lines), so the model
+reads `pending` with that reason for good: no condition tells it apart from a slow start; on a
+spoke such a model keeps its work `Progressing` and the placed model reads
+`pending`/`Processing` for good; the rollout's `progressDeadline` times that cluster out (a
+`Progressive` rollout moves on to the next one), which no condition shows; a cluster labelled
 `ai-grid-mock/fail-apply=true` fails to apply its work: the model reads `failed`/`NotAsExpected`
-and the work `applied: "False"`, `available: "Unknown"`, with `Applied=False/AppliedManifestWorkFailed`
-"Failed to apply manifest work" (the manifest's own text, `Failed to apply manifest: the server
-doesn't have a resource type "LLMInferenceService"`, is in the gRPC status only).
+and the work `applied: "False"`, `available: "Unknown"`, with
+`Applied=False/AppliedManifestWorkFailed` "Failed to apply manifest work" (the manifest's own
+text, `Failed to apply manifest: the server doesn't have a resource type "LLMInferenceService"`,
+is in the gRPC status only).
 
 ## Errors worth building UI for
 
 | Status | How to get it from the fake | Message |
 |---|---|---|
-| 401 | `AUTH_TOKEN=expired-token` on an endpoint that asks the hub or the backend: `GET /user` (the hub's access review) and every `/clusters`, `/tenants`, `/models` and `/capabilities` endpoint (the backend). `GET /config` asks neither and answers 200; a POST or PATCH with a bad body is 415, 422 or 413 first. A request without the token header is 401 on every `/api/v1` path, `/config` included | `the hub rejected the credentials; log in again` (`/user`), `the AI Grid backend rejected the credentials; log in again` (the others), `missing x-forwarded-access-token header` |
-| 403 | `viewer-token` on a request that passes the body checks and reaches a mutating RPC: every POST and DELETE, a tenant PATCH that sets a field, and a cluster or model PATCH that changes something. A PATCH of a cluster or model reads it first, so an unknown name is 404 before 403; a PATCH that changes nothing is 200 with no write | the backend's text: the API server's `... is forbidden: User "viewer" cannot patch resource "managedclusters" ...` for clusters, `User "viewer" is not a provider admin: ...` for tenants and models |
+| 401 | `AUTH_TOKEN=expired-token` on an endpoint that asks the hub or the backend: `GET /user` (the hub's access review) and every `/clusters`, `/tenants`, `/models` and `/capabilities` endpoint (the backend). `GET /config` asks neither and answers 200; a write that fails the BFF's own checks is 415, 428, 422 or 413 first. A request without the token header is 401 on every `/api/v1` path, `/config` included | `the hub rejected the credentials; log in again` (`/user`), `the AI Grid backend rejected the credentials; log in again` (the others), `missing x-forwarded-access-token header` |
+| 403 | `viewer-token` on a request that passes the BFF's checks (415, 428, the body) and reaches a mutating RPC: every POST and DELETE, and every PATCH that names a field, even one that would change nothing (the BFF reads nothing first, and the backend checks the permission before it looks the object up, so a PATCH of an unknown name is 403 too); a PATCH whose body names no field is 422 first | the backend's text: the API server's `... is forbidden: User "viewer" cannot patch resource "managedclusters" ...` for clusters, `User "viewer" is not a provider admin, and only provider admins can change tenants (a provider admin may patch ManagedClusters on the hub)` (`models` for models) |
 | 404 | an unknown cluster, tenant or model | `object with identifier '<name>' not found` for a cluster, `'<id>'` for a tenant, `'<namespace>/<name>'` for a model |
-| 409 | a taken tenant name or alias, or model name; a blank `name` in a tenant PATCH (Keycloak's own answer); an `If-Match` older than the object; a cluster or model that changed between the BFF's read and write | `A organization with the same name already exists.`, `... same alias already exists`, the API server's `... already exists` for a model, `object with identifier '<id>' has resource version <v>, the request carries "<v>"; fetch it again and retry` |
+| 409 | a taken tenant name or alias, or model name; a blank `name` in a tenant PATCH (Keycloak's own answer); an `If-Match` older than the object (also for an update that would change nothing) | `A organization with the same name already exists.`, `... same alias already exists`, the API server's `... already exists` for a model, `object with identifier '<id>' has resource version <v>, the request carries "<v>"; fetch it again and retry` |
 | 412 | `manifestWorkReplicaSetEnabled: false` in `settings.json`, then a model with `placement` (a POST, or a PATCH that adds one); `{"realmMissing": true}` or `{"organizationsDisabled": true}` in `tenants.json` | `ManifestWorkReplicaSet feature gate disabled on hub`; `Keycloak realm "ai-grid": Realm not found.`, `Keycloak realm "ai-grid": Organizations not enabled for this realm.` |
 | 413 | a body over 1 MiB | `request body must not exceed 1048576 bytes` |
 | 415 | a POST or PATCH without `Content-Type: application/json` (an HTML form, `text/plain`) | `request body must be JSON: send Content-Type: application/json` |
-| 422 | a body the BFF rejects (unknown field, wrong type, out-of-range coordinate, trailing content), a malformed `If-Match`, or a value the backend rejects | Keycloak's texts (`Name can not be null`, `Invalid domain format: <d>`, `Cannot change the alias`, `Domain <d> is already linked to organization <o> in realm ai-grid`), the CRD's (`replicas and scaling are mutually exclusive; ...`) and the console's own checks (`spec.rollout requires spec.placement`, `attribute "ai-grid/resource-version" is reserved ...`); Keycloak's `Identity provider with alias '<a>' does not exist in realm ai-grid` exists in the fake but no BFF body can send a domain's identity provider |
-| 501 | not reachable through today's endpoints on the fake. The shipped backend answers it for every RPC it lacks: `PATCH /clusters/{name}`, `GET /tenants/{id}`, every tenant write and a tenant PATCH that sets no field (it reads with `GetTenant`), every `/models` endpoint and `/capabilities` (`GET /clusters/{name}` falls back to the list); and the BFF answers it for `GET /tenants` with `search`, `limit` or an `offset` above 0 there, because that backend ignores them | `the AI Grid backend does not support this operation yet`, or `the AI Grid backend does not support searching or paging tenants yet; ...`: show "not available on this backend yet", not an error page |
+| 428 | a PATCH or DELETE without `If-Match`, or with `If-Match: *` | `this write needs an If-Match header: send the ETag that GET answered (the object's resourceVersion), for example If-Match: "42"`, `If-Match: * names no version: ...`: send the `ETag` of the GET the page showed |
+| 422 | a body the BFF rejects (unknown field, such as the removed `aiGridEnabled` or `hubAcceptsClient` or a model's `displayName`, wrong type, trailing content) or that names no field (`the request body names no field to change`), a cluster PATCH that changes a label or annotation outside the console's keys (`label "cluster.open-cluster-management.io/clusterset" cannot be changed through the console; only ai-grid/* labels and annotations and the location label can`), a repeated `filter`, an `ai-grid/latitude` or `ai-grid/longitude` annotation that is not a number in range (`annotation "ai-grid/latitude" must be a number between -90 and 90, got "91"`), a malformed `If-Match`, a list query with the removed `search`, `namespace` or `label`, a `filter` the backend cannot evaluate (`GET /api/v1/models?filter=this.metadata.labels[%22x%22]==%22y%22`: no model has `x`, and the index is not guarded), or a value the backend rejects | `query parameter "search" is not supported; send a CEL filter in "filter"`, `filter <f> is not a valid CEL expression: ...`, `filter <f> failed on '<id>': no such key: <k>`, Keycloak's texts (`Name can not be null`, `Invalid domain format: <d>`, `Cannot change the alias`, `Domain <d> is already linked to organization <o> in realm ai-grid`), the CRD's (`replicas and scaling are mutually exclusive; ...`) and the console's own checks (`spec.rollout requires spec.placement`, `attribute "ai-grid/resource-version" is reserved ...`); Keycloak's `Identity provider with alias '<a>' does not exist in realm ai-grid` exists in the fake but no BFF body can send a domain's identity provider |
+| 501 | not reachable through today's endpoints on the fake. The shipped backend answers it for every RPC it lacks: `PATCH /clusters/{name}`, `GET /tenants/{id}`, every tenant write, every `/models` endpoint and `/capabilities` (`GET /clusters/{name}` falls back to the list); and the BFF answers it for `GET /tenants` with `filter`, `limit` or an `offset` above 0 there, because that backend ignores them | `the AI Grid backend does not support this operation yet`, or `the AI Grid backend does not support filtering or paging tenants yet; ...`: show "not available on this backend yet", not an error page |
 | 503 | `{"unavailable": "..."}` in `tenants.json`, then any tenants endpoint as a provider admin (a viewer's write stays 403, an expired token 401: the token checks come first) | `the AI Grid backend is unavailable; try again` |
 
 The full table, including 502 and 504, is in `bff-api.md`, "Errors".

@@ -85,8 +85,9 @@ Failure modes:
   message (`workload_single_node.go:418-443`, :442), before its one status write
   (`controller.go:246-262`); and the deployment controller writes `Available` on every status
   sync (Kubernetes `pkg/controller/deployment/sync.go:525-531`, v1.35.8), so only a Deployment
-  without any status yet reads `Progressing`. `url` and `addresses` are present, `readyReplicas` stays 0. On a hub the
-  phase is FAILED/`MinimumReplicasUnavailable`; on a spoke see the rollout below.
+  without any status yet reads `Progressing`. `url` and `addresses` are present, `readyReplicas`
+  stays 0. On a hub the phase is PENDING/`MinimumReplicasUnavailable` for good (no condition
+  tells it from a slow start); on a spoke see the rollout below.
 - A referenced Gateway that does not exist (anything but
   `openshift-ingress/{openshift-ai-inference,maas-default-gateway}`, the product-default names):
   `GatewaysReady`, `RouterReady` and `Ready` False/`RefsInvalid` "Gateway <ns>/<name> does not
@@ -99,7 +100,11 @@ Failure modes:
 A spec change bumps the model's generation. A change of the LLMInferenceService's own spec
 (everything but `placement` and `rollout`) bumps its generation too: the controller observes it at
 T1 after the change, and at T2 the Deployment rolls out again from `Progressing`; `url` and
-`addresses` are kept.
+`addresses` are kept. An update after which the spec, labels and annotations equal the stored
+ones is not written: `UpdateModel` answers the stored model without bumping `resource_version`
+or `generation`, as the API server skips an unchanged update (`k8s.io/apiserver` v0.35.8
+`pkg/storage/etcd3/store.go:553-577`); the lock and the admission checks run first. Removing
+the placement without naming `spec.rollout` drops the rollout with it.
 
 Placement (`mock/research/acm.md` 3, items 6 and 7), recomputed on every pass from the clusters
 and the previous decision: the sets bound into the namespace (`global` = every cluster,
@@ -202,18 +207,29 @@ out of the summary, and its cluster is to apply again like a new one.
   area will wire up (nothing references a model today).
 
 Phase (a console derivation, see `ModelPhase` in `model_type.proto`): a hub deployment is READY
-when `Ready` is True, FAILED when it is False (also while starting), PENDING otherwise. A placed
+when `Ready` is True, FAILED when it is False with a reason that does not recover on its own
+(`terminalReadyReasons`: `ConfigNotFound`, `RefsInvalid`, `GatewaysNotReady`, the set the
+ManifestWork template's Degraded rule uses), PENDING otherwise, with the condition's reason:
+KServe reports `Ready` False with `WaitingForGateway`, `Progressing` and
+`MinimumReplicasUnavailable` while a healthy model starts, so "False means failed" showed every
+new model as failed for its first 45 s. A placed
 model is READY when `PlacementRolledOut` and `ManifestworkApplied` are True; FAILED when
 `ManifestworkApplied` is `NotAsExpected` and a work is degraded or failed to apply; otherwise
 PENDING with the reason of `PlacementVerified` when it is False, of `PlacementRolledOut` when
 `ManifestworkApplied` is True, else of `ManifestworkApplied`.
 
 `GetHubCapabilities` answers from `settings.json`. Mutations are gated by the provider-admin rule
-(a viewer gets PermissionDenied, 403 at the BFF); every RPC needs `authorization`; `ListModels`
-evaluates `this.metadata.namespace == "x"` and the guarded label term `"k" in
-this.metadata.labels && this.metadata.labels["k"] == "v"` (in CEL a missing key is a `no such
-key` error, so the index needs the `in` guard) joined with `&&`; values are CEL string literals,
-their escapes decoded, and a quoted `&&` stays inside its literal.
+(a viewer gets PermissionDenied, 403 at the BFF); every RPC needs `authorization`. `ListModels`
+evaluates `filter` as CEL over `this` (an `ai_grid.v1.Model` as the read derives it, status
+included, proto field names) and `now`, with cel-go and its strings extension, over every model
+and before paging, so `total` counts the matches (`bff/internal/fakebackend/celfilter`, the
+List rule of `mock/research/backend-conventions.md` 5.3). Any expression works, for example
+`this.metadata.namespace == "ai-grid-models" && "ai-grid/family" in this.metadata.labels &&
+this.metadata.labels["ai-grid/family"] == "granite"` or `this.status.phase ==
+ai_grid.v1.ModelPhase.MODEL_PHASE_FAILED`; in CEL a missing key is a `no such key` error, not
+false, so an unguarded `this.metadata.labels["k"]` on a model without `k` makes the list
+`InvalidArgument` (`filter <f> failed on '<namespace>/<name>': no such key: k`), as cel-go
+answers. A filter that does not compile or is not a bool is `InvalidArgument` too.
 
 ## Deviations from the real controllers
 
@@ -275,20 +291,26 @@ their escapes decoded, and a quoted `&&` stays inside its literal.
 Invented texts (console wording, not hub messages): the admission messages other than the CEL, CRD
 schema and DNS-1123 texts, "ManifestWorkReplicaSet feature gate disabled on hub", the `referencedBy`
 message, the template's rule messages ("LLMInferenceService rolling out", "LLMInferenceService
-not ready"), the ListModels filter and paging messages, and the hosts and domains
+not ready"), the ListModels filter and paging messages (`filter <f> is not a valid CEL
+expression: ...`, `filter <f> must evaluate to a bool, not <type>`, `filter <f> failed on '<id>':
+...`, with cel-go's own error after the colon), and the hosts and domains
 (`*.example.com`, `apps.hub.example.com`).
 
 ## BFF
 
-`GET /api/v1/models?namespace=&label=`, `GET/PATCH/DELETE /api/v1/models/{namespace}/{name}`,
+`GET /api/v1/models?offset=&limit=&filter=` (the client's CEL forwarded unchanged; the removed
+`namespace` and `label` parameters are 422 `query parameter "<name>" is not supported; send a CEL
+filter in "filter"`), `GET/PATCH/DELETE /api/v1/models/{namespace}/{name}`,
 `POST /api/v1/models` (201 + Location) and `GET /api/v1/capabilities` (501 against today's
 backend), with the JSON shape in `docs/plan/bff-api.md`: the POC's `ManagedModel` without its
 inventions, plus `placement` (selector, selected clusters, `PlacementSatisfied`) and `rollout`
 (strategy, summary without `updated`, per-site works with their condition statuses and the
-`ready` and `url` feedback); `url` is omitted when empty; PATCH is a locked read-modify-write with
-the present fields that differ from the stored ones as the mask (none: no write), locked on the
-`If-Match` version when the client sends one and on the version read otherwise; DELETE passes
-`If-Match` as `DeleteModelRequest.resource_version`, which the fake checks like a Kubernetes
+`ready` and `url` feedback); `url` is omitted when empty; PATCH is one `UpdateModel` with every
+present field in the mask (no read first, no comparison; `labels` and `annotations` are whole
+maps, and the display name and description are their `openshift.io/*` annotation keys, not body
+fields on PATCH or POST), locked on the `If-Match` version the client must send (428 without it),
+and a body that names no field is 422; DELETE needs `If-Match` too and passes
+it as `DeleteModelRequest.resource_version`, which the fake checks like a Kubernetes
 delete precondition (`Aborted` with the update's wording when stale); GET, POST and PATCH send
 the `resourceVersion` as the `ETag`.
 

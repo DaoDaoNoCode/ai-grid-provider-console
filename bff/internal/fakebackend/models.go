@@ -3,6 +3,7 @@ package fakebackend
 import (
 	"context"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"sort"
@@ -16,6 +17,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
+	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/fakebackend/celfilter"
 )
 
 // Models are KServe LLMInferenceServices on the hub, optionally fanned out to
@@ -86,21 +88,6 @@ const (
 	maxDNSLabelLength     = 63
 	maxDNSSubdomainLength = 253
 )
-
-// celLiteral is a CEL double-quoted string literal: any character but `"` and
-// `\`, or a backslash escape (what the BFF's celString writes).
-const celLiteral = `"(?:[^"\\]|\\.)*"`
-
-// The term forms ListModels evaluates, matched at the start of the rest of
-// the filter so that ` && ` inside a quoted literal never splits a term. The
-// label term is guarded with `in`: in CEL a missing map key is a
-// `no such key` error, not false.
-var (
-	filterNamespace = regexp.MustCompile(`^this\.metadata\.namespace == (` + celLiteral + `)`)
-	filterLabel     = regexp.MustCompile(`^(` + celLiteral + `) in this\.metadata\.labels && this\.metadata\.labels\[(` + celLiteral + `)\] == (` + celLiteral + `)`)
-)
-
-const supportedModelFilter = `this.metadata.namespace == "<ns>" and "<key>" in this.metadata.labels && this.metadata.labels["<key>"] == "<value>", joined with &&`
 
 // model is one stored model with the controller facts the derivation needs.
 // Times are scenario time (see Server.scenarioTime).
@@ -839,83 +826,19 @@ func derivePlacedPhase(rollout *aigridv1.RolloutStatus) (aigridv1.ModelPhase, st
 	}
 }
 
-// parseModelFilter evaluates the supported ListModels filter terms. It reads
-// one term at a time from the front of the filter, so a quoted ` && ` stays
-// in its literal, and decodes each literal's escapes (`\"`, `\\`, `\n`,
-// `\uXXXX`, what the BFF writes) with Go's rules, which agree with CEL's for
-// those; a malformed escape is InvalidArgument like a CEL compile error.
-func parseModelFilter(filter string) (func(*aigridv1.Model) bool, error) {
-	rest := strings.TrimSpace(filter)
-	if rest == "" {
-		return func(*aigridv1.Model) bool { return true }, nil
-	}
-	unsupported := status.Errorf(codes.InvalidArgument, "filter %s is not supported; this server only evaluates %s", filter, supportedModelFilter)
-	unquote := func(literals ...string) ([]string, error) {
-		out := make([]string, len(literals))
-		for i, l := range literals {
-			v, err := strconv.Unquote(l)
-			if err != nil {
-				return nil, status.Errorf(codes.InvalidArgument, "filter %s is not a valid CEL string literal", filter)
-			}
-			out[i] = v
-		}
-		return out, nil
-	}
-	var checks []func(*aigridv1.Model) bool
-	for {
-		if m := filterNamespace.FindStringSubmatch(rest); m != nil {
-			vals, err := unquote(m[1])
-			if err != nil {
-				return nil, err
-			}
-			ns := vals[0]
-			checks = append(checks, func(x *aigridv1.Model) bool { return x.GetMetadata().GetNamespace() == ns })
-			rest = rest[len(m[0]):]
-		} else if m := filterLabel.FindStringSubmatch(rest); m != nil {
-			vals, err := unquote(m[1], m[2], m[3])
-			if err != nil {
-				return nil, err
-			}
-			if vals[0] != vals[1] {
-				return nil, unsupported // the guard names another key
-			}
-			k, v := vals[1], vals[2]
-			checks = append(checks, func(x *aigridv1.Model) bool {
-				got, ok := x.GetMetadata().GetLabels()[k]
-				return ok && got == v
-			})
-			rest = rest[len(m[0]):]
-		} else {
-			return nil, unsupported
-		}
-		rest = strings.TrimLeft(rest, " ")
-		if rest == "" {
-			break
-		}
-		after, ok := strings.CutPrefix(rest, "&&")
-		if !ok {
-			return nil, unsupported
-		}
-		rest = strings.TrimLeft(after, " ")
-	}
-	return func(x *aigridv1.Model) bool {
-		for _, check := range checks {
-			if !check(x) {
-				return false
-			}
-		}
-		return true
-	}, nil
-}
-
 // ListModels implements Models: namespace then name order, offset/limit
 // paging (omitted limit means all, zero counts only, negative is
-// InvalidArgument), the two filter term forms.
+// InvalidArgument). `filter` is CEL over `this` (a Model, its status as this
+// read derives it) and `now` (celfilter), evaluated in memory over every
+// model before paging (backend-conventions.md 5.3, "Filter"), so `total`
+// counts the filtered set; a label term needs the `in` guard, because CEL
+// indexes a missing key with a `no such key` error, which is InvalidArgument
+// here as it is in cel-go.
 func (s *Server) ListModels(ctx context.Context, req *aigridv1.ListModelsRequest) (*aigridv1.ListModelsResponse, error) {
 	if _, err := s.begin(ctx); err != nil {
 		return nil, err
 	}
-	match, err := parseModelFilter(req.GetFilter())
+	filter, err := celfilter.Compile(req.GetFilter(), &aigridv1.Model{})
 	if err != nil {
 		return nil, err
 	}
@@ -931,18 +854,28 @@ func (s *Server) ListModels(ctx context.Context, req *aigridv1.ListModelsRequest
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.advance()
-	all := make([]*aigridv1.Model, 0, len(s.models))
+	views := make([]*aigridv1.Model, 0, len(s.models))
 	for _, m := range s.models {
-		if match(m.obj) {
-			all = append(all, s.viewModel(m, now))
-		}
+		views = append(views, s.viewModel(m, now))
 	}
-	sort.Slice(all, func(i, j int) bool {
-		if a, b := all[i].GetMetadata().GetNamespace(), all[j].GetMetadata().GetNamespace(); a != b {
+	sort.Slice(views, func(i, j int) bool {
+		if a, b := views[i].GetMetadata().GetNamespace(), views[j].GetMetadata().GetNamespace(); a != b {
 			return a < b
 		}
-		return all[i].GetName() < all[j].GetName()
+		return views[i].GetName() < views[j].GetName()
 	})
+	// Filtered in that order, so an evaluation error names the same model
+	// every time.
+	all := make([]*aigridv1.Model, 0, len(views))
+	for _, v := range views {
+		ok, err := filter.Match(ctx, v, modelKey(v.GetMetadata().GetNamespace(), v.GetName()), s.wallTime(now))
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			all = append(all, v)
+		}
+	}
 	total := len(all)
 	offset := min(int(req.GetOffset()), total)
 	page := all[offset:]
@@ -981,7 +914,7 @@ func (s *Server) CreateModel(ctx context.Context, req *aigridv1.CreateModelReque
 	if err != nil {
 		return nil, err
 	}
-	if err := s.authorizeProviderAdmin(ctx, token); err != nil {
+	if err := s.authorizeProviderAdmin(ctx, token, "models"); err != nil {
 		return nil, err
 	}
 	obj := req.GetObject()
@@ -1026,13 +959,18 @@ func (s *Server) CreateModel(ctx context.Context, req *aigridv1.CreateModelReque
 // (templateOf: everything but `placement` and `rollout`) also changes the
 // LLMInferenceService, which makes its Deployment roll out again, and the
 // ManifestWorkReplicaSet's template, which re-applies the works; a change of
-// only `placement` or `rollout` leaves both as they are.
+// only `placement` or `rollout` leaves both as they are. An update after which
+// the spec, labels and annotations equal the stored ones is not written: the
+// stored model comes back with its `resource_version` and `generation`
+// unchanged, as the Kubernetes API server answers an unchanged update
+// (k8s.io/apiserver v0.35.8 pkg/storage/etcd3/store.go:553-577); the `lock`
+// precondition and the admission checks run before, as there.
 func (s *Server) UpdateModel(ctx context.Context, req *aigridv1.UpdateModelRequest) (*aigridv1.UpdateModelResponse, error) {
 	token, err := s.begin(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.authorizeProviderAdmin(ctx, token); err != nil {
+	if err := s.authorizeProviderAdmin(ctx, token, "models"); err != nil {
 		return nil, err
 	}
 	obj := req.GetObject()
@@ -1111,6 +1049,10 @@ func (s *Server) UpdateModel(ctx context.Context, req *aigridv1.UpdateModelReque
 			return nil, err
 		}
 	}
+	if proto.Equal(cur.GetSpec(), next.GetSpec()) && maps.Equal(cur.GetMetadata().GetLabels(), next.GetMetadata().GetLabels()) && maps.Equal(cur.GetMetadata().GetAnnotations(), next.GetMetadata().GetAnnotations()) {
+		s.logger.Debug("model update changes nothing", "model", key, "paths", paths, "resourceVersion", cur.GetMetadata().GetResourceVersion())
+		return &aigridv1.UpdateModelResponse{Object: s.viewModel(m, now)}, nil
+	}
 	if !proto.Equal(cur.GetSpec(), next.GetSpec()) {
 		next.Metadata.Generation++
 		if !proto.Equal(templateOf(cur.GetSpec()), templateOf(next.GetSpec())) {
@@ -1151,7 +1093,7 @@ func (s *Server) DeleteModel(ctx context.Context, req *aigridv1.DeleteModelReque
 	if err != nil {
 		return nil, err
 	}
-	if err := s.authorizeProviderAdmin(ctx, token); err != nil {
+	if err := s.authorizeProviderAdmin(ctx, token, "models"); err != nil {
 		return nil, err
 	}
 	if req.GetName() == "" || req.GetNamespace() == "" {

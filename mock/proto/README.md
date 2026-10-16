@@ -105,10 +105,12 @@ the new `DeleteTenantRequest.resource_version = 2` is set (no flag; `lock` stays
 `ListModelsResponse.total` became `optional`, so a backend that ignores paging and filters
 (the shipped one) is visible by the missing count. The Tenants area also added `TenantDomain` and
 `repeated TenantDomain domain_details = 9` (`name`, `verified`, `identity_provider_alias`,
-`auto_redirect`, the fields Keycloak 26.8 keeps per domain), kept `domains` as the list of
-names, and narrowed `ListTenantsRequest.filter` to the one CEL form the backend can push down
-to Keycloak's `search`, `this.name.lowerAscii().contains("<term>") || this.domains.exists(d, d.lowerAscii().contains("<term>"))`
-(`lowerAscii()` needs cel-go's strings extension, `ext.Strings()`).
+`auto_redirect`, the fields Keycloak 26.8 keeps per domain), and kept `domains` as the list of
+names. `ListTenantsRequest.filter` was first narrowed to the one CEL form that pushes down to
+Keycloak's `search`; it is general CEL again, as is `ListModelsRequest.filter`: an expression
+over `this` (the message, proto field names) and `now` in cel-go's standard library plus its
+strings extension (`ext.Strings()`), which the client writes, the BFF forwards and the backend
+evaluates before paging (the fake in memory, `bff/internal/fakebackend/celfilter`).
 
 ## Working with the backend team
 

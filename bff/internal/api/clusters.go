@@ -11,6 +11,7 @@ import (
 	"math"
 	"mime"
 	"net/http"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -261,55 +262,53 @@ func (a *App) fetchCluster(ctx context.Context, name string) (*aigridv1.ManagedC
 }
 
 // ClusterPatch is the body of PATCH /api/v1/clusters/{name}. Every field is
-// optional; an absent field is left alone, an empty string removes the label
-// or annotation, `null` removes a coordinate.
+// optional and `null` is the same as absent; a present map replaces the
+// stored one as a whole (FieldMask semantics, OSAC's; there are no per-key
+// paths), so a client that changes one label sends the `labels` map it
+// loaded with that label set, and removes a label by leaving it out. The BFF
+// neither merges, compares nor validates the maps: the backend applies them
+// under optimistic locking, puts back what the hub owns, refuses a change to
+// any key outside `ai-grid/*` and `location`, checks the AI Grid annotations
+// it understands (`ai-grid/latitude`, `ai-grid/longitude`) and does not
+// write an update that changes nothing. Hub acceptance is not writable here:
+// no page needs it, and a mistake would make the hub drop a live site.
 type ClusterPatch struct {
-	AIGridEnabled *bool           `json:"aiGridEnabled"`
-	Provisioned   *bool           `json:"provisioned"`
-	Location      *string         `json:"location"`
-	Site          *string         `json:"site"`
-	Region        *string         `json:"region"`
-	SiteName      *string         `json:"siteName"`
-	Latitude      optionalFloat64 `json:"latitude"`
-	Longitude     optionalFloat64 `json:"longitude"`
+	Labels      *map[string]string `json:"labels"`
+	Annotations *map[string]string `json:"annotations"`
 }
 
-// optionalFloat64 tells apart absent, null and a number.
-type optionalFloat64 struct {
-	Set   bool
-	Valid bool
-	Value float64
-}
-
-func (o *optionalFloat64) UnmarshalJSON(b []byte) error {
-	o.Set = true
-	if string(b) == "null" {
-		o.Valid = false
-		return nil
-	}
-	if err := json.Unmarshal(b, &o.Value); err != nil {
-		return err
-	}
-	o.Valid = true
-	return nil
-}
+// Field-mask paths of UpdateManagedCluster.
+const (
+	maskClusterLabels      = "labels"
+	maskClusterAnnotations = "annotations"
+)
 
 // maxBodyBytes bounds a JSON request body; a patch or a tenant is a handful
 // of fields.
 const maxBodyBytes = 1 << 20
 
-// decodeBody reads a JSON request body strictly, for every handler that takes
-// one (every POST, PATCH and PUT): a Content-Type other than
-// application/json (parameters such as charset are allowed) is 415, so a
-// cross-site HTML form or a text/plain fetch, which a browser sends without a
-// CORS preflight, can never write; then exactly one JSON object (not null, an
-// array or a scalar) of at most maxBodyBytes bytes with nothing after it, no
-// unknown fields. A body that is too large is 413 (also when the excess is
-// after the value); anything else wrong with it is 422 with a message that
-// names the problem. The body is fully validated before any backend call.
-func decodeBody(w http.ResponseWriter, r *http.Request, into any) error {
+// requireJSON is the first check of every handler that takes a body (every
+// POST, PATCH and PUT): a Content-Type other than application/json
+// (parameters such as charset are allowed) is 415, so a cross-site HTML form
+// or a text/plain fetch, which a browser sends without a CORS preflight, can
+// never write. A PATCH runs it before requireIfMatch, so such a request is
+// 415 whatever its other headers say.
+func requireJSON(r *http.Request) error {
 	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
 		return Errorf(http.StatusUnsupportedMediaType, "request body must be JSON: send Content-Type: application/json")
+	}
+	return nil
+}
+
+// decodeBody reads a JSON request body strictly: requireJSON, then exactly
+// one JSON object (not null, an array or a scalar) of at most maxBodyBytes
+// bytes with nothing after it, no unknown fields. A body that is too large is
+// 413 (also when the excess is after the value); anything else wrong with it
+// is 422 with a message that names the problem. The body is fully validated
+// before any backend call.
+func decodeBody(w http.ResponseWriter, r *http.Request, into any) error {
+	if err := requireJSON(r); err != nil {
+		return err
 	}
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodyBytes))
 	if err := decodeObject(dec, into); err != nil {
@@ -350,104 +349,49 @@ func decodeObject(dec *json.Decoder, into any) error {
 	return strict.Decode(into)
 }
 
-// patchCluster answers PATCH /api/v1/clusters/{name}: reads the cluster,
-// applies the patch to its labels and annotations and writes them back with
-// `UpdateManagedCluster` under optimistic locking, so a concurrent change on
-// the hub surfaces as 409 instead of being overwritten. The lock is on the
-// If-Match version when the client sent one (the version its page showed,
-// so a stale tab gets 409), else on the version just read, which only
-// catches a write between this read and the update. A patch that leaves
-// both maps as they are writes nothing and answers the current cluster.
+// patchCluster answers PATCH /api/v1/clusters/{name} with one
+// UpdateManagedCluster: the present body fields become the object and the
+// field mask, the If-Match version (required, requireIfMatch) the object's
+// `resource_version` with `lock: true`, so a stale tab or a concurrent
+// change is the backend's Aborted, 409. The BFF does not read the cluster
+// first. A body that names no field is 422: there is nothing to send, and
+// answering it like GET would skip the If-Match check.
 func (a *App) patchCluster(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
+	if err := requireJSON(r); err != nil {
+		a.respondError(w, r, err)
+		return
+	}
+	expected, err := requireIfMatch(r)
+	if err != nil {
+		a.respondError(w, r, err)
+		return
+	}
 	var patch ClusterPatch
 	if err := decodeBody(w, r, &patch); err != nil {
 		a.respondError(w, r, err)
 		return
 	}
-	expected, err := ifMatch(r)
-	if err != nil {
-		a.respondError(w, r, err)
-		return
-	}
-	if patch.Latitude.Valid && (patch.Latitude.Value < -90 || patch.Latitude.Value > 90) {
-		a.respondError(w, r, Errorf(http.StatusUnprocessableEntity, "latitude must be between -90 and 90"))
-		return
-	}
-	if patch.Longitude.Valid && (patch.Longitude.Value < -180 || patch.Longitude.Value > 180) {
-		a.respondError(w, r, Errorf(http.StatusUnprocessableEntity, "longitude must be between -180 and 180"))
-		return
-	}
-
-	ctx, cancel := a.backend.Context(r.Context())
-	defer cancel()
-	current, err := a.backend.Clusters.GetManagedCluster(ctx, &aigridv1.GetManagedClusterRequest{Name: name})
-	if err != nil {
-		a.respondError(w, r, err)
-		return
-	}
-	obj := current.GetObject()
-	labels := copyMap(obj.GetLabels())
-	annotations := copyMap(obj.GetAnnotations())
-
-	setBool := func(m map[string]string, key string, v *bool) {
-		if v != nil {
-			m[key] = strconv.FormatBool(*v)
-		}
-	}
-	setString := func(m map[string]string, key string, v *string) {
-		switch {
-		case v == nil:
-		case *v == "":
-			delete(m, key)
-		default:
-			m[key] = *v
-		}
-	}
-	setCoord := func(m map[string]string, key string, v optionalFloat64) {
-		switch {
-		case !v.Set:
-		case v.Valid:
-			m[key] = strconv.FormatFloat(v.Value, 'f', -1, 64)
-		default:
-			delete(m, key)
-		}
-	}
-	setBool(labels, LabelEnabled, patch.AIGridEnabled)
-	setBool(labels, LabelProvisioned, patch.Provisioned)
-	setString(labels, LabelLocation, patch.Location)
-	setString(labels, LabelSite, patch.Site)
-	setString(labels, LabelRegion, patch.Region)
-	setString(annotations, AnnotationSiteName, patch.SiteName)
-	setCoord(annotations, AnnotationLatitude, patch.Latitude)
-	setCoord(annotations, AnnotationLongitude, patch.Longitude)
-	// Only a map that now differs from the stored one goes in the mask, so a
-	// patch that repeats the current values (or sets nothing) writes nothing.
+	// An empty map is absent on the wire; the mask path is what tells the
+	// backend to clear it.
+	obj := &aigridv1.ManagedCluster{Name: name, ResourceVersion: expected}
 	var paths []string
-	if !maps.Equal(labels, obj.GetLabels()) {
-		paths = append(paths, "labels")
+	if patch.Labels != nil {
+		obj.Labels = *patch.Labels
+		paths = append(paths, maskClusterLabels)
 	}
-	if !maps.Equal(annotations, obj.GetAnnotations()) {
-		paths = append(paths, "annotations")
+	if patch.Annotations != nil {
+		obj.Annotations = *patch.Annotations
+		paths = append(paths, maskClusterAnnotations)
 	}
 	if len(paths) == 0 {
-		// Nothing to change: answer with the current object, no write.
-		setETag(w, obj.GetResourceVersion())
-		writeData(w, http.StatusOK, toGridCluster(obj))
+		a.respondError(w, r, Errorf(http.StatusUnprocessableEntity, "the request body names no field to change"))
 		return
 	}
-
-	version := obj.GetResourceVersion()
-	if expected != "" {
-		version = expected
-	}
+	ctx, cancel := a.backend.Context(r.Context())
+	defer cancel()
 	updated, err := a.backend.Clusters.UpdateManagedCluster(ctx, &aigridv1.UpdateManagedClusterRequest{
-		Object: &aigridv1.ManagedCluster{
-			Name:            name,
-			ResourceVersion: version,
-			Labels:          labels,
-			Annotations:     annotations,
-		},
+		Object:     obj,
 		UpdateMask: &fieldmaskpb.FieldMask{Paths: paths},
 		Lock:       true,
 	})
@@ -460,8 +404,8 @@ func (a *App) patchCluster(w http.ResponseWriter, r *http.Request) {
 	writeData(w, http.StatusOK, toGridCluster(updated.GetObject()))
 }
 
-// copyMap is nil-safe: the patch needs a map to write into even when the
-// hub object has none.
+// copyMap is nil-safe: the JSON carries an empty map rather than null when
+// the backend sends none.
 func copyMap(m map[string]string) map[string]string {
 	if m == nil {
 		return map[string]string{}
@@ -470,6 +414,30 @@ func copyMap(m map[string]string) map[string]string {
 }
 
 // decodeErrorMessage keeps the useful part of a JSON decoding error.
+// jsonKind names a Go type the way a JSON client knows it ("an object", "a
+// string"), so a type error never shows the BFF's internal type names.
+func jsonKind(t reflect.Type) string {
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	switch t.Kind() {
+	case reflect.Struct, reflect.Map:
+		return "an object"
+	case reflect.Slice, reflect.Array:
+		return "an array"
+	case reflect.String:
+		return "a string"
+	case reflect.Bool:
+		return "true or false"
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return "a whole number"
+	case reflect.Float32, reflect.Float64:
+		return "a number"
+	}
+	return "a different JSON type"
+}
+
 func decodeErrorMessage(err error) string {
 	var syntax *json.SyntaxError
 	var typ *json.UnmarshalTypeError
@@ -477,7 +445,7 @@ func decodeErrorMessage(err error) string {
 	case errors.As(err, &syntax), errors.Is(err, io.ErrUnexpectedEOF):
 		return "malformed JSON"
 	case errors.As(err, &typ):
-		return fmt.Sprintf("field %q must be a %s", typ.Field, typ.Type)
+		return fmt.Sprintf("field %q must be %s", typ.Field, jsonKind(typ.Type))
 	case errors.Is(err, io.EOF):
 		return "empty body"
 	}

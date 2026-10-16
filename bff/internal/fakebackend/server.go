@@ -366,14 +366,18 @@ func (s *Server) rejected(token string) error {
 // ManagedClusters on the hub (backend-conventions.md 5.6, "provider admin").
 // The conventions fix only the code; the message text is the console's
 // proposal (keycloak.md 8.2), nothing on the hub or in Keycloak produces it.
-func (s *Server) authorizeProviderAdmin(ctx context.Context, token string) error {
+//
+// The message names what the caller tried to change (`what`: "tenants",
+// "models") and then the rule, so a viewer who creates a tenant is not told
+// about a resource they never touched.
+func (s *Server) authorizeProviderAdmin(ctx context.Context, token, what string) error {
 	user, allowed, err := s.isProviderAdmin(ctx, token)
 	if err != nil {
 		return err
 	}
 	if !allowed {
 		return status.Errorf(codes.PermissionDenied,
-			"User %q is not a provider admin: cannot patch resource \"managedclusters\" in API group \"cluster.open-cluster-management.io\" at the cluster scope", user)
+			"User %q is not a provider admin, and only provider admins can change %s (a provider admin may patch ManagedClusters on the hub)", user, what)
 	}
 	return nil
 }
