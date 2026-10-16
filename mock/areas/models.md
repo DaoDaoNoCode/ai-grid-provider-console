@@ -178,7 +178,8 @@ out of the summary, and its cluster is to apply again like a new one.
   `Progressive`). A change of only `rollout` or `placement` re-applies nothing, as the controller
   compares each work with the template alone (`deploy_reconcile.go:80-89`): a new strategy only
   schedules the works still to apply, a new placement only adds and removes the works of clusters
-  entering and leaving the decision. A work's own `generation` is the ManifestWork's
+  entering and leaving the decision, and under either no work is applied at an instant before the
+  change. A work's own `generation` is the ManifestWork's
   counter, 1 when it is created (also for a cluster that joins later or a placement added by a
   PATCH) and bumped by each update that changes its spec; a cluster leaving the decision loses
   its work;

@@ -1807,6 +1807,74 @@ func TestOnlyATemplateChangeReappliesWorks(t *testing.T) {
 	})
 }
 
+// A rollout change re-applies nothing, and the works still to apply are
+// scheduled under the new settings from the change on: none is applied at
+// an earlier instant, which would replay its lifecycle as already under way.
+func TestARolloutChangeNeverSchedulesAWorkBeforeIt(t *testing.T) {
+	ctx := authed(context.Background())
+	stuck := func(name string, rollout *aigridv1.Rollout) (*Server, func(time.Duration)) {
+		t.Helper()
+		s, advance := modelServer(t, &Fixtures{Clusters: []*aigridv1.ManagedCluster{enrolled("site-a"), enrolled("site-b"), enrolled("site-c")}})
+		m := placedModel(name, rollout)
+		m.Spec.Main = &aigridv1.Container{Image: "quay.io/example/vllm-oom"} // never comes up
+		createModel(t, s, m)
+		return s, advance
+	}
+	setRollout := func(s *Server, name string, rollout *aigridv1.Rollout) *aigridv1.Model {
+		t.Helper()
+		resp, err := s.UpdateModel(ctx, &aigridv1.UpdateModelRequest{Object: &aigridv1.Model{Name: name, Metadata: &aigridv1.ObjectMeta{Namespace: testNS}, Spec: &aigridv1.ModelSpec{Rollout: rollout}}, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{PathSpecRollout}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp.GetObject()
+	}
+	appliedAt := func(m *aigridv1.Model) map[string]time.Duration {
+		out := map[string]time.Duration{}
+		for _, w := range m.GetStatus().GetRollout().GetWorks() {
+			out[w.GetClusterName()] = condition(w.GetConditions(), CondWorkApplied).GetLastTransitionTime().AsTime().Sub(testStart)
+		}
+		return out
+	}
+	const change = 600 * time.Second
+
+	t.Run("maxConcurrency raised while a stuck work holds the only slot", func(t *testing.T) {
+		s, advance := stuck("wide", &aigridv1.Rollout{Strategy: aigridv1.RolloutStrategy_ROLLOUT_STRATEGY_PROGRESSIVE, MaxConcurrency: "1"})
+		advance(change)
+		if got := appliedAt(getModel(t, s, "wide")); !maps.Equal(got, map[string]time.Duration{"site-a": 0}) {
+			t.Fatalf("site-a holds the only slot: %v", got)
+		}
+		got := setRollout(s, "wide", &aigridv1.Rollout{Strategy: aigridv1.RolloutStrategy_ROLLOUT_STRATEGY_PROGRESSIVE, MaxConcurrency: "3"})
+		if want := map[string]time.Duration{"site-a": 0, "site-b": change, "site-c": change}; !maps.Equal(appliedAt(got), want) {
+			t.Errorf("site-b and site-c applied at the PATCH, site-a kept: %v, want %v", appliedAt(got), want)
+		}
+		for _, w := range got.GetStatus().GetRollout().GetWorks() {
+			if w.GetGeneration() != 1 {
+				t.Errorf("%s: generation %d, want 1", w.GetClusterName(), w.GetGeneration())
+			}
+			if w.GetClusterName() != "site-a" {
+				wantNoCond(t, w.GetConditions(), CondWorkAvailable) // the agent has not synced yet
+			}
+		}
+	})
+
+	t.Run("maxFailures raised after a breach", func(t *testing.T) {
+		rollout := &aigridv1.Rollout{Strategy: aigridv1.RolloutStrategy_ROLLOUT_STRATEGY_PROGRESSIVE, MaxConcurrency: "1", ProgressDeadline: "60s"}
+		s, advance := stuck("brk", rollout)
+		// site-a times out about a minute in: a failure beyond maxFailures 0
+		// stops the rollout.
+		advance(change)
+		if got := appliedAt(getModel(t, s, "brk")); !maps.Equal(got, map[string]time.Duration{"site-a": 0}) {
+			t.Fatalf("the rollout stopped after site-a: %v", got)
+		}
+		raised := proto.Clone(rollout).(*aigridv1.Rollout)
+		raised.MaxFailures = "2"
+		got := setRollout(s, "brk", raised)
+		if want := map[string]time.Duration{"site-a": 0, "site-b": change}; !maps.Equal(appliedAt(got), want) {
+			t.Errorf("site-b applied at the PATCH, not when site-a timed out: %v, want %v", appliedAt(got), want)
+		}
+	})
+}
+
 func TestDisconnectedAgentFreezesTheWork(t *testing.T) {
 	c := enrolled("site-flaky")
 	fx := &Fixtures{Clusters: []*aigridv1.ManagedCluster{c}, Scenarios: []ScenarioEvent{

@@ -126,6 +126,11 @@ type model struct {
 	works []*work
 	// candidateSince is when each cluster entered the Placement decision.
 	candidateSince map[string]time.Time
+	// scheduleChangedAt is when `rollout` or `placement` last changed without
+	// a template change (zero when never): no work is re-applied, but the
+	// works still to apply are scheduled under the new settings from then on,
+	// never at an earlier instant judged with them.
+	scheduleChangedAt time.Time
 	// decisions is the Placement's status as the scheduling controller last
 	// wrote it; the next pass reads its clusters (Steady, NoSelectIfNew).
 	decisions *aigridv1.PlacementStatus
@@ -372,6 +377,7 @@ func (s *Server) resetSeeded(m *model) {
 	}
 	m.obj.Metadata.CreationTimestamp = timestamppb.New(s.wallTime(m.created))
 	m.works, m.epochs, m.placementConds, m.rolloutConds, m.decisions = nil, nil, nil, nil, nil
+	m.scheduleChangedAt = time.Time{}
 	m.baseSpec = cloneSpec(m.obj.GetSpec())
 	m.candidateSince = map[string]time.Time{}
 	if p := m.obj.GetSpec().GetPlacement(); p != nil {
@@ -548,8 +554,15 @@ func (s *Server) rollout(m *model, decisions *aigridv1.PlacementStatus, now time
 			pending = append(pending, name)
 		}
 	}
+	// floorFor is the earliest instant a cluster's work can be applied: the
+	// last template change, the last rollout or placement change (the
+	// controller only reads the new strategy and decision from then on) and
+	// the cluster's entry into the decision, whichever is latest.
 	floorFor := func(cluster string) time.Time {
 		t := templateAt
+		if m.scheduleChangedAt.After(t) {
+			t = m.scheduleChangedAt
+		}
 		if since := m.candidateSince[cluster]; since.After(t) {
 			t = since
 		}
@@ -1070,6 +1083,8 @@ func (s *Server) UpdateModel(ctx context.Context, req *aigridv1.UpdateModelReque
 		next.Metadata.Generation++
 		if !proto.Equal(templateOf(cur.GetSpec()), templateOf(next.GetSpec())) {
 			m.epochs = append(m.epochs, specEpoch{at: now, spec: cloneSpec(next.GetSpec())})
+		} else {
+			m.scheduleChangedAt = now // rollout or placement only
 		}
 		if (cur.GetSpec().GetPlacement() == nil) != (next.GetSpec().GetPlacement() == nil) {
 			// The hub deployment is replaced by the fan-out, or the other way
