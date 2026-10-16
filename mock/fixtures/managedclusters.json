@@ -1,0 +1,105 @@
+{
+  "_comment": "ai_grid.v1.ManagedCluster in protojson. Labels are the ones ACM sets on every imported cluster (name, cloud, vendor, clusterID, openshiftVersion*, clusterset, feature addons) plus the console's ai-grid/* conventions. All values are fictional. See mock/README.md.",
+  "clusters": [
+    {
+      "name": "local-cluster",
+      "hubAcceptsClient": true,
+      "labels": {
+        "name": "local-cluster",
+        "local-cluster": "true",
+        "cloud": "Amazon",
+        "vendor": "OpenShift",
+        "clusterID": "7f0c2a6e-1d2b-4a3c-9e8f-0123456789ab",
+        "openshiftVersion": "4.22.15",
+        "openshiftVersion-major": "4",
+        "openshiftVersion-major-minor": "4.22",
+        "cluster.open-cluster-management.io/clusterset": "default",
+        "feature.open-cluster-management.io/addon-application-manager": "available",
+        "feature.open-cluster-management.io/addon-work-manager": "available",
+        "feature.open-cluster-management.io/addon-managed-serviceaccount": "available",
+        "velero.io/exclude-from-backup": "true"
+      }
+    },
+    {
+      "name": "site-paris-1",
+      "hubAcceptsClient": true,
+      "labels": {
+        "name": "site-paris-1",
+        "cloud": "Amazon",
+        "vendor": "OpenShift",
+        "clusterID": "2b9d4f10-6c7e-4e21-8a5b-ab0123456789",
+        "openshiftVersion": "4.22.12",
+        "openshiftVersion-major": "4",
+        "openshiftVersion-major-minor": "4.22",
+        "cluster.open-cluster-management.io/clusterset": "ai-grid",
+        "feature.open-cluster-management.io/addon-application-manager": "available",
+        "feature.open-cluster-management.io/addon-work-manager": "available",
+        "feature.open-cluster-management.io/addon-managed-serviceaccount": "available",
+        "ai-grid/enabled": "true",
+        "ai-grid/provisioned": "true",
+        "ai-grid/site": "paris-dc1",
+        "ai-grid/region": "eu-west",
+        "location": "paris"
+      }
+    },
+    {
+      "name": "site-frankfurt-1",
+      "hubAcceptsClient": true,
+      "labels": {
+        "name": "site-frankfurt-1",
+        "cloud": "BareMetal",
+        "vendor": "OpenShift",
+        "clusterID": "c41e8a77-3b5d-4f60-9c12-345678abcdef",
+        "openshiftVersion": "4.21.9",
+        "openshiftVersion-major": "4",
+        "openshiftVersion-major-minor": "4.21",
+        "cluster.open-cluster-management.io/clusterset": "ai-grid",
+        "feature.open-cluster-management.io/addon-application-manager": "available",
+        "feature.open-cluster-management.io/addon-work-manager": "available",
+        "feature.open-cluster-management.io/addon-managed-serviceaccount": "available",
+        "ai-grid/enabled": "true",
+        "ai-grid/provisioned": "true",
+        "ai-grid/site": "frankfurt-dc2",
+        "ai-grid/region": "eu-central",
+        "location": "frankfurt"
+      }
+    },
+    {
+      "name": "site-ashburn-1",
+      "hubAcceptsClient": true,
+      "labels": {
+        "name": "site-ashburn-1",
+        "cloud": "Amazon",
+        "vendor": "OpenShift",
+        "clusterID": "9e3f5b21-7d8a-4c93-b0e4-56789abcdef0",
+        "openshiftVersion": "4.22.15",
+        "openshiftVersion-major": "4",
+        "openshiftVersion-major-minor": "4.22",
+        "cluster.open-cluster-management.io/clusterset": "ai-grid",
+        "feature.open-cluster-management.io/addon-application-manager": "available",
+        "feature.open-cluster-management.io/addon-work-manager": "available",
+        "feature.open-cluster-management.io/addon-managed-serviceaccount": "available",
+        "ai-grid/enabled": "true",
+        "ai-grid/provisioned": "false",
+        "ai-grid/site": "ashburn-dc1",
+        "ai-grid/region": "us-east",
+        "location": "ashburn"
+      }
+    },
+    {
+      "name": "edge-lyon-2",
+      "hubAcceptsClient": false,
+      "labels": {
+        "name": "edge-lyon-2",
+        "cloud": "BareMetal",
+        "vendor": "OpenShift",
+        "clusterID": "0a1b2c3d-4e5f-4607-8899-aabbccddeeff",
+        "openshiftVersion": "4.22.15",
+        "openshiftVersion-major": "4",
+        "openshiftVersion-major-minor": "4.22",
+        "cluster.open-cluster-management.io/clusterset": "default",
+        "feature.open-cluster-management.io/addon-work-manager": "unreachable"
+      }
+    }
+  ]
+}

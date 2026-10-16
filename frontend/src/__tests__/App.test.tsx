@@ -30,6 +30,18 @@ describe('App', () => {
     expect(screen.getByText('a.example.com')).toBeInTheDocument();
   });
 
+  it('shows a not-available state, not an error, when the backend lacks the RPC', async () => {
+    const service = new MockConsoleService();
+    service.listTenants = async () => {
+      throw new ServiceError(501, 'the AI Grid backend does not support this operation yet');
+    };
+    render(<App service={service} />);
+    fireEvent.click(await screen.findByRole('link', { name: 'Tenants' }));
+
+    expect(await screen.findByText('Tenants are not available on this backend yet')).toBeInTheDocument();
+    expect(screen.queryByText('Tenants could not be loaded')).not.toBeInTheDocument();
+  });
+
   it('shows the backend error when tenants cannot be loaded', async () => {
     const service = new MockConsoleService();
     service.listTenants = async () => {

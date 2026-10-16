@@ -19,4 +19,14 @@ export class ServiceError extends Error {
     super(message);
     this.name = 'ServiceError';
   }
+
+  /** The BFF answers 501 when the backend has no RPC for this yet. */
+  get isNotImplemented(): boolean {
+    return this.status === 501;
+  }
+
+  /** The session is gone; the proxy will start a new login on reload. */
+  get isUnauthenticated(): boolean {
+    return this.status === 401;
+  }
 }

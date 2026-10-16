@@ -1,0 +1,4 @@
+{
+  "_comment": "latency is added to every RPC; a hub list from a pod on the hub takes tens of milliseconds, Keycloak a little more.",
+  "latency": "40ms"
+}
