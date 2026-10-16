@@ -54,8 +54,13 @@ type ManagedClustersClient interface {
 	// `hub_accepts_client`. Any other path in `update_mask` is InvalidArgument
 	// naming the path; an empty mask is InvalidArgument. Setting
 	// `hub_accepts_client` to false makes the hub flip `HubAcceptedManagedCluster`
-	// to False/`HubClusterAdminDenied`, so the cluster reads NOT_ACCEPTED.
-	// Requires `patch` on managedclusters for the caller.
+	// to False/`HubClusterAdminDenied` when it was True, so the cluster reads
+	// NOT_ACCEPTED; a cluster never accepted gets no condition. After a label
+	// or annotation write the hub's webhook and controllers put back what they
+	// own (`name`, the default clusterset label, the add-on labels, `clusterID`,
+	// `openshiftVersion*`, `open-cluster-management/created-via`), but not a
+	// removed `cloud` or `vendor`. Requires `patch` on managedclusters for the
+	// caller.
 	UpdateManagedCluster(ctx context.Context, in *UpdateManagedClusterRequest, opts ...grpc.CallOption) (*UpdateManagedClusterResponse, error)
 }
 
@@ -115,8 +120,13 @@ type ManagedClustersServer interface {
 	// `hub_accepts_client`. Any other path in `update_mask` is InvalidArgument
 	// naming the path; an empty mask is InvalidArgument. Setting
 	// `hub_accepts_client` to false makes the hub flip `HubAcceptedManagedCluster`
-	// to False/`HubClusterAdminDenied`, so the cluster reads NOT_ACCEPTED.
-	// Requires `patch` on managedclusters for the caller.
+	// to False/`HubClusterAdminDenied` when it was True, so the cluster reads
+	// NOT_ACCEPTED; a cluster never accepted gets no condition. After a label
+	// or annotation write the hub's webhook and controllers put back what they
+	// own (`name`, the default clusterset label, the add-on labels, `clusterID`,
+	// `openshiftVersion*`, `open-cluster-management/created-via`), but not a
+	// removed `cloud` or `vendor`. Requires `patch` on managedclusters for the
+	// caller.
 	UpdateManagedCluster(context.Context, *UpdateManagedClusterRequest) (*UpdateManagedClusterResponse, error)
 	mustEmbedUnimplementedManagedClustersServer()
 }

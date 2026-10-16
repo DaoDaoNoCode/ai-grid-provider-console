@@ -86,8 +86,10 @@ func (s *Server) GetManagedCluster(ctx context.Context, req *aigridv1.GetManaged
 // mock/research/backend-conventions.md section 5.3: the mask names whole
 // fields of `object` (a map path replaces the map), `lock` compares
 // `resource_version` and fails with Aborted, and every write bumps the
-// version. Flipping `hub_accepts_client` makes the registration controller
-// rewrite `HubAcceptedManagedCluster` as the hub would.
+// version. The hub's webhook and controllers then react as reconcileMetadata
+// describes (default clusterset, `name`, created-via, add-on and autodetect
+// labels come back). Flipping `hub_accepts_client` makes the registration
+// controller rewrite `HubAcceptedManagedCluster` as the hub would.
 func (s *Server) UpdateManagedCluster(ctx context.Context, req *aigridv1.UpdateManagedClusterRequest) (*aigridv1.UpdateManagedClusterResponse, error) {
 	token, err := s.begin(ctx)
 	if err != nil {
@@ -123,6 +125,7 @@ func (s *Server) UpdateManagedCluster(ctx context.Context, req *aigridv1.UpdateM
 		return nil, status.Errorf(codes.Aborted, "object with identifier '%s' has resource version %s, the request carries %q; fetch it again and retry", obj.GetName(), c.GetResourceVersion(), obj.GetResourceVersion())
 	}
 	now := s.clock()
+	before := cloneCluster(c)
 	for _, p := range paths {
 		switch p {
 		case PathLabels:
@@ -135,13 +138,20 @@ func (s *Server) UpdateManagedCluster(ctx context.Context, req *aigridv1.UpdateM
 			}
 			c.HubAcceptsClient = obj.GetHubAcceptsClient()
 			c.Generation++ // a spec change
-			if c.HubAcceptsClient {
+			// The registration controller
+			// (ocm:pkg/registration/hub/managedcluster/controller.go): accepting
+			// always writes True (L262-271); denying writes False only for a
+			// cluster that was accepted, and does nothing for one that never
+			// was (L164-167).
+			switch {
+			case c.HubAcceptsClient:
 				setCondition(c, now, CondHubAccepted, aigridv1.ConditionStatus_CONDITION_STATUS_TRUE, ReasonHubAccepted, MessageHubAccepted)
-			} else {
+			case isTrue(c, CondHubAccepted):
 				setCondition(c, now, CondHubAccepted, aigridv1.ConditionStatus_CONDITION_STATUS_FALSE, ReasonHubDenied, MessageHubDenied)
 			}
 		}
 	}
+	reconcileMetadata(c, before)
 	s.bumpResourceVersion(c)
 	s.reconcileModels(scenarioNow) // Placements watch cluster labels and taints
 	s.logger.Debug("cluster updated", "name", c.GetName(), "paths", paths, "resourceVersion", c.GetResourceVersion())

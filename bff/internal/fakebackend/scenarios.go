@@ -14,41 +14,55 @@ import (
 )
 
 // Scenario events. Each one is a transition a hub controller drives, with the
-// condition, taint and label changes mock/research/acm.md section 1 lists for
-// it ("What the fake backend must simulate", items 2, 3 and 5).
+// condition, taint and label changes the cited controllers make (see the
+// constants in acm.go for each source line).
 const (
 	// EventJoined: the klusterlet registered and its certificate was signed.
 	// Adds ManagedClusterJoined, Available and ClockSynced True, publishes
 	// what the agent reports (claims, capacity, allocatable, version), lets
-	// autodetect replace the `auto-detect` labels and removes the
-	// `unreachable` taint.
+	// autodetect replace the `auto-detect` labels and the taint controller
+	// remove `unreachable`. On a hub `cloud`, `vendor` and `clusterID` follow
+	// a little later, once the work-manager add-on syncs ManagedClusterInfo;
+	// the fake writes them at join.
 	EventJoined = "joined"
 	// EventImported: the `<cluster>-klusterlet` ManifestWork is Available;
-	// ImportSucceeded becomes True/ManagedClusterImported.
+	// ImportSucceeded becomes True/ManagedClusterImported. The summary state
+	// does not change (a joined cluster already reads from Available), only
+	// that condition and resourceVersion do.
 	EventImported = "imported"
 	// EventAddonsAvailable: the add-on agents report; the
-	// `feature.open-cluster-management.io/addon-*` labels appear as
-	// `available`. On a hub they come one by one over about a minute; the
-	// fake sets the whole list at once (schedule several events with
-	// different `addons` lists to spread them).
+	// `feature.open-cluster-management.io/addon-*` labels become
+	// `available`. On a hub each label first appears as `unreachable` when
+	// the ManagedClusterAddOn is created and flips once its agent reports,
+	// one add-on after another; the fake writes `available` directly for the
+	// listed add-ons (schedule several events with different `addons` lists
+	// to spread them).
 	EventAddonsAvailable = "addons-available"
 	// EventLeaseLost: 5 x leaseDurationSeconds without a lease renewal.
-	// Available Unknown/ManagedClusterLeaseUpdateStopped, taint `unreachable`
-	// with timeAdded, addon labels `unreachable`.
+	// Available Unknown/ManagedClusterLeaseUpdateStopped; the taint
+	// controller swaps any `unavailable` taint for `unreachable` (with
+	// timeAdded); the add-on health check marks every add-on Unknown, so the
+	// add-on labels read `unreachable`.
 	EventLeaseLost = "lease-lost"
-	// EventLeaseRecovered: the agent renews again; reverses EventLeaseLost
-	// with a new lastTransitionTime.
+	// EventLeaseRecovered: the agent renews again: Available True (a new
+	// lastTransitionTime), no hub taint, and the add-on labels `available`
+	// (on a hub each add-on reports its own state again; the fake assumes
+	// they are all healthy).
 	EventLeaseRecovered = "lease-recovered"
 	// EventAPIDown: the agent is alive but the managed API server answers
-	// errors. Available False/ManagedClusterKubeAPIServerUnavailable, taint
-	// `unavailable`, addon labels `unhealthy`.
+	// errors. Available False/ManagedClusterKubeAPIServerUnavailable; the
+	// taint controller swaps any `unreachable` taint for `unavailable`. The
+	// add-on labels are left as they are: the hub's add-on health check acts
+	// only on Unknown.
 	EventAPIDown = "api-down"
-	// EventAPIUp: reverses EventAPIDown.
+	// EventAPIUp: Available True again and no hub taint; add-on labels
+	// untouched.
 	EventAPIUp = "api-up"
 	// EventDetaching: deletion requested; deletionTimestamp is set,
 	// ImportSucceeded becomes False/ManagedClusterDetaching and the gc
-	// controller adds Deleting/ResourceRemaining while the finalizers drain
-	// (its message text is not verified by the research, so it is empty).
+	// controller writes Deleting: False/ResourceRemaining naming the
+	// managedclusteraddons still in the namespace, or True/NoResource when
+	// there are none. Taints, add-on labels and autodetect labels freeze.
 	EventDetaching = "detaching"
 	// EventDetached: the finalizers are gone; the object disappears.
 	EventDetached = "detached"
@@ -69,7 +83,7 @@ type ScenarioEvent struct {
 	// like the autodetect controller does.
 	Spoke json.RawMessage `json:"spoke,omitempty"`
 	// Addons, for `addons-available`: add-on names without the label prefix.
-	// Defaults to the add-ons of a plain ACM import.
+	// Defaults to the seven ACM add-ons in defaultAddons.
 	Addons []string `json:"addons,omitempty"`
 	// StatusCode and Detail, for `api-down`: fill the agent's message
 	// "The kube-apiserver is not ok, status code: %d, %v". Default 503.
@@ -163,10 +177,13 @@ func (s *Server) applyEvent(c *aigridv1.ManagedCluster, sc *scenario, now time.T
 		setCondition(c, now, CondAvailable, aigridv1.ConditionStatus_CONDITION_STATUS_TRUE, ReasonAvailable, MessageAvailable)
 		setCondition(c, now, CondClockSynced, aigridv1.ConditionStatus_CONDITION_STATUS_TRUE, ReasonClockSynced, MessageClockSynced)
 		autodetectLabels(c)
-		removeTaint(c, TaintUnreachable)
+		syncTaints(c, now)
 	case EventImported:
 		setCondition(c, now, CondImportSucceeded, aigridv1.ConditionStatus_CONDITION_STATUS_TRUE, ReasonImported, MessageImported)
 	case EventAddonsAvailable:
+		if terminating(c) {
+			break // the discovery controller skips a terminating cluster
+		}
 		addons := sc.Addons
 		if len(addons) == 0 {
 			addons = defaultAddons
@@ -179,12 +196,11 @@ func (s *Server) applyEvent(c *aigridv1.ManagedCluster, sc *scenario, now time.T
 		}
 	case EventLeaseLost:
 		setCondition(c, now, CondAvailable, aigridv1.ConditionStatus_CONDITION_STATUS_UNSPECIFIED, ReasonLeaseStopped, MessageLeaseStopped)
-		addTaint(c, now, TaintUnreachable)
+		syncTaints(c, now)
 		setAddonLabels(c, AddonUnreachable)
-	case EventLeaseRecovered, EventAPIUp:
+	case EventLeaseRecovered:
 		setCondition(c, now, CondAvailable, aigridv1.ConditionStatus_CONDITION_STATUS_TRUE, ReasonAvailable, MessageAvailable)
-		removeTaint(c, TaintUnreachable)
-		removeTaint(c, TaintUnavailable)
+		syncTaints(c, now)
 		setAddonLabels(c, AddonAvailable)
 	case EventAPIDown:
 		code := sc.StatusCode
@@ -196,12 +212,14 @@ func (s *Server) applyEvent(c *aigridv1.ManagedCluster, sc *scenario, now time.T
 			detail = "the server is currently unable to handle the request"
 		}
 		setCondition(c, now, CondAvailable, aigridv1.ConditionStatus_CONDITION_STATUS_FALSE, ReasonAPIServerUnavail, fmt.Sprintf(MessageAPIServerUnavailFm, code, detail))
-		addTaint(c, now, TaintUnavailable)
-		setAddonLabels(c, AddonUnhealthy)
+		syncTaints(c, now)
+	case EventAPIUp:
+		setCondition(c, now, CondAvailable, aigridv1.ConditionStatus_CONDITION_STATUS_TRUE, ReasonAvailable, MessageAvailable)
+		syncTaints(c, now)
 	case EventDetaching:
 		c.DeletionTimestamp = timestamppb.New(now)
 		setCondition(c, now, CondImportSucceeded, aigridv1.ConditionStatus_CONDITION_STATUS_FALSE, ReasonDetaching, MessageDetaching)
-		setCondition(c, now, CondDeleting, aigridv1.ConditionStatus_CONDITION_STATUS_TRUE, ReasonResourceRemaining, "")
+		setDeletingCondition(c, now)
 	case EventDetached:
 		delete(s.clusters, c.GetName())
 		return

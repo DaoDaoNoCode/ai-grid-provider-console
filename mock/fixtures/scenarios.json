@@ -1,5 +1,5 @@
 {
-  "_comment": "Timed transitions the fake applies relative to its start, divided by settings.json speed (speed 6 fires the 20s event after about 3s). Events and the condition/taint/label changes each one makes are documented in bff/internal/fakebackend/scenarios.go and come from mock/research/acm.md 'What the fake backend must simulate'. The import of site-berlin-1 follows the timing observed on the hub (accepted, joined, imported, add-ons); site-madrid-1 recovers its lease; edge-lyon-2 finishes detaching and disappears.",
+  "_comment": "Timed transitions the fake applies relative to its start, divided by settings.json speed (speed 6 fires the 20s event after about 3s). Each event's condition, taint and label changes are documented, with the hub controller source lines, in bff/internal/fakebackend/scenarios.go and acm.go. The import of site-berlin-1 follows the order observed on the hub (accepted, joined, imported, add-ons); site-madrid-1 recovers its lease; edge-lyon-2 finishes detaching and disappears.",
   "events": [
     {
       "cluster": "site-berlin-1",
@@ -67,10 +67,6 @@
           {
             "name": "product.open-cluster-management.io",
             "value": "OpenShift"
-          },
-          {
-            "name": "region.open-cluster-management.io",
-            "value": "Other"
           },
           {
             "name": "schedulable.open-cluster-management.io",

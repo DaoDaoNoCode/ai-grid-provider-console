@@ -57,6 +57,11 @@ func TestRepoFixturesLoad(t *testing.T) {
 					t.Errorf("joined cluster %s lacks the autodetect label %q", c.GetName(), want)
 				}
 			}
+			// clusterID is the id.openshift.io claim on OpenShift
+			// (foundation:pkg/klusterlet/clusterinfo/defaultInfo_sync.go L31-33).
+			if got, want := c.GetLabels()[LabelClusterID], claim(c, ClaimOpenShiftID); got != want {
+				t.Errorf("cluster %s: clusterID %q, want the id.openshift.io claim %q", c.GetName(), got, want)
+			}
 		} else if c.GetLabels()[LabelCloud] != LabelAutoDetect || len(c.GetStatus().GetClusterClaims()) != 0 {
 			t.Errorf("cluster %s has not joined: cloud must still be auto-detect and claims empty", c.GetName())
 		}
@@ -86,14 +91,17 @@ var knownConditions = map[string]map[string][]string{
 	CondClockSynced: {ReasonClockSynced: {MessageClockSynced}, ReasonClockOutOfSync: {MessageClockOutOfSync}},
 	CondImportSucceeded: {
 		ReasonWaitForImporting: {MessageWaitForImporting},
-		ReasonImporting:        {MessageImportStart, MessageImportWaitSecret, MessageImportApplied, MessageImportNoWorks, MessageImportWaitSecretH},
-		ReasonImportFailed:     {"Try to import managed cluster, error: ", "Try to import managed cluster, apply resources error: ", "AutoImportSecretInvalid "},
-		ReasonImported:         {MessageImported},
-		ReasonDetaching:        {MessageDetaching},
-		ReasonForceDetaching:   {MessageForceDetaching},
+		// import-controller:pkg/helpers/autoimport.go L141-237: the "apply
+		// resources error ... Will Retry" text is filed under Importing.
+		ReasonImporting:      {MessageImportStart, MessageImportWaitSecret, MessageImportApplied, MessageImportNoWorks, MessageImportWaitSecretH, "Get klusterlet manifestwork failed: ", "Try to import managed cluster, apply resources error: "},
+		ReasonImportFailed:   {"Try to import managed cluster, error: ", "AutoImportSecretInvalid ", "Generate kube client error: ", "Apply resources error, please check kube client permission: ", "Get import secret failed: "},
+		ReasonImported:       {MessageImported},
+		ReasonDetaching:      {MessageDetaching},
+		ReasonForceDetaching: {MessageForceDetaching},
 	},
-	// Deleting messages are not verified by the research; the fake keeps them empty.
-	CondDeleting: {ReasonResourceRemaining: {""}, ReasonNoResource: {""}, ReasonDeletingError: {""}},
+	// ocm:pkg/registration/hub/gc/gc_resources.go L67-73, L93-99; DeletingError
+	// carries the cleanup error (gc/controller.go L100-105).
+	CondDeleting: {ReasonResourceRemaining: {"The resource managedclusteraddons is remaning, the remaining count is ", "The resource manifestworks is remaning, the remaining count is "}, ReasonNoResource: {MessageNoResource}, ReasonDeletingError: {"failed to "}},
 }
 
 // knownAddonValues are the values the addon discovery controller writes.
@@ -145,13 +153,32 @@ func TestRepoFixturesUseOnlyHubStrings(t *testing.T) {
 				t.Errorf("%s: addon label %s=%q is not available|unhealthy|unreachable", c.GetName(), k, v)
 			}
 		}
+		// The region claim is published only when the agent found one; it is
+		// never a placeholder (foundation:pkg/klusterlet/clusterclaim/clusterclaimer.go L250-257, L435-487).
+		for _, cl := range claims {
+			if cl.GetName() == "region.open-cluster-management.io" && (cl.GetValue() == "" || cl.GetValue() == "Other") {
+				t.Errorf("%s: region claim %q; an unknown region is omitted", c.GetName(), cl.GetValue())
+			}
+		}
+		// The finalizers the hub's controllers put on every live cluster,
+		// joined or not (see the Finalizer* constants for the sources).
+		if !terminating(c) {
+			for _, f := range []string{FinalizerImportCleanup, FinalizerClusterInfo, FinalizerResourceCleanup, FinalizerClusterRole, FinalizerManifestWork, FinalizerClusterAPIResource} {
+				if !slices.Contains(c.GetFinalizers(), f) {
+					t.Errorf("%s: live cluster lacks finalizer %s", c.GetName(), f)
+				}
+			}
+		}
+		if hasTaint(c, TaintUnreachable) && hasTaint(c, TaintUnavailable) {
+			t.Errorf("%s: the hub taints are mutually exclusive", c.GetName())
+		}
 		// The taint and the addon labels follow the Available condition.
 		avail := findCondition(c, CondAvailable)
 		switch {
 		case avail.GetStatus() == aigridv1.ConditionStatus_CONDITION_STATUS_FALSE && !hasTaint(c, TaintUnavailable):
 			t.Errorf("%s: Available=False needs the unavailable taint", c.GetName())
-		case isTrue(c, CondJoined) && avail.GetStatus() == aigridv1.ConditionStatus_CONDITION_STATUS_UNSPECIFIED && !hasTaint(c, TaintUnreachable):
-			t.Errorf("%s: Available=Unknown needs the unreachable taint", c.GetName())
+		case !terminating(c) && (avail == nil || avail.GetStatus() == aigridv1.ConditionStatus_CONDITION_STATUS_UNSPECIFIED) && !hasTaint(c, TaintUnreachable):
+			t.Errorf("%s: Available Unknown or missing needs the unreachable taint", c.GetName())
 		case isTrue(c, CondAvailable) && (hasTaint(c, TaintUnreachable) || hasTaint(c, TaintUnavailable)):
 			t.Errorf("%s: Available=True removes the hub taints", c.GetName())
 		}
@@ -178,7 +205,8 @@ func TestRepoFixturesCoverEveryState(t *testing.T) {
 		"site-lisbon-1":    aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_NOT_ACCEPTED,
 		"edge-lyon-2":      aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_DETACHING,
 	}
-	// Every value of the enum except UNSPECIFIED and the superseded PENDING is seeded.
+	// Every value of the enum except UNSPECIFIED and the superseded PENDING is
+	// seeded (AVAILABLE three times); no fixture has an empty condition list.
 	seededStates := map[aigridv1.ManagedClusterState]bool{}
 	for _, st := range want {
 		seededStates[st] = true
@@ -213,8 +241,8 @@ func TestRepoFixturesCoverEveryState(t *testing.T) {
 		if c.GetStatus().GetStateMessage() == "" {
 			t.Errorf("%s: a decided state carries the deciding condition's message", c.GetName())
 		}
-		if c.GetName() == "edge-lyon-2" && findCondition(c, CondDeleting).GetReason() != ReasonResourceRemaining {
-			t.Error("the detaching cluster carries Deleting/ResourceRemaining while its finalizers drain")
+		if d := findCondition(c, CondDeleting); c.GetName() == "edge-lyon-2" && (d.GetStatus() != aigridv1.ConditionStatus_CONDITION_STATUS_FALSE || d.GetReason() != ReasonResourceRemaining) {
+			t.Errorf("the detaching cluster carries Deleting False/ResourceRemaining while its add-ons drain, got %v", d)
 		}
 	}
 	for name := range want {

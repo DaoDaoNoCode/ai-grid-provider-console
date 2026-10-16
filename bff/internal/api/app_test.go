@@ -434,7 +434,7 @@ func TestGridClusterCarriesTheDerivedFields(t *testing.T) {
 // the Unix epoch through AsTime; the JSON must not present 1970 as observed.
 func TestConditionWithoutTransitionTimeIsOmitted(t *testing.T) {
 	mc := richCluster()
-	mc.Status.Conditions = append(mc.Status.Conditions, &aigridv1.Condition{Type: "Deleting", Status: aigridv1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: proto.String("ResourceRemaining")})
+	mc.Status.Conditions = append(mc.Status.Conditions, &aigridv1.Condition{Type: "Deleting", Status: aigridv1.ConditionStatus_CONDITION_STATUS_FALSE, Reason: proto.String("ResourceRemaining")})
 	app := newTestApp(t, testConfig(t), &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{mc}})
 	for _, path := range []string{"/api/v1/clusters", "/api/v1/clusters/site-paris-1"} {
 		rec := serve(app, asUser(http.MethodGet, path))

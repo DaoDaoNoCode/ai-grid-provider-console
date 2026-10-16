@@ -33,8 +33,13 @@ service ManagedClusters {
   // `hub_accepts_client`. Any other path in `update_mask` is InvalidArgument
   // naming the path; an empty mask is InvalidArgument. Setting
   // `hub_accepts_client` to false makes the hub flip `HubAcceptedManagedCluster`
-  // to False/`HubClusterAdminDenied`, so the cluster reads NOT_ACCEPTED.
-  // Requires `patch` on managedclusters for the caller.
+  // to False/`HubClusterAdminDenied` when it was True, so the cluster reads
+  // NOT_ACCEPTED; a cluster never accepted gets no condition. After a label
+  // or annotation write the hub's webhook and controllers put back what they
+  // own (`name`, the default clusterset label, the add-on labels, `clusterID`,
+  // `openshiftVersion*`, `open-cluster-management/created-via`), but not a
+  // removed `cloud` or `vendor`. Requires `patch` on managedclusters for the
+  // caller.
   rpc UpdateManagedCluster(UpdateManagedClusterRequest) returns (UpdateManagedClusterResponse);
 }
 
@@ -48,9 +53,12 @@ message ListManagedClustersRequest {
   optional int32 limit = 2;
   // CEL expression over `this` (a ManagedCluster) selecting the clusters to
   // return, for example `this.labels["ai-grid/enabled"] == "true"`. Empty
-  // means all. See docs/FILTER.md for the supported subset.
+  // means all. The language is OSAC's (osac-project/osac
+  // fulfillment-service/docs/FILTER.md, a CEL subset). Not implemented yet:
+  // the console's fake backend answers InvalidArgument for any filter.
   optional string filter = 3;
-  // Sort order, `<field> [asc|desc]`, for example `name desc`. Default: by name.
+  // Sort order, `<field> [asc|desc]`, for example `name desc`. Default: by
+  // name. Not implemented yet: the fake answers InvalidArgument for any order.
   optional string order = 4;
 }
 

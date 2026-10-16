@@ -1,5 +1,5 @@
 {
-  "_comment": "ai_grid.v1.ManagedCluster objects in protojson under \"clusters\", one per lifecycle state the ACM console distinguishes (mock/research/acm.md section 1): local-cluster, site-paris-1 and site-frankfurt-1 ready; site-madrid-1 unknown (lease expired, taint unreachable); site-ashburn-1 offline (API server down, taint unavailable); site-berlin-1 importing and site-oslo-1 pending import (auto-detect labels, no claims yet); site-dublin-1 import failed; site-lisbon-1 not accepted (hubAcceptsClient false, HubClusterAdminDenied, agent lost its lease since); edge-lyon-2 detaching (deletionTimestamp, Deleting/ResourceRemaining). Every condition carries the controller's exact type, reason and message (the Deleting message is not verified and left empty); labels are what ACM writes plus the console's ai-grid/* conventions; claims are one name-sorted list. status.state and status.stateMessage are derived by the server on every read and must not be written here. scenarios.json moves these clusters over time. All values are fictional.",
+  "_comment": "ai_grid.v1.ManagedCluster objects in protojson under \"clusters\". Ten clusters seed the eight states the ACM console distinguishes for an imported cluster (every ManagedClusterState value except UNSPECIFIED and the superseded PENDING; AVAILABLE three times): local-cluster, site-paris-1 and site-frankfurt-1 ready (frankfurt with one add-on unhealthy on its own); site-madrid-1 unknown (lease expired, taint unreachable, add-ons unreachable); site-ashburn-1 offline (API server down, taint unavailable, add-on labels left as they were); site-berlin-1 importing and site-oslo-1 pending import (auto-detect labels, no claims yet); site-dublin-1 import failed; site-lisbon-1 not accepted (hubAcceptsClient false, HubClusterAdminDenied after it had been accepted, agent lost its lease since); edge-lyon-2 detaching (deletionTimestamp, Deleting False/ResourceRemaining with the gc controller's message, upstream spelling 'remaning'). Every condition type, reason and message, taint, label, finalizer and claim name is one the hub's controllers write; bff/internal/fakebackend/acm.go cites the source line of each. Labels are what ACM writes plus the console's ai-grid/* conventions; claims are one name-sorted list and the region claim is present only where the agent can read one (AWS, Azure node labels). status.state and status.stateMessage are derived by the server on every read and must not be written here. scenarios.json moves these clusters over time. All names, ids, hosts and numbers are fictional.",
   "clusters": [
     {
       "name": "local-cluster",
@@ -22,6 +22,7 @@
         "feature.open-cluster-management.io/addon-work-manager": "available",
         "feature.open-cluster-management.io/addon-hypershift-addon": "available",
         "feature.open-cluster-management.io/addon-multicluster-observability-addon": "available",
+        "feature.open-cluster-management.io/addon-submariner": "available",
         "local-cluster": "true",
         "velero.io/exclude-from-backup": "true"
       },
@@ -32,7 +33,7 @@
       },
       "uid": "a1b2c3d4-0001-4e5f-8a9b-000000000001",
       "resourceVersion": "48812031",
-      "generation": "1",
+      "generation": "3",
       "creationTimestamp": "2026-09-01T07:30:00Z",
       "leaseDurationSeconds": 60,
       "finalizers": [
@@ -215,7 +216,7 @@
       },
       "uid": "7d3e2b1a-5c6f-4a8b-9e0d-1f2a3b4c5d6e",
       "resourceVersion": "48811204",
-      "generation": "1",
+      "generation": "3",
       "creationTimestamp": "2026-10-01T09:00:00Z",
       "leaseDurationSeconds": 60,
       "finalizers": [
@@ -295,10 +296,6 @@
             "value": "OpenShift"
           },
           {
-            "name": "region.open-cluster-management.io",
-            "value": "Other"
-          },
-          {
             "name": "schedulable.open-cluster-management.io",
             "value": "true"
           },
@@ -358,7 +355,7 @@
         "openshiftVersion-major": "4",
         "openshiftVersion-major-minor": "4.21",
         "cluster.open-cluster-management.io/clusterset": "default",
-        "feature.open-cluster-management.io/addon-application-manager": "available",
+        "feature.open-cluster-management.io/addon-application-manager": "unhealthy",
         "feature.open-cluster-management.io/addon-cert-policy-controller": "available",
         "feature.open-cluster-management.io/addon-cluster-proxy": "available",
         "feature.open-cluster-management.io/addon-config-policy-controller": "available",
@@ -372,7 +369,7 @@
       },
       "uid": "a1b2c3d4-0003-4e5f-8a9b-000000000003",
       "resourceVersion": "48809977",
-      "generation": "1",
+      "generation": "3",
       "creationTimestamp": "2026-10-03T14:12:00Z",
       "leaseDurationSeconds": 60,
       "finalizers": [
@@ -450,10 +447,6 @@
           {
             "name": "product.open-cluster-management.io",
             "value": "OpenShift"
-          },
-          {
-            "name": "region.open-cluster-management.io",
-            "value": "Other"
           },
           {
             "name": "schedulable.open-cluster-management.io",
@@ -537,7 +530,7 @@
       },
       "uid": "a1b2c3d4-0004-4e5f-8a9b-000000000004",
       "resourceVersion": "48812499",
-      "generation": "1",
+      "generation": "4",
       "creationTimestamp": "2026-09-20T08:00:00Z",
       "leaseDurationSeconds": 60,
       "finalizers": [
@@ -687,13 +680,13 @@
         "openshiftVersion-major": "4",
         "openshiftVersion-major-minor": "4.22",
         "cluster.open-cluster-management.io/clusterset": "default",
-        "feature.open-cluster-management.io/addon-application-manager": "unhealthy",
-        "feature.open-cluster-management.io/addon-cert-policy-controller": "unhealthy",
-        "feature.open-cluster-management.io/addon-cluster-proxy": "unhealthy",
-        "feature.open-cluster-management.io/addon-config-policy-controller": "unhealthy",
-        "feature.open-cluster-management.io/addon-governance-policy-framework": "unhealthy",
-        "feature.open-cluster-management.io/addon-managed-serviceaccount": "unhealthy",
-        "feature.open-cluster-management.io/addon-work-manager": "unhealthy",
+        "feature.open-cluster-management.io/addon-application-manager": "available",
+        "feature.open-cluster-management.io/addon-cert-policy-controller": "available",
+        "feature.open-cluster-management.io/addon-cluster-proxy": "available",
+        "feature.open-cluster-management.io/addon-config-policy-controller": "available",
+        "feature.open-cluster-management.io/addon-governance-policy-framework": "available",
+        "feature.open-cluster-management.io/addon-managed-serviceaccount": "available",
+        "feature.open-cluster-management.io/addon-work-manager": "available",
         "ai-grid/enabled": "true",
         "ai-grid/provisioned": "false",
         "location": "ashburn",
@@ -709,7 +702,7 @@
       },
       "uid": "a1b2c3d4-0005-4e5f-8a9b-000000000005",
       "resourceVersion": "48812610",
-      "generation": "1",
+      "generation": "4",
       "creationTimestamp": "2026-09-28T16:45:00Z",
       "leaseDurationSeconds": 60,
       "finalizers": [
@@ -861,11 +854,15 @@
       },
       "uid": "a1b2c3d4-0006-4e5f-8a9b-000000000006",
       "resourceVersion": "48812702",
-      "generation": "1",
+      "generation": "2",
       "creationTimestamp": "2026-10-15T10:00:00Z",
       "leaseDurationSeconds": 60,
       "finalizers": [
         "managedcluster-import-controller.open-cluster-management.io/cleanup",
+        "managedclusterinfo.finalizers.open-cluster-management.io",
+        "cluster.open-cluster-management.io/resource-cleanup",
+        "open-cluster-management.io/managedclusterrole",
+        "managedcluster-import-controller.open-cluster-management.io/manifestwork-cleanup",
         "cluster.open-cluster-management.io/api-resource-cleanup"
       ],
       "taints": [
@@ -920,7 +917,7 @@
       },
       "uid": "a1b2c3d4-0007-4e5f-8a9b-000000000007",
       "resourceVersion": "48812755",
-      "generation": "1",
+      "generation": "3",
       "creationTimestamp": "2026-10-10T11:20:00Z",
       "deletionTimestamp": "2026-10-15T12:00:00Z",
       "leaseDurationSeconds": 60,
@@ -1001,10 +998,6 @@
             "value": "OpenShift"
           },
           {
-            "name": "region.open-cluster-management.io",
-            "value": "Other"
-          },
-          {
             "name": "schedulable.open-cluster-management.io",
             "value": "true"
           },
@@ -1051,9 +1044,9 @@
           },
           {
             "type": "Deleting",
-            "status": "CONDITION_STATUS_TRUE",
+            "status": "CONDITION_STATUS_FALSE",
             "reason": "ResourceRemaining",
-            "message": "",
+            "message": "The resource managedclusteraddons is remaning, the remaining count is 7, the finalizer pending count is 1",
             "lastTransitionTime": "2026-10-15T12:00:00Z"
           }
         ]
@@ -1073,11 +1066,15 @@
       },
       "uid": "a1b2c3d4-0008-4e5f-8a9b-000000000008",
       "resourceVersion": "48812790",
-      "generation": "1",
+      "generation": "2",
       "creationTimestamp": "2026-10-15T12:30:00Z",
       "leaseDurationSeconds": 60,
       "finalizers": [
         "managedcluster-import-controller.open-cluster-management.io/cleanup",
+        "managedclusterinfo.finalizers.open-cluster-management.io",
+        "cluster.open-cluster-management.io/resource-cleanup",
+        "open-cluster-management.io/managedclusterrole",
+        "managedcluster-import-controller.open-cluster-management.io/manifestwork-cleanup",
         "cluster.open-cluster-management.io/api-resource-cleanup"
       ],
       "taints": [
@@ -1120,11 +1117,15 @@
       },
       "uid": "a1b2c3d4-0009-4e5f-8a9b-000000000009",
       "resourceVersion": "48812401",
-      "generation": "1",
+      "generation": "2",
       "creationTimestamp": "2026-10-14T09:15:00Z",
       "leaseDurationSeconds": 60,
       "finalizers": [
         "managedcluster-import-controller.open-cluster-management.io/cleanup",
+        "managedclusterinfo.finalizers.open-cluster-management.io",
+        "cluster.open-cluster-management.io/resource-cleanup",
+        "open-cluster-management.io/managedclusterrole",
+        "managedcluster-import-controller.open-cluster-management.io/manifestwork-cleanup",
         "cluster.open-cluster-management.io/api-resource-cleanup"
       ],
       "taints": [
@@ -1179,7 +1180,7 @@
       },
       "uid": "a1b2c3d4-0010-4e5f-8a9b-000000000010",
       "resourceVersion": "48812688",
-      "generation": "2",
+      "generation": "5",
       "creationTimestamp": "2026-09-12T10:00:00Z",
       "leaseDurationSeconds": 60,
       "finalizers": [

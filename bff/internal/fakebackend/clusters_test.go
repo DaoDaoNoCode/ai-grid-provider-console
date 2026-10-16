@@ -3,6 +3,7 @@ package fakebackend
 import (
 	"context"
 	"log/slog"
+	"maps"
 	"strconv"
 	"strings"
 	"sync"
@@ -347,8 +348,13 @@ func TestUpdateManagedCluster(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(got.GetLabels()) != 1 || got.GetLabels()["ai-grid/enabled"] != "true" {
-			t.Errorf("labels must be replaced as a whole, got %v", got.GetLabels())
+		// The map is replaced as a whole; then the hub puts back what its
+		// webhook and controllers own (name, the default clusterset, the
+		// add-on labels) but not cloud or vendor, which autodetect only fills
+		// while they read auto-detect.
+		wantLabels := map[string]string{"ai-grid/enabled": "true", LabelName: "a", LabelClusterSet: ClusterSetDefault, LabelAddonPrefix + "work-manager": AddonAvailable}
+		if !maps.Equal(got.GetLabels(), wantLabels) {
+			t.Errorf("labels = %v, want %v", got.GetLabels(), wantLabels)
 		}
 		if got.GetAnnotations()["open-cluster-management/created-via"] != "other" {
 			t.Errorf("annotations were not in the mask and must be untouched, got %v", got.GetAnnotations())
@@ -362,9 +368,14 @@ func TestUpdateManagedCluster(t *testing.T) {
 		if got.GetStatus().GetState() != aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_AVAILABLE {
 			t.Errorf("response carries the derived state, got %s", got.GetStatus().GetState())
 		}
-		got2, err := update(s, &aigridv1.UpdateManagedClusterRequest{Object: &aigridv1.ManagedCluster{Name: "a", Annotations: map[string]string{}}, UpdateMask: mask("annotations")})
-		if err != nil || len(got2.GetAnnotations()) != 0 || len(got2.GetLabels()) != 1 {
-			t.Errorf("empty annotations map clears them and leaves labels: %v, %v", got2, err)
+		got2, err := update(s, &aigridv1.UpdateManagedClusterRequest{Object: &aigridv1.ManagedCluster{Name: "a", Annotations: map[string]string{"x": "y"}}, UpdateMask: mask("annotations")})
+		wantAnn := map[string]string{"x": "y", AnnotationCreatedVia: AnnotationCreatedViaOther}
+		if err != nil || !maps.Equal(got2.GetAnnotations(), wantAnn) || !maps.Equal(got2.GetLabels(), wantLabels) {
+			t.Errorf("annotations replaced (created-via restored by the import controller), labels untouched: %v, %v", got2, err)
+		}
+		got3, err := update(s, &aigridv1.UpdateManagedClusterRequest{Object: &aigridv1.ManagedCluster{Name: "a", Labels: map[string]string{LabelAddonPrefix + "work-manager": AddonUnhealthy, LabelAddonPrefix + "made-up": AddonAvailable}}, UpdateMask: mask("labels")})
+		if err != nil || got3.GetLabels()[LabelAddonPrefix+"work-manager"] != AddonAvailable || got3.GetLabels()[LabelAddonPrefix+"made-up"] != "" {
+			t.Errorf("add-on labels follow the add-ons, not the client: %v, %v", got3.GetLabels(), err)
 		}
 	})
 
@@ -419,6 +430,20 @@ func TestUpdateManagedCluster(t *testing.T) {
 			t.Errorf("re-accepted = %v, state %s", c, got.GetStatus().GetState())
 		}
 	})
+
+	t.Run("denying a cluster that was never accepted writes no condition", func(t *testing.T) {
+		// ocm:pkg/registration/hub/managedcluster/controller.go L164-167.
+		never := withConditions()
+		never.Name = "fresh"
+		s := newServer(t, &Fixtures{Clusters: []*aigridv1.ManagedCluster{never}})
+		got, err := update(s, &aigridv1.UpdateManagedClusterRequest{Object: &aigridv1.ManagedCluster{Name: "fresh", HubAcceptsClient: false}, UpdateMask: mask("hub_accepts_client")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if findCondition(got, CondHubAccepted) != nil || got.GetGeneration() != 1 {
+			t.Errorf("no HubAccepted condition, generation bumped: %v", got)
+		}
+	})
 }
 
 // importingCluster is site-berlin-1 from the research: created by ACM, agent
@@ -437,14 +462,20 @@ func importingCluster(name string, created time.Time) *aigridv1.ManagedCluster {
 
 func TestScenarioImport(t *testing.T) {
 	start := time.Date(2026, 10, 15, 10, 0, 0, 0, time.UTC)
+	// A cluster whose `cloud` label someone removed: autodetect fills it only
+	// while it reads auto-detect, so it stays absent.
+	noCloudLabel := importingCluster("oslo", start)
+	delete(noCloudLabel.Labels, LabelCloud)
 	spoke := `{"kubernetesVersion":"v1.35.6","capacity":{"cpu":"64","nvidia.com/gpu":"8"},"allocatable":{"cpu":"61","nvidia.com/gpu":"8"},
-	  "clusterClaims":[{"name":"version.openshift.io","value":"4.22.15"},{"name":"id.k8s.io","value":"5e6f7a8b-9c0d-4e1f-a2b3-c4d5e6f7a8b9"},
+	  "clusterClaims":[{"name":"version.openshift.io","value":"4.22.15"},{"name":"id.k8s.io","value":"0f1e2d3c-4b5a-4968-8776-655443322110"},
+	  {"name":"id.openshift.io","value":"5e6f7a8b-9c0d-4e1f-a2b3-c4d5e6f7a8b9"},
 	  {"name":"platform.open-cluster-management.io","value":"AWS"},{"name":"product.open-cluster-management.io","value":"OpenShift"}]}`
 	fx := &Fixtures{
-		Clusters: []*aigridv1.ManagedCluster{importingCluster("berlin", start)},
+		Clusters: []*aigridv1.ManagedCluster{importingCluster("berlin", start), noCloudLabel},
 		Speed:    2, // "20s" fires after 10s of wall clock
 		Scenarios: []ScenarioEvent{
 			{Cluster: "berlin", At: Duration{20 * time.Second}, Event: EventJoined, Spoke: []byte(spoke)},
+			{Cluster: "oslo", At: Duration{20 * time.Second}, Event: EventJoined, Spoke: []byte(spoke)},
 			{Cluster: "berlin", At: Duration{70 * time.Second}, Event: EventImported},
 			{Cluster: "berlin", At: Duration{90 * time.Second}, Event: EventAddonsAvailable, Addons: []string{"work-manager"}},
 		},
@@ -490,16 +521,25 @@ func TestScenarioImport(t *testing.T) {
 		t.Error("import is not finished at join time")
 	}
 	l := c.GetLabels()
-	if l[LabelCloud] != "Amazon" || l[LabelVendor] != "OpenShift" || l[LabelClusterID] != "5e6f7a8b-9c0d-4e1f-a2b3-c4d5e6f7a8b9" || l[LabelOpenShiftVersion] != "4.22.15" || l[LabelOpenShiftMajor] != "4" || l[LabelOpenShiftMajorMin] != "4.22" {
+	if l[LabelCloud] != "Amazon" || l[LabelVendor] != "OpenShift" || l[LabelClusterID] != "5e6f7a8b-9c0d-4e1f-a2b3-c4d5e6f7a8b9" /* id.openshift.io, not id.k8s.io */ || l[LabelOpenShiftVersion] != "4.22.15" || l[LabelOpenShiftMajor] != "4" || l[LabelOpenShiftMajorMin] != "4.22" {
 		t.Errorf("autodetect labels = %v", l)
 	}
-	if hasTaint(c, TaintUnreachable) {
-		t.Error("the unreachable taint goes once Available is True")
+	if hasTaint(c, TaintUnreachable) || c.GetGeneration() != 1 {
+		t.Errorf("the unreachable taint goes once Available is True, a spec change: %v generation %d", c.GetTaints(), c.GetGeneration())
+	}
+	oslo, err := s.GetManagedCluster(ctx, &aigridv1.GetManagedClusterRequest{Name: "oslo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l := oslo.GetObject().GetLabels(); l[LabelVendor] != "OpenShift" || l[LabelClusterID] == "" {
+		t.Errorf("autodetect still fills vendor and clusterID: %v", l)
+	} else if _, ok := l[LabelCloud]; ok {
+		t.Errorf("a removed cloud label is not added back: %v", l)
 	}
 	if c.GetStatus().GetCapacity()["nvidia.com/gpu"] != "8" || c.GetStatus().GetKubernetesVersion() != "v1.35.6" {
 		t.Errorf("spoke status not applied: %v", c.GetStatus())
 	}
-	if claims := c.GetStatus().GetClusterClaims(); len(claims) != 4 || claims[0].GetName() != ClaimID || claims[3].GetName() != ClaimOCPVersion {
+	if claims := c.GetStatus().GetClusterClaims(); len(claims) != 5 || claims[0].GetName() != ClaimID || claims[1].GetName() != ClaimOpenShiftID || claims[4].GetName() != ClaimOCPVersion {
 		t.Errorf("claims must be sorted by name: %v", claims)
 	}
 	if c.GetResourceVersion() == before {
@@ -524,8 +564,11 @@ func TestScenarioImport(t *testing.T) {
 func TestScenarioLeaseAndDetach(t *testing.T) {
 	start := time.Date(2026, 10, 15, 11, 0, 0, 0, time.UTC)
 	fx := &Fixtures{
-		Clusters: []*aigridv1.ManagedCluster{readyCluster("madrid"), readyCluster("lyon"), readyCluster("ashburn")},
+		Clusters: []*aigridv1.ManagedCluster{readyCluster("madrid"), readyCluster("lyon"), readyCluster("ashburn"), readyCluster("frankfurt")},
 		Scenarios: []ScenarioEvent{
+			{Cluster: "frankfurt", At: Duration{10 * time.Second}, Event: EventAPIDown},
+			{Cluster: "frankfurt", At: Duration{15 * time.Second}, Event: EventLeaseLost},
+			{Cluster: "lyon", At: Duration{15 * time.Second}, Event: EventLeaseLost},
 			{Cluster: "madrid", At: Duration{10 * time.Second}, Event: EventLeaseLost},
 			{Cluster: "madrid", At: Duration{20 * time.Second}, Event: EventLeaseRecovered},
 			{Cluster: "ashburn", At: Duration{10 * time.Second}, Event: EventAPIDown},
@@ -560,7 +603,7 @@ func TestScenarioLeaseAndDetach(t *testing.T) {
 	}
 	a, _ := get("ashburn")
 	av = findCondition(a, CondAvailable)
-	if a.GetStatus().GetState() != aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_UNAVAILABLE || av.GetReason() != ReasonAPIServerUnavail || !strings.HasPrefix(av.GetMessage(), "The kube-apiserver is not ok, status code: 503, ") || !hasTaint(a, TaintUnavailable) || a.GetLabels()[LabelAddonPrefix+"work-manager"] != AddonUnhealthy {
+	if a.GetStatus().GetState() != aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_UNAVAILABLE || av.GetReason() != ReasonAPIServerUnavail || !strings.HasPrefix(av.GetMessage(), "The kube-apiserver is not ok, status code: 503, ") || !hasTaint(a, TaintUnavailable) || hasTaint(a, TaintUnreachable) || a.GetLabels()[LabelAddonPrefix+"work-manager"] != AddonAvailable {
 		t.Errorf("api down: %s %v taints %v labels %v", a.GetStatus().GetState(), av, a.GetTaints(), a.GetLabels())
 	}
 	l, _ := get("lyon")
@@ -569,6 +612,22 @@ func TestScenarioLeaseAndDetach(t *testing.T) {
 	}
 	if imp := findCondition(l, CondImportSucceeded); imp.GetStatus() != cFalse || imp.GetReason() != ReasonDetaching {
 		t.Errorf("detaching import condition = %v", imp)
+	}
+
+	// The taint controller keeps the two hub taints mutually exclusive: a
+	// lease lost after the API server went down swaps unavailable for
+	// unreachable. On a terminating cluster taints and add-on labels freeze.
+	now = start.Add(15 * time.Second)
+	f, _ := get("frankfurt")
+	if !hasTaint(f, TaintUnreachable) || hasTaint(f, TaintUnavailable) || len(f.GetTaints()) != 1 || f.GetGeneration() != 2 {
+		t.Errorf("api-down then lease-lost: taints %v generation %d", f.GetTaints(), f.GetGeneration())
+	}
+	if f.GetLabels()[LabelAddonPrefix+"work-manager"] != AddonUnreachable {
+		t.Errorf("lease lost marks add-ons unreachable: %v", f.GetLabels())
+	}
+	l, _ = get("lyon")
+	if findCondition(l, CondAvailable).GetStatus() != cUnknown || len(l.GetTaints()) != 0 || l.GetLabels()[LabelAddonPrefix+"work-manager"] != AddonAvailable {
+		t.Errorf("terminating cluster: Available moves, taints and add-on labels do not: %v", l)
 	}
 
 	// An event for a cluster that is already gone is skipped, and
@@ -584,14 +643,14 @@ func TestScenarioLeaseAndDetach(t *testing.T) {
 	if m.GetStatus().GetState() != aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_AVAILABLE || !av.GetLastTransitionTime().AsTime().Equal(now) || hasTaint(m, TaintUnreachable) || m.GetLabels()[LabelAddonPrefix+"work-manager"] != AddonAvailable {
 		t.Errorf("lease recovered: %s %v %v %v", m.GetStatus().GetState(), av, m.GetTaints(), m.GetLabels())
 	}
-	if a, _ = get("ashburn"); a.GetStatus().GetState() != aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_AVAILABLE || hasTaint(a, TaintUnavailable) {
+	if a, _ = get("ashburn"); a.GetStatus().GetState() != aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_AVAILABLE || len(a.GetTaints()) != 0 || a.GetLabels()[LabelAddonPrefix+"work-manager"] != AddonAvailable {
 		t.Errorf("api up: %v", a)
 	}
 	if _, err := get("lyon"); status.Code(err) != codes.NotFound {
 		t.Errorf("detached cluster must be gone, got %v", err)
 	}
 	list, _ := s.ListManagedClusters(ctx, &aigridv1.ListManagedClustersRequest{})
-	if list.GetTotal() != 2 {
+	if list.GetTotal() != 3 {
 		t.Errorf("list after detach = %d", list.GetTotal())
 	}
 
@@ -612,18 +671,35 @@ func TestScenarioLeaseAndDetach(t *testing.T) {
 	}
 }
 
+// TestDetachingEventAddsDeleting: the gc controller's Deleting condition
+// (ocm:pkg/registration/hub/gc/gc_resources.go L67-73, L93-99) names the
+// managedclusteraddons still in the namespace and how many carry a
+// finalizer, or reports the namespace clean when none are left.
 func TestDetachingEventAddsDeleting(t *testing.T) {
-	s := newServer(t, &Fixtures{Clusters: []*aigridv1.ManagedCluster{readyCluster("a")}, Scenarios: []ScenarioEvent{{Cluster: "a", At: Duration{time.Second}, Event: EventDetaching}}})
+	withAddons := readyCluster("a")
+	withAddons.Labels[LabelAddonPrefix+"config-policy-controller"] = AddonAvailable
+	bare := readyCluster("b")
+	delete(bare.Labels, LabelAddonPrefix+"work-manager")
+	s := newServer(t, &Fixtures{Clusters: []*aigridv1.ManagedCluster{withAddons, bare}, Scenarios: []ScenarioEvent{
+		{Cluster: "a", At: Duration{time.Second}, Event: EventDetaching},
+		{Cluster: "b", At: Duration{time.Second}, Event: EventDetaching},
+	}})
 	now := time.Date(2026, 10, 15, 11, 0, 0, 0, time.UTC)
 	s.SetClock(func() time.Time { return now })
 	now = now.Add(time.Second)
-	resp, err := s.GetManagedCluster(authed(context.Background()), &aigridv1.GetManagedClusterRequest{Name: "a"})
-	if err != nil {
-		t.Fatal(err)
+	get := func(name string) *aigridv1.Condition {
+		resp, err := s.GetManagedCluster(authed(context.Background()), &aigridv1.GetManagedClusterRequest{Name: name})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return findCondition(resp.GetObject(), CondDeleting)
 	}
-	d := findCondition(resp.GetObject(), CondDeleting)
-	if d.GetStatus() != cTrue || d.GetReason() != ReasonResourceRemaining || d.GetMessage() != "" {
-		t.Errorf("Deleting = %v", d)
+	want := "The resource managedclusteraddons is remaning, the remaining count is 2, the finalizer pending count is 1"
+	if d := get("a"); d.GetStatus() != cFalse || d.GetReason() != ReasonResourceRemaining || d.GetMessage() != want {
+		t.Errorf("Deleting with add-ons left = %v, want False/ResourceRemaining %q", d, want)
+	}
+	if d := get("b"); d.GetStatus() != cTrue || d.GetReason() != ReasonNoResource || d.GetMessage() != MessageNoResource {
+		t.Errorf("Deleting with nothing left = %v, want True/NoResource", d)
 	}
 }
 

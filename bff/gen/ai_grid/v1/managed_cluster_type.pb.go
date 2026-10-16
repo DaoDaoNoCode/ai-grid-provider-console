@@ -71,8 +71,9 @@ const (
 	ManagedClusterState_MANAGED_CLUSTER_STATE_UNAVAILABLE ManagedClusterState = 3
 	// `deletion_timestamp` is set. ACM console: `detaching`.
 	ManagedClusterState_MANAGED_CLUSTER_STATE_DETACHING ManagedClusterState = 4
-	// Accepted but `ManagedClusterJoined` is not True and the import controller
-	// reports no progress. ACM console: `pendingimport`.
+	// Accepted but `ManagedClusterJoined` is not True and
+	// `ManagedClusterImportSucceeded` is absent or carries another reason (for
+	// example `ManagedClusterWaitForImporting`). ACM console: `pendingimport`.
 	ManagedClusterState_MANAGED_CLUSTER_STATE_PENDING_IMPORT ManagedClusterState = 5
 	// Not joined; `ManagedClusterImportSucceeded` is False with reason
 	// `ManagedClusterImporting`. ACM console: `importing`.
@@ -177,12 +178,13 @@ type ManagedCluster struct {
 	ManagedClusterClientConfigs []*ClientConfig `protobuf:"bytes,10,rep,name=managed_cluster_client_configs,json=managedClusterClientConfigs,proto3" json:"managed_cluster_client_configs,omitempty"`
 	// Observed state. Output only.
 	Status *ManagedClusterStatus `protobuf:"bytes,11,opt,name=status,proto3" json:"status,omitempty"`
-	// `spec.taints`. The hub's taint controller adds
-	// `cluster.open-cluster-management.io/unavailable` (Available False) and
-	// `cluster.open-cluster-management.io/unreachable` (Available Unknown or
-	// missing), both with effect `NoSelect`, and removes them when Available is
-	// True. Placements must tolerate them to select the cluster. Output only
-	// for the console: users may add taints with other tooling.
+	// `spec.taints`. The hub's taint controller keeps at most one of its two
+	// taints, both with effect `NoSelect`: `cluster.open-cluster-management.io/unreachable`
+	// while Available is Unknown or missing, `cluster.open-cluster-management.io/unavailable`
+	// while it is False (each replaces the other), none while it is True; it
+	// leaves a terminating cluster alone (ocm pkg/registration/hub/taint/controller.go).
+	// Placements must tolerate them to select the cluster. Output only for the
+	// console: users may add taints with other tooling.
 	Taints []*Taint `protobuf:"bytes,12,rep,name=taints,proto3" json:"taints,omitempty"`
 	// Generation of the desired state (`metadata.generation`); the hub bumps
 	// it on every spec change. Output only.
@@ -472,7 +474,9 @@ type ManagedClusterStatus struct {
 	// Message of the condition that decided `state`, verbatim (for example
 	// "Registration agent stopped updating its lease."). Empty when no
 	// condition decided it (DETACHING with no ImportSucceeded condition, or
-	// UNKNOWN with the Available condition absent).
+	// UNKNOWN with the Available condition absent). Filling it for every state
+	// is this proposal's choice: the ACM console shows a message only for
+	// importing, importfailed, offline and unknown.
 	StateMessage  string `protobuf:"bytes,7,opt,name=state_message,json=stateMessage,proto3" json:"state_message,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

@@ -45,9 +45,12 @@ type ListManagedClustersRequest struct {
 	Limit *int32 `protobuf:"varint,2,opt,name=limit,proto3,oneof" json:"limit,omitempty"`
 	// CEL expression over `this` (a ManagedCluster) selecting the clusters to
 	// return, for example `this.labels["ai-grid/enabled"] == "true"`. Empty
-	// means all. See docs/FILTER.md for the supported subset.
+	// means all. The language is OSAC's (osac-project/osac
+	// fulfillment-service/docs/FILTER.md, a CEL subset). Not implemented yet:
+	// the console's fake backend answers InvalidArgument for any filter.
 	Filter *string `protobuf:"bytes,3,opt,name=filter,proto3,oneof" json:"filter,omitempty"`
-	// Sort order, `<field> [asc|desc]`, for example `name desc`. Default: by name.
+	// Sort order, `<field> [asc|desc]`, for example `name desc`. Default: by
+	// name. Not implemented yet: the fake answers InvalidArgument for any order.
 	Order         *string `protobuf:"bytes,4,opt,name=order,proto3,oneof" json:"order,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

@@ -5,12 +5,21 @@ import (
 )
 
 // deriveState computes the summary state and the message of the condition
-// that decided it, in the order the ACM console uses
-// (console:frontend/src/resources/utils/get-cluster.ts, transcribed in
-// mock/research/acm.md section 1). "Not True" means False or absent.
+// that decided it, in the order the ACM console uses for a ManagedCluster
+// (console:frontend/src/resources/utils/get-cluster.ts L1467-1551). "Not
+// True" means False or absent (status-conditions.ts L5-9).
+//
+// Two parts are the console's own choice, not the ACM console's:
+//   - state_message is filled for every state from the deciding condition.
+//     The ACM console sets a message only for importing and importfailed
+//     (L1494-1499) and for offline and unknown (L1538, L1550); for
+//     detaching, notaccepted, pendingimport and ready it shows none.
+//   - The ACM console's needsapproval (a pending CSR, L1503-1514) and the
+//     hosted-cluster branch (L1515-1540) are not derived: the backend reads
+//     no CSRs or HostedClusters, so such a cluster reads PENDING_IMPORT.
 //
 // The real backend is asked to do the same server-side so that the console
-// and the ACM console never disagree about a cluster.
+// and the ACM console never disagree about a cluster's state.
 func deriveState(c *aigridv1.ManagedCluster) (aigridv1.ManagedClusterState, string) {
 	msg := func(typ string) string { return findCondition(c, typ).GetMessage() }
 
