@@ -167,12 +167,12 @@ type work struct {
 	// frozenAt is set while the agent is disconnected after it reported: the
 	// hub keeps the status as it was at that instant until the agent is back.
 	frozenAt *time.Time
-	// generation is the model generation whose template the work carries,
-	// which the rollout compares with the model's to find stale works, and
-	// spec the spec it applied: a work waiting its turn in a Progressive
-	// update keeps serving the spec it was applied with.
-	generation int64
-	spec       *aigridv1.ModelSpec
+	// spec is the template the work carries (templateOf the model's spec
+	// when it was applied), which the rollout compares with the current one
+	// to find stale works, as the controller compares the ManifestWork with
+	// the MWRS template: a work waiting its turn in a Progressive update keeps
+	// serving the spec it was applied with.
+	spec *aigridv1.ModelSpec
 	// workGeneration is the ManifestWork's own `metadata.generation`: 1 when
 	// the controller creates it, bumped by the API server each time an update
 	// changes its spec. A work created while the model is at generation N

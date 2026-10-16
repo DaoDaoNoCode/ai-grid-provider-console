@@ -84,7 +84,7 @@ Paths are under `/api/v1`, except `/healthcheck` and `/readyz` at the root.
 | DELETE | `/api/v1/tenants/{id}` | 204 | `Tenants/DeleteTenant` with the `If-Match` version as `resource_version`; 404 when absent, 409 on a stale `If-Match` |
 | GET | `/api/v1/models?namespace=&label=k=v&offset=&limit=` | `Model[]` by namespace and name plus `meta`; `label` may repeat | `Models/ListModels` with `filter: this.metadata.namespace == "<ns>" && "<k>" in this.metadata.labels && this.metadata.labels["<k>"] == "<v>"` (the `in` guard keeps a model without the label from being a CEL `no such key` error) |
 | GET | `/api/v1/models/{namespace}/{name}` | `Model`, `ETag: "<resourceVersion>"` | `Models/GetModel`; 404 with the backend's message (`object with identifier '<ns>/<name>' not found`) |
-| POST | `/api/v1/models` | 201, `Model` with no conditions yet, `Location: /api/v1/models/{namespace}/{name}`, `ETag` | `Models/CreateModel`; 422 with the API server's or the CRD's message (a name that is not a DNS-1123 subdomain, a negative `replicas`, `replicas` with `scaling`, `scaling` without `maxReplicas`, without a trigger, with a count below 1 or with `minReplicas` above `maxReplicas`) or the console's own (URI scheme, Placement operators, rollout fields, `rollout` without `placement`), 409 on a taken name, 412 `ManifestWorkReplicaSet feature gate disabled on hub` when `placement` is set on a hub without the controller |
+| POST | `/api/v1/models` | 201, `Model` with no conditions yet, `Location: /api/v1/models/{namespace}/{name}`, `ETag` | `Models/CreateModel`; 422 with the API server's or the CRD's message (a name that is not a DNS-1123 subdomain, a negative `replicas`, `replicas` with `scaling`, `scaling` without `maxReplicas`, without a trigger, with `maxReplicas` below 1 or a negative `minReplicas` (`minReplicas: 0` counts as unset and defaults to 1) or with `minReplicas` above `maxReplicas`) or the console's own (URI scheme, Placement operators, rollout fields, `rollout` without `placement`), 409 on a taken name, 412 `ManifestWorkReplicaSet feature gate disabled on hub` when `placement` is set on a hub without the controller |
 | PATCH | `/api/v1/models/{namespace}/{name}` | `Model` after the write, with its `ETag` | `GetModel` then `UpdateModel` with the present fields that differ from the stored ones as the mask (`spec.replicas`, `spec.main.image`, `spec.main.env`, `spec.placement`, `spec.rollout`, `metadata.labels`, `metadata.annotations`) and `lock: true` on the `If-Match` version, or on the fetched `resource_version` without one; 409 when the object is not at that version, 412 when a placement is added on a gated hub |
 | DELETE | `/api/v1/models/{namespace}/{name}` | 204; the model is gone at once (the MWRS cascades `Background`, its works drain out of sight) | `Models/DeleteModel` with the `If-Match` version as `resource_version`; 404 when absent, 409 on a stale `If-Match`, 412 while a catalog entry or a subscription references the model (not reachable on the fake yet: nothing references a model until the catalog and subscriptions exist) |
 | GET | `/api/v1/capabilities` | `{manifestWorkReplicaSetEnabled, observabilityInstalled, acmVersion}` | `AiGrid/GetHubCapabilities`; 501 against a backend without the RPC, which a client reads as "unknown" |
@@ -283,7 +283,8 @@ no `revision`, `status: Saved`, `hasDeployment`; collections are always present)
 and `modelUri` are required by the backend; `cpu`, `memory` and `gpuCount` become the main
 container's requests (the GPU also its limit); `scaling` becomes a `spec.scaling.keda` block
 and is refused with the CRD's own messages when it comes with `replicas`, without
-`maxReplicas`, without a trigger, with a count below 1 or with `minReplicas` above
+`maxReplicas`, without a trigger, with `maxReplicas` below 1 or a negative `minReplicas`
+(`minReplicas: 0` counts as unset and defaults to 1) or with `minReplicas` above
 `maxReplicas`; the gateway defaults to
 `openshift-ingress/openshift-ai-inference`, the route and the scheduler are always managed;
 `rollout` without `placement` is 422. The same body rules as the other POSTs apply (unknown
@@ -293,8 +294,10 @@ fields 422, over 1 MiB 413).
 "env": [...], "placement": {...} | null, "rollout": {...}, "labels", "annotations", "displayName",
 "description"}`. A present field replaces the stored one as a whole (`env: []` removes every
 variable, `placement: null` makes the model a hub deployment again); `displayName` and
-`description` are merged into the stored annotations. A spec change bumps `generation`; the
-Deployment rolls out again and a placed model re-applies its works.
+`description` are merged into the stored annotations. A spec change bumps `generation`; a change
+of anything but `placement` and `rollout` also rolls the Deployment out again and makes a placed
+model re-apply its works, while a change of only `rollout` or `placement` re-applies none (a new
+placement adds and removes the works of clusters entering and leaving the decision).
 
 The list response:
 

@@ -71,6 +71,10 @@ message ListTenantsRequest {
   // `lowerAscii()` is cel-go's strings extension (`ext.Strings()`), which a
   // backend evaluating the expression must enable; the BFF writes the term
   // lower-cased (ASCII), and `contains` without it would be case-sensitive.
+  // The fake, like the Keycloak database search it stands in for, also folds
+  // non-ASCII letters, so a term with a non-ASCII capital (`É`) matches a
+  // lower-case `é` in the fake and through Keycloak but not under strict CEL
+  // `lowerAscii()`, which folds A-Z only.
   // The term is a literal substring: `%` and `_` match themselves, never act
   // as wildcards. A blank term (empty or whitespace only) matches every
   // tenant, as Keycloak's `search` does. The backend may evaluate the

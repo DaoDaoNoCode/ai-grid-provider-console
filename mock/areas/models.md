@@ -96,8 +96,10 @@ Failure modes:
 - A router without a managed route: no `HTTPRoutesReady`, the workload Service URL as the only
   address, no `url`. Gateway refs omitted: no `GatewaysReady`, the route uses the default Gateway.
 
-A spec change bumps the generation; the controller observes it at T1 after the change, and at T2
-the Deployment rolls out again from `Progressing`; `url` and `addresses` are kept.
+A spec change bumps the model's generation. A change of the LLMInferenceService's own spec
+(everything but `placement` and `rollout`) bumps its generation too: the controller observes it at
+T1 after the change, and at T2 the Deployment rolls out again from `Progressing`; `url` and
+`addresses` are kept.
 
 Placement (`mock/research/acm.md` 3, items 6 and 7), recomputed on every pass from the clusters
 and the previous decision: the sets bound into the namespace (`global` = every cluster,
@@ -120,9 +122,10 @@ listed by name. `PlacementSatisfied` has the exact reasons and messages
 MWRS and works (`mock/research/acm.md` 4, items 8-13). One work per selected cluster named
 `model-<name><5 chars from the generateName alphabet>` (the controller's generateName is the
 MWRS name with no separator, cut to 58 characters; random, tests inject a deterministic suffix
-with `SetWorkSuffixGenerator`). Only works whose spec is the current template count: a stale work
-holds no rollout slot, is left out of the summary, and its cluster is to apply again like a new
-one.
+with `SetWorkSuffixGenerator`). The template is the LLMInferenceService, the spec without
+`placement` (the Placement object) and `rollout` (the MWRS's `placementRefs[].rolloutStrategy`).
+Only works whose spec is the current template count: a stale work holds no rollout slot, is left
+out of the summary, and its cluster is to apply again like a new one.
 - `All` applies every cluster at once. `ProgressivePerGroup` rolls out a whole decision group at
   once; the console's Placements have one group, so it behaves like `All`.
 - `Progressive` fills `maxConcurrency` slots in cluster-name order (a percentage rounds up; empty,
@@ -171,8 +174,11 @@ one.
   current template number the selected clusters (so also for an empty decision), else
   `Progressing`; `ManifestworkApplied` `AsExpected`, `Processing`, `NotAsExpected` or
   `PlacementDecisionEmpty` from the summary.
-- A template change re-applies the works at the new generation (all at once for `All`, in name
-  order as slots free for `Progressive`); a work's own `generation` is the ManifestWork's
+- A template change re-applies the works (all at once for `All`, in name order as slots free for
+  `Progressive`). A change of only `rollout` or `placement` re-applies nothing, as the controller
+  compares each work with the template alone (`deploy_reconcile.go:80-89`): a new strategy only
+  schedules the works still to apply, a new placement only adds and removes the works of clusters
+  entering and leaving the decision. A work's own `generation` is the ManifestWork's
   counter, 1 when it is created (also for a cluster that joins later or a placement added by a
   PATCH) and bumped by each update that changes its spec; a cluster leaving the decision loses
   its work;

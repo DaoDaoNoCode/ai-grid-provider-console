@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -1706,6 +1707,104 @@ func TestUpdateDuringProgressiveRolloutReappliesStaleWorksInNameOrder(t *testing
 	if works[1].GetGeneration() != 2 || works[2].GetGeneration() != 1 || !condition(works[1].GetConditions(), CondWorkApplied).GetLastTransitionTime().AsTime().Equal(testStart.Add(at+llmisvcT3)) {
 		t.Errorf("site-b re-applied once site-a succeeded: %v", works)
 	}
+}
+
+// workApplied is each work's cluster, own generation and Applied time.
+func workApplied(m *aigridv1.Model) map[string]string {
+	out := map[string]string{}
+	for _, w := range m.GetStatus().GetRollout().GetWorks() {
+		out[w.GetClusterName()] = fmt.Sprintf("%s gen %d applied %s", w.GetWorkName(), w.GetGeneration(), condition(w.GetConditions(), CondWorkApplied).GetLastTransitionTime().AsTime().Format(time.RFC3339))
+	}
+	return out
+}
+
+// Only a change of the work template re-applies the works
+// (deploy_reconcile.go:80-89): the rollout strategy is the MWRS's
+// placementRefs and the Placement a separate object, so changing either
+// leaves every existing work as it is.
+func TestOnlyATemplateChangeReappliesWorks(t *testing.T) {
+	ctx := authed(context.Background())
+	three := func() *Fixtures {
+		return &Fixtures{Clusters: []*aigridv1.ManagedCluster{enrolled("site-a"), enrolled("site-b"), enrolled("site-c")}}
+	}
+	update := func(s *Server, obj *aigridv1.Model, paths ...string) *aigridv1.Model {
+		t.Helper()
+		obj.Metadata = &aigridv1.ObjectMeta{Namespace: testNS}
+		resp, err := s.UpdateModel(ctx, &aigridv1.UpdateModelRequest{Object: obj, UpdateMask: &fieldmaskpb.FieldMask{Paths: paths}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp.GetObject()
+	}
+
+	t.Run("maxConcurrency on a rolled-out model", func(t *testing.T) {
+		s, advance := modelServer(t, three())
+		createModel(t, s, placedModel("roll", &aigridv1.Rollout{Strategy: aigridv1.RolloutStrategy_ROLLOUT_STRATEGY_PROGRESSIVE, MaxConcurrency: "1"}))
+		at := 3*llmisvcT3 + time.Second
+		advance(at)
+		before := getModel(t, s, "roll")
+		wantPhase(t, before, aigridv1.ModelPhase_MODEL_PHASE_READY, ReasonRolloutComplete)
+		got := update(s, &aigridv1.Model{Name: "roll", Spec: &aigridv1.ModelSpec{Rollout: &aigridv1.Rollout{Strategy: aigridv1.RolloutStrategy_ROLLOUT_STRATEGY_PROGRESSIVE, MaxConcurrency: "2"}}}, PathSpecRollout)
+		if got.GetMetadata().GetGeneration() != 2 {
+			t.Errorf("a spec change bumps the model generation: %d", got.GetMetadata().GetGeneration())
+		}
+		for _, m := range []*aigridv1.Model{got, func() *aigridv1.Model { advance(at + time.Hour); return getModel(t, s, "roll") }()} {
+			wantPhase(t, m, aigridv1.ModelPhase_MODEL_PHASE_READY, ReasonRolloutComplete)
+			if got, want := workApplied(m), workApplied(before); !maps.Equal(got, want) {
+				t.Errorf("no work re-applied: %v, before %v", got, want)
+			}
+			if sum := m.GetStatus().GetRollout().GetSummary(); sum.GetTotal() != 3 || sum.GetAvailable() != 3 {
+				t.Errorf("summary = %v", sum)
+			}
+		}
+	})
+
+	t.Run("placement adds a cluster", func(t *testing.T) {
+		s, advance := modelServer(t, three())
+		m := placedModel("grow", nil)
+		m.Spec.Placement.NumberOfClusters = proto.Int32(2)
+		createModel(t, s, m)
+		at := llmisvcT3 + time.Second
+		advance(at)
+		before := getModel(t, s, "grow")
+		wantPhase(t, before, aigridv1.ModelPhase_MODEL_PHASE_READY, ReasonRolloutComplete)
+		if len(before.GetStatus().GetRollout().GetWorks()) != 2 {
+			t.Fatalf("works = %v", before.GetStatus().GetRollout().GetWorks())
+		}
+		p := proto.Clone(m.GetSpec().GetPlacement()).(*aigridv1.Placement)
+		p.NumberOfClusters = nil
+		got := update(s, &aigridv1.Model{Name: "grow", Spec: &aigridv1.ModelSpec{Placement: p}}, PathSpecPlacement)
+		applied := workApplied(got)
+		if len(applied) != 3 || applied["site-a"] != workApplied(before)["site-a"] || applied["site-b"] != workApplied(before)["site-b"] {
+			t.Errorf("site-a and site-b kept as they were: %v, before %v", applied, workApplied(before))
+		}
+		if want := fmt.Sprintf("model-grow%s gen 1 applied %s", "w0003", testStart.Add(at).Format(time.RFC3339)); applied["site-c"] != want {
+			t.Errorf("site-c = %q, want %q", applied["site-c"], want)
+		}
+		advance(2*at + time.Second)
+		wantPhase(t, getModel(t, s, "grow"), aigridv1.ModelPhase_MODEL_PHASE_READY, ReasonRolloutComplete)
+	})
+
+	t.Run("image re-applies every work", func(t *testing.T) {
+		s, advance := modelServer(t, three())
+		createModel(t, s, placedModel("img", nil))
+		at := llmisvcT3 + time.Second
+		advance(at)
+		wantPhase(t, getModel(t, s, "img"), aigridv1.ModelPhase_MODEL_PHASE_READY, ReasonRolloutComplete)
+		got := update(s, &aigridv1.Model{Name: "img", Spec: &aigridv1.ModelSpec{Main: &aigridv1.Container{Image: "quay.io/example/vllm:v2"}}}, PathSpecMainImage)
+		works := got.GetStatus().GetRollout().GetWorks()
+		if len(works) != 3 {
+			t.Fatalf("works = %v", works)
+		}
+		for _, w := range works {
+			if w.GetGeneration() != 2 || !condition(w.GetConditions(), CondWorkApplied).GetLastTransitionTime().AsTime().Equal(testStart.Add(at)) {
+				t.Errorf("%s re-applied at the update with generation 2: %v", w.GetClusterName(), w)
+			}
+		}
+		wantPhase(t, got, aigridv1.ModelPhase_MODEL_PHASE_PENDING, ReasonNotAsExpected)
+		advance(2*at + time.Second)
+		wantPhase(t, getModel(t, s, "img"), aigridv1.ModelPhase_MODEL_PHASE_READY, ReasonRolloutComplete)
+	})
 }
 
 func TestDisconnectedAgentFreezesTheWork(t *testing.T) {

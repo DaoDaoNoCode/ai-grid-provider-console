@@ -66,7 +66,12 @@ type ModelsClient interface {
 	// ManifestWorkReplicaSet controller.
 	CreateModel(ctx context.Context, in *CreateModelRequest, opts ...grpc.CallOption) (*CreateModelResponse, error)
 	// Updates the fields named in `update_mask`. A spec change bumps
-	// `metadata.generation` and, for a placed model, re-runs the rollout.
+	// `metadata.generation`. A change of the LLMInferenceService spec
+	// (everything but `placement` and `rollout`) also rolls the Deployment out
+	// again and, for a placed model, re-applies the works; a change of only
+	// `rollout` or `placement` re-applies none, as the ManifestWorkReplicaSet
+	// controller compares each work with its template alone (a new placement
+	// adds and removes the works of clusters entering and leaving the decision).
 	UpdateModel(ctx context.Context, in *UpdateModelRequest, opts ...grpc.CallOption) (*UpdateModelResponse, error)
 	// Deletes a model and, for a placed model, its Placement and
 	// ManifestWorkReplicaSet. The console's template uses the CRD default,
@@ -164,7 +169,12 @@ type ModelsServer interface {
 	// ManifestWorkReplicaSet controller.
 	CreateModel(context.Context, *CreateModelRequest) (*CreateModelResponse, error)
 	// Updates the fields named in `update_mask`. A spec change bumps
-	// `metadata.generation` and, for a placed model, re-runs the rollout.
+	// `metadata.generation`. A change of the LLMInferenceService spec
+	// (everything but `placement` and `rollout`) also rolls the Deployment out
+	// again and, for a placed model, re-applies the works; a change of only
+	// `rollout` or `placement` re-applies none, as the ManifestWorkReplicaSet
+	// controller compares each work with its template alone (a new placement
+	// adds and removes the works of clusters entering and leaving the decision).
 	UpdateModel(context.Context, *UpdateModelRequest) (*UpdateModelResponse, error)
 	// Deletes a model and, for a placed model, its Placement and
 	// ManifestWorkReplicaSet. The console's template uses the CRD default,

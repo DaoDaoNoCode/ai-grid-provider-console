@@ -53,7 +53,10 @@ whole search like `/count`), includes disabled organizations and evaluates the o
 form `this.name.lowerAscii().contains("<term>") || this.domains.exists(d, d.lowerAscii().contains("<term>"))`
 (`lowerAscii()` from cel-go's strings extension, `ext.Strings()`; the BFF lowers the term), the
 expression that means what Keycloak's `search` does (a case-insensitive contains on name or any domain; a blank
-or whitespace-only term matches everything, as in Keycloak). The paging rules are the
+or whitespace-only term matches everything, as in Keycloak). The BFF lowers the term for ASCII only,
+but the fake, like Keycloak's database search it stands in for, folds non-ASCII letters too
+(`strings.ToLower`), so a term with a non-ASCII capital (`É`) matches a lower-case `é` in the
+fake and through Keycloak but not under strict CEL `lowerAscii()`, which folds A-Z only. The paging rules are the
 contract's, not Keycloak's: Keycloak's `max` defaults to 10 and it ignores a negative `first`
 or `max`, so the backend must send an explicit `max` for an omitted `limit` and reject
 negatives itself; Keycloak's `search` is a SQL LIKE without escaping or an ESCAPE clause, so a

@@ -112,10 +112,14 @@ type model struct {
 	// live marks a fixture model without creationTimestamp: created when the
 	// fake starts, so its lifecycle plays live.
 	live bool
-	// baseSpec is the spec at `created` (generation 1 of what serves the
-	// model today); epochs are the spec changes after it (generation 2, 3,
-	// ...) with the spec each one wrote: the Deployment rolls out again from
-	// each one, and a work records which of them it applied.
+	// baseSpec is the spec at `created` (generation 1 of the
+	// LLMInferenceService that serves the model today); epochs are the later
+	// spec changes that change that LLMInferenceService (templateOf), its
+	// generation 2, 3, ..., with the spec each one wrote: the Deployment rolls
+	// out again from each one, and the latest one is when the
+	// ManifestWorkReplicaSet's template last changed. A change of only
+	// `placement` or `rollout` writes the Placement or the MWRS's
+	// placementRefs, not the LLMInferenceService, and adds no epoch.
 	baseSpec *aigridv1.ModelSpec
 	epochs   []specEpoch
 	// works are the generated ManifestWorks, one per selected cluster.
@@ -135,6 +139,22 @@ type model struct {
 type specEpoch struct {
 	at   time.Time
 	spec *aigridv1.ModelSpec
+}
+
+// templateOf is the part of a spec that ends up in the LLMInferenceService,
+// the ManifestWorkReplicaSet's `manifestWorkTemplate`: everything but
+// `placement`, which is the separate Placement object, and `rollout`, which
+// is the MWRS's `spec.placementRefs[].rolloutStrategy`. The model's labels and
+// annotations are metadata, outside the spec, and the fake copies none of
+// them into the manifest. Two specs with the same
+// template give equal ManifestWorks, so the controller leaves a work alone
+// across a change of only those fields (ocm:pkg/work/hub/controllers/
+// manifestworkreplicasetcontroller/manifestworkreplicaset_deploy_reconcile.go:
+// 80-89 compares the work with the template, ManifestWorkEqual).
+func templateOf(spec *aigridv1.ModelSpec) *aigridv1.ModelSpec {
+	t := cloneSpec(spec)
+	t.Placement, t.Rollout = nil, nil
+	return t
 }
 
 func modelKey(namespace, name string) string { return namespace + "/" + name }
@@ -464,8 +484,9 @@ func (s *Server) deriveWorkAt(m *model, w *work, params rolloutParams, at time.T
 }
 
 // applyWork creates or updates the work of one cluster at scenario time t:
-// the controller's `generateName` work carrying the current template.
-func (s *Server) applyWork(m *model, cluster string, t time.Time) {
+// the controller's `generateName` work carrying the current template `tmpl`
+// (templateOf the model's spec).
+func (s *Server) applyWork(m *model, tmpl *aigridv1.ModelSpec, cluster string, t time.Time) {
 	var w *work
 	for _, existing := range m.works {
 		if existing.cluster == cluster {
@@ -475,11 +496,11 @@ func (s *Server) applyWork(m *model, cluster string, t time.Time) {
 	if w == nil {
 		w = &work{cluster: cluster, name: workNameFor(placementName(m.obj.GetName()), s.newSuffix()), workGeneration: 1}
 		m.works = append(m.works, w)
-	} else if !proto.Equal(w.spec, m.obj.GetSpec()) {
+	} else if !proto.Equal(w.spec, tmpl) {
 		w.workGeneration++ // the template update changes the work's spec
 	}
-	w.startedAt, w.generation, w.agentStart, w.frozenAt = t, m.obj.GetMetadata().GetGeneration(), nil, nil
-	w.spec = cloneSpec(m.obj.GetSpec())
+	w.startedAt, w.agentStart, w.frozenAt = t, nil, nil
+	w.spec = cloneSpec(tmpl)
 	w.failApply = s.clusters[cluster].GetLabels()[LabelFailApply] == "true"
 	s.observeAgent(w, t)
 }
@@ -489,7 +510,11 @@ func (s *Server) applyWork(m *model, cluster string, t time.Time) {
 // manifestworkreplicaset_deploy_reconcile.go:32-226 and sdk-go
 // pkg/apis/cluster/v1alpha1/rollout.go). Only works whose spec equals the
 // current template count (deploy_reconcile.go:79-104); a stale one holds no
-// slot and its cluster is to apply again, like a new one.
+// slot and its cluster is to apply again, like a new one. The template is
+// templateOf the spec, so a change of only the rollout strategy or the
+// placement leaves every existing work current: the placement adds and
+// removes the works of the clusters entering and leaving the decision, the
+// strategy only schedules the works still to apply.
 //
 // `All` applies every selected cluster at once (rollout.go:115-138).
 // `ProgressivePerGroup` rolls out a whole decision group at once and has no
@@ -510,21 +535,21 @@ func (s *Server) rollout(m *model, decisions *aigridv1.PlacementStatus, now time
 	if err != nil {
 		return // rejected on write; cannot happen
 	}
-	gen := m.obj.GetMetadata().GetGeneration()
-	generationAt := m.created
+	tmpl := templateOf(m.obj.GetSpec())
+	templateAt := m.created
 	if len(m.epochs) > 0 {
-		generationAt = m.epochs[len(m.epochs)-1].at
+		templateAt = m.epochs[len(m.epochs)-1].at
 	}
 	var pending []string
 	for _, d := range decisions.GetDecisions() {
 		name := d.GetClusterName()
 		i := slices.IndexFunc(m.works, func(w *work) bool { return w.cluster == name })
-		if i < 0 || m.works[i].generation < gen {
+		if i < 0 || !proto.Equal(m.works[i].spec, tmpl) {
 			pending = append(pending, name)
 		}
 	}
 	floorFor := func(cluster string) time.Time {
-		t := generationAt
+		t := templateAt
 		if since := m.candidateSince[cluster]; since.After(t) {
 			t = since
 		}
@@ -533,7 +558,7 @@ func (s *Server) rollout(m *model, decisions *aigridv1.PlacementStatus, now time
 	if params.strategy != aigridv1.RolloutStrategy_ROLLOUT_STRATEGY_PROGRESSIVE {
 		for _, cluster := range pending {
 			if t := floorFor(cluster); !t.After(now) {
-				s.applyWork(m, cluster, t)
+				s.applyWork(m, tmpl, cluster, t)
 			}
 		}
 		return
@@ -542,7 +567,7 @@ func (s *Server) rollout(m *model, decisions *aigridv1.PlacementStatus, now time
 	maxConcurrency := rolloutSize(params.maxConcurrency, total, total) // rollout.go:183
 	maxFailures := rolloutSize(params.maxFailures, total, 0)           // rollout.go:160
 	current := func() []*work {
-		return slices.DeleteFunc(slices.Clone(m.works), func(w *work) bool { return w.generation != gen })
+		return slices.DeleteFunc(slices.Clone(m.works), func(w *work) bool { return !proto.Equal(w.spec, tmpl) })
 	}
 	// slotsAt counts the taken slots and the failures at instant t.
 	slotsAt := func(t time.Time) (taken, failed int) {
@@ -607,7 +632,7 @@ func (s *Server) rollout(m *model, decisions *aigridv1.PlacementStatus, now time
 				return // MaxFailureBreach: the rollout stops
 			}
 			if taken < maxConcurrency {
-				s.applyWork(m, cluster, t)
+				s.applyWork(m, tmpl, cluster, t)
 				applied, frontier = true, t
 				break
 			}
@@ -664,9 +689,9 @@ func (s *Server) writeRolloutConditions(m *model, decisions *aigridv1.PlacementS
 func (s *Server) summarize(m *model, params rolloutParams, now time.Time) (*aigridv1.RolloutSummary, int) {
 	sum := &aigridv1.RolloutSummary{}
 	succeeded := 0
-	gen := m.obj.GetMetadata().GetGeneration()
+	tmpl := templateOf(m.obj.GetSpec())
 	for _, w := range m.works {
-		if w.generation != gen {
+		if !proto.Equal(w.spec, tmpl) {
 			continue
 		}
 		sum.Total++
@@ -952,8 +977,11 @@ func (s *Server) CreateModel(ctx context.Context, req *aigridv1.CreateModelReque
 // UpdateModel implements Models with the conventions' semantics
 // (backend-conventions.md 5.3): the mask names whole fields, `lock` compares
 // `metadata.resource_version` and fails with Aborted, every write bumps the
-// version and a spec change bumps the generation, which makes the Deployment
-// roll out again and the ManifestWorkReplicaSet re-apply its works.
+// version and a spec change bumps the generation. A change of the template
+// (templateOf: everything but `placement` and `rollout`) also changes the
+// LLMInferenceService, which makes its Deployment roll out again, and the
+// ManifestWorkReplicaSet's template, which re-applies the works; a change of
+// only `placement` or `rollout` leaves both as they are.
 func (s *Server) UpdateModel(ctx context.Context, req *aigridv1.UpdateModelRequest) (*aigridv1.UpdateModelResponse, error) {
 	token, err := s.begin(ctx)
 	if err != nil {
@@ -1040,7 +1068,9 @@ func (s *Server) UpdateModel(ctx context.Context, req *aigridv1.UpdateModelReque
 	}
 	if !proto.Equal(cur.GetSpec(), next.GetSpec()) {
 		next.Metadata.Generation++
-		m.epochs = append(m.epochs, specEpoch{at: now, spec: cloneSpec(next.GetSpec())})
+		if !proto.Equal(templateOf(cur.GetSpec()), templateOf(next.GetSpec())) {
+			m.epochs = append(m.epochs, specEpoch{at: now, spec: cloneSpec(next.GetSpec())})
+		}
 		if (cur.GetSpec().GetPlacement() == nil) != (next.GetSpec().GetPlacement() == nil) {
 			// The hub deployment is replaced by the fan-out, or the other way
 			// round: whatever now serves the model is created at this moment.
