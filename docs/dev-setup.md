@@ -21,10 +21,12 @@ make install     # once: frontend dependencies
 make dev-fake    # fake backend :9090 and hub :9091, BFF :8080, frontend :9000
 ```
 
-Open http://127.0.0.1:9000. You're signed in as `dev-user`, a provider admin; set
-`AUTH_TOKEN=viewer-token AUTH_USER=viewer` to see the console as a user who isn't one. The fake backend serves
-the backend's gRPC services from `mock/fixtures/`. For what it simulates, the fixture files, and
-the other tokens, see [mock/README.md](../mock/README.md).
+No `oc login` is needed. Open http://127.0.0.1:9000. You're signed in as `dev-user`, a provider
+admin; set `AUTH_TOKEN=viewer-token AUTH_USER=viewer` to see the console as a user who isn't one.
+The fake backend serves the backend's gRPC services from `mock/fixtures/` and answers the BFF's
+access review like a hub would. For what it simulates and how faithful it is, the fixture files,
+and the other tokens, see [mock/README.md](../mock/README.md). Edit the fixtures and restart to
+change the fleet.
 
 ## Run against a real cluster
 
