@@ -8,6 +8,8 @@ type ConsoleConfig struct {
 	MapTileURL   string `json:"mapTileUrl"`
 	BillingURL   string `json:"billingUrl"`
 	Version      string `json:"version"`
+	// FakeBackend tells the UI to show its fake-backend banner.
+	FakeBackend bool `json:"fakeBackend"`
 }
 
 // getConfig answers GET /api/v1/config.
@@ -17,5 +19,6 @@ func (a *App) getConfig(w http.ResponseWriter, _ *http.Request) {
 		MapTileURL:   a.cfg.MapTileURL,
 		BillingURL:   a.cfg.BillingURL,
 		Version:      Version,
+		FakeBackend:  a.cfg.FakeBackend,
 	})
 }

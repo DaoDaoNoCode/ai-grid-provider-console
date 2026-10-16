@@ -69,6 +69,10 @@ type Config struct {
 	// BillingURL is an external billing UI link; empty hides the menu item.
 	BillingURL string
 
+	// FakeBackend says the backend is the fake from mock/fixtures, so the UI
+	// shows a banner.
+	FakeBackend bool
+
 	LogLevel slog.Level
 }
 
@@ -100,6 +104,7 @@ func Parse(args []string, lookupEnv func(string) (string, bool)) (Config, error)
 	fs.StringVar(&cfg.GridEndpoint, "grid-endpoint", env.str("GRID_CONSUMER_URL", ""), "Consumer-facing AI Grid inference URL")
 	fs.StringVar(&cfg.MapTileURL, "map-tile-url", env.str("MAP_TILE_URL", ""), "Tile server URL template for the fleet map")
 	fs.StringVar(&cfg.BillingURL, "billing-url", env.str("BILLING_URL", ""), "External billing UI URL")
+	fs.BoolVar(&cfg.FakeBackend, "fake-backend", env.boolean("FAKE_BACKEND", false), "The backend is the fake from mock/fixtures; the UI shows a banner")
 	fs.StringVar(&logLevel, "log-level", env.str("LOG_LEVEL", "info"), "Log level: debug, info, warn, error")
 
 	if err := fs.Parse(args); err != nil {

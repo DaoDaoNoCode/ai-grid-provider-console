@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -344,6 +345,9 @@ func TestSPAHandler(t *testing.T) {
 	}
 	if rec := get("/clusters/local-cluster"); rec.Code != 200 || rec.Body.String() != "<html>index</html>" {
 		t.Fatalf("client route -> %d %q", rec.Code, rec.Body.String())
+	}
+	if rec := get("/subscriptions/view/engineering"); rec.Code != 200 || rec.Body.String() != "<html>index</html>" {
+		t.Fatalf("deep client route -> %d %q", rec.Code, rec.Body.String())
 	}
 	if rec := get("/assets/app-0123abcdef.js"); rec.Code != 200 || rec.Header().Get("Cache-Control") != "public, max-age=31536000, immutable" {
 		t.Fatalf("hashed asset -> %d %q", rec.Code, rec.Header().Get("Cache-Control"))
@@ -933,5 +937,66 @@ func TestListMeta(t *testing.T) {
 		if err != nil || string(b) != tc.want {
 			t.Errorf("%s: %s, want %s (%v)", tc.name, b, tc.want, err)
 		}
+	}
+}
+
+func TestFieldErrorsReachTheBody(t *testing.T) {
+	st := status.New(codes.InvalidArgument, "The organization is invalid.")
+	st, _ = st.WithDetails(&errdetails.BadRequest{FieldViolations: []*errdetails.BadRequest_FieldViolation{
+		{Field: "identityProvider.config.issuer", Description: "Enter a valid HTTP or HTTPS URL."},
+	}})
+	fake := &backendtest.Fake{Err: st.Err()}
+	app := newTestApp(t, testConfig(t), fake)
+	rec := serve(app, asUser(http.MethodGet, "/api/v1/tenants"))
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status %d", rec.Code)
+	}
+	body := decodeError(t, rec)
+	if body.Error.FieldErrors["identityProvider.config.issuer"] != "Enter a valid HTTP or HTTPS URL." {
+		t.Fatalf("fieldErrors %+v", body.Error.FieldErrors)
+	}
+}
+
+// Field violations on any status other than InvalidArgument stay in the log;
+// the browser gets the mapped message only.
+func TestFieldErrorsOnlyForInvalidArgument(t *testing.T) {
+	for _, tc := range []struct {
+		code codes.Code
+		want int
+	}{
+		{codes.Internal, http.StatusBadGateway},
+		{codes.FailedPrecondition, http.StatusPreconditionFailed},
+		{codes.NotFound, http.StatusNotFound},
+	} {
+		t.Run(tc.code.String(), func(t *testing.T) {
+			st, err := status.New(tc.code, "backend detail").WithDetails(&errdetails.BadRequest{FieldViolations: []*errdetails.BadRequest_FieldViolation{
+				{Field: "internal.secret", Description: "must not leak"},
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			app := newTestApp(t, testConfig(t), &backendtest.Fake{Err: st.Err()})
+			rec := serve(app, asUser(http.MethodGet, "/api/v1/tenants"))
+			if rec.Code != tc.want {
+				t.Fatalf("status %d, want %d", rec.Code, tc.want)
+			}
+			if got := decodeError(t, rec).Error.FieldErrors; got != nil {
+				t.Fatalf("fieldErrors %+v, want none", got)
+			}
+			if strings.Contains(rec.Body.String(), "fieldErrors") || strings.Contains(rec.Body.String(), "must not leak") {
+				t.Fatalf("body leaks field violations: %s", rec.Body)
+			}
+		})
+	}
+}
+
+func TestConfigReportsFakeBackend(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.FakeBackend = true
+	app := newTestApp(t, cfg, &backendtest.Fake{})
+	var got ConsoleConfig
+	decodeData(t, serve(app, asUser(http.MethodGet, "/api/v1/config")), &got)
+	if !got.FakeBackend {
+		t.Fatal("fakeBackend not reported")
 	}
 }
