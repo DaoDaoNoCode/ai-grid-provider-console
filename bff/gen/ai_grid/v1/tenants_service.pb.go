@@ -398,7 +398,8 @@ type UpdateTenantRequest struct {
 	// caller last read: the update fails with Aborted unless it equals the
 	// stored `resource_version` (the same check `lock` makes on
 	// UpdateManagedCluster and UpdateModel; empty skips it). It is never
-	// written: every successful update bumps the stored version.
+	// written: an update that changes the tenant bumps the stored version, and
+	// one that changes nothing keeps it.
 	Object *Tenant `protobuf:"bytes,1,opt,name=object,proto3" json:"object,omitempty"`
 	// Supported paths: `name`, `alias`, `domains`, `enabled`, `description`,
 	// `attributes`, `domain_details`. `alias` writes nothing, because the

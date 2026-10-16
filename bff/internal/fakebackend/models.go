@@ -868,7 +868,7 @@ func (s *Server) ListModels(ctx context.Context, req *aigridv1.ListModelsRequest
 	// every time.
 	all := make([]*aigridv1.Model, 0, len(views))
 	for _, v := range views {
-		ok, err := filter.Match(v, modelKey(v.GetMetadata().GetNamespace(), v.GetName()), s.wallTime(now))
+		ok, err := filter.Match(ctx, v, modelKey(v.GetMetadata().GetNamespace(), v.GetName()), s.wallTime(now))
 		if err != nil {
 			return nil, err
 		}

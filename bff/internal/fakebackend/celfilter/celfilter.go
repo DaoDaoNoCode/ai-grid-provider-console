@@ -21,6 +21,7 @@
 package celfilter
 
 import (
+	"context"
 	"strings"
 	"sync"
 	"time"
@@ -38,6 +39,11 @@ import (
 // "roughly 0.1 second"), so a filter that would loop over a large
 // comprehension stops with InvalidArgument instead of holding the store.
 const CostLimit = 1_000_000
+
+// interruptEvery is how many comprehension iterations cel-go runs between
+// checks of the request's context (cel.InterruptCheckFrequency), so a
+// cancelled or timed-out List stops inside a long evaluation too.
+const interruptEvery = 100
 
 // Filter is a compiled filter. A nil *Filter (from an empty expression)
 // matches every object.
@@ -94,7 +100,7 @@ func Compile(src string, msg proto.Message) (*Filter, error) {
 	if out := ast.OutputType(); !out.IsExactType(cel.BoolType) && !out.IsExactType(cel.DynType) {
 		return nil, status.Errorf(codes.InvalidArgument, "filter %s must evaluate to a bool, not %s", src, out)
 	}
-	prg, err := e.Program(ast, cel.CostLimit(CostLimit))
+	prg, err := e.Program(ast, cel.CostLimit(CostLimit), cel.InterruptCheckFrequency(interruptEvery))
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "filter %s is not a valid CEL expression: %v", src, err)
 	}
@@ -106,13 +112,24 @@ func Compile(src string, msg proto.Message) (*Filter, error) {
 // rule out) is InvalidArgument naming the filter, the object (id, as the
 // List answer would identify it) and cel-go's error: CEL has no "false on
 // error", so one object that breaks the expression fails the whole list,
-// which is what tells the caller to guard the term.
-func (f *Filter) Match(obj proto.Message, id string, now time.Time) (bool, error) {
+// which is what tells the caller to guard the term. The evaluation stops when
+// ctx ends (the caller went away or its deadline passed), checked before each
+// object and inside comprehensions; that is the context's own gRPC code
+// (Canceled, DeadlineExceeded), not InvalidArgument, because the filter is
+// not at fault. Callers evaluate under the store lock, so this keeps an
+// abandoned List from holding it.
+func (f *Filter) Match(ctx context.Context, obj proto.Message, id string, now time.Time) (bool, error) {
 	if f == nil {
 		return true, nil
 	}
-	out, _, err := f.prg.Eval(map[string]any{"this": obj, "now": now})
+	if err := ctx.Err(); err != nil {
+		return false, status.FromContextError(err).Err()
+	}
+	out, _, err := f.prg.ContextEval(ctx, map[string]any{"this": obj, "now": now})
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return false, status.FromContextError(ctxErr).Err()
+		}
 		return false, status.Errorf(codes.InvalidArgument, "filter %s failed on '%s': %v", f.src, id, err)
 	}
 	b, ok := out.Value().(bool)

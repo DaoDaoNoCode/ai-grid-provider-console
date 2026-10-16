@@ -218,7 +218,7 @@ func (f *Fake) ListTenants(ctx context.Context, req *aigridv1.ListTenantsRequest
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].GetName() < sorted[j].GetName() })
 	var all []*aigridv1.Tenant
 	for _, t := range sorted {
-		ok, err := filter.Match(t, t.GetId(), time.Now())
+		ok, err := filter.Match(ctx, t, t.GetId(), time.Now())
 		if err != nil {
 			return nil, err
 		}
@@ -423,7 +423,7 @@ func (f *Fake) ListModels(ctx context.Context, req *aigridv1.ListModelsRequest) 
 	})
 	var all []*aigridv1.Model
 	for _, m := range sorted {
-		ok, err := filter.Match(m, m.GetMetadata().GetNamespace()+"/"+m.GetName(), time.Now())
+		ok, err := filter.Match(ctx, m, m.GetMetadata().GetNamespace()+"/"+m.GetName(), time.Now())
 		if err != nil {
 			return nil, err
 		}

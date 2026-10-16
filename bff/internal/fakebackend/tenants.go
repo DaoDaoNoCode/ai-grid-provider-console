@@ -136,7 +136,7 @@ func (s *Server) ListTenants(ctx context.Context, req *aigridv1.ListTenantsReque
 	now := s.clock()
 	all := make([]*aigridv1.Tenant, 0, len(sorted))
 	for _, t := range sorted {
-		ok, err := filter.Match(t, t.GetId(), now)
+		ok, err := filter.Match(ctx, t, t.GetId(), now)
 		if err != nil {
 			return nil, err
 		}
