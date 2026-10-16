@@ -1,0 +1,18 @@
+{
+  "request": "PATCH /api/v1/clusters/site-paris-1",
+  "requestHeaders": {
+    "If-Match": "\"48811203\""
+  },
+  "requestBody": {
+    "location": "rome"
+  },
+  "token": "dev-token",
+  "user": "dev-user",
+  "status": 409,
+  "body": {
+    "error": {
+      "code": "409",
+      "message": "object with identifier 'site-paris-1' has resource version 48811204, the request carries \"48811203\"; fetch it again and retry"
+    }
+  }
+}

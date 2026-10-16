@@ -3,6 +3,9 @@
   "token": "dev-token",
   "user": "dev-user",
   "status": 200,
+  "responseHeaders": {
+    "ETag": "\"48812791\""
+  },
   "body": {
     "data": {
       "name": "mistral-7b-instruct",
@@ -87,8 +90,7 @@
           "applied": 1,
           "available": 0,
           "progressing": 0,
-          "degraded": 0,
-          "updated": 1
+          "degraded": 0
         },
         "rolledOut": false,
         "applied": false,
@@ -116,7 +118,7 @@
         "works": [
           {
             "cluster": "site-frankfurt-1",
-            "workName": "model-mistral-7b-instruct-g0002",
+            "workName": "model-mistral-7b-instructg0002",
             "applied": "True",
             "feedback": {},
             "conditions": [

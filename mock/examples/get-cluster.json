@@ -3,6 +3,9 @@
   "token": "dev-token",
   "user": "dev-user",
   "status": 200,
+  "responseHeaders": {
+    "ETag": "\"48811204\""
+  },
   "body": {
     "data": {
       "name": "site-paris-1",

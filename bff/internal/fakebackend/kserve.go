@@ -48,14 +48,16 @@ const (
 	// loop goes on and returns at the Available condition, so Available=False
 	// ends at MinimumReplicasUnavailable with the Deployment's message whatever
 	// Progressing says. Without an Available condition the loop falls through
-	// to :441, which overwrites it with Progressing and an empty message; the
-	// stored status is the final one (knative:reconciler/reconcile_common.go:
-	// 93-111), so ProgressDeadlineExceeded never persists on MainWorkloadReady
-	// in either case. The deployment controller writes Available on every
+	// to :442, which overwrites it with Progressing and an empty message
+	// (knative:apis/condition_set.go:187-209 replaces a condition of the same
+	// type). The reconciler works on a copy and writes the status once, after
+	// the whole pass (kserve:controller.go:246-262; reconcile_common.go:93-111
+	// only grooms lastTransitionTime), so ProgressDeadlineExceeded never
+	// persists on MainWorkloadReady in either case. The deployment controller writes Available on every
 	// status sync (k8s.io/kubernetes@v1.35.8 pkg/controller/deployment/
 	// sync.go:525-531), so a workload that never becomes available keeps
 	// MinimumReplicasUnavailable for good. No Deployment condition yet gives
-	// Progressing with an empty message (:441).
+	// Progressing with an empty message (:442).
 	ReasonMinimumReplicasUnavailable  = "MinimumReplicasUnavailable"
 	MessageMinimumReplicasUnavailable = "Deployment does not have minimum availability."
 	ReasonProgressing                 = "Progressing"

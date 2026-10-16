@@ -63,10 +63,11 @@ Owner: Yuval Turgeman. Everything that touches the hub, Keycloak or metrics.
 
 Owner: console team. A handler per RPC, nothing else.
 
-1. As RPCs land in the backend, sync the vendored proto (`hack/sync-upstream-proto.sh`),
-   reconcile the draft in `mock/proto`, and map each one in `internal/api`: `UpdateManagedCluster` to `PATCH /clusters/{name}`, `GetOverview` to
-   `GET /grid/overview`, `GetCurrentUser` into `/user`, models, catalog, subscriptions,
-   tenant mutations. Keep the error table in `bff-api.md` true.
+1. As RPCs land in the backend, sync the vendored proto (`hack/sync-upstream-proto.sh`) and
+   reconcile the draft in `mock/proto` (cluster PATCH, tenants, models and capabilities are
+   already mapped against it), and map the rest in `internal/api`: `GetOverview` to
+   `GET /grid/overview`, `GetCurrentUser` into `/user`, catalog, subscriptions. Keep the
+   error table in `bff-api.md` true.
 2. When the backend moves to its own Deployment: `BACKEND_ADDRESS` to its Service,
    `BACKEND_CA_FILE` to its serving CA, a NetworkPolicy, and drop the backend container and
    its ClusterRole from `manifests/`.

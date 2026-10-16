@@ -71,9 +71,13 @@ Failure modes:
   <apps-ns>]`); nothing else is written.
 - An image or model name containing `oom` or `fail`: the pods never become available, and KServe
   ends on the Deployment's `Available` condition, so the model keeps
-  `MinimumReplicasUnavailable` for good (it never shows `ProgressDeadlineExceeded`; without an
-  `Available` condition KServe would write `Progressing`, which the deployment controller does
-  not let happen). `url` and `addresses` are present, `readyReplicas` stays 0. On a hub the
+  `MinimumReplicasUnavailable` for good. It never shows `ProgressDeadlineExceeded`: KServe marks
+  it on the way through the Deployment's conditions and then overwrites it, with the
+  `Available` verdict or, without an `Available` condition, with `Progressing` and an empty
+  message (`workload_single_node.go:418-443`, :442), before its one status write
+  (`controller.go:246-262`); and the deployment controller writes `Available` on every status
+  sync (Kubernetes `pkg/controller/deployment/sync.go:525-531`, v1.35.8), so only a Deployment
+  without any status yet reads `Progressing`. `url` and `addresses` are present, `readyReplicas` stays 0. On a hub the
   phase is FAILED/`MinimumReplicasUnavailable`; on a spoke see the rollout below.
 - A referenced Gateway that does not exist (anything but
   `openshift-ingress/{openshift-ai-inference,maas-default-gateway}`, the product-default names):

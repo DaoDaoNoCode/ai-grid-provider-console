@@ -65,8 +65,9 @@
           },
           {
             "type": "Deleting",
-            "status": "True",
+            "status": "False",
             "reason": "ResourceRemaining",
+            "message": "The resource managedclusteraddons is remaning, the remaining count is 7, the finalizer pending count is 1",
             "lastTransitionTime": "2026-10-15T12:00:00Z"
           }
         ],
@@ -115,6 +116,7 @@
           "hypershift-addon": "available",
           "managed-serviceaccount": "available",
           "multicluster-observability-addon": "available",
+          "submariner": "available",
           "work-manager": "available"
         },
         "conditions": [
@@ -167,6 +169,7 @@
           "feature.open-cluster-management.io/addon-hypershift-addon": "available",
           "feature.open-cluster-management.io/addon-managed-serviceaccount": "available",
           "feature.open-cluster-management.io/addon-multicluster-observability-addon": "available",
+          "feature.open-cluster-management.io/addon-submariner": "available",
           "feature.open-cluster-management.io/addon-work-manager": "available",
           "local-cluster": "true",
           "name": "local-cluster",
@@ -202,13 +205,13 @@
         "latitude": 39.0438,
         "longitude": -77.4874,
         "addons": {
-          "application-manager": "unhealthy",
-          "cert-policy-controller": "unhealthy",
-          "cluster-proxy": "unhealthy",
-          "config-policy-controller": "unhealthy",
-          "governance-policy-framework": "unhealthy",
-          "managed-serviceaccount": "unhealthy",
-          "work-manager": "unhealthy"
+          "application-manager": "available",
+          "cert-policy-controller": "available",
+          "cluster-proxy": "available",
+          "config-policy-controller": "available",
+          "governance-policy-framework": "available",
+          "managed-serviceaccount": "available",
+          "work-manager": "available"
         },
         "conditions": [
           {
@@ -256,13 +259,13 @@
           "cloud": "Amazon",
           "cluster.open-cluster-management.io/clusterset": "default",
           "clusterID": "9e3f5b21-7d8a-4c93-b0e4-56789abcdef0",
-          "feature.open-cluster-management.io/addon-application-manager": "unhealthy",
-          "feature.open-cluster-management.io/addon-cert-policy-controller": "unhealthy",
-          "feature.open-cluster-management.io/addon-cluster-proxy": "unhealthy",
-          "feature.open-cluster-management.io/addon-config-policy-controller": "unhealthy",
-          "feature.open-cluster-management.io/addon-governance-policy-framework": "unhealthy",
-          "feature.open-cluster-management.io/addon-managed-serviceaccount": "unhealthy",
-          "feature.open-cluster-management.io/addon-work-manager": "unhealthy",
+          "feature.open-cluster-management.io/addon-application-manager": "available",
+          "feature.open-cluster-management.io/addon-cert-policy-controller": "available",
+          "feature.open-cluster-management.io/addon-cluster-proxy": "available",
+          "feature.open-cluster-management.io/addon-config-policy-controller": "available",
+          "feature.open-cluster-management.io/addon-governance-policy-framework": "available",
+          "feature.open-cluster-management.io/addon-managed-serviceaccount": "available",
+          "feature.open-cluster-management.io/addon-work-manager": "available",
           "location": "ashburn",
           "name": "site-ashburn-1",
           "openshiftVersion": "4.22.15",
@@ -364,7 +367,7 @@
         "product": "OpenShift",
         "gpuCapacity": 8,
         "addons": {
-          "application-manager": "available",
+          "application-manager": "unhealthy",
           "cert-policy-controller": "available",
           "cluster-proxy": "available",
           "config-policy-controller": "available",
@@ -414,7 +417,7 @@
           "cloud": "BareMetal",
           "cluster.open-cluster-management.io/clusterset": "default",
           "clusterID": "c41e8a77-3b5d-4f60-9c12-345678abcdef",
-          "feature.open-cluster-management.io/addon-application-manager": "available",
+          "feature.open-cluster-management.io/addon-application-manager": "unhealthy",
           "feature.open-cluster-management.io/addon-cert-policy-controller": "available",
           "feature.open-cluster-management.io/addon-cluster-proxy": "available",
           "feature.open-cluster-management.io/addon-config-policy-controller": "available",

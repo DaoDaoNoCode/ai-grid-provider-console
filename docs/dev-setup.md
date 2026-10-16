@@ -24,9 +24,11 @@ make dev-fake    # fake backend :9090 and hub :9091, BFF :8080, frontend :9000
 No `oc login` is needed. Open http://127.0.0.1:9000. You're signed in as `dev-user`, a provider
 admin; set `AUTH_TOKEN=viewer-token AUTH_USER=viewer` to see the console as a user who isn't one.
 The fake backend serves the backend's gRPC services from `mock/fixtures/` and answers the BFF's
-access review like a hub would. For what it simulates and how faithful it is, the fixture files,
-and the other tokens, see [mock/README.md](../mock/README.md). Edit the fixtures and restart to
-change the fleet.
+access review like a hub would. For the endpoints, the tokens, the seeded states, the timed
+scenarios and the errors you can provoke, see [mock/AGENTS.md](../mock/AGENTS.md); for every
+fixture file and field, [mock/fixtures/README.md](../mock/fixtures/README.md);
+[mock/README.md](../mock/README.md) explains why the console runs against a fake. Edit the
+fixtures and restart to change the fleet.
 
 ## Run against a real cluster
 
@@ -107,6 +109,12 @@ make -C bff generate      # buf generate; buf and the protoc plugins run through
 make -C bff lint-proto    # buf lint
 make -C bff check-generated
 ```
+
+`generate` and `check-generated` run with `GOTOOLCHAIN` set to the version in `bff/go.mod`,
+which is what CI installs, because the generated comments depend on the Go release that builds
+`protoc-gen-go`; the first run downloads that toolchain if it is not cached. After a change to
+the BFF's JSON or the fixtures, `make -C bff golden` rewrites the golden responses in
+`mock/examples/` (see `mock/AGENTS.md`).
 
 `hack/sync-upstream-proto.sh <ref>` refreshes the vendored copy of the backend's real proto
 (it fetches into a temporary directory and only then replaces `mock/proto/upstream`, so a

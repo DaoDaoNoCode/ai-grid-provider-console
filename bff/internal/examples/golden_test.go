@@ -48,12 +48,14 @@ var (
 	expired = caller{"expired-token", "expired"}
 )
 
-// example is one golden file: a request and the BFF's answer.
+// example is one golden file: a request and the BFF's answer. A body is
+// sent as application/json unless header sets another Content-Type.
 type example struct {
 	file   string
 	method string
 	path   string
 	body   string
+	header map[string]string
 	as     caller
 }
 
@@ -70,17 +72,26 @@ var examples = []example{
 	{file: "error-401-expired-token.json", method: http.MethodGet, path: "/api/v1/user", as: expired},
 	{file: "error-403-viewer-patch.json", method: http.MethodPatch, path: "/api/v1/clusters/site-frankfurt-1", body: `{"aiGridEnabled": true}`, as: viewer},
 	{file: "error-404-unknown-cluster.json", method: http.MethodGet, path: "/api/v1/clusters/site-unknown-1", as: admin},
+	{file: "error-409-stale-if-match.json", method: http.MethodPatch, path: "/api/v1/clusters/site-paris-1", body: `{"location": "rome"}`, header: map[string]string{"If-Match": `"48811203"`}, as: admin},
+	{file: "error-415-not-json.json", method: http.MethodPost, path: "/api/v1/tenants", body: `{"name": "from-a-form"}`, header: map[string]string{"Content-Type": "text/plain"}, as: admin},
 }
 
-// golden is the file format: the request line, who sent it, the status code
-// and the response body exactly as the BFF encoded it (re-indented).
+// recordedHeaders are the response headers a golden file keeps.
+var recordedHeaders = []string{"ETag", "Location"}
+
+// golden is the file format: the request line, its headers beyond the
+// identity ones, who sent it, the status code, the ETag and Location
+// response headers when set, and the response body exactly as the BFF
+// encoded it (re-indented).
 type golden struct {
-	Request     string          `json:"request"`
-	RequestBody json.RawMessage `json:"requestBody,omitempty"`
-	Token       string          `json:"token"`
-	User        string          `json:"user"`
-	Status      int             `json:"status"`
-	Body        json.RawMessage `json:"body,omitempty"`
+	Request         string            `json:"request"`
+	RequestHeaders  map[string]string `json:"requestHeaders,omitempty"`
+	RequestBody     json.RawMessage   `json:"requestBody,omitempty"`
+	Token           string            `json:"token"`
+	User            string            `json:"user"`
+	Status          int               `json:"status"`
+	ResponseHeaders map[string]string `json:"responseHeaders,omitempty"`
+	Body            json.RawMessage   `json:"body,omitempty"`
 }
 
 func TestGoldenResponses(t *testing.T) {
@@ -180,14 +191,25 @@ func render(t *testing.T, app *api.App, ex example) []byte {
 	if ex.body != "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	for k, v := range ex.header {
+		req.Header.Set(k, v)
+	}
 	req.Header.Set(config.DefaultAuthTokenHeader, ex.as.token)
 	req.Header.Set(config.DefaultAuthUserHeader, ex.as.user)
 	rec := httptest.NewRecorder()
 	app.Handler().ServeHTTP(rec, req)
 
-	g := golden{Request: ex.method + " " + ex.path, Token: ex.as.token, User: ex.as.user, Status: rec.Code}
+	g := golden{Request: ex.method + " " + ex.path, RequestHeaders: ex.header, Token: ex.as.token, User: ex.as.user, Status: rec.Code}
 	if ex.body != "" {
 		g.RequestBody = json.RawMessage(ex.body)
+	}
+	for _, h := range recordedHeaders {
+		if v := rec.Header().Get(h); v != "" {
+			if g.ResponseHeaders == nil {
+				g.ResponseHeaders = map[string]string{}
+			}
+			g.ResponseHeaders[h] = v
+		}
 	}
 	if rec.Body.Len() > 0 {
 		if !json.Valid(rec.Body.Bytes()) {

@@ -81,10 +81,9 @@
             "applied": 0,
             "available": 0,
             "progressing": 0,
-            "degraded": 0,
-            "updated": 0
+            "degraded": 0
           },
-          "rolledOut": false,
+          "rolledOut": true,
           "applied": false,
           "reason": "PlacementDecisionEmpty",
           "conditions": [
@@ -96,8 +95,8 @@
             },
             {
               "type": "PlacementRolledOut",
-              "status": "False",
-              "reason": "Progressing",
+              "status": "True",
+              "reason": "Complete",
               "lastTransitionTime": "2026-10-15T12:00:00Z"
             },
             {
@@ -191,8 +190,7 @@
             "applied": 1,
             "available": 1,
             "progressing": 0,
-            "degraded": 0,
-            "updated": 1
+            "degraded": 0
           },
           "rolledOut": true,
           "applied": true,
@@ -220,7 +218,7 @@
           "works": [
             {
               "cluster": "site-paris-1",
-              "workName": "model-granite-8b-instruct-g0001",
+              "workName": "model-granite-8b-instructg0001",
               "applied": "True",
               "available": "True",
               "progressing": "False",
@@ -416,8 +414,7 @@
             "applied": 1,
             "available": 0,
             "progressing": 0,
-            "degraded": 0,
-            "updated": 1
+            "degraded": 0
           },
           "rolledOut": false,
           "applied": false,
@@ -445,7 +442,7 @@
           "works": [
             {
               "cluster": "site-frankfurt-1",
-              "workName": "model-mistral-7b-instruct-g0002",
+              "workName": "model-mistral-7b-instructg0002",
               "applied": "True",
               "feedback": {},
               "conditions": [
@@ -508,6 +505,29 @@
         "url": "https://openshift-ai-inference.apps.hub.example.com/ai-grid-models/tiny-llm",
         "addresses": [
           {
+            "name": "gateway-internal-model-routing",
+            "url": "https://openshift-ai-inference-openshift-default.openshift-ingress.svc.cluster.local/",
+            "models": [
+              "publishers/ai-grid-models/models/example-org/tiny-llm"
+            ]
+          },
+          {
+            "name": "gateway-internal",
+            "url": "https://openshift-ai-inference-openshift-default.openshift-ingress.svc.cluster.local/ai-grid-models/tiny-llm",
+            "models": [
+              "publishers/ai-grid-models/models/example-org/tiny-llm",
+              "example-org/tiny-llm"
+            ]
+          },
+          {
+            "name": "gateway-internal",
+            "url": "https://openshift-ai-inference-openshift-default.openshift-ingress.svc.cluster.local/publishers/ai-grid-models/models/example-org/tiny-llm",
+            "models": [
+              "publishers/ai-grid-models/models/example-org/tiny-llm",
+              "example-org/tiny-llm"
+            ]
+          },
+          {
             "name": "gateway-external-model-routing",
             "url": "https://openshift-ai-inference.apps.hub.example.com/",
             "models": [
@@ -525,29 +545,6 @@
           {
             "name": "gateway-external",
             "url": "https://openshift-ai-inference.apps.hub.example.com/publishers/ai-grid-models/models/example-org/tiny-llm",
-            "models": [
-              "publishers/ai-grid-models/models/example-org/tiny-llm",
-              "example-org/tiny-llm"
-            ]
-          },
-          {
-            "name": "gateway-internal-model-routing",
-            "url": "https://openshift-ai-inference-openshift-ai-inference.openshift-ingress.svc.cluster.local/",
-            "models": [
-              "publishers/ai-grid-models/models/example-org/tiny-llm"
-            ]
-          },
-          {
-            "name": "gateway-internal",
-            "url": "https://openshift-ai-inference-openshift-ai-inference.openshift-ingress.svc.cluster.local/ai-grid-models/tiny-llm",
-            "models": [
-              "publishers/ai-grid-models/models/example-org/tiny-llm",
-              "example-org/tiny-llm"
-            ]
-          },
-          {
-            "name": "gateway-internal",
-            "url": "https://openshift-ai-inference-openshift-ai-inference.openshift-ingress.svc.cluster.local/publishers/ai-grid-models/models/example-org/tiny-llm",
             "models": [
               "publishers/ai-grid-models/models/example-org/tiny-llm",
               "example-org/tiny-llm"

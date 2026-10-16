@@ -13,8 +13,9 @@ The backend's proto has three RPCs. The console needs more than that, so it carr
 **draft** of the next proto in `mock/proto/ai_grid/v1/`, split by type as the style guide in
 `mock/research/backend-conventions.md` section 5 says (`ai_grid.proto`, `condition_type.proto`,
 `metadata_type.proto`, `managed_cluster_type.proto`, `managed_clusters_service.proto`,
-`tenant_type.proto`, `tenants_service.proto`, and the placeholder services `grid_service.proto`,
-`models_service.proto`, `catalog_items_service.proto`, `subscriptions_service.proto`). It is the
+`tenant_type.proto`, `tenants_service.proto`, `model_type.proto`, `models_service.proto`, and the
+placeholder services `grid_service.proto`, `catalog_items_service.proto`,
+`subscriptions_service.proto`). It is the
 console's **proposal** to the backend team, nothing more: the shapes are the ones drafted in
 section 6 of that report, every file says so in its header, and the `go_package` is the
 console's own (`bff/gen/ai_grid/v1`), not the backend's.
@@ -48,7 +49,12 @@ What keeps it honest:
   any `Unimplemented` answer except from a method in `intentionallyUnimplemented`.
 - **Generated code is committed and checked.** `bff/gen/ai_grid/v1` is produced by
   `make -C bff generate` (`buf generate` with `protoc-gen-go` and `protoc-gen-go-grpc` at
-  pinned versions, all run through `go run`, so nothing is installed); `make -C bff lint-proto`
+  pinned versions, all run through `go run`, so nothing is installed). Both `generate` and
+  `check-generated` run under `GOTOOLCHAIN` set to the `bff/go.mod` version, the one CI's
+  `setup-go` installs: protoc-gen-go formats its output with the `go/printer` of the Go that
+  builds it, and Go 1.26 rewrites an indented line in a doc comment into a code block where
+  1.27 does not, so a generation with another local Go could differ from CI's. (The draft
+  avoids indented comment lines for the same reason.) `make -C bff lint-proto`
   runs `buf lint` (STANDARD minus `SERVICE_SUFFIX`); `make -C bff check-generated` generates
   into a temporary directory and `diff -r`s it against `gen/`, so CI fails on a stale file,
   on a missing one and on one the proto no longer produces, not only on uncommitted edits.
@@ -86,10 +92,17 @@ the `Models` service wraps one Placement and one MWRS per model (`mock/research/
 "Proposal"). `AiGrid` gained `GetHubCapabilities` (`manifest_work_replica_set_enabled`,
 `observability_installed`, `acm_version`).
 
-The Tenants area removed two drafted fields instead of adding: `Tenant.version` (field 8)
-and `UpdateTenantRequest.lock` (field 3) are `reserved`, because Keycloak Organizations have
-no server-side version, etag or `Last-Modified` and a Keycloak-backed backend could never
-honour them (`mock/research/keycloak.md` 8.1). It added `TenantDomain` and
+The Tenants area first removed two drafted fields: `Tenant.version` (field 8) and
+`UpdateTenantRequest.lock` (field 3) are `reserved`, because Keycloak Organizations have no
+server-side version, etag or `Last-Modified` (`mock/research/keycloak.md` 8.1). The review of
+the fake server PR brought a version back under a new name and number, kept by the backend
+itself in an organization attribute (`mock/areas/tenants.md`, "Version"):
+`Tenant.resource_version = 10`, checked when `UpdateTenantRequest.object.resource_version` or
+the new `DeleteTenantRequest.resource_version = 2` is set (no flag; `lock` stays reserved), and
+`Aborted` when stale. `DeleteModelRequest` gained the same precondition (`resource_version =
+3`, a Kubernetes delete precondition), and `ListTenantsResponse.total` and
+`ListModelsResponse.total` became `optional`, so a backend that ignores paging and filters
+(the shipped one) is visible by the missing count. The Tenants area also added `TenantDomain` and
 `repeated TenantDomain domain_details = 9` (`name`, `verified`, `identity_provider_alias`,
 `auto_redirect`, the fields Keycloak 26.8 keeps per domain), kept `domains` as the list of
 names, and narrowed `ListTenantsRequest.filter` to the one CEL form the backend can push down
