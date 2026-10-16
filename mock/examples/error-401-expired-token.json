@@ -1,0 +1,12 @@
+{
+  "request": "GET /api/v1/user",
+  "token": "expired-token",
+  "user": "expired",
+  "status": 401,
+  "body": {
+    "error": {
+      "code": "401",
+      "message": "the hub rejected the credentials; log in again"
+    }
+  }
+}

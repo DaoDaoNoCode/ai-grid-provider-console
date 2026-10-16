@@ -1,0 +1,14 @@
+{
+  "request": "GET /api/v1/config",
+  "token": "dev-token",
+  "user": "dev-user",
+  "status": 200,
+  "body": {
+    "data": {
+      "gridEndpoint": "",
+      "mapTileUrl": "",
+      "billingUrl": "",
+      "version": "dev"
+    }
+  }
+}

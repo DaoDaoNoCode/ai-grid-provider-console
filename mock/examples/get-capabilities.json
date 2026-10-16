@@ -1,0 +1,13 @@
+{
+  "request": "GET /api/v1/capabilities",
+  "token": "dev-token",
+  "user": "dev-user",
+  "status": 200,
+  "body": {
+    "data": {
+      "manifestWorkReplicaSetEnabled": true,
+      "observabilityInstalled": false,
+      "acmVersion": "2.17.3"
+    }
+  }
+}

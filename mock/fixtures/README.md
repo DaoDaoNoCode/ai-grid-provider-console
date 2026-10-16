@@ -24,6 +24,9 @@ each cluster derives the state it was seeded for, that the tenants are a realm K
 accept and cover the shapes listed above, and that every model uses only installed presets
 (but the one seeded to fail), the hub's Gateways, the selector and toleration operators, the
 built-in cluster sets and the rollout strategies, and derives the phase it was seeded for.
+`bff/internal/examples` compares the BFF's responses for the shipped fixtures with the golden
+files in `mock/examples/`, so a fixture change shows up there too (`make -C bff golden` rewrites
+them; see `mock/AGENTS.md`).
 Fixture names, labels and ids must never be real: this repository is public. The
 addresses the fake derives are synthetic too: external URLs under `example.com` and
 internal ones as standard Kubernetes service names (`<svc>.<ns>.svc.cluster.local`) built

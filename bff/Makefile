@@ -14,7 +14,7 @@ LDFLAGS := -X github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/api
 BUF := go run github.com/bufbuild/buf/cmd/buf@v1.57.2
 PROTO_DIR := ../mock/proto
 
-.PHONY: all fmt vet lint test build run run-fake fake-backend tidy generate lint-proto check-generated
+.PHONY: all fmt vet lint test golden build run run-fake fake-backend tidy generate lint-proto check-generated
 
 all: build
 
@@ -29,6 +29,9 @@ lint: ## golangci-lint (install: brew install golangci-lint)
 
 test:
 	go test -race -count=1 ./...
+
+golden: ## rewrite ../mock/examples, the BFF's responses for ../mock/fixtures at scenario time zero (go test checks them)
+	go test -count=1 ./internal/examples -run Golden -update
 
 build: ## build ./bin/bff and ./bin/fake-backend
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o bin/bff ./cmd

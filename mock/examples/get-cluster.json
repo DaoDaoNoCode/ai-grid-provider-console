@@ -1,0 +1,104 @@
+{
+  "request": "GET /api/v1/clusters/site-paris-1",
+  "token": "dev-token",
+  "user": "dev-user",
+  "status": 200,
+  "body": {
+    "data": {
+      "name": "site-paris-1",
+      "aiGridEnabled": true,
+      "provisioned": true,
+      "hubAcceptsClient": true,
+      "location": "paris",
+      "site": "paris-dc1",
+      "region": "europe-west",
+      "openshiftVersion": "4.22.15",
+      "status": "ready",
+      "statusMessage": "Managed cluster is available",
+      "consoleUrl": "https://console-openshift-console.apps.site-paris-1.example.com",
+      "kubernetesVersion": "v1.35.6",
+      "platform": "BareMetal",
+      "product": "OpenShift",
+      "gpuCapacity": 16,
+      "siteName": "Paris DC1",
+      "latitude": 48.8566,
+      "longitude": 2.3522,
+      "addons": {
+        "application-manager": "available",
+        "cert-policy-controller": "available",
+        "cluster-proxy": "available",
+        "config-policy-controller": "available",
+        "governance-policy-framework": "available",
+        "managed-serviceaccount": "available",
+        "work-manager": "available"
+      },
+      "conditions": [
+        {
+          "type": "ManagedClusterImportSucceeded",
+          "status": "True",
+          "reason": "ManagedClusterImported",
+          "message": "Import succeeded",
+          "lastTransitionTime": "2026-10-01T09:00:12Z"
+        },
+        {
+          "type": "HubAcceptedManagedCluster",
+          "status": "True",
+          "reason": "HubClusterAdminAccepted",
+          "message": "Accepted by hub cluster admin",
+          "lastTransitionTime": "2026-10-01T09:00:02Z"
+        },
+        {
+          "type": "ManagedClusterJoined",
+          "status": "True",
+          "reason": "ManagedClusterJoined",
+          "message": "Managed cluster joined",
+          "lastTransitionTime": "2026-10-01T09:00:08Z"
+        },
+        {
+          "type": "ManagedClusterConditionAvailable",
+          "status": "True",
+          "reason": "ManagedClusterAvailable",
+          "message": "Managed cluster is available",
+          "lastTransitionTime": "2026-10-01T09:00:08Z"
+        },
+        {
+          "type": "ManagedClusterConditionClockSynced",
+          "status": "True",
+          "reason": "ManagedClusterClockSynced",
+          "message": "The clock of the managed cluster is synced with the hub.",
+          "lastTransitionTime": "2026-10-01T09:00:08Z"
+        }
+      ],
+      "resourceVersion": "48811204",
+      "labels": {
+        "ai-grid/enabled": "true",
+        "ai-grid/provisioned": "true",
+        "ai-grid/region": "europe-west",
+        "ai-grid/site": "paris-dc1",
+        "cloud": "BareMetal",
+        "cluster.open-cluster-management.io/clusterset": "default",
+        "clusterID": "3f1c9c3e-8a4b-4e1d-9f0a-2b7d5e6c1a90",
+        "feature.open-cluster-management.io/addon-application-manager": "available",
+        "feature.open-cluster-management.io/addon-cert-policy-controller": "available",
+        "feature.open-cluster-management.io/addon-cluster-proxy": "available",
+        "feature.open-cluster-management.io/addon-config-policy-controller": "available",
+        "feature.open-cluster-management.io/addon-governance-policy-framework": "available",
+        "feature.open-cluster-management.io/addon-managed-serviceaccount": "available",
+        "feature.open-cluster-management.io/addon-work-manager": "available",
+        "location": "paris",
+        "name": "site-paris-1",
+        "openshiftVersion": "4.22.15",
+        "openshiftVersion-major": "4",
+        "openshiftVersion-major-minor": "4.22",
+        "vendor": "OpenShift"
+      },
+      "annotations": {
+        "ai-grid/latitude": "48.8566",
+        "ai-grid/longitude": "2.3522",
+        "ai-grid/site-name": "Paris DC1",
+        "installer.multicluster.openshift.io/release-version": "2.17.3",
+        "open-cluster-management/created-via": "other"
+      }
+    }
+  }
+}
