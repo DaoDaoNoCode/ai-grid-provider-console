@@ -127,9 +127,10 @@ type model struct {
 	// candidateSince is when each cluster entered the Placement decision.
 	candidateSince map[string]time.Time
 	// scheduleChangedAt is when `rollout` or `placement` last changed without
-	// a template change (zero when never): no work is re-applied, but the
-	// works still to apply are scheduled under the new settings from then on,
-	// never at an earlier instant judged with them.
+	// a template change, or when the decision last lost a cluster or changed
+	// its count (zero when never): no work is re-applied, but the works still
+	// to apply are scheduled under the new settings from then on, never at an
+	// earlier instant judged with them.
 	scheduleChangedAt time.Time
 	// decisions is the Placement's status as the scheduling controller last
 	// wrote it; the next pass reads its clusters (Steady, NoSelectIfNew).
@@ -401,6 +402,7 @@ func (s *Server) reconcileModels(now time.Time) {
 			continue
 		}
 		decisions := computePlacement(p, s.bindingsFor(m.obj.GetMetadata().GetNamespace()), s.clusters, decisionSet(m.decisions), now, s.scenarioTime)
+		previous := m.decisions != nil // a pass already wrote a decision
 		m.decisions = decisions
 		for _, c := range decisions.GetConditions() {
 			m.placementConds = writeCondition(m.placementConds, s.wallTime(now), c.GetType(), c.GetStatus(), c.GetReason(), c.GetMessage())
@@ -409,16 +411,29 @@ func (s *Server) reconcileModels(now time.Time) {
 			continue // nothing reconciles the MWRS
 		}
 		selected := map[string]bool{}
+		before := len(m.candidateSince)
+		joined, left := false, false
 		for _, d := range decisions.GetDecisions() {
 			selected[d.GetClusterName()] = true
 			if _, ok := m.candidateSince[d.GetClusterName()]; !ok {
 				m.candidateSince[d.GetClusterName()] = now
+				joined = true
 			}
 		}
 		for c := range m.candidateSince {
 			if !selected[c] {
 				delete(m.candidateSince, c) // ClustersRemoved: the work is deleted
+				left = true
 			}
+		}
+		// A decision that lost a cluster (and its work, which may have held a
+		// slot) or changed its count (behind a percentage maxConcurrency or
+		// maxFailures) is the controller's input from the moment the fake
+		// notices it, like every MWRS time; the works still to apply are
+		// scheduled under it from then on, never earlier. A joining cluster
+		// is itself floored by candidateSince.
+		if previous && (left || joined && before > 0) {
+			m.scheduleChangedAt = now
 		}
 		m.works = slices.DeleteFunc(m.works, func(w *work) bool { return !selected[w.cluster] })
 		for _, w := range m.works {
@@ -555,9 +570,9 @@ func (s *Server) rollout(m *model, decisions *aigridv1.PlacementStatus, now time
 		}
 	}
 	// floorFor is the earliest instant a cluster's work can be applied: the
-	// last template change, the last rollout or placement change (the
-	// controller only reads the new strategy and decision from then on) and
-	// the cluster's entry into the decision, whichever is latest.
+	// last template change, the last rollout, placement or decision change
+	// (the controller only reads the new strategy and decision from then on)
+	// and the cluster's entry into the decision, whichever is latest.
 	floorFor := func(cluster string) time.Time {
 		t := templateAt
 		if m.scheduleChangedAt.After(t) {

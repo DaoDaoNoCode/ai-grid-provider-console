@@ -179,7 +179,9 @@ out of the summary, and its cluster is to apply again like a new one.
   compares each work with the template alone (`deploy_reconcile.go:80-89`): a new strategy only
   schedules the works still to apply, a new placement only adds and removes the works of clusters
   entering and leaving the decision, and under either no work is applied at an instant before the
-  change. A work's own `generation` is the ManifestWork's
+  change. The same holds when the decision loses a cluster or changes its count without a PATCH (a
+  label, a taint, a terminating cluster): the works still to apply are scheduled from the moment
+  the fake notices it. A work's own `generation` is the ManifestWork's
   counter, 1 when it is created (also for a cluster that joins later or a placement added by a
   PATCH) and bumped by each update that changes its spec; a cluster leaving the decision loses
   its work;
@@ -227,8 +229,9 @@ their escapes decoded, and a quoted `&&` stays inside its literal.
   address assumes LLMInferenceService TLS is on (`https`).
 - Knative's `severity` (`Info` on the sub-conditions) is dropped: the proto `Condition` has no
   such field.
-- MWRS and Placement condition times are the time the fake noticed a change (at most one poll
-  late; the real controllers are event-driven with requeues). Placement decisions are recomputed
+- MWRS and Placement condition times, and the instant a decision change frees rollout slots, are
+  the time the fake noticed a change (at most one poll late; the real controllers are
+  event-driven with requeues). Placement decisions are recomputed
   at each pass, so the Steady prioritizer and `NoSelectIfNew` see the decision of the previous
   pass. The Balance prioritizer is not modelled: every cluster gets its full score, as if no other
   Placement selected it, which only matters with `numberOfClusters`. Decision groups, spread

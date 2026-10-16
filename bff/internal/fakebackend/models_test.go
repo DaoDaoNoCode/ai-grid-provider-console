@@ -1875,6 +1875,71 @@ func TestARolloutChangeNeverSchedulesAWorkBeforeIt(t *testing.T) {
 	})
 }
 
+// A decision change without a PATCH (a cluster relabelled, tainted or
+// terminating) schedules the works still to apply from when the fake
+// notices it, never at an earlier instant judged with the new decision.
+func TestADecisionChangeNeverSchedulesAWorkBeforeIt(t *testing.T) {
+	ctx := authed(context.Background())
+	const change = 600 * time.Second
+	setEnabled := func(s *Server, cluster string, enabled bool) {
+		t.Helper()
+		resp, err := s.GetManagedCluster(ctx, &aigridv1.GetManagedClusterRequest{Name: cluster})
+		if err != nil {
+			t.Fatal(err)
+		}
+		labels := copyMap(resp.GetObject().GetLabels())
+		if enabled {
+			labels["ai-grid/enabled"] = "true"
+		} else {
+			delete(labels, "ai-grid/enabled")
+		}
+		if _, err := s.UpdateManagedCluster(ctx, &aigridv1.UpdateManagedClusterRequest{Object: &aigridv1.ManagedCluster{Name: cluster, Labels: labels}, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{PathLabels}}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	appliedAt := func(m *aigridv1.Model) map[string]time.Duration {
+		out := map[string]time.Duration{}
+		for _, w := range m.GetStatus().GetRollout().GetWorks() {
+			out[w.GetClusterName()] = condition(w.GetConditions(), CondWorkApplied).GetLastTransitionTime().AsTime().Sub(testStart)
+		}
+		return out
+	}
+	stuck := func(s *Server, name, maxConcurrency string) {
+		t.Helper()
+		m := placedModel(name, &aigridv1.Rollout{Strategy: aigridv1.RolloutStrategy_ROLLOUT_STRATEGY_PROGRESSIVE, MaxConcurrency: maxConcurrency})
+		m.Spec.Main = &aigridv1.Container{Image: "quay.io/example/vllm-oom"} // never comes up
+		createModel(t, s, m)
+	}
+
+	t.Run("the cluster holding the only slot leaves", func(t *testing.T) {
+		s, advance := modelServer(t, &Fixtures{Clusters: []*aigridv1.ManagedCluster{enrolled("site-a"), enrolled("site-b"), enrolled("site-c")}})
+		stuck(s, "leave", "1")
+		advance(change)
+		if got := appliedAt(getModel(t, s, "leave")); !maps.Equal(got, map[string]time.Duration{"site-a": 0}) {
+			t.Fatalf("site-a holds the only slot: %v", got)
+		}
+		setEnabled(s, "site-a", false)
+		if got, want := appliedAt(getModel(t, s, "leave")), map[string]time.Duration{"site-b": change}; !maps.Equal(got, want) {
+			t.Errorf("site-a's work gone, site-b applied when the fake noticed: %v, want %v", got, want)
+		}
+	})
+
+	t.Run("a percentage maxConcurrency over a growing decision", func(t *testing.T) {
+		off := enrolled("site-c")
+		delete(off.Labels, "ai-grid/enabled")
+		s, advance := modelServer(t, &Fixtures{Clusters: []*aigridv1.ManagedCluster{enrolled("site-a"), enrolled("site-b"), off}})
+		stuck(s, "grow", "50%") // 2 clusters: 1 slot
+		advance(change)
+		if got := appliedAt(getModel(t, s, "grow")); !maps.Equal(got, map[string]time.Duration{"site-a": 0}) {
+			t.Fatalf("site-a holds the only slot: %v", got)
+		}
+		setEnabled(s, "site-c", true) // 3 clusters: 2 slots
+		if got, want := appliedAt(getModel(t, s, "grow")), map[string]time.Duration{"site-a": 0, "site-b": change}; !maps.Equal(got, want) {
+			t.Errorf("site-b takes the second slot when the fake noticed the third cluster: %v, want %v", got, want)
+		}
+	})
+}
+
 func TestDisconnectedAgentFreezesTheWork(t *testing.T) {
 	c := enrolled("site-flaky")
 	fx := &Fixtures{Clusters: []*aigridv1.ManagedCluster{c}, Scenarios: []ScenarioEvent{
