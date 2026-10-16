@@ -37,7 +37,8 @@ make dev            # backend on :9090, BFF on :8080, frontend on :9000
 Open http://127.0.0.1:9000. The masthead shows the `oc` user; Clusters lists the hub's
 `ManagedClusters` as the backend reports them. Tenants shows an error until the backend
 can reach a Keycloak with an `ai-grid` realm (the dev hub has Keycloak in `grid-sso` but
-no realm yet).
+no realm yet); against the fake (`make dev-fake`) it lists the organizations in
+`mock/fixtures/tenants.json`.
 
 How the pieces connect:
 

@@ -306,32 +306,33 @@ func (o *optionalFloat64) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// maxPatchBody bounds a PATCH body; a patch is a handful of labels.
-const maxPatchBody = 1 << 20
+// maxBodyBytes bounds a JSON request body; a patch or a tenant is a handful
+// of fields.
+const maxBodyBytes = 1 << 20
 
-// readPatch decodes the body of PATCH /api/v1/clusters/{name}: exactly one
-// JSON object (not null, an array or a scalar) of at most maxPatchBody bytes,
-// with nothing after it. A body
-// that is too large is 413; anything else wrong with it is 422. The body is
+// decodeBody reads a JSON request body strictly, for every handler that takes
+// one: exactly one JSON object (not null, an array or a scalar) of at most
+// maxBodyBytes bytes with nothing after it, no unknown fields. A body that is
+// too large is 413 (also when the excess is after the value); anything else
+// wrong with it is 422 with a message that names the problem. The body is
 // fully validated before any backend call.
-func readPatch(w http.ResponseWriter, r *http.Request) (ClusterPatch, error) {
-	var patch ClusterPatch
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxPatchBody))
-	if err := decodeObject(dec, &patch); err != nil {
+func decodeBody(w http.ResponseWriter, r *http.Request, into any) error {
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodyBytes))
+	if err := decodeObject(dec, into); err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			return patch, Errorf(http.StatusRequestEntityTooLarge, fmt.Sprintf("request body must not exceed %d bytes", maxPatchBody))
+			return Errorf(http.StatusRequestEntityTooLarge, fmt.Sprintf("request body must not exceed %d bytes", maxBodyBytes))
 		}
-		return patch, Errorf(http.StatusUnprocessableEntity, fmt.Sprintf("invalid request body: %s", decodeErrorMessage(err)))
+		return Errorf(http.StatusUnprocessableEntity, fmt.Sprintf("invalid request body: %s", decodeErrorMessage(err)))
 	}
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			return patch, Errorf(http.StatusRequestEntityTooLarge, fmt.Sprintf("request body must not exceed %d bytes", maxPatchBody))
+			return Errorf(http.StatusRequestEntityTooLarge, fmt.Sprintf("request body must not exceed %d bytes", maxBodyBytes))
 		}
-		return patch, Errorf(http.StatusUnprocessableEntity, "invalid request body: unexpected content after the JSON object")
+		return Errorf(http.StatusUnprocessableEntity, "invalid request body: unexpected content after the JSON object")
 	}
-	return patch, nil
+	return nil
 }
 
 // errNotObject is the decode error for a body that is valid JSON but not an
@@ -361,8 +362,8 @@ func decodeObject(dec *json.Decoder, into any) error {
 // the hub surfaces as 409 instead of being overwritten.
 func (a *App) patchCluster(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	patch, err := readPatch(w, r)
-	if err != nil {
+	var patch ClusterPatch
+	if err := decodeBody(w, r, &patch); err != nil {
 		a.respondError(w, r, err)
 		return
 	}

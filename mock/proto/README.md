@@ -37,9 +37,8 @@ What keeps it honest:
   `bff/internal/fakebackend` then calls every method of every draft service and fails on an
   `Unimplemented` answer, except for the methods listed in `intentionallyUnimplemented`
   (`fakebackend_test.go`), each with its reason: the placeholder `Grid`, `Models`,
-  `CatalogItems` and `Subscriptions` methods until they are agreed with the backend team,
-  the `Tenants` methods until the tenants area implements them, and `GetCurrentUser`, which
-  the BFF does not need yet. An entry whose
+  `CatalogItems` and `Subscriptions` methods until they are agreed with the backend team, and
+  `GetCurrentUser`, which the BFF does not need yet. An entry whose
   method starts answering fails the test until the entry is removed, so the allowlist is
   always exactly the set of stubs.
 - **The allowlist refines `mock/README.md`.** That page says the test fails on any
@@ -67,6 +66,15 @@ console's derivation order documented on the enum. The flattened claim fields an
 `addon_status` map from that proposal were not added: the BFF derives them from
 `cluster_claims` and the `feature.open-cluster-management.io/addon-*` labels, which the proto
 already carries verbatim.
+
+The Tenants area removed two drafted fields instead of adding: `Tenant.version` (field 8)
+and `UpdateTenantRequest.lock` (field 3) are `reserved`, because Keycloak Organizations have
+no server-side version, etag or `Last-Modified` and a Keycloak-backed backend could never
+honour them (`mock/research/keycloak.md` 8.1). It added `TenantDomain` and
+`repeated TenantDomain domain_details = 9` (`name`, `verified`, `identity_provider_alias`,
+`auto_redirect`, the fields Keycloak 26.8 keeps per domain), kept `domains` as the list of
+names, and narrowed `ListTenantsRequest.filter` to the one CEL form the backend can push down
+to Keycloak's `search`, `this.name.contains("<term>") || this.domains.exists(d, d.contains("<term>"))`.
 
 ## Working with the backend team
 
