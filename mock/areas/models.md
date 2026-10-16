@@ -181,7 +181,11 @@ out of the summary, and its cluster is to apply again like a new one.
   entering and leaving the decision, and under either no work is applied at an instant before the
   change. The same holds when the decision loses a cluster or changes its count without a PATCH (a
   label, a taint, a terminating cluster): the works still to apply are scheduled from the moment
-  the fake notices it. A work's own `generation` is the ManifestWork's
+  the fake notices it, after the rollout has caught up under the previous decision to that
+  moment, so a slot that freed before the change is used when it freed however often the fake is
+  read. Scenario events and API writes are noticed at their own time; a change that only time
+  makes (a `tolerationSeconds` running out) is noticed at the next read, and up to then the
+  previous decision counts as held. A work's own `generation` is the ManifestWork's
   counter, 1 when it is created (also for a cluster that joins later or a placement added by a
   PATCH) and bumped by each update that changes its spec; a cluster leaving the decision loses
   its work;

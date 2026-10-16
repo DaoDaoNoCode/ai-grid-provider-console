@@ -143,6 +143,10 @@ func (s *Server) advance() time.Time {
 		if !ok {
 			continue // detached earlier
 		}
+		// The controllers ran under the state before the event up to its
+		// time, so the models catch up to it first: what the rollout did in
+		// between does not depend on whether the fake was read.
+		s.reconcileModels(s.start.Add(sc.At.Duration()))
 		// The event happened at its scheduled wall-clock time, not when it
 		// was noticed, so lastTransitionTime and timeAdded are consistent.
 		at := s.start.Add(time.Duration(float64(sc.At.Duration()) / s.speed))

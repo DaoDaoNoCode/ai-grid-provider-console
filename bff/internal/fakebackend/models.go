@@ -402,7 +402,7 @@ func (s *Server) reconcileModels(now time.Time) {
 			continue
 		}
 		decisions := computePlacement(p, s.bindingsFor(m.obj.GetMetadata().GetNamespace()), s.clusters, decisionSet(m.decisions), now, s.scenarioTime)
-		previous := m.decisions != nil // a pass already wrote a decision
+		prevDecisions := m.decisions // nil before the model's first pass
 		m.decisions = decisions
 		for _, c := range decisions.GetConditions() {
 			m.placementConds = writeCondition(m.placementConds, s.wallTime(now), c.GetType(), c.GetStatus(), c.GetReason(), c.GetMessage())
@@ -411,18 +411,15 @@ func (s *Server) reconcileModels(now time.Time) {
 			continue // nothing reconciles the MWRS
 		}
 		selected := map[string]bool{}
-		before := len(m.candidateSince)
 		joined, left := false, false
 		for _, d := range decisions.GetDecisions() {
 			selected[d.GetClusterName()] = true
 			if _, ok := m.candidateSince[d.GetClusterName()]; !ok {
-				m.candidateSince[d.GetClusterName()] = now
 				joined = true
 			}
 		}
 		for c := range m.candidateSince {
 			if !selected[c] {
-				delete(m.candidateSince, c) // ClustersRemoved: the work is deleted
 				left = true
 			}
 		}
@@ -430,10 +427,27 @@ func (s *Server) reconcileModels(now time.Time) {
 		// slot) or changed its count (behind a percentage maxConcurrency or
 		// maxFailures) is the controller's input from the moment the fake
 		// notices it, like every MWRS time; the works still to apply are
-		// scheduled under it from then on, never earlier. A joining cluster
-		// is itself floored by candidateSince.
-		if previous && (left || joined && before > 0) {
+		// scheduled under it from then on, never earlier. Up to that moment
+		// the previous decision held, so the rollout first catches up under
+		// it (a slot that freed in between is used when it freed, however
+		// often the fake is read). A joining cluster is itself floored by
+		// candidateSince.
+		if prevDecisions != nil && (left || joined && len(m.candidateSince) > 0) {
+			for _, w := range m.works {
+				s.observeAgent(w, now)
+			}
+			s.rollout(m, prevDecisions, now)
 			m.scheduleChangedAt = now
+		}
+		for c := range selected {
+			if _, ok := m.candidateSince[c]; !ok {
+				m.candidateSince[c] = now
+			}
+		}
+		for c := range m.candidateSince {
+			if !selected[c] {
+				delete(m.candidateSince, c) // ClustersRemoved: the work is deleted
+			}
 		}
 		m.works = slices.DeleteFunc(m.works, func(w *work) bool { return !selected[w.cluster] })
 		for _, w := range m.works {
@@ -550,7 +564,8 @@ func (s *Server) applyWork(m *model, tmpl *aigridv1.ModelSpec, cluster string, t
 // condition's lastTransitionTime; ToApply never times out) frees its slot and
 // counts too; beyond `maxFailures` nothing more is applied. The fake computes
 // the exact instant a slot freed, so timing does not depend on how often it is
-// polled.
+// polled; across a decision change reconcileModels first catches up under the
+// previous decision, and advance() reconciles before each scenario event.
 func (s *Server) rollout(m *model, decisions *aigridv1.PlacementStatus, now time.Time) {
 	params, err := validateRollout(m.obj.GetSpec().GetRollout())
 	if err != nil {

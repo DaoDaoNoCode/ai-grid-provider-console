@@ -1940,6 +1940,70 @@ func TestADecisionChangeNeverSchedulesAWorkBeforeIt(t *testing.T) {
 	})
 }
 
+// A decision change catches the rollout up under the previous decision
+// first, so the instant each work is applied does not depend on how often
+// the fake is read: site-d terminating at 100 s leaves site-b and site-c
+// applied when their slots freed, as the controller would, with or without
+// a read in between. The same when site-d leaves because a toleration
+// expires, which no event marks: the first pass after it catches up.
+func TestRolloutTimingAcrossADecisionChangeIsIndependentOfPolling(t *testing.T) {
+	const detach = 100 * time.Second
+	rollout := &aigridv1.Rollout{Strategy: aigridv1.RolloutStrategy_ROLLOUT_STRATEGY_PROGRESSIVE, MaxConcurrency: "1"}
+	clusters := func() []*aigridv1.ManagedCluster {
+		return []*aigridv1.ManagedCluster{enrolled("site-a"), enrolled("site-b"), enrolled("site-c"), enrolled("site-d")}
+	}
+	appliedAt := func(m *aigridv1.Model) map[string]time.Duration {
+		out := map[string]time.Duration{}
+		for _, w := range m.GetStatus().GetRollout().GetWorks() {
+			out[w.GetClusterName()] = condition(w.GetConditions(), CondWorkApplied).GetLastTransitionTime().AsTime().Sub(testStart)
+		}
+		return out
+	}
+	// The controller's times: the same rollout with no decision change,
+	// read once site-c is applied and before site-d's turn.
+	control, advance := modelServer(t, &Fixtures{Clusters: clusters()})
+	createModel(t, control, placedModel("poll", rollout))
+	advance(detach)
+	want := appliedAt(getModel(t, control, "poll"))
+	if len(want) != 3 || want["site-b"] <= 0 || want["site-c"] <= want["site-b"] || want["site-c"] >= detach {
+		t.Fatalf("control: site-b and site-c applied one after the other before %s: %v", detach, want)
+	}
+	delete(want, "site-d")
+
+	const maintenance = "example.com/maintenance"
+	leaves := map[string]func() (*Fixtures, *aigridv1.Model){
+		"detaching": func() (*Fixtures, *aigridv1.Model) {
+			return &Fixtures{Clusters: clusters(), Scenarios: []ScenarioEvent{{Cluster: "site-d", At: Duration{detach}, Event: EventDetaching}}}, placedModel("poll", rollout)
+		},
+		"toleration expiry": func() (*Fixtures, *aigridv1.Model) {
+			cs := clusters()
+			cs[3].Taints = []*aigridv1.Taint{{Key: maintenance, Effect: TaintNoSelect, TimeAdded: timestamppb.New(testStart)}}
+			m := placedModel("poll", rollout)
+			m.Spec.Placement.Tolerations = []*aigridv1.Toleration{{Key: maintenance, Operator: TolerationExists, TolerationSeconds: proto.Int64(int64(detach / time.Second))}}
+			return &Fixtures{Clusters: cs}, m
+		},
+	}
+	for name, setup := range leaves {
+		for _, reads := range [][]time.Duration{nil, {50 * time.Second}, {50 * time.Second, want["site-c"] - time.Second}, {detach - time.Second}} {
+			fx, m := setup()
+			s, advance := modelServer(t, fx)
+			createModel(t, s, m)
+			for _, at := range reads {
+				advance(at)
+				getModel(t, s, "poll")
+			}
+			advance(detach + time.Second)
+			got := getModel(t, s, "poll")
+			if n := got.GetStatus().GetPlacement().GetNumberOfSelectedClusters(); n != 3 {
+				t.Errorf("%s: site-d left the decision: %d selected", name, n)
+			}
+			if applied := appliedAt(got); !maps.Equal(applied, want) {
+				t.Errorf("%s, reads at %v: works applied at %v, want %v", name, reads, applied, want)
+			}
+		}
+	}
+}
+
 func TestDisconnectedAgentFreezesTheWork(t *testing.T) {
 	c := enrolled("site-flaky")
 	fx := &Fixtures{Clusters: []*aigridv1.ManagedCluster{c}, Scenarios: []ScenarioEvent{
