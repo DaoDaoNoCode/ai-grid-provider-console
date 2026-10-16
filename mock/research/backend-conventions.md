@@ -84,7 +84,7 @@ Repo state: `github.com/osac-project/fulfillment-api` and `fulfillment-common` c
 ### Service and method naming
 
 - Service = plural of the type, **no `Service` suffix** (`Clusters`, `Tenants`, `Users`, `Hubs`); `buf.yaml` has `lint: except: [SERVICE_SUFFIX]` for this.
-- Methods are exactly `List`, `Get`, `Create`, `Update`, `Delete`; private services add `Signal`. "Services should not have any additional ad-hoc methods"; no imperative verbs (`Start`, `Reboot`) — model them as `spec` fields (`API.md`, "Standard methods", "Declarative, intent-based design"). Non-CRUD singletons are `Create`-only or `Get`-only services: `SelfSubjectAccessReviews/Create`, `ConsoleSessions/Create`, `Capabilities/Get`, `Events/Watch`.
+- Methods are `List`, `Get`, `Create`, `Update`, `Delete` on most public services; the immutable networking services (`Subnets`, `VirtualNetworks`, `NatGateways`, `ExternalIps`, `ExternalIpAttachments`) omit `Update` by design, and read-only ones such as `StorageTiers` expose only `List`/`Get` (`API.md` L418-423; `proto/public/osac/public/v1/*_service.proto` at `334a01c`); private services add `Signal`. "Services should not have any additional ad-hoc methods"; no imperative verbs (`Start`, `Reboot`) — model them as `spec` fields (`API.md`, "Standard methods", "Declarative, intent-based design"). Non-CRUD singletons are `Create`-only or `Get`-only services: `SelfSubjectAccessReviews/Create`, `ConsoleSessions/Create`, `Capabilities/Get`, `Events/Watch`.
 - Request/response messages: `{Service}{Method}Request/Response` (`ClustersListRequest`, `ClustersGetResponse`) (`API.md`, "Request and response messages").
 
 ### Request/response shapes
@@ -100,7 +100,7 @@ message ThingsDeleteRequest { string id = 1; }              // response: empty
 ```
 (`proto/public/osac/public/v1/clusters_service.proto`, `tenants_service.proto`, `users_service.proto`; rules in `API.md`.)
 
-- **Pagination**: offset/limit, not page tokens. `limit` omitted = server default, which is a **page of 100** (`internal/database/dao/generic_dao.go` L116 `defaultLimit: 100`, applied in `generic_dao_list.go` L171-172 when the request has no limit; `GenericServer.List` only forwards the limit when `HasLimit()`), not "all"; `limit = 0` = count only; negative rejected. `size` = items returned, `total` = matches regardless of paging (`API.md`, "List"; `GenericServer.List` sets `SetSize/SetTotal`, `fulfillment-service/internal/servers/generic_server.go` ~L408-414).
+- **Pagination**: offset/limit, not page tokens. `limit` omitted = server default, which is a **page of 100** (`internal/database/dao/generic_dao.go` L116 `defaultLimit: 100`, with a cap `maxLimit: 1000` at L117; both applied in `generic_dao_list.go` L170-175; `GenericServer.List` only forwards the limit when `HasLimit()`), not "all"; `limit = 0` = count only; negative rejected. `size` = items returned, `total` = matches regardless of paging (`API.md`, "List"; `GenericServer.List` sets `SetSize/SetTotal`, `fulfillment-service/internal/servers/generic_server.go` ~L408-414).
 - **Filtering**: `filter` is a **CEL** expression over `this` (the object) and `now`; translated to SQL server-side; supported subset documented in `fulfillment-service/docs/FILTER.md` (comparisons, `&& || !`, `in` on lists/arrays/maps, map index on `metadata.labels`, `startsWith/endsWith/contains`, `has()`, timestamps vs `now`/`null`). Invalid filter -> `InvalidArgument`. `order` ("SQL ORDER BY-like") is declared but "not yet implemented".
 - **Field masks**: `Update` takes `object` + `google.protobuf.FieldMask update_mask` + `bool lock`; the REST gateway fills the mask from the PATCH body; validation runs on the merged stored object, not the partial request. `lock=true` compares `metadata.version` and fails with `Aborted` on mismatch (`generic_server.go` ~L707-720; `API.md`, "Update").
 - "No extra request or response fields" beyond these without a cross-service design discussion (`API.md`, "Additional rules").
@@ -122,9 +122,9 @@ Enforced by the custom buf lint rule `OSAC_OBJECT_SHAPE` (`fulfillment-service/c
 - Condition pattern (`API.md`, "Conditions"; `cluster_type.proto`):
 ```protobuf
 message ThingCondition { ThingConditionType type = 1; ConditionStatus status = 2; google.protobuf.Timestamp last_transition_time = 3; optional string reason = 4; optional string message = 5; }
-enum ThingConditionType { THING_CONDITION_TYPE_UNSPECIFIED = 0; ..._PROGRESSING = 1; ..._READY = 2; ..._FAILED = 3; /* FAILED not verified in cluster_type.proto */ }
+enum ThingConditionType { THING_CONDITION_TYPE_UNSPECIFIED = 0; ..._PROGRESSING = 1; ..._READY = 2; ..._FAILED = 3; }   // cluster_type.proto L451-479 also has DEGRADED = 4, WORKER_PROVISIONING_FAILED = 5, WORKER_PROVISIONING_BLOCKED = 6
 ```
-  Shared `enum ConditionStatus { CONDITION_STATUS_UNSPECIFIED = 0; CONDITION_STATUS_TRUE = 1; CONDITION_STATUS_FALSE = 2; }` (`condition_status_type.proto`); Kubernetes `Unknown` maps to `UNSPECIFIED`. Condition `type` is a typed enum, except `UserCondition.type` which is a free string because it mirrors an external system (`user_type.proto`). No `observed_generation`.
+  Shared `enum ConditionStatus { CONDITION_STATUS_UNSPECIFIED = 0; CONDITION_STATUS_TRUE = 1; CONDITION_STATUS_FALSE = 2; }` (`condition_status_type.proto`); Kubernetes `Unknown` maps to `UNSPECIFIED`. Condition `type` is a typed enum, except `UserCondition.type`, which is a plain `string` (`user_type.proto` L74-77; the proto gives no reason). No `observed_generation`.
 - Enums: `CamelCase` name, values prefixed with the enum name in `UPPER_SNAKE_CASE`, first value `_UNSPECIFIED = 0`, `[(buf.validate.field).enum.defined_only = true]` where input is accepted (`API.md`, "Enums").
 
 ### Events / watch
@@ -142,21 +142,21 @@ enum ThingConditionType { THING_CONDITION_TYPE_UNSPECIFIED = 0; ..._PROGRESSING 
 ### Authentication and authorization (server side)
 
 - Interceptor chain (`fulfillment-service/internal/cmd/service/start/grpcserver/start_grpc_server_cmd.go` L599-626): `panic -> metrics -> logging -> protovalidate -> db tx -> authn -> authz -> JIT user provisioning -> reference validation` (`referenceValidator`, which resolves/validates object references after authorization; the stream chain is the same minus tx and also ends with the reference validator). Then `reflection.RegisterV1`, `health.NewServer()` + `healthv1.RegisterHealthServer`.
-- **Authn** (`internal/auth/grpc_authn_interceptor.go`): reads exactly one `authorization` metadata value (`auth.Authorization = "authorization"`, `auth_headers.go`), requires `Bearer <jwt>`, validates the JWT against JWKS of trusted issuers, stores the token in context. Missing/duplicate/invalid -> `Unauthenticated`. Anonymous methods by regex: `^/(osac\.public\.v1\.(Capabilities/|JsonWebKeySet/)|grpc\.(reflection|health)\.).*$` (L909).
+- **Authn** (`internal/auth/grpc_authn_interceptor.go`): reads exactly one `authorization` metadata value (`auth.Authorization = "authorization"`, `auth_headers.go`), requires `Bearer <jwt>`, validates the JWT against JWKS of trusted issuers, stores the token in context. Missing/duplicate/invalid -> `Unauthenticated`. Anonymous methods by regex: `^/(osac\.public\.v1\.(Capabilities/|JsonWebKeySet/)|grpc\.(reflection|health)\.).*$` (`anonymousMethodsRegex`, `internal/cmd/service/start/grpcserver/start_grpc_server_cmd.go` L909, not the authn interceptor file).
 - **Authz** (`internal/auth/grpc_authz_interceptor.go`, with the claim extraction in `internal/auth/auth_context_extraction.go` L46-64 and the policy evaluation in `internal/auth/authorization_evaluator.go`): builds an `AuthContext` from JWT claims (`preferred_username`/`username`, `organization` claim -> tenants, `realm_access.roles`, groups) plus the request (`id` via `GetId()` or reflection on `object.id`, `grpc_authz_interceptor.go` L312-345), evaluates an embedded **OPA/Rego** policy (`internal/auth/policies/authz.rego`) per full method name; denial -> `PermissionDenied "permission denied"` (L283); policy errors -> `Internal` (L246-295). Then a `Subject{User, Tenants}` goes into context and **tenancy logic** filters/assigns `metadata.tenant` (`docs/AUTH.md`, "Tenancy Logic", "Authorization Levels"). Admins get the universal tenant `*`.
-- **Who is the caller**: only the JWT. There is no `x-forwarded-*` convention anywhere in OSAC; the UI proxy (`osac-ui/proxy/middleware/auth.go`) strips the incoming `Authorization` header and re-sets `Authorization: Bearer <token-from-cookie-session>`. The REST gateway forwards headers with `runtime.DefaultHeaderMatcher` plus one custom dry-run header.
+- **Who is the caller**: only the JWT. OSAC has no `x-forwarded-*` identity convention; the only `X-Forwarded-*` header it reads is `X-Forwarded-Proto`, which the UI proxy uses to decide whether cookies are `Secure` (`osac-ui/proxy/auth/cookies.go` L40-45). The UI proxy (`osac-ui/proxy/middleware/auth.go`) strips the incoming `Authorization` header and re-sets `Authorization: Bearer <token-from-cookie-session>`. The REST gateway forwards headers with `runtime.DefaultHeaderMatcher` plus one custom dry-run header.
 - Permission introspection for UIs: `SelfSubjectAccessReviews/Create` with `spec.service` (`osac.public.v1.Clusters`) and `spec.method` (`Create`), answering `status.allowed` (`self_subject_access_review_type.proto`).
 
 ### Error handling
 
-- Status codes from DAO errors (`fulfillment-service/internal/servers/dao_error_converter.go`): not found -> `NotFound`; duplicate name -> `AlreadyExists`; singleton/"single default" invariant -> `FailedPrecondition`; optimistic-lock conflict and deadlock -> `Aborted`; denied -> `PermissionDenied`; immutable field / validation / invalid filter / bad reference on create -> `InvalidArgument`; bad reference on update/delete, object in use -> `FailedPrecondition`; unknown -> `Internal` with a generic message (details logged). Tenant assignment errors -> `PermissionDenied` (`tenant_errors.go`). Missing `id`/`object` -> `InvalidArgument "object identifier is mandatory"` (37 sites; the shorter `"identifier is mandatory"` appears 3 times) / `"object is mandatory"` (46 sites). Code histogram across `internal/servers` excluding `*_test.go` (reproduced 2026-10-15): InvalidArgument 541, Internal 236, FailedPrecondition 69, NotFound 55, PermissionDenied 18, Aborted 11, AlreadyExists 7, Unimplemented 2. "Consumers must match on the gRPC status code rather than message text" (`API.md`, "Error responses").
-- Logging interceptor logs method, peer, metadata (debug), duration, and `grpcstatus.Code(err).String()` with `slog` (`internal/logging/logging_interceptor.go`; field list not verified in the 2026-10-15 pass).
+- Status codes from DAO errors (`fulfillment-service/internal/servers/dao_error_converter.go`): not found -> `NotFound`; duplicate name -> `AlreadyExists`; singleton/"single default" invariant -> `FailedPrecondition`; optimistic-lock conflict and deadlock -> `Aborted`; denied -> `PermissionDenied`; immutable field / validation / invalid filter / bad reference on create -> `InvalidArgument`; bad reference on update/delete, object in use -> `FailedPrecondition`; unknown -> `Internal` with a generic message (details logged). Tenant assignment errors -> `PermissionDenied` (`tenant_errors.go`). Missing `id`/`object` -> `InvalidArgument "object identifier is mandatory"` (37 sites; the shorter `"identifier is mandatory"` appears 3 times) / `"object is mandatory"` (46 sites). Code histogram across `internal/servers` excluding `*_test.go` (reproduced 2026-10-15): InvalidArgument 541, Internal 236, FailedPrecondition 69, NotFound 55, PermissionDenied 18, Aborted 11, AlreadyExists 7, Unimplemented 2. `API.md` says, in "Error responses" (L230-231, at `334a01c`): "Consumers must match on the gRPC status code rather than assuming every uniqueness conflict is `AlreadyExists`.", and in "When not to use protovalidate" (L355-356): "Match on the gRPC status code, not on message text." 
+- Logging interceptor logs, at **Debug** level only (it returns early otherwise, L135), `method`, the peer `address`, `metadata`, then `duration`, `code` (`grpcstatus.Code(err).String()`) and `error` with `slog` (`internal/logging/logging_interceptor.go` L135-196).
 
 ### Generated code publishing
 
 - `proto/buf.gen.yaml`: `managed.enabled: true`, `go_package_prefix github.com/osac-project/osac/proto/gen`, remote plugins pinned (`buf.build/protocolbuffers/go:v1.36.5` with `default_api_level=API_HYBRID`, `buf.build/grpc/go:v1.5.1`, `buf.build/grpc-ecosystem/gateway:v2.26.1`), `paths=source_relative`, output `gen/`. `proto/Makefile generate` = `dev.py build protos` (private -> public) + `buf generate`; `lint` = `buf lint` with the custom plugin.
 - CI: `.github/workflows/check-generated-code.yaml` re-runs `make generate` and fails on any diff under `proto/` ("Generated proto code is out of date"); `.pre-commit-config.yaml` runs `buf lint` on `proto/**/*.proto`. No `buf breaking` job was found in `.github/workflows`; the `breaking: FILE` config exists for local/manual use.
-- Publishing: `.github/workflows/publish-proto.yaml` is a **`workflow_call`-only** reusable workflow (inputs `version`, `ref`; no trigger of its own) that runs `buf push --label "<version>"` from the `proto/` module root, which pushes **all three** modules declared in `buf.yaml` (`buf.build/osac-project/public-api`, `private-api` and `tests`). It is invoked by `osac-build-and-publish.yaml` in release mode when the fulfillment-service component is bumped (that workflow's `BUF_TOKEN` secret and `publish-fulfillment-service-proto` job). `docs/RELEASING.md` describes per-component versions and throwaway nightly tags (the literal `<component>/vX.Y.Z` tag form was not verified). Go consumers inside the monorepo use `go.work` + `replace`; the UI consumes the BSR module at a pinned version (`osac-ui/libs/types/.buf-api-version` = `v0.0.118`, `buf.gen.yaml.template` with `buf.build/bufbuild/es:v2.12.0`), and `.github/workflows/nightly-ui-buf-compatibility.yaml` nightly checks for a newer BSR label, regenerates TS, runs typecheck/lint/test/build, and opens an auto-merged PR.
+- Publishing: `.github/workflows/publish-proto.yaml` is a **`workflow_call`-only** reusable workflow (inputs `version`, `ref`; no trigger of its own) that runs `buf push --label "<version>"` from the `proto/` module root, which pushes **all three** modules declared in `buf.yaml` (`buf.build/osac-project/public-api`, `private-api` and `tests`). It is invoked by `osac-build-and-publish.yaml` in release mode when the fulfillment-service component is bumped (that workflow's `BUF_TOKEN` secret and `publish-fulfillment-service-proto` job). `docs/RELEASING.md` describes per-component versions as `<component>/vX.Y.Z` git tags (L52-55; e.g. `osac-ui/vX.Y.Z`, L61-62) and throwaway nightly tags `<latest-real-base>-nightly.<date>.<sha>.<run>.<attempt>` (L75-76). Go consumers inside the monorepo use `go.work` + `replace`; the UI consumes the BSR module at a pinned version (`osac-ui/libs/types/.buf-api-version` = `v0.0.118`, `buf.gen.yaml.template` with `buf.build/bufbuild/es:v2.12.0`), and `.github/workflows/nightly-ui-buf-compatibility.yaml` nightly checks for a newer BSR label, regenerates TS, runs typecheck/lint/test/build, and opens an auto-merged PR.
 
 ### Kubernetes-backed objects: own model, not CRD mirrors
 
@@ -212,7 +212,7 @@ message Condition {
   int64 observed_generation = 6;                    // metav1.Condition field; 0 when absent
 }
 ```
-`type` is a string (not an enum) because OCM/ACM define and extend condition types outside this API — the same exception OSAC makes for `UserCondition` mirroring Keycloak. Well-known type names are documented as constants in comments. Each `*Status` also carries a summarising enum `state` where the console needs one (e.g. `ManagedClusterState { UNSPECIFIED, PENDING, AVAILABLE, UNAVAILABLE, UNKNOWN_DEPRECATED? }` — keep to `UNSPECIFIED/PENDING/AVAILABLE/UNAVAILABLE/DETACHING`).
+`type` is a string (not an enum) because OCM/ACM define and extend condition types outside this API; OSAC's `UserCondition.type` is also a plain string, though its proto states no reason. Well-known type names are documented as constants in comments. Each `*Status` also carries a summarising enum `state` where the console needs one (`ManagedClusterState` in `mock/proto/ai_grid/v1/managed_cluster_type.proto`, which has values 0-9; see 6.4).
 
 ### 5.6 Identity metadata (what the console sends, what the backend must do)
 
@@ -255,6 +255,16 @@ Rule: always return `status.Error(...)`/`status.Errorf(...)`; never a bare `erro
 - Keep `gen/` committed (OSAC does; the console imports only `gen/ai_grid/v1`). Optionally `buf push --label vX.Y.Z` to a BSR module later for TypeScript consumers; not needed while the BFF is the only client.
 
 ## 6. Draft proto additions
+
+**Superseded by `mock/proto/ai_grid/v1`.** The console's draft proto in `mock/proto/ai_grid/v1` (see
+`mock/proto/README.md`) is authoritative; the drafts below are the research record and must not be used for
+field numbers. Where they differ (2026-10-16): the draft's `go_package` is the console's own,
+`github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1;aigridv1`, not the backend's;
+`AiGrid` (6.3) also has `GetHubCapabilities` (`HubCapabilities{manifest_work_replica_set_enabled = 1,
+observability_installed = 2, acm_version = 3}`); 6.4, 6.5 and 6.6 differ as listed under each; the `Models`
+placeholder of 6.7 is filled (`model_type.proto`, `models_service.proto`) while `Grid`, `CatalogItems` and
+`Subscriptions` stay empty stubs. `make -C bff lint-proto` runs `buf lint` (STANDARD minus `SERVICE_SUFFIX`) on
+the draft and passed on 2026-10-16 (buf v1.57.2).
 
 Package/options header for every file:
 
@@ -393,6 +403,14 @@ enum IdentityProviderKind {
 
 Fields 1-3 are the shipped ones and must not move. New fields are appended.
 
+Differences in the authoritative draft (`mock/proto/ai_grid/v1/managed_cluster_type.proto`): `ManagedCluster`
+continues past 11 with `repeated Taint taints = 12` (`Taint{key = 1, value = 2, effect = 3,
+google.protobuf.Timestamp time_added = 4}`), `int64 generation = 13` and `repeated string finalizers = 14`;
+`ManagedClusterStatus` adds `string state_message = 7`; `ManagedClusterState` adds `PENDING_IMPORT = 5`,
+`IMPORTING = 6`, `IMPORT_FAILED = 7`, `NOT_ACCEPTED = 8`, `UNKNOWN = 9` (the ACM console's derivation order is
+documented on the enum, and `PENDING` is superseded). The sketch below stops at field 11 and five enum values;
+do not reuse its numbering.
+
 ```protobuf
 syntax = "proto3";
 package ai_grid.v1;
@@ -481,9 +499,13 @@ message ClusterClaim {
 }
 ```
 
-Rationale for strings in `capacity`/`allocatable`: Kubernetes quantities (`16`, `64Gi`, `500m`) have no lossless numeric proto type; the BFF/UI parse them. This matches OSAC's "well-known formats as plain strings" allowance.
+Rationale for strings in `capacity`/`allocatable`: Kubernetes quantities (`16`, `64Gi`, `500m`) have no lossless numeric proto type; the BFF/UI parse them. OSAC's "No structured strings" rule allows well-known formats as plain strings but names only IP addresses, CIDRs and URLs (`API.md` L809-816); Kubernetes quantities are not in that list, so this is an argued extension of the rule, not something OSAC states.
 
 ### 6.5 `proto/ai_grid/v1/managed_clusters_service.proto`
+
+The authoritative draft (`mock/proto/ai_grid/v1/managed_clusters_service.proto`) has the same three RPCs and
+message numbers. Its filter comment points to `docs/FILTER.md`, which means OSAC's
+`fulfillment-service/docs/FILTER.md`; the console has no such file.
 
 ```protobuf
 syntax = "proto3";
@@ -558,7 +580,7 @@ message UpdateManagedClusterResponse {
 
 ### 6.6 `proto/ai_grid/v1/tenant_type.proto` and `tenants_service.proto`
 
-This is the **single** tenant proto draft (the page-token sketch that used to live in `keycloak.md` 8.1 was removed; `keycloak.md` 8.1 now only lists the Keycloak-specific implementation notes). Keeps the shipped flat `Tenant{id, name, domains}` with field numbers 1-3 frozen and grows it additively (OSAC permits flat objects; `Tenant` in OSAC also has no `status` and carries `// buf:lint:ignore OSAC_OBJECT_SHAPE`).
+This was the single tenant proto draft of the research (the page-token sketch that used to live in `keycloak.md` 8.1 was removed). The authoritative version is now `mock/proto/ai_grid/v1/tenant_type.proto` and `tenants_service.proto`, which differ from the sketch below: `Tenant` has `reserved 8; reserved "version";` and `UpdateTenantRequest` has `reserved 3; reserved "lock";` (Keycloak has no server-side version, `keycloak.md` 8.1); `enabled = 5` is `optional bool` (unset on create means Keycloak's default, true); `repeated TenantDomain domain_details = 9` was added with `TenantDomain{name = 1, verified = 2, identity_provider_alias = 3, auto_redirect = 4}`, and `domains` stays the list of names; `UpdateTenantRequest.update_mask` also accepts `domain_details`; `ListTenantsRequest.filter` is narrowed to the one form that pushes down to Keycloak's `search`, `this.name.contains("<term>") || this.domains.exists(d, d.contains("<term>"))`. Do not reuse fields 8 and 3. Keeps the shipped flat `Tenant{id, name, domains}` with field numbers 1-3 frozen and grows it additively (OSAC permits flat objects; `Tenant` in OSAC also has no `status` and carries `// buf:lint:ignore OSAC_OBJECT_SHAPE`).
 
 ```protobuf
 syntax = "proto3";
@@ -668,7 +690,7 @@ Keycloak mapping for this service (details and evidence in `keycloak.md` section
 
 ### 6.7 Placeholders (names agreed now, fields later, all `Unimplemented` until agreed)
 
-Empty request/response messages are deliberate: adding fields later is additive, and the fake can already register the services so the drift test (section 7) covers them.
+Empty request/response messages are deliberate: adding fields later is additive, and the fake can already register the services so the drift test (section 7) covers them. In the authoritative draft `Models` is no longer a placeholder (see the note at the top of section 6); the other three are, and the fake's probe test lists their methods in `intentionallyUnimplemented` (`bff/internal/fakebackend/fakebackend_test.go`).
 
 ```protobuf
 // proto/ai_grid/v1/grid_service.proto
@@ -726,8 +748,8 @@ When filled in, `Model`, `CatalogItem`, `Subscription` use `{ string name = 1; O
 1. **Proto PR first, in the backend repo.** Any new RPC starts as a PR touching only `proto/`, `gen/`, and (automatically, via the embedded `Unimplemented*Server`s in `internal/ai_grid/service.go`) nothing else: the server compiles and answers `Unimplemented`. The PR runs `buf lint`, `buf breaking --against main`, `buf generate` + diff check, `go build ./...`, `go test ./...`. Reviewers from both teams approve the shape. This mirrors OSAC's "commit source + generated code, CI fails if stale" (`check-generated-code.yaml`).
 2. **Tag.** On merge, tag `vX.Y.Z` (API addition -> minor). Later, implementation PRs ship under patch tags. Optionally a GitHub Release with the proto diff.
 3. **Console bumps.** `go get github.com/osac-project/ai-grid-backend@vX.Y.Z` in `bff/` (remove the `replace` once the repo is under the module's org), then: the fake (`bff/internal/backend/backendtest`, and the planned standalone fake) implements the method or keeps it `Unimplemented`; the BFF handler lands; `docs/plan/bff-api.md` moves the row from "Waiting" to "Implemented".
-4. **Drift test in the console** (new, cheap): a Go test that starts the fake server and asserts that `srv.GetServiceInfo()` contains every service and every method listed in the generated file descriptors (`aigridv1.File_ai_grid_v1_*_proto.Services()` via `protoregistry.GlobalFiles.RangeFilesByPackage("ai_grid.v1", ...)`), i.e. the fake registers every service the proto declares; and, per method, a table marks it `implemented` or `unimplemented` so adding a method to the proto without a decision in the fake fails the test. A second assertion compares the console's `backend.Client` fields with the registered services so a new service cannot be forgotten in `Dial`.
-5. **Nightly drift build in the console** (copy of OSAC's `nightly-ui-buf-compatibility.yaml` idea): a scheduled workflow that runs `go get github.com/osac-project/ai-grid-backend@main && go build ./... && go test ./...` in `bff/` on a throwaway branch, and opens/updates a PR or an issue when it fails or when a new tag exists. The backend repo gets the reverse guard only if cheap: a job that checks out the console at `main` with `replace` pointing at the PR's checkout and runs `go build ./bff/...`.
+4. **Drift test in the console** (implemented since: `TestFakeImplementsEveryProtoMethod` in `bff/internal/fakebackend` calls every method of every draft service and fails on an `Unimplemented` answer unless the method is listed in `intentionallyUnimplemented`, and `bff/internal/protodrift` checks the draft against the vendored backend proto; see `mock/proto/README.md`; the original proposal follows): a Go test that starts the fake server and asserts that `srv.GetServiceInfo()` contains every service and every method listed in the generated file descriptors (`aigridv1.File_ai_grid_v1_*_proto.Services()` via `protoregistry.GlobalFiles.RangeFilesByPackage("ai_grid.v1", ...)`), i.e. the fake registers every service the proto declares; and, per method, a table marks it `implemented` or `unimplemented` so adding a method to the proto without a decision in the fake fails the test. A second assertion compares the console's `backend.Client` fields with the registered services so a new service cannot be forgotten in `Dial`.
+5. **Nightly drift build in the console** (implemented since as `.github/workflows/drift.yaml`, which syncs the backend's `main` proto into a throwaway checkout and runs the drift test; the original proposal, a copy of OSAC's `nightly-ui-buf-compatibility.yaml` idea, follows): a scheduled workflow that runs `go get github.com/osac-project/ai-grid-backend@main && go build ./... && go test ./...` in `bff/` on a throwaway branch, and opens/updates a PR or an issue when it fails or when a new tag exists. The backend repo gets the reverse guard only if cheap: a job that checks out the console at `main` with `replace` pointing at the PR's checkout and runs `go build ./bff/...`.
 6. **Fake stays faithful to error semantics.** The fake uses the same `k8sErrorToStatus` table (section 5.7); fixture data lives in Go, not YAML, so it compiles against the generated types and breaks loudly on changes.
 7. **Metadata contract test.** The fake records incoming metadata (already in `backendtest.Fake.Metadata`); a shared test asserts `authorization` is present and `x-forwarded-*` are optional, so both sides agree on the identity contract in section 5.6.
 
@@ -763,3 +785,20 @@ Archived: `github.com/osac-project/fulfillment-service` (redirect notice), `gith
 Independently re-checked on 2026-10-15 against the backend checkout at `fb419b3` (and its remote via `gh api`: 0 tags, only `main`, same head), the `osac-project/osac` monorepo at a 2026-10-15 head (all 56 cited OSAC paths and 13 cited console paths exist), the archived repos' metadata via `gh api`, grpc-go `clientconn.go` at `v1.61.0` and `v1.84.0`, and buf's lint rule/category definitions. Corrections applied in this pass: `grpc.DialContext` is deprecated only at the console's grpc version (2); OSAC `limit` omitted = page of 100 (4, 5.3); the interceptor chain ends with the reference validator and the authz claim handling lives in `auth_context_extraction.go`/`authorization_evaluator.go` (4); dominant mandatory-id message and histogram scope (4); `publish-proto` is `workflow_call`-only and pushes three modules (4); `lock`/`version` cannot be honoured for Keycloak tenants (5.3, 6.6); unused timestamp import removed from `tenant_type.proto` and the single tenant draft now lives here, with the Keycloak mapping appended (6.6); proto3 `optional` vs `protoc 3.13.0` (8.9). The drafts in section 6 were checked by reading against buf's STANDARD rules, not by running `buf lint` (`buf`/`protoc` not installed locally).
 
 Not verified in this pass: the logging interceptor's field list (4); the literal `<component>/vX.Y.Z` tag form in `docs/RELEASING.md` (4); `ClusterConditionType` values beyond `READY` (4); Keycloak's `ORG.NAME` length limit (6.6).
+
+Audit (2026-10-16). Re-checked against the `osac-project/osac` monorepo at `334a01c` (2026-10-16; line numbers
+above that were added in this audit refer to it) and this branch's `mock/proto/ai_grid/v1`. Corrected: the
+quoted `API.md` sentence did not exist; the two real sentences are now quoted with their lines (4, "Error
+handling"); `defaultLimit: 100` is at `generic_dao.go` L116 (the brief's L115 does not match this checkout) with
+`maxLimit: 1000` at L117; the anonymous-methods regex lives in `start_grpc_server_cmd.go`, not the authn
+interceptor; OSAC does read `X-Forwarded-Proto` (UI proxy cookies), so only an `x-forwarded-*` identity
+convention is absent; the immutable networking services omit `Update`, so "exactly the five CRUD verbs" is
+narrowed; the reason given for `UserCondition.type` being a string was unsourced and is removed (4, 5.5);
+Kubernetes quantity strings are not in `API.md`'s list of well-known string formats (6.4). Verified now that were
+marked not verified: the logging interceptor's fields (Debug only), the `<component>/vX.Y.Z` tag form in
+`RELEASING.md`, `CLUSTER_CONDITION_TYPE_FAILED` (plus `DEGRADED` and two worker values), and `buf lint` (run on the
+console's draft with `make -C bff lint-proto`, passing). Sections 6.3-6.7 are marked as the research record: the
+authoritative draft is `mock/proto/ai_grid/v1`, and each section lists how it differs (ManagedCluster fields 12-14,
+`state_message = 7`, enum values 5-9; Tenant `version`/`lock` reserved, optional `enabled`, `domain_details = 9`,
+narrowed filter; `GetHubCapabilities`; filled `Models`). Section 7 items 4 and 5 note what has been implemented.
+Still not verified: Keycloak's `ORG.NAME` length limit (6.6).
