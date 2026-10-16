@@ -9,58 +9,128 @@
 //
 // When the backend ships these RPCs the console switches its import back to the
 // backend's generated package and deletes this draft.
-//
-// Placeholder: the names are agreed now, the fields later. Empty request and
-// response messages are deliberate; adding fields is additive, and the fake can
-// already register the service so the drift test covers it. Every RPC answers
-// Unimplemented until the shape is agreed.
 
 syntax = "proto3";
 
 package ai_grid.v1;
 
+import "ai_grid/v1/model_type.proto";
+import "google/protobuf/field_mask.proto";
+
 option go_package = "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1;aigridv1";
 
-// Models deployed on the grid: a Placement plus a ManifestWorkReplicaSet on the hub.
+// Models deployed on the grid: a KServe LLMInferenceService on the hub, or a
+// Placement plus a ManifestWorkReplicaSet that deploys it to managed clusters
+// (mock/research/models-maas.md 8.1, mock/research/acm.md "Proposal").
+// Mutations require the caller to be a provider admin.
 service Models {
-  // Lists Models.
+  // Lists models in name order within namespace order.
   rpc ListModels(ListModelsRequest) returns (ListModelsResponse);
-  // Returns one Model.
+  // Returns one model by namespace and name. NotFound, with the message
+  // `object with identifier '<namespace>/<name>' not found`, when absent.
   rpc GetModel(GetModelRequest) returns (GetModelResponse);
-  // Creates a Model.
+  // Creates a model. The object is returned at once with no conditions; the
+  // controllers fill the status over the following minutes. InvalidArgument
+  // with the CRD's own message when the spec breaks a validation rule;
+  // AlreadyExists for a taken namespace/name; FailedPrecondition
+  // "ManifestWorkReplicaSet feature gate disabled on hub" when `placement` is
+  // set and the hub does not run the ManifestWorkReplicaSet controller.
   rpc CreateModel(CreateModelRequest) returns (CreateModelResponse);
-  // Updates a Model.
+  // Updates the fields named in `update_mask`. A spec change bumps
+  // `metadata.generation` and, for a placed model, re-runs the rollout.
   rpc UpdateModel(UpdateModelRequest) returns (UpdateModelResponse);
-  // Deletes a Model.
+  // Deletes a model and, for a placed model, its Placement and
+  // ManifestWorkReplicaSet. The console's template uses the CRD default,
+  // cascade `Background`: the MWRS is gone at once and the generated works
+  // are deleted in the cluster namespaces shortly after, invisibly to this
+  // API. FailedPrecondition while a catalog entry or a subscription
+  // references the model.
   rpc DeleteModel(DeleteModelRequest) returns (DeleteModelResponse);
 }
 
-// Request of ListModels. Fields to be agreed.
-message ListModelsRequest {}
+// Request of ListModels. Every field is optional.
+message ListModelsRequest {
+  // Zero-based index of the first result. Default zero.
+  optional int32 offset = 1;
+  // Maximum number of results. Omitted means all; zero means count only;
+  // negative is InvalidArgument.
+  optional int32 limit = 2;
+  // CEL over `this` (a Model). Supported today: terms of the form
+  // `this.metadata.namespace == "<ns>"` and
+  // `this.metadata.labels["<key>"] == "<value>"`, joined with `&&`. Any other
+  // expression is InvalidArgument naming it.
+  optional string filter = 3;
+  // Sort order. Only the default (namespace, then name) is supported; a
+  // non-empty value is InvalidArgument.
+  optional string order = 4;
+}
 
-// Response of ListModels. Fields to be agreed.
-message ListModelsResponse {}
+// Response of ListModels.
+message ListModelsResponse {
+  // Models returned.
+  repeated Model items = 1;
+  // Number of models returned.
+  int32 size = 2;
+  // Number of models matching the filter regardless of paging.
+  int32 total = 3;
+}
 
-// Request of GetModel. Fields to be agreed.
-message GetModelRequest {}
+// Request of GetModel.
+message GetModelRequest {
+  // Model name.
+  string name = 1;
+  // Model namespace.
+  string namespace = 2;
+}
 
-// Response of GetModel. Fields to be agreed.
-message GetModelResponse {}
+// Response of GetModel.
+message GetModelResponse {
+  // The model.
+  Model object = 1;
+}
 
-// Request of CreateModel. Fields to be agreed.
-message CreateModelRequest {}
+// Request of CreateModel.
+message CreateModelRequest {
+  // `name`, `metadata.namespace` and `spec.model.uri` are required. `status`
+  // and the output-only metadata are ignored.
+  Model object = 1;
+}
 
-// Response of CreateModel. Fields to be agreed.
-message CreateModelResponse {}
+// Response of CreateModel.
+message CreateModelResponse {
+  // The model as stored, with no status yet.
+  Model object = 1;
+}
 
-// Request of UpdateModel. Fields to be agreed.
-message UpdateModelRequest {}
+// Request of UpdateModel.
+message UpdateModelRequest {
+  // The model with the new values. `name` and `metadata.namespace` identify it.
+  Model object = 1;
+  // Supported paths: `spec.replicas`, `spec.main.image`, `spec.main.env`,
+  // `spec.placement`, `spec.rollout`, `metadata.labels`,
+  // `metadata.annotations`. A path replaces that field as a whole (a map path
+  // replaces the map). Any other path, or an empty mask, is InvalidArgument.
+  // Clearing `spec.placement` also clears `spec.rollout`, which belongs to
+  // the placement, unless the mask names `spec.rollout` too.
+  google.protobuf.FieldMask update_mask = 2;
+  // When true, the update fails with Aborted unless
+  // `object.metadata.resource_version` matches the stored value.
+  bool lock = 3;
+}
 
-// Response of UpdateModel. Fields to be agreed.
-message UpdateModelResponse {}
+// Response of UpdateModel.
+message UpdateModelResponse {
+  // The model after the update.
+  Model object = 1;
+}
 
-// Request of DeleteModel. Fields to be agreed.
-message DeleteModelRequest {}
+// Request of DeleteModel.
+message DeleteModelRequest {
+  // Model name.
+  string name = 1;
+  // Model namespace.
+  string namespace = 2;
+}
 
-// Response of DeleteModel. Fields to be agreed.
+// Response of DeleteModel. Empty.
 message DeleteModelResponse {}

@@ -522,12 +522,6 @@ var intentionallyUnimplemented = map[string]string{
 	"/ai_grid.v1.Grid/GetOverview": "placeholder until agreed with the backend team, see mock/README.md",
 	"/ai_grid.v1.Grid/GetNetwork":  "placeholder until agreed with the backend team, see mock/README.md",
 
-	"/ai_grid.v1.Models/ListModels":  "placeholder until agreed with the backend team, see mock/README.md",
-	"/ai_grid.v1.Models/GetModel":    "placeholder until agreed with the backend team, see mock/README.md",
-	"/ai_grid.v1.Models/CreateModel": "placeholder until agreed with the backend team, see mock/README.md",
-	"/ai_grid.v1.Models/UpdateModel": "placeholder until agreed with the backend team, see mock/README.md",
-	"/ai_grid.v1.Models/DeleteModel": "placeholder until agreed with the backend team, see mock/README.md",
-
 	"/ai_grid.v1.CatalogItems/ListCatalogItems":  "placeholder until agreed with the backend team, see mock/README.md",
 	"/ai_grid.v1.CatalogItems/GetCatalogItem":    "placeholder until agreed with the backend team, see mock/README.md",
 	"/ai_grid.v1.CatalogItems/CreateCatalogItem": "placeholder until agreed with the backend team, see mock/README.md",

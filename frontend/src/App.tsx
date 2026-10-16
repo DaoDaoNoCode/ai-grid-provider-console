@@ -20,14 +20,16 @@ import {
 import type { ConsoleService } from './api/ConsoleService';
 import { useServiceData } from './hooks/useServiceData';
 import { ClustersPage } from './pages/ClustersPage';
+import { ModelsPage } from './pages/ModelsPage';
 import { TenantsPage } from './pages/TenantsPage';
 
 type Props = { service: ConsoleService };
 
-type Section = 'clusters' | 'tenants';
+type Section = 'clusters' | 'models' | 'tenants';
 
 const sections: { id: Section; label: string }[] = [
   { id: 'clusters', label: 'Clusters' },
+  { id: 'models', label: 'Models' },
   { id: 'tenants', label: 'Tenants' },
 ];
 
@@ -82,6 +84,8 @@ export const App: React.FC<Props> = ({ service }) => {
       <PageSection>
         {section === 'clusters' ? (
           <ClustersPage service={service} canEdit={user?.isProviderAdmin ?? false} />
+        ) : section === 'models' ? (
+          <ModelsPage service={service} canEdit={user?.isProviderAdmin ?? false} />
         ) : (
           <TenantsPage service={service} canEdit={user?.isProviderAdmin ?? false} />
         )}

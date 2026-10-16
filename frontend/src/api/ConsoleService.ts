@@ -1,4 +1,20 @@
-import type { ClusterPatch, ConsoleConfig, GridCluster, ListTenantsParams, Tenant, TenantCreate, TenantPage, TenantPatch, User } from './types';
+import type {
+  Capabilities,
+  ClusterPatch,
+  ConsoleConfig,
+  GridCluster,
+  ListModelsParams,
+  ListTenantsParams,
+  Model,
+  ModelCreate,
+  ModelPage,
+  ModelPatch,
+  Tenant,
+  TenantCreate,
+  TenantPage,
+  TenantPatch,
+  User,
+} from './types';
 
 /**
  * Every page talks to the BFF through this interface only. The HTTP
@@ -15,6 +31,13 @@ export interface ConsoleService {
   createTenant(body: TenantCreate): Promise<Tenant>;
   updateTenant(id: string, patch: TenantPatch): Promise<Tenant>;
   deleteTenant(id: string): Promise<void>;
+  listModels(params?: ListModelsParams): Promise<ModelPage>;
+  getModel(namespace: string, name: string): Promise<Model>;
+  createModel(body: ModelCreate): Promise<Model>;
+  updateModel(namespace: string, name: string, patch: ModelPatch): Promise<Model>;
+  deleteModel(namespace: string, name: string): Promise<void>;
+  /** 501 (ServiceError.isNotImplemented) against a backend without the RPC. */
+  getCapabilities(): Promise<Capabilities>;
 }
 
 export class ServiceError extends Error {

@@ -22,6 +22,16 @@ describe('App', () => {
     expect(screen.getByTestId('masthead-user')).not.toHaveTextContent('provider admin');
   });
 
+  it('navigates to models and shows them with their per-site state', async () => {
+    render(<App service={new MockConsoleService()} />);
+    fireEvent.click(await screen.findByRole('link', { name: 'Models' }));
+
+    expect(await screen.findByTestId('model-granite-8b-instruct')).toBeInTheDocument();
+    expect(screen.getByTestId('phase-granite-8b-instruct')).toHaveTextContent('Ready');
+    expect(screen.getByTestId('sites-granite-8b-instruct')).toHaveTextContent('1 / 1 site');
+    expect(screen.getByRole('button', { name: 'Deploy model' })).toBeInTheDocument();
+  });
+
   it('navigates to tenants and shows them', async () => {
     render(<App service={new MockConsoleService()} />);
     fireEvent.click(await screen.findByRole('link', { name: 'Tenants' }));

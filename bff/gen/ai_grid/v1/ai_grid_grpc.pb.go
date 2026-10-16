@@ -31,8 +31,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AiGrid_Ping_FullMethodName           = "/ai_grid.v1.AiGrid/Ping"
-	AiGrid_GetCurrentUser_FullMethodName = "/ai_grid.v1.AiGrid/GetCurrentUser"
+	AiGrid_Ping_FullMethodName               = "/ai_grid.v1.AiGrid/Ping"
+	AiGrid_GetCurrentUser_FullMethodName     = "/ai_grid.v1.AiGrid/GetCurrentUser"
+	AiGrid_GetHubCapabilities_FullMethodName = "/ai_grid.v1.AiGrid/GetHubCapabilities"
 )
 
 // AiGridClient is the client API for AiGrid service.
@@ -48,6 +49,13 @@ type AiGridClient interface {
 	// `authorization` metadata, and the coarse roles the console uses to show
 	// or hide actions. The backend still authorizes every RPC; this is a hint.
 	GetCurrentUser(ctx context.Context, in *GetCurrentUserRequest, opts ...grpc.CallOption) (*GetCurrentUserResponse, error)
+	// Returns what the hub this backend talks to can do, so the console can
+	// explain a disabled feature instead of failing on it: whether the
+	// ManifestWorkReplicaSet controller runs (on the dev hub the CRD exists but
+	// the feature gate is off, so creating a placed model is FailedPrecondition;
+	// mock/research/acm.md 4), whether observability is installed, and the ACM
+	// version. Requires authorization like every RPC but Ping.
+	GetHubCapabilities(ctx context.Context, in *GetHubCapabilitiesRequest, opts ...grpc.CallOption) (*GetHubCapabilitiesResponse, error)
 }
 
 type aiGridClient struct {
@@ -78,6 +86,16 @@ func (c *aiGridClient) GetCurrentUser(ctx context.Context, in *GetCurrentUserReq
 	return out, nil
 }
 
+func (c *aiGridClient) GetHubCapabilities(ctx context.Context, in *GetHubCapabilitiesRequest, opts ...grpc.CallOption) (*GetHubCapabilitiesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetHubCapabilitiesResponse)
+	err := c.cc.Invoke(ctx, AiGrid_GetHubCapabilities_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AiGridServer is the server API for AiGrid service.
 // All implementations must embed UnimplementedAiGridServer
 // for forward compatibility.
@@ -91,6 +109,13 @@ type AiGridServer interface {
 	// `authorization` metadata, and the coarse roles the console uses to show
 	// or hide actions. The backend still authorizes every RPC; this is a hint.
 	GetCurrentUser(context.Context, *GetCurrentUserRequest) (*GetCurrentUserResponse, error)
+	// Returns what the hub this backend talks to can do, so the console can
+	// explain a disabled feature instead of failing on it: whether the
+	// ManifestWorkReplicaSet controller runs (on the dev hub the CRD exists but
+	// the feature gate is off, so creating a placed model is FailedPrecondition;
+	// mock/research/acm.md 4), whether observability is installed, and the ACM
+	// version. Requires authorization like every RPC but Ping.
+	GetHubCapabilities(context.Context, *GetHubCapabilitiesRequest) (*GetHubCapabilitiesResponse, error)
 	mustEmbedUnimplementedAiGridServer()
 }
 
@@ -106,6 +131,9 @@ func (UnimplementedAiGridServer) Ping(context.Context, *PingRequest) (*PingRespo
 }
 func (UnimplementedAiGridServer) GetCurrentUser(context.Context, *GetCurrentUserRequest) (*GetCurrentUserResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetCurrentUser not implemented")
+}
+func (UnimplementedAiGridServer) GetHubCapabilities(context.Context, *GetHubCapabilitiesRequest) (*GetHubCapabilitiesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetHubCapabilities not implemented")
 }
 func (UnimplementedAiGridServer) mustEmbedUnimplementedAiGridServer() {}
 func (UnimplementedAiGridServer) testEmbeddedByValue()                {}
@@ -164,6 +192,24 @@ func _AiGrid_GetCurrentUser_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AiGrid_GetHubCapabilities_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetHubCapabilitiesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AiGridServer).GetHubCapabilities(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AiGrid_GetHubCapabilities_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AiGridServer).GetHubCapabilities(ctx, req.(*GetHubCapabilitiesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AiGrid_ServiceDesc is the grpc.ServiceDesc for AiGrid service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -178,6 +224,10 @@ var AiGrid_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetCurrentUser",
 			Handler:    _AiGrid_GetCurrentUser_Handler,
+		},
+		{
+			MethodName: "GetHubCapabilities",
+			Handler:    _AiGrid_GetHubCapabilities_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

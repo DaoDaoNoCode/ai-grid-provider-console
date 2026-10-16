@@ -23,8 +23,15 @@ import (
 //	                      ai-grid realm (the dev hub today), or
 //	                      {"organizationsDisabled": true} for a realm whose
 //	                      organizations feature is off
+//	models.json           {"models": [Model...]} in protojson, plus
+//	                      {"bindings": {"<namespace>": ["global"]}} naming the
+//	                      ManagedClusterSets bound into a model namespace (a
+//	                      namespace not listed is bound to `global`; an empty
+//	                      list simulates a namespace without a binding)
+//	presets.json          {"namespace": "...", "presets": [...]} the installed
+//	                      LLMInferenceServiceConfigs baseRefs resolve against
 //	access.json           who the fake hub treats as provider admin
-//	settings.json         latency, scenario speed and other knobs
+//	settings.json         latency, scenario speed, hub capabilities
 //	scenarios.json        {"events": [ScenarioEvent...]} timed transitions
 //
 // Proto messages are decoded with protojson so the files use the same field
@@ -41,6 +48,15 @@ type Fixtures struct {
 	// Zero (not set) means 1.
 	Speed     float64
 	Scenarios []ScenarioEvent
+	// Models and what they resolve against.
+	Models        []*aigridv1.Model
+	ModelBindings map[string][]string
+	Presets       *Presets
+	// Hub capabilities (settings.json). ManifestWorkReplicaSetEnabled nil
+	// means true; false mirrors the dev hub, where nothing reconciles an MWRS.
+	ManifestWorkReplicaSetEnabled *bool
+	ObservabilityInstalled        bool
+	ACMVersion                    string
 }
 
 // Access decides the fake hub's SelfSubjectAccessReview answers.
@@ -153,19 +169,65 @@ func Load(dir string) (*Fixtures, error) {
 		return nil, err
 	} else if ok {
 		var doc struct {
-			Latency Duration `json:"latency"`
-			Speed   *float64 `json:"speed"`
+			Latency                       Duration `json:"latency"`
+			Speed                         *float64 `json:"speed"`
+			ManifestWorkReplicaSetEnabled *bool    `json:"manifestWorkReplicaSetEnabled"`
+			ObservabilityInstalled        bool     `json:"observabilityInstalled"`
+			ACMVersion                    string   `json:"acmVersion"`
 		}
 		if err := json.Unmarshal(raw, &doc); err != nil {
 			return nil, fmt.Errorf("settings.json: %w", err)
 		}
 		fx.Latency = doc.Latency
+		fx.ManifestWorkReplicaSetEnabled = doc.ManifestWorkReplicaSetEnabled
+		fx.ObservabilityInstalled = doc.ObservabilityInstalled
+		fx.ACMVersion = doc.ACMVersion
 		if doc.Speed != nil {
 			if *doc.Speed <= 0 {
 				return nil, fmt.Errorf("settings.json: speed must be greater than zero, got %v", *doc.Speed)
 			}
 			fx.Speed = *doc.Speed
 		}
+	}
+
+	if raw, ok, err := readFile(filepath.Join(dir, "models.json")); err != nil {
+		return nil, err
+	} else if ok {
+		var doc struct {
+			Models   []json.RawMessage   `json:"models"`
+			Bindings map[string][]string `json:"bindings"`
+		}
+		if err := json.Unmarshal(raw, &doc); err != nil {
+			return nil, fmt.Errorf("models.json: %w", err)
+		}
+		for i, raw := range doc.Models {
+			m := &aigridv1.Model{}
+			if err := protojson.Unmarshal(raw, m); err != nil {
+				return nil, fmt.Errorf("models.json model %d: %w", i, err)
+			}
+			fx.Models = append(fx.Models, m)
+		}
+		fx.ModelBindings = doc.Bindings
+		for ns, sets := range doc.Bindings {
+			for _, set := range sets {
+				if !knownClusterSets[set] {
+					return nil, fmt.Errorf("models.json bindings[%q]: ManagedClusterSet %q does not exist on the hub", ns, set)
+				}
+			}
+		}
+	}
+
+	if raw, ok, err := readFile(filepath.Join(dir, "presets.json")); err != nil {
+		return nil, err
+	} else if ok {
+		var doc Presets
+		if err := json.Unmarshal(raw, &doc); err != nil {
+			return nil, fmt.Errorf("presets.json: %w", err)
+		}
+		if doc.Namespace == "" || len(doc.Names) == 0 {
+			return nil, errors.New("presets.json: namespace and presets are required")
+		}
+		fx.Presets = &doc
 	}
 
 	if raw, ok, err := readFile(filepath.Join(dir, "scenarios.json")); err != nil {

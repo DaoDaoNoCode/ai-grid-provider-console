@@ -29,10 +29,14 @@ serves the backend's gRPC services from `mock/fixtures/` and answers the BFF's a
 a hub would; the gRPC services need `authorization` metadata like the real backend, which the BFF
 forwards from the proxy headers. For what it simulates and how faithful it is, the fixture files,
 and the other tokens, see [mock/README.md](../mock/README.md). Edit the fixtures and restart to
-change the fleet or the tenants (`mock/fixtures/tenants.json` can also reproduce a Keycloak that
-is unreachable or has no `ai-grid` realm, see `mock/README.md`). The fake also moves clusters over
-time (`mock/fixtures/scenarios.json`: a cluster imports, one detaches, one recovers its lease);
-set `speed` in `mock/fixtures/settings.json` to play those faster.
+change the fleet, the tenants or the models (`mock/fixtures/tenants.json` can also reproduce a
+Keycloak that is unreachable or has no `ai-grid` realm, see `mock/README.md`). The fake also moves
+clusters and models over time (`mock/fixtures/scenarios.json`: a cluster imports, one detaches,
+one recovers its lease; `mock/fixtures/models.json`: a model created at start rolls out one site
+at a time, and a model you deploy from the Models page walks through the real KServe conditions
+to Ready over about a minute); set `speed` in `mock/fixtures/settings.json` to play those faster.
+`manifestWorkReplicaSetEnabled: false` there mirrors the dev hub, where multi-site placement is
+refused with 412 and the Models page says so.
 
 ## Run against a real cluster
 
@@ -72,6 +76,8 @@ make dev-bff
 hack/api.sh /api/v1/user
 hack/api.sh /api/v1/clusters
 hack/api.sh /api/v1/tenants
+hack/api.sh /api/v1/models
+hack/api.sh /api/v1/capabilities
 curl -s http://127.0.0.1:8080/readyz
 ```
 

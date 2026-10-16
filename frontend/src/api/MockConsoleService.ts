@@ -1,12 +1,18 @@
 import type { ConsoleService } from './ConsoleService';
 import { ServiceError } from './ConsoleService';
 import type {
+  Capabilities,
   ClusterCondition,
   ClusterPatch,
   ClusterStatus,
   ConsoleConfig,
   GridCluster,
+  ListModelsParams,
   ListTenantsParams,
+  Model,
+  ModelCreate,
+  ModelPage,
+  ModelPatch,
   Tenant,
   TenantCreate,
   TenantDomain,
@@ -14,6 +20,21 @@ import type {
   TenantPatch,
   User,
 } from './types';
+import {
+  DEFAULT_GATEWAY,
+  DNS1123_LABEL,
+  DNS1123_SUBDOMAIN,
+  GATE_DISABLED_MESSAGE,
+  MOCK_CAPABILITIES,
+  URI_SCHEMES,
+  dns1123LabelMessage,
+  dns1123SubdomainMessage,
+  placedPhase,
+  placementFor,
+  rolloutFromWorks,
+  seedModels,
+  selectClusters,
+} from './mockModels';
 
 /**
  * In-memory service for tests and UI work without a cluster. It follows the
@@ -24,7 +45,11 @@ import type {
  * as the fake implements them: unique name and alias (409 with Keycloak's
  * messages), alias defaulting to the name and immutable, domain validation
  * with Keycloak's messages (422), 404 for an unknown id, 403 for a
- * non-admin write.
+ * non-admin write. Models follow the fake's admission rules (DNS-1123 names,
+ * a known URI scheme, AlreadyExists 409, the ManifestWorkReplicaSet gate
+ * 412) and are static otherwise: a created model stays pending, a placed
+ * one gets its Placement decision from the mock clusters. A delete removes
+ * the model at once (cascade Background, like the fake).
  */
 export class MockConsoleService implements ConsoleService {
   constructor(
@@ -37,6 +62,8 @@ export class MockConsoleService implements ConsoleService {
       billingUrl: '',
       version: 'mock',
     },
+    public models: Model[] = seedModels(),
+    public capabilities: Capabilities = { ...MOCK_CAPABILITIES },
   ) {}
 
   getUser = async (): Promise<User> => this.user;
@@ -140,6 +167,215 @@ export class MockConsoleService implements ConsoleService {
     const current = this.findTenant(id);
     this.tenants.splice(this.tenants.indexOf(current), 1);
   };
+
+  getCapabilities = async (): Promise<Capabilities> => ({ ...this.capabilities });
+
+  listModels = async (params: ListModelsParams = {}): Promise<ModelPage> => {
+    const all = this.models
+      .filter((m) => !params.namespace || m.namespace === params.namespace)
+      .filter((m) => Object.entries(params.labels ?? {}).every(([k, v]) => m.labels[k] === v))
+      .sort((a, b) => (a.namespace < b.namespace ? -1 : a.namespace > b.namespace ? 1 : a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    const offset = Math.min(params.offset ?? 0, all.length);
+    const items = (params.limit === undefined ? all.slice(offset) : all.slice(offset, offset + params.limit)).map(copyModel);
+    return { items, meta: { size: items.length, total: all.length, offset, limit: params.limit } };
+  };
+
+  getModel = async (namespace: string, name: string): Promise<Model> => copyModel(this.findModel(namespace, name));
+
+  createModel = async (body: ModelCreate): Promise<Model> => {
+    this.requireAdmin();
+    if (!body.name) {
+      throw new ServiceError(422, 'metadata.name is required');
+    }
+    if (!DNS1123_SUBDOMAIN.test(body.name) || body.name.length > 253) {
+      throw new ServiceError(422, dns1123SubdomainMessage('metadata.name', body.name));
+    }
+    if (!body.namespace) {
+      throw new ServiceError(422, 'metadata.namespace is required');
+    }
+    if (!DNS1123_LABEL.test(body.namespace) || body.namespace.length > 63) {
+      throw new ServiceError(422, dns1123LabelMessage('metadata.namespace', body.namespace));
+    }
+    if (!body.modelUri) {
+      throw new ServiceError(422, 'spec.model.uri is required');
+    }
+    if (!URI_SCHEMES.some((s) => body.modelUri.startsWith(s) && body.modelUri.length > s.length)) {
+      throw new ServiceError(422, `spec.model.uri ${JSON.stringify(body.modelUri)}: unsupported scheme; expected one of hf://, s3://, pvc://, oci://`);
+    }
+    if (body.scaling) {
+      // The CRD's CEL rules on spec and spec.scaling, as the fake applies them.
+      if (body.replicas !== undefined) {
+        throw new ServiceError(422, 'replicas and scaling are mutually exclusive; use scaling for autoscaled deployments or replicas for static deployments');
+      }
+      if (body.scaling.triggers.length === 0) {
+        throw new ServiceError(422, 'at least one trigger is required when using direct KEDA scaling');
+      }
+      if (body.scaling.maxReplicas < 1) {
+        throw new ServiceError(422, 'spec.scaling.max_replicas is required when scaling is configured');
+      }
+      if (body.scaling.minReplicas > body.scaling.maxReplicas) {
+        throw new ServiceError(422, 'minReplicas cannot exceed maxReplicas');
+      }
+    }
+    if (body.rollout && !body.placement) {
+      throw new ServiceError(422, 'spec.rollout requires spec.placement');
+    }
+    if (body.placement && !this.capabilities.manifestWorkReplicaSetEnabled) {
+      throw new ServiceError(412, GATE_DISABLED_MESSAGE);
+    }
+    if (this.models.some((m) => m.namespace === body.namespace && m.name === body.name)) {
+      throw new ServiceError(409, `llminferenceservices.serving.kserve.io ${JSON.stringify(body.name)} already exists`);
+    }
+    const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+    const requests: Record<string, string> = {};
+    const limits: Record<string, string> = {};
+    if (body.cpu) {
+      requests.cpu = body.cpu;
+    }
+    if (body.memory) {
+      requests.memory = body.memory;
+    }
+    if (body.gpuCount) {
+      requests['nvidia.com/gpu'] = String(body.gpuCount);
+      limits['nvidia.com/gpu'] = String(body.gpuCount);
+    }
+    const annotations = { ...(body.annotations ?? {}) };
+    if (body.displayName) {
+      annotations['openshift.io/display-name'] = body.displayName;
+    }
+    if (body.description) {
+      annotations['openshift.io/description'] = body.description;
+    }
+    const model: Model = {
+      name: body.name,
+      namespace: body.namespace,
+      ...(body.displayName ? { displayName: body.displayName } : {}),
+      ...(body.description ? { description: body.description } : {}),
+      modelUri: body.modelUri,
+      modelName: body.modelName || body.name,
+      ...(body.runtimeImage ? { runtimeImage: body.runtimeImage } : {}),
+      ...(body.runtime ? { runtime: body.runtime } : {}),
+      ...(body.replicas !== undefined ? { replicas: body.replicas } : {}),
+      ...(body.scaling ? { scaling: { ...body.scaling, triggers: body.scaling.triggers.map((t) => ({ ...t })) } } : {}),
+      baseRefs: [...(body.baseRefs ?? [])],
+      requests,
+      limits,
+      env: (body.env ?? []).map((e) => ({ ...e })),
+      gateways: [body.gateway ?? DEFAULT_GATEWAY],
+      phase: 'pending',
+      addresses: [],
+      conditions: [],
+      appliedConfigs: [],
+      labels: { ...(body.labels ?? {}) },
+      annotations,
+      resourceVersion: String(++mockResourceVersion),
+      generation: 1,
+      creationTimestamp: now,
+    };
+    if (body.placement) {
+      const selected = selectClusters(body.placement, this.clusters);
+      const rollout = rolloutFromWorks(body.rollout ?? {}, [], selected.length, now);
+      model.placement = placementFor(body.placement, selected, now);
+      model.rollout = rollout;
+      Object.assign(model, placedPhase(rollout));
+    }
+    this.models.push(model);
+    return copyModel(model);
+  };
+
+  updateModel = async (namespace: string, name: string, patch: ModelPatch): Promise<Model> => {
+    this.requireAdmin();
+    const current = this.findModel(namespace, name);
+    const next = copyModel(current);
+    let touched = false;
+    if (patch.replicas !== undefined) {
+      next.replicas = patch.replicas;
+      touched = true;
+    }
+    if (patch.runtimeImage !== undefined) {
+      next.runtimeImage = patch.runtimeImage || undefined;
+      touched = true;
+    }
+    if (patch.env !== undefined) {
+      next.env = patch.env.map((e) => ({ ...e }));
+      touched = true;
+    }
+    if (patch.labels !== undefined) {
+      next.labels = { ...patch.labels };
+      touched = true;
+    }
+    if (patch.annotations !== undefined) {
+      next.annotations = { ...patch.annotations };
+      touched = true;
+    }
+    if (patch.displayName !== undefined) {
+      next.displayName = patch.displayName || undefined;
+      next.annotations = { ...next.annotations };
+      if (patch.displayName) {
+        next.annotations['openshift.io/display-name'] = patch.displayName;
+      } else {
+        delete next.annotations['openshift.io/display-name'];
+      }
+      touched = true;
+    }
+    if (patch.description !== undefined) {
+      next.description = patch.description || undefined;
+      next.annotations = { ...next.annotations };
+      if (patch.description) {
+        next.annotations['openshift.io/description'] = patch.description;
+      } else {
+        delete next.annotations['openshift.io/description'];
+      }
+      touched = true;
+    }
+    if (patch.placement !== undefined) {
+      if (patch.placement && !this.capabilities.manifestWorkReplicaSetEnabled && !current.placement) {
+        throw new ServiceError(412, GATE_DISABLED_MESSAGE);
+      }
+      if (patch.placement === null) {
+        delete next.placement;
+        delete next.rollout;
+        next.phase = 'pending';
+        delete next.reason;
+      } else {
+        const selected = selectClusters(patch.placement, this.clusters);
+        const now = new Date().toISOString();
+        next.rollout = rolloutFromWorks(patch.rollout ?? next.rollout ?? {}, [], selected.length, now);
+        next.placement = placementFor(patch.placement, selected, now);
+        Object.assign(next, placedPhase(next.rollout));
+      }
+      touched = true;
+    }
+    if (patch.rollout !== undefined && patch.placement === undefined) {
+      // A rollout change on its own: the strategy of the existing placement.
+      if (!next.placement || !next.rollout) {
+        throw new ServiceError(422, 'spec.rollout requires spec.placement');
+      }
+      next.rollout = rolloutFromWorks(patch.rollout, next.rollout.works, next.placement.selectedClusters.length, new Date().toISOString());
+      Object.assign(next, placedPhase(next.rollout));
+      touched = true;
+    }
+    if (!touched) {
+      return copyModel(current);
+    }
+    next.resourceVersion = String(++mockResourceVersion);
+    this.models[this.models.indexOf(current)] = next;
+    return copyModel(next);
+  };
+
+  deleteModel = async (namespace: string, name: string): Promise<void> => {
+    this.requireAdmin();
+    const current = this.findModel(namespace, name);
+    this.models.splice(this.models.indexOf(current), 1);
+  };
+
+  private findModel(namespace: string, name: string): Model {
+    const model = this.models.find((m) => m.namespace === namespace && m.name === name);
+    if (!model) {
+      throw new ServiceError(404, `object with identifier '${namespace}/${name}' not found`);
+    }
+    return model;
+  }
 
   private findTenant(id: string): Tenant {
     const tenant = this.tenants.find((t) => t.id === id);
@@ -590,6 +826,10 @@ export const seedClusters = (): GridCluster[] => [
     ],
   }),
 ];
+
+let mockResourceVersion = 48900000;
+
+const copyModel = (m: Model): Model => structuredClone(m);
 
 const copyTenant = (t: Tenant): Tenant => ({ ...t, domains: [...t.domains], domainDetails: t.domainDetails.map((d) => ({ ...d })), attributes: { ...t.attributes } });
 

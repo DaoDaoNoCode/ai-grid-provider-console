@@ -356,6 +356,157 @@ func (x *CurrentUser) GetIdentityProvider() IdentityProviderKind {
 	return IdentityProviderKind_IDENTITY_PROVIDER_KIND_UNSPECIFIED
 }
 
+// Request of GetHubCapabilities. Empty.
+type GetHubCapabilitiesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetHubCapabilitiesRequest) Reset() {
+	*x = GetHubCapabilitiesRequest{}
+	mi := &file_ai_grid_v1_ai_grid_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetHubCapabilitiesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetHubCapabilitiesRequest) ProtoMessage() {}
+
+func (x *GetHubCapabilitiesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_v1_ai_grid_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetHubCapabilitiesRequest.ProtoReflect.Descriptor instead.
+func (*GetHubCapabilitiesRequest) Descriptor() ([]byte, []int) {
+	return file_ai_grid_v1_ai_grid_proto_rawDescGZIP(), []int{5}
+}
+
+// Response of GetHubCapabilities.
+type GetHubCapabilitiesResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The hub's capabilities.
+	Capabilities  *HubCapabilities `protobuf:"bytes,1,opt,name=capabilities,proto3" json:"capabilities,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetHubCapabilitiesResponse) Reset() {
+	*x = GetHubCapabilitiesResponse{}
+	mi := &file_ai_grid_v1_ai_grid_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetHubCapabilitiesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetHubCapabilitiesResponse) ProtoMessage() {}
+
+func (x *GetHubCapabilitiesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_v1_ai_grid_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetHubCapabilitiesResponse.ProtoReflect.Descriptor instead.
+func (*GetHubCapabilitiesResponse) Descriptor() ([]byte, []int) {
+	return file_ai_grid_v1_ai_grid_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *GetHubCapabilitiesResponse) GetCapabilities() *HubCapabilities {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
+// What the hub can do, as the backend detects it at start-up and refreshes
+// periodically.
+type HubCapabilities struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// True when `ClusterManager.spec.workConfiguration.featureGates` enables
+	// `ManifestWorkReplicaSet` and the `cluster-manager-work-controller`
+	// Deployment runs. False on the dev hub today.
+	ManifestWorkReplicaSetEnabled bool `protobuf:"varint,1,opt,name=manifest_work_replica_set_enabled,json=manifestWorkReplicaSetEnabled,proto3" json:"manifest_work_replica_set_enabled,omitempty"`
+	// True when a `MultiClusterObservability` is installed and ready, so fleet
+	// metrics can be queried.
+	ObservabilityInstalled bool `protobuf:"varint,2,opt,name=observability_installed,json=observabilityInstalled,proto3" json:"observability_installed,omitempty"`
+	// `MultiClusterHub.status.currentVersion`, for example `2.17.3`.
+	AcmVersion    string `protobuf:"bytes,3,opt,name=acm_version,json=acmVersion,proto3" json:"acm_version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HubCapabilities) Reset() {
+	*x = HubCapabilities{}
+	mi := &file_ai_grid_v1_ai_grid_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HubCapabilities) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HubCapabilities) ProtoMessage() {}
+
+func (x *HubCapabilities) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_v1_ai_grid_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HubCapabilities.ProtoReflect.Descriptor instead.
+func (*HubCapabilities) Descriptor() ([]byte, []int) {
+	return file_ai_grid_v1_ai_grid_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *HubCapabilities) GetManifestWorkReplicaSetEnabled() bool {
+	if x != nil {
+		return x.ManifestWorkReplicaSetEnabled
+	}
+	return false
+}
+
+func (x *HubCapabilities) GetObservabilityInstalled() bool {
+	if x != nil {
+		return x.ObservabilityInstalled
+	}
+	return false
+}
+
+func (x *HubCapabilities) GetAcmVersion() string {
+	if x != nil {
+		return x.AcmVersion
+	}
+	return ""
+}
+
 var File_ai_grid_v1_ai_grid_proto protoreflect.FileDescriptor
 
 const file_ai_grid_v1_ai_grid_proto_rawDesc = "" +
@@ -375,14 +526,23 @@ const file_ai_grid_v1_ai_grid_proto_rawDesc = "" +
 	"\x06groups\x18\x03 \x03(\tR\x06groups\x12*\n" +
 	"\x11is_provider_admin\x18\x04 \x01(\bR\x0fisProviderAdmin\x12\x18\n" +
 	"\atenants\x18\x05 \x03(\tR\atenants\x12M\n" +
-	"\x11identity_provider\x18\x06 \x01(\x0e2 .ai_grid.v1.IdentityProviderKindR\x10identityProvider*\x8f\x01\n" +
+	"\x11identity_provider\x18\x06 \x01(\x0e2 .ai_grid.v1.IdentityProviderKindR\x10identityProvider\"\x1b\n" +
+	"\x19GetHubCapabilitiesRequest\"]\n" +
+	"\x1aGetHubCapabilitiesResponse\x12?\n" +
+	"\fcapabilities\x18\x01 \x01(\v2\x1b.ai_grid.v1.HubCapabilitiesR\fcapabilities\"\xb5\x01\n" +
+	"\x0fHubCapabilities\x12H\n" +
+	"!manifest_work_replica_set_enabled\x18\x01 \x01(\bR\x1dmanifestWorkReplicaSetEnabled\x127\n" +
+	"\x17observability_installed\x18\x02 \x01(\bR\x16observabilityInstalled\x12\x1f\n" +
+	"\vacm_version\x18\x03 \x01(\tR\n" +
+	"acmVersion*\x8f\x01\n" +
 	"\x14IdentityProviderKind\x12&\n" +
 	"\"IDENTITY_PROVIDER_KIND_UNSPECIFIED\x10\x00\x12*\n" +
 	"&IDENTITY_PROVIDER_KIND_OPENSHIFT_OAUTH\x10\x01\x12#\n" +
-	"\x1fIDENTITY_PROVIDER_KIND_KEYCLOAK\x10\x022\x9c\x01\n" +
+	"\x1fIDENTITY_PROVIDER_KIND_KEYCLOAK\x10\x022\x81\x02\n" +
 	"\x06AiGrid\x129\n" +
 	"\x04Ping\x12\x17.ai_grid.v1.PingRequest\x1a\x18.ai_grid.v1.PingResponse\x12W\n" +
-	"\x0eGetCurrentUser\x12!.ai_grid.v1.GetCurrentUserRequest\x1a\".ai_grid.v1.GetCurrentUserResponseBOZMgithub.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1;aigridv1b\x06proto3"
+	"\x0eGetCurrentUser\x12!.ai_grid.v1.GetCurrentUserRequest\x1a\".ai_grid.v1.GetCurrentUserResponse\x12c\n" +
+	"\x12GetHubCapabilities\x12%.ai_grid.v1.GetHubCapabilitiesRequest\x1a&.ai_grid.v1.GetHubCapabilitiesResponseBOZMgithub.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1;aigridv1b\x06proto3"
 
 var (
 	file_ai_grid_v1_ai_grid_proto_rawDescOnce sync.Once
@@ -397,27 +557,33 @@ func file_ai_grid_v1_ai_grid_proto_rawDescGZIP() []byte {
 }
 
 var file_ai_grid_v1_ai_grid_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_ai_grid_v1_ai_grid_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_ai_grid_v1_ai_grid_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_ai_grid_v1_ai_grid_proto_goTypes = []any{
-	(IdentityProviderKind)(0),      // 0: ai_grid.v1.IdentityProviderKind
-	(*PingRequest)(nil),            // 1: ai_grid.v1.PingRequest
-	(*PingResponse)(nil),           // 2: ai_grid.v1.PingResponse
-	(*GetCurrentUserRequest)(nil),  // 3: ai_grid.v1.GetCurrentUserRequest
-	(*GetCurrentUserResponse)(nil), // 4: ai_grid.v1.GetCurrentUserResponse
-	(*CurrentUser)(nil),            // 5: ai_grid.v1.CurrentUser
+	(IdentityProviderKind)(0),          // 0: ai_grid.v1.IdentityProviderKind
+	(*PingRequest)(nil),                // 1: ai_grid.v1.PingRequest
+	(*PingResponse)(nil),               // 2: ai_grid.v1.PingResponse
+	(*GetCurrentUserRequest)(nil),      // 3: ai_grid.v1.GetCurrentUserRequest
+	(*GetCurrentUserResponse)(nil),     // 4: ai_grid.v1.GetCurrentUserResponse
+	(*CurrentUser)(nil),                // 5: ai_grid.v1.CurrentUser
+	(*GetHubCapabilitiesRequest)(nil),  // 6: ai_grid.v1.GetHubCapabilitiesRequest
+	(*GetHubCapabilitiesResponse)(nil), // 7: ai_grid.v1.GetHubCapabilitiesResponse
+	(*HubCapabilities)(nil),            // 8: ai_grid.v1.HubCapabilities
 }
 var file_ai_grid_v1_ai_grid_proto_depIdxs = []int32{
 	5, // 0: ai_grid.v1.GetCurrentUserResponse.user:type_name -> ai_grid.v1.CurrentUser
 	0, // 1: ai_grid.v1.CurrentUser.identity_provider:type_name -> ai_grid.v1.IdentityProviderKind
-	1, // 2: ai_grid.v1.AiGrid.Ping:input_type -> ai_grid.v1.PingRequest
-	3, // 3: ai_grid.v1.AiGrid.GetCurrentUser:input_type -> ai_grid.v1.GetCurrentUserRequest
-	2, // 4: ai_grid.v1.AiGrid.Ping:output_type -> ai_grid.v1.PingResponse
-	4, // 5: ai_grid.v1.AiGrid.GetCurrentUser:output_type -> ai_grid.v1.GetCurrentUserResponse
-	4, // [4:6] is the sub-list for method output_type
-	2, // [2:4] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	8, // 2: ai_grid.v1.GetHubCapabilitiesResponse.capabilities:type_name -> ai_grid.v1.HubCapabilities
+	1, // 3: ai_grid.v1.AiGrid.Ping:input_type -> ai_grid.v1.PingRequest
+	3, // 4: ai_grid.v1.AiGrid.GetCurrentUser:input_type -> ai_grid.v1.GetCurrentUserRequest
+	6, // 5: ai_grid.v1.AiGrid.GetHubCapabilities:input_type -> ai_grid.v1.GetHubCapabilitiesRequest
+	2, // 6: ai_grid.v1.AiGrid.Ping:output_type -> ai_grid.v1.PingResponse
+	4, // 7: ai_grid.v1.AiGrid.GetCurrentUser:output_type -> ai_grid.v1.GetCurrentUserResponse
+	7, // 8: ai_grid.v1.AiGrid.GetHubCapabilities:output_type -> ai_grid.v1.GetHubCapabilitiesResponse
+	6, // [6:9] is the sub-list for method output_type
+	3, // [3:6] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_ai_grid_v1_ai_grid_proto_init() }
@@ -431,7 +597,7 @@ func file_ai_grid_v1_ai_grid_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ai_grid_v1_ai_grid_proto_rawDesc), len(file_ai_grid_v1_ai_grid_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   5,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

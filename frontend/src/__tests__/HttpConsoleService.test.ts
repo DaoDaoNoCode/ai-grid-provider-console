@@ -50,6 +50,41 @@ describe('HttpConsoleService', () => {
     await expect(service.createTenant({ name: 't' })).rejects.toMatchObject({ status: 409, message: 'A organization with the same name already exists.' });
   });
 
+  it('lists, gets, creates, updates and deletes models and reads the capabilities', async () => {
+    const model = { name: 'm', namespace: 'ns', modelUri: 'hf://x/m', modelName: 'm', baseRefs: [], requests: {}, limits: {}, env: [], gateways: [], addresses: [], conditions: [], appliedConfigs: [], labels: {}, annotations: {} };
+    const fetchFn = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse(200, { data: [model], meta: { size: 1, total: 1, offset: 0 } })));
+    const service = new HttpConsoleService(fetchFn);
+    await expect(service.listModels({ namespace: 'ns', labels: { 'ai-grid/family': 'tiny' }, limit: 5 })).resolves.toEqual({ items: [model], meta: { size: 1, total: 1, offset: 0 } });
+    expect(fetchFn).toHaveBeenLastCalledWith('/api/v1/models?namespace=ns&label=ai-grid%2Ffamily%3Dtiny&limit=5', expect.objectContaining({ method: 'GET' }));
+    await service.listModels();
+    expect(fetchFn).toHaveBeenLastCalledWith('/api/v1/models', expect.objectContaining({ method: 'GET' }));
+
+    fetchFn.mockResolvedValue(jsonResponse(200, { data: model }));
+    await expect(service.getModel('ns', 'm')).resolves.toEqual(model);
+    expect(fetchFn).toHaveBeenLastCalledWith('/api/v1/models/ns/m', expect.objectContaining({ method: 'GET' }));
+    fetchFn.mockResolvedValue(jsonResponse(201, { data: model }));
+    await expect(service.createModel({ name: 'm', namespace: 'ns', modelUri: 'hf://x/m', placement: { matchLabels: { a: 'b' } } })).resolves.toEqual(model);
+    expect(fetchFn).toHaveBeenLastCalledWith(
+      '/api/v1/models',
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({ name: 'm', namespace: 'ns', modelUri: 'hf://x/m', placement: { matchLabels: { a: 'b' } } }) }),
+    );
+    fetchFn.mockResolvedValue(jsonResponse(200, { data: { ...model, replicas: 3 } }));
+    await expect(service.updateModel('ns', 'm', { replicas: 3, placement: null })).resolves.toMatchObject({ replicas: 3 });
+    expect(fetchFn).toHaveBeenLastCalledWith('/api/v1/models/ns/m', expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ replicas: 3, placement: null }) }));
+    fetchFn.mockResolvedValue(new Response(null, { status: 204 }));
+    await expect(service.deleteModel('ns', 'm')).resolves.toBeUndefined();
+    expect(fetchFn).toHaveBeenLastCalledWith('/api/v1/models/ns/m', expect.objectContaining({ method: 'DELETE' }));
+
+    fetchFn.mockResolvedValue(jsonResponse(412, { error: { code: '412', message: 'ManifestWorkReplicaSet feature gate disabled on hub' } }));
+    await expect(service.createModel({ name: 'm', namespace: 'ns', modelUri: 'hf://x/m', placement: {} })).rejects.toMatchObject({ status: 412, message: 'ManifestWorkReplicaSet feature gate disabled on hub' });
+
+    fetchFn.mockResolvedValue(jsonResponse(200, { data: { manifestWorkReplicaSetEnabled: false, observabilityInstalled: false, acmVersion: '2.17.3' } }));
+    await expect(service.getCapabilities()).resolves.toEqual({ manifestWorkReplicaSetEnabled: false, observabilityInstalled: false, acmVersion: '2.17.3' });
+    expect(fetchFn).toHaveBeenLastCalledWith('/api/v1/capabilities', expect.objectContaining({ method: 'GET' }));
+    fetchFn.mockResolvedValue(jsonResponse(501, { error: { code: '501', message: 'the AI Grid backend does not support this operation yet' } }));
+    await expect(service.getCapabilities()).rejects.toMatchObject({ isNotImplemented: true });
+  });
+
   it('gets one cluster by name', async () => {
     const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, { data: { name: 'site-paris-1', status: 'ready' } }));
     const service = new HttpConsoleService(fetchFn);

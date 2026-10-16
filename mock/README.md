@@ -122,9 +122,10 @@ What keeps it honest:
   plus this test name every difference. `TestFakeImplementsEveryProtoMethod` in
   `bff/internal/fakebackend` then calls every method of every draft service and fails on an
   `Unimplemented` answer, except for the methods listed in `intentionallyUnimplemented`
-  (`fakebackend_test.go`), each with its reason: the placeholder `Grid`, `Models`,
-  `CatalogItems` and `Subscriptions` methods until they are agreed with the backend team, and
-  `GetCurrentUser`, which the BFF does not need yet. An entry whose
+  (`fakebackend_test.go`), each with its reason: the placeholder `Grid`, `CatalogItems` and
+  `Subscriptions` methods until they are agreed with the backend team, and `GetCurrentUser`,
+  which the BFF does not need yet (`Models` and `GetHubCapabilities` are implemented and
+  probed like every other method). An entry whose
   method starts answering fails the test until the entry is removed, so the allowlist is
   always exactly the set of stubs.
 - **Generated code is committed and checked.** `bff/gen/ai_grid/v1` is produced by
@@ -149,6 +150,24 @@ console's derivation order documented on the enum. The flattened claim fields an
 `cluster_claims` and the `feature.open-cluster-management.io/addon-*` labels, which the proto
 already carries verbatim.
 
+The Models area filled the placeholder `Models` service (`model_type.proto`,
+`models_service.proto`) with `Model { name, metadata, spec, status }`: the spec is the subset
+of a KServe `LLMInferenceService` the console writes (`model.uri/name`, `replicas` or
+`scaling`, `base_refs`, `runtime`, `router` with gateway refs, a managed route and the
+scheduler, the `main` container) plus an ACM `Placement` (one predicate: label selector, claim
+expressions, tolerations, `number_of_clusters`, spread constraints) and a `Rollout`
+(`All|Progressive|ProgressivePerGroup` with `max_concurrency`, `max_failures`,
+`progress_deadline`, `min_success_time`); the status is the LLMInferenceService status of the
+hub deployment (`url`, `addresses`, Knative conditions, `applied_configs`, `workloads`,
+`observed_generation`), a derived `phase` with its reason and message, and for a placed model
+the Placement decisions and conditions plus the ManifestWorkReplicaSet summary, conditions and
+one `ManifestWorkStatus` per generated work (conditions, manifests with their conditions and
+feedback, generations). The research's `Placements` and `ManifestWorkReplicaSets` services
+were not drafted as separate services: the console only ever needs them through a model, so
+the `Models` service wraps one Placement and one MWRS per model (`research/acm.md`,
+"Proposal"). `AiGrid` gained `GetHubCapabilities` (`manifest_work_replica_set_enabled`,
+`observability_installed`, `acm_version`).
+
 The Tenants area removed two drafted fields instead of adding: `Tenant.version` (field 8)
 and `UpdateTenantRequest.lock` (field 3) are `reserved`, because Keycloak Organizations have
 no server-side version, etag or `Last-Modified` and a Keycloak-backed backend could never
@@ -164,8 +183,10 @@ to Keycloak's `search`, `this.name.contains("<term>") || this.domains.exists(d, 
 |---|---|---|
 | `managedclusters.json` | `{"clusters": [ai_grid.v1.ManagedCluster...]}` in protojson | Full hub objects: labels exactly as ACM writes them (`name`, `cloud`, `vendor`, `clusterID`, `openshiftVersion*`, `clusterset=default`, `feature.open-cluster-management.io/addon-*`) plus the console's `ai-grid/*` labels and annotations, `uid`, `resourceVersion`, `creationTimestamp`, finalizers, taints, client configs, and a `status` with every condition's exact type, reason and message, name-sorted claims, capacity (`nvidia.com/gpu` on GPU clusters) and version. One cluster per state the ACM console distinguishes: `local-cluster`, `site-paris-1`, `site-frankfurt-1` ready (Paris enrolled with GPUs, Frankfurt not enrolled); `site-madrid-1` unknown (lease expired, taint `unreachable`, add-ons `unreachable`); `site-ashburn-1` offline (API server down, taint `unavailable`); `site-berlin-1` importing and `site-oslo-1` pending import (`auto-detect` labels, no claims); `site-dublin-1` import failed; `site-lisbon-1` not accepted (`hubAcceptsClient: false`, `HubClusterAdminDenied`); `edge-lyon-2` detaching (`deletionTimestamp`, `Deleting/ResourceRemaining`; the research verified that reason but not its message, which is left empty). `status.state` and `status.stateMessage` are derived by the server on every read and must not be written here. |
 | `tenants.json` | `{"tenants": [ai_grid.v1.Tenant...]}` in protojson | Keycloak 26.8 Organizations as the backend maps them: UUID `id`, unique `name` and `alias` (alias defaults to the name and never changes), `enabled`, `description`, `attributes` (first value per key), `domains` as the lower-case names of `domainDetails`, each with `verified`, `identityProviderAlias`, `autoRedirect`. Six fictional organizations: one disabled (`umbrella-biotech`), one with two domains and attributes (`acme-robotics`), one with a wildcard domain (`vandelay-industries`), one without domains (`initech-labs`), one whose alias differs from its name (`globex-research` / `globex`). The fake validates the file like Keycloak would (duplicate name, alias or domain, bad domain, non-v4-UUID id fail at start). Other modes, one at a time: `{"unavailable": "<text>"}` makes every Tenants RPC `Unavailable` (message `Keycloak is unavailable: <text>`; the shipped backend still returns `Unknown` here), `{"realmMissing": true}` makes them `FailedPrecondition` with `Keycloak realm "ai-grid": Realm not found.` (the dev hub today), `{"organizationsDisabled": true}` the same with `Organizations not enabled for this realm.`. |
+| `models.json` | `{"models": [ai_grid.v1.Model...], "bindings": {"<namespace>": ["global"]}}` in protojson | The subset of a KServe `LLMInferenceService` the console writes, shaped like the hub instance (`baseRefs`, `model.uri/name`, `replicas`, the `openshift-ai-inference` Gateway, a managed route and the scheduler, a `main` container with resources and env), with `openshift.io/display-name|description` annotations, plus an optional `placement` (an ACM Placement: cluster sets, label selector, tolerations) and `rollout` (strategy, concurrency, deadline). `status` is derived on every read and must not be written here. Five fictional models in `ai-grid-models`: `tiny-llm` Ready on the hub; `granite-8b-instruct` placed on the enrolled and provisioned sites with the rollout complete (`site-paris-1` today, `site-madrid-1` joins when its lease recovers); `mistral-7b-instruct`, a Progressive rollout one OpenShift spoke at a time, without `creationTimestamp` so it is created when the fake starts and can be watched live (`site-frankfurt-1`, `site-berlin-1` once it joins, `site-paris-1`); `llama-3-70b` failed on a preset the hub lacks (`ConfigNotFound` with KServe's exact message); `codellama-13b`, whose placement selects no cluster (`NoManagedClusterMatched`, `PlacementDecisionEmpty`). `bindings` names the ManagedClusterSets bound into a model namespace (`global` when not listed; an empty list is a namespace without a binding, `NoManagedClusterSetBindings`). |
+| `presets.json` | `{"namespace", "presets": [...]}` | The `LLMInferenceServiceConfig` presets installed in the RHOAI applications namespace (`v3-6-0-kserve-config-llm-*`, the subset the research names), which `baseRefs` resolve against; an unknown one is accepted by the API server and fails later with `PresetsCombined=False/ConfigNotFound`, as on the hub. |
 | `access.json` | who is a provider admin | Drives the fake hub's access review **and** the fake backend's answer to a mutating RPC: a token in `deniedTokens` (or any token when `defaultAllowed` is false) gets `PermissionDenied` with the API server's forbidden message from `UpdateManagedCluster` and with "is not a provider admin" from `CreateTenant`, `UpdateTenant` and `DeleteTenant`, a token in `rejectedTokens` gets `Unauthenticated` from every RPC, reads included, like an expired OpenShift token at the hub; so `AUTH_TOKEN=viewer-token` sees the clusters and tenants but cannot enrol a cluster or create a tenant (the BFF answers 403 and the UI hides the actions) and `AUTH_TOKEN=expired-token` sees nothing but the signed-out path. |
-| `settings.json` | latency, speed | `latency` is a Go duration such as `"40ms"` added to every RPC; a hub list from a pod on the hub takes tens of milliseconds. `speed` multiplies the scenario clock (`10` plays the five-minute scenario in 30 seconds; default `1`). |
+| `settings.json` | latency, speed, hub capabilities | `latency` is a Go duration such as `"40ms"` added to every RPC; a hub list from a pod on the hub takes tens of milliseconds. `speed` multiplies the scenario clock and the model lifecycles (`10` plays the five-minute scenario in 30 seconds; default `1`). `manifestWorkReplicaSetEnabled` (default true) is what `GetHubCapabilities` reports and what gates a placed model; `false` mirrors the dev hub, where the CRD exists but nothing reconciles it, so `CreateModel` with a placement is `FailedPrecondition` and a seeded placed model keeps an empty MWRS status. `observabilityInstalled` and `acmVersion` are reported as-is. |
 
 Fixtures are protojson so they use the field names grpcurl shows and fail to load on any
 unknown field; a fixture that fails to load stops the fake with an error, so a typo never
@@ -173,9 +194,14 @@ serves nonsense. A missing file leaves its part empty, except `access.json`: wit
 token is a provider admin. The directory itself must exist. Tests load the shipped directory
 and check the ACM labels, that every condition uses only a type, reason and message the
 research verified, that claims are sorted, that hub taints match the Available condition, that
-each cluster derives the state it was seeded for, and that the tenants are a realm Keycloak
-would accept and cover the shapes the UI renders. Fixture names, labels and ids must never be
-real: this repository is public.
+each cluster derives the state it was seeded for, that the tenants are a realm Keycloak would
+accept and cover the shapes the UI renders, and that every model uses only installed presets
+(but the one seeded to fail), the hub's Gateways, the selector and toleration operators, the
+built-in cluster sets and the rollout strategies, and derives the phase it was seeded for.
+Fixture names, labels and ids must never be real: this repository is public. The
+addresses the fake derives are synthetic too: external URLs under `example.com` and
+internal ones as standard Kubernetes service names (`<svc>.<ns>.svc.cluster.local`) built
+from the fictional Gateway names.
 
 ## What the research found, in one paragraph each
 
@@ -326,19 +352,139 @@ a scoped service-account client instead of the master admin.
 
 ### 3. Models (LLMInferenceService, Placement, ManifestWorkReplicaSet)
 
-Fake: `CreateModel` returns an object with no conditions, then on timers walks through the
-real condition set to `Ready` or stops at a failure chosen by name or URI
-(`ConfigNotFound`, `ReconcileSingleNodeWorkloadError`, `GatewaysNotReady`); multi-site models
-get a Placement whose decisions are recomputed from cluster labels and taints, and an MWRS
-whose per-cluster works go `Applied`, `Available`, `Progressing`, then complete, with
-progressive rollout and failure injection; a capability flag reproduces the dev hub's
-disabled MWRS gate with `FailedPrecondition`.
-Frontend: model list and detail with per-site status from the works, create wizard with the
-POC's inputs mapped to the real spec, delete blocked while a subscription references the
-model.
-Backend ask: the `Models` service shape in `research/models-maas.md` section 8.1, the
-`Placements` and `ManifestWorkReplicaSets` messages in `research/acm.md`, and a
-`GetHubCapabilities` RPC so the UI can explain a disabled gate.
+Implemented. Fake (`bff/internal/fakebackend/{models.go,kserve.go,placement.go,work.go}`): a
+store of models whose desired state is a KServe `LLMInferenceService` spec, optionally with an
+ACM `Placement` and a `ManifestWorkReplicaSet` (both `model-<name>` in the model's namespace,
+labelled `ai-grid/model=<name>`); the store keeps only what the controllers would have written
+(when a model was created, when each generated work was applied) and derives everything else
+on every read from the clock and the current clusters.
+`CreateModel` admits like the API server and the KServe webhook (`research/models-maas.md`
+2.1, plus the CRD's CEL texts read from the hub): a DNS-1123 subdomain name and a DNS-1123
+label namespace with apimachinery's messages, `spec.model.uri` with a known scheme, the four
+`scaling` rules verbatim ("replicas and scaling are mutually exclusive; use scaling for
+autoscaled deployments or replicas for static deployments", "either wva or keda must be
+specified when scaling is configured", "at least one trigger is required when using direct
+KEDA scaling", "minReplicas cannot exceed maxReplicas"), the Placement operators and cluster
+sets, the rollout durations and percentages; `AlreadyExists` with the API server's message; and,
+before writing an MWRS, `FailedPrecondition` "ManifestWorkReplicaSet feature gate disabled on
+hub" when `settings.json` turns the gate off. The object comes back with no conditions. Then
+the lifecycle of 8.2 replays on the scenario clock, each write stamped at the time it
+happened so `lastTransitionTime` moves only on a status change: T1 (5 s) `PresetsCombined`,
+`GatewaysReady`, `HTTPRoutesReady=False/WaitingForGateway` ("The following HTTPRoutes exist
+but no Gateway controller has accepted them yet: [<ns>/<name>-kserve-route]", the reason
+KServe's router reports for a managed route; `HTTPRouteNotObserved` "The managed HTTPRoute
+has not been observed yet" is only reported for an inline route spec, which the console does
+not write) and `appliedConfigs` (the implicit scheduler, router-route and template presets,
+then the `baseRefs` as `UserRef`); T2 (15 s) the route, pool and scheduler ready,
+`MainWorkloadReady=False/Progressing` with an empty message, `workloads` (`<name>-kserve`,
+`<name>-kserve-router-scheduler`, the `<name>-kserve-workload-svc` Service); T2b (20 s)
+`MinimumReplicasUnavailable` "Deployment does not have minimum availability."; T3 (45 s)
+everything True, `url`, the six addresses (external and internal root, path and publishers
+forms with their `models[]`), `workloads.primary.readyReplicas`. The roll-ups copy the first
+failing dependent's reason and message as Knative does, so `Ready` reads
+False/`WaitingForGateway`, then `Progressing`, then `MinimumReplicasUnavailable` while a
+healthy model starts (the UI shows these as "Starting").
+Failure modes: an unknown `baseRef` stops at T1 with `ConfigNotFound` and KServe's exact
+message (`LLMInferenceServiceConfig "<name>" not found in namespaces [<ns> <apps-ns>]`); an
+image or model name containing `oom` or `fail` stays at `MinimumReplicasUnavailable` and
+turns into `ProgressDeadlineExceeded` with the Deployment's message after the default
+600 s progress deadline; a Gateway outside `openshift-ingress/{openshift-ai-inference,
+maas-default-gateway}` gives `GatewaysNotReady` ("The following Gateways are not ready:
+[<ns>/<name>]") and `HTTPRoutesReady=False/WaitingForGateway`. A spec change bumps the
+generation and the Deployment rolls out again from `Progressing`.
+Placement decisions are recomputed from the clusters on every read (`research/acm.md` 3,
+items 6 and 7): the sets bound into the namespace (`global` = every cluster, `default` = the
+`clusterset=default` label; `models.json` can unbind a namespace), the predicate (AND of
+`matchLabels`, `matchExpressions` with Kubernetes `In|NotIn|Exists|DoesNotExist` semantics
+and claim expressions), `NoSelect` taints dropped unless tolerated (key, value for `Equal`,
+effect, `tolerationSeconds` counted from `timeAdded`), terminating clusters never selected,
+cluster-name order, `numberOfClusters` cap, and `PlacementSatisfied` with the exact reasons
+and messages (`AllDecisionsScheduled`, `NotAllDecisionsScheduled` "<n> cluster decisions
+unscheduled", `NoManagedClusterMatched`, `NoManagedClusterSetBindings`, `NoIntersection`,
+`AllManagedClusterSetsEmpty`) and `PlacementMisconfigured=False/Succeedconfigured` always.
+The MWRS (`research/acm.md` 4, items 8-13): one work per selected cluster named
+`model-<name>-<5 chars from the generateName alphabet>`; `All` applies every cluster at once,
+`Progressive` (and `ProgressivePerGroup`, one decision group) fills `maxConcurrency` slots in
+cluster-name order, a slot held while the work is to apply, progressing or failed and for
+`minSuccessTime` after it succeeded; a failed cluster counts towards `maxFailures` at once and
+a progressing or failed one past `progressDeadline` times out, frees its slot and counts too,
+after which nothing more is applied (sdk-go `progressivePerCluster`); a `ToApply` cluster (no
+work yet, or a work whose `Applied` is not True or whose `Progressing` is missing) never
+times out, so it holds its slot indefinitely and the rollout stalls on it, as on the hub (a
+dead cluster is a Placement decision to make, not a rollout-engine one); the fake computes the
+exact instant a slot frees so timing does not depend on polling. Only the spoke agent writes
+a work's status, so a cluster that is not Available has a work with an empty status (no
+conditions, no manifests), counted `ToApply` for as long as the agent is silent. From the
+moment the agent reports: `Applied=True/AppliedManifestWorkComplete` at once, `Available`
+absent until the status controller's first sync 2 s later, then `True/ResourcesAvailable`;
+two manifests (the namespace and the LLMInferenceService)
+with `Applied`, `Available`, `StatusFeedbackSynced` (`NoStatusFeedbackSynced` for the
+namespace); the template's CEL rules evaluated against the spoke object's own lifecycle,
+`Progressing=True` until its `Ready` is True and `Degraded=True` when `Ready` is False with
+a terminal reason, with reason `ConditionRuleEvaluated` per manifest and
+`ConditionRulesAggregated` on the work (the single rule-bearing manifest's message copied;
+"Aggregated from <n> manifest conditions" otherwise); feedback `ready` ("False" then "True")
+and `url`; every condition stamped with the work's `observedGeneration`. A cluster labelled
+`ai-grid-mock/fail-apply=true` gets `Applied=False/AppliedManifestWorkFailed`, the manifest
+`AppliedManifestFailed` "Failed to apply manifest: no matches for kind ..." and
+`Available=False/ResourcesNotAvailable`; the status controller skips the feedback and the
+condition rules of a manifest it cannot find, so no `Progressing` or `Degraded` exists and
+the cluster stays `ToApply`, holding its slot without a timeout. The summary counts works per
+condition and `updated` per generation;
+`PlacementVerified` (`AsExpected` / `PlacementDecisionEmpty`), `PlacementRolledOut`
+(`Complete` only when every selected cluster's work is `Applied=True` and `Progressing=False`
+at the current generation, else `Progressing`) and `ManifestworkApplied` (`AsExpected`,
+`Processing`, `NotAsExpected`, `PlacementDecisionEmpty`) follow the controller's rules. A
+template change re-applies the works at the new generation; a cluster leaving the decision
+loses its work; `DeleteModel` removes the model at once (the console's MWRS uses the CRD
+default cascade `Background`: the finalize reconciler deletes the works and drops the
+finalizer in one pass, so the MWRS is gone immediately and the works drain in the cluster
+namespaces out of sight; only `Foreground` would keep it listed), and answers
+`FailedPrecondition` through a `referencedBy` hook that area 4 will wire to the catalog and
+subscriptions (nothing references a model today). `GetHubCapabilities` answers
+from `settings.json`. Mutations are gated by the provider-admin rule; every RPC needs
+`authorization`; `ListModels` evaluates `this.metadata.namespace == "x"` and
+`this.metadata.labels["k"] == "v"` joined with `&&`.
+Deviations, documented in the code: the Degraded rule in the console's template fires only
+on terminal `Ready=False` reasons (`ConfigNotFound`, `GatewaysNotReady`,
+`ProgressDeadlineExceeded`), not on the transient ones KServe reports while starting, or
+every rollout would read degraded for its first 45 s (the rule text is in `kserve.go`, the
+template's contract); the derived phase of a placed model reads `NotAsExpected` without a
+degraded or unapplied work as PENDING, because OCM reports `NotAsExpected` for a work whose
+`Available` is simply not True yet; MWRS and Placement condition times are the time the fake
+noticed a change, at most one poll
+late (the real controller is event-driven with requeues), while every LLMInferenceService
+and ManifestWork time is exact; the `apierror` name marker (`ReconcileSingleNodeWorkloadError`)
+is deferred: its message is the free-form `err.Error()` of the failed Deployment write, so
+any plausible API-server error would do. The hub and source checks of the Models-area review
+(the CRD texts, the route messages, the scheduler Deployment name, the empty status of an
+unreported work, the absent `Available` before the first sync, the rollout timeout rules and
+the Background delete) are recorded in `research/models-maas.md` 2.1/8.2/10 and
+`research/acm.md` 4 and items 9, 11, 13 of its proposal, so the research, this plan and the
+fake agree.
+BFF: `GET /api/v1/models?namespace=&label=`, `GET/PATCH/DELETE /api/v1/models/{namespace}/{name}`,
+`POST /api/v1/models` (201 + Location) and `GET /api/v1/capabilities` (501 against today's
+backend), with the JSON shape in `docs/plan/bff-api.md`: the POC's `ManagedModel` without
+its inventions, plus `placement` (selector, selected clusters, `PlacementSatisfied`) and
+`rollout` (strategy, summary, per-site works with their condition statuses and the `ready`
+and `url` feedback); PATCH is a locked read-modify-write with the present fields as the mask.
+Frontend: a Models page with phase labels (Ready, Starting for KServe's transient
+`Ready=False` reasons, Failed with the reason, Pending), replicas, "applied / selected sites"
+and URL columns, expandable rows with the conditions or the placement decision and the
+per-site works, a deploy modal with the POC's inputs (name, namespace, display name, model
+URI and name, image, preset, replicas, CPU, memory, GPUs, hub or sites by `location` label
+from the Ready enrolled clusters, All or Progressive rollout), Edit replicas and Delete for
+provider admins, and a banner when the capabilities say the MWRS gate is off (the placement
+option is then disabled; a 501 from a backend without the RPC says nothing). The browser mock
+mirrors the fixture file (a test keeps them in step) and applies the admission rules and the
+gate.
+Remaining here: editing the placement, env and image in the UI (the PATCH exists), scaling
+(`keda` triggers) and multi-node specs in the deploy form, `ProgressivePerGroup` with several
+decision groups, the `apierror` failure mode, `status.router` in the proto, and the catalog
+reference check once area 4 exists.
+Backend ask: the `Models` service and `Model` message as drafted in
+`proto/ai_grid/v1/model*.proto`, with the phase derived server-side; `AiGrid/GetHubCapabilities`;
+the ManifestWorkReplicaSet feature gate on the hub (`research/acm.md` open question 1).
 
 ### 4. Catalog and subscriptions (MaaSModelRef, MaaSSubscription, MaaSAuthPolicy)
 
