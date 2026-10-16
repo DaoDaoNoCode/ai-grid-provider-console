@@ -109,6 +109,9 @@ type model struct {
 	works []*work
 	// candidateSince is when each cluster entered the Placement decision.
 	candidateSince map[string]time.Time
+	// decisions is the Placement's status as the scheduling controller last
+	// wrote it; the next pass reads its clusters (Steady, NoSelectIfNew).
+	decisions *aigridv1.PlacementStatus
 	// Conditions the hub controllers write, kept so lastTransitionTime moves
 	// only on a status change.
 	placementConds []*aigridv1.Condition
@@ -179,9 +182,14 @@ func validateNamespaceName(field, name string) error {
 	return nil
 }
 
-// validateModelSpec is what the API server (CRD schema and CEL rules) and the
-// KServe webhook reject on an LLMInferenceService, plus the Placement and
-// rollout checks, as InvalidArgument.
+// validateModelSpec is what the API server (CRD schema and CEL rules) rejects
+// on an LLMInferenceService, plus the console's (and the backend's) own
+// checks, as InvalidArgument. The CEL texts are the CRD's; the URI scheme, the
+// replicas sign, the scaling maxReplicas presence, the Placement operators,
+// numberOfClusters and cluster-set existence, and the rollout field rules are
+// console checks with console wording: the CRD types `spec.model.uri` as a
+// plain string (hub CRD, v1alpha2 spec.model.uri) and the KServe webhook does
+// not check the scheme.
 func validateModelSpec(spec *aigridv1.ModelSpec) error {
 	if spec == nil {
 		return status.Error(codes.InvalidArgument, "spec is required")
@@ -321,11 +329,11 @@ func (s *Server) resetSeeded(m *model) {
 		m.created = s.scenarioTime(m.obj.GetMetadata().GetCreationTimestamp().AsTime())
 	}
 	m.obj.Metadata.CreationTimestamp = timestamppb.New(s.wallTime(m.created))
-	m.works, m.epochs, m.placementConds, m.rolloutConds = nil, nil, nil, nil
+	m.works, m.epochs, m.placementConds, m.rolloutConds, m.decisions = nil, nil, nil, nil, nil
 	m.baseSpec = cloneSpec(m.obj.GetSpec())
 	m.candidateSince = map[string]time.Time{}
 	if p := m.obj.GetSpec().GetPlacement(); p != nil {
-		decisions := computePlacement(p, s.bindingsFor(m.obj.GetMetadata().GetNamespace()), s.clusters, m.created, s.scenarioTime)
+		decisions := computePlacement(p, s.bindingsFor(m.obj.GetMetadata().GetNamespace()), s.clusters, nil, m.created, s.scenarioTime)
 		for _, d := range decisions.GetDecisions() {
 			m.candidateSince[d.GetClusterName()] = m.created
 		}
@@ -341,10 +349,11 @@ func (s *Server) reconcileModels(now time.Time) {
 	for _, m := range s.models {
 		p := m.obj.GetSpec().GetPlacement()
 		if p == nil {
-			m.works, m.placementConds, m.rolloutConds = nil, nil, nil
+			m.works, m.placementConds, m.rolloutConds, m.decisions = nil, nil, nil, nil
 			continue
 		}
-		decisions := computePlacement(p, s.bindingsFor(m.obj.GetMetadata().GetNamespace()), s.clusters, now, s.scenarioTime)
+		decisions := computePlacement(p, s.bindingsFor(m.obj.GetMetadata().GetNamespace()), s.clusters, decisionSet(m.decisions), now, s.scenarioTime)
+		m.decisions = decisions
 		for _, c := range decisions.GetConditions() {
 			m.placementConds = writeCondition(m.placementConds, s.wallTime(now), c.GetType(), c.GetStatus(), c.GetReason(), c.GetMessage())
 		}
@@ -452,17 +461,26 @@ func (s *Server) applyWork(m *model, cluster string, t time.Time) {
 }
 
 // rollout is the ManifestWorkReplicaSet deploy reconcile (acm.md "Rollout
-// counting", sdk-go rollout.go): `All` applies every selected cluster at
-// once; `Progressive` (and, with the single decision group the fake has,
-// `ProgressivePerGroup`) fills `maxConcurrency` slots in cluster-name order,
-// a slot staying taken while its work is to apply, progressing or failed, and
-// for `minSuccessTime` after it succeeded; a failed cluster counts towards
-// `maxFailures` at once and a timed-out one (a Progressing or Failed work past
-// `progressDeadline`; ToApply never times out) frees its slot and counts too;
-// beyond `maxFailures` nothing more is applied. A
-// work is stale, and to apply again, when the template changed since it was
-// applied. The fake computes the exact instant a slot freed, so timing does
-// not depend on how often it is polled.
+// counting"; ocm:pkg/work/hub/controllers/manifestworkreplicasetcontroller/
+// manifestworkreplicaset_deploy_reconcile.go:32-226 and sdk-go
+// pkg/apis/cluster/v1alpha1/rollout.go). Only works whose spec equals the
+// current template count (deploy_reconcile.go:79-104); a stale one holds no
+// slot and its cluster is to apply again, like a new one.
+//
+// `All` applies every selected cluster at once (rollout.go:115-138).
+// `ProgressivePerGroup` rolls out a whole decision group at once and has no
+// maxConcurrency (rollout.go:195-244, :370-448); the console's Placements have
+// one decision group (clustersPerDecisionGroup defaults to 100%), and a
+// maxFailures breach inside the last group stops nothing, so it behaves like
+// `All`. `Progressive` fills `maxConcurrency` slots in cluster-name order
+// (progressivePerCluster, rollout.go:270-368), a slot staying taken while its
+// work is to apply, progressing or failed, and for `minSuccessTime` after it
+// succeeded; a failed cluster counts towards `maxFailures` at once and a
+// timed-out one (a Progressing or Failed work `progressDeadline` after its
+// condition's lastTransitionTime; ToApply never times out) frees its slot and
+// counts too; beyond `maxFailures` nothing more is applied. The fake computes
+// the exact instant a slot freed, so timing does not depend on how often it is
+// polled.
 func (s *Server) rollout(m *model, decisions *aigridv1.PlacementStatus, now time.Time) {
 	params, err := validateRollout(m.obj.GetSpec().GetRollout())
 	if err != nil {
@@ -488,7 +506,7 @@ func (s *Server) rollout(m *model, decisions *aigridv1.PlacementStatus, now time
 		}
 		return t
 	}
-	if params.strategy == aigridv1.RolloutStrategy_ROLLOUT_STRATEGY_ALL {
+	if params.strategy != aigridv1.RolloutStrategy_ROLLOUT_STRATEGY_PROGRESSIVE {
 		for _, cluster := range pending {
 			if t := floorFor(cluster); !t.After(now) {
 				s.applyWork(m, cluster, t)
@@ -497,27 +515,27 @@ func (s *Server) rollout(m *model, decisions *aigridv1.PlacementStatus, now time
 		return
 	}
 	total := len(decisions.GetDecisions())
-	maxConcurrency, _ := parseIntOrPercent(params.maxConcurrency, total, total)
-	if maxConcurrency <= 0 {
-		maxConcurrency = total
+	maxConcurrency := rolloutSize(params.maxConcurrency, total, total) // rollout.go:183
+	maxFailures := rolloutSize(params.maxFailures, total, 0)           // rollout.go:160
+	current := func() []*work {
+		return slices.DeleteFunc(slices.Clone(m.works), func(w *work) bool { return w.generation != gen })
 	}
-	maxFailures, _ := parseIntOrPercent(params.maxFailures, total, 0)
 	// slotsAt counts the taken slots and the failures at instant t.
 	slotsAt := func(t time.Time) (taken, failed int) {
-		for _, w := range m.works {
+		for _, w := range current() {
 			if w.startedAt.After(t) {
 				continue
 			}
 			v := s.deriveWorkAt(m, w, params, t)
 			switch v.state {
 			case rolloutSucceeded:
-				if t.Before(v.succeeded.Add(params.minSuccessTime)) {
+				if t.Before(v.since.Add(params.minSuccessTime)) {
 					taken++
 				}
 			case rolloutTimeOut:
 				failed++
 			case rolloutFailed:
-				// sdk-go progressivePerCluster: a Failed cluster keeps its slot
+				// progressivePerCluster: a Failed cluster keeps its slot
 				// until its timeout and counts towards maxFailures at once.
 				taken++
 				failed++
@@ -545,13 +563,13 @@ func (s *Server) rollout(m *model, decisions *aigridv1.PlacementStatus, now time
 		}
 		// Candidate instants: the cluster's floor and every moment a slot frees.
 		candidates := []time.Time{floor}
-		for _, w := range m.works {
+		for _, w := range current() {
 			v := s.deriveWorkAt(m, w, params, now)
 			switch v.state {
 			case rolloutSucceeded:
-				candidates = append(candidates, v.succeeded.Add(params.minSuccessTime))
+				candidates = append(candidates, v.since.Add(params.minSuccessTime))
 			case rolloutTimeOut:
-				candidates = append(candidates, w.startedAt.Add(params.progressDeadline))
+				candidates = append(candidates, v.since.Add(params.progressDeadline))
 			}
 		}
 		sort.Slice(candidates, func(i, j int) bool { return candidates[i].Before(candidates[j]) })
@@ -576,31 +594,33 @@ func (s *Server) rollout(m *model, decisions *aigridv1.PlacementStatus, now time
 	}
 }
 
-// writeRolloutConditions is the status reconcile: the summary counts and
-// the three MWRS conditions by the rules in acm.md 4.
+// writeRolloutConditions is the status the deploy and status reconciles write
+// (acm.md 4): PlacementVerified AsExpected once a work at the current template
+// exists, else PlacementDecisionEmpty (deploy_reconcile.go:198-209);
+// PlacementRolledOut Complete when the succeeded works at the current
+// template number the selected clusters, which includes an empty decision
+// (0 == 0, :211-215); ManifestworkApplied from the summary
+// (manifestworkreplicaset_status_reconcile.go:22-96).
 func (s *Server) writeRolloutConditions(m *model, decisions *aigridv1.PlacementStatus, now time.Time) {
 	params, _ := validateRollout(m.obj.GetSpec().GetRollout())
-	summary, allSucceeded := s.summarize(m, params, now)
+	summary, succeeded := s.summarize(m, params, now)
 	wall := s.wallTime(now)
 	set := func(typ string, st aigridv1.ConditionStatus, reason string) {
 		m.rolloutConds = writeCondition(m.rolloutConds, wall, typ, st, reason, "")
 	}
-	total := len(decisions.GetDecisions())
-	if total == 0 {
-		set(CondPlacementVerified, cFalse, ReasonPlacementDecisionEmpty)
-	} else {
+	if summary.GetTotal() > 0 {
 		set(CondPlacementVerified, cTrue, ReasonAsExpected)
+	} else {
+		set(CondPlacementVerified, cFalse, ReasonPlacementDecisionEmpty)
 	}
-	if total > 0 && allSucceeded && len(m.works) == total {
+	if succeeded == int(decisions.GetNumberOfSelectedClusters()) {
 		set(CondPlacementRolledOut, cTrue, ReasonRolloutComplete)
 	} else {
 		set(CondPlacementRolledOut, cFalse, ReasonRolloutProgressing)
 	}
 	switch {
-	case summary.GetTotal() == 0 && total == 0:
-		set(CondManifestworkApplied, cFalse, ReasonPlacementDecisionEmpty)
 	case summary.GetTotal() == 0:
-		set(CondManifestworkApplied, cFalse, ReasonNotAsExpected)
+		set(CondManifestworkApplied, cFalse, ReasonPlacementDecisionEmpty) // PlacementVerified is PlacementDecisionEmpty
 	case summary.GetAvailable() == summary.GetTotal() && summary.GetProgressing() == 0 && summary.GetDegraded() == 0:
 		set(CondManifestworkApplied, cTrue, ReasonAsExpected)
 	case summary.GetProgressing() > 0 && summary.GetDegraded() == 0:
@@ -610,13 +630,22 @@ func (s *Server) writeRolloutConditions(m *model, decisions *aigridv1.PlacementS
 	}
 }
 
-// summarize counts the works by condition and reports whether every work is
-// Succeeded at the current generation (PlacementRolledOut's rule).
-func (s *Server) summarize(m *model, params rolloutParams, now time.Time) (*aigridv1.RolloutSummary, bool) {
-	sum := &aigridv1.RolloutSummary{Total: int32(len(m.works))}
-	allSucceeded := true
+// summarize is `status.summary`: the works at the current template, counted
+// by condition (deploy_reconcile.go:174-197 for total,
+// manifestworkreplicaset_status_reconcile.go:40-87 for the rest; a work whose
+// spec differs from the template is skipped). It also returns how many of
+// those works are Succeeded (deploy_reconcile.go:100-103). `desiredTotal` and
+// `updated` are declared in the API but never written by the controller, so
+// the summary carries neither.
+func (s *Server) summarize(m *model, params rolloutParams, now time.Time) (*aigridv1.RolloutSummary, int) {
+	sum := &aigridv1.RolloutSummary{}
+	succeeded := 0
 	gen := m.obj.GetMetadata().GetGeneration()
 	for _, w := range m.works {
+		if w.generation != gen {
+			continue
+		}
+		sum.Total++
 		v := s.deriveWorkAt(m, w, params, now)
 		isTrue := func(typ string) bool { return condition(v.status.GetConditions(), typ).GetStatus() == cTrue }
 		if isTrue(CondWorkApplied) {
@@ -631,14 +660,11 @@ func (s *Server) summarize(m *model, params rolloutParams, now time.Time) (*aigr
 		if isTrue(CondWorkDegraded) {
 			sum.Degraded++
 		}
-		if w.generation == gen {
-			sum.Updated++
-		}
-		if v.state != rolloutSucceeded || w.generation != gen {
-			allSucceeded = false
+		if v.state == rolloutSucceeded {
+			succeeded++
 		}
 	}
-	return sum, allSucceeded
+	return sum, succeeded
 }
 
 // viewModel is the model as a read returns it: the stored object plus the
@@ -656,7 +682,10 @@ func (s *Server) viewModel(m *model, now time.Time) *aigridv1.Model {
 		out.Status = st
 		return out
 	}
-	decisions := computePlacement(m.obj.GetSpec().GetPlacement(), s.bindingsFor(m.obj.GetMetadata().GetNamespace()), s.clusters, now, s.scenarioTime)
+	decisions := m.decisions // what the scheduling controller last wrote (reconcileModels runs first)
+	if decisions == nil {
+		decisions = computePlacement(m.obj.GetSpec().GetPlacement(), s.bindingsFor(m.obj.GetMetadata().GetNamespace()), s.clusters, nil, now, s.scenarioTime)
+	}
 	st.Placement = &aigridv1.PlacementStatus{NumberOfSelectedClusters: decisions.GetNumberOfSelectedClusters(), Decisions: decisions.GetDecisions()}
 	for _, c := range m.placementConds {
 		st.Placement.Conditions = append(st.Placement.Conditions, proto.Clone(c).(*aigridv1.Condition))
@@ -682,11 +711,15 @@ func (s *Server) viewModel(m *model, now time.Time) *aigridv1.Model {
 }
 
 // derivePlacedPhase is the phase derivation for a placed model (see
-// ModelPhase in model_type.proto): rolled out and applied -> READY; applied
-// NotAsExpected with a degraded or unapplied work -> FAILED; otherwise
-// PENDING with the reason of PlacementVerified when it is False, of
-// PlacementRolledOut when every work so far is applied, else of
-// ManifestworkApplied.
+// ModelPhase in model_type.proto), a console rule over the MWRS conditions:
+// rolled out and applied -> READY; applied NotAsExpected with a degraded or
+// unapplied work -> FAILED; otherwise PENDING with the reason of
+// PlacementVerified when it is False, of PlacementRolledOut when
+// ManifestworkApplied is True (every work so far applied, more clusters to
+// come), else of ManifestworkApplied. A stuck spoke never reads FAILED: its
+// work stays Progressing (MinimumReplicasUnavailable is not a terminal
+// reason), so the model reads PENDING/Processing, and a Progressive rollout
+// times it out after progressDeadline, which no MWRS condition shows.
 func derivePlacedPhase(rollout *aigridv1.RolloutStatus) (aigridv1.ModelPhase, string, string) {
 	conds := rollout.GetConditions()
 	verified := condition(conds, CondPlacementVerified)
@@ -809,8 +842,10 @@ func (s *Server) GetModel(ctx context.Context, req *aigridv1.GetModelRequest) (*
 
 // CreateModel implements Models: admission in the API server's order (names,
 // schema and CEL rules, the webhook), then the backend's feature-gate check,
-// then the AlreadyExists check, then the object is stored with no status;
-// the controllers fill it over the following minutes (kserve.go, work.go).
+// then the AlreadyExists check, then the object is stored with no
+// LLMInferenceService status; the controllers fill it over the following
+// minutes (kserve.go, work.go). A placed model comes back with its Placement
+// decision and MWRS conditions already reconciled (and, for All, its works).
 func (s *Server) CreateModel(ctx context.Context, req *aigridv1.CreateModelRequest) (*aigridv1.CreateModelResponse, error) {
 	token, err := s.begin(ctx)
 	if err != nil {

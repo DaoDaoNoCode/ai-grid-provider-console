@@ -146,7 +146,7 @@ func TestRepoModelFixturesUseOnlyKnownStrings(t *testing.T) {
 		}
 		for _, gw := range m.GetSpec().GetRouter().GetGatewayRefs() {
 			if !knownGateways[gw.GetNamespace()+"/"+gw.GetName()] {
-				t.Errorf("%s: gateway %s/%s is not one of the hub's", name, gw.GetNamespace(), gw.GetName())
+				t.Errorf("%s: gateway %s/%s is not one of the product-default Gateways", name, gw.GetNamespace(), gw.GetName())
 			}
 		}
 		if !slices.ContainsFunc(uriSchemes, func(s string) bool { return strings.HasPrefix(m.GetSpec().GetModel().GetUri(), s) }) {
@@ -199,7 +199,8 @@ func TestRepoModelFixturesDeriveTheirStates(t *testing.T) {
 	granite := getModel(t, s, "granite-8b-instruct")
 	wantPhase(t, granite, aigridv1.ModelPhase_MODEL_PHASE_READY, ReasonRolloutComplete)
 	works := granite.GetStatus().GetRollout().GetWorks()
-	if len(works) != 1 || works[0].GetClusterName() != "site-paris-1" || !strings.HasPrefix(works[0].GetWorkName(), "model-granite-8b-instruct-") {
+	// generateName is the MWRS name with no separator: model-<name><5 chars>.
+	if len(works) != 1 || works[0].GetClusterName() != "site-paris-1" || works[0].GetWorkName() != "model-granite-8b-instructw0001" {
 		t.Fatalf("granite works = %v", works)
 	}
 	wantCond(t, works[0].GetConditions(), CondWorkProgressing, cFalse, ReasonConditionRulesAggregated, MessageRuleProgressing)
@@ -227,6 +228,9 @@ func TestRepoModelFixturesDeriveTheirStates(t *testing.T) {
 	wantCond(t, code.GetStatus().GetPlacement().GetConditions(), CondPlacementSatisfied, cFalse, ReasonNoManagedClusterMatched, MessageNoManagedClusterMatched)
 	wantCond(t, code.GetStatus().GetRollout().GetConditions(), CondPlacementVerified, cFalse, ReasonPlacementDecisionEmpty, "")
 	wantCond(t, code.GetStatus().GetRollout().GetConditions(), CondManifestworkApplied, cFalse, ReasonPlacementDecisionEmpty, "")
+	// Succeeded (0) equals selected (0): the controller writes Complete for an
+	// empty decision.
+	wantCond(t, code.GetStatus().GetRollout().GetConditions(), CondPlacementRolledOut, cTrue, ReasonRolloutComplete, "")
 	if code.GetStatus().GetPlacement().GetNumberOfSelectedClusters() != 0 || len(code.GetStatus().GetRollout().GetWorks()) != 0 {
 		t.Errorf("codellama selects nothing: %v", code.GetStatus())
 	}
@@ -260,13 +264,25 @@ func TestRepoModelFixturesDeriveTheirStates(t *testing.T) {
 	advance(200 * time.Second)
 	mistral = getModel(t, s, "mistral-7b-instruct")
 	wantPhase(t, mistral, aigridv1.ModelPhase_MODEL_PHASE_READY, ReasonRolloutComplete)
-	if sum := mistral.GetStatus().GetRollout().GetSummary(); sum.GetTotal() != 3 || sum.GetAvailable() != 3 || sum.GetUpdated() != 3 {
+	if sum := mistral.GetStatus().GetRollout().GetSummary(); sum.GetTotal() != 3 || sum.GetAvailable() != 3 {
 		t.Errorf("summary = %v", sum)
 	}
+	if works := mistral.GetStatus().GetRollout().GetWorks(); works[2].GetClusterName() != "site-paris-1" || !condition(works[2].GetConditions(), CondWorkApplied).GetLastTransitionTime().AsTime().Equal(testStart.Add(150*time.Second)) {
+		t.Errorf("paris is applied once berlin succeeded (120s) and soaked 30s: %v", works)
+	}
 
-	// madrid recovers its lease at 300s and joins granite's placement; its
-	// work is applied at the event's time even though the fake was polled later.
+	// madrid recovers its lease at 300s and joins both placements; its works
+	// are applied at the event's time even though the fake was polled later,
+	// and both models return to pending.
 	advance(310 * time.Second)
+	mistral = getModel(t, s, "mistral-7b-instruct")
+	if d := mistral.GetStatus().GetPlacement().GetDecisions(); len(d) != 4 {
+		t.Errorf("madrid joins mistral's decision too: %v", d)
+	}
+	if w := mistral.GetStatus().GetRollout().GetWorks(); len(w) != 4 || w[2].GetClusterName() != "site-madrid-1" || !condition(w[2].GetConditions(), CondWorkApplied).GetLastTransitionTime().AsTime().Equal(testStart.Add(300*time.Second)) {
+		t.Errorf("mistral's madrid work = %v", w)
+	}
+	wantPhase(t, mistral, aigridv1.ModelPhase_MODEL_PHASE_PENDING, ReasonProcessing)
 	granite = getModel(t, s, "granite-8b-instruct")
 	if d := granite.GetStatus().GetPlacement().GetDecisions(); len(d) != 2 || d[0].GetClusterName() != "site-madrid-1" {
 		t.Errorf("madrid joins once its taint is gone: %v", d)
@@ -275,6 +291,15 @@ func TestRepoModelFixturesDeriveTheirStates(t *testing.T) {
 		t.Errorf("madrid's work = %v", w)
 	}
 	wantPhase(t, granite, aigridv1.ModelPhase_MODEL_PHASE_PENDING, ReasonProcessing)
+	// madrid's spokes are Ready at 345s: both models are Ready, granite on two
+	// sites and mistral on four.
+	advance(350 * time.Second)
+	granite, mistral = getModel(t, s, "granite-8b-instruct"), getModel(t, s, "mistral-7b-instruct")
+	wantPhase(t, granite, aigridv1.ModelPhase_MODEL_PHASE_READY, ReasonRolloutComplete)
+	wantPhase(t, mistral, aigridv1.ModelPhase_MODEL_PHASE_READY, ReasonRolloutComplete)
+	if len(granite.GetStatus().GetRollout().GetWorks()) != 2 || len(mistral.GetStatus().GetRollout().GetWorks()) != 4 {
+		t.Errorf("works: granite %d, mistral %d", len(granite.GetStatus().GetRollout().GetWorks()), len(mistral.GetStatus().GetRollout().GetWorks()))
+	}
 }
 
 func TestLLMISvcLifecycle(t *testing.T) {
@@ -287,6 +312,9 @@ func TestLLMISvcLifecycle(t *testing.T) {
 		t.Errorf("metadata = %v", created.GetMetadata())
 	}
 
+	// T1, the first reconcile: workload and router in one pass (the workload
+	// first, so Ready ends with the router's reason), `url` and `addresses`
+	// as soon as the route exists, `workloads` with nothing ready.
 	advance(llmisvcT1)
 	m := getModel(t, s, "tiny")
 	conds := m.GetStatus().GetConditions()
@@ -294,12 +322,24 @@ func TestLLMISvcLifecycle(t *testing.T) {
 	wantCond(t, conds, CondPresetsCombined, cTrue, "", "")
 	wantCond(t, conds, CondGatewaysReady, cTrue, "", "")
 	wantCond(t, conds, CondHTTPRoutesReady, cFalse, ReasonWaitingForGateway, routesMsg)
+	wantCond(t, conds, CondInferencePoolReady, cFalse, ReasonWaitingForGateway, "Inference Pool ai-grid-models/tiny-inference-pool exists but no Gateway controller has accepted it yet")
+	wantCond(t, conds, CondSchedulerWorkloadReady, cFalse, ReasonProgressing, MessageDeploymentRolloutInProgress)
 	wantCond(t, conds, CondRouterReady, cFalse, ReasonWaitingForGateway, routesMsg)
+	wantCond(t, conds, CondMainWorkloadReady, cFalse, ReasonProgressing, "")
+	wantCond(t, conds, CondWorkloadsReady, cFalse, ReasonProgressing, "")
 	wantCond(t, conds, CondReady, cFalse, ReasonWaitingForGateway, routesMsg)
-	wantNoCond(t, conds, CondMainWorkloadReady)
+	if len(conds) != 9 {
+		t.Errorf("%d conditions at T1, want 9", len(conds))
+	}
 	wantPhase(t, m, aigridv1.ModelPhase_MODEL_PHASE_FAILED, ReasonWaitingForGateway)
 	if m.GetStatus().GetObservedGeneration() != 1 {
 		t.Errorf("observedGeneration = %d", m.GetStatus().GetObservedGeneration())
+	}
+	if m.GetStatus().GetUrl() != "https://openshift-ai-inference.apps.hub.example.com/ai-grid-models/tiny" || len(m.GetStatus().GetAddresses()) != 6 {
+		t.Errorf("url and addresses come with the route, before Ready: %q %v", m.GetStatus().GetUrl(), m.GetStatus().GetAddresses())
+	}
+	if w := m.GetStatus().GetWorkloads(); w.GetPrimary().GetName() != "tiny-kserve" || w.GetPrimary().GetReadyReplicas() != 0 || w.GetScheduler().GetName() != "tiny-kserve-router-scheduler" || w.GetScheduler().GetReadyReplicas() != 0 || w.GetService().GetName() != "tiny-kserve-workload-svc" || w.GetService().GetKind() != "Service" {
+		t.Errorf("workloads = %v", w)
 	}
 	wantApplied := []string{PresetScheduler + "/Preset", PresetRouterRoute + "/Preset", PresetTemplate + "/Preset", "v3-6-0-kserve-config-llm-template-cpu/UserRef"}
 	var gotApplied []string
@@ -319,16 +359,25 @@ func TestLLMISvcLifecycle(t *testing.T) {
 	}
 
 	advance(llmisvcT2)
-	conds = getModel(t, s, "tiny").GetStatus().GetConditions()
+	m = getModel(t, s, "tiny")
+	conds = m.GetStatus().GetConditions()
 	wantCond(t, conds, CondHTTPRoutesReady, cTrue, "", "")
 	wantCond(t, conds, CondInferencePoolReady, cTrue, "", "")
 	wantCond(t, conds, CondSchedulerWorkloadReady, cTrue, "", "")
 	wantCond(t, conds, CondRouterReady, cTrue, "", "")
 	wantCond(t, conds, CondMainWorkloadReady, cFalse, ReasonProgressing, "")
 	wantCond(t, conds, CondWorkloadsReady, cFalse, ReasonProgressing, "")
-	wantCond(t, conds, CondReady, cFalse, ReasonProgressing, "")
-	if w := getModel(t, s, "tiny").GetStatus().GetWorkloads(); w.GetPrimary().GetName() != "tiny-kserve" || w.GetPrimary().GetReadyReplicas() != 0 || w.GetScheduler().GetName() != "tiny-kserve-router-scheduler" || w.GetService().GetName() != "tiny-kserve-workload-svc" || w.GetService().GetKind() != "Service" {
-		t.Errorf("workloads = %v", w)
+	ready := wantCond(t, conds, CondReady, cFalse, ReasonProgressing, "")
+	// Knative moves lastTransitionTime on any change of reason or message,
+	// not only of status.
+	if !ready.GetLastTransitionTime().AsTime().Equal(testStart.Add(llmisvcT2)) {
+		t.Errorf("Ready changed reason at T2, its transition time must move: %s", ready.GetLastTransitionTime().AsTime())
+	}
+	if lt := condition(conds, CondMainWorkloadReady).GetLastTransitionTime().AsTime(); !lt.Equal(testStart.Add(llmisvcT1)) {
+		t.Errorf("MainWorkloadReady did not change at T2, got %s", lt)
+	}
+	if w := m.GetStatus().GetWorkloads(); w.GetPrimary().GetReadyReplicas() != 0 || w.GetScheduler().GetReadyReplicas() != 1 {
+		t.Errorf("the scheduler is available at T2, the pods are not: %v", w)
 	}
 
 	advance(llmisvcT2b)
@@ -336,8 +385,10 @@ func TestLLMISvcLifecycle(t *testing.T) {
 	wantCond(t, conds, CondMainWorkloadReady, cFalse, ReasonMinimumReplicasUnavailable, MessageMinimumReplicasUnavailable)
 	wantCond(t, conds, CondWorkloadsReady, cFalse, ReasonMinimumReplicasUnavailable, MessageMinimumReplicasUnavailable)
 	wantCond(t, conds, CondReady, cFalse, ReasonMinimumReplicasUnavailable, MessageMinimumReplicasUnavailable)
-	if ready := condition(conds, CondReady); !ready.GetLastTransitionTime().AsTime().Equal(testStart.Add(llmisvcT1)) {
-		t.Errorf("Ready stayed False since T1, its transition time must not move: %s", ready.GetLastTransitionTime().AsTime())
+	for _, typ := range []string{CondReady, CondMainWorkloadReady, CondWorkloadsReady} {
+		if lt := condition(conds, typ).GetLastTransitionTime().AsTime(); !lt.Equal(testStart.Add(llmisvcT2b)) {
+			t.Errorf("%s stayed False but changed reason at T2b: %s", typ, lt)
+		}
 	}
 
 	advance(llmisvcT3)
@@ -360,13 +411,17 @@ func TestLLMISvcLifecycle(t *testing.T) {
 	if st.GetUrl() != "https://openshift-ai-inference.apps.hub.example.com/ai-grid-models/tiny" {
 		t.Errorf("url = %q", st.GetUrl())
 	}
+	// Sorted by URL string (the internal Service host sorts first), the
+	// internal host being the Gateway's `<gateway>-<gatewayClassName>` Service.
+	internal := "https://openshift-ai-inference-openshift-default.openshift-ingress.svc.cluster.local"
+	external := "https://openshift-ai-inference.apps.hub.example.com"
 	wantAddresses := []string{
-		AddressGatewayExternalModelRouting + " https://openshift-ai-inference.apps.hub.example.com/ [publishers/ai-grid-models/models/example-org/tiny]",
-		AddressGatewayExternal + " https://openshift-ai-inference.apps.hub.example.com/ai-grid-models/tiny [publishers/ai-grid-models/models/example-org/tiny example-org/tiny]",
-		AddressGatewayExternal + " https://openshift-ai-inference.apps.hub.example.com/publishers/ai-grid-models/models/example-org/tiny [publishers/ai-grid-models/models/example-org/tiny example-org/tiny]",
-		AddressGatewayInternalModelRouting + " https://openshift-ai-inference-openshift-ai-inference.openshift-ingress.svc.cluster.local/ [publishers/ai-grid-models/models/example-org/tiny]",
-		AddressGatewayInternal + " https://openshift-ai-inference-openshift-ai-inference.openshift-ingress.svc.cluster.local/ai-grid-models/tiny [publishers/ai-grid-models/models/example-org/tiny example-org/tiny]",
-		AddressGatewayInternal + " https://openshift-ai-inference-openshift-ai-inference.openshift-ingress.svc.cluster.local/publishers/ai-grid-models/models/example-org/tiny [publishers/ai-grid-models/models/example-org/tiny example-org/tiny]",
+		AddressGatewayInternalModelRouting + " " + internal + "/ [publishers/ai-grid-models/models/example-org/tiny]",
+		AddressGatewayInternal + " " + internal + "/ai-grid-models/tiny [publishers/ai-grid-models/models/example-org/tiny example-org/tiny]",
+		AddressGatewayInternal + " " + internal + "/publishers/ai-grid-models/models/example-org/tiny [publishers/ai-grid-models/models/example-org/tiny example-org/tiny]",
+		AddressGatewayExternalModelRouting + " " + external + "/ [publishers/ai-grid-models/models/example-org/tiny]",
+		AddressGatewayExternal + " " + external + "/ai-grid-models/tiny [publishers/ai-grid-models/models/example-org/tiny example-org/tiny]",
+		AddressGatewayExternal + " " + external + "/publishers/ai-grid-models/models/example-org/tiny [publishers/ai-grid-models/models/example-org/tiny example-org/tiny]",
 	}
 	var gotAddresses []string
 	for _, a := range st.GetAddresses() {
@@ -394,54 +449,88 @@ func TestLLMISvcFailureModes(t *testing.T) {
 	gw := hubModel("bad-gateway")
 	gw.Spec.Router.GatewayRefs = []*aigridv1.GatewayRef{{Name: "edge-gateway", Namespace: GatewayNamespace}}
 	createModel(t, s, gw)
+	gws := hubModel("bad-gateways")
+	gws.Spec.Router.GatewayRefs = []*aigridv1.GatewayRef{{Name: GatewayAIInference, Namespace: GatewayNamespace}, {Name: "a"}, {Name: "b", Namespace: "edge"}}
+	createModel(t, s, gws)
 	defaulted := hubModel("defaulted")
 	defaulted.Spec.Router = nil
 	defaulted.Spec.Model.Name = ""
 	createModel(t, s, defaulted)
+	noRefs := hubModel("no-refs")
+	noRefs.Spec.Router = &aigridv1.Router{ManagedRoute: true}
+	createModel(t, s, noRefs)
 
 	advance(llmisvcT3 + time.Second)
 	m := getModel(t, s, "bad-preset")
 	msg := `LLMInferenceServiceConfig "v3-6-0-kserve-config-llm-template-tpu" not found in namespaces [ai-grid-models redhat-ods-applications]`
 	wantCond(t, m.GetStatus().GetConditions(), CondPresetsCombined, cFalse, ReasonConfigNotFound, msg)
 	wantCond(t, m.GetStatus().GetConditions(), CondReady, cFalse, ReasonConfigNotFound, msg)
-	if len(m.GetStatus().GetConditions()) != 2 || len(m.GetStatus().GetAppliedConfigs()) != 0 {
+	if len(m.GetStatus().GetConditions()) != 2 || len(m.GetStatus().GetAppliedConfigs()) != 0 || m.GetStatus().GetWorkloads() != nil || m.GetStatus().GetUrl() != "" {
 		t.Errorf("a bad preset stops the controller before anything else: %v", m.GetStatus())
 	}
 	wantPhase(t, m, aigridv1.ModelPhase_MODEL_PHASE_FAILED, ReasonConfigNotFound)
 
-	m = getModel(t, s, "stuck")
-	wantCond(t, m.GetStatus().GetConditions(), CondMainWorkloadReady, cFalse, ReasonMinimumReplicasUnavailable, MessageMinimumReplicasUnavailable)
-	wantCond(t, m.GetStatus().GetConditions(), CondReady, cFalse, ReasonMinimumReplicasUnavailable, MessageMinimumReplicasUnavailable)
-	wantCond(t, m.GetStatus().GetConditions(), CondRouterReady, cTrue, "", "")
-	if m.GetStatus().GetUrl() != "" {
-		t.Error("a stuck workload has no url")
-	}
-	advance(llmisvcT2 + llmisvcDeadline)
-	m = getModel(t, s, "stuck")
-	ready := condition(m.GetStatus().GetConditions(), CondReady)
-	if ready.GetReason() != ReasonProgressDeadlineExceeded || !strings.HasPrefix(ready.GetMessage(), `ReplicaSet "stuck-kserve-`) || !strings.HasSuffix(ready.GetMessage(), `" has timed out progressing.`) {
-		t.Errorf("after the progress deadline: %v", ready)
-	}
-	wantCond(t, m.GetStatus().GetConditions(), CondMainWorkloadReady, cFalse, ReasonProgressDeadlineExceeded, ready.GetMessage())
-
+	// A referenced Gateway that does not exist: RefsInvalid, the router stops
+	// before the scheduler and the route, the workload still deploys.
 	m = getModel(t, s, "bad-gateway")
-	gwMsg := "The following Gateways are not ready: [openshift-ingress/edge-gateway]"
-	wantCond(t, m.GetStatus().GetConditions(), CondGatewaysReady, cFalse, ReasonGatewaysNotReady, gwMsg)
-	wantCond(t, m.GetStatus().GetConditions(), CondHTTPRoutesReady, cFalse, ReasonWaitingForGateway, "The following HTTPRoutes exist but no Gateway controller has accepted them yet: [ai-grid-models/bad-gateway-kserve-route]")
-	wantCond(t, m.GetStatus().GetConditions(), CondRouterReady, cFalse, ReasonGatewaysNotReady, gwMsg)
-	wantCond(t, m.GetStatus().GetConditions(), CondReady, cFalse, ReasonGatewaysNotReady, gwMsg)
-	wantNoCond(t, m.GetStatus().GetConditions(), CondMainWorkloadReady)
+	gwMsg := "Gateway openshift-ingress/edge-gateway does not exist"
+	conds := m.GetStatus().GetConditions()
+	wantCond(t, conds, CondGatewaysReady, cFalse, ReasonRefsInvalid, gwMsg)
+	wantCond(t, conds, CondRouterReady, cFalse, ReasonRefsInvalid, gwMsg)
+	wantCond(t, conds, CondReady, cFalse, ReasonRefsInvalid, gwMsg)
+	wantCond(t, conds, CondMainWorkloadReady, cTrue, "", "")
+	wantCond(t, conds, CondWorkloadsReady, cTrue, "", "")
+	for _, typ := range []string{CondHTTPRoutesReady, CondInferencePoolReady, CondSchedulerWorkloadReady} {
+		wantNoCond(t, conds, typ)
+	}
+	if st := m.GetStatus(); st.GetUrl() != "" || len(st.GetAddresses()) != 0 || st.GetWorkloads() != nil || len(st.GetAppliedConfigs()) != 4 {
+		t.Errorf("no route, no url, no workloads (observeWorkloadStatus is not reached): %v", st)
+	}
+	if lt := condition(conds, CondReady).GetLastTransitionTime().AsTime(); !lt.Equal(testStart.Add(llmisvcT1)) {
+		t.Errorf("Ready stayed RefsInvalid since T1, got %s", lt)
+	}
+	wantPhase(t, m, aigridv1.ModelPhase_MODEL_PHASE_FAILED, ReasonRefsInvalid)
+	wantCond(t, getModel(t, s, "bad-gateways").GetStatus().GetConditions(), CondGatewaysReady, cFalse, ReasonRefsInvalid,
+		"Gateway ai-grid-models/a does not exist; Gateway edge/b does not exist")
 
+	// No router at all: no route, the workload Service as the only address,
+	// no url, and only the roll-ups on the router side.
 	m = getModel(t, s, "defaulted")
 	wantPhase(t, m, aigridv1.ModelPhase_MODEL_PHASE_READY, "")
 	if m.GetSpec().GetModel().GetName() != "defaulted" {
 		t.Errorf("spec.model.name defaults to the name, got %q", m.GetSpec().GetModel().GetName())
 	}
-	if len(m.GetStatus().GetConditions()) != 7 || m.GetStatus().GetWorkloads().GetScheduler() != nil {
-		t.Errorf("without a scheduler there is no pool, no scheduler workload: %v", m.GetStatus())
+	if len(m.GetStatus().GetConditions()) != 5 || m.GetStatus().GetWorkloads().GetScheduler() != nil || m.GetStatus().GetUrl() != "" {
+		t.Errorf("without a router there is no route, pool or scheduler: %v", m.GetStatus())
 	}
-	if m.GetStatus().GetAddresses()[0].GetOrigin().GetName() != GatewayAIInference {
-		t.Errorf("an empty gateway ref is the default Gateway: %v", m.GetStatus().GetAddresses()[0])
+	if a := m.GetStatus().GetAddresses(); len(a) != 1 || a[0].GetUrl() != "https://defaulted-kserve-workload-svc.ai-grid-models.svc.cluster.local" || a[0].GetName() != "" {
+		t.Errorf("addresses = %v", a)
+	}
+	// A managed route without Gateway refs attaches to the default Gateway and
+	// reports no GatewaysReady.
+	m = getModel(t, s, "no-refs")
+	wantPhase(t, m, aigridv1.ModelPhase_MODEL_PHASE_READY, "")
+	wantNoCond(t, m.GetStatus().GetConditions(), CondGatewaysReady)
+	if len(m.GetStatus().GetConditions()) != 6 || m.GetStatus().GetAddresses()[0].GetOrigin().GetName() != GatewayAIInference {
+		t.Errorf("no refs: %v", m.GetStatus())
+	}
+
+	// A workload that never becomes available keeps MinimumReplicasUnavailable:
+	// KServe ends on the Deployment's Available condition, so the progress
+	// deadline never shows.
+	for _, d := range []time.Duration{llmisvcT3 + time.Second, llmisvcT2 + 600*time.Second + time.Second, 24 * time.Hour} {
+		advance(d)
+		m = getModel(t, s, "stuck")
+		wantCond(t, m.GetStatus().GetConditions(), CondMainWorkloadReady, cFalse, ReasonMinimumReplicasUnavailable, MessageMinimumReplicasUnavailable)
+		ready := wantCond(t, m.GetStatus().GetConditions(), CondReady, cFalse, ReasonMinimumReplicasUnavailable, MessageMinimumReplicasUnavailable)
+		wantCond(t, m.GetStatus().GetConditions(), CondRouterReady, cTrue, "", "")
+		if !ready.GetLastTransitionTime().AsTime().Equal(testStart.Add(llmisvcT2b)) {
+			t.Errorf("at %s: Ready has not changed since T2b, got %s", d, ready.GetLastTransitionTime().AsTime())
+		}
+		wantPhase(t, m, aigridv1.ModelPhase_MODEL_PHASE_FAILED, ReasonMinimumReplicasUnavailable)
+		if m.GetStatus().GetUrl() == "" || m.GetStatus().GetWorkloads().GetPrimary().GetReadyReplicas() != 0 {
+			t.Errorf("at %s: the route exists, the pods are not ready: %v", d, m.GetStatus())
+		}
 	}
 }
 
@@ -506,7 +595,24 @@ func TestCreateModelValidation(t *testing.T) {
 		{"bad deadline", func(m *aigridv1.Model) {
 			m.Spec.Placement = &aigridv1.Placement{}
 			m.Spec.Rollout = &aigridv1.Rollout{ProgressDeadline: "soon"}
-		}, codes.InvalidArgument, `spec.rollout.progress_deadline: "soon" is not a duration such as 5m or 1h`},
+		}, codes.InvalidArgument, `spec.rollout.progress_deadline: "soon" is not a duration such as 5m or 1h, or None`},
+		{"fractional deadline", func(m *aigridv1.Model) {
+			// The CRD pattern ^(([0-9])+[h|m|s])|None$ rejects it.
+			m.Spec.Placement = &aigridv1.Placement{}
+			m.Spec.Rollout = &aigridv1.Rollout{ProgressDeadline: "1.5h"}
+		}, codes.InvalidArgument, `spec.rollout.progress_deadline: "1.5h" is not a duration such as 5m or 1h, or None`},
+		{"fractional percent", func(m *aigridv1.Model) {
+			m.Spec.Placement = &aigridv1.Placement{}
+			m.Spec.Rollout = &aigridv1.Rollout{Strategy: aigridv1.RolloutStrategy_ROLLOUT_STRATEGY_PROGRESSIVE, MaxFailures: "12.5%"}
+		}, codes.InvalidArgument, `spec.rollout.max_failures: "12.5%" is not a percentage between 0% and 100%`},
+		{"concurrency for All", func(m *aigridv1.Model) {
+			m.Spec.Placement = &aigridv1.Placement{}
+			m.Spec.Rollout = &aigridv1.Rollout{MaxConcurrency: "1"}
+		}, codes.InvalidArgument, "spec.rollout.max_concurrency applies only to the Progressive strategy; All and ProgressivePerGroup have no maxConcurrency"},
+		{"concurrency per group", func(m *aigridv1.Model) {
+			m.Spec.Placement = &aigridv1.Placement{}
+			m.Spec.Rollout = &aigridv1.Rollout{Strategy: aigridv1.RolloutStrategy_ROLLOUT_STRATEGY_PROGRESSIVE_PER_GROUP, MaxConcurrency: "1"}
+		}, codes.InvalidArgument, "spec.rollout.max_concurrency applies only to the Progressive strategy; All and ProgressivePerGroup have no maxConcurrency"},
 		{"bad percent", func(m *aigridv1.Model) {
 			m.Spec.Placement = &aigridv1.Placement{}
 			m.Spec.Rollout = &aigridv1.Rollout{MaxConcurrency: "150%"}
@@ -528,6 +634,15 @@ func TestCreateModelValidation(t *testing.T) {
 		m.Spec.Scaling = &aigridv1.Scaling{MinReplicas: 1, MaxReplicas: 4, Keda: true, Triggers: trigger}
 	}); err != nil {
 		t.Errorf("a complete scaling block is accepted, got %v", err)
+	}
+	// The scheduler, not admission, rejects an empty toleration key without
+	// Exists (PlacementMisconfigured); `0s` is a valid, immediate deadline.
+	if err := create(func(m *aigridv1.Model) {
+		m.Name = "misconfigured"
+		m.Spec.Placement = &aigridv1.Placement{Tolerations: []*aigridv1.Toleration{{Operator: TolerationEqual}}}
+		m.Spec.Rollout = &aigridv1.Rollout{ProgressDeadline: "0s"}
+	}); err != nil {
+		t.Errorf("an empty-key toleration and a 0s deadline pass admission, got %v", err)
 	}
 	// Unknown presets pass admission: the controller reports them.
 	if err := create(func(m *aigridv1.Model) { m.Name = "unknown-preset"; m.Spec.BaseRefs = []string{"nope"} }); err != nil {
@@ -635,7 +750,7 @@ func TestComputePlacement(t *testing.T) {
 	}
 	check := func(name string, p *aigridv1.Placement, bound []string, wantNames []string, status aigridv1.ConditionStatus, reason, message string) {
 		t.Helper()
-		st := computePlacement(p, bound, clusters, now, ident)
+		st := computePlacement(p, bound, clusters, nil, now, ident)
 		if !slices.Equal(names(st), wantNames) || int(st.GetNumberOfSelectedClusters()) != len(wantNames) {
 			t.Errorf("%s: decisions %v, want %v", name, names(st), wantNames)
 		}
@@ -663,8 +778,61 @@ func TestComputePlacement(t *testing.T) {
 	check("claim", &aigridv1.Placement{ClaimExpressions: []*aigridv1.ClaimExpression{{Key: ClaimPlatform, Operator: OperatorIn, Values: []string{"BareMetal"}}}}, global, []string{"site-a"}, cTrue, ReasonAllDecisionsScheduled, MessageAllDecisionsScheduled)
 	check("nothing", &aigridv1.Placement{LabelSelector: &aigridv1.LabelSelector{MatchLabels: map[string]string{"ai-grid/region": "asia-east"}}}, global, nil, cFalse, ReasonNoManagedClusterMatched, MessageNoManagedClusterMatched)
 	empty := map[string]*aigridv1.ManagedCluster{"site-b": b}
-	st := computePlacement(&aigridv1.Placement{ClusterSets: []string{ClusterSetDefault}}, []string{ClusterSetDefault}, empty, now, ident)
+	st := computePlacement(&aigridv1.Placement{ClusterSets: []string{ClusterSetDefault}}, []string{ClusterSetDefault}, empty, nil, now, ident)
 	wantCond(t, st.GetConditions(), CondPlacementSatisfied, cFalse, ReasonAllManagedClusterSetsEmpty, "All ManagedClusterSets [default] have no member ManagedCluster")
+	// A set whose only member is terminating is empty: terminating clusters
+	// are dropped while the available set is built.
+	st = computePlacement(&aigridv1.Placement{ClusterSets: []string{ClusterSetDefault}}, []string{ClusterSetDefault}, map[string]*aigridv1.ManagedCluster{"site-e": e}, nil, now, ident)
+	wantCond(t, st.GetConditions(), CondPlacementSatisfied, cFalse, ReasonAllManagedClusterSetsEmpty, "All ManagedClusterSets [default] have no member ManagedCluster")
+
+	// An empty toleration key with Exists matches every taint.
+	check("wildcard toleration", &aigridv1.Placement{LabelSelector: enabledSel, Tolerations: []*aigridv1.Toleration{{Operator: TolerationExists}}}, global, []string{"site-a", "site-b", "site-d", "site-f"}, cTrue, ReasonAllDecisionsScheduled, MessageAllDecisionsScheduled)
+	// tolerationSeconds against a taint without timeAdded: already expired.
+	d.Taints[0].TimeAdded = nil
+	check("no timeAdded", &aigridv1.Placement{LabelSelector: enabledSel, Tolerations: []*aigridv1.Toleration{{Key: TaintUnreachable, Operator: TolerationExists, TolerationSeconds: proto.Int64(600)}}}, global, []string{"site-a", "site-b", "site-f"}, cTrue, ReasonAllDecisionsScheduled, MessageAllDecisionsScheduled)
+	// Misconfigured tolerations: no decision, PlacementMisconfigured True.
+	for _, tc := range []struct {
+		tol *aigridv1.Toleration
+		msg string
+	}{
+		{&aigridv1.Toleration{Operator: TolerationEqual}, "TaintToleration:If the key is empty, operator must be Exists."},
+		{&aigridv1.Toleration{}, "TaintToleration:If the key is empty, operator must be Exists."},
+		{&aigridv1.Toleration{Key: TaintUnreachable, Operator: TolerationExists, Value: "x"}, "TaintToleration:If the operator is Exists, the value should be empty."},
+	} {
+		st := computePlacement(&aigridv1.Placement{LabelSelector: enabledSel, Tolerations: []*aigridv1.Toleration{tc.tol}}, global, clusters, nil, now, ident)
+		if len(st.GetDecisions()) != 0 {
+			t.Errorf("%v: decisions %v", tc.tol, st.GetDecisions())
+		}
+		wantCond(t, st.GetConditions(), CondPlacementMisconfigured, cTrue, ReasonMisconfigured, tc.msg)
+		wantCond(t, st.GetConditions(), CondPlacementSatisfied, cFalse, ReasonNoManagedClusterMatched, MessageNoManagedClusterMatched)
+	}
+	// The check only runs when the predicate left a cluster to filter.
+	st = computePlacement(&aigridv1.Placement{LabelSelector: &aigridv1.LabelSelector{MatchLabels: map[string]string{"ai-grid/region": "asia-east"}}, Tolerations: []*aigridv1.Toleration{{}}}, global, clusters, nil, now, ident)
+	wantCond(t, st.GetConditions(), CondPlacementMisconfigured, cFalse, ReasonSucceedconfigured, MessageSucceedconfigured)
+
+	// Taint effects: PreferNoSelect never filters; NoSelectIfNew filters only a
+	// cluster that is not already selected.
+	g := enrolled("site-g")
+	g.Taints = []*aigridv1.Taint{{Key: "dedicated", Effect: TaintPreferNoSelect}}
+	h := enrolled("site-h")
+	h.Taints = []*aigridv1.Taint{{Key: "draining", Effect: TaintNoSelectIfNew}}
+	effects := map[string]*aigridv1.ManagedCluster{"site-g": g, "site-h": h}
+	sel := &aigridv1.Placement{LabelSelector: enabledSel}
+	if got := names(computePlacement(sel, global, effects, nil, now, ident)); !slices.Equal(got, []string{"site-g"}) {
+		t.Errorf("a new cluster with NoSelectIfNew is not selected: %v", got)
+	}
+	if got := names(computePlacement(sel, global, effects, map[string]bool{"site-h": true}, now, ident)); !slices.Equal(got, []string{"site-g", "site-h"}) {
+		t.Errorf("an already selected cluster keeps its NoSelectIfNew place: %v", got)
+	}
+	// numberOfClusters keeps the clusters already selected (Steady), then
+	// takes the rest by name.
+	capped := &aigridv1.Placement{LabelSelector: enabledSel, NumberOfClusters: proto.Int32(2)}
+	if got := names(computePlacement(capped, global, clusters, map[string]bool{"site-f": true}, now, ident)); !slices.Equal(got, []string{"site-a", "site-f"}) {
+		t.Errorf("Steady keeps site-f: %v", got)
+	}
+	if got := names(computePlacement(&aigridv1.Placement{LabelSelector: enabledSel, NumberOfClusters: proto.Int32(1)}, global, clusters, map[string]bool{"site-f": true}, now, ident)); !slices.Equal(got, []string{"site-f"}) {
+		t.Errorf("a lower-named cluster does not displace a selected one: %v", got)
+	}
 }
 
 func TestProgressiveRollout(t *testing.T) {
@@ -673,7 +841,7 @@ func TestProgressiveRollout(t *testing.T) {
 	m := createModel(t, s, placedModel("pm", rollout))
 	rs := m.GetStatus().GetRollout()
 	works := rs.GetWorks()
-	if len(works) != 1 || works[0].GetClusterName() != "site-a" || works[0].GetWorkName() != "model-pm-w0001" || works[0].GetGeneration() != 1 || works[0].GetObservedGeneration() != 1 {
+	if len(works) != 1 || works[0].GetClusterName() != "site-a" || works[0].GetWorkName() != "model-pmw0001" || works[0].GetGeneration() != 1 || works[0].GetObservedGeneration() != 1 {
 		t.Fatalf("t0 works = %v", works)
 	}
 	wantCond(t, works[0].GetConditions(), CondWorkApplied, cTrue, ReasonAppliedManifestWorkComplete, MessageAppliedManifestWorkComplete)
@@ -682,7 +850,7 @@ func TestProgressiveRollout(t *testing.T) {
 	if mf := works[0].GetManifests(); len(mf) != 2 || mf[0].GetResource().GetKind() != kindNamespace || mf[0].GetResource().GetName() != testNS || mf[1].GetResource().GetOrdinal() != 1 || mf[1].GetResource().GetResource() != llmisvcResource || mf[1].GetResource().GetVersion() != llmisvcVersion || len(mf[1].GetConditions()) != 1 {
 		t.Errorf("manifests = %v", mf)
 	}
-	if sum := rs.GetSummary(); sum.GetTotal() != 1 || sum.GetApplied() != 1 || sum.GetAvailable() != 0 || sum.GetUpdated() != 1 {
+	if sum := rs.GetSummary(); sum.GetTotal() != 1 || sum.GetApplied() != 1 || sum.GetAvailable() != 0 || sum.GetUpdated() != 0 {
 		t.Errorf("summary = %v", sum)
 	}
 	wantCond(t, rs.GetConditions(), CondPlacementVerified, cTrue, ReasonAsExpected, "")
@@ -705,6 +873,16 @@ func TestProgressiveRollout(t *testing.T) {
 	wantCond(t, mdl.GetConditions(), CondManifestStatusFeedbackSynced, cTrue, ReasonStatusFeedbackSynced, "")
 	wantCond(t, mdl.GetConditions(), CondWorkProgressing, cTrue, ReasonConditionRuleEvaluated, MessageRuleProgressing)
 	wantCond(t, mdl.GetConditions(), CondWorkDegraded, cFalse, ReasonConditionRuleEvaluated, MessageRuleDegraded)
+	// Only Applied and the rule conditions carry observedGeneration; the
+	// manifest Available and StatusFeedbackSynced do not.
+	for typ, want := range map[string]int64{CondWorkApplied: 1, CondWorkProgressing: 1, CondWorkDegraded: 1, CondWorkAvailable: 0, CondManifestStatusFeedbackSynced: 0} {
+		if got := condition(mdl.GetConditions(), typ).GetObservedGeneration(); got != want {
+			t.Errorf("manifest %s observedGeneration = %d, want %d", typ, got, want)
+		}
+	}
+	if got := condition(w.GetConditions(), CondWorkAvailable).GetObservedGeneration(); got != 1 {
+		t.Errorf("work-level Available observedGeneration = %d", got)
+	}
 	if len(mdl.GetFeedback()) != 0 {
 		t.Errorf("no Ready condition on the spoke yet, so no feedback: %v", mdl.GetFeedback())
 	}
@@ -713,8 +891,13 @@ func TestProgressiveRollout(t *testing.T) {
 
 	advance(llmisvcT1 + 2*time.Second)
 	mdl = getModel(t, s, "pm").GetStatus().GetRollout().GetWorks()[0].GetManifests()[1]
-	if fb := mdl.GetFeedback(); len(fb) != 1 || fb[0].GetName() != FeedbackReady || fb[0].GetValue() != "False" || fb[0].GetType() != FeedbackTypeString {
+	// The spoke wrote its url with the route at its T1, before Ready.
+	if fb := mdl.GetFeedback(); len(fb) != 2 || fb[0].GetName() != FeedbackReady || fb[0].GetValue() != "False" || fb[0].GetType() != FeedbackTypeString || fb[1].GetValue() != "https://openshift-ai-inference.apps.site-a.example.com/ai-grid-models/pm" {
 		t.Errorf("feedback while starting = %v", fb)
+	}
+	// StatusFeedbackSynced is re-added whenever the values change.
+	if lt := condition(mdl.GetConditions(), CondManifestStatusFeedbackSynced).GetLastTransitionTime().AsTime(); !lt.Equal(testStart.Add(llmisvcT1)) {
+		t.Errorf("StatusFeedbackSynced at %s, want the feedback change at T1", lt)
 	}
 
 	advance(llmisvcT3 + time.Second)
@@ -737,7 +920,7 @@ func TestProgressiveRollout(t *testing.T) {
 
 	advance(llmisvcT3 + 10*time.Second + time.Second)
 	works = getModel(t, s, "pm").GetStatus().GetRollout().GetWorks()
-	if len(works) != 2 || works[1].GetClusterName() != "site-b" || works[1].GetWorkName() != "model-pm-w0002" {
+	if len(works) != 2 || works[1].GetClusterName() != "site-b" || works[1].GetWorkName() != "model-pmw0002" {
 		t.Fatalf("site-b applied after the soak: %v", works)
 	}
 	if lt := condition(works[1].GetConditions(), CondWorkApplied).GetLastTransitionTime().AsTime(); !lt.Equal(testStart.Add(llmisvcT3 + 10*time.Second)) {
@@ -748,7 +931,7 @@ func TestProgressiveRollout(t *testing.T) {
 	m = getModel(t, s, "pm")
 	wantPhase(t, m, aigridv1.ModelPhase_MODEL_PHASE_READY, ReasonRolloutComplete)
 	wantCond(t, m.GetStatus().GetRollout().GetConditions(), CondPlacementRolledOut, cTrue, ReasonRolloutComplete, "")
-	if sum := m.GetStatus().GetRollout().GetSummary(); sum.GetTotal() != 2 || sum.GetApplied() != 2 || sum.GetAvailable() != 2 || sum.GetProgressing() != 0 || sum.GetDegraded() != 0 || sum.GetUpdated() != 2 {
+	if sum := m.GetStatus().GetRollout().GetSummary(); sum.GetTotal() != 2 || sum.GetApplied() != 2 || sum.GetAvailable() != 2 || sum.GetProgressing() != 0 || sum.GetDegraded() != 0 || sum.GetUpdated() != 0 {
 		t.Errorf("summary = %v", sum)
 	}
 }
@@ -781,7 +964,7 @@ func TestAllRolloutAndClusterChanges(t *testing.T) {
 	advance(time.Minute + 3*time.Second)
 	m = getModel(t, s, "all")
 	works := m.GetStatus().GetRollout().GetWorks()
-	if len(works) != 3 || works[1].GetWorkName() != "model-all-w0004" || !condition(works[1].GetConditions(), CondWorkApplied).GetLastTransitionTime().AsTime().Equal(testStart.Add(time.Minute)) {
+	if len(works) != 3 || works[1].GetWorkName() != "model-allw0004" || !condition(works[1].GetConditions(), CondWorkApplied).GetLastTransitionTime().AsTime().Equal(testStart.Add(time.Minute)) {
 		t.Errorf("site-b gets a fresh work, applied when its label came back: %v", works)
 	}
 	wantPhase(t, m, aigridv1.ModelPhase_MODEL_PHASE_PENDING, ReasonProcessing)
@@ -796,14 +979,17 @@ func TestFailApplyAndTimeouts(t *testing.T) {
 	m := getModel(t, s, "all")
 	w := m.GetStatus().GetRollout().GetWorks()[1]
 	wantCond(t, w.GetConditions(), CondWorkApplied, cFalse, ReasonAppliedManifestWorkFailed, MessageAppliedManifestWorkFailed)
-	wantCond(t, w.GetConditions(), CondWorkAvailable, cFalse, ReasonResourcesNotAvailable, "1 of 2 resources are not available")
+	wantCond(t, w.GetConditions(), CondWorkAvailable, cUnknown, ReasonResourcesStatusUnknown, "1 of 2 resources have unknown status")
 	// The status controller skips the feedback and the condition rules of a
 	// manifest it cannot find: no Progressing, no Degraded.
 	wantNoCond(t, w.GetConditions(), CondWorkDegraded)
 	wantNoCond(t, w.GetConditions(), CondWorkProgressing)
 	mdl := w.GetManifests()[1]
-	wantCond(t, mdl.GetConditions(), CondWorkApplied, cFalse, ReasonAppliedManifestFailed, `Failed to apply manifest: no matches for kind "LLMInferenceService" in version "serving.kserve.io/v1alpha2"`)
-	wantCond(t, mdl.GetConditions(), CondWorkAvailable, cFalse, ReasonResourceNotAvailable, MessageResourceNotAvailable)
+	wantCond(t, mdl.GetConditions(), CondWorkApplied, cFalse, ReasonAppliedManifestFailed, `Failed to apply manifest: the server doesn't have a resource type "LLMInferenceService"`)
+	wantCond(t, mdl.GetConditions(), CondWorkAvailable, cUnknown, ReasonIncompleteResourceMeta, MessageIncompleteResourceMeta)
+	if r := mdl.GetResource(); r.GetResource() != "" || r.GetKind() != llmisvcKind || r.GetName() != "all" || r.GetVersion() != llmisvcVersion {
+		t.Errorf("an unmapped kind keeps its meta but no resource: %v", r)
+	}
 	if len(mdl.GetFeedback()) != 0 || len(mdl.GetConditions()) != 2 || condition(mdl.GetConditions(), CondWorkApplied).GetObservedGeneration() != 1 {
 		t.Errorf("nothing to scrape, no rules: %v", mdl)
 	}
@@ -839,19 +1025,36 @@ func TestFailApplyAndTimeouts(t *testing.T) {
 	wantCond(t, m.GetStatus().GetRollout().GetConditions(), CondManifestworkApplied, cFalse, ReasonNotAsExpected, "")
 	wantPhase(t, m, aigridv1.ModelPhase_MODEL_PHASE_FAILED, ReasonNotAsExpected)
 
-	// A Progressing work, by contrast, does time out: a stuck spoke frees its
-	// slot after progressDeadline and counts as a failure.
+	// A Progressing work, by contrast, does time out: a stuck spoke keeps
+	// MinimumReplicasUnavailable, which the Degraded rule does not match, so
+	// its work stays Progressing (not Failed) and the model reads
+	// PENDING/Processing; progressDeadline counts from the work's Progressing
+	// condition (first written at the agent's first sync, 2s after apply),
+	// after which the cluster times out, frees its slot and counts as a failure.
 	s3, advance3 := modelServer(t, &Fixtures{Clusters: []*aigridv1.ManagedCluster{enrolled("site-a3"), enrolled("site-b3")}})
 	stuck := placedModel("stuck", &aigridv1.Rollout{Strategy: aigridv1.RolloutStrategy_ROLLOUT_STRATEGY_PROGRESSIVE, MaxConcurrency: "1", MaxFailures: "1", ProgressDeadline: "1m"})
 	stuck.Spec.Main.Image = "quay.io/example/vllm-oom"
 	createModel(t, s3, stuck)
-	advance3(59 * time.Second)
-	if works := getModel(t, s3, "stuck").GetStatus().GetRollout().GetWorks(); len(works) != 1 {
-		t.Errorf("before the deadline site-a3 holds the slot: %v", works)
+	advance3(61 * time.Second)
+	m = getModel(t, s3, "stuck")
+	if works := m.GetStatus().GetRollout().GetWorks(); len(works) != 1 {
+		t.Errorf("before Progressing's lastTransitionTime + 1m site-a3 holds the slot: %v", works)
+	} else {
+		wantCond(t, works[0].GetConditions(), CondWorkProgressing, cTrue, ReasonConditionRulesAggregated, MessageRuleProgressing)
+		wantCond(t, works[0].GetConditions(), CondWorkDegraded, cFalse, ReasonConditionRulesAggregated, MessageRuleDegraded)
 	}
-	advance3(time.Minute + time.Second)
-	if works := getModel(t, s3, "stuck").GetStatus().GetRollout().GetWorks(); len(works) != 2 || !condition(works[1].GetConditions(), CondWorkApplied).GetLastTransitionTime().AsTime().Equal(testStart.Add(time.Minute)) {
-		t.Errorf("site-b3 is applied when site-a3 times out (maxFailures 1): %v", works)
+	wantPhase(t, m, aigridv1.ModelPhase_MODEL_PHASE_PENDING, ReasonProcessing)
+	advance3(63 * time.Second)
+	if works := getModel(t, s3, "stuck").GetStatus().GetRollout().GetWorks(); len(works) != 2 || !condition(works[1].GetConditions(), CondWorkApplied).GetLastTransitionTime().AsTime().Equal(testStart.Add(62*time.Second)) {
+		t.Errorf("site-b3 is applied when site-a3 times out at 2s + 1m (maxFailures 1): %v", works)
+	}
+	// progressDeadline 0s times a progressing cluster out as soon as its
+	// Progressing condition exists.
+	s5, advance5 := modelServer(t, &Fixtures{Clusters: []*aigridv1.ManagedCluster{enrolled("site-a5"), enrolled("site-b5")}})
+	createModel(t, s5, placedModel("zero", &aigridv1.Rollout{Strategy: aigridv1.RolloutStrategy_ROLLOUT_STRATEGY_PROGRESSIVE, MaxConcurrency: "1", MaxFailures: "1", ProgressDeadline: "0s"}))
+	advance5(3 * time.Second)
+	if works := getModel(t, s5, "zero").GetStatus().GetRollout().GetWorks(); len(works) != 2 || !condition(works[1].GetConditions(), CondWorkApplied).GetLastTransitionTime().AsTime().Equal(testStart.Add(2*time.Second)) {
+		t.Errorf("0s deadline: site-b5 applied at 2s: %v", works)
 	}
 	s4, advance4 := modelServer(t, &Fixtures{Clusters: []*aigridv1.ManagedCluster{enrolled("site-a4"), enrolled("site-b4")}})
 	stuck.Name = "stuck-strict"
@@ -942,8 +1145,8 @@ func TestUpdateModel(t *testing.T) {
 	advance(time.Minute + llmisvcT2 + time.Second)
 	m := getModel(t, s, "hub")
 	wantCond(t, m.GetStatus().GetConditions(), CondMainWorkloadReady, cFalse, ReasonProgressing, "")
-	if m.GetStatus().GetObservedGeneration() != 2 || m.GetStatus().GetUrl() != "" {
-		t.Errorf("rolling out generation 2: %v", m.GetStatus())
+	if m.GetStatus().GetObservedGeneration() != 2 || m.GetStatus().GetUrl() != "https://openshift-ai-inference.apps.hub.example.com/ai-grid-models/hub" {
+		t.Errorf("rolling out generation 2, url kept from the unchanged route: %v", m.GetStatus())
 	}
 	if lt := condition(m.GetStatus().GetConditions(), CondPresetsCombined).GetLastTransitionTime().AsTime(); !lt.Equal(testStart.Add(llmisvcT1)) {
 		t.Errorf("PresetsCombined never changed status: %s", lt)
@@ -966,7 +1169,7 @@ func TestUpdateModel(t *testing.T) {
 		t.Errorf("work re-applied at the update: %v", w)
 	}
 	wantNoCond(t, w.GetConditions(), CondWorkAvailable) // not synced yet at the new generation
-	if sum := updated.GetStatus().GetRollout().GetSummary(); sum.GetUpdated() != 1 || sum.GetTotal() != 1 {
+	if sum := updated.GetStatus().GetRollout().GetSummary(); sum.GetTotal() != 1 || sum.GetApplied() != 1 {
 		t.Errorf("summary = %v", sum)
 	}
 	wantPhase(t, updated, aigridv1.ModelPhase_MODEL_PHASE_PENDING, ReasonNotAsExpected)
@@ -1164,29 +1367,44 @@ func TestRolloutHelpers(t *testing.T) {
 	if aggregatedMessage("one", 1) != "one" || aggregatedMessage("one", 3) != "Aggregated from 3 manifest conditions" {
 		t.Error("aggregated message")
 	}
+	// sdk-go calculateRolloutSize: zero, or more than total, falls back.
 	for _, tc := range []struct {
 		in         string
 		total, def int
 		want       int
-		ok         bool
-	}{{"", 4, 4, 4, true}, {"2", 4, 4, 2, true}, {"50%", 3, 0, 2, true}, {"0", 4, 4, 0, true}, {"x", 4, 4, 0, false}, {"-1", 4, 4, 0, false}, {"101%", 4, 4, 0, false}} {
-		got, err := parseIntOrPercent(tc.in, tc.total, tc.def)
-		if (err == nil) != tc.ok || got != tc.want {
-			t.Errorf("parseIntOrPercent(%q) = %d, %v", tc.in, got, err)
+	}{{"", 4, 4, 4}, {"2", 4, 4, 2}, {"50%", 3, 0, 2}, {"0", 4, 4, 4}, {"0%", 4, 4, 4}, {"5", 4, 0, 0}, {"5", 4, 4, 4}, {"100%", 4, 0, 4}, {"1%", 4, 0, 1}} {
+		if got := rolloutSize(tc.in, tc.total, tc.def); got != tc.want {
+			t.Errorf("rolloutSize(%q, %d, %d) = %d, want %d", tc.in, tc.total, tc.def, got, tc.want)
 		}
 	}
-	if d, err := parseRolloutDuration("None"); err != nil || d != 0 {
-		t.Errorf("None = %v, %v", d, err)
+	for in, ok := range map[string]bool{"": true, "3": true, "100%": true, "7%": true, "x": false, "-1": false, "101%": false, "12.5%": false, "+1": false, "007%": false} {
+		if err := validIntOrPercent(in); (err == nil) != ok {
+			t.Errorf("validIntOrPercent(%q) = %v", in, err)
+		}
 	}
-	if _, err := parseRolloutDuration("-5m"); err == nil {
-		t.Error("negative duration accepted")
+	for in, want := range map[string]time.Duration{"": noDeadline, "None": noDeadline, "0s": 0, "5m": 5 * time.Minute, "1h30m": 90 * time.Minute} {
+		if d, err := parseProgressDeadline(in); err != nil || d != want {
+			t.Errorf("parseProgressDeadline(%q) = %v, %v", in, d, err)
+		}
 	}
-	if replicaSetHash("a", 1) == replicaSetHash("a", 2) || len(replicaSetHash("a", 1)) != 10 {
-		t.Error("replicaSetHash")
+	for _, in := range []string{"-5m", "1.5h", "5mx", "soon"} {
+		if _, err := parseProgressDeadline(in); err == nil {
+			t.Errorf("parseProgressDeadline(%q) accepted", in)
+		}
+	}
+	if _, err := parseMinSuccessTime("-5m"); err == nil {
+		t.Error("negative minSuccessTime accepted")
 	}
 	first, second := newWorkSuffix(), newWorkSuffix()
 	if first == second || len(first) != generateNameLength || strings.Trim(first, generateNameAlphabet) != "" {
 		t.Errorf("work suffixes are random five-character strings from the generateName alphabet, got %q %q", first, second)
+	}
+	if got := workNameFor("model-granite", "x7k2p"); got != "model-granitex7k2p" {
+		t.Errorf("workNameFor = %q: generateName has no separator", got)
+	}
+	long := "model-" + strings.Repeat("a", 70)
+	if got := workNameFor(long, "x7k2p"); len(got) != 63 || got != long[:58]+"x7k2p" {
+		t.Errorf("a long base is cut to 58 characters: %q", got)
 	}
 }
 
@@ -1233,7 +1451,11 @@ func TestProgressivePerGroupAndPercentConcurrency(t *testing.T) {
 	clusters := []*aigridv1.ManagedCluster{enrolled("site-a"), enrolled("site-b"), enrolled("site-c"), enrolled("site-d")}
 	s, advance := modelServer(t, &Fixtures{Clusters: clusters})
 	createModel(t, s, placedModel("half", &aigridv1.Rollout{Strategy: aigridv1.RolloutStrategy_ROLLOUT_STRATEGY_PROGRESSIVE, MaxConcurrency: "50%"}))
-	createModel(t, s, placedModel("group", &aigridv1.Rollout{Strategy: aigridv1.RolloutStrategy_ROLLOUT_STRATEGY_PROGRESSIVE_PER_GROUP, MaxConcurrency: "1"}))
+	// ProgressivePerGroup rolls a whole decision group out at once; the
+	// console's Placements have one group, so every cluster starts together.
+	createModel(t, s, placedModel("group", &aigridv1.Rollout{Strategy: aigridv1.RolloutStrategy_ROLLOUT_STRATEGY_PROGRESSIVE_PER_GROUP, MaxFailures: "0"}))
+	// maxConcurrency above the number of clusters falls back to all of them.
+	createModel(t, s, placedModel("wide", &aigridv1.Rollout{Strategy: aigridv1.RolloutStrategy_ROLLOUT_STRATEGY_PROGRESSIVE, MaxConcurrency: "9"}))
 	names := func(name string) []string {
 		var out []string
 		for _, w := range getModel(t, s, name).GetStatus().GetRollout().GetWorks() {
@@ -1241,21 +1463,22 @@ func TestProgressivePerGroupAndPercentConcurrency(t *testing.T) {
 		}
 		return out
 	}
+	all := []string{"site-a", "site-b", "site-c", "site-d"}
 	if got := names("half"); !slices.Equal(got, []string{"site-a", "site-b"}) {
 		t.Errorf("50%% of 4 is 2 at once: %v", got)
 	}
-	if got := names("group"); !slices.Equal(got, []string{"site-a"}) {
-		t.Errorf("one decision group, one at a time: %v", got)
+	if got := names("group"); !slices.Equal(got, all) {
+		t.Errorf("one decision group, all at once: %v", got)
+	}
+	if got := names("wide"); !slices.Equal(got, all) {
+		t.Errorf("9 of 4 is all: %v", got)
 	}
 	advance(llmisvcT3 + time.Second)
-	if got := names("half"); !slices.Equal(got, []string{"site-a", "site-b", "site-c", "site-d"}) {
+	if got := names("half"); !slices.Equal(got, all) {
 		t.Errorf("the next two once the first two succeeded: %v", got)
 	}
-	if got := names("group"); !slices.Equal(got, []string{"site-a", "site-b"}) {
-		t.Errorf("the second after the first succeeded: %v", got)
-	}
-	advance(4*llmisvcT3 + time.Second)
 	wantPhase(t, getModel(t, s, "group"), aigridv1.ModelPhase_MODEL_PHASE_READY, ReasonRolloutComplete)
+	advance(2*llmisvcT3 + time.Second)
 	wantPhase(t, getModel(t, s, "half"), aigridv1.ModelPhase_MODEL_PHASE_READY, ReasonRolloutComplete)
 	// MWRS and Placement condition times do not move between polls.
 	before := getModel(t, s, "group").GetStatus()
@@ -1271,7 +1494,7 @@ func TestProgressivePerGroupAndPercentConcurrency(t *testing.T) {
 			t.Errorf("%s moved between polls", typ)
 		}
 	}
-	if rolled := condition(after.GetRollout().GetConditions(), CondPlacementRolledOut); !rolled.GetLastTransitionTime().AsTime().Equal(testStart.Add(4*llmisvcT3 + time.Second)) {
+	if rolled := condition(after.GetRollout().GetConditions(), CondPlacementRolledOut); !rolled.GetLastTransitionTime().AsTime().Equal(testStart.Add(llmisvcT3 + time.Second)) {
 		t.Errorf("PlacementRolledOut was noticed at the poll that saw the rollout complete, got %s", rolled.GetLastTransitionTime().AsTime())
 	}
 }
@@ -1298,7 +1521,7 @@ func TestUpdatesAcrossGenerations(t *testing.T) {
 	m := getModel(t, s, "gen")
 	wantCond(t, m.GetStatus().GetConditions(), CondMainWorkloadReady, cFalse, ReasonMinimumReplicasUnavailable, MessageMinimumReplicasUnavailable)
 	wantCond(t, m.GetStatus().GetConditions(), CondReady, cFalse, ReasonMinimumReplicasUnavailable, MessageMinimumReplicasUnavailable)
-	if m.GetStatus().GetObservedGeneration() != 3 || m.GetStatus().GetUrl() != "" {
+	if m.GetStatus().GetObservedGeneration() != 3 || m.GetStatus().GetWorkloads().GetPrimary().GetReadyReplicas() != 0 {
 		t.Errorf("generation 2's completion must not mark generation 3 Ready: %v", m.GetStatus())
 	}
 	advance(116 * time.Second)
@@ -1309,8 +1532,8 @@ func TestUpdatesAcrossGenerations(t *testing.T) {
 	}
 
 	// Healthy to stuck: generation 4 at 200s with an image that never comes
-	// up stays at MinimumReplicasUnavailable past its own T3 and reaches the
-	// progress deadline at 200+15+600.
+	// up stays at MinimumReplicasUnavailable, past its own T3 and past the
+	// Deployment's 600s progress deadline: KServe ends on Available.
 	advance(200 * time.Second)
 	setImage("quay.io/example/vllm-oom:v4")
 	advance(260 * time.Second)
@@ -1319,11 +1542,11 @@ func TestUpdatesAcrossGenerations(t *testing.T) {
 	if m.GetStatus().GetObservedGeneration() != 4 {
 		t.Errorf("observedGeneration = %d", m.GetStatus().GetObservedGeneration())
 	}
-	advance(200*time.Second + llmisvcT2 + llmisvcDeadline + time.Second)
-	wantPhase(t, getModel(t, s, "gen"), aigridv1.ModelPhase_MODEL_PHASE_FAILED, ReasonProgressDeadlineExceeded)
+	advance(200*time.Second + llmisvcT2 + 600*time.Second + time.Second)
+	wantPhase(t, getModel(t, s, "gen"), aigridv1.ModelPhase_MODEL_PHASE_FAILED, ReasonMinimumReplicasUnavailable)
 
-	// Recovery: generation 5 with a healthy image rolls out and becomes Ready;
-	// generation 4's deadline, which never fired, cannot fire later either.
+	// Recovery: generation 3 with a healthy image rolls out and becomes Ready
+	// and stays Ready.
 	s2, advance2 := modelServer(t, &Fixtures{})
 	createModel(t, s2, hubModel("rec"))
 	advance2(60 * time.Second)
@@ -1341,53 +1564,60 @@ func TestUpdatesAcrossGenerations(t *testing.T) {
 	if m.GetStatus().GetObservedGeneration() != 3 {
 		t.Errorf("observedGeneration = %d", m.GetStatus().GetObservedGeneration())
 	}
-	advance2(60*time.Second + llmisvcT2 + llmisvcDeadline + time.Minute)
+	advance2(60*time.Second + llmisvcT2 + 600*time.Second + time.Minute)
 	wantPhase(t, getModel(t, s2, "rec"), aigridv1.ModelPhase_MODEL_PHASE_READY, "")
 }
 
-func TestUpdateDuringProgressiveRolloutKeepsAppliedSpecs(t *testing.T) {
+func TestUpdateDuringProgressiveRolloutReappliesStaleWorksInNameOrder(t *testing.T) {
 	s, advance := modelServer(t, &Fixtures{Clusters: []*aigridv1.ManagedCluster{enrolled("site-a"), enrolled("site-b"), enrolled("site-c")}})
 	ctx := authed(context.Background())
+	setImage := func(name, image string) {
+		t.Helper()
+		if _, err := s.UpdateModel(ctx, &aigridv1.UpdateModelRequest{Object: &aigridv1.Model{Name: name, Metadata: &aigridv1.ObjectMeta{Namespace: testNS}, Spec: &aigridv1.ModelSpec{Main: &aigridv1.Container{Image: image}}}, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{PathSpecMainImage}}}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	createModel(t, s, placedModel("roll", &aigridv1.Rollout{Strategy: aigridv1.RolloutStrategy_ROLLOUT_STRATEGY_PROGRESSIVE, MaxConcurrency: "1", MinSuccessTime: "30s"}))
-	// At 20s the template changes to an image that never comes up. The work
-	// already applied on site-a keeps serving the spec it applied: it goes
-	// Ready at 45s like a healthy rollout and only then is re-applied with
-	// the new generation (after its 30s soak), the pending clusters wait.
+	// At 20s the template changes to an image that never comes up. The
+	// controller counts only works at the current template, so site-a's
+	// stale work holds no slot: site-a, first by name, is re-applied at once
+	// with generation 2 and, stuck without a deadline, holds the slot for good.
 	advance(20 * time.Second)
-	if _, err := s.UpdateModel(ctx, &aigridv1.UpdateModelRequest{Object: &aigridv1.Model{Name: "roll", Metadata: &aigridv1.ObjectMeta{Namespace: testNS}, Spec: &aigridv1.ModelSpec{Main: &aigridv1.Container{Image: "quay.io/example/vllm-oom"}}}, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{PathSpecMainImage}}}); err != nil {
-		t.Fatal(err)
+	setImage("roll", "quay.io/example/vllm-oom")
+	for _, d := range []time.Duration{44 * time.Second, time.Hour} {
+		advance(d)
+		m := getModel(t, s, "roll")
+		works := m.GetStatus().GetRollout().GetWorks()
+		if len(works) != 1 || works[0].GetGeneration() != 2 || !condition(works[0].GetConditions(), CondWorkApplied).GetLastTransitionTime().AsTime().Equal(testStart.Add(20*time.Second)) {
+			t.Fatalf("at %s: works = %v", d, works)
+		}
+		wantCond(t, works[0].GetConditions(), CondWorkProgressing, cTrue, ReasonConditionRulesAggregated, MessageRuleProgressing)
+		wantPhase(t, m, aigridv1.ModelPhase_MODEL_PHASE_PENDING, ReasonProcessing)
 	}
-	advance(44 * time.Second)
-	works := getModel(t, s, "roll").GetStatus().GetRollout().GetWorks()
-	if len(works) != 1 || works[0].GetGeneration() != 1 {
-		t.Fatalf("works = %v", works)
+
+	// A healthy update after a complete rollout: the stale works are not
+	// counted in the summary and are re-applied one at a time in name order.
+	s2, advance2 := modelServer(t, &Fixtures{Clusters: []*aigridv1.ManagedCluster{enrolled("site-a"), enrolled("site-b"), enrolled("site-c")}})
+	s = s2
+	createModel(t, s, placedModel("ok", &aigridv1.Rollout{Strategy: aigridv1.RolloutStrategy_ROLLOUT_STRATEGY_PROGRESSIVE, MaxConcurrency: "1"}))
+	advance2(3*llmisvcT3 + time.Second)
+	wantPhase(t, getModel(t, s, "ok"), aigridv1.ModelPhase_MODEL_PHASE_READY, ReasonRolloutComplete)
+	at := 3*llmisvcT3 + time.Second
+	setImage("ok", "quay.io/example/vllm:v2")
+	m := getModel(t, s, "ok")
+	works := m.GetStatus().GetRollout().GetWorks()
+	if len(works) != 3 || works[0].GetGeneration() != 2 || works[1].GetGeneration() != 1 || works[2].GetGeneration() != 1 {
+		t.Fatalf("site-a re-applied at once, the others still stale: %v", works)
 	}
-	wantCond(t, works[0].GetConditions(), CondWorkProgressing, cTrue, ReasonConditionRulesAggregated, MessageRuleProgressing)
-	wantCond(t, works[0].GetConditions(), CondWorkDegraded, cFalse, ReasonConditionRulesAggregated, MessageRuleDegraded)
-	advance(60 * time.Second)
-	m := getModel(t, s, "roll")
-	works = m.GetStatus().GetRollout().GetWorks()
-	if len(works) != 1 || works[0].GetGeneration() != 1 {
-		t.Fatalf("works = %v", works)
+	if sum := m.GetStatus().GetRollout().GetSummary(); sum.GetTotal() != 1 || sum.GetApplied() != 1 || sum.GetAvailable() != 0 {
+		t.Errorf("only the work at the current template counts: %v", sum)
 	}
-	wantCond(t, works[0].GetConditions(), CondWorkProgressing, cFalse, ReasonConditionRulesAggregated, MessageRuleProgressing)
-	if fb := works[0].GetManifests()[1].GetFeedback(); len(fb) != 2 || fb[0].GetValue() != "True" {
-		t.Errorf("the applied spec (generation 1) came up: %v", fb)
+	wantCond(t, m.GetStatus().GetRollout().GetConditions(), CondPlacementRolledOut, cFalse, ReasonRolloutProgressing, "")
+	advance2(at + llmisvcT3 + time.Second)
+	works = getModel(t, s, "ok").GetStatus().GetRollout().GetWorks()
+	if works[1].GetGeneration() != 2 || works[2].GetGeneration() != 1 || !condition(works[1].GetConditions(), CondWorkApplied).GetLastTransitionTime().AsTime().Equal(testStart.Add(at+llmisvcT3)) {
+		t.Errorf("site-b re-applied once site-a succeeded: %v", works)
 	}
-	if sum := m.GetStatus().GetRollout().GetSummary(); sum.GetUpdated() != 0 || sum.GetTotal() != 1 {
-		t.Errorf("summary = %v", sum)
-	}
-	advance(76 * time.Second)
-	works = getModel(t, s, "roll").GetStatus().GetRollout().GetWorks()
-	if len(works) != 1 || works[0].GetGeneration() != 2 || !condition(works[0].GetConditions(), CondWorkApplied).GetLastTransitionTime().AsTime().Equal(testStart.Add(75*time.Second)) {
-		t.Errorf("site-a re-applied with generation 2 once its soak ended: %v", works)
-	}
-	advance(76*time.Second + llmisvcT3)
-	works = getModel(t, s, "roll").GetStatus().GetRollout().GetWorks()
-	if len(works) != 1 {
-		t.Errorf("the stuck generation 2 holds the only slot: %v", works)
-	}
-	wantCond(t, works[0].GetConditions(), CondWorkProgressing, cTrue, ReasonConditionRulesAggregated, MessageRuleProgressing)
 }
 
 func TestDisconnectedAgentFreezesTheWork(t *testing.T) {
@@ -1413,7 +1643,7 @@ func TestDisconnectedAgentFreezesTheWork(t *testing.T) {
 	// lost its lease: the hub keeps that report unchanged.
 	at60 := snapshot(60 * time.Second)
 	wantCond(t, at60.GetConditions(), CondWorkProgressing, cTrue, ReasonConditionRulesAggregated, MessageRuleProgressing)
-	if fb := at60.GetManifests()[1].GetFeedback(); len(fb) != 1 || fb[0].GetValue() != "False" {
+	if fb := at60.GetManifests()[1].GetFeedback(); len(fb) != 2 || fb[0].GetValue() != "False" || fb[1].GetName() != FeedbackURL {
 		t.Errorf("frozen feedback = %v", fb)
 	}
 	at100 := snapshot(100 * time.Second)
@@ -1423,7 +1653,7 @@ func TestDisconnectedAgentFreezesTheWork(t *testing.T) {
 	// Back at 120s: the spoke resumes where it stopped (10s into its
 	// lifecycle), so Ready comes at 120 + 35 = 155s.
 	at150 := snapshot(150 * time.Second)
-	if fb := at150.GetManifests()[1].GetFeedback(); len(fb) != 1 || fb[0].GetValue() != "False" {
+	if fb := at150.GetManifests()[1].GetFeedback(); len(fb) != 2 || fb[0].GetValue() != "False" {
 		t.Errorf("still starting after reconnect: %v", fb)
 	}
 	at160 := snapshot(160 * time.Second)
@@ -1458,7 +1688,7 @@ func TestWorkSuffixGeneratorRenamesExistingWorks(t *testing.T) {
 		var out []string
 		for _, m := range resp.GetItems() {
 			for _, w := range m.GetStatus().GetRollout().GetWorks() {
-				if !strings.HasPrefix(w.GetWorkName(), "model-"+m.GetName()+"-g") {
+				if !strings.HasPrefix(w.GetWorkName(), "model-"+m.GetName()+"g") {
 					t.Errorf("%s: work %q was not renamed by the generator", m.GetName(), w.GetWorkName())
 				}
 				out = append(out, w.GetClusterName()+"="+w.GetWorkName())

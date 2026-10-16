@@ -41,9 +41,11 @@ const (
 	RolloutStrategy_ROLLOUT_STRATEGY_UNSPECIFIED RolloutStrategy = 0
 	// Every selected cluster at once.
 	RolloutStrategy_ROLLOUT_STRATEGY_ALL RolloutStrategy = 1
-	// `max_concurrency` clusters at a time, in cluster-name order.
+	// `max_concurrency` clusters at a time, in cluster-name order. A work
+	// still carrying an older template holds no slot.
 	RolloutStrategy_ROLLOUT_STRATEGY_PROGRESSIVE RolloutStrategy = 2
-	// Decision group by decision group.
+	// Decision group by decision group, each group all at once. The console's
+	// Placements have one decision group, so this behaves like ALL.
 	RolloutStrategy_ROLLOUT_STRATEGY_PROGRESSIVE_PER_GROUP RolloutStrategy = 3
 )
 
@@ -103,7 +105,13 @@ func (RolloutStrategy) EnumDescriptor() ([]byte, []int) {
 //	`ManifestworkApplied` False/`NotAsExpected` with a work that is Degraded
 //	or failed to apply -> FAILED; otherwise PENDING (this includes
 //	`NotAsExpected` from an agent that has not reported yet) with the reason
-//	of `PlacementVerified` when it is False, else of `ManifestworkApplied`.
+//	of `PlacementVerified` when it is False, of `PlacementRolledOut` when
+//	`ManifestworkApplied` is True (more clusters to come), else of
+//	`ManifestworkApplied`. A spoke whose pods never become ready keeps
+//	`Ready=False/MinimumReplicasUnavailable`, which the template's Degraded
+//	rule does not match, so its work stays Progressing and the model reads
+//	PENDING/`Processing`; a Progressive rollout times that cluster out after
+//	`progress_deadline`.
 type ModelPhase int32
 
 const (
@@ -113,7 +121,7 @@ const (
 	ModelPhase_MODEL_PHASE_PENDING ModelPhase = 1
 	// Serving.
 	ModelPhase_MODEL_PHASE_READY ModelPhase = 2
-	// `Ready` is False, or a work is degraded.
+	// `Ready` is False (hub), or a work is degraded or failed to apply.
 	ModelPhase_MODEL_PHASE_FAILED ModelPhase = 3
 )
 
@@ -170,7 +178,7 @@ func (ModelPhase) EnumDescriptor() ([]byte, []int) {
 // whose works deploy it to every selected cluster (mock/research/acm.md 3, 4).
 type Model struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// `metadata.name`: a DNS-1123 label, unique in the namespace.
+	// `metadata.name`: a DNS-1123 subdomain, unique in the namespace.
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	// Kubernetes metadata. `display_name` and `description` live in the
 	// `openshift.io/display-name` and `openshift.io/description` annotations.
@@ -368,7 +376,8 @@ func (x *ModelSpec) GetRollout() *Rollout {
 // `spec.model`.
 type ModelSource struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// `spec.model.uri`: `hf://`, `s3://`, `pvc://` or `oci://`. Required.
+	// `spec.model.uri`: `hf://`, `s3://`, `pvc://` or `oci://`. Required. The
+	// CRD types it as a plain string; the scheme is a console check.
 	Uri string `protobuf:"bytes,1,opt,name=uri,proto3" json:"uri,omitempty"`
 	// `spec.model.name`: the identifier clients send in the request `model`
 	// field. Defaults to `metadata.name`.
@@ -554,7 +563,10 @@ func (x *KedaTrigger) GetMetadata() map[string]string {
 // `spec.router`.
 type Router struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// `spec.router.gateway.refs[]`. Empty means the default Gateway.
+	// `spec.router.gateway.refs[]`. Empty: the managed route attaches to the
+	// default Gateway and `GatewaysReady` is not reported. A referenced Gateway
+	// that does not exist gives `GatewaysReady=False/RefsInvalid`; the workload
+	// still deploys, but no route, `url` or `addresses` are written.
 	GatewayRefs []*GatewayRef `protobuf:"bytes,1,rep,name=gateway_refs,json=gatewayRefs,proto3" json:"gateway_refs,omitempty"`
 	// `spec.router.route: {}`: the controller manages the HTTPRoute.
 	ManagedRoute bool `protobuf:"varint,2,opt,name=managed_route,json=managedRoute,proto3" json:"managed_route,omitempty"`
@@ -619,7 +631,7 @@ func (x *Router) GetScheduler() bool {
 // One `spec.router.gateway.refs[]` entry.
 type GatewayRef struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Gateway name, for example `openshift-ai-inference`.
+	// Gateway name, for example `openshift-ai-inference` (the product default).
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	// Gateway namespace, for example `openshift-ingress`.
 	Namespace string `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
@@ -810,8 +822,12 @@ func (x *EnvVar) GetValue() string {
 }
 
 // An ACM `Placement.spec` (`cluster.open-cluster-management.io/v1beta1`) with
-// one predicate (mock/research/acm.md 3). On create the backend adds only the
-// CRD defaults `scoreRateLimit: 1m` and `sortBy: ClusterName`.
+// one predicate (mock/research/acm.md 3). The console's message carries no
+// defaults; the API server applies the CRD's (`sortBy: ClusterName`,
+// `scoreRateLimit: 1m`, `prioritizerPolicy.mode: Additive`,
+// `decisionStrategy.groupStrategy.clustersPerDecisionGroup: 100%`, so one
+// decision group). The operator, `number_of_clusters` and cluster-set checks
+// are the console's; the CRD only enumerates the toleration effect.
 type Placement struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// `spec.clusterSets[]`: sets to draw from; each must be bound into the
@@ -827,7 +843,9 @@ type Placement struct {
 	// unavailable with `NoSelect`; a Placement must tolerate the taint to keep
 	// such a cluster selected.
 	Tolerations []*Toleration `protobuf:"bytes,4,rep,name=tolerations,proto3" json:"tolerations,omitempty"`
-	// `spec.numberOfClusters`: cap on selected clusters. Unset means all.
+	// `spec.numberOfClusters`: cap on selected clusters. Unset means all. The
+	// scheduler keeps clusters already selected (Steady prioritizer) and picks
+	// the rest by score, then name.
 	NumberOfClusters *int32 `protobuf:"varint,5,opt,name=number_of_clusters,json=numberOfClusters,proto3,oneof" json:"number_of_clusters,omitempty"`
 	// `spec.spreadPolicy.spreadConstraints[]`. Carried as written; the fake
 	// does not evaluate them.
@@ -1096,12 +1114,16 @@ func (x *ClaimExpression) GetValues() []string {
 type Toleration struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Taint key, for example `cluster.open-cluster-management.io/unreachable`.
+	// Empty matches every key and needs operator `Exists`; otherwise the
+	// scheduler reports `PlacementMisconfigured=True` and selects nothing.
 	Key string `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
-	// `Equal` (CRD default) or `Exists`.
+	// `Equal` (CRD default) or `Exists`, which takes no value.
 	Operator string `protobuf:"bytes,2,opt,name=operator,proto3" json:"operator,omitempty"`
 	// Taint value for `Equal`.
 	Value string `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
-	// Taint effect to tolerate; empty tolerates every effect.
+	// Taint effect to tolerate; empty tolerates every effect. `NoSelect`
+	// taints filter a cluster, `NoSelectIfNew` only one not already selected,
+	// `PreferNoSelect` never.
 	Effect string `protobuf:"bytes,4,opt,name=effect,proto3" json:"effect,omitempty"`
 	// How long the taint is tolerated, counted from the taint's `timeAdded`.
 	// Unset tolerates it forever.
@@ -1254,17 +1276,24 @@ type Rollout struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Strategy type.
 	Strategy RolloutStrategy `protobuf:"varint,1,opt,name=strategy,proto3,enum=ai_grid.v1.RolloutStrategy" json:"strategy,omitempty"`
-	// Progressive only: clusters rolled out at once, an integer or a percent
-	// such as `20%`. Empty means every selected cluster.
+	// Progressive only (All and ProgressivePerGroup have no maxConcurrency;
+	// InvalidArgument otherwise): clusters rolled out at once, an integer or a
+	// percent such as `20%`, rounded up. Empty, zero or more than the selected
+	// clusters means every selected cluster. The backend must write a bare
+	// integer as an IntOrString int: sdk-go rejects a string without `%`.
 	MaxConcurrency string `protobuf:"bytes,2,opt,name=max_concurrency,json=maxConcurrency,proto3" json:"max_concurrency,omitempty"`
 	// Failed or timed-out clusters tolerated before the rollout stops, an
-	// integer or a percent. Empty means 0.
+	// integer or a percent of the selected clusters. Empty means 0, and so
+	// does a value above the number of selected clusters (sdk-go's fallback).
+	// Not used by All.
 	MaxFailures string `protobuf:"bytes,3,opt,name=max_failures,json=maxFailures,proto3" json:"max_failures,omitempty"`
-	// How long a cluster may stay progressing before it counts as timed out.
-	// Empty means never.
+	// How long a cluster may stay progressing (or failed) before it counts as
+	// timed out, counted from its work's `Progressing` (or, failed, `Degraded`)
+	// condition's last transition. `5m`, `1h` or `None`; empty or `None` means
+	// never, `0s` at once.
 	ProgressDeadline string `protobuf:"bytes,4,opt,name=progress_deadline,json=progressDeadline,proto3" json:"progress_deadline,omitempty"`
 	// How long a succeeded cluster keeps its slot before the next starts.
-	// Empty means 0.
+	// Empty means 0. Not used by All.
 	MinSuccessTime string `protobuf:"bytes,5,opt,name=min_success_time,json=minSuccessTime,proto3" json:"min_success_time,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -1340,9 +1369,11 @@ func (x *Rollout) GetMinSuccessTime() string {
 // status when `spec.placement` is set.
 type ModelStatus struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// `status.url`: the external address when there is one.
+	// `status.url`: the external `/<namespace>/<name>` address. Written with
+	// the managed route on the first reconcile, before the model is Ready, and
+	// kept through a restart.
 	Url string `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
-	// `status.addresses[]`.
+	// `status.addresses[]`, sorted by URL as the controller writes them.
 	Addresses []*Address `protobuf:"bytes,2,rep,name=addresses,proto3" json:"addresses,omitempty"`
 	// `status.conditions[]` (Knative style; `Ready` rolls up `PresetsCombined`,
 	// `WorkloadsReady` and `RouterReady`).
@@ -2014,10 +2045,11 @@ func (x *RolloutStatus) GetWorks() []*ManifestWorkStatus {
 	return nil
 }
 
-// `status.summary`: counts of generated ManifestWorks.
+// `status.summary`: counts of the generated ManifestWorks whose spec is the
+// current template (a work still carrying an older template is not counted).
 type RolloutSummary struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Works that exist.
+	// Works at the current template, including those applied in this pass.
 	Total int32 `protobuf:"varint,1,opt,name=total,proto3" json:"total,omitempty"`
 	// Works with `Applied` True.
 	Applied int32 `protobuf:"varint,2,opt,name=applied,proto3" json:"applied,omitempty"`
@@ -2027,7 +2059,9 @@ type RolloutSummary struct {
 	Progressing int32 `protobuf:"varint,4,opt,name=progressing,proto3" json:"progressing,omitempty"`
 	// Works with `Degraded` True.
 	Degraded int32 `protobuf:"varint,5,opt,name=degraded,proto3" json:"degraded,omitempty"`
-	// Works at the current generation.
+	// Never set. The CRD declares `updated` (and `desiredTotal`) but the
+	// ManifestWorkReplicaSet controller never writes either, so the fake and
+	// the BFF leave it out. To be removed from the proposal (reserve 6).
 	Updated       int32 `protobuf:"varint,6,opt,name=updated,proto3" json:"updated,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2110,7 +2144,8 @@ type ManifestWorkStatus struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Namespace of the work: the cluster it targets.
 	ClusterName string `protobuf:"bytes,1,opt,name=cluster_name,json=clusterName,proto3" json:"cluster_name,omitempty"`
-	// Work name, `<mwrs name>-<5 random characters>`.
+	// Work name, `<mwrs name><5 random characters>`: the controller's
+	// generateName is the MWRS name with no separator, cut to 58 characters.
 	WorkName string `protobuf:"bytes,2,opt,name=work_name,json=workName,proto3" json:"work_name,omitempty"`
 	// `Applied`, `Available`, and `Progressing`/`Degraded` from the template's
 	// condition rules.
@@ -2203,6 +2238,7 @@ type ManifestStatus struct {
 	// `resourceMeta`.
 	Resource *ResourceIdentifier `protobuf:"bytes,1,opt,name=resource,proto3" json:"resource,omitempty"`
 	// `Applied`, `Available`, `StatusFeedbackSynced`, plus rule conditions.
+	// Only `Applied` and the rule conditions carry `observed_generation`.
 	Conditions []*Condition `protobuf:"bytes,2,rep,name=conditions,proto3" json:"conditions,omitempty"`
 	// `statusFeedback.values[]`.
 	Feedback      []*FeedbackValue `protobuf:"bytes,3,rep,name=feedback,proto3" json:"feedback,omitempty"`
@@ -2270,7 +2306,8 @@ type ResourceIdentifier struct {
 	Group string `protobuf:"bytes,2,opt,name=group,proto3" json:"group,omitempty"`
 	// API version.
 	Version string `protobuf:"bytes,3,opt,name=version,proto3" json:"version,omitempty"`
-	// Plural lowercase resource.
+	// Plural lowercase resource. Empty when the spoke has no such kind (the
+	// apply then failed).
 	Resource string `protobuf:"bytes,4,opt,name=resource,proto3" json:"resource,omitempty"`
 	// Kind.
 	Kind string `protobuf:"bytes,5,opt,name=kind,proto3" json:"kind,omitempty"`

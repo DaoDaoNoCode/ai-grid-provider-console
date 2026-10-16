@@ -35,7 +35,10 @@ const (
 	ResourceGPU    = "nvidia.com/gpu"
 )
 
-// The Gateway KServe programs on the hub (`openshift-ingress/openshift-ai-inference`).
+// The product-default Gateway the console attaches a model to
+// (`openshift-ingress/openshift-ai-inference`, the name RHOAI installs for
+// KServe; mock/research/models-maas.md 1). A name, not a claim that any given
+// hub has it.
 const (
 	DefaultGatewayName      = "openshift-ai-inference"
 	DefaultGatewayNamespace = "openshift-ingress"
@@ -109,7 +112,10 @@ type Model struct {
 	Phase   string `json:"phase,omitempty"`
 	Reason  string `json:"reason,omitempty"`
 	Message string `json:"message,omitempty"`
-	// URL and Addresses are set once the hub deployment is Ready.
+	// URL and Addresses are set as soon as the controller has written the
+	// managed route, before the deployment is Ready, and kept through a
+	// restart (KServe updateRoutingStatus); a Gateway that does not exist
+	// leaves both unset.
 	URL            string             `json:"url,omitempty"`
 	Addresses      []ModelAddress     `json:"addresses"`
 	Conditions     []ClusterCondition `json:"conditions"`
@@ -213,14 +219,16 @@ type RolloutSpec struct {
 	MinSuccessTime   string `json:"minSuccessTime,omitempty"`
 }
 
-// RolloutSummary is the ManifestWorkReplicaSet's `status.summary`.
+// RolloutSummary is the ManifestWorkReplicaSet's `status.summary`: counts of
+// the works at the current template (a work still carrying an older template
+// is not counted). The CRD also declares `desiredTotal` and `updated`, which
+// the controller never writes, so they are not exposed.
 type RolloutSummary struct {
 	Total       int32 `json:"total"`
 	Applied     int32 `json:"applied"`
 	Available   int32 `json:"available"`
 	Progressing int32 `json:"progressing"`
 	Degraded    int32 `json:"degraded"`
-	Updated     int32 `json:"updated"`
 }
 
 // ModelRollout is the ManifestWorkReplicaSet with its works.
@@ -406,7 +414,7 @@ func toModel(m *aigridv1.Model) Model {
 		rs := st.GetRollout()
 		rollout := &ModelRollout{RolloutSpec: toRolloutSpec(spec.GetRollout()), Conditions: toConditions(rs.GetConditions()), Works: []WorkStatus{}}
 		if sum := rs.GetSummary(); sum != nil {
-			rollout.Summary = RolloutSummary{Total: sum.GetTotal(), Applied: sum.GetApplied(), Available: sum.GetAvailable(), Progressing: sum.GetProgressing(), Degraded: sum.GetDegraded(), Updated: sum.GetUpdated()}
+			rollout.Summary = RolloutSummary{Total: sum.GetTotal(), Applied: sum.GetApplied(), Available: sum.GetAvailable(), Progressing: sum.GetProgressing(), Degraded: sum.GetDegraded()}
 		}
 		rollout.RolledOut = conditionString(rs.GetConditions(), "PlacementRolledOut") == "True"
 		if applied := findCondition(rs.GetConditions(), "ManifestworkApplied"); applied != nil {

@@ -56,11 +56,11 @@ func seedModels() []*aigridv1.Model {
 				Placement: &aigridv1.PlacementStatus{NumberOfSelectedClusters: 2, Decisions: []*aigridv1.ClusterDecision{{ClusterName: "site-paris-1"}, {ClusterName: "site-madrid-1"}},
 					Conditions: []*aigridv1.Condition{modelCondition("PlacementSatisfied", aigridv1.ConditionStatus_CONDITION_STATUS_TRUE, "AllDecisionsScheduled", "All cluster decisions scheduled")}},
 				Rollout: &aigridv1.RolloutStatus{
-					Summary:    &aigridv1.RolloutSummary{Total: 2, Applied: 2, Available: 1, Progressing: 1, Updated: 2},
+					Summary:    &aigridv1.RolloutSummary{Total: 2, Applied: 2, Available: 1, Progressing: 1, Updated: 2}, // updated is never written by OCM; the BFF drops it
 					Conditions: []*aigridv1.Condition{modelCondition("PlacementRolledOut", aigridv1.ConditionStatus_CONDITION_STATUS_FALSE, "Progressing", ""), modelCondition("ManifestworkApplied", aigridv1.ConditionStatus_CONDITION_STATUS_FALSE, "Processing", "")},
 					Works: []*aigridv1.ManifestWorkStatus{
-						{ClusterName: "site-madrid-1", WorkName: "model-granite-8b-instruct-x7k2p", Generation: 2}, // agent not reporting: empty status
-						{ClusterName: "site-paris-1", WorkName: "model-granite-8b-instruct-m4q8z", Generation: 2, ObservedGeneration: 2,
+						{ClusterName: "site-madrid-1", WorkName: "model-granite-8b-instructx7k2p", Generation: 2}, // agent not reporting: empty status
+						{ClusterName: "site-paris-1", WorkName: "model-granite-8b-instructm4q8z", Generation: 2, ObservedGeneration: 2,
 							Conditions: []*aigridv1.Condition{modelCondition("Applied", aigridv1.ConditionStatus_CONDITION_STATUS_TRUE, "AppliedManifestWorkComplete", "Apply manifest work complete"), modelCondition("Available", aigridv1.ConditionStatus_CONDITION_STATUS_TRUE, "ResourcesAvailable", "All resources are available"), modelCondition("Progressing", aigridv1.ConditionStatus_CONDITION_STATUS_TRUE, "ConditionRulesAggregated", "LLMInferenceService rolling out"), modelCondition("Degraded", aigridv1.ConditionStatus_CONDITION_STATUS_FALSE, "ConditionRulesAggregated", "LLMInferenceService not ready")},
 							Manifests:  []*aigridv1.ManifestStatus{{Resource: &aigridv1.ResourceIdentifier{Ordinal: 1, Kind: "LLMInferenceService"}, Feedback: []*aigridv1.FeedbackValue{{Name: "ready", Type: "String", Value: "False"}, {Name: "url", Type: "String", Value: "https://openshift-ai-inference.apps.site-paris-1.example.com/ai-grid-models/granite-8b-instruct"}}}}},
 					},
@@ -107,11 +107,14 @@ func TestListModels(t *testing.T) {
 	if r.Strategy != StrategyProgressive || r.MaxConcurrency != "1" || r.Summary.Total != 2 || r.Summary.Progressing != 1 || r.RolledOut || r.Applied || r.Reason != "Processing" || len(r.Works) != 2 {
 		t.Errorf("rollout = %+v", r)
 	}
+	if strings.Contains(rec.Body.String(), `"updated"`) || strings.Contains(rec.Body.String(), `"desiredTotal"`) {
+		t.Errorf("summary carries updated/desiredTotal, which OCM never writes: %s", rec.Body.String())
+	}
 	madrid, paris := r.Works[0], r.Works[1]
 	if madrid.Applied != "" || madrid.Available != "" || madrid.Progressing != "" || madrid.Feedback.Ready != "" || madrid.Conditions == nil || madrid.ObservedGeneration != 0 {
 		t.Errorf("madrid work = %+v", madrid)
 	}
-	if paris.Progressing != "True" || paris.Degraded != "False" || paris.Feedback.Ready != "False" || !strings.HasPrefix(paris.Feedback.URL, "https://openshift-ai-inference.apps.site-paris-1") || paris.WorkName != "model-granite-8b-instruct-m4q8z" || paris.ObservedGeneration != 2 {
+	if paris.Progressing != "True" || paris.Degraded != "False" || paris.Feedback.Ready != "False" || !strings.HasPrefix(paris.Feedback.URL, "https://openshift-ai-inference.apps.site-paris-1") || paris.WorkName != "model-granite-8b-instructm4q8z" || paris.ObservedGeneration != 2 {
 		t.Errorf("paris work = %+v", paris)
 	}
 	other := list[2]

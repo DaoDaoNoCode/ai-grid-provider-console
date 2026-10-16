@@ -27,10 +27,11 @@ service AiGrid {
   rpc GetCurrentUser(GetCurrentUserRequest) returns (GetCurrentUserResponse);
   // Returns what the hub this backend talks to can do, so the console can
   // explain a disabled feature instead of failing on it: whether the
-  // ManifestWorkReplicaSet controller runs (on the dev hub the CRD exists but
-  // the feature gate is off, so creating a placed model is FailedPrecondition;
-  // mock/research/acm.md 4), whether observability is installed, and the ACM
-  // version. Requires authorization like every RPC but Ping.
+  // ManifestWorkReplicaSet controller runs (with the feature gate off the CRD
+  // may still exist but nothing reconciles it, so creating a placed model is
+  // FailedPrecondition; mock/research/acm.md 4), whether observability is
+  // installed, and the ACM version. Requires authorization like every RPC
+  // but Ping.
   rpc GetHubCapabilities(GetHubCapabilitiesRequest) returns (GetHubCapabilitiesResponse);
 }
 
@@ -89,7 +90,8 @@ message GetHubCapabilitiesResponse {
 message HubCapabilities {
   // True when `ClusterManager.spec.workConfiguration.featureGates` enables
   // `ManifestWorkReplicaSet` and the `cluster-manager-work-controller`
-  // Deployment runs. False on the dev hub today.
+  // Deployment runs. The research found it false on the dev hub
+  // (mock/research/acm.md 4).
   bool manifest_work_replica_set_enabled = 1;
   // True when a `MultiClusterObservability` is installed and ready, so fleet
   // metrics can be queried.

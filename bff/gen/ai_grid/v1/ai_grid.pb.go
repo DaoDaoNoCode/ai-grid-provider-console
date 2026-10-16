@@ -445,7 +445,8 @@ type HubCapabilities struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// True when `ClusterManager.spec.workConfiguration.featureGates` enables
 	// `ManifestWorkReplicaSet` and the `cluster-manager-work-controller`
-	// Deployment runs. False on the dev hub today.
+	// Deployment runs. The research found it false on the dev hub
+	// (mock/research/acm.md 4).
 	ManifestWorkReplicaSetEnabled bool `protobuf:"varint,1,opt,name=manifest_work_replica_set_enabled,json=manifestWorkReplicaSetEnabled,proto3" json:"manifest_work_replica_set_enabled,omitempty"`
 	// True when a `MultiClusterObservability` is installed and ready, so fleet
 	// metrics can be queried.

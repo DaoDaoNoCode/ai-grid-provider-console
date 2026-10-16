@@ -14,16 +14,19 @@ import (
 )
 
 // Strings KServe writes on an LLMInferenceService (serving.kserve.io/v1alpha2).
-// Every value comes from mock/research/models-maas.md section 2.1, which cites
-// the controller source for each one (kserve:llm_inference_service_lifecycle.go,
-// config_merge.go, workload_single_node.go, router.go); nothing here is
+// Every value comes from mock/research/models-maas.md section 2.1 and was
+// re-checked against the controller source (opendatahub-io/kserve at 01d6280;
+// `kserve:` paths below are pkg/controller/v1alpha2/llmisvc/ unless they name
+// pkg/apis) and knative.dev/pkg at 0795cb8 (`knative:`); nothing here is
 // invented unless its comment says so. Keep them verbatim: the UI and the real
 // backend will match on them.
 const (
 	// Condition types. `Ready` rolls up PresetsCombined, WorkloadsReady and
-	// RouterReady (Knative LivingConditionSet); WorkloadsReady rolls up
-	// MainWorkloadReady; RouterReady rolls up GatewaysReady, HTTPRoutesReady,
-	// InferencePoolReady and SchedulerWorkloadReady.
+	// RouterReady (Knative LivingConditionSet,
+	// kserve:pkg/apis/serving/v1alpha2/llm_inference_service_lifecycle.go:164-168);
+	// WorkloadsReady rolls up MainWorkloadReady (:258-283); RouterReady rolls up
+	// GatewaysReady, HTTPRoutesReady, InferencePoolReady and
+	// SchedulerWorkloadReady, the first False one in that order (:405-425).
 	CondReady                  = "Ready"
 	CondPresetsCombined        = "PresetsCombined"
 	CondWorkloadsReady         = "WorkloadsReady"
@@ -34,42 +37,65 @@ const (
 	CondInferencePoolReady     = "InferencePoolReady"
 	CondSchedulerWorkloadReady = "SchedulerWorkloadReady"
 
-	// PresetsCombined False (config_merge.go). The message format is
-	// kserve:config_merge.go:1283, `%v` of the namespaces searched.
+	// PresetsCombined False (kserve:config_merge.go:378). The message format
+	// is kserve:config_merge.go:1283, `%v` of the namespaces searched.
 	ReasonConfigNotFound    = "ConfigNotFound"
 	MessageConfigNotFoundFm = "LLMInferenceServiceConfig %q not found in namespaces %v"
 
 	// MainWorkloadReady False: KServe copies the Deployment's own conditions
-	// (kserve:workload_single_node.go:418-443). Available=False gives
-	// MinimumReplicasUnavailable with the Deployment's message; Progressing=False
-	// gives ProgressDeadlineExceeded with the Deployment's message (the
-	// deployment controller's `ReplicaSet %q has timed out progressing.`); no
-	// Deployment condition yet gives Progressing with an empty message.
+	// (kserve:workload_single_node.go:418-443, propagateWorkloadDeploymentStatus).
+	// A Progressing=False condition is marked (ProgressDeadlineExceeded) but the
+	// loop goes on and returns at the Available condition, so Available=False
+	// ends at MinimumReplicasUnavailable with the Deployment's message whatever
+	// Progressing says. Without an Available condition the loop falls through
+	// to :441, which overwrites it with Progressing and an empty message; the
+	// stored status is the final one (knative:reconciler/reconcile_common.go:
+	// 93-111), so ProgressDeadlineExceeded never persists on MainWorkloadReady
+	// in either case. The deployment controller writes Available on every
+	// status sync (k8s.io/kubernetes@v1.35.8 pkg/controller/deployment/
+	// sync.go:525-531), so a workload that never becomes available keeps
+	// MinimumReplicasUnavailable for good. No Deployment condition yet gives
+	// Progressing with an empty message (:441).
 	ReasonMinimumReplicasUnavailable  = "MinimumReplicasUnavailable"
 	MessageMinimumReplicasUnavailable = "Deployment does not have minimum availability."
-	ReasonProgressDeadlineExceeded    = "ProgressDeadlineExceeded"
-	MessageProgressDeadlineExceededFm = "ReplicaSet %q has timed out progressing."
 	ReasonProgressing                 = "Progressing"
+	// SchedulerWorkloadReady before the scheduler Deployment reports
+	// (kserve:scheduler.go:875).
+	MessageDeploymentRolloutInProgress = "Deployment rollout in progress"
 
-	// GatewaysReady False (router.go). The message lists `<ns>/<name>` pairs.
+	// GatewaysReady False. A referenced Gateway that does not exist fails
+	// validateGatewayReferences (kserve:router_validation.go:118-156):
+	// RefsInvalid with one "Gateway <ns>/<name> does not exist" per missing
+	// Gateway joined with "; " (:142, :150-151), marked at :68. The router then
+	// returns before the scheduler and the HTTPRoute are reconciled.
+	// GatewaysNotReady is only for a Gateway that exists but is not programmed
+	// (kserve:router.go:622-656, :649); every Gateway the fake knows is programmed,
+	// so it never produces it.
+	ReasonRefsInvalid         = "RefsInvalid"
+	MessageGatewayMissingFm   = "Gateway %s/%s does not exist"
 	ReasonGatewaysNotReady    = "GatewaysNotReady"
 	MessageGatewaysNotReadyFm = "The following Gateways are not ready: %v"
 
-	// HTTPRoutesReady False (kserve:router.go:732 and :771-772). For a managed
-	// route (`route: {}`, the console's case) the controller creates
-	// `<name>-kserve-route` and, until a Gateway controller accepts it, reports
-	// WaitingForGateway listing the routes; HTTPRouteNotObserved is only
-	// reported for an inline route spec (`route.http.spec`), which the console
-	// does not write, so the fake never produces it. Whether the hub's RHOAI
-	// 3.6 build still reports HTTPRouteNotObserved for a managed route could
-	// not be settled read-only (sha-pinned images); the fake follows the source.
+	// HTTPRoutesReady False (kserve:router.go:713-779). Once the managed
+	// `<name>-kserve-route` is written and until a Gateway controller accepts
+	// it, the controller reports WaitingForGateway listing the routes
+	// (:771-772). HTTPRouteNotObserved (:732) is only reported when the route
+	// list is empty for an inline spec, which cannot happen after
+	// reconcileHTTPRoutes wrote the managed route, so the fake never produces
+	// it.
 	ReasonHTTPRouteNotObserved  = "HTTPRouteNotObserved"
 	MessageHTTPRouteNotObserved = "The managed HTTPRoute has not been observed yet"
 	ReasonWaitingForGateway     = "WaitingForGateway"
 	MessageWaitingForGatewayFm  = "The following HTTPRoutes exist but no Gateway controller has accepted them yet: %v"
 	managedRouteSuffix          = "-kserve-route"
 
-	// `status.addresses[].name` values (kserve:router_discovery_filter.go).
+	// InferencePoolReady False while no Gateway has accepted the managed pool
+	// `<name>-inference-pool` (kserve:router.go:938-939, pool name
+	// kserve:scheduler.go:346).
+	MessagePoolWaitingForGatewayFm = "Inference Pool %s/%s exists but no Gateway controller has accepted it yet"
+	inferencePoolSuffix            = "-inference-pool"
+
+	// `status.addresses[].name` values (kserve:router_discovery_filter.go:91-105).
 	AddressGatewayExternal             = "gateway-external"
 	AddressGatewayExternalModelRouting = "gateway-external-model-routing"
 	AddressGatewayInternal             = "gateway-internal"
@@ -83,30 +109,45 @@ const (
 	GatewayGroup = "gateway.networking.k8s.io"
 	GatewayKind  = "Gateway"
 
-	// Gateways on the hub (models-maas.md section 1, `openshift-ingress`).
-	// `openshift-ai-inference` is the default Gateway KServe programs; the
-	// MaaS one is `maas-default-gateway`.
+	// The product-default Gateway names, as recorded in
+	// mock/research/models-maas.md section 1: `openshift-ai-inference`, the
+	// Gateway RHOAI installs for KServe, and `maas-default-gateway`, the MaaS
+	// one, both in `openshift-ingress`. They are what the console writes by
+	// default, not a claim about any particular hub (a hub's Gateway set
+	// changes with its installation).
 	GatewayNamespace   = "openshift-ingress"
 	GatewayAIInference = "openshift-ai-inference"
 	GatewayMaaSDefault = "maas-default-gateway"
 	defaultGatewayName = GatewayAIInference
 	defaultGatewayNS   = GatewayNamespace
+	// gatewayClassName is an invented GatewayClass for the fake's Gateways.
+	// The internal address is the Gateway's backing Service
+	// (kserve:router_discovery.go:92-134), which the gateway controller names
+	// `<gateway>-<gatewayClassName>`.
+	gatewayClassName = "openshift-default"
+
 	workloadsAPIGroup  = "apps"
 	workloadsKind      = "Deployment"
-	workloadMainSuffix = "-kserve"
+	workloadMainSuffix = "-kserve" // kserve:workload_single_node.go:606
 	// The scheduler Deployment is `<name>-kserve-router-scheduler`
-	// (kserve:scheduler.go, `kmeta.ChildName(name, "-kserve-router-scheduler")`,
-	// confirmed on the hub instance); `<name>-kserve-scheduler` is the EPP
-	// Service. The workload Service is `<name>-kserve-workload-svc`
-	// (kserve:workload.go).
+	// (kserve:scheduler.go:2364). The EPP Service is `<name>-epp-service`
+	// (kserve:pkg/apis/serving/v1alpha2/llm_inference_service_types_func.go:44);
+	// `<name>-kserve-scheduler` is an Istio DestinationRule
+	// (kserve:router_platform_networking_odh.go:193). The workload Service is
+	// `<name>-kserve-workload-svc` (kserve:workload.go:327).
 	workloadSchedSuffix = "-kserve-router-scheduler"
 	workloadSvcSuffix   = "-kserve-workload-svc"
 	serviceKind         = "Service"
 
-	// Presets the controller merges under every spec (status.appliedConfigs
-	// on the hub instance: scheduler, router-route, template as Preset, then
-	// the baseRefs as UserRef). Their names are versioned by RHOAI release;
-	// presets.json carries the installed list (models-maas.md open question 10).
+	// Presets the controller merges under every spec, in merge order
+	// (kserve:config_merge.go:579-674): scheduler, router-route, template as
+	// Preset, then the baseRefs as UserRef. Upstream also merges
+	// `<prefix>config-llm-scheduler-eppconfig-default` right after the
+	// scheduler preset when the scheduler preset's router image is at least
+	// 0.11.0 (:584-616); whether the installed 3.6 router image qualifies was
+	// not observed, so the fake leaves it out (models.md "Deviations"). Names
+	// are versioned by RHOAI release; presets.json carries the installed list
+	// (models-maas.md open question 10).
 	PresetTemplate    = "v3-6-0-kserve-config-llm-template"
 	PresetScheduler   = "v3-6-0-kserve-config-llm-scheduler"
 	PresetRouterRoute = "v3-6-0-kserve-config-llm-router-route"
@@ -118,7 +159,9 @@ const (
 	AnnotationDisplayName = "openshift.io/display-name"
 	AnnotationDescription = "openshift.io/description"
 
-	// URI schemes `spec.model.uri` accepts (models-maas.md 2.1).
+	// URI schemes the console accepts in `spec.model.uri`. The CRD types the
+	// field as a plain string (hub CRD, v1alpha2 spec.model.uri) and the
+	// webhook does not check the scheme, so this is a console check.
 	schemeHF  = "hf://"
 	schemeS3  = "s3://"
 	schemePVC = "pvc://"
@@ -132,16 +175,17 @@ const (
 
 // Stage offsets of the LLMInferenceService lifecycle, in scenario seconds
 // (divided by the settings' `speed`), following models-maas.md 8.2: the
-// controller's first reconcile, the route being accepted and the Deployment
-// created, the Deployment reporting Available=False, the pods ready, and the
-// Deployment's default progressDeadlineSeconds (600) for a workload that never
-// becomes ready.
+// controller's first reconcile (presets merged, the Deployment, the scheduler,
+// the InferencePool and the managed HTTPRoute created in one pass, workload
+// before router: kserve:controller.go:308-325), the route and the pool
+// accepted and the scheduler available, the Deployment reporting
+// Available=False, the pods ready. A workload that never becomes ready stays at
+// the third stage for good.
 const (
-	llmisvcT1       = 5 * time.Second
-	llmisvcT2       = 15 * time.Second
-	llmisvcT2b      = 20 * time.Second
-	llmisvcT3       = 45 * time.Second
-	llmisvcDeadline = 600 * time.Second
+	llmisvcT1  = 5 * time.Second
+	llmisvcT2  = 15 * time.Second
+	llmisvcT2b = 20 * time.Second
+	llmisvcT3  = 45 * time.Second
 )
 
 // Condition status values, short names for the derivations below.
@@ -154,8 +198,9 @@ const (
 // uriSchemes lists the accepted `spec.model.uri` prefixes.
 var uriSchemes = []string{schemeHF, schemeS3, schemePVC, schemeOCI}
 
-// knownGateways are the Gateways that are Programmed on the hub; any other
-// reference yields GatewaysReady=False/GatewaysNotReady.
+// knownGateways are the Gateways that exist (and are programmed) wherever the
+// fake deploys a model; a reference to any other one does not exist, which
+// yields GatewaysReady=False/RefsInvalid.
 var knownGateways = map[string]bool{
 	GatewayNamespace + "/" + GatewayAIInference: true,
 	GatewayNamespace + "/" + GatewayMaaSDefault: true,
@@ -171,11 +216,15 @@ type llmisvcInput struct {
 	name, namespace string
 	modelName       string
 	baseRefs        []string
-	gateways        []*aigridv1.GatewayRef
-	scheduler       bool
-	managedRoute    bool
-	replicas        int32
-	generation      int64
+	// gateways are the route's parents: the referenced Gateways, or the
+	// default one when none is referenced.
+	gateways []*aigridv1.GatewayRef
+	// gatewayRefs is whether `spec.router.gateway.refs` is set; without refs
+	// GatewaysReady is left unset (kserve:router.go:630-635).
+	gatewayRefs  bool
+	scheduler    bool
+	managedRoute bool
+	replicas     int32
 	// appsDomain is the wildcard domain the external addresses use.
 	appsDomain string
 	// unknownPreset is the first baseRef not installed, or "" when all are.
@@ -184,8 +233,8 @@ type llmisvcInput struct {
 	presetsNamespace string
 	// stuck: the workload never reaches minimum availability.
 	stuck bool
-	// badGateway is the first referenced Gateway that is not Programmed.
-	badGateway *aigridv1.GatewayRef
+	// missingGateways are the referenced Gateways that do not exist.
+	missingGateways []*aigridv1.GatewayRef
 }
 
 // newLLMISvcInput reads the lifecycle inputs from a model for a given cluster
@@ -201,7 +250,6 @@ func newLLMISvcInput(m *aigridv1.Model, presets *Presets, appsDomain string) llm
 		scheduler:        spec.GetRouter().GetScheduler(),
 		managedRoute:     spec.GetRouter().GetManagedRoute(),
 		replicas:         spec.GetReplicas(),
-		generation:       m.GetMetadata().GetGeneration(),
 		appsDomain:       appsDomain,
 		presetsNamespace: presets.Namespace,
 	}
@@ -214,7 +262,8 @@ func newLLMISvcInput(m *aigridv1.Model, presets *Presets, appsDomain string) llm
 			in.replicas = max(sc.GetMinReplicas(), 1)
 		}
 	}
-	if len(in.gateways) == 0 {
+	in.gatewayRefs = len(in.gateways) > 0
+	if !in.gatewayRefs {
 		in.gateways = []*aigridv1.GatewayRef{{Name: defaultGatewayName, Namespace: defaultGatewayNS}}
 	}
 	for _, ref := range in.baseRefs {
@@ -223,10 +272,11 @@ func newLLMISvcInput(m *aigridv1.Model, presets *Presets, appsDomain string) llm
 			break
 		}
 	}
-	for _, gw := range in.gateways {
-		if !knownGateways[gw.GetNamespace()+"/"+gw.GetName()] {
-			in.badGateway = gw
-			break
+	if in.gatewayRefs {
+		for _, gw := range in.gateways {
+			if !knownGateways[gatewayNS(gw, in.namespace)+"/"+gw.GetName()] {
+				in.missingGateways = append(in.missingGateways, gw)
+			}
 		}
 	}
 	image := strings.ToLower(spec.GetMain().GetImage())
@@ -237,6 +287,15 @@ func newLLMISvcInput(m *aigridv1.Model, presets *Presets, appsDomain string) llm
 		}
 	}
 	return in
+}
+
+// gatewayNS is a Gateway reference's namespace, the service's own when empty
+// (kserve:router_validation.go:135-137).
+func gatewayNS(gw *aigridv1.GatewayRef, own string) string {
+	if gw.GetNamespace() == "" {
+		return own
+	}
+	return gw.GetNamespace()
 }
 
 // Presets is the installed LLMInferenceServiceConfig list (presets.json).
@@ -253,7 +312,7 @@ func defaultPresets() *Presets {
 	return &Presets{Namespace: PresetsNamespace, Names: []string{PresetTemplate, PresetScheduler, PresetRouterRoute, "v3-6-0-kserve-config-llm-template-cpu"}}
 }
 
-// llmisvcEvent is one controller write in the lifecycle replay.
+// llmisvcEvent is one controller reconcile in the lifecycle replay.
 type llmisvcEvent struct {
 	at    time.Duration
 	apply func(st *aigridv1.ModelStatus, now time.Time)
@@ -267,28 +326,37 @@ type llmisvcGeneration struct {
 	at time.Duration
 }
 
+// llmisvcMarks are the offsets (from creation) at which the parts of the
+// status the work agent reads last changed, for the condition rules and the
+// feedback of a ManifestWork carrying this object (work.go). Zero when the
+// part never changed.
+type llmisvcMarks struct {
+	// readyStatus: Ready's status last changed (the Progressing rule).
+	readyStatus time.Duration
+	// terminal: Ready last entered or left a terminal failure (the Degraded rule).
+	terminal time.Duration
+	// feedback: the `ready` (Ready's status) or `url` feedback value last changed.
+	feedback time.Duration
+}
+
 // llmisvcStatus derives the LLMInferenceService status at `elapsed` after
-// creation by replaying the controller's writes in order, each stamped with
-// the time it happened, so lastTransitionTime moves only when a status
-// changes, exactly as a controller leaves it. `gens` are the generations of
-// the spec in order (the first at offset zero); each one's events are derived
-// from its own inputs, and the events of a generation that a newer one
-// supersedes before they happen are dropped: a controller that sees a new
-// generation reconciles the new spec, so a Deployment rollout of the old one
-// can never mark the new one Ready. `at(offset)` converts an offset into wall
-// time. It also returns the offset of the last `Ready` status change (zero
-// when `Ready` was never written), which the work agent's condition rules
-// need.
-func llmisvcStatus(gens []llmisvcGeneration, elapsed time.Duration, at func(time.Duration) time.Time) (*aigridv1.ModelStatus, time.Duration) {
+// creation by replaying the controller's reconciles in order, each stamped
+// with the time it happened, with Knative's lastTransitionTime rule (see
+// setModelCondition). `gens` are the generations of the spec in order (the
+// first at offset zero); each one's events are derived from its own inputs,
+// and the events of a generation that a newer one supersedes before they
+// happen are dropped: a controller that sees a new generation reconciles the
+// new spec, so a Deployment rollout of the old one can never mark the new one
+// Ready. `at(offset)` converts an offset into wall time.
+func llmisvcStatus(gens []llmisvcGeneration, elapsed time.Duration, at func(time.Duration) time.Time) (*aigridv1.ModelStatus, llmisvcMarks) {
 	st := &aigridv1.ModelStatus{}
 	var events []llmisvcEvent
 	for i, g := range gens {
 		var own []llmisvcEvent
 		switch {
-		case i == 0 || !gens[i-1].in.deploys():
-			// First generation, or the previous one never created the
-			// workload (stopped at the presets or the Gateway): the whole
-			// lifecycle runs for this spec.
+		case i == 0 || gens[i-1].in.unknownPreset != "":
+			// First generation, or the previous one stopped at the presets
+			// and never created the workload: the whole lifecycle runs.
 			own = llmisvcEvents(g.in, g.at, int64(i)+1)
 		default:
 			own = llmisvcRestartEvents(g.in, g.at, int64(i)+1)
@@ -300,38 +368,53 @@ func llmisvcStatus(gens []llmisvcGeneration, elapsed time.Duration, at func(time
 		events = append(events, own...)
 	}
 	sort.SliceStable(events, func(i, j int) bool { return events[i].at < events[j].at })
-	var readyAt time.Duration
+	var marks llmisvcMarks
 	for _, ev := range events {
 		if ev.at > elapsed {
 			break
 		}
-		before := condition(st.Conditions, CondReady)
-		wasSet, was := before != nil, before.GetStatus()
+		before := proto.Clone(st).(*aigridv1.ModelStatus)
 		ev.apply(st, at(ev.at))
-		if after := condition(st.Conditions, CondReady); after != nil && (!wasSet || after.GetStatus() != was) {
-			readyAt = ev.at
+		was, now := condition(before.GetConditions(), CondReady), condition(st.GetConditions(), CondReady)
+		if now != nil && (was == nil || was.GetStatus() != now.GetStatus()) {
+			marks.readyStatus = ev.at
+		}
+		if now != nil && (was == nil || isTerminalFailure(was) != isTerminalFailure(now)) {
+			marks.terminal = ev.at
+		}
+		if readyFeedback(was) != readyFeedback(now) || before.GetUrl() != st.GetUrl() {
+			marks.feedback = ev.at
 		}
 	}
-	sort.SliceStable(st.Conditions, func(i, j int) bool { return st.Conditions[i].GetType() < st.Conditions[j].GetType() }) // Knative sorts by type
-	return st, readyAt
+	sort.SliceStable(st.Conditions, func(i, j int) bool { return st.Conditions[i].GetType() < st.Conditions[j].GetType() }) // knative:apis/condition_set.go:207
+	return st, marks
 }
 
-// deploys reports whether the controller gets past the presets and the
-// Gateway check and creates the workload for this spec.
-func (in llmisvcInput) deploys() bool { return in.unknownPreset == "" && in.badGateway == nil }
+// readyFeedback is the `ready` feedback value of a Ready condition ("" when
+// absent).
+func readyFeedback(ready *aigridv1.Condition) string {
+	if ready == nil {
+		return ""
+	}
+	return conditionStatusString(ready.GetStatus())
+}
 
 // terminalReadyReasons are the `Ready=False` reasons that mean the model will
-// not recover on its own: a missing preset, a Gateway that is not programmed,
-// a Deployment past its progress deadline. The other False reasons
-// (`WaitingForGateway`, `Progressing`, `MinimumReplicasUnavailable`) are
-// what KServe reports while a healthy model starts. The console's
-// ManifestWork template encodes this set in its Degraded condition rule:
+// not recover on its own: a missing preset, a referenced Gateway that does not
+// exist, or one that is not programmed. The other False reasons
+// (`WaitingForGateway`, `Progressing`, `MinimumReplicasUnavailable`) are what
+// KServe reports while a healthy model starts, and MinimumReplicasUnavailable
+// is also what a workload that never becomes available keeps reporting
+// (kserve:workload_single_node.go:418-443), so a rule cannot tell those two
+// apart. The console's ManifestWork template encodes this set in its Degraded
+// condition rule:
 //
 //	object.status.conditions.exists(c, c.type == "Ready" && c.status == "False"
-//	  && c.reason in ["ConfigNotFound", "GatewaysNotReady", "ProgressDeadlineExceeded"])
+//	  && c.reason in ["ConfigNotFound", "RefsInvalid", "GatewaysNotReady"])
 //
-// so a spoke that is merely starting is Progressing, not Degraded.
-var terminalReadyReasons = map[string]bool{ReasonConfigNotFound: true, ReasonGatewaysNotReady: true, ReasonProgressDeadlineExceeded: true}
+// so a spoke that is starting, or stuck, is Progressing, not Degraded: a stuck
+// spoke stays Progressing until the rollout's progressDeadline times it out.
+var terminalReadyReasons = map[string]bool{ReasonConfigNotFound: true, ReasonRefsInvalid: true, ReasonGatewaysNotReady: true}
 
 // isTerminalFailure applies terminalReadyReasons to a `Ready` condition.
 func isTerminalFailure(ready *aigridv1.Condition) bool {
@@ -340,11 +423,17 @@ func isTerminalFailure(ready *aigridv1.Condition) bool {
 
 // llmisvcEvents is the lifecycle from creation at `base`, generation `gen`.
 func llmisvcEvents(in llmisvcInput, base time.Duration, gen int64) []llmisvcEvent {
-	// T1: presets merged, Gateways checked, the managed HTTPRoute created but
-	// not yet observed by a parent.
+	// T1, the first reconcile (kserve:controller.go:279-327): presets merged;
+	// reconcileWorkload creates the Deployment, which has no condition yet;
+	// reconcileRouter validates the Gateways, creates the scheduler, the
+	// InferencePool and the managed HTTPRoute, and writes `url` and
+	// `addresses` from the route's Gateways right away (updateRoutingStatus,
+	// kserve:router.go:452-553, called before the route is accepted);
+	// observeWorkloadStatus writes `workloads` (kserve:workload_status.go:62).
 	t1 := func(st *aigridv1.ModelStatus, now time.Time) {
-		st.ObservedGeneration = gen
+		st.ObservedGeneration = gen // knative:reconciler/reconcile_common.go:82
 		if in.unknownPreset != "" {
+			// reconcileBaseRefs fails before any child resource is touched.
 			msg := fmt.Sprintf(MessageConfigNotFoundFm, in.unknownPreset, []string{in.namespace, in.presetsNamespace})
 			setModelCondition(st, now, CondPresetsCombined, cFalse, ReasonConfigNotFound, msg)
 			setModelCondition(st, now, CondReady, cFalse, ReasonConfigNotFound, msg)
@@ -352,108 +441,151 @@ func llmisvcEvents(in llmisvcInput, base time.Duration, gen int64) []llmisvcEven
 		}
 		setModelCondition(st, now, CondPresetsCombined, cTrue, "", "")
 		st.AppliedConfigs = appliedConfigs(in)
-		routesMsg := fmt.Sprintf(MessageWaitingForGatewayFm, []string{in.namespace + "/" + in.name + managedRouteSuffix})
-		if in.badGateway != nil {
-			msg := fmt.Sprintf(MessageGatewaysNotReadyFm, []string{in.badGateway.GetNamespace() + "/" + in.badGateway.GetName()})
-			setModelCondition(st, now, CondGatewaysReady, cFalse, ReasonGatewaysNotReady, msg)
-			setModelCondition(st, now, CondHTTPRoutesReady, cFalse, ReasonWaitingForGateway, routesMsg)
-			setModelCondition(st, now, CondRouterReady, cFalse, ReasonGatewaysNotReady, msg)
-			setModelCondition(st, now, CondReady, cFalse, ReasonGatewaysNotReady, msg)
+		setModelCondition(st, now, CondMainWorkloadReady, cFalse, ReasonProgressing, "")
+		if len(in.missingGateways) > 0 {
+			// The router returns the validation error before the scheduler and
+			// the route; reconcile stops there, so observeWorkloadStatus never
+			// runs and `workloads`, `url` and `addresses` stay unset. The
+			// Deployment was already created and keeps rolling out.
+			var missing []string
+			for _, gw := range in.missingGateways {
+				missing = append(missing, fmt.Sprintf(MessageGatewayMissingFm, gatewayNS(gw, in.namespace), gw.GetName()))
+			}
+			setModelCondition(st, now, CondGatewaysReady, cFalse, ReasonRefsInvalid, strings.Join(missing, "; "))
+			rollUp(st, now)
 			return
 		}
-		setModelCondition(st, now, CondGatewaysReady, cTrue, "", "")
-		setModelCondition(st, now, CondHTTPRoutesReady, cFalse, ReasonWaitingForGateway, routesMsg)
-		setModelCondition(st, now, CondRouterReady, cFalse, ReasonWaitingForGateway, routesMsg)
-		setModelCondition(st, now, CondReady, cFalse, ReasonWaitingForGateway, routesMsg)
+		if in.scheduler {
+			setModelCondition(st, now, CondSchedulerWorkloadReady, cFalse, ReasonProgressing, MessageDeploymentRolloutInProgress)
+		}
+		if in.managedRoute {
+			setModelCondition(st, now, CondHTTPRoutesReady, cFalse, ReasonWaitingForGateway, fmt.Sprintf(MessageWaitingForGatewayFm, []string{in.namespace + "/" + in.name + managedRouteSuffix}))
+			st.Url, st.Addresses = routedAddresses(in)
+		} else {
+			st.Addresses = workloadServiceAddress(in)
+		}
+		if in.scheduler {
+			setModelCondition(st, now, CondInferencePoolReady, cFalse, ReasonWaitingForGateway, fmt.Sprintf(MessagePoolWaitingForGatewayFm, in.namespace, in.name+inferencePoolSuffix))
+		}
+		if in.gatewayRefs {
+			setModelCondition(st, now, CondGatewaysReady, cTrue, "", "")
+		}
+		st.Workloads = workloads(in, 0, 0)
+		rollUp(st, now)
 	}
-	if !in.deploys() {
+	if in.unknownPreset != "" {
 		return []llmisvcEvent{{base + llmisvcT1, t1}} // never progresses
 	}
-	// T2: route accepted, scheduler up, Deployment created without conditions.
-	t2 := func(st *aigridv1.ModelStatus, now time.Time) {
-		setModelCondition(st, now, CondHTTPRoutesReady, cTrue, "", "")
-		if in.scheduler {
-			setModelCondition(st, now, CondInferencePoolReady, cTrue, "", "")
-			setModelCondition(st, now, CondSchedulerWorkloadReady, cTrue, "", "")
+	events := []llmisvcEvent{{base + llmisvcT1, t1}}
+	if len(in.missingGateways) == 0 {
+		// T2: the Gateway controller accepted the route and the pool, the
+		// scheduler Deployment has an available replica
+		// (kserve:scheduler.go:841-876).
+		t2 := func(st *aigridv1.ModelStatus, now time.Time) {
+			if in.managedRoute {
+				setModelCondition(st, now, CondHTTPRoutesReady, cTrue, "", "")
+			}
+			if in.scheduler {
+				setModelCondition(st, now, CondInferencePoolReady, cTrue, "", "")
+				setModelCondition(st, now, CondSchedulerWorkloadReady, cTrue, "", "")
+			}
+			st.Workloads = workloads(in, 0, 1)
+			rollUp(st, now)
 		}
-		setModelCondition(st, now, CondRouterReady, cTrue, "", "")
-		st.Workloads = workloads(in, 0)
-		setModelCondition(st, now, CondMainWorkloadReady, cFalse, ReasonProgressing, "")
-		setModelCondition(st, now, CondWorkloadsReady, cFalse, ReasonProgressing, "")
-		setModelCondition(st, now, CondReady, cFalse, ReasonProgressing, "")
+		events = append(events, llmisvcEvent{base + llmisvcT2, t2})
 	}
-	return append([]llmisvcEvent{{base + llmisvcT1, t1}, {base + llmisvcT2, t2}}, llmisvcWorkloadEvents(in, base)...)
+	return append(events, llmisvcWorkloadEvents(in, base)...)
 }
 
 // llmisvcRestartEvents is what a spec change does: the controller observes the
-// new generation and the Deployment rolls out again.
+// new generation at once and the Deployment rolls out again. `url` and
+// `addresses` stay: the route is unchanged, and only a stopped service clears
+// them (kserve:router.go:455-460).
 func llmisvcRestartEvents(in llmisvcInput, base time.Duration, gen int64) []llmisvcEvent {
-	if !in.deploys() {
-		// The new spec fails admission by the controller: the presets or
-		// the Gateway check now fail, as on a first reconcile.
+	if in.unknownPreset != "" || len(in.missingGateways) > 0 {
+		// The new spec fails in the controller: the presets or the Gateway
+		// check now fail, as on a first reconcile.
 		return llmisvcEvents(in, base, gen)
 	}
-	restart := func(st *aigridv1.ModelStatus, now time.Time) {
+	observe := func(st *aigridv1.ModelStatus, now time.Time) {
 		st.ObservedGeneration = gen
-		st.Url = ""
-		st.Addresses = nil
-		st.Workloads = workloads(in, 0)
-		setModelCondition(st, now, CondMainWorkloadReady, cFalse, ReasonProgressing, "")
-		setModelCondition(st, now, CondWorkloadsReady, cFalse, ReasonProgressing, "")
-		setModelCondition(st, now, CondReady, cFalse, ReasonProgressing, "")
+		st.AppliedConfigs = appliedConfigs(in)
 	}
-	return append([]llmisvcEvent{{base + llmisvcT2, restart}}, llmisvcWorkloadEvents(in, base)...)
+	restart := func(st *aigridv1.ModelStatus, now time.Time) {
+		st.Workloads = workloads(in, 0, 1)
+		setModelCondition(st, now, CondMainWorkloadReady, cFalse, ReasonProgressing, "")
+		rollUp(st, now)
+	}
+	return append([]llmisvcEvent{{base + llmisvcT1, observe}, {base + llmisvcT2, restart}}, llmisvcWorkloadEvents(in, base)...)
 }
 
-// llmisvcWorkloadEvents are the Deployment's reports after it was created at
-// base+T2: Available=False, then either the pods ready or, for a stuck
-// workload, the progress deadline.
+// llmisvcWorkloadEvents are the Deployment's reports after it was created:
+// Available=False, then the pods ready, or, for a stuck workload, nothing more:
+// MinimumReplicasUnavailable for good.
 func llmisvcWorkloadEvents(in llmisvcInput, base time.Duration) []llmisvcEvent {
 	t2b := func(st *aigridv1.ModelStatus, now time.Time) {
 		setModelCondition(st, now, CondMainWorkloadReady, cFalse, ReasonMinimumReplicasUnavailable, MessageMinimumReplicasUnavailable)
-		setModelCondition(st, now, CondWorkloadsReady, cFalse, ReasonMinimumReplicasUnavailable, MessageMinimumReplicasUnavailable)
-		setModelCondition(st, now, CondReady, cFalse, ReasonMinimumReplicasUnavailable, MessageMinimumReplicasUnavailable)
+		rollUp(st, now)
 	}
 	if in.stuck {
-		deadline := func(st *aigridv1.ModelStatus, now time.Time) {
-			msg := fmt.Sprintf(MessageProgressDeadlineExceededFm, in.name+workloadMainSuffix+"-"+replicaSetHash(in.name, st.GetObservedGeneration()))
-			setModelCondition(st, now, CondMainWorkloadReady, cFalse, ReasonProgressDeadlineExceeded, msg)
-			setModelCondition(st, now, CondWorkloadsReady, cFalse, ReasonProgressDeadlineExceeded, msg)
-			setModelCondition(st, now, CondReady, cFalse, ReasonProgressDeadlineExceeded, msg)
-		}
-		return []llmisvcEvent{{base + llmisvcT2b, t2b}, {base + llmisvcT2 + llmisvcDeadline, deadline}}
+		return []llmisvcEvent{{base + llmisvcT2b, t2b}}
 	}
 	t3 := func(st *aigridv1.ModelStatus, now time.Time) {
 		setModelCondition(st, now, CondMainWorkloadReady, cTrue, "", "")
-		setModelCondition(st, now, CondWorkloadsReady, cTrue, "", "")
-		setModelCondition(st, now, CondReady, cTrue, "", "")
-		st.Workloads = workloads(in, in.replicas)
-		st.Addresses = addresses(in)
-		st.Url = st.Addresses[1].GetUrl() // the external path address
+		if len(in.missingGateways) == 0 {
+			st.Workloads = workloads(in, in.replicas, 1)
+		}
+		rollUp(st, now)
 	}
 	return []llmisvcEvent{{base + llmisvcT2b, t2b}, {base + llmisvcT3, t3}}
 }
 
-// replicaSetHash is a stable stand-in for the pod-template hash in a
-// ReplicaSet name (ten characters of the Kubernetes hash alphabet).
-func replicaSetHash(name string, gen int64) string {
-	const alphabet = "bcdfghjklmnpqrstvwxz2456789"
-	seed := uint64(gen) * 1099511628211
-	for _, r := range name {
-		seed = (seed ^ uint64(r)) * 1099511628211
+// rollUp recomputes the roll-up conditions at the end of a reconcile.
+// WorkloadsReady copies the first False workload sub-condition
+// (DetermineWorkloadReadiness, kserve:pkg/apis/serving/v1alpha2/
+// llm_inference_service_lifecycle.go:258-283); RouterReady the first False of
+// GatewaysReady, HTTPRoutesReady, InferencePoolReady, SchedulerWorkloadReady,
+// True when none is False (DetermineRouterReadiness, :405-425). Both are
+// Knative dependents of Ready: MarkFalse on a dependent sets Ready to the same
+// reason and message, MarkTrue recomputes it from the remaining False
+// dependents (knative:apis/condition_set.go:283-301, :395-411). The workload
+// is reconciled before the router (kserve:controller.go:308, :312), so Ready
+// ends with RouterReady's reason when the router is not ready, else with
+// WorkloadsReady's, else True.
+func rollUp(st *aigridv1.ModelStatus, now time.Time) {
+	firstFalse := func(types ...string) *aigridv1.Condition {
+		for _, typ := range types {
+			if c := condition(st.Conditions, typ); c != nil && c.GetStatus() == cFalse {
+				return c
+			}
+		}
+		return nil
 	}
-	out := make([]byte, 10)
-	for i := range out {
-		out[i] = alphabet[seed%uint64(len(alphabet))]
-		seed /= 7
-		seed = seed*6364136223846793005 + 1442695040888963407
+	if main := condition(st.Conditions, CondMainWorkloadReady); main != nil {
+		if f := firstFalse(CondMainWorkloadReady); f != nil {
+			setModelCondition(st, now, CondWorkloadsReady, cFalse, f.GetReason(), f.GetMessage())
+		} else {
+			setModelCondition(st, now, CondWorkloadsReady, cTrue, "", "")
+		}
 	}
-	return string(out)
+	router := firstFalse(CondGatewaysReady, CondHTTPRoutesReady, CondInferencePoolReady, CondSchedulerWorkloadReady)
+	if router != nil {
+		setModelCondition(st, now, CondRouterReady, cFalse, router.GetReason(), router.GetMessage())
+	} else {
+		setModelCondition(st, now, CondRouterReady, cTrue, "", "")
+	}
+	switch f := firstFalse(CondRouterReady, CondWorkloadsReady, CondPresetsCombined); {
+	case f != nil:
+		setModelCondition(st, now, CondReady, cFalse, f.GetReason(), f.GetMessage())
+	default:
+		setModelCondition(st, now, CondReady, cTrue, "", "")
+	}
 }
 
 // appliedConfigs lists the presets the controller merges, in merge order:
 // scheduler and router-route when those features are on, template always,
-// then the user's baseRefs (the hub instance's status.appliedConfigs).
+// then the user's baseRefs (kserve:config_merge.go:579-674; the hub instance's
+// status.appliedConfigs in models-maas.md 2.1 showed the same order).
 func appliedConfigs(in llmisvcInput) []*aigridv1.AppliedConfig {
 	var out []*aigridv1.AppliedConfig
 	if in.scheduler {
@@ -469,38 +601,40 @@ func appliedConfigs(in llmisvcInput) []*aigridv1.AppliedConfig {
 	return out
 }
 
-// workloads is `status.workloads` once the Deployments and the workload
-// Service exist (names from the hub instance and kserve:workload.go,
-// scheduler.go).
-func workloads(in llmisvcInput, ready int32) *aigridv1.Workloads {
+// workloads is `status.workloads` (kserve:workload_status.go:62-120): the main
+// Deployment, the scheduler Deployment when enabled, and the workload Service.
+// `readyReplicas` is each Deployment's availableReplicas (:136).
+func workloads(in llmisvcInput, ready, schedReady int32) *aigridv1.Workloads {
 	w := &aigridv1.Workloads{
 		Primary: &aigridv1.WorkloadRef{ApiGroup: workloadsAPIGroup, Kind: workloadsKind, Name: in.name + workloadMainSuffix, ReadyReplicas: ready},
 		Service: &aigridv1.WorkloadRef{Kind: serviceKind, Name: in.name + workloadSvcSuffix},
 	}
 	if in.scheduler {
-		schedReady := int32(0)
-		if ready > 0 {
-			schedReady = 1
-		}
 		w.Scheduler = &aigridv1.WorkloadRef{ApiGroup: workloadsAPIGroup, Kind: workloadsKind, Name: in.name + workloadSchedSuffix, ReadyReplicas: schedReady}
 	}
 	return w
 }
 
-// addresses is `status.addresses` for a Ready model: per Gateway an external
-// and an internal root address (model routing by header, accepting only the
-// `publishers/...` identifier) and the `/<ns>/<name>` and
-// `/publishers/<ns>/models/<model.name>` path addresses (accepting that and
-// the bare model name), models-maas.md 2.1. The external host is the
-// Gateway's load balancer, the internal one its Service.
-func addresses(in llmisvcInput) []*aigridv1.Address {
+// routedAddresses is `status.url` and `status.addresses` for a managed route:
+// per Gateway an external and an internal root address (model routing by
+// header, accepting only the `publishers/...` identifier) and the
+// `/<ns>/<name>` and `/publishers/<ns>/models/<model.name>` path addresses
+// (accepting that and the bare model name), models-maas.md 2.1 and
+// kserve:router_discovery_filter.go:91-127. The external host is the Gateway's
+// load balancer, the internal one its backing Service. The controller sorts
+// the discovered URLs by their string (kserve:router.go:517-519) and takes
+// `url` from the external ones, preferring the `/<ns>/<name>` path
+// (:530, :555-572).
+func routedAddresses(in llmisvcInput) (string, []*aigridv1.Address) {
 	publishers := "publishers/" + in.namespace + "/models/" + in.modelName
 	var out []*aigridv1.Address
+	url := ""
 	for _, gw := range in.gateways {
-		origin := &aigridv1.ObjectRef{Group: GatewayGroup, Kind: GatewayKind, Name: gw.GetName(), Namespace: gw.GetNamespace()}
+		ns := gatewayNS(gw, in.namespace)
+		origin := &aigridv1.ObjectRef{Group: GatewayGroup, Kind: GatewayKind, Name: gw.GetName(), Namespace: ns}
 		for _, side := range []struct{ host, name, routing string }{
 			{"https://" + gw.GetName() + "." + in.appsDomain, AddressGatewayExternal, AddressGatewayExternalModelRouting},
-			{"https://" + gw.GetName() + "-" + gw.GetName() + "." + gw.GetNamespace() + ".svc.cluster.local", AddressGatewayInternal, AddressGatewayInternalModelRouting},
+			{"https://" + gw.GetName() + "-" + gatewayClassName + "." + ns + ".svc.cluster.local", AddressGatewayInternal, AddressGatewayInternalModelRouting},
 		} {
 			out = append(out,
 				&aigridv1.Address{Name: side.routing, Url: side.host + "/", Origin: origin, Models: []string{publishers}},
@@ -509,20 +643,42 @@ func addresses(in llmisvcInput) []*aigridv1.Address {
 			)
 		}
 	}
-	return out
+	sort.SliceStable(out, func(i, j int) bool { return out[i].GetUrl() < out[j].GetUrl() })
+	for _, a := range out {
+		if a.GetName() == AddressGatewayExternal && strings.HasSuffix(a.GetUrl(), "/"+in.namespace+"/"+in.name) {
+			url = a.GetUrl()
+			break
+		}
+	}
+	return url, out
 }
 
-// setModelCondition writes a condition the way KServe does: status, reason and
-// message replaced, lastTransitionTime moved only when the status changes. An
-// empty reason or message is left unset, as a True Knative condition carries
-// neither.
+// workloadServiceAddress is `status.addresses` without a route: the workload
+// Service only, no `url` (kserve:router.go:466-482). The scheme is https when
+// the ingress configuration enables LLMInferenceService TLS, which the fake
+// assumes.
+func workloadServiceAddress(in llmisvcInput) []*aigridv1.Address {
+	return []*aigridv1.Address{{Url: "https://" + in.name + workloadSvcSuffix + "." + in.namespace + ".svc.cluster.local"}}
+}
+
+// setModelCondition writes a Knative condition: status, reason and message
+// replaced, lastTransitionTime moved whenever any of them changes
+// (knative:apis/condition_set.go:187-209 keeps the old time only for an
+// identical condition, and the reconciler re-applies that rule between the
+// stored and the reconciled status, knative:reconciler/reconcile_common.go:93-111).
+// An empty reason or message is left unset, as a True Knative condition
+// carries neither.
 func setModelCondition(st *aigridv1.ModelStatus, now time.Time, typ string, status aigridv1.ConditionStatus, reason, message string) {
+	if c := condition(st.Conditions, typ); c != nil && (c.GetStatus() != status || c.GetReason() != reason || c.GetMessage() != message) {
+		c.LastTransitionTime = timestamppb.New(now)
+	}
 	st.Conditions = writeCondition(st.Conditions, now, typ, status, reason, message)
 }
 
-// writeCondition is the controller write shared by every status list: a new
-// condition is appended with lastTransitionTime=now, an existing one keeps
-// its time unless the status changed.
+// writeCondition is the apimachinery meta.SetStatusCondition write the OCM
+// controllers use: a new condition is appended with lastTransitionTime=now,
+// an existing one keeps its time unless the status changed; reason and
+// message are replaced.
 func writeCondition(conds []*aigridv1.Condition, now time.Time, typ string, status aigridv1.ConditionStatus, reason, message string) []*aigridv1.Condition {
 	var cond *aigridv1.Condition
 	for _, c := range conds {

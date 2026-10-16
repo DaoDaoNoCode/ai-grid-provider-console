@@ -327,7 +327,7 @@ func (x *CreateModelRequest) GetObject() *Model {
 // Response of CreateModel.
 type CreateModelResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The model as stored, with no status yet.
+	// The model as stored, with no LLMInferenceService status yet.
 	Object        *Model `protobuf:"bytes,1,opt,name=object,proto3" json:"object,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

@@ -51,10 +51,11 @@ type AiGridClient interface {
 	GetCurrentUser(ctx context.Context, in *GetCurrentUserRequest, opts ...grpc.CallOption) (*GetCurrentUserResponse, error)
 	// Returns what the hub this backend talks to can do, so the console can
 	// explain a disabled feature instead of failing on it: whether the
-	// ManifestWorkReplicaSet controller runs (on the dev hub the CRD exists but
-	// the feature gate is off, so creating a placed model is FailedPrecondition;
-	// mock/research/acm.md 4), whether observability is installed, and the ACM
-	// version. Requires authorization like every RPC but Ping.
+	// ManifestWorkReplicaSet controller runs (with the feature gate off the CRD
+	// may still exist but nothing reconciles it, so creating a placed model is
+	// FailedPrecondition; mock/research/acm.md 4), whether observability is
+	// installed, and the ACM version. Requires authorization like every RPC
+	// but Ping.
 	GetHubCapabilities(ctx context.Context, in *GetHubCapabilitiesRequest, opts ...grpc.CallOption) (*GetHubCapabilitiesResponse, error)
 }
 
@@ -111,10 +112,11 @@ type AiGridServer interface {
 	GetCurrentUser(context.Context, *GetCurrentUserRequest) (*GetCurrentUserResponse, error)
 	// Returns what the hub this backend talks to can do, so the console can
 	// explain a disabled feature instead of failing on it: whether the
-	// ManifestWorkReplicaSet controller runs (on the dev hub the CRD exists but
-	// the feature gate is off, so creating a placed model is FailedPrecondition;
-	// mock/research/acm.md 4), whether observability is installed, and the ACM
-	// version. Requires authorization like every RPC but Ping.
+	// ManifestWorkReplicaSet controller runs (with the feature gate off the CRD
+	// may still exist but nothing reconciles it, so creating a placed model is
+	// FailedPrecondition; mock/research/acm.md 4), whether observability is
+	// installed, and the ACM version. Requires authorization like every RPC
+	// but Ping.
 	GetHubCapabilities(context.Context, *GetHubCapabilitiesRequest) (*GetHubCapabilitiesResponse, error)
 	mustEmbedUnimplementedAiGridServer()
 }

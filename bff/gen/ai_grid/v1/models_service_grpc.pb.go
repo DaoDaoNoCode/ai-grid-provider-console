@@ -52,12 +52,18 @@ type ModelsClient interface {
 	// Returns one model by namespace and name. NotFound, with the message
 	// `object with identifier '<namespace>/<name>' not found`, when absent.
 	GetModel(ctx context.Context, in *GetModelRequest, opts ...grpc.CallOption) (*GetModelResponse, error)
-	// Creates a model. The object is returned at once with no conditions; the
+	// Creates a model. The object is returned at once with no
+	// LLMInferenceService conditions (a placed model already carries its
+	// Placement decision and ManifestWorkReplicaSet conditions); the
 	// controllers fill the status over the following minutes. InvalidArgument
-	// with the CRD's own message when the spec breaks a validation rule;
-	// AlreadyExists for a taken namespace/name; FailedPrecondition
-	// "ManifestWorkReplicaSet feature gate disabled on hub" when `placement` is
-	// set and the hub does not run the ManifestWorkReplicaSet controller.
+	// with the CRD's own message when the spec breaks a CRD rule (name,
+	// `replicas` with `scaling`, the scaling rules), or with the console's
+	// wording for its own checks (URI scheme, Placement operators,
+	// `number_of_clusters`, cluster sets, rollout fields), which the API
+	// server would accept; AlreadyExists for a taken namespace/name;
+	// FailedPrecondition "ManifestWorkReplicaSet feature gate disabled on hub"
+	// (console text) when `placement` is set and the hub does not run the
+	// ManifestWorkReplicaSet controller.
 	CreateModel(ctx context.Context, in *CreateModelRequest, opts ...grpc.CallOption) (*CreateModelResponse, error)
 	// Updates the fields named in `update_mask`. A spec change bumps
 	// `metadata.generation` and, for a placed model, re-runs the rollout.
@@ -143,12 +149,18 @@ type ModelsServer interface {
 	// Returns one model by namespace and name. NotFound, with the message
 	// `object with identifier '<namespace>/<name>' not found`, when absent.
 	GetModel(context.Context, *GetModelRequest) (*GetModelResponse, error)
-	// Creates a model. The object is returned at once with no conditions; the
+	// Creates a model. The object is returned at once with no
+	// LLMInferenceService conditions (a placed model already carries its
+	// Placement decision and ManifestWorkReplicaSet conditions); the
 	// controllers fill the status over the following minutes. InvalidArgument
-	// with the CRD's own message when the spec breaks a validation rule;
-	// AlreadyExists for a taken namespace/name; FailedPrecondition
-	// "ManifestWorkReplicaSet feature gate disabled on hub" when `placement` is
-	// set and the hub does not run the ManifestWorkReplicaSet controller.
+	// with the CRD's own message when the spec breaks a CRD rule (name,
+	// `replicas` with `scaling`, the scaling rules), or with the console's
+	// wording for its own checks (URI scheme, Placement operators,
+	// `number_of_clusters`, cluster sets, rollout fields), which the API
+	// server would accept; AlreadyExists for a taken namespace/name;
+	// FailedPrecondition "ManifestWorkReplicaSet feature gate disabled on hub"
+	// (console text) when `placement` is set and the hub does not run the
+	// ManifestWorkReplicaSet controller.
 	CreateModel(context.Context, *CreateModelRequest) (*CreateModelResponse, error)
 	// Updates the fields named in `update_mask`. A spec change bumps
 	// `metadata.generation` and, for a placed model, re-runs the rollout.

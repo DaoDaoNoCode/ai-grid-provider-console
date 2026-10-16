@@ -12,13 +12,14 @@ import (
 
 // Strings the hub's placement controller writes on a Placement and a
 // PlacementDecision (cluster.open-cluster-management.io/v1beta1). Every value
-// comes from mock/research/acm.md section 3, which cites
-// ocm:pkg/placement/controllers/scheduling for each one. Keep them verbatim.
+// comes from mock/research/acm.md section 3 and was re-checked against
+// open-cluster-management-io/ocm at 8b0d31f (`ocm:` paths below are
+// pkg/placement/ unless they say otherwise). Keep them verbatim.
 const (
 	CondPlacementSatisfied     = "PlacementSatisfied"
 	CondPlacementMisconfigured = "PlacementMisconfigured"
 
-	// PlacementSatisfied.
+	// PlacementSatisfied (ocm:controllers/scheduling/scheduling_controller.go:317-360).
 	ReasonAllDecisionsScheduled         = "AllDecisionsScheduled"
 	MessageAllDecisionsScheduled        = "All cluster decisions scheduled"
 	ReasonNotAllDecisionsScheduled      = "NotAllDecisionsScheduled"
@@ -32,10 +33,18 @@ const (
 	ReasonNoManagedClusterMatched       = "NoManagedClusterMatched"
 	MessageNoManagedClusterMatched      = "No ManagedCluster matches any of the cluster predicate"
 
-	// PlacementMisconfigured, always False in the fake (no prioritizer or
-	// decision-group plugin is configured that could fail).
-	ReasonSucceedconfigured  = "Succeedconfigured"
-	MessageSucceedconfigured = "Placement configurations check pass"
+	// PlacementMisconfigured (ocm:controllers/scheduling/scheduling_controller.go:362-378):
+	// False/Succeedconfigured, or True/Misconfigured with `<plugin>:<message>`
+	// when a scheduling plugin rejects the spec. The only such plugin the
+	// console's Placements reach is TaintToleration, with the two messages
+	// below (ocm:plugins/tainttoleration/taint_toleration.go:58-74).
+	ReasonSucceedconfigured      = "Succeedconfigured"
+	MessageSucceedconfigured     = "Placement configurations check pass"
+	ReasonMisconfigured          = "Misconfigured"
+	MessageTolerationEmptyKey    = "TaintToleration:If the key is empty, operator must be Exists."
+	MessageTolerationExistsValue = "TaintToleration:If the operator is Exists, the value should be empty."
+	TaintPreferNoSelect          = "PreferNoSelect"
+	TaintNoSelectIfNew           = "NoSelectIfNew"
 
 	// Built-in ManagedClusterSets (acm.md section 2): `global` selects every
 	// cluster (LabelSelector {}), `default` the clusters whose
@@ -51,20 +60,26 @@ const (
 	OperatorExists       = "Exists"
 	OperatorDoesNotExist = "DoesNotExist"
 
-	// Toleration operators; the CRD defaults an omitted operator to Equal.
+	// Toleration operators; the CRD defaults an omitted operator to Equal
+	// and has no enum on it (api:cluster/v1beta1/0000_02_clusters.open-cluster-management.io_placements.crd.yaml:537-538).
 	TolerationEqual  = "Equal"
 	TolerationExists = "Exists"
 
 	// LabelModel marks the Placement and the ManifestWorkReplicaSet of a model
 	// (acm.md "Proposal": `ai-grid/model=<name>`); the objects are named
 	// `model-<name>` in the model's namespace.
-	// Its PlacementDecision is `model-<name>-decision-1`, and on create the
-	// backend adds only the CRD defaults `scoreRateLimit: 1m` and
-	// `sortBy: ClusterName`, neither of which the console's Placement message
-	// carries.
+	// Its PlacementDecision is `model-<name>-decision-1`. On create the API
+	// server applies the CRD defaults (`sortBy: ClusterName`,
+	// `scoreRateLimit: 1m`, `prioritizerPolicy.mode: Additive`,
+	// `decisionStrategy.groupStrategy.clustersPerDecisionGroup: 100%`,
+	// placements.crd.yaml:94, :424, :436, :444); the console's Placement
+	// message carries none of them.
 	LabelModel          = "ai-grid/model"
 	placementNamePrefix = "model-"
 )
+
+// maxClusterScore is the most a prioritizer gives a cluster (ocm:plugins/interface.go:23).
+const maxClusterScore int64 = 100
 
 // knownOperators are the selector operators the fake evaluates.
 var knownOperators = map[string]bool{OperatorIn: true, OperatorNotIn: true, OperatorExists: true, OperatorDoesNotExist: true}
@@ -124,26 +139,53 @@ func matchesPredicate(p *aigridv1.Placement, c *aigridv1.ManagedCluster) bool {
 	return true
 }
 
-// tolerated reports whether the cluster's NoSelect taints are all tolerated
-// at `now`: a toleration matches by key (and value for Equal) and effect, and
-// an expired `tolerationSeconds`, counted from the taint's `timeAdded`, no
-// longer tolerates (acm.md section 3). Both times are scenario time.
-func tolerated(p *aigridv1.Placement, c *aigridv1.ManagedCluster, now time.Time, toScenario func(time.Time) time.Time) bool {
+// misconfiguredToleration is the TaintToleration filter's spec check
+// (ocm:plugins/tainttoleration/taint_toleration.go:58-74): an empty key needs
+// operator Exists, and Exists takes no value. It returns the
+// PlacementMisconfigured message, or "" when the tolerations are valid.
+func misconfiguredToleration(p *aigridv1.Placement) string {
+	for _, tol := range p.GetTolerations() {
+		if tol.GetKey() == "" && tol.GetOperator() != TolerationExists {
+			return MessageTolerationEmptyKey
+		}
+		if tol.GetOperator() == TolerationExists && tol.GetValue() != "" {
+			return MessageTolerationExistsValue
+		}
+	}
+	return ""
+}
+
+// tolerated reports whether every taint of the cluster is tolerated at `now`
+// (ocm:plugins/tainttoleration/taint_toleration.go:116-200): a PreferNoSelect
+// taint never filters, a NoSelectIfNew taint filters only a cluster that is
+// not already in the decision (`inDecision`), and a NoSelect taint (or a
+// NoSelectIfNew one on a new cluster) needs a toleration whose effect is empty
+// or equal, whose key is empty (any key) or equal, whose value matches for
+// Equal (the default), and whose `tolerationSeconds`, counted from the taint's
+// `timeAdded` (the zero time when unset, so already expired), has not run out.
+// Both times are scenario time.
+func tolerated(p *aigridv1.Placement, c *aigridv1.ManagedCluster, inDecision bool, now time.Time, toScenario func(time.Time) time.Time) bool {
 	for _, taint := range c.GetTaints() {
-		if taint.GetEffect() != TaintNoSelect {
+		if taint.GetEffect() == TaintPreferNoSelect || (taint.GetEffect() == TaintNoSelectIfNew && inDecision) {
 			continue
 		}
 		ok := false
 		for _, tol := range p.GetTolerations() {
-			if tol.GetKey() != taint.GetKey() || (tol.GetEffect() != "" && tol.GetEffect() != taint.GetEffect()) {
+			if tol.GetEffect() != "" && tol.GetEffect() != taint.GetEffect() {
+				continue
+			}
+			if tol.GetKey() != "" && tol.GetKey() != taint.GetKey() {
 				continue
 			}
 			if op := tol.GetOperator(); op != TolerationExists && tol.GetValue() != taint.GetValue() {
-				continue // Equal (the default)
+				continue // "" or Equal
 			}
-			if tol.TolerationSeconds != nil && taint.GetTimeAdded() != nil {
-				expires := toScenario(taint.GetTimeAdded().AsTime()).Add(time.Duration(tol.GetTolerationSeconds()) * time.Second)
-				if !now.Before(expires) {
+			if tol.TolerationSeconds != nil {
+				added := time.Time{}
+				if taint.GetTimeAdded() != nil {
+					added = toScenario(taint.GetTimeAdded().AsTime())
+				}
+				if !now.Before(added.Add(time.Duration(tol.GetTolerationSeconds()) * time.Second)) {
 					continue
 				}
 			}
@@ -173,14 +215,24 @@ func inClusterSet(set string, c *aigridv1.ManagedCluster) bool {
 func bracketList(names []string) string { return "[" + strings.Join(names, ",") + "]" }
 
 // computePlacement is the scheduling controller's decision for one Placement
-// (acm.md section 3 and "What the fake backend must simulate" item 6): clusters
-// of the bound sets, filtered by the predicate, by tolerated taints and by not
-// terminating, sorted by name and capped at numberOfClusters. `bound` are the
-// ManagedClusterSets bound into the namespace; `now` is scenario time.
-func computePlacement(p *aigridv1.Placement, bound []string, clusters map[string]*aigridv1.ManagedCluster, now time.Time, toScenario func(time.Time) time.Time) *aigridv1.PlacementStatus {
+// (acm.md section 3 and "What the fake backend must simulate" item 6;
+// ocm:controllers/scheduling/scheduling_controller.go:214-282): the clusters
+// of the bound sets that are not terminating
+// (ocm:controllers/scheduling/helpers.go:73-105), filtered by the predicate
+// and by tolerated taints, scored and capped at numberOfClusters
+// (ocm:controllers/scheduling/schedule.go:179-338), listed in name order.
+// `bound` are the ManagedClusterSets bound into the namespace; `previous` the
+// clusters of the current decision, which the Steady prioritizer and the
+// NoSelectIfNew taint look at; `now` is scenario time.
+func computePlacement(p *aigridv1.Placement, bound []string, clusters map[string]*aigridv1.ManagedCluster, previous map[string]bool, now time.Time, toScenario func(time.Time) time.Time) *aigridv1.PlacementStatus {
 	st := &aigridv1.PlacementStatus{}
-	st.Conditions = writeCondition(st.Conditions, now, CondPlacementMisconfigured, cFalse, ReasonSucceedconfigured, MessageSucceedconfigured)
+	misconfigured := ""
 	satisfied := func(status aigridv1.ConditionStatus, reason, message string) *aigridv1.PlacementStatus {
+		if misconfigured != "" {
+			st.Conditions = writeCondition(st.Conditions, now, CondPlacementMisconfigured, cTrue, ReasonMisconfigured, misconfigured)
+		} else {
+			st.Conditions = writeCondition(st.Conditions, now, CondPlacementMisconfigured, cFalse, ReasonSucceedconfigured, MessageSucceedconfigured)
+		}
 		st.Conditions = writeCondition(st.Conditions, now, CondPlacementSatisfied, status, reason, message)
 		return st
 	}
@@ -202,6 +254,9 @@ func computePlacement(p *aigridv1.Placement, bound []string, clusters map[string
 	}
 	var members []*aigridv1.ManagedCluster
 	for _, c := range clusters {
+		if c.GetDeletionTimestamp() != nil {
+			continue // a terminating cluster is not available (helpers.go:97-99)
+		}
 		for _, set := range usable {
 			if inClusterSet(set, c) {
 				members = append(members, c)
@@ -212,25 +267,53 @@ func computePlacement(p *aigridv1.Placement, bound []string, clusters map[string
 	if len(members) == 0 {
 		return satisfied(cFalse, ReasonAllManagedClusterSetsEmpty, fmt.Sprintf(MessageAllManagedClusterSetsEmptyFm, bracketList(usable)))
 	}
-	var names []string
+	var matched []*aigridv1.ManagedCluster
 	for _, c := range members {
-		if c.GetDeletionTimestamp() != nil { // a terminating cluster is never selected
-			continue
+		if matchesPredicate(p, c) {
+			matched = append(matched, c)
 		}
-		if !matchesPredicate(p, c) || !tolerated(p, c, now, toScenario) {
-			continue
-		}
-		names = append(names, c.GetName())
 	}
-	sort.Strings(names) // sortBy: ClusterName
+	// The TaintToleration filter checks the tolerations only when the
+	// predicate left a cluster to filter (taint_toleration.go:52-56); a
+	// misconfigured toleration ends the scheduling with no decision, so
+	// PlacementSatisfied reads NoManagedClusterMatched.
+	if len(matched) > 0 {
+		misconfigured = misconfiguredToleration(p)
+	}
+	var names []string
+	if misconfigured == "" {
+		for _, c := range matched {
+			if tolerated(p, c, previous[c.GetName()], now, toScenario) {
+				names = append(names, c.GetName())
+			}
+		}
+	}
+	// Default prioritizers Balance and Steady, weight 1 each (schedule.go:151-160),
+	// then name on equal scores (:286-293). Steady gives a cluster already in
+	// the decision 100 (ocm:plugins/steady/steady.go); Balance would lower the
+	// clusters other Placements already select, which the fake does not
+	// model, so every cluster gets Balance's full 100 (models.md "Deviations").
+	score := func(name string) int64 {
+		if previous[name] {
+			return 2 * maxClusterScore
+		}
+		return maxClusterScore
+	}
+	sort.SliceStable(names, func(i, j int) bool {
+		if a, b := score(names[i]), score(names[j]); a != b {
+			return a > b
+		}
+		return names[i] < names[j]
+	})
 	unscheduled := 0
 	if p.NumberOfClusters != nil {
 		want := int(p.GetNumberOfClusters())
 		if len(names) > want {
-			names = names[:want]
+			names = names[:max(want, 0)]
 		}
 		unscheduled = want - len(names)
 	}
+	sort.Strings(names) // decisions are listed by cluster name (scheduling_controller.go:749-752)
 	for _, n := range names {
 		st.Decisions = append(st.Decisions, &aigridv1.ClusterDecision{ClusterName: n})
 	}
@@ -244,10 +327,23 @@ func computePlacement(p *aigridv1.Placement, bound []string, clusters map[string
 	return satisfied(cTrue, ReasonAllDecisionsScheduled, MessageAllDecisionsScheduled)
 }
 
-// validatePlacement checks what the API server would reject on a Placement:
-// selector operators and toleration operators outside their enums, values
-// with Exists/DoesNotExist, a negative numberOfClusters. The messages are the
-// console's wording for the CRD's enum validation.
+// decisionSet is the set of clusters in a decision.
+func decisionSet(st *aigridv1.PlacementStatus) map[string]bool {
+	out := map[string]bool{}
+	for _, d := range st.GetDecisions() {
+		out[d.GetClusterName()] = true
+	}
+	return out
+}
+
+// validatePlacement is the console's (and the backend's) admission check on
+// a Placement, with console wording. Only the toleration effect is a CRD enum
+// (placements.crd.yaml:521-529); the API server accepts any selector or
+// toleration operator, a negative numberOfClusters (:224, no minimum) and a
+// ManagedClusterSet that does not exist (the scheduler then reports
+// NoIntersection or NoManagedClusterSetBindings). Tolerations the scheduler
+// rejects as misconfigured (an empty key without Exists, Exists with a value)
+// pass here and surface as PlacementMisconfigured, as on the hub.
 func validatePlacement(p *aigridv1.Placement) error {
 	for _, req := range p.GetLabelSelector().GetMatchExpressions() {
 		if err := validateRequirement("spec.placement.label_selector.match_expressions", req.GetKey(), req.GetOperator(), req.GetValues()); err != nil {
