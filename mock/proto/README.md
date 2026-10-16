@@ -36,9 +36,10 @@ What keeps it honest:
   plus this test name every difference. `TestFakeImplementsEveryProtoMethod` in
   `bff/internal/fakebackend` then calls every method of every draft service and fails on an
   `Unimplemented` answer, except for the methods listed in `intentionallyUnimplemented`
-  (`fakebackend_test.go`), each with its reason: the placeholder `Grid`, `Models`,
-  `CatalogItems` and `Subscriptions` methods until they are agreed with the backend team, and
-  `GetCurrentUser`, which the BFF does not need yet. An entry whose
+  (`fakebackend_test.go`), each with its reason: the placeholder `Grid`, `CatalogItems` and
+  `Subscriptions` methods until they are agreed with the backend team, and `GetCurrentUser`,
+  which the BFF does not need yet (`Models` and `GetHubCapabilities` are implemented and
+  probed like every other method). An entry whose
   method starts answering fails the test until the entry is removed, so the allowlist is
   always exactly the set of stubs.
 - **The allowlist refines `mock/README.md`.** That page says the test fails on any
@@ -66,6 +67,24 @@ console's derivation order documented on the enum. The flattened claim fields an
 `addon_status` map from that proposal were not added: the BFF derives them from
 `cluster_claims` and the `feature.open-cluster-management.io/addon-*` labels, which the proto
 already carries verbatim.
+
+The Models area filled the placeholder `Models` service (`model_type.proto`,
+`models_service.proto`) with `Model { name, metadata, spec, status }`: the spec is the subset
+of a KServe `LLMInferenceService` the console writes (`model.uri/name`, `replicas` or
+`scaling`, `base_refs`, `runtime`, `router` with gateway refs, a managed route and the
+scheduler, the `main` container) plus an ACM `Placement` (one predicate: label selector, claim
+expressions, tolerations, `number_of_clusters`, spread constraints) and a `Rollout`
+(`All|Progressive|ProgressivePerGroup` with `max_concurrency`, `max_failures`,
+`progress_deadline`, `min_success_time`); the status is the LLMInferenceService status of the
+hub deployment (`url`, `addresses`, Knative conditions, `applied_configs`, `workloads`,
+`observed_generation`), a derived `phase` with its reason and message, and for a placed model
+the Placement decisions and conditions plus the ManifestWorkReplicaSet summary, conditions and
+one `ManifestWorkStatus` per generated work (conditions, manifests with their conditions and
+feedback, generations). The research's `Placements` and `ManifestWorkReplicaSets` services
+were not drafted as separate services: the console only ever needs them through a model, so
+the `Models` service wraps one Placement and one MWRS per model (`mock/research/acm.md`,
+"Proposal"). `AiGrid` gained `GetHubCapabilities` (`manifest_work_replica_set_enabled`,
+`observability_installed`, `acm_version`).
 
 The Tenants area removed two drafted fields instead of adding: `Tenant.version` (field 8)
 and `UpdateTenantRequest.lock` (field 3) are `reserved`, because Keycloak Organizations have

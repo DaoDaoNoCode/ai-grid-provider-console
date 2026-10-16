@@ -82,6 +82,12 @@ Paths are under `/api/v1`.
 | POST | `/api/v1/tenants` | 201, `Tenant` as created, `Location: /api/v1/tenants/{id}` | `Tenants/CreateTenant`; 422 with Keycloak's message on a bad name, alias or domain, 409 on a taken name or alias |
 | PATCH | `/api/v1/tenants/{id}` | `Tenant` after the write | `Tenants/UpdateTenant` with the present body fields as the mask; 422 "Cannot change the alias", 409 on a taken name |
 | DELETE | `/api/v1/tenants/{id}` | 204 | `Tenants/DeleteTenant`; 404 when absent |
+| GET | `/api/v1/models?namespace=&label=k=v&offset=&limit=` | `Model[]` by namespace and name plus `meta`; `label` may repeat | `Models/ListModels` with `filter: this.metadata.namespace == "<ns>" && this.metadata.labels["<k>"] == "<v>"` |
+| GET | `/api/v1/models/{namespace}/{name}` | `Model` | `Models/GetModel`; 404 with the backend's message (`object with identifier '<ns>/<name>' not found`) |
+| POST | `/api/v1/models` | 201, `Model` with no conditions yet, `Location: /api/v1/models/{namespace}/{name}` | `Models/CreateModel`; 422 with the CRD's message (bad name, URI scheme, `replicas` with `scaling`, scaling without `keda`), 409 on a taken name, 412 `ManifestWorkReplicaSet feature gate disabled on hub` when `placement` is set on a hub without the controller |
+| PATCH | `/api/v1/models/{namespace}/{name}` | `Model` after the write | `GetModel` then `UpdateModel` with the present fields as the mask (`spec.replicas`, `spec.main.image`, `spec.main.env`, `spec.placement`, `spec.rollout`, `metadata.labels`, `metadata.annotations`) and `lock: true` on the fetched `resource_version`; 409 when the object changed in between, 412 when a placement is added on a gated hub |
+| DELETE | `/api/v1/models/{namespace}/{name}` | 204; the model is gone at once (the MWRS cascades `Background`, its works drain out of sight) | `Models/DeleteModel`; 404 when absent, 412 while a catalog entry or a subscription references the model |
+| GET | `/api/v1/capabilities` | `{manifestWorkReplicaSetEnabled, observabilityInstalled, acmVersion}` | `AiGrid/GetHubCapabilities`; 501 against a backend without the RPC, which a client reads as "unknown" |
 
 `GridCluster` (fields the shipped backend does not fill are omitted or empty, so a client
 also works against a backend that only returns `name`, `labels`, `hubAcceptsClient`):
@@ -188,6 +194,85 @@ one `UpdateTenant` call; an empty body, or one with only `alias`, reads the tena
 without a write (422 "Cannot change the alias" when the alias differs). There is no optimistic
 locking: Keycloak Organizations carry no version.
 
+`Model` (a KServe `LLMInferenceService`, `mock/research/models-maas.md` 2.1, with the ACM
+`Placement` and `ManifestWorkReplicaSet` the backend keeps for a multi-site model,
+`mock/research/acm.md` 3 and 4; close to the POC's `ManagedModel` without its inventions:
+no `revision`, `status: Saved`, `hasDeployment`; collections are always present):
+
+```json
+{
+  "name": "granite-8b-instruct", "namespace": "ai-grid-models",
+  "displayName": "Granite 8B Instruct", "description": "Served on every enrolled and provisioned site.",
+  "modelUri": "hf://example-org/granite-8b-instruct", "modelName": "example-org/granite-8b-instruct",
+  "runtimeImage": "quay.io/example/vllm-cuda:v0.11.0", "replicas": 1,
+  "baseRefs": ["v3-6-0-kserve-config-llm-template"],
+  "requests": {"cpu": "8", "memory": "32Gi", "nvidia.com/gpu": "1"}, "limits": {"nvidia.com/gpu": "1"}, "env": [],
+  "gateways": [{"name": "openshift-ai-inference", "namespace": "openshift-ingress"}],
+  "phase": "ready", "reason": "Complete",
+  "url": "", "addresses": [], "conditions": [], "appliedConfigs": [],
+  "placement": {
+    "clusterSets": ["global"], "matchLabels": {"ai-grid/enabled": "true", "ai-grid/provisioned": "true"},
+    "selectedClusters": ["site-paris-1"], "satisfied": true, "reason": "AllDecisionsScheduled", "message": "All cluster decisions scheduled",
+    "conditions": [{"type": "PlacementSatisfied", "status": "True", "reason": "AllDecisionsScheduled", "message": "All cluster decisions scheduled", "lastTransitionTime": "..."}]
+  },
+  "rollout": {
+    "strategy": "All", "progressDeadline": "15m",
+    "summary": {"total": 1, "applied": 1, "available": 1, "progressing": 0, "degraded": 0, "updated": 1},
+    "rolledOut": true, "applied": true, "reason": "AsExpected",
+    "conditions": [{"type": "PlacementVerified", "status": "True", "reason": "AsExpected"}, {"type": "PlacementRolledOut", "status": "True", "reason": "Complete"}, {"type": "ManifestworkApplied", "status": "True", "reason": "AsExpected"}],
+    "works": [{
+      "cluster": "site-paris-1", "workName": "model-granite-8b-instruct-x7k2p",
+      "applied": "True", "available": "True", "progressing": "False", "degraded": "False",
+      "feedback": {"ready": "True", "url": "https://openshift-ai-inference.apps.site-paris-1.example.com/ai-grid-models/granite-8b-instruct"},
+      "conditions": [{"type": "Applied", "status": "True", "reason": "AppliedManifestWorkComplete", "message": "Apply manifest work complete"}],
+      "generation": 1, "observedGeneration": 1
+    }]
+  },
+  "labels": {"ai-grid/family": "granite"}, "annotations": {"openshift.io/display-name": "Granite 8B Instruct"},
+  "resourceVersion": "48760230", "generation": 1, "creationTimestamp": "2026-10-10T08:00:00Z"
+}
+```
+
+- `phase` is the backend's derivation (`ModelPhase` in `mock/proto/ai_grid/v1/model_type.proto`):
+  for a hub deployment from the `Ready` condition (True `ready`, False `failed` with its reason
+  and message, absent or Unknown `pending`); for a placed model from the
+  ManifestWorkReplicaSet conditions (`PlacementRolledOut` and `ManifestworkApplied` True
+  `ready`; `ManifestworkApplied` False/`NotAsExpected` with a degraded or unapplied work
+  `failed`; otherwise `pending` with the deciding reason). KServe reports `Ready=False`
+  with `WaitingForGateway`, `Progressing` or `MinimumReplicasUnavailable` while a healthy
+  model starts, so a client should treat those reasons as starting, not failed.
+- `url`, `addresses`, `conditions` and `appliedConfigs` are the hub LLMInferenceService's
+  and stay empty for a placed model, whose per-site state is in `rollout.works[]`:
+  `applied`, `available`, `progressing`, `degraded` are the work's condition statuses
+  (`True|False|Unknown`, absent until the agent writes them) and `feedback` the `ready` and
+  `url` values the agent scraped from the spoke object.
+- `displayName` and `description` are the `openshift.io/display-name` and
+  `openshift.io/description` annotations.
+
+`POST /api/v1/models` body (the POC deploy wizard's inputs mapped to the spec,
+`mock/research/models-maas.md` 7.3): `{"name", "namespace", "displayName", "description",
+"modelUri", "modelName", "runtimeImage", "runtime", "replicas" | "scaling": {"minReplicas", "maxReplicas",
+"triggers": [{"type", "metadata"}]}, "baseRefs": ["..."], "cpu": "8",
+"memory": "32Gi", "gpuCount": 1, "env": [{"name", "value"}], "gateway": {"name", "namespace"},
+"placement": {"clusterSets", "matchLabels", "matchExpressions": [{"key", "operator", "values"}],
+"claimExpressions", "tolerations": [{"key", "operator", "value", "effect", "tolerationSeconds"}],
+"numberOfClusters"}, "rollout": {"strategy": "All|Progressive|ProgressivePerGroup", "maxConcurrency",
+"maxFailures", "progressDeadline", "minSuccessTime"}, "labels", "annotations"}`. `name`, `namespace`
+and `modelUri` are required by the backend; `cpu`, `memory` and `gpuCount` become the main
+container's requests (the GPU also its limit); `scaling` becomes a `spec.scaling.keda` block
+and is refused with the CRD's own messages when it comes with `replicas`, without a trigger
+or with `minReplicas` above `maxReplicas`; the gateway defaults to
+`openshift-ingress/openshift-ai-inference`, the route and the scheduler are always managed;
+`rollout` without `placement` is 422. The same body rules as the other POSTs apply (unknown
+fields 422, over 1 MiB 413).
+
+`PATCH /api/v1/models/{namespace}/{name}` body, every field optional: `{"replicas", "runtimeImage",
+"env": [...], "placement": {...} | null, "rollout": {...}, "labels", "annotations", "displayName",
+"description"}`. A present field replaces the stored one as a whole (`env: []` removes every
+variable, `placement: null` makes the model a hub deployment again); `displayName` and
+`description` are merged into the stored annotations. A spec change bumps `generation`; the
+Deployment rolls out again and a placed model re-applies its works.
+
 The list response:
 
 ```json
@@ -205,7 +290,7 @@ exists; the frontend uses the mock service meanwhile.
 | GET/PATCH | `/api/v1/clusters[/{name}]` (implemented against the draft) | The backend has to ship the draft's `GetManagedCluster`, `UpdateManagedCluster` and the richer `ManagedCluster` (`mock/proto/ai_grid/v1/managed_cluster*.proto`), with `status.state` derived server-side; `patch` on managedclusters in its ClusterRole | Steps 2, 10 |
 | GET/POST/PATCH/DELETE | `/api/v1/tenants[/{id}]` (implemented against the draft) | The backend has to ship the draft's `GetTenant`, `CreateTenant`, `UpdateTenant`, `DeleteTenant`, the paged `ListTenants` and the richer `Tenant` (`mock/proto/ai_grid/v1/tenant*.proto`), mapping Keycloak outcomes to the codes in `mock/research/keycloak.md` 8.2 instead of `Unknown`, and gating mutations on the provider-admin check | Step 6 |
 | GET | `/api/v1/grid/overview?range=1h|6h|24h&site=&metrics=false` | `Grid/GetOverview` with the POC's metric contract: requests, errors, latency, gpu from Thanos with a `cluster` label; `metricsSource: thanos|demo` | Steps 5, 10 |
-| GET/POST/PATCH/PUT/DELETE | `/api/v1/models[/{name}]` | `Models/*` over Placement and ManifestWorkReplicaSet (feature plan 3a: `feedbackRules`, `SelectivelyOrphan`); needs the `ManifestWorkReplicaSet` feature gate on the hub | Steps 3, 4 |
+| GET/POST/PATCH/DELETE | `/api/v1/models[/{namespace}/{name}]`, GET `/api/v1/capabilities` (implemented against the draft) | The backend has to ship the draft's `Models` service and `Model` message (`mock/proto/ai_grid/v1/model*.proto`) over LLMInferenceService, Placement and ManifestWorkReplicaSet with the status derived server-side, and `AiGrid/GetHubCapabilities`; the `ManifestWorkReplicaSet` feature gate on the hub for multi-site models (`FailedPrecondition` otherwise) | Steps 3, 4 |
 | GET/POST/PUT/DELETE | `/api/v1/catalog[/{name}]` | `Catalog/*` on ConfigMaps | Step 9 |
 | GET/POST/PUT/DELETE | `/api/v1/subscriptions[/{name}]` | `Subscriptions/*` over MaaSSubscription | Step 8 |
 | GET/POST/DELETE | `/api/v1/tenants/{id}/members[/{userId}]` | Member RPCs on `Tenants` (not drafted yet; `mock/research/keycloak.md` open question 3) | Step 6 |
@@ -225,7 +310,7 @@ exists; the frontend uses the mock service meanwhile.
 | Request body over 1 MiB | 413 |
 | Backend `InvalidArgument`, `OutOfRange` (including Keycloak's validation messages: "Name can not be null", "Invalid domain format: x", "Cannot change the alias", "Domain x is already linked to organization y in realm ai-grid") | 422, backend message kept |
 | Backend `AlreadyExists` (Keycloak: "A organization with the same name already exists."), `Aborted` (the cluster changed between the BFF's read and write) | 409, backend message kept |
-| Backend `FailedPrecondition` (hub feature gate missing; Keycloak realm missing or organizations disabled) | 412, backend message kept |
+| Backend `FailedPrecondition` (hub feature gate missing, e.g. "ManifestWorkReplicaSet feature gate disabled on hub"; a model still referenced by a catalog entry or subscription; Keycloak realm missing or organizations disabled) | 412, backend message kept |
 | Backend `ResourceExhausted` | 429 |
 | Backend `Unimplemented` | 501 |
 | Backend `Unavailable` (hub or Keycloak unreachable), `Canceled` | 503 |

@@ -64,6 +64,8 @@ make dev-bff
 hack/api.sh /api/v1/user
 hack/api.sh /api/v1/clusters
 hack/api.sh /api/v1/tenants
+hack/api.sh /api/v1/models
+hack/api.sh /api/v1/capabilities
 curl -s http://127.0.0.1:8080/readyz
 ```
 

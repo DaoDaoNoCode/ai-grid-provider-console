@@ -52,7 +52,19 @@ type Server struct {
 	mu       sync.RWMutex
 	clusters map[string]*aigridv1.ManagedCluster
 	tenants  map[string]*aigridv1.Tenant
+	models   map[string]*model
 	access   Access
+	// presets are the installed LLMInferenceServiceConfigs baseRefs resolve
+	// against; bindings the ManagedClusterSets bound per model namespace
+	// (absent namespace: `global`); capabilities what GetHubCapabilities
+	// answers and what gates a placed model.
+	presets      *Presets
+	bindings     map[string][]string
+	capabilities *aigridv1.HubCapabilities
+	// newSuffix draws generated ManifestWork name suffixes; referencedBy is
+	// DeleteModel's in-use check (see SetReferencedBy).
+	newSuffix    func() string
+	referencedBy func(namespace, name string) []string
 	// resourceVersion is the last value handed out, like etcd's revision:
 	// one counter for the whole store, bumped on every write.
 	resourceVersion int64
@@ -96,17 +108,32 @@ func New(fx *Fixtures, logger *slog.Logger) (*Server, error) {
 		logger = slog.Default()
 	}
 	s := &Server{
-		clusters: map[string]*aigridv1.ManagedCluster{},
-		tenants:  map[string]*aigridv1.Tenant{},
-		access:   fx.Access,
-		speed:    fx.Speed,
-		clock:    time.Now,
-		newID:    newUUID,
-		Latency:  fx.Latency.Duration(),
-		logger:   logger,
+		clusters:     map[string]*aigridv1.ManagedCluster{},
+		tenants:      map[string]*aigridv1.Tenant{},
+		models:       map[string]*model{},
+		access:       fx.Access,
+		presets:      fx.Presets,
+		bindings:     fx.ModelBindings,
+		capabilities: &aigridv1.HubCapabilities{ManifestWorkReplicaSetEnabled: true, ObservabilityInstalled: fx.ObservabilityInstalled, AcmVersion: fx.ACMVersion},
+		speed:        fx.Speed,
+		clock:        time.Now,
+		newID:        newUUID,
+		newSuffix:    newWorkSuffix,
+		referencedBy: func(string, string) []string { return nil },
+		Latency:      fx.Latency.Duration(),
+		logger:       logger,
 	}
 	if s.speed <= 0 {
 		s.speed = 1
+	}
+	if s.presets == nil {
+		s.presets = defaultPresets()
+	}
+	if fx.ManifestWorkReplicaSetEnabled != nil {
+		s.capabilities.ManifestWorkReplicaSetEnabled = *fx.ManifestWorkReplicaSetEnabled
+	}
+	if s.capabilities.AcmVersion == "" {
+		s.capabilities.AcmVersion = defaultACMVersion
 	}
 	for _, c := range fx.Clusters {
 		if c.GetName() == "" {
@@ -151,8 +178,18 @@ func New(fx *Fixtures, logger *slog.Logger) (*Server, error) {
 	}
 	s.realmMissing = fx.TenantsRealmMissing
 	s.orgsDisabled = fx.TenantsOrgsDisabled
+	for _, m := range fx.Models {
+		if err := s.seedModel(m); err != nil {
+			return nil, err
+		}
+	}
+	s.reconcileModels(s.start)
 	return s, nil
 }
+
+// defaultACMVersion is the hub's MultiClusterHub version (acm.md, "Feature
+// gate and installation facts").
+const defaultACMVersion = "2.17.3"
 
 // SetIDGenerator replaces the source of organization ids, so tests can
 // predict the id of a created tenant.
@@ -163,12 +200,20 @@ func (s *Server) SetIDGenerator(next func() string) {
 }
 
 // SetClock replaces the time source and restarts the scenario clock from it,
-// so tests drive transitions deterministically.
+// so tests drive transitions deterministically. The fixture models restart
+// from the new clock (a fixture without creationTimestamp is created at the
+// new start); models created through the API keep their times.
 func (s *Server) SetClock(clock func() time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.clock = clock
 	s.start = clock()
+	for _, m := range s.models {
+		if m.live || m.obj.GetMetadata().GetCreationTimestamp().AsTime().Before(s.start) {
+			s.resetSeeded(m)
+		}
+	}
+	s.reconcileModels(s.start)
 }
 
 // Register attaches every service of the draft proto, the health service and

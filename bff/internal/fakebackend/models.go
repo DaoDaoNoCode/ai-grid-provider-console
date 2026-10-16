@@ -1,0 +1,1048 @@
+package fakebackend
+
+import (
+	"context"
+	"fmt"
+	"regexp"
+	"slices"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
+)
+
+// Models are KServe LLMInferenceServices on the hub, optionally fanned out to
+// managed clusters by an ACM Placement and a ManifestWorkReplicaSet
+// (mock/research/models-maas.md 8, mock/research/acm.md "Proposal"). The store
+// keeps the desired state and the few facts the controllers would have
+// written (when a model was created, when each generated work was applied);
+// everything else, the LLMInferenceService conditions, the Placement decisions,
+// the work conditions and feedback, the rollout summary, is derived on every
+// read from the clock and the current clusters, the way the hub's controllers
+// would have left it (kserve.go, placement.go, work.go).
+
+// Field-mask paths UpdateModel accepts.
+const (
+	PathSpecReplicas       = "spec.replicas"
+	PathSpecMainImage      = "spec.main.image"
+	PathSpecMainEnv        = "spec.main.env"
+	PathSpecPlacement      = "spec.placement"
+	PathSpecRollout        = "spec.rollout"
+	PathMetadataLabels     = "metadata.labels"
+	PathMetadataAnnotation = "metadata.annotations"
+)
+
+// modelPaths is the list UpdateModel names in its InvalidArgument messages.
+var modelPaths = []string{PathSpecReplicas, PathSpecMainImage, PathSpecMainEnv, PathSpecPlacement, PathSpecRollout, PathMetadataLabels, PathMetadataAnnotation}
+
+// Validation messages. The CRD's CEL texts were read from the hub's
+// llminferenceservices.serving.kserve.io CRD (v1alpha2 `spec` and
+// `spec.scaling` x-kubernetes-validations) and are verbatim; the rest is the
+// console's wording for rules the API server enforces with a message the
+// research did not capture (marked "console wording").
+const (
+	// MsgReplicasScalingExclusive is the `spec` CEL rule
+	// `!(has(self.replicas) && has(self.scaling))`.
+	MsgReplicasScalingExclusive = "replicas and scaling are mutually exclusive; use scaling for autoscaled deployments or replicas for static deployments"
+	// MsgScalingNeedsKeda, MsgKedaTriggerRequired and MsgMinMaxReplicas are
+	// the `spec.scaling` CEL rules, in the CRD's order.
+	MsgScalingNeedsKeda    = "either wva or keda must be specified when scaling is configured"
+	MsgKedaTriggerRequired = "at least one trigger is required when using direct KEDA scaling"
+	MsgMinMaxReplicas      = "minReplicas cannot exceed maxReplicas"
+	// MsgDNS1123SubdomainFm is apimachinery's IsDNS1123Subdomain message, the
+	// check the API server applies to a custom resource's metadata.name
+	// (NameIsDNSSubdomain); MsgDNS1123LabelFm is IsDNS1123Label, applied to a
+	// namespace name.
+	MsgDNS1123SubdomainFm = "%s: Invalid value: %q: a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character (e.g. 'example.com', regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*')"
+	MsgDNS1123LabelFm     = "%s: Invalid value: %q: a lowercase RFC 1123 label must consist of lower case alphanumeric characters or '-', and must start and end with an alphanumeric character (e.g. 'my-name',  or '123-abc', regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?')"
+	// MsgAlreadyExistsFm is the API server's AlreadyExists message.
+	MsgAlreadyExistsFm = llmisvcResource + "." + llmisvcGroup + " %q already exists"
+	// Console wording.
+	MsgModelURIRequired   = "spec.model.uri is required"
+	MsgModelURISchemeFm   = "spec.model.uri %q: unsupported scheme; expected one of hf://, s3://, pvc://, oci://"
+	MsgScalingMaxReplicas = "spec.scaling.max_replicas is required when scaling is configured"
+	MsgRolloutNoPlacement = "spec.rollout requires spec.placement"
+)
+
+var (
+	dns1123Label     = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+	dns1123Subdomain = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`)
+)
+
+const (
+	maxDNSLabelLength     = 63
+	maxDNSSubdomainLength = 253
+)
+
+// filterTerm forms ListModels evaluates, joined with ` && `.
+var (
+	filterNamespace = regexp.MustCompile(`^this\.metadata\.namespace == "([^"]*)"$`)
+	filterLabel     = regexp.MustCompile(`^this\.metadata\.labels\["([^"]+)"\] == "([^"]*)"$`)
+)
+
+const supportedModelFilter = `this.metadata.namespace == "<ns>" and this.metadata.labels["<key>"] == "<value>", joined with &&`
+
+// model is one stored model with the controller facts the derivation needs.
+// Times are scenario time (see Server.scenarioTime).
+type model struct {
+	obj *aigridv1.Model
+	// created is when what serves the model today was created: the model's
+	// creation, or the moment a placement was added or removed.
+	created time.Time
+	// live marks a fixture model without creationTimestamp: created when the
+	// fake starts, so its lifecycle plays live.
+	live bool
+	// baseSpec is the spec at `created` (generation 1 of what serves the
+	// model today); epochs are the spec changes after it (generation 2, 3,
+	// ...) with the spec each one wrote: the Deployment rolls out again from
+	// each one, and a work records which of them it applied.
+	baseSpec *aigridv1.ModelSpec
+	epochs   []specEpoch
+	// works are the generated ManifestWorks, one per selected cluster.
+	works []*work
+	// candidateSince is when each cluster entered the Placement decision.
+	candidateSince map[string]time.Time
+	// Conditions the hub controllers write, kept so lastTransitionTime moves
+	// only on a status change.
+	placementConds []*aigridv1.Condition
+	rolloutConds   []*aigridv1.Condition
+}
+
+// specEpoch is one generation after the first: when it was written and what.
+type specEpoch struct {
+	at   time.Time
+	spec *aigridv1.ModelSpec
+}
+
+func modelKey(namespace, name string) string { return namespace + "/" + name }
+
+// cloneSpec returns an owned copy of a spec.
+func cloneSpec(spec *aigridv1.ModelSpec) *aigridv1.ModelSpec {
+	return proto.Clone(spec).(*aigridv1.ModelSpec)
+}
+
+// inputFor is the lifecycle input of one spec of the model on a cluster domain.
+func (s *Server) inputFor(m *model, spec *aigridv1.ModelSpec, appsDomain string) llmisvcInput {
+	return newLLMISvcInput(&aigridv1.Model{Name: m.obj.GetName(), Metadata: m.obj.GetMetadata(), Spec: spec}, s.presets, appsDomain)
+}
+
+// scenarioTime maps a wall-clock instant to the scenario clock, which runs
+// `speed` times faster from the fake's start; wallTime is the inverse. Every
+// stored model time is scenario time so the lifecycle offsets (kserve.go,
+// work.go) apply unscaled, and output timestamps are converted back.
+func (s *Server) scenarioTime(wall time.Time) time.Time {
+	return s.start.Add(time.Duration(float64(wall.Sub(s.start)) * s.speed))
+}
+
+func (s *Server) wallTime(scenario time.Time) time.Time {
+	return s.start.Add(time.Duration(float64(scenario.Sub(s.start)) / s.speed))
+}
+
+// bindingsFor is the ManagedClusterSets bound into a namespace: `global` by
+// default, or what models.json says for that namespace (an empty list means
+// no binding, the dev hub's state for a namespace nobody prepared).
+func (s *Server) bindingsFor(namespace string) []string {
+	if bound, ok := s.bindings[namespace]; ok {
+		return bound
+	}
+	return []string{ClusterSetGlobal}
+}
+
+// validateModelName is the API server's DNS-1123 subdomain check on a
+// custom resource's name (253 characters, dots allowed).
+func validateModelName(field, name string) error {
+	if name == "" {
+		return status.Errorf(codes.InvalidArgument, "%s is required", field)
+	}
+	if len(name) > maxDNSSubdomainLength || !dns1123Subdomain.MatchString(name) {
+		return status.Errorf(codes.InvalidArgument, MsgDNS1123SubdomainFm, field, name)
+	}
+	return nil
+}
+
+// validateNamespaceName is the API server's DNS-1123 label check on a
+// namespace name.
+func validateNamespaceName(field, name string) error {
+	if name == "" {
+		return status.Errorf(codes.InvalidArgument, "%s is required", field)
+	}
+	if len(name) > maxDNSLabelLength || !dns1123Label.MatchString(name) {
+		return status.Errorf(codes.InvalidArgument, MsgDNS1123LabelFm, field, name)
+	}
+	return nil
+}
+
+// validateModelSpec is what the API server (CRD schema and CEL rules) and the
+// KServe webhook reject on an LLMInferenceService, plus the Placement and
+// rollout checks, as InvalidArgument.
+func validateModelSpec(spec *aigridv1.ModelSpec) error {
+	if spec == nil {
+		return status.Error(codes.InvalidArgument, "spec is required")
+	}
+	uri := spec.GetModel().GetUri()
+	if uri == "" {
+		return status.Error(codes.InvalidArgument, MsgModelURIRequired)
+	}
+	if !slices.ContainsFunc(uriSchemes, func(scheme string) bool { return strings.HasPrefix(uri, scheme) && len(uri) > len(scheme) }) {
+		return status.Errorf(codes.InvalidArgument, MsgModelURISchemeFm, uri)
+	}
+	if spec.Replicas != nil && spec.GetReplicas() < 0 {
+		return status.Errorf(codes.InvalidArgument, "spec.replicas must not be negative, got %d", spec.GetReplicas())
+	}
+	if sc := spec.GetScaling(); sc != nil {
+		if spec.Replicas != nil {
+			return status.Error(codes.InvalidArgument, MsgReplicasScalingExclusive)
+		}
+		if !sc.GetKeda() {
+			return status.Error(codes.InvalidArgument, MsgScalingNeedsKeda)
+		}
+		if len(sc.GetTriggers()) == 0 {
+			return status.Error(codes.InvalidArgument, MsgKedaTriggerRequired)
+		}
+		if sc.GetMaxReplicas() < 1 {
+			return status.Error(codes.InvalidArgument, MsgScalingMaxReplicas)
+		}
+		if sc.GetMinReplicas() > sc.GetMaxReplicas() {
+			return status.Error(codes.InvalidArgument, MsgMinMaxReplicas)
+		}
+	}
+	if p := spec.GetPlacement(); p != nil {
+		if err := validatePlacement(p); err != nil {
+			return status.Error(codes.InvalidArgument, err.Error())
+		}
+	} else if spec.GetRollout() != nil {
+		return status.Error(codes.InvalidArgument, MsgRolloutNoPlacement)
+	}
+	if r := spec.GetRollout(); r != nil {
+		if _, err := validateRollout(r); err != nil {
+			return status.Error(codes.InvalidArgument, err.Error())
+		}
+	}
+	return nil
+}
+
+// checkGate is the backend's check for the ManifestWorkReplicaSet controller
+// before it writes an MWRS (acm.md 4, "feature gate OFF").
+func (s *Server) checkGate(spec *aigridv1.ModelSpec) error {
+	if spec.GetPlacement() != nil && !s.capabilities.GetManifestWorkReplicaSetEnabled() {
+		return status.Error(codes.FailedPrecondition, MessageFeatureGateDisabled)
+	}
+	return nil
+}
+
+// bumpModelVersion stamps a written model with the next store revision.
+// Must be called under s.mu.
+func (s *Server) bumpModelVersion(m *aigridv1.Model) {
+	s.resourceVersion++
+	m.Metadata.ResourceVersion = strconv.FormatInt(s.resourceVersion, 10)
+}
+
+// normalizeModel fills what the KServe defaulting webhook and the API server
+// fill on admission: `spec.model.name` from the name, empty maps for labels
+// and annotations, and strips every output-only field a client may have sent.
+func normalizeModel(obj *aigridv1.Model) *aigridv1.Model {
+	m := proto.Clone(obj).(*aigridv1.Model)
+	if m.Metadata == nil {
+		m.Metadata = &aigridv1.ObjectMeta{}
+	}
+	m.Metadata.Labels = copyMap(m.Metadata.GetLabels())
+	m.Metadata.Annotations = copyMap(m.Metadata.GetAnnotations())
+	m.Metadata.Uid, m.Metadata.ResourceVersion, m.Metadata.Generation = "", "", 0
+	m.Metadata.CreationTimestamp, m.Metadata.DeletionTimestamp, m.Metadata.Finalizers = nil, nil, nil
+	m.Status = nil
+	if m.Spec.GetModel() != nil && m.Spec.Model.GetName() == "" {
+		m.Spec.Model.Name = m.GetName() // llm_inference_service_defaults.go
+	}
+	return m
+}
+
+// seedModel validates one fixture model as CreateModel would and stores it
+// as created at its creationTimestamp, or at the fake's start when the fixture
+// carries none (so it starts its lifecycle live). Must be called before Serve.
+func (s *Server) seedModel(obj *aigridv1.Model) error {
+	if err := validateModelName("metadata.name", obj.GetName()); err != nil {
+		return fmt.Errorf("fixture model %q: %s", obj.GetName(), status.Convert(err).Message())
+	}
+	if err := validateNamespaceName("metadata.namespace", obj.GetMetadata().GetNamespace()); err != nil {
+		return fmt.Errorf("fixture model %q: %s", obj.GetName(), status.Convert(err).Message())
+	}
+	if err := validateModelSpec(obj.GetSpec()); err != nil {
+		return fmt.Errorf("fixture model %q: %s", obj.GetName(), status.Convert(err).Message())
+	}
+	key := modelKey(obj.GetMetadata().GetNamespace(), obj.GetName())
+	if _, dup := s.models[key]; dup {
+		return fmt.Errorf("fixture model %s listed twice", key)
+	}
+	m := normalizeModel(obj)
+	m.Metadata.Uid = obj.GetMetadata().GetUid()
+	if m.Metadata.Uid == "" {
+		m.Metadata.Uid = s.newID()
+	}
+	m.Metadata.Generation = max(obj.GetMetadata().GetGeneration(), 1)
+	created := s.start
+	live := true
+	if ts := obj.GetMetadata().GetCreationTimestamp(); ts != nil {
+		created, live = s.scenarioTime(ts.AsTime()), false
+		if !ts.AsTime().Before(s.start) {
+			return fmt.Errorf("fixture model %s: creationTimestamp %s is not in the past; omit it to create the model when the fake starts", key, ts.AsTime().Format(time.RFC3339))
+		}
+	}
+	m.Metadata.CreationTimestamp = timestamppb.New(s.wallTime(created))
+	if rv := obj.GetMetadata().GetResourceVersion(); rv != "" {
+		m.Metadata.ResourceVersion = rv
+		if n, err := strconv.ParseInt(rv, 10, 64); err == nil && n > s.resourceVersion {
+			s.resourceVersion = n
+		}
+	} else {
+		s.bumpModelVersion(m)
+	}
+	stored := &model{obj: m, created: created, live: live}
+	s.models[key] = stored
+	s.resetSeeded(stored)
+	return nil
+}
+
+// resetSeeded (re)starts a fixture model's controller facts from its creation
+// time: no works yet, and every cluster its Placement selects today counted
+// as selected since the model was created, so a model created days ago reads
+// as rolled out, not as rolling out from the moment the fake started. Must
+// be called under s.mu, before the next reconcile.
+func (s *Server) resetSeeded(m *model) {
+	if m.live {
+		m.created = s.start
+	} else {
+		m.created = s.scenarioTime(m.obj.GetMetadata().GetCreationTimestamp().AsTime())
+	}
+	m.obj.Metadata.CreationTimestamp = timestamppb.New(s.wallTime(m.created))
+	m.works, m.epochs, m.placementConds, m.rolloutConds = nil, nil, nil, nil
+	m.baseSpec = cloneSpec(m.obj.GetSpec())
+	m.candidateSince = map[string]time.Time{}
+	if p := m.obj.GetSpec().GetPlacement(); p != nil {
+		decisions := computePlacement(p, s.bindingsFor(m.obj.GetMetadata().GetNamespace()), s.clusters, m.created, s.scenarioTime)
+		for _, d := range decisions.GetDecisions() {
+			m.candidateSince[d.GetClusterName()] = m.created
+		}
+	}
+}
+
+// reconcileModels is the controllers' pass, run under s.mu on every read and
+// write after the cluster scenarios: it drops deleted models whose works are
+// gone, recomputes each placed model's decisions from the current clusters,
+// removes the works of clusters that left, and applies works to clusters that
+// joined as the rollout strategy allows. `now` is scenario time.
+func (s *Server) reconcileModels(now time.Time) {
+	for _, m := range s.models {
+		p := m.obj.GetSpec().GetPlacement()
+		if p == nil {
+			m.works, m.placementConds, m.rolloutConds = nil, nil, nil
+			continue
+		}
+		decisions := computePlacement(p, s.bindingsFor(m.obj.GetMetadata().GetNamespace()), s.clusters, now, s.scenarioTime)
+		for _, c := range decisions.GetConditions() {
+			m.placementConds = writeCondition(m.placementConds, s.wallTime(now), c.GetType(), c.GetStatus(), c.GetReason(), c.GetMessage())
+		}
+		if !s.capabilities.GetManifestWorkReplicaSetEnabled() {
+			continue // nothing reconciles the MWRS
+		}
+		selected := map[string]bool{}
+		for _, d := range decisions.GetDecisions() {
+			selected[d.GetClusterName()] = true
+			if _, ok := m.candidateSince[d.GetClusterName()]; !ok {
+				m.candidateSince[d.GetClusterName()] = now
+			}
+		}
+		for c := range m.candidateSince {
+			if !selected[c] {
+				delete(m.candidateSince, c) // ClustersRemoved: the work is deleted
+			}
+		}
+		m.works = slices.DeleteFunc(m.works, func(w *work) bool { return !selected[w.cluster] })
+		for _, w := range m.works {
+			s.observeAgent(w, now)
+		}
+		s.rollout(m, decisions, now)
+		sortWorks(m.works)
+		s.writeRolloutConditions(m, decisions, now)
+	}
+}
+
+// observeAgent follows the spoke agent's connection. It records when the
+// agent first reported (once the cluster is Available, from the later of the
+// work's apply time and the cluster's Available transition; a cluster that is
+// not Available has an agent that reports nothing, acm.md item 9). After
+// that, a cluster that loses its lease freezes the work's status at the
+// instant Available stopped being True (the hub keeps the last report), and
+// when the agent is back the spoke's lifecycle resumes where it stopped.
+func (s *Server) observeAgent(w *work, now time.Time) {
+	c := s.clusters[w.cluster]
+	avail := findCondition(c, CondAvailable)
+	available := avail.GetStatus() == cTrue
+	since := s.scenarioTime(avail.GetLastTransitionTime().AsTime())
+	if w.agentStart == nil {
+		if !available {
+			return
+		}
+		start := w.startedAt
+		if since.After(start) {
+			start = since
+		}
+		if !start.After(now) {
+			w.agentStart = &start
+		}
+		return
+	}
+	switch {
+	case !available && w.frozenAt == nil:
+		frozen := since
+		if frozen.Before(*w.agentStart) {
+			frozen = *w.agentStart
+		}
+		if frozen.After(now) {
+			frozen = now
+		}
+		w.frozenAt = &frozen
+	case available && w.frozenAt != nil:
+		back := since
+		if back.Before(*w.frozenAt) {
+			back = *w.frozenAt
+		}
+		if back.After(now) {
+			back = now
+		}
+		shifted := w.agentStart.Add(back.Sub(*w.frozenAt))
+		w.agentStart, w.frozenAt = &shifted, nil
+	}
+}
+
+// spokeInput is the LLMInferenceService lifecycle on one managed cluster,
+// from the spec the work applied.
+func (s *Server) spokeInput(m *model, w *work) llmisvcInput {
+	return s.inputFor(m, w.spec, "apps."+w.cluster+".example.com")
+}
+
+// deriveWorkAt is deriveWork for one of a model's works at a scenario time.
+func (s *Server) deriveWorkAt(m *model, w *work, params rolloutParams, at time.Time) workView {
+	return deriveWork(w, s.spokeInput(m, w), at, params.progressDeadline, s.wallTime)
+}
+
+// applyWork creates or updates the work of one cluster at scenario time t:
+// the controller's `generateName` work carrying the current template.
+func (s *Server) applyWork(m *model, cluster string, t time.Time) {
+	var w *work
+	for _, existing := range m.works {
+		if existing.cluster == cluster {
+			w = existing
+		}
+	}
+	if w == nil {
+		w = &work{cluster: cluster, name: workNameFor(placementName(m.obj.GetName()), s.newSuffix())}
+		m.works = append(m.works, w)
+	}
+	w.startedAt, w.generation, w.agentStart, w.frozenAt = t, m.obj.GetMetadata().GetGeneration(), nil, nil
+	w.spec = cloneSpec(m.obj.GetSpec())
+	w.failApply = s.clusters[cluster].GetLabels()[LabelFailApply] == "true"
+	s.observeAgent(w, t)
+}
+
+// rollout is the ManifestWorkReplicaSet deploy reconcile (acm.md "Rollout
+// counting", sdk-go rollout.go): `All` applies every selected cluster at
+// once; `Progressive` (and, with the single decision group the fake has,
+// `ProgressivePerGroup`) fills `maxConcurrency` slots in cluster-name order,
+// a slot staying taken while its work is to apply, progressing or failed, and
+// for `minSuccessTime` after it succeeded; a failed cluster counts towards
+// `maxFailures` at once and a timed-out one (a Progressing or Failed work past
+// `progressDeadline`; ToApply never times out) frees its slot and counts too;
+// beyond `maxFailures` nothing more is applied. A
+// work is stale, and to apply again, when the template changed since it was
+// applied. The fake computes the exact instant a slot freed, so timing does
+// not depend on how often it is polled.
+func (s *Server) rollout(m *model, decisions *aigridv1.PlacementStatus, now time.Time) {
+	params, err := validateRollout(m.obj.GetSpec().GetRollout())
+	if err != nil {
+		return // rejected on write; cannot happen
+	}
+	gen := m.obj.GetMetadata().GetGeneration()
+	generationAt := m.created
+	if len(m.epochs) > 0 {
+		generationAt = m.epochs[len(m.epochs)-1].at
+	}
+	var pending []string
+	for _, d := range decisions.GetDecisions() {
+		name := d.GetClusterName()
+		i := slices.IndexFunc(m.works, func(w *work) bool { return w.cluster == name })
+		if i < 0 || m.works[i].generation < gen {
+			pending = append(pending, name)
+		}
+	}
+	floorFor := func(cluster string) time.Time {
+		t := generationAt
+		if since := m.candidateSince[cluster]; since.After(t) {
+			t = since
+		}
+		return t
+	}
+	if params.strategy == aigridv1.RolloutStrategy_ROLLOUT_STRATEGY_ALL {
+		for _, cluster := range pending {
+			if t := floorFor(cluster); !t.After(now) {
+				s.applyWork(m, cluster, t)
+			}
+		}
+		return
+	}
+	total := len(decisions.GetDecisions())
+	maxConcurrency, _ := parseIntOrPercent(params.maxConcurrency, total, total)
+	if maxConcurrency <= 0 {
+		maxConcurrency = total
+	}
+	maxFailures, _ := parseIntOrPercent(params.maxFailures, total, 0)
+	// slotsAt counts the taken slots and the failures at instant t.
+	slotsAt := func(t time.Time) (taken, failed int) {
+		for _, w := range m.works {
+			if w.startedAt.After(t) {
+				continue
+			}
+			v := s.deriveWorkAt(m, w, params, t)
+			switch v.state {
+			case rolloutSucceeded:
+				if t.Before(v.succeeded.Add(params.minSuccessTime)) {
+					taken++
+				}
+			case rolloutTimeOut:
+				failed++
+			case rolloutFailed:
+				// sdk-go progressivePerCluster: a Failed cluster keeps its slot
+				// until its timeout and counts towards maxFailures at once.
+				taken++
+				failed++
+			default:
+				taken++
+			}
+		}
+		return taken, failed
+	}
+	// frontier is the latest (re)apply among the works: the fake keeps no
+	// history before it, so no slot is computed for an earlier instant.
+	var frontier time.Time
+	for _, w := range m.works {
+		if w.startedAt.After(frontier) {
+			frontier = w.startedAt
+		}
+	}
+	for _, cluster := range pending {
+		floor := floorFor(cluster)
+		if frontier.After(floor) {
+			floor = frontier
+		}
+		if floor.After(now) {
+			continue
+		}
+		// Candidate instants: the cluster's floor and every moment a slot frees.
+		candidates := []time.Time{floor}
+		for _, w := range m.works {
+			v := s.deriveWorkAt(m, w, params, now)
+			switch v.state {
+			case rolloutSucceeded:
+				candidates = append(candidates, v.succeeded.Add(params.minSuccessTime))
+			case rolloutTimeOut:
+				candidates = append(candidates, w.startedAt.Add(params.progressDeadline))
+			}
+		}
+		sort.Slice(candidates, func(i, j int) bool { return candidates[i].Before(candidates[j]) })
+		applied := false
+		for _, t := range candidates {
+			if t.Before(floor) || t.After(now) {
+				continue
+			}
+			taken, failed := slotsAt(t)
+			if failed > maxFailures {
+				return // MaxFailureBreach: the rollout stops
+			}
+			if taken < maxConcurrency {
+				s.applyWork(m, cluster, t)
+				applied, frontier = true, t
+				break
+			}
+		}
+		if !applied {
+			return // every slot is taken; later clusters wait too
+		}
+	}
+}
+
+// writeRolloutConditions is the status reconcile: the summary counts and
+// the three MWRS conditions by the rules in acm.md 4.
+func (s *Server) writeRolloutConditions(m *model, decisions *aigridv1.PlacementStatus, now time.Time) {
+	params, _ := validateRollout(m.obj.GetSpec().GetRollout())
+	summary, allSucceeded := s.summarize(m, params, now)
+	wall := s.wallTime(now)
+	set := func(typ string, st aigridv1.ConditionStatus, reason string) {
+		m.rolloutConds = writeCondition(m.rolloutConds, wall, typ, st, reason, "")
+	}
+	total := len(decisions.GetDecisions())
+	if total == 0 {
+		set(CondPlacementVerified, cFalse, ReasonPlacementDecisionEmpty)
+	} else {
+		set(CondPlacementVerified, cTrue, ReasonAsExpected)
+	}
+	if total > 0 && allSucceeded && len(m.works) == total {
+		set(CondPlacementRolledOut, cTrue, ReasonRolloutComplete)
+	} else {
+		set(CondPlacementRolledOut, cFalse, ReasonRolloutProgressing)
+	}
+	switch {
+	case summary.GetTotal() == 0 && total == 0:
+		set(CondManifestworkApplied, cFalse, ReasonPlacementDecisionEmpty)
+	case summary.GetTotal() == 0:
+		set(CondManifestworkApplied, cFalse, ReasonNotAsExpected)
+	case summary.GetAvailable() == summary.GetTotal() && summary.GetProgressing() == 0 && summary.GetDegraded() == 0:
+		set(CondManifestworkApplied, cTrue, ReasonAsExpected)
+	case summary.GetProgressing() > 0 && summary.GetDegraded() == 0:
+		set(CondManifestworkApplied, cFalse, ReasonProcessing)
+	default:
+		set(CondManifestworkApplied, cFalse, ReasonNotAsExpected)
+	}
+}
+
+// summarize counts the works by condition and reports whether every work is
+// Succeeded at the current generation (PlacementRolledOut's rule).
+func (s *Server) summarize(m *model, params rolloutParams, now time.Time) (*aigridv1.RolloutSummary, bool) {
+	sum := &aigridv1.RolloutSummary{Total: int32(len(m.works))}
+	allSucceeded := true
+	gen := m.obj.GetMetadata().GetGeneration()
+	for _, w := range m.works {
+		v := s.deriveWorkAt(m, w, params, now)
+		isTrue := func(typ string) bool { return condition(v.status.GetConditions(), typ).GetStatus() == cTrue }
+		if isTrue(CondWorkApplied) {
+			sum.Applied++
+		}
+		if isTrue(CondWorkAvailable) {
+			sum.Available++
+		}
+		if isTrue(CondWorkProgressing) {
+			sum.Progressing++
+		}
+		if isTrue(CondWorkDegraded) {
+			sum.Degraded++
+		}
+		if w.generation == gen {
+			sum.Updated++
+		}
+		if v.state != rolloutSucceeded || w.generation != gen {
+			allSucceeded = false
+		}
+	}
+	return sum, allSucceeded
+}
+
+// viewModel is the model as a read returns it: the stored object plus the
+// status derived at scenario time `now`.
+func (s *Server) viewModel(m *model, now time.Time) *aigridv1.Model {
+	out := proto.Clone(m.obj).(*aigridv1.Model)
+	st := &aigridv1.ModelStatus{}
+	if m.obj.GetSpec().GetPlacement() == nil {
+		gens := []llmisvcGeneration{{in: s.inputFor(m, m.baseSpec, hubAppsDomain)}}
+		for _, e := range m.epochs {
+			gens = append(gens, llmisvcGeneration{in: s.inputFor(m, e.spec, hubAppsDomain), at: e.at.Sub(m.created)})
+		}
+		st, _ = llmisvcStatus(gens, now.Sub(m.created), func(d time.Duration) time.Time { return s.wallTime(m.created.Add(d)) })
+		st.Phase, st.Reason, st.Message = deriveHubPhase(st)
+		out.Status = st
+		return out
+	}
+	decisions := computePlacement(m.obj.GetSpec().GetPlacement(), s.bindingsFor(m.obj.GetMetadata().GetNamespace()), s.clusters, now, s.scenarioTime)
+	st.Placement = &aigridv1.PlacementStatus{NumberOfSelectedClusters: decisions.GetNumberOfSelectedClusters(), Decisions: decisions.GetDecisions()}
+	for _, c := range m.placementConds {
+		st.Placement.Conditions = append(st.Placement.Conditions, proto.Clone(c).(*aigridv1.Condition))
+	}
+	st.Rollout = &aigridv1.RolloutStatus{Summary: &aigridv1.RolloutSummary{}}
+	if !s.capabilities.GetManifestWorkReplicaSetEnabled() {
+		// The CRD stores the object, nothing reconciles it: empty status.
+		st.Phase, st.Message = aigridv1.ModelPhase_MODEL_PHASE_PENDING, MessageFeatureGateDisabled
+		out.Status = st
+		return out
+	}
+	params, _ := validateRollout(m.obj.GetSpec().GetRollout())
+	st.Rollout.Summary, _ = s.summarize(m, params, now)
+	for _, c := range m.rolloutConds {
+		st.Rollout.Conditions = append(st.Rollout.Conditions, proto.Clone(c).(*aigridv1.Condition))
+	}
+	for _, w := range m.works {
+		st.Rollout.Works = append(st.Rollout.Works, s.deriveWorkAt(m, w, params, now).status)
+	}
+	st.Phase, st.Reason, st.Message = derivePlacedPhase(st.Rollout)
+	out.Status = st
+	return out
+}
+
+// derivePlacedPhase is the phase derivation for a placed model (see
+// ModelPhase in model_type.proto): rolled out and applied -> READY; applied
+// NotAsExpected with a degraded or unapplied work -> FAILED; otherwise
+// PENDING with the reason of PlacementVerified when it is False, of
+// PlacementRolledOut when every work so far is applied, else of
+// ManifestworkApplied.
+func derivePlacedPhase(rollout *aigridv1.RolloutStatus) (aigridv1.ModelPhase, string, string) {
+	conds := rollout.GetConditions()
+	verified := condition(conds, CondPlacementVerified)
+	rolledOut := condition(conds, CondPlacementRolledOut)
+	applied := condition(conds, CondManifestworkApplied)
+	broken := rollout.GetSummary().GetDegraded() > 0
+	for _, w := range rollout.GetWorks() {
+		if condition(w.GetConditions(), CondWorkApplied).GetStatus() == cFalse {
+			broken = true
+		}
+	}
+	switch {
+	case rolledOut.GetStatus() == cTrue && applied.GetStatus() == cTrue:
+		return aigridv1.ModelPhase_MODEL_PHASE_READY, ReasonRolloutComplete, ""
+	case applied.GetStatus() == cFalse && applied.GetReason() == ReasonNotAsExpected && broken:
+		return aigridv1.ModelPhase_MODEL_PHASE_FAILED, ReasonNotAsExpected, ""
+	case verified != nil && verified.GetStatus() == cFalse:
+		return aigridv1.ModelPhase_MODEL_PHASE_PENDING, verified.GetReason(), ""
+	case applied.GetStatus() == cTrue:
+		return aigridv1.ModelPhase_MODEL_PHASE_PENDING, rolledOut.GetReason(), "" // applied everywhere so far, more clusters to come
+	default:
+		return aigridv1.ModelPhase_MODEL_PHASE_PENDING, applied.GetReason(), ""
+	}
+}
+
+// matchesFilter evaluates the supported ListModels filter terms.
+func parseModelFilter(filter string) (func(*aigridv1.Model) bool, error) {
+	if strings.TrimSpace(filter) == "" {
+		return func(*aigridv1.Model) bool { return true }, nil
+	}
+	var checks []func(*aigridv1.Model) bool
+	for _, term := range strings.Split(filter, " && ") {
+		term = strings.TrimSpace(term)
+		if m := filterNamespace.FindStringSubmatch(term); m != nil {
+			ns := m[1]
+			checks = append(checks, func(x *aigridv1.Model) bool { return x.GetMetadata().GetNamespace() == ns })
+			continue
+		}
+		if m := filterLabel.FindStringSubmatch(term); m != nil {
+			k, v := m[1], m[2]
+			checks = append(checks, func(x *aigridv1.Model) bool {
+				got, ok := x.GetMetadata().GetLabels()[k]
+				return ok && got == v
+			})
+			continue
+		}
+		return nil, status.Errorf(codes.InvalidArgument, "filter %s is not supported; this server only evaluates %s", filter, supportedModelFilter)
+	}
+	return func(x *aigridv1.Model) bool {
+		for _, check := range checks {
+			if !check(x) {
+				return false
+			}
+		}
+		return true
+	}, nil
+}
+
+// ListModels implements Models: namespace then name order, offset/limit
+// paging (omitted limit means all, zero counts only, negative is
+// InvalidArgument), the two filter term forms.
+func (s *Server) ListModels(ctx context.Context, req *aigridv1.ListModelsRequest) (*aigridv1.ListModelsResponse, error) {
+	if _, err := s.begin(ctx); err != nil {
+		return nil, err
+	}
+	match, err := parseModelFilter(req.GetFilter())
+	if err != nil {
+		return nil, err
+	}
+	if req.GetOrder() != "" {
+		return nil, status.Error(codes.InvalidArgument, "order is not supported by this server yet; models are returned by namespace and name")
+	}
+	if req.GetOffset() < 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "offset must not be negative, got %d", req.GetOffset())
+	}
+	if req.Limit != nil && req.GetLimit() < 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "limit must not be negative, got %d", req.GetLimit())
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := s.advance()
+	all := make([]*aigridv1.Model, 0, len(s.models))
+	for _, m := range s.models {
+		if match(m.obj) {
+			all = append(all, s.viewModel(m, now))
+		}
+	}
+	sort.Slice(all, func(i, j int) bool {
+		if a, b := all[i].GetMetadata().GetNamespace(), all[j].GetMetadata().GetNamespace(); a != b {
+			return a < b
+		}
+		return all[i].GetName() < all[j].GetName()
+	})
+	total := len(all)
+	offset := min(int(req.GetOffset()), total)
+	page := all[offset:]
+	if req.Limit != nil && int(req.GetLimit()) < len(page) {
+		page = page[:req.GetLimit()]
+	}
+	return &aigridv1.ListModelsResponse{Items: page, Size: int32(len(page)), Total: int32(total)}, nil
+}
+
+// GetModel implements Models.
+func (s *Server) GetModel(ctx context.Context, req *aigridv1.GetModelRequest) (*aigridv1.GetModelResponse, error) {
+	if _, err := s.begin(ctx); err != nil {
+		return nil, err
+	}
+	if req.GetName() == "" || req.GetNamespace() == "" {
+		return nil, status.Error(codes.InvalidArgument, "name and namespace are required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := s.advance()
+	m, ok := s.models[modelKey(req.GetNamespace(), req.GetName())]
+	if !ok {
+		return nil, notFound(modelKey(req.GetNamespace(), req.GetName()))
+	}
+	return &aigridv1.GetModelResponse{Object: s.viewModel(m, now)}, nil
+}
+
+// CreateModel implements Models: admission in the API server's order (names,
+// schema and CEL rules, the webhook), then the backend's feature-gate check,
+// then the AlreadyExists check, then the object is stored with no status;
+// the controllers fill it over the following minutes (kserve.go, work.go).
+func (s *Server) CreateModel(ctx context.Context, req *aigridv1.CreateModelRequest) (*aigridv1.CreateModelResponse, error) {
+	token, err := s.begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.authorizeProviderAdmin(ctx, token); err != nil {
+		return nil, err
+	}
+	obj := req.GetObject()
+	if obj == nil {
+		return nil, status.Error(codes.InvalidArgument, "object is required")
+	}
+	if err := validateModelName("metadata.name", obj.GetName()); err != nil {
+		return nil, err
+	}
+	if err := validateNamespaceName("metadata.namespace", obj.GetMetadata().GetNamespace()); err != nil {
+		return nil, err
+	}
+	if err := validateModelSpec(obj.GetSpec()); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := s.advance()
+	if err := s.checkGate(obj.GetSpec()); err != nil {
+		return nil, err
+	}
+	key := modelKey(obj.GetMetadata().GetNamespace(), obj.GetName())
+	if _, dup := s.models[key]; dup {
+		return nil, status.Errorf(codes.AlreadyExists, MsgAlreadyExistsFm, obj.GetName())
+	}
+	m := normalizeModel(obj)
+	m.Metadata.Uid = s.newID()
+	m.Metadata.Generation = 1
+	m.Metadata.CreationTimestamp = timestamppb.New(s.wallTime(now))
+	s.bumpModelVersion(m)
+	stored := &model{obj: m, created: now, baseSpec: cloneSpec(m.GetSpec()), candidateSince: map[string]time.Time{}}
+	s.models[key] = stored
+	s.reconcileModels(now)
+	s.logger.Debug("model created", "model", key, "placed", m.GetSpec().GetPlacement() != nil)
+	return &aigridv1.CreateModelResponse{Object: s.viewModel(stored, now)}, nil
+}
+
+// UpdateModel implements Models with the conventions' semantics
+// (backend-conventions.md 5.3): the mask names whole fields, `lock` compares
+// `metadata.resource_version` and fails with Aborted, every write bumps the
+// version and a spec change bumps the generation, which makes the Deployment
+// roll out again and the ManifestWorkReplicaSet re-apply its works.
+func (s *Server) UpdateModel(ctx context.Context, req *aigridv1.UpdateModelRequest) (*aigridv1.UpdateModelResponse, error) {
+	token, err := s.begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.authorizeProviderAdmin(ctx, token); err != nil {
+		return nil, err
+	}
+	obj := req.GetObject()
+	if obj.GetName() == "" || obj.GetMetadata().GetNamespace() == "" {
+		return nil, status.Error(codes.InvalidArgument, "object.name and object.metadata.namespace are required")
+	}
+	paths := req.GetUpdateMask().GetPaths()
+	if len(paths) == 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "update_mask must name at least one of %s", strings.Join(modelPaths, ", "))
+	}
+	for _, p := range paths {
+		if !slices.Contains(modelPaths, p) {
+			return nil, status.Errorf(codes.InvalidArgument, "update_mask path %q is not supported; supported paths: %s", p, strings.Join(modelPaths, ", "))
+		}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := s.advance()
+	key := modelKey(obj.GetMetadata().GetNamespace(), obj.GetName())
+	m, ok := s.models[key]
+	if !ok {
+		return nil, notFound(key)
+	}
+	cur := m.obj
+	if req.GetLock() && obj.GetMetadata().GetResourceVersion() != cur.GetMetadata().GetResourceVersion() {
+		return nil, status.Errorf(codes.Aborted, "object with identifier '%s' has resource version %s, the request carries %q; fetch it again and retry", key, cur.GetMetadata().GetResourceVersion(), obj.GetMetadata().GetResourceVersion())
+	}
+	next := proto.Clone(cur).(*aigridv1.Model)
+	if next.Spec == nil {
+		next.Spec = &aigridv1.ModelSpec{}
+	}
+	for _, p := range paths {
+		switch p {
+		case PathSpecReplicas:
+			next.Spec.Replicas = nil
+			if obj.GetSpec().Replicas != nil {
+				next.Spec.Replicas = proto.Int32(obj.GetSpec().GetReplicas())
+			}
+		case PathSpecMainImage:
+			if next.Spec.Main == nil {
+				next.Spec.Main = &aigridv1.Container{}
+			}
+			next.Spec.Main.Image = obj.GetSpec().GetMain().GetImage()
+		case PathSpecMainEnv:
+			if next.Spec.Main == nil {
+				next.Spec.Main = &aigridv1.Container{}
+			}
+			next.Spec.Main.Env = nil
+			for _, e := range obj.GetSpec().GetMain().GetEnv() {
+				next.Spec.Main.Env = append(next.Spec.Main.Env, proto.Clone(e).(*aigridv1.EnvVar))
+			}
+		case PathSpecPlacement:
+			next.Spec.Placement = nil
+			if p := obj.GetSpec().GetPlacement(); p != nil {
+				next.Spec.Placement = proto.Clone(p).(*aigridv1.Placement)
+			}
+		case PathSpecRollout:
+			next.Spec.Rollout = nil
+			if r := obj.GetSpec().GetRollout(); r != nil {
+				next.Spec.Rollout = proto.Clone(r).(*aigridv1.Rollout)
+			}
+		case PathMetadataLabels:
+			next.Metadata.Labels = copyMap(obj.GetMetadata().GetLabels())
+		case PathMetadataAnnotation:
+			next.Metadata.Annotations = copyMap(obj.GetMetadata().GetAnnotations())
+		}
+	}
+	if next.Spec.Placement == nil && next.Spec.Rollout != nil && cur.GetSpec().GetPlacement() != nil && !slices.Contains(paths, PathSpecRollout) {
+		next.Spec.Rollout = nil // the rollout goes with the placement it belonged to
+	}
+	if err := validateModelSpec(next.GetSpec()); err != nil {
+		return nil, err
+	}
+	if cur.GetSpec().GetPlacement() == nil {
+		if err := s.checkGate(next.GetSpec()); err != nil {
+			return nil, err
+		}
+	}
+	if !proto.Equal(cur.GetSpec(), next.GetSpec()) {
+		next.Metadata.Generation++
+		m.epochs = append(m.epochs, specEpoch{at: now, spec: cloneSpec(next.GetSpec())})
+		if (cur.GetSpec().GetPlacement() == nil) != (next.GetSpec().GetPlacement() == nil) {
+			// The hub deployment is replaced by the fan-out, or the other way
+			// round: whatever now serves the model is created at this moment.
+			m.created, m.epochs, m.baseSpec = now, nil, cloneSpec(next.GetSpec())
+			m.works, m.candidateSince, m.rolloutConds, m.placementConds = nil, map[string]time.Time{}, nil, nil
+		}
+	}
+	s.bumpModelVersion(next)
+	m.obj = next
+	s.reconcileModels(now)
+	s.logger.Debug("model updated", "model", key, "paths", paths, "generation", next.GetMetadata().GetGeneration())
+	return &aigridv1.UpdateModelResponse{Object: s.viewModel(m, now)}, nil
+}
+
+// DeleteModel implements Models. The model disappears at once: the hub
+// deployment has no finalizer the console knows of, and the MWRS uses the
+// CRD default cascade `Background`, under which the finalize reconciler
+// deletes the works and removes the finalizer in the same pass
+// (ocm:manifestworkreplicaset_finalize_reconcile.go); the works drain in the
+// cluster namespaces afterwards, invisibly to this API (only `Foreground`
+// would keep the MWRS until they are gone). FailedPrecondition while
+// something references the model: the check is `referencedBy`, which the
+// catalog and subscriptions area will wire; today nothing references a model.
+func (s *Server) DeleteModel(ctx context.Context, req *aigridv1.DeleteModelRequest) (*aigridv1.DeleteModelResponse, error) {
+	token, err := s.begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.authorizeProviderAdmin(ctx, token); err != nil {
+		return nil, err
+	}
+	if req.GetName() == "" || req.GetNamespace() == "" {
+		return nil, status.Error(codes.InvalidArgument, "name and namespace are required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.advance()
+	key := modelKey(req.GetNamespace(), req.GetName())
+	if _, ok := s.models[key]; !ok {
+		return nil, notFound(key)
+	}
+	if refs := s.referencedBy(req.GetNamespace(), req.GetName()); len(refs) > 0 {
+		return nil, status.Errorf(codes.FailedPrecondition, MessageReferencedByCatalogFm, key, strings.Join(refs, ", "))
+	}
+	delete(s.models, key)
+	s.logger.Debug("model deleted", "model", key)
+	return &aigridv1.DeleteModelResponse{}, nil
+}
+
+// GetHubCapabilities implements AiGrid from the settings fixture.
+func (s *Server) GetHubCapabilities(ctx context.Context, _ *aigridv1.GetHubCapabilitiesRequest) (*aigridv1.GetHubCapabilitiesResponse, error) {
+	if _, err := s.begin(ctx); err != nil {
+		return nil, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return &aigridv1.GetHubCapabilitiesResponse{Capabilities: proto.Clone(s.capabilities).(*aigridv1.HubCapabilities)}, nil
+}
+
+// SetReferencedBy installs the check DeleteModel runs: the names of the
+// catalog entries and subscriptions that reference a model. The catalog area
+// wires it; until then nothing references a model.
+func (s *Server) SetReferencedBy(fn func(namespace, name string) []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.referencedBy = fn
+}
+
+// SetWorkSuffixGenerator replaces the source of generated work name suffixes
+// (newWorkSuffix, a random generateName suffix, by default), so tests and the
+// golden responses can predict work names. The works that already exist, such
+// as the ones New generated for the fixture models, are renamed with the new
+// generator in model and cluster order, so every work name is predictable
+// from the moment it is set (call SetClock first: it regenerates the fixture
+// models' works).
+func (s *Server) SetWorkSuffixGenerator(next func() string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.newSuffix = next
+	keys := make([]string, 0, len(s.models))
+	for key := range s.models {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		m := s.models[key]
+		sortWorks(m.works)
+		for _, w := range m.works {
+			w.name = workNameFor(placementName(m.obj.GetName()), next())
+		}
+	}
+}
+
+// SetManifestWorkReplicaSetEnabled flips the hub capability at runtime, for
+// tests of both paths.
+func (s *Server) SetManifestWorkReplicaSetEnabled(enabled bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.capabilities.ManifestWorkReplicaSetEnabled = enabled
+}

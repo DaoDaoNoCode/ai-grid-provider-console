@@ -19,12 +19,6 @@ import (
 	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
 )
 
-const (
-	cTrue    = aigridv1.ConditionStatus_CONDITION_STATUS_TRUE
-	cFalse   = aigridv1.ConditionStatus_CONDITION_STATUS_FALSE
-	cUnknown = aigridv1.ConditionStatus_CONDITION_STATUS_UNSPECIFIED
-)
-
 func cond(typ string, st aigridv1.ConditionStatus, reason, message string) *aigridv1.Condition {
 	return &aigridv1.Condition{Type: typ, Status: st, Reason: proto.String(reason), Message: proto.String(message), LastTransitionTime: timestamppb.New(time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC))}
 }
