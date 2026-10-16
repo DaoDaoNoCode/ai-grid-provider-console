@@ -767,7 +767,16 @@ status:
 While the InferenceService is still coming up the same work shows `Progressing=True`, the `ready` feedback
 `"False"` (or absent until the status field exists) and `Available=True` (the object exists). A CRD missing on
 the spoke yields manifest `Applied=False/AppliedManifestFailed` with message
-"Failed to apply manifest: no matches for kind \"InferenceService\" ..." and work `Applied=False`.
+"Failed to apply manifest: no matches for kind \"InferenceService\" ...", work `Applied=False/AppliedManifestWorkFailed`,
+and on the next status sync manifest `Available=False/ResourceNotAvailable` and work
+`Available=False/ResourcesNotAvailable` "1 of 2 resources are not available"; the status controller skips the
+feedback rules and the condition rules of a manifest it cannot fetch (`ocm:pkg/work/spoke/controllers/statuscontroller/availablestatus_controller.go`,
+`continue` after `objectReader.Get` fails), so that work carries no `Progressing` or `Degraded` condition.
+Only the spoke agent writes a ManifestWork's status: a work in the namespace of a cluster whose agent is not
+running (Available Unknown/False) keeps an empty `status` (no conditions, no `resourceStatus`), and between
+the manifest controller's `Applied` and the status controller's first sync `Available` is absent, not Unknown
+(`ResourcesStatusUnknown` only arises from a manifest-level `FetchingResourceFailed`/`IncompleteResourceMeta`
+or an empty workload).
 
 ### ManifestWorkReplicaSet (`work.open-cluster-management.io/v1alpha1`, namespaced, short `mwrs`)
 
@@ -818,8 +827,12 @@ Rollout counting (`sdk:pkg/apis/cluster/v1alpha1/rollout.go` states; mapping in
 `Applied` is missing or not True at the current generation, **or when the `Progressing` condition is missing
 or stale** (`shouldReturnToApply`); `Progressing` (work `Progressing=True`, or Unknown); `Failed`
 (`Progressing=True` and `Degraded=True`); `Succeeded` (`Progressing=False` at the current generation);
-`TimeOut` after `progressDeadline`; plus `Skip`. `Progressive` fills `maxConcurrency` slots alphabetically; a
-`Succeeded` cluster keeps its slot for `minSuccessTime`. **Without `conditionRules` producing `Progressing`
+`TimeOut` after `progressDeadline`, but only from `Progressing` or `Failed` (`sdk:rollout.go` `determineRolloutStatus`:
+`ToApply` is appended to the rollout set with no timeout, so a cluster whose work is never applied or never
+reported holds its slot indefinitely); plus `Skip`. `Progressive` fills `maxConcurrency` slots alphabetically
+(`progressivePerCluster`); a `Succeeded` cluster keeps its slot for `minSuccessTime`; a `Failed` cluster keeps
+its slot until its timeout **and** counts towards `maxFailures` at once (`failureCount++` for `TimeOut || Failed`,
+breach when `failureCount > maxFailures`, after which no new cluster is added). **Without `conditionRules` producing `Progressing`
 the work agent never emits that condition (only `Available` and rule-generated conditions are aggregated),
 so at current upstream main every cluster stays `ToApply`, `PlacementRolledOut` stays `False/Progressing`
 and a Progressive rollout never advances** (ocm #1207 2025-10-22 and #1243 2025-12-01; unit test "no
@@ -1151,7 +1164,7 @@ ManifestWorkReplicaSet:
    `work.open-cluster-management.io/manifestworkreplicaset=<ns>.<name>` and `placementname`; the
    `ownerkey-hash` label and owner annotation are upstream-main only), respecting `max_concurrency` for
    Progressive (next cluster starts only when the previous is Succeeded for `min_success_time`). Per work:
-   t+0 `Applied=True/AppliedManifestWorkComplete`, `Available=Unknown/ResourcesStatusUnknown` -> t+2 s
+   t+0 `Applied=True/AppliedManifestWorkComplete` (no `Available` yet) -> t+2 s
    `Available=True/ResourcesAvailable`; if the template has condition rules, `Progressing=True` for 20-90 s
    then `False` (work-level message = the single rule-bearing manifest's message when only one manifest has
    rules, otherwise "Aggregated from <n> manifest conditions"); feedback `ready` goes `"False"` -> `"True"`,
@@ -1160,22 +1173,29 @@ ManifestWorkReplicaSet:
    condition stays `ToApply`, so a template without a Progressing-yielding condition rule never completes
    its rollout and Progressive never advances past `max_concurrency`.** Manifest-level conditions as in the
    example; manifest `Available=Unknown` uses reason `FetchingResourceFailed`, `False` uses
-   `ResourceNotAvailable`. For a cluster in UNKNOWN state the work stays `Applied` missing /
-   `Available=Unknown` forever (agent not reporting) and counts as `ToApply`, then `TimeOut` after
-   `progress_deadline`.
+   `ResourceNotAvailable`. For a cluster in UNKNOWN state the work keeps an empty status (no conditions, no
+   manifests: only the spoke agent writes it) and counts as `ToApply` for as long as the agent is silent;
+   `ToApply` has no timeout in sdk-go, so it holds its Progressive slot and never counts towards
+   `max_failures`.
 10. Summary recomputed from the works: `total` = works, `applied`/`available`/`progressing`/`degraded` =
     counts with that condition True; `PlacementRolledOut=True/Complete` only when every cluster is Succeeded
     by the rule in step 9; `ManifestworkApplied` by the three rules (AsExpected / Processing / NotAsExpected /
     PlacementDecisionEmpty). `placement_summary[].available_decision_groups = "1 (<applied> / <total> clusters applied)"`.
 11. Failure injection: a cluster label such as `ai-grid-mock/fail-apply=true` makes its work
     `Applied=False/AppliedManifestWorkFailed`, manifest `AppliedManifestFailed` with a "no matches for kind"
-    message, `Degraded=True`; with `max_failures: 0` the rollout stops (`PlacementRolledOut=False/Progressing`,
-    `ManifestworkApplied=False/NotAsExpected`).
+    message and `Available=False/ResourceNotAvailable`, work `Available=False/ResourcesNotAvailable`; no
+    `Progressing` or `Degraded` condition exists (the status controller skips the rules of a manifest it
+    cannot fetch), `summary.degraded` stays 0, `ManifestworkApplied=False/NotAsExpected` because
+    `available != total`, `PlacementRolledOut=False/Progressing`, and the cluster stays `ToApply`, holding
+    its Progressive slot without a timeout. A `Failed` cluster (rule `Degraded=True` from a terminal spoke
+    condition) counts towards `max_failures` at once.
 12. Update of the template bumps `generation`; works go back to `Applied` True with new
     `observed_generation` and re-run the Progressing cycle; `summary.updated` counts works at the new
     generation.
-13. Delete: `cascade_deletion_policy` Background removes the MWRS at once and works within 5 s; Foreground
-    keeps the MWRS (with `deletion_time`) until the works are gone. Removing a cluster from the Placement
+13. Delete: with `cascade_deletion_policy` Background (the default) the finalize reconciler deletes every
+    work and removes the finalizer in the same pass (`ocm:manifestworkreplicaset_finalize_reconcile.go`), so
+    the MWRS disappears within one reconcile and the works drain in the cluster namespaces afterwards;
+    Foreground keeps the MWRS (with `deletion_time`) until the works are gone. Removing a cluster from the Placement
     deletes just that cluster's work; `SelectivelyOrphan` rules are informational to the mock.
 
 Observability mock: per READY cluster emit the POC's `requests`, `errors`, `latency`, `gpu` series for
@@ -1236,7 +1256,11 @@ and `sortBy`), the MWRS rollout rule (a work without `Progressing` is `ToApply`;
 notaccepted), claim ordering (one name-sorted list on the hub), the aggregated condition message for a
 single rule-bearing manifest, `PlacementDecisionNotFound` scope, the Detaching messages, taint `timeAdded`
 origin (ManagedCluster mutating webhook), the addon label writer and its missing/Unknown -> `unreachable`
-rule, the `/healthz` fallback, the `oc get mwrs` columns, and the klusterlet-work labels.
+rule, the `/healthz` fallback, the `oc get mwrs` columns, and the klusterlet-work labels. Added in the
+Models-area review (2026-10-15, same `ocm`/`sdk-go` clones): a never-reporting agent leaves a ManifestWork
+status empty and `Available` is absent (not Unknown) until the first status sync; a manifest that failed to
+apply gets no rule conditions; `ToApply` has no rollout timeout while `Failed` counts towards `maxFailures`
+at once; Background cascade removes the MWRS in one pass (section 4, items 9, 11, 13).
 
 Still uncheckable from here: which OCM commit MCE 2.17.3 bundles (hub images are sha-pinned Red Hat
 builds), MWRS runtime behaviour on this hub (would require a write; no controller is deployed),
