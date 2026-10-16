@@ -59,8 +59,8 @@ documentation, from the POC, or from the backend's own conventions. The sources 
    controllers drive, on a clock the fixtures control (`settings.json` `speed`): a cluster
    joins, imports and gains its add-ons in stages, a lost lease recovers, a cluster detaches
    and goes away (`scenarios.json`); a model walks KServe's conditions to `Ready` or stops at
-   a failure, and a placed model rolls out site by site. Once the subscriptions area lands, a
-   subscription will wait for its models' rate-limit policies to be accepted.
+   a failure, and a placed model rolls out site by site. Once the subscriptions area lands (plan 4
+   below), a subscription will wait for its models' rate-limit policies to be accepted.
 6. **No real data, ever.** Fixtures use `example.com`, invented UUIDs and fictional sites.
    Research notes quote field paths, string constants, versions and in-cluster object names
    from the real systems, never the dev hub's routes, cluster ids or people.
@@ -111,7 +111,7 @@ Both grow together as RPCs are added.
 | File | Shape | What it seeds |
 |---|---|---|
 | `managedclusters.json` | `{"clusters": [ai_grid.v1.ManagedCluster...]}` in protojson | Full hub objects: the labels ACM writes, the console's `ai-grid/*` and `location` labels and `ai-grid/*` annotations, and a `status` with every condition. The hub's own `local-cluster` and at least one cluster in each state the ACM console distinguishes (ready, unknown, offline, importing, pending import, import failed, not accepted, detaching). |
-| `tenants.json` | `{"tenants": [ai_grid.v1.Tenant...]}` in protojson, or one error mode | Six fictional Keycloak organizations. In place of `tenants`, `{"unavailable": "<text>"}` makes every tenant RPC `Unavailable` (Keycloak cannot be reached), `{"realmMissing": true}` makes it `FailedPrecondition` as on the dev hub, where the `ai-grid` realm does not exist, and `{"organizationsDisabled": true}` does the same for a realm without Organizations. |
+| `tenants.json` | `{"tenants": [ai_grid.v1.Tenant...]}` in protojson, or one error mode | Six fictional Keycloak organizations. In place of `tenants`, `{"unavailable": "<text>"}` makes every tenant RPC that passes the token and permission checks `Unavailable` (Keycloak cannot be reached), `{"realmMissing": true}` makes it `FailedPrecondition` as on the dev hub, where the `ai-grid` realm does not exist, and `{"organizationsDisabled": true}` does the same for a realm without Organizations. |
 | `models.json` | `{"models": [ai_grid.v1.Model...]}` in protojson, plus `bindings` | `LLMInferenceService` models, some placed on clusters, and the cluster sets bound into each model namespace. |
 | `presets.json` | plain JSON | The installed `LLMInferenceServiceConfig` presets that a model's `baseRefs` resolve against. |
 | `scenarios.json` | `{"events": [...]}` | Timed cluster transitions: an import in stages, a lease recovery, a detach. |
