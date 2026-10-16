@@ -1,0 +1,44 @@
+AI Grid provider console
+
+Screens, behavior, and validation rules are ported from krisv/ai-grid-cloud-provider-poc
+at 62319b8, licensed under the Apache License, Version 2.0. That project includes code
+adapted from:
+
+- Open Data Hub Dashboard, https://github.com/opendatahub-io/odh-dashboard,
+  commit 8051fbbea117457b4da4074fb2856b732e6677a4, Apache License 2.0.
+- OSAC, https://github.com/osac-project/osac,
+  commit 8cb0a227e45cc9b17421b6e79ce493ed370ebd5d, Apache License 2.0.
+
+The AI Grid map and monitoring layouts in frontend/src/pages/grid are adapted, through
+the PoC, from the public repository https://github.com/jennyyangyi-magic/ai-grid-prototype
+at commit 5cc7adb62ace9dc6d19d7ea4aaf83e7e0c3746f1, which does not yet include a license.
+
+The frontend bundles Leaflet 1.9.4, https://github.com/Leaflet/Leaflet, under the
+BSD 2-Clause License:
+
+Copyright (c) 2010-2023, Volodymyr Agafonkin
+Copyright (c) 2010-2011, CloudMade
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Per-file provenance is recorded in source comments.
