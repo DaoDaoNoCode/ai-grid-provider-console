@@ -3,6 +3,7 @@ package fakebackend
 import (
 	"context"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"sort"
@@ -958,7 +959,12 @@ func (s *Server) CreateModel(ctx context.Context, req *aigridv1.CreateModelReque
 // (templateOf: everything but `placement` and `rollout`) also changes the
 // LLMInferenceService, which makes its Deployment roll out again, and the
 // ManifestWorkReplicaSet's template, which re-applies the works; a change of
-// only `placement` or `rollout` leaves both as they are.
+// only `placement` or `rollout` leaves both as they are. An update after which
+// the spec, labels and annotations equal the stored ones is not written: the
+// stored model comes back with its `resource_version` and `generation`
+// unchanged, as the Kubernetes API server answers an unchanged update
+// (k8s.io/apiserver v0.35.8 pkg/storage/etcd3/store.go:553-577); the `lock`
+// precondition and the admission checks run before, as there.
 func (s *Server) UpdateModel(ctx context.Context, req *aigridv1.UpdateModelRequest) (*aigridv1.UpdateModelResponse, error) {
 	token, err := s.begin(ctx)
 	if err != nil {
@@ -1042,6 +1048,10 @@ func (s *Server) UpdateModel(ctx context.Context, req *aigridv1.UpdateModelReque
 		if err := s.checkGate(next.GetSpec()); err != nil {
 			return nil, err
 		}
+	}
+	if proto.Equal(cur.GetSpec(), next.GetSpec()) && maps.Equal(cur.GetMetadata().GetLabels(), next.GetMetadata().GetLabels()) && maps.Equal(cur.GetMetadata().GetAnnotations(), next.GetMetadata().GetAnnotations()) {
+		s.logger.Debug("model update changes nothing", "model", key, "paths", paths, "resourceVersion", cur.GetMetadata().GetResourceVersion())
+		return &aigridv1.UpdateModelResponse{Object: s.viewModel(m, now)}, nil
 	}
 	if !proto.Equal(cur.GetSpec(), next.GetSpec()) {
 		next.Metadata.Generation++

@@ -628,9 +628,9 @@ func TestUpdateTenant(t *testing.T) {
 		mustCode(t, err, codes.InvalidArgument, "Domain globex.example.com is already linked to organization globex-research in realm ai-grid")
 		_, err = update(s, &aigridv1.Tenant{Id: idAcme, Domains: []string{"Bad Domain"}}, mask(PathDomains))
 		mustCode(t, err, codes.InvalidArgument, "Invalid domain format: bad domain")
-		_, err = update(s, &aigridv1.Tenant{Id: idAcme}, mask("alias"))
+		_, err = update(s, &aigridv1.Tenant{Id: idAcme}, mask("redirect_url"))
 		mustCode(t, err, codes.InvalidArgument, "")
-		if !strings.Contains(status.Convert(err).Message(), `"alias"`) {
+		if !strings.Contains(status.Convert(err).Message(), `"redirect_url"`) {
 			t.Errorf("bad path must be named: %v", err)
 		}
 		_, err = update(s, &aigridv1.Tenant{Name: "x"}, mask(PathName))

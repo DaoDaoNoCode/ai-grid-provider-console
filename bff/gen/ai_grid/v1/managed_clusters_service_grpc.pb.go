@@ -59,8 +59,15 @@ type ManagedClustersClient interface {
 	// or annotation write the hub's webhook and controllers put back what they
 	// own (`name`, the default clusterset label, the add-on labels, `clusterID`,
 	// `openshiftVersion*`, `open-cluster-management/created-via`), but not a
-	// removed `cloud` or `vendor`. Requires `patch` on managedclusters for the
-	// caller.
+	// removed `cloud` or `vendor`. An update after which the labels,
+	// annotations and `hub_accepts_client` equal the stored ones is not
+	// written: the stored cluster comes back with `resource_version` and
+	// `generation` unchanged, as the Kubernetes API server answers an unchanged
+	// update. The backend owns the AI Grid annotation convention: an
+	// `ai-grid/latitude` or `ai-grid/longitude` annotation, when present, must
+	// be a number within -90..90 or -180..180, else InvalidArgument (a console
+	// proposal; the hub itself accepts any string). Requires `patch` on
+	// managedclusters for the caller.
 	UpdateManagedCluster(ctx context.Context, in *UpdateManagedClusterRequest, opts ...grpc.CallOption) (*UpdateManagedClusterResponse, error)
 }
 
@@ -125,8 +132,15 @@ type ManagedClustersServer interface {
 	// or annotation write the hub's webhook and controllers put back what they
 	// own (`name`, the default clusterset label, the add-on labels, `clusterID`,
 	// `openshiftVersion*`, `open-cluster-management/created-via`), but not a
-	// removed `cloud` or `vendor`. Requires `patch` on managedclusters for the
-	// caller.
+	// removed `cloud` or `vendor`. An update after which the labels,
+	// annotations and `hub_accepts_client` equal the stored ones is not
+	// written: the stored cluster comes back with `resource_version` and
+	// `generation` unchanged, as the Kubernetes API server answers an unchanged
+	// update. The backend owns the AI Grid annotation convention: an
+	// `ai-grid/latitude` or `ai-grid/longitude` annotation, when present, must
+	// be a number within -90..90 or -180..180, else InvalidArgument (a console
+	// proposal; the hub itself accepts any string). Requires `patch` on
+	// managedclusters for the caller.
 	UpdateManagedCluster(context.Context, *UpdateManagedClusterRequest) (*UpdateManagedClusterResponse, error)
 	mustEmbedUnimplementedManagedClustersServer()
 }

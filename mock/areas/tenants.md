@@ -32,7 +32,13 @@ and in `tenants.json` (the fake refuses to start). Keycloak's other answer, "Ide
 cannot occur. `autoRedirect` is stored without a check, as in Keycloak.
 `UpdateTenant` is the backend's GET, merge, PUT (the console's proposal): mask paths `name`,
 `domains`, `enabled`, `description`, `attributes`, `domain_details` replace the field as a
-whole and everything else, `alias` included, goes back as stored. Without a mask `name`,
+whole and everything else, `alias` included, goes back as stored. The path `alias` changes
+nothing: the stored alias is kept, and a different non-blank one is "Cannot change the alias"
+as below, so a client can send back the alias it loaded. A merge that leaves the organization
+as stored is not PUT (console proposal: the backend compares its GET with the merged
+representation, so Keycloak writes no admin event and the version is not bumped; Keycloak
+itself would accept the PUT and write the event); the version precondition and Keycloak's
+checks run first. Without a mask `name`,
 `enabled` (true when unset, Keycloak's default) and `description` come from the request and
 `attributes` and the domains stay, which is what a Keycloak PUT does with a body that lacks
 those two keys. The `domains` path keeps the `verified`, identity provider and `autoRedirect`
@@ -127,7 +133,7 @@ proposed here). A client only displays them. Fake backend (gRPC status messages)
   be null."), `object.id must be empty; Keycloak assigns it` (Keycloak ignores a client id;
   the draft rejects it), `object.id is required` (update), `id is required` (get, delete;
   Keycloak: "Id cannot be null."), `update_mask path "<p>" is not supported; supported paths:
-  name, domains, enabled, description, attributes, domain_details`, `domains and
+  name, alias, domains, enabled, description, attributes, domain_details`, `domains and
   domain_details name different domains`.
 - List, all `InvalidArgument`: `filter <filter> is not a valid CEL expression: <cel-go's
   error>`, `filter <filter> must evaluate to a bool, not <type>`, `filter <filter> failed on
@@ -146,14 +152,15 @@ proposed here). A client only displays them. Fake backend (gRPC status messages)
   Unauthorized`.
 BFF (`bff/internal/api/tenants.go`): `query parameter "offset"` (or `"limit"`) `must be an
 integer between 0 and 2147483647` (422); `query parameter "search" is not supported; send a CEL
-filter in "filter"` (422); an alias-only PATCH with a different alias is
-answered by the BFF itself with Keycloak's "Cannot change the alias" (422) and no write, the
-alias compared with the one the BFF shows (the name when the backend sends none); the
+filter in "filter"` (422); the 428 for a write without `If-Match`; the alias is sent to the
+backend like any other field (the `alias` path), which answers a changed one; the
 body-decoding (`invalid request body: ...`) and status texts (`errors.go`) are shared with the
 other areas.
 BFF: `GET /api/v1/tenants?offset=&limit=&filter=` with a `meta` page and the client's
 `filter` forwarded unchanged (the BFF no longer builds an expression from a `search` term),
-`GET/PATCH/DELETE /api/v1/tenants/{id}`, `POST /api/v1/tenants` (201 + Location); Keycloak's messages reach the client as 422 and 409 (a blank name on PATCH is 409,
+`GET/PATCH/DELETE /api/v1/tenants/{id}` (a PATCH body that names no field is answered like the
+GET), `POST /api/v1/tenants` (201 + Location); Keycloak's messages reach the client as 422 and
+409 (a blank name on PATCH is 409,
 see above); an absent `enabled` from today's backend (fields 1-3 only) reads as enabled; the
 JSON has no `redirectUrl` and carries `resourceVersion` (also the `ETag` of a single tenant);
 PATCH and DELETE need `If-Match` (428 without it) and map it to the version fields above (409

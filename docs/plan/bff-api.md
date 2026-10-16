@@ -76,16 +76,16 @@ Paths are under `/api/v1`, except `/healthcheck` and `/readyz` at the root.
 | GET | `/api/v1/config` | `{gridEndpoint, mapTileUrl, billingUrl, version}` | none; env `GRID_CONSUMER_URL`, `MAP_TILE_URL`, `BILLING_URL` |
 | GET | `/api/v1/clusters` | `GridCluster[]` sorted by name | `ManagedClusters/ListManagedClusters` |
 | GET | `/api/v1/clusters/{name}` | `GridCluster`, `ETag: "<resourceVersion>"` | `ManagedClusters/GetManagedCluster`; 404 with the backend's message when absent. Against a backend without that RPC (the shipped one answers `Unimplemented`) the BFF filters `ListManagedClusters` by name instead, so the detail works either way |
-| PATCH | `/api/v1/clusters/{name}` | `GridCluster` after the write, with its `ETag` | `GetManagedCluster` then `UpdateManagedCluster` with mask `labels` and/or `annotations` (only the maps that changed) and `lock: true` on the `If-Match` version; 409 when the hub object is not at that version, 428 without `If-Match`, 422 on a bad body or `If-Match`, 413 over 1 MiB, 415 when the body is not `application/json` |
+| PATCH | `/api/v1/clusters/{name}` | `GridCluster` after the write, with its `ETag` | `UpdateManagedCluster` (no read first) with the present body fields as the object and the mask (`labels`, `annotations`, `hub_accepts_client`) and `lock: true` on the `If-Match` version; an empty body answers like GET; 409 when the hub object is not at that version, 428 without `If-Match`, 422 on a bad body or `If-Match` or a coordinate annotation the backend refuses, 413 over 1 MiB, 415 when the body is not `application/json` |
 | GET | `/api/v1/tenants?offset=&limit=&filter=` | `Tenant[]` in Keycloak's order (by name, the realm database's collation) plus `meta`; `filter` is a CEL expression the client writes, over `this` (a Tenant), see "Writes, versions and lists"; `limit` omitted returns everything; the removed `search` is 422 | `Tenants/ListTenants` with `offset`, `limit` and `filter` exactly as sent |
 | GET | `/api/v1/tenants/{id}` | `Tenant`, `ETag: "<resourceVersion>"` | `Tenants/GetTenant`; 404 with the backend's message when absent |
 | POST | `/api/v1/tenants` | 201, `Tenant` as created, `Location: /api/v1/tenants/{id}`, `ETag` | `Tenants/CreateTenant`; 422 with Keycloak's message on a bad name, alias or domain, 409 on a taken name or alias |
-| PATCH | `/api/v1/tenants/{id}` | `Tenant` after the write, with its `ETag` | `Tenants/UpdateTenant` with the present body fields as the mask and the `If-Match` version as `object.resource_version`; 422 "Cannot change the alias", 409 on a taken or blank name (Keycloak's own answer to a blank one) or a stale `If-Match`, 428 without `If-Match` |
+| PATCH | `/api/v1/tenants/{id}` | `Tenant` after the write, with its `ETag` | `Tenants/UpdateTenant` with the present body fields as the mask (`alias` included) and the `If-Match` version as `object.resource_version`; an empty body answers like GET; 422 "Cannot change the alias", 409 on a taken or blank name (Keycloak's own answer to a blank one) or a stale `If-Match`, 428 without `If-Match` |
 | DELETE | `/api/v1/tenants/{id}` | 204 | `Tenants/DeleteTenant` with the `If-Match` version as `resource_version`; 404 when absent, 409 on a stale `If-Match`, 428 without `If-Match` |
 | GET | `/api/v1/models?offset=&limit=&filter=` | `Model[]` by namespace and name plus `meta`; `filter` is CEL over `this` (a Model) as for tenants; the removed `namespace` and `label` are 422 | `Models/ListModels` with `offset`, `limit` and `filter` exactly as sent |
 | GET | `/api/v1/models/{namespace}/{name}` | `Model`, `ETag: "<resourceVersion>"` | `Models/GetModel`; 404 with the backend's message (`object with identifier '<ns>/<name>' not found`) |
 | POST | `/api/v1/models` | 201, `Model` with no conditions yet, `Location: /api/v1/models/{namespace}/{name}`, `ETag` | `Models/CreateModel`; 422 with the API server's or the CRD's message (a name that is not a DNS-1123 subdomain, a negative `replicas`, `replicas` with `scaling`, `scaling` without `maxReplicas`, without a trigger, with `maxReplicas` below 1 or a negative `minReplicas` (`minReplicas: 0` counts as unset and defaults to 1) or with `minReplicas` above `maxReplicas`) or the console's own (URI scheme, Placement operators, rollout fields, `rollout` without `placement`), 409 on a taken name, 412 `ManifestWorkReplicaSet feature gate disabled on hub` when `placement` is set on a hub without the controller |
-| PATCH | `/api/v1/models/{namespace}/{name}` | `Model` after the write, with its `ETag` | `GetModel` then `UpdateModel` with the present fields that differ from the stored ones as the mask (`spec.replicas`, `spec.main.image`, `spec.main.env`, `spec.placement`, `spec.rollout`, `metadata.labels`, `metadata.annotations`) and `lock: true` on the `If-Match` version; 409 when the object is not at that version, 428 without `If-Match`, 412 when a placement is added on a gated hub |
+| PATCH | `/api/v1/models/{namespace}/{name}` | `Model` after the write, with its `ETag` | `UpdateModel` (no read first) with every present field as the mask (`spec.replicas`, `spec.main.image`, `spec.main.env`, `spec.placement`, `spec.rollout`, `metadata.labels`, `metadata.annotations`) and `lock: true` on the `If-Match` version; an empty body answers like GET; 409 when the object is not at that version, 428 without `If-Match`, 412 when a placement is added on a gated hub |
 | DELETE | `/api/v1/models/{namespace}/{name}` | 204; the model is gone at once (the MWRS cascades `Background`, its works drain out of sight) | `Models/DeleteModel` with the `If-Match` version as `resource_version`; 404 when absent, 409 on a stale `If-Match`, 428 without `If-Match`, 412 while a catalog entry or a subscription references the model (not reachable on the fake yet: nothing references a model until the catalog and subscriptions exist) |
 | GET | `/api/v1/capabilities` | `{manifestWorkReplicaSetEnabled, observabilityInstalled, acmVersion}` | `AiGrid/GetHubCapabilities`; 501 against a backend without the RPC, which a client reads as "unknown" |
 
@@ -140,21 +140,28 @@ also works against a backend that only returns `name`, `labels`, `hubAcceptsClie
 `PATCH /api/v1/clusters/{name}` body, every field optional:
 
 ```json
-{"aiGridEnabled": true, "provisioned": false, "location": "paris", "site": "paris-dc1", "region": "europe-west",
- "siteName": "Paris DC1", "latitude": 48.8566, "longitude": 2.3522}
+{"labels": {"name": "site-paris-1", "ai-grid/enabled": "true", "location": "paris", "...": "..."},
+ "annotations": {"ai-grid/site-name": "Paris DC1", "ai-grid/latitude": "48.8566", "...": "..."},
+ "hubAcceptsClient": true}
 ```
 
-An absent field is left alone; an empty string removes that label or annotation; `null`
-removes a coordinate. Latitude must be within -90..90 and longitude within -180..180, and
-unknown fields are rejected (422). The body is exactly one JSON object of at most 1 MiB:
-anything after the object is 422, more than 1 MiB is 413, and the body is validated in full
-before the backend is called. The BFF sends the whole `labels` and `annotations` maps
-back (field masks replace a map as a whole) and only the maps it changed are in the mask.
-After such a write the hub's webhook and controllers put back what they own (the `name` and
-default clusterset labels, the add-on labels, `clusterID`, `openshiftVersion*` and the
+A present map replaces the stored one as a whole (FieldMask semantics, as in OSAC; there are no
+per-key paths), so a page that enrols a cluster sends the `labels` map it loaded with
+`ai-grid/enabled` set to `"true"`, and removes a label or annotation by leaving it out of the
+map; an absent field or `null` is left alone. The BFF writes the present fields into one
+`UpdateManagedCluster` (object, mask, `lock: true` on `If-Match`) without reading the cluster
+first and without merging, comparing or validating the maps; unknown fields, wrong types and
+anything after the object are 422, more than 1 MiB is 413. A body that names no field is
+answered like `GET /clusters/{name}` (200 and its `ETag`), with no write. The backend does the
+rest: the hub's webhook and controllers put back what they own (the `name` and default
+clusterset labels, the add-on labels, `clusterID`, `openshiftVersion*` and the
 `open-cluster-management/created-via` annotation; not a removed `cloud` or `vendor`), and the
 fake does the same before `UpdateManagedCluster` answers, so the response shows the labels as
-the hub keeps them.
+the hub keeps them; an `ai-grid/latitude` or `ai-grid/longitude` annotation must be a number
+within -90..90 or -180..180 (422 `annotation "ai-grid/latitude" must be a number between -90 and
+90, got "<v>"`, a console proposal for the backend, which owns the convention); and an update
+that leaves labels, annotations and `hubAcceptsClient` as stored is not written (the response
+keeps the stored `resourceVersion`, as the API server's does).
 
 `Tenant` (a Keycloak Organization in the `ai-grid` realm, `mock/research/keycloak.md` section 4;
 the collections are always present even though Keycloak omits an empty `domains`):
@@ -198,14 +205,14 @@ validated by the backend, whose Keycloak message comes back as the 422 or 409 me
 "enabled": false, "domains": ["..."], "attributes": {"k": "v"}, "alias": "<unchanged>"}`. An
 absent field is left alone; a present field replaces the stored one as a whole (`domains: []`
 removes every domain, `attributes: {}` every attribute; a domain that stays keeps its
-`verified` and identity-provider metadata); `null` is the same as absent. `alias` may be sent
-for a round trip but must equal the stored alias. The present fields become the field mask of
-one `UpdateTenant` call; an empty body, or one with only `alias`, reads the tenant and answers
-without a write (422 "Cannot change the alias" when the alias differs from the one the BFF
-shows, which is the name when the backend sends no alias). Unlike a cluster or model PATCH,
-the BFF does not read the tenant first, so a present field always writes, even with the stored
-value. Keycloak Organizations carry no version; the backend keeps one for them (see "Writes,
-versions and lists").
+`verified` and identity-provider metadata); `null` is the same as absent. The present fields
+become the field mask of one `UpdateTenant` call, `alias` included: the backend keeps the stored
+alias and answers a different one with Keycloak's 422 "Cannot change the alias", so a form can
+send back the alias it loaded. A body that names no field is answered like `GET /tenants/{id}`
+(200 and its `ETag`), with no write. The backend skips a PUT that would change nothing (console
+proposal, so Keycloak writes no admin event) and answers the tenant with its stored
+`resourceVersion`. Keycloak Organizations carry no version; the backend keeps one for them (see
+"Writes, versions and lists").
 
 `Model` (a KServe `LLMInferenceService`, `mock/research/models-maas.md` 2.1, with the ACM
 `Placement` and `ManifestWorkReplicaSet` the backend keeps for a multi-site model,
@@ -291,13 +298,20 @@ and is refused with the CRD's own messages when it comes with `replicas`, withou
 fields 422, over 1 MiB 413).
 
 `PATCH /api/v1/models/{namespace}/{name}` body, every field optional: `{"replicas", "runtimeImage",
-"env": [...], "placement": {...} | null, "rollout": {...}, "labels", "annotations", "displayName",
-"description"}`. A present field replaces the stored one as a whole (`env: []` removes every
-variable, `placement: null` makes the model a hub deployment again); `displayName` and
-`description` are merged into the stored annotations. A spec change bumps `generation`; a change
-of anything but `placement` and `rollout` also rolls the Deployment out again and makes a placed
+"env": [...], "placement": {...} | null, "rollout": {...}, "labels", "annotations"}`. A present
+field replaces the stored one as a whole (`env: []` removes every variable, `placement: null`
+makes the model a hub deployment again, `labels` and `annotations` are whole maps) and goes into
+the mask whatever the stored value; the BFF does not read the model first. `displayName` and
+`description` are not PATCH fields (422 unknown field): a page edits the
+`openshift.io/display-name` and `openshift.io/description` keys of the `annotations` map it
+loaded. A rollout is sent only when the client sends one; the backend drops the stored rollout
+when the placement is removed without a new one. A body that names no field is answered like
+`GET /models/{namespace}/{name}`, with no write. A spec change bumps `generation`; a change of
+anything but `placement` and `rollout` also rolls the Deployment out again and makes a placed
 model re-apply its works, while a change of only `rollout` or `placement` re-applies none (a new
-placement adds and removes the works of clusters entering and leaving the decision).
+placement adds and removes the works of clusters entering and leaving the decision). An update
+that leaves the spec, labels and annotations as stored is not written and keeps the
+`resourceVersion`.
 
 The list response:
 
@@ -338,19 +352,22 @@ decides.
   the version its client read. The checks run in this order: 415 for a body that is not JSON,
   then 428, then the body (422, 413). `If-Match` must be one strong entity tag exactly as
   `ETag` sent it (`"42"`); a bare value, a weak tag (`W/"42"`) or a list is 422 `If-Match must
-  be one entity tag as the ETag header sent it, for example "42"` before any call. A PATCH that
-  writes nothing (below) does not check the version and answers the current object with its
-  `ETag`. The tenant version is the backend's (`Tenant.resource_version`, kept in an
+  be one entity tag as the ETag header sent it, for example "42"` before any call. A PATCH whose
+  body names no field (below) does not reach an update, so its version is not checked. The tenant version is the backend's (`Tenant.resource_version`, kept in an
   organization attribute; `mock/areas/tenants.md`, "Version"), so it changes only on writes
   through the backend.
-- **A PATCH that changes nothing writes nothing.** For clusters and models the BFF reads the
-  object and compares: a cluster's new `labels` and `annotations` maps with the stored ones, a
-  model's present fields with the stored values (an unchanged `rollout` stays in the mask when
-  `placement` changes). If nothing differs it answers the current object with 200 and no
-  write, for a caller without write rights too. A tenant PATCH is not read first: any present
-  field other than `alias` is written. A PATCH that changes nothing answers 200 with the
-  current object and `ETag` even when its `If-Match` is stale, because nothing is written
-  (RFC 9110 would answer 412; no stale write can happen this way).
+- **Every PATCH is one update; the backend decides what changes.** The BFF reads nothing
+  before a PATCH: each field present in the body goes into the update's object and its mask,
+  whatever the stored value, and the backend applies the mask under optimistic locking. A
+  body that names no field is the one shortcut: the BFF answers it like the GET of the object
+  (200, the current object and its `ETag`) and writes nothing, for a caller without write
+  rights too and whatever `If-Match` says (a transport shortcut, not a comparison; RFC 9110
+  would answer a stale one 412, but nothing is written). Whether an update changes anything is
+  the backend's answer: a cluster or model update that leaves the object as stored is not
+  written and comes back with the stored `resourceVersion` (the Kubernetes API server does the
+  same with an unchanged update), and a tenant update that changes nothing is not PUT to
+  Keycloak (console proposal). The version is still checked first, so a stale `If-Match` is
+  409 even when nothing would change, and a viewer's update is 403.
 - **`filter` is the client's CEL.** `GET /tenants` and `GET /models` take `filter`, a CEL
   expression over `this` (the proto message, `ai_grid.v1.Tenant` or `ai_grid.v1.Model` with its
   status, fields by their proto names) and `now` (the backend's time), in cel-go's standard
@@ -416,13 +433,13 @@ exists; the frontend uses the mock service meanwhile.
 | Backend `Unauthenticated` | 401 |
 | Backend `PermissionDenied` (the hub's RBAC denies the caller, e.g. a PATCH by a user who may not patch ManagedClusters) | 403, backend message kept |
 | Backend `NotFound` | 404, backend message kept (`object with identifier '<name>' not found`) |
-| Invalid POST or PATCH body (unknown field, wrong type, trailing content, coordinate out of range), bad `offset`/`limit` query, a removed list parameter (`search`, `namespace`, `label`), malformed `If-Match` | 422, BFF message |
+| Invalid POST or PATCH body (unknown field, wrong type, trailing content), bad `offset`/`limit` query, a removed list parameter (`search`, `namespace`, `label`), malformed `If-Match` | 422, BFF message |
 | POST or PATCH body not declared `application/json` | 415, BFF message |
 | PATCH or DELETE without `If-Match`, or with `If-Match: *` | 428, BFF message |
 | `filter`, `limit` or `offset` against a backend whose list answer has no `total` | 501, BFF message |
 | Request body over 1 MiB | 413 |
-| Backend `InvalidArgument`, `OutOfRange`: Keycloak's validation messages ("Name can not be null", "Invalid domain format: x", "Cannot change the alias", "Domain x is already linked to organization y in realm ai-grid"), the API server's and the CRD's for a model (the DNS-1123 name message, the schema's "spec.replicas: Invalid value: -1: spec.replicas in body should be greater than or equal to 0" and "spec.scaling.maxReplicas: Required value", "replicas and scaling are mutually exclusive; ...", "at least one trigger is required when using direct KEDA scaling", "minReplicas cannot exceed maxReplicas"), and the backend's own checks with the console's proposed wording (URI scheme, Placement operators, rollout fields, `spec.rollout requires spec.placement`, the reserved tenant version attribute, a list `filter` that does not compile, is not a bool or fails on an object) | 422, backend message kept |
-| Backend `AlreadyExists` (Keycloak: "A organization with the same name already exists.", also for a blank name on update), `Aborted` (the object is not at the `If-Match` version, or changed between the BFF's read and write) | 409, backend message kept |
+| Backend `InvalidArgument`, `OutOfRange`: Keycloak's validation messages ("Name can not be null", "Invalid domain format: x", "Cannot change the alias", "Domain x is already linked to organization y in realm ai-grid"), the API server's and the CRD's for a model (the DNS-1123 name message, the schema's "spec.replicas: Invalid value: -1: spec.replicas in body should be greater than or equal to 0" and "spec.scaling.maxReplicas: Required value", "replicas and scaling are mutually exclusive; ...", "at least one trigger is required when using direct KEDA scaling", "minReplicas cannot exceed maxReplicas"), and the backend's own checks with the console's proposed wording (URI scheme, Placement operators, rollout fields, `spec.rollout requires spec.placement`, the reserved tenant version attribute, an `ai-grid/latitude` or `ai-grid/longitude` annotation that is not a number in range, a list `filter` that does not compile, is not a bool or fails on an object) | 422, backend message kept |
+| Backend `AlreadyExists` (Keycloak: "A organization with the same name already exists.", also for a blank name on update), `Aborted` (the object is not at the `If-Match` version) | 409, backend message kept |
 | Backend `FailedPrecondition` (hub feature gate missing, e.g. "ManifestWorkReplicaSet feature gate disabled on hub"; a model still referenced by a catalog entry or subscription; Keycloak realm missing or organizations disabled) | 412, backend message kept |
 | Backend `ResourceExhausted` | 429 |
 | Backend `Unimplemented` | 501 |

@@ -310,7 +310,7 @@ func TestPatchTenant(t *testing.T) {
 			t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
 		}
 		up = fake.LastUpdateTenant
-		if paths := up.GetUpdateMask().GetPaths(); strings.Join(paths, ",") != "name,domains,attributes" {
+		if paths := up.GetUpdateMask().GetPaths(); strings.Join(paths, ",") != "name,alias,domains,attributes" {
 			t.Errorf("mask = %v", paths)
 		}
 		if up.GetObject().GetAlias() != "acme-robotics" || len(up.GetObject().GetAttributes()) != 0 || len(up.GetObject().GetDomains()) != 0 {
@@ -341,25 +341,26 @@ func TestPatchTenant(t *testing.T) {
 		}
 	})
 
-	t.Run("empty and alias-only patches read without writing", func(t *testing.T) {
+	t.Run("an empty body answers like GET; the alias goes to the backend", func(t *testing.T) {
 		fake := &backendtest.Fake{Tenants: seedTenants()}
 		app := newTestApp(t, testConfig(t), fake)
-		rec := serve(app, patchTenant("t-2", "1", `{}`))
-		if rec.Code != http.StatusOK || fake.LastUpdateTenant != nil {
-			t.Errorf("empty patch = %d, update %v", rec.Code, fake.LastUpdateTenant)
+		rec := serve(app, patchTenant("t-2", "9", `{}`))
+		if rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"1"` || strings.Join(fake.Calls, ",") != "GetTenant" {
+			t.Errorf("empty patch = %d, calls %v", rec.Code, fake.Calls)
 		}
+		// The alias is a mask path like the others; the backend keeps the
+		// stored one, so sending it back changes nothing and keeps the version.
 		rec = serve(app, patchTenant("t-2", "1", `{"alias": "globex"}`))
-		if rec.Code != http.StatusOK || fake.LastUpdateTenant != nil {
+		if rec.Code != http.StatusOK || strings.Join(fake.LastUpdateTenant.GetUpdateMask().GetPaths(), ",") != "alias" || fake.LastUpdateTenant.GetObject().GetAlias() != "globex" || rec.Header().Get("ETag") != `"1"` {
 			t.Errorf("same alias = %d %s, update %v", rec.Code, rec.Body.String(), fake.LastUpdateTenant)
 		}
-		rec = serve(app, patchTenant("t-2", "1", `{"alias": "globex-2"}`))
-		if rec.Code != http.StatusUnprocessableEntity || decodeError(t, rec).Error.Message != "Cannot change the alias" || fake.LastUpdateTenant != nil {
-			t.Errorf("alias change = %d %s, update %v", rec.Code, rec.Body.String(), fake.LastUpdateTenant)
-		}
-		// With another field present the alias travels to the backend, which answers like Keycloak.
-		rec = serve(app, patchTenant("t-2", "1", `{"alias": "globex-2", "enabled": false}`))
-		if rec.Code != http.StatusUnprocessableEntity || decodeError(t, rec).Error.Message != "Cannot change the alias" || fake.LastUpdateTenant == nil {
-			t.Errorf("alias change with a write = %d %s", rec.Code, rec.Body.String())
+		// A different one is the backend's answer, Keycloak's text.
+		for _, body := range []string{`{"alias": "globex-2"}`, `{"alias": "globex-2", "enabled": false}`} {
+			fake.LastUpdateTenant = nil
+			rec = serve(app, patchTenant("t-2", "1", body))
+			if rec.Code != http.StatusUnprocessableEntity || decodeError(t, rec).Error.Message != "Cannot change the alias" || fake.LastUpdateTenant == nil {
+				t.Errorf("%s = %d %s", body, rec.Code, rec.Body.String())
+			}
 		}
 	})
 
@@ -527,23 +528,5 @@ func TestTenantFilterAndPagingOnTheShippedBackend(t *testing.T) {
 		if meta := decodeList(t, rec, &list); len(list) != 8 || meta.Size != 8 || total(meta) != 8 {
 			t.Errorf("%q = %d tenants, meta %+v", q, len(list), meta)
 		}
-	}
-}
-
-// The displayed alias (the name, when the backend sends no alias) can be
-// sent back unchanged.
-func TestDisplayedAliasRoundTrip(t *testing.T) {
-	fake := &backendtest.Fake{Tenants: []*aigridv1.Tenant{{Id: "t-9", Name: "noalias"}}}
-	app := newTestApp(t, testConfig(t), fake)
-	var shown Tenant
-	decodeData(t, serve(app, asUser(http.MethodGet, "/api/v1/tenants/t-9")), &shown)
-	if shown.Alias != "noalias" {
-		t.Fatalf("shown alias = %q", shown.Alias)
-	}
-	if rec := serve(app, patchTenant("t-9", "1", `{"alias": "noalias"}`)); rec.Code != http.StatusOK || fake.Reached("UpdateTenant") {
-		t.Errorf("displayed alias sent back = %d %s, calls %v", rec.Code, rec.Body.String(), fake.Calls)
-	}
-	if rec := serve(app, patchTenant("t-9", "1", `{"alias": "other"}`)); rec.Code != http.StatusUnprocessableEntity {
-		t.Errorf("a different alias = %d, want 422", rec.Code)
 	}
 }

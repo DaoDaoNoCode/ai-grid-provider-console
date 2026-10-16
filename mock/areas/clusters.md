@@ -22,7 +22,14 @@ conventions' message. `UpdateManagedCluster` validates the field mask (`labels`,
 hub's webhook and controllers own (`name`, `cluster.open-cluster-management.io/clusterset=default`
 when empty, the add-on labels, `clusterID`, `openshiftVersion*`,
 `open-cluster-management/created-via`; a removed `cloud` or `vendor` stays removed), honours
-`lock` with `Aborted`, bumps `resource_version` (and `generation` on a spec change), writes
+`lock` with `Aborted`, refuses an `ai-grid/latitude` or `ai-grid/longitude` annotation that is
+not a number within -90..90 or -180..180 (`InvalidArgument`, a console proposal: the backend owns
+the AI Grid annotation convention, the hub accepts any string), answers an update that leaves
+labels, annotations and `hub_accepts_client` as stored (after putting back what the hub owns)
+with the stored object, without bumping `resource_version` or `generation`, as the API server
+skips an unchanged update (`k8s.io/apiserver` v0.35.8 `pkg/storage/etcd3/store.go:553-577`; the
+lock and the coordinate check run first), bumps `resource_version` on a real write (and
+`generation` on a spec change), writes
 `HubAcceptedManagedCluster` False/`HubClusterAdminDenied` when acceptance is withdrawn from a
 cluster that was accepted (none for a cluster never accepted) and True/`HubClusterAdminAccepted`
 when it is granted, and answers `PermissionDenied` with the API server's forbidden message for
@@ -30,10 +37,11 @@ a token `access.json` denies. Every RPC but `Ping` needs `authorization` metadat
 (`Unauthenticated` otherwise).
 
 BFF: `GET /api/v1/clusters/{name}` uses the Get RPC and sends the `resourceVersion` as the
-`ETag`; `PATCH /api/v1/clusters/{name}` writes labels and annotations through the Update RPC
-under optimistic locking on the `If-Match` version the client must send (a stale tab gets 409;
-no `If-Match` is 428), and only the maps that differ from the
-stored ones (a PATCH that repeats the stored values writes nothing); `GridCluster` exposes
+`ETag`; `PATCH /api/v1/clusters/{name}` takes `labels`, `annotations` (whole maps) and
+`hubAcceptsClient` and sends them in one Update RPC, with the present fields as the mask and
+`lock: true` on the `If-Match` version the client must send (a stale tab gets 409; no `If-Match`
+is 428); it does not read the cluster first and neither merges, compares nor validates the maps
+(a body that names no field is answered like the GET); `GridCluster` exposes
 `status`, `statusMessage`, `consoleUrl`, `kubernetesVersion`, `platform`, `product`,
 `gpuCapacity`, `siteName`, `latitude`, `longitude`, `addons`, `conditions`, `resourceVersion`.
 
@@ -130,7 +138,9 @@ Nothing on the hub writes these; the console (fake and draft proto) does:
   console's backend proposal repeats the deciding condition's message.
 - `NotFound`: `object with identifier '<name>' not found` (the conventions' shape, from OSAC).
 - `Aborted`: `object with identifier '<name>' has resource version <v>, the request carries "<v>"; fetch it again and retry`.
-- `InvalidArgument`: `name is required`, `object.name is required`,
+- `InvalidArgument`: `annotation "ai-grid/latitude" must be a number between -90 and 90, got
+  "<v>"` and the same for `ai-grid/longitude` with -180 and 180 (a console proposal; the hub
+  stores any annotation), `name is required`, `object.name is required`,
   `update_mask must name at least one of labels, annotations, hub_accepts_client`,
   `update_mask path "<p>" is not supported; supported paths: labels, annotations, hub_accepts_client`,
   `offset must not be negative, got <n>`, `limit must not be negative, got <n>`,

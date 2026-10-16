@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -555,12 +556,14 @@ func TestGetClusterFallsBackToListOnTheShippedBackend(t *testing.T) {
 	if rec := serve(app, asUser(http.MethodGet, "/api/v1/clusters/site-1")); rec.Code != http.StatusServiceUnavailable || fake.Reached("ListManagedClusters") {
 		t.Errorf("Unavailable = %d, calls %v", rec.Code, fake.Calls)
 	}
-	// A PATCH against the shipped backend is 501: it has no UpdateManagedCluster either.
+	// A PATCH against the shipped backend is 501: it has no UpdateManagedCluster
+	// either (and the BFF does not read first).
+	fake.Calls = nil
 	fake.Errs = map[string]error{
 		"GetManagedCluster":    backendtest.Status(codes.Unimplemented, "method GetManagedCluster not implemented"),
 		"UpdateManagedCluster": backendtest.Status(codes.Unimplemented, "method UpdateManagedCluster not implemented"),
 	}
-	if rec := serve(app, withIfMatch(patchRequest("site-1", `{"aiGridEnabled": false}`), `"1"`)); rec.Code != http.StatusNotImplemented {
+	if rec := serve(app, withIfMatch(patchRequest("site-1", `{"labels": {}}`), `"1"`)); rec.Code != http.StatusNotImplemented || fake.Reached("GetManagedCluster") {
 		t.Errorf("PATCH on the shipped backend = %d %s", rec.Code, rec.Body.String())
 	}
 }
@@ -607,29 +610,37 @@ func patchRequest(name, body string) *http.Request {
 }
 
 func TestPatchCluster(t *testing.T) {
-	t.Run("enrol and locate", func(t *testing.T) {
-		fake := &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{{Name: "site-1", ResourceVersion: "7", Labels: map[string]string{"name": "site-1", LabelEnabled: "false"}, Annotations: map[string]string{"open-cluster-management/created-via": "other"}}}}
+	site := func() *backendtest.Fake {
+		return &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{{Name: "site-1", ResourceVersion: "7",
+			Labels:      map[string]string{"name": "site-1", LabelEnabled: "false"},
+			Annotations: map[string]string{"open-cluster-management/created-via": "other"}}}}
+	}
+
+	t.Run("one update with whole maps, no read", func(t *testing.T) {
+		fake := site()
 		app := newTestApp(t, testConfig(t), fake)
-		rec := serve(app, withIfMatch(patchRequest("site-1", `{"aiGridEnabled": true, "location": "paris", "siteName": "Paris DC1", "latitude": 48.8566, "longitude": 2.3522}`), `"7"`))
+		body := `{"labels": {"name": "site-1", "ai-grid/enabled": "true", "location": "paris"}, "annotations": {"ai-grid/site-name": "Paris DC1", "ai-grid/latitude": "48.8566"}}`
+		rec := serve(app, withIfMatch(patchRequest("site-1", body), `"7"`))
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
 		}
 		var c GridCluster
 		decodeData(t, rec, &c)
-		if !c.AIGridEnabled || c.Location != "paris" || c.SiteName != "Paris DC1" || c.Latitude == nil || *c.Latitude != 48.8566 || c.ResourceVersion != "8" {
+		if !c.AIGridEnabled || c.Location != "paris" || c.SiteName != "Paris DC1" || c.Latitude == nil || *c.Latitude != 48.8566 || c.ResourceVersion != "8" || rec.Header().Get("ETag") != `"8"` {
 			t.Errorf("patched = %+v", c)
 		}
+		if strings.Join(fake.Calls, ",") != "UpdateManagedCluster" {
+			t.Errorf("the BFF must not read the cluster first: calls %v", fake.Calls)
+		}
 		up := fake.LastUpdate
-		if up == nil || !up.GetLock() || up.GetObject().GetResourceVersion() != "7" {
-			t.Fatalf("update must lock on the If-Match version, got %v", up)
+		if !up.GetLock() || up.GetObject().GetResourceVersion() != "7" || up.GetObject().GetName() != "site-1" || strings.Join(up.GetUpdateMask().GetPaths(), ",") != "labels,annotations" {
+			t.Fatalf("update = %v", up)
 		}
-		if paths := up.GetUpdateMask().GetPaths(); len(paths) != 2 || paths[0] != "labels" || paths[1] != "annotations" {
-			t.Errorf("mask = %v", paths)
+		// Sent as the client wrote them: nothing merged in from the stored maps.
+		if l := up.GetObject().GetLabels(); len(l) != 3 || l[LabelEnabled] != "true" {
+			t.Errorf("labels = %v", l)
 		}
-		if l := up.GetObject().GetLabels(); l["name"] != "site-1" || l[LabelEnabled] != "true" || l[LabelLocation] != "paris" {
-			t.Errorf("labels sent as a whole map with the change applied, got %v", l)
-		}
-		if an := up.GetObject().GetAnnotations(); an["open-cluster-management/created-via"] != "other" || an[AnnotationLatitude] != "48.8566" || an[AnnotationLongitude] != "2.3522" || an[AnnotationSiteName] != "Paris DC1" {
+		if an := up.GetObject().GetAnnotations(); len(an) != 2 || an["open-cluster-management/created-via"] != "" {
 			t.Errorf("annotations = %v", an)
 		}
 		if got := fake.Metadata.Get("authorization"); len(got) != 1 || got[0] != "Bearer sha256~token" {
@@ -637,44 +648,49 @@ func TestPatchCluster(t *testing.T) {
 		}
 	})
 
-	t.Run("empty string removes, null removes a coordinate, only touched maps are in the mask", func(t *testing.T) {
-		fake := &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{{Name: "site-1", ResourceVersion: "7", Labels: map[string]string{LabelEnabled: "true", LabelLocation: "paris"}, Annotations: map[string]string{AnnotationLatitude: "1", AnnotationSiteName: "x"}}}}
+	t.Run("hubAcceptsClient, an empty map clears, null is absent", func(t *testing.T) {
+		fake := site()
 		app := newTestApp(t, testConfig(t), fake)
-		rec := serve(app, withIfMatch(patchRequest("site-1", `{"location": ""}`), `"7"`))
+		rec := serve(app, withIfMatch(patchRequest("site-1", `{"hubAcceptsClient": false, "labels": {}, "annotations": null}`), `"7"`))
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
 		}
-		if l := fake.LastUpdate.GetObject().GetLabels(); len(l) != 1 || l[LabelEnabled] != "true" {
-			t.Errorf("labels = %v", l)
-		}
-		if paths := fake.LastUpdate.GetUpdateMask().GetPaths(); len(paths) != 1 || paths[0] != "labels" {
-			t.Errorf("mask = %v", paths)
-		}
-		rec = serve(app, withIfMatch(patchRequest("site-1", `{"latitude": null}`), `"8"`))
-		if rec.Code != http.StatusOK {
-			t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
-		}
-		if an := fake.LastUpdate.GetObject().GetAnnotations(); len(an) != 1 || an[AnnotationSiteName] != "x" {
-			t.Errorf("annotations = %v", an)
-		}
-		if paths := fake.LastUpdate.GetUpdateMask().GetPaths(); len(paths) != 1 || paths[0] != "annotations" {
-			t.Errorf("mask = %v", paths)
-		}
-		fake.LastUpdate = nil
-		if rec = serve(app, withIfMatch(patchRequest("site-1", `{}`), `"9"`)); rec.Code != http.StatusOK || fake.LastUpdate != nil {
-			t.Errorf("an empty patch answers 200 without a write: %d %v", rec.Code, fake.LastUpdate)
+		up := fake.LastUpdate
+		if strings.Join(up.GetUpdateMask().GetPaths(), ",") != "labels,hub_accepts_client" || len(up.GetObject().GetLabels()) != 0 || up.GetObject().GetHubAcceptsClient() {
+			t.Errorf("update = %v", up)
 		}
 	})
 
-	t.Run("validation", func(t *testing.T) {
-		fake := &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{{Name: "site-1", ResourceVersion: "7"}}}
+	t.Run("an empty body answers the current cluster without a write", func(t *testing.T) {
+		for _, body := range []string{`{}`, `{"labels": null, "annotations": null, "hubAcceptsClient": null}`} {
+			fake := site()
+			rec := serve(newTestApp(t, testConfig(t), fake), withIfMatch(patchRequest("site-1", body), `"3"`))
+			var c GridCluster
+			decodeData(t, rec, &c)
+			if rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"7"` || c.Name != "site-1" || strings.Join(fake.Calls, ",") != "GetManagedCluster" {
+				t.Errorf("%s = %d %s, calls %v", body, rec.Code, rec.Body.String(), fake.Calls)
+			}
+		}
+	})
+
+	t.Run("the BFF does not compare: the stored maps go to the backend, which keeps the version", func(t *testing.T) {
+		fake := site()
+		rec := serve(newTestApp(t, testConfig(t), fake), withIfMatch(patchRequest("site-1", `{"labels": {"name": "site-1", "ai-grid/enabled": "false"}}`), `"7"`))
+		if rec.Code != http.StatusOK || !fake.Reached("UpdateManagedCluster") || rec.Header().Get("ETag") != `"7"` {
+			t.Errorf("repeat = %d, calls %v, ETag %q", rec.Code, fake.Calls, rec.Header().Get("ETag"))
+		}
+	})
+
+	t.Run("validation is the body's shape only", func(t *testing.T) {
+		fake := site()
 		app := newTestApp(t, testConfig(t), fake)
 		for body, want := range map[string]string{
-			`{"latitude": 91}`:         "latitude must be between -90 and 90",
-			`{"longitude": -180.5}`:    "longitude must be between -180 and 180",
-			`{"aiGridEnabled": "yes"}`: `invalid request body: field "aiGridEnabled" must be a bool`,
-			`{"colour": "red"}`:        `invalid request body: json: unknown field "colour"`,
-			`{`:                        "invalid request body: malformed JSON",
+			// The typed fields are gone; a client sends the maps.
+			`{"aiGridEnabled": true}`: `invalid request body: json: unknown field "aiGridEnabled"`,
+			`{"latitude": 91}`:        `invalid request body: json: unknown field "latitude"`,
+			`{"labels": "x"}`:         `invalid request body: field "labels" must be a map[string]string`,
+			`{"hubAcceptsClient": 1}`: `invalid request body: field "hubAcceptsClient" must be a bool`,
+			`{`:                       "invalid request body: malformed JSON",
 			// The body is an object: null would otherwise read as an empty patch.
 			`null`:    "invalid request body: must be a JSON object",
 			` null `:  "invalid request body: must be a JSON object",
@@ -682,97 +698,59 @@ func TestPatchCluster(t *testing.T) {
 			`"enrol"`: "invalid request body: must be a JSON object",
 			`true`:    "invalid request body: must be a JSON object",
 			// One JSON object and nothing else: a second value or stray bytes are refused.
-			`{"aiGridEnabled": true} garbage`: "invalid request body: unexpected content after the JSON object",
-			`{"aiGridEnabled": true}{}`:       "invalid request body: unexpected content after the JSON object",
-			`{"aiGridEnabled": true} 1`:       "invalid request body: unexpected content after the JSON object",
+			`{"labels": {}} garbage`: "invalid request body: unexpected content after the JSON object",
+			`{"labels": {}}{}`:       "invalid request body: unexpected content after the JSON object",
+			`{"labels": {}} 1`:       "invalid request body: unexpected content after the JSON object",
 		} {
 			rec := serve(app, withIfMatch(patchRequest("site-1", body), `"7"`))
 			if rec.Code != http.StatusUnprocessableEntity || decodeError(t, rec).Error.Message != want {
 				t.Errorf("%s -> %d %s, want 422 %q", body, rec.Code, rec.Body.String(), want)
 			}
 		}
-		// Trailing whitespace is fine.
-		if rec := serve(app, withIfMatch(patchRequest("site-1", "{\"aiGridEnabled\": true}\n  \n"), `"7"`)); rec.Code != http.StatusOK {
-			t.Errorf("trailing whitespace -> %d %s", rec.Code, rec.Body.String())
-		}
-		fake.Calls = nil
-		huge := `{"location": "` + strings.Repeat("x", maxBodyBytes) + `"}`
-		if rec := serve(app, withIfMatch(patchRequest("site-1", huge), `"8"`)); rec.Code != http.StatusRequestEntityTooLarge {
+		huge := `{"labels": {"x": "` + strings.Repeat("x", maxBodyBytes) + `"}}`
+		if rec := serve(app, withIfMatch(patchRequest("site-1", huge), `"7"`)); rec.Code != http.StatusRequestEntityTooLarge {
 			t.Errorf("oversized body -> %d %s", rec.Code, rec.Body.String())
 		}
-		if rec := serve(app, withIfMatch(patchRequest("site-1", `{"aiGridEnabled": true}`+strings.Repeat(" ", maxBodyBytes)), `"8"`)); rec.Code != http.StatusRequestEntityTooLarge {
+		if rec := serve(app, withIfMatch(patchRequest("site-1", `{"labels": {}}`+strings.Repeat(" ", maxBodyBytes)), `"7"`)); rec.Code != http.StatusRequestEntityTooLarge {
 			t.Errorf("oversized trailing content -> %d %s", rec.Code, rec.Body.String())
 		}
 		if len(fake.Calls) != 0 {
 			t.Errorf("invalid patches must not reach the backend at all, got %v", fake.Calls)
 		}
-		if rec := serve(app, withIfMatch(patchRequest("missing", `{"aiGridEnabled": true}`), `"1"`)); rec.Code != http.StatusNotFound {
-			t.Errorf("unknown cluster = %d", rec.Code)
+		// Trailing whitespace is fine; an out-of-range coordinate is the
+		// backend's to refuse, so the BFF forwards it.
+		if rec := serve(app, withIfMatch(patchRequest("site-1", "{\"annotations\": {\"ai-grid/latitude\": \"91\"}}\n  \n"), `"7"`)); rec.Code != http.StatusOK || fake.LastUpdate.GetObject().GetAnnotations()[AnnotationLatitude] != "91" {
+			t.Errorf("coordinate forwarded -> %d %s", rec.Code, rec.Body.String())
 		}
 	})
 
-	// updateFails makes the read succeed and only UpdateManagedCluster fail,
-	// and asserts the handler got as far as that write.
-	updateFails := func(t *testing.T, fake *backendtest.Fake, err error, body string) *httptest.ResponseRecorder {
+	// updateFails makes UpdateManagedCluster fail and asserts the handler
+	// reached it, and nothing else.
+	updateFails := func(t *testing.T, err error) *httptest.ResponseRecorder {
 		t.Helper()
+		fake := site()
 		fake.Errs = map[string]error{"UpdateManagedCluster": err}
-		fake.Calls, fake.LastUpdate = nil, nil
-		rec := serve(newTestApp(t, testConfig(t), fake), withIfMatch(patchRequest("site-1", body), `"`+fake.Clusters[0].GetResourceVersion()+`"`))
-		if !fake.Reached("GetManagedCluster") || !fake.Reached("UpdateManagedCluster") || fake.LastUpdate == nil {
-			t.Fatalf("the read must succeed and the update be reached, calls = %v", fake.Calls)
+		rec := serve(newTestApp(t, testConfig(t), fake), withIfMatch(patchRequest("site-1", `{"labels": {"ai-grid/enabled": "true"}}`), `"7"`))
+		if strings.Join(fake.Calls, ",") != "UpdateManagedCluster" || fake.LastUpdate == nil {
+			t.Fatalf("the update must be the only call, calls = %v", fake.Calls)
 		}
 		return rec
 	}
 
-	t.Run("backend conflict and invalid argument", func(t *testing.T) {
-		fake := &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{{Name: "site-1", ResourceVersion: "7"}}}
-		app := newTestApp(t, testConfig(t), fake)
-		rec := serve(app, withIfMatch(patchRequest("site-1", `{"aiGridEnabled": true}`), `"7"`))
-		if rec.Code != http.StatusOK {
-			t.Fatalf("a consistent read-then-write succeeds: %d %s", rec.Code, rec.Body.String())
-		}
-		// The backend answers Aborted when something else wrote between the Get and the Update.
-		// The cluster is enrolled now, so the next patches un-enrol it (a
-		// repeat of the stored value would not write at all).
-		rec = updateFails(t, fake, backendtest.Status(codes.Aborted, "object with identifier 'site-1' has resource version 9, the request carries \"8\""), `{"aiGridEnabled": false}`)
-		if rec.Code != http.StatusConflict || !strings.Contains(decodeError(t, rec).Error.Message, "resource version 9") {
-			t.Errorf("Aborted -> %d %s, want 409 with the backend's message", rec.Code, rec.Body.String())
-		}
-		rec = updateFails(t, fake, backendtest.Status(codes.InvalidArgument, "update_mask path \"labels\" is not supported"), `{"aiGridEnabled": false}`)
-		if rec.Code != http.StatusUnprocessableEntity {
-			t.Errorf("InvalidArgument -> %d, want 422", rec.Code)
-		}
-	})
-
-	t.Run("optimistic lock: the hub object changes between the read and the write", func(t *testing.T) {
-		fake := &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{{Name: "site-1", ResourceVersion: "7", Labels: map[string]string{LabelLocation: "paris"}}}}
-		// Another writer lands after the BFF's Get and before its Update.
-		fake.AfterGet = func(stored *aigridv1.ManagedCluster) {
-			stored.ResourceVersion = "8"
-			stored.Labels[LabelLocation] = "lyon"
-		}
-		app := newTestApp(t, testConfig(t), fake)
-		rec := serve(app, withIfMatch(patchRequest("site-1", `{"aiGridEnabled": true}`), `"7"`))
-		if rec.Code != http.StatusConflict {
-			t.Fatalf("status = %d %s, want 409", rec.Code, rec.Body.String())
-		}
-		if msg := decodeError(t, rec).Error.Message; !strings.Contains(msg, "resource version 8") || !strings.Contains(msg, `carries "7"`) {
-			t.Errorf("message = %q", msg)
-		}
-		if up := fake.LastUpdate; up == nil || !up.GetLock() || up.GetObject().GetResourceVersion() != "7" {
-			t.Errorf("the update must lock on the If-Match version, got %v", up)
-		}
-		if got := fake.Clusters[0].GetLabels(); got[LabelLocation] != "lyon" || got[LabelEnabled] != "" {
-			t.Errorf("the other writer's change must survive, the lost update must not land: %v", got)
-		}
-	})
-
-	t.Run("hub RBAC denies the caller", func(t *testing.T) {
-		fake := &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{{Name: "site-1", ResourceVersion: "7"}}}
-		forbidden := `managedclusters.cluster.open-cluster-management.io "site-1" is forbidden: User "alice" cannot patch resource "managedclusters" in API group "cluster.open-cluster-management.io" at the cluster scope`
-		rec := updateFails(t, fake, backendtest.Status(codes.PermissionDenied, forbidden), `{"aiGridEnabled": true}`)
-		if rec.Code != http.StatusForbidden || decodeError(t, rec).Error.Message != forbidden {
-			t.Errorf("PermissionDenied -> %d %s, want 403 with the hub's message", rec.Code, rec.Body.String())
+	t.Run("backend answers keep their message", func(t *testing.T) {
+		for _, tc := range []struct {
+			err    error
+			status int
+		}{
+			{backendtest.Status(codes.Aborted, `object with identifier 'site-1' has resource version 9, the request carries "7"`), http.StatusConflict},
+			{backendtest.Status(codes.InvalidArgument, `annotation "ai-grid/latitude" must be a number between -90 and 90, got "91"`), http.StatusUnprocessableEntity},
+			{backendtest.Status(codes.PermissionDenied, `managedclusters.cluster.open-cluster-management.io "site-1" is forbidden: User "alice" cannot patch resource "managedclusters" in API group "cluster.open-cluster-management.io" at the cluster scope`), http.StatusForbidden},
+			{backendtest.Status(codes.NotFound, "object with identifier 'site-1' not found"), http.StatusNotFound},
+		} {
+			rec := updateFails(t, tc.err)
+			if rec.Code != tc.status || decodeError(t, rec).Error.Message != status.Convert(tc.err).Message() {
+				t.Errorf("%v -> %d %s, want %d with the backend's message", tc.err, rec.Code, rec.Body.String(), tc.status)
+			}
 		}
 	})
 
@@ -781,7 +759,7 @@ func TestPatchCluster(t *testing.T) {
 			Status: &aigridv1.ManagedClusterStatus{State: aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_DETACHING}}}}
 		app := newTestApp(t, testConfig(t), fake)
 		var c GridCluster
-		rec := serve(app, withIfMatch(patchRequest("site-1", `{"aiGridEnabled": true}`), `"7"`))
+		rec := serve(app, withIfMatch(patchRequest("site-1", `{"labels": {"ai-grid/enabled": "true"}}`), `"7"`))
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
 		}
@@ -810,7 +788,7 @@ func TestWritesRequireJSONContentType(t *testing.T) {
 		{http.MethodPatch, "/api/v1/tenants/t-1", `{"enabled": false}`},
 		{http.MethodPost, "/api/v1/models", `{"name": "m", "namespace": "ns", "modelUri": "hf://x/y"}`},
 		{http.MethodPatch, "/api/v1/models/ai-grid-models/tiny-llm", `{"replicas": 2}`},
-		{http.MethodPatch, "/api/v1/clusters/site-1", `{"aiGridEnabled": true}`},
+		{http.MethodPatch, "/api/v1/clusters/site-1", `{"labels": {"ai-grid/enabled": "true"}}`},
 	}
 	for _, ct := range []string{"", "text/plain", "text/plain;charset=UTF-8", "application/x-www-form-urlencoded", "multipart/form-data; boundary=x", "application/jsonp", "application/merge-patch+json", "json", "application/json;;"} {
 		for _, wr := range writes {
@@ -859,7 +837,7 @@ func TestWritesRequireJSONContentType(t *testing.T) {
 func TestWritesRequireIfMatch(t *testing.T) {
 	const want = `this write needs an If-Match header: send the ETag that GET answered (the object's resourceVersion), for example If-Match: "42"`
 	writes := []struct{ method, path, body string }{
-		{http.MethodPatch, "/api/v1/clusters/site-1", `{"aiGridEnabled": true}`},
+		{http.MethodPatch, "/api/v1/clusters/site-1", `{"labels": {"ai-grid/enabled": "true"}}`},
 		{http.MethodPatch, "/api/v1/tenants/t-1", `{"enabled": false}`},
 		{http.MethodDelete, "/api/v1/tenants/t-1", ""},
 		{http.MethodPatch, "/api/v1/models/ai-grid-models/tiny-llm", `{"replicas": 2}`},
@@ -894,7 +872,7 @@ func TestClusterETagAndIfMatch(t *testing.T) {
 	}
 
 	// The tab loaded version 3; the hub has 9: the lock is on 3 and the write is refused.
-	rec := serve(app, withIfMatch(patchRequest("site-1", `{"location": "rome"}`), `"3"`))
+	rec := serve(app, withIfMatch(patchRequest("site-1", `{"labels": {"location": "rome"}}`), `"3"`))
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("stale If-Match = %d %s, want 409", rec.Code, rec.Body.String())
 	}
@@ -906,7 +884,7 @@ func TestClusterETagAndIfMatch(t *testing.T) {
 	}
 
 	// The current version writes and answers the new ETag.
-	rec = serve(app, withIfMatch(patchRequest("site-1", `{"location": "rome"}`), `"9"`))
+	rec = serve(app, withIfMatch(patchRequest("site-1", `{"labels": {"location": "rome"}}`), `"9"`))
 	if rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"10"` || fake.LastUpdate.GetObject().GetResourceVersion() != "9" {
 		t.Fatalf("matching If-Match = %d, ETag %q, update %v", rec.Code, rec.Header().Get("ETag"), fake.LastUpdate)
 	}
@@ -918,7 +896,7 @@ func TestClusterETagAndIfMatch(t *testing.T) {
 		"*": `If-Match: * names no version: send the ETag that GET answered (the object's resourceVersion), for example If-Match: "42"`,
 	} {
 		fake := fresh()
-		req := patchRequest("site-1", `{"location": "rome"}`)
+		req := patchRequest("site-1", `{"labels": {"location": "rome"}}`)
 		if h != "" {
 			req.Header.Set("If-Match", h)
 		}
@@ -931,37 +909,10 @@ func TestClusterETagAndIfMatch(t *testing.T) {
 	// A header the backend cannot compare is 422 before any call.
 	for _, h := range []string{`9`, `W/"9"`, `"9", "10"`, `""`, `"a b"`} {
 		fake := fresh()
-		rec := serve(newTestApp(t, testConfig(t), fake), withIfMatch(patchRequest("site-1", `{"location": "rome"}`), h))
+		rec := serve(newTestApp(t, testConfig(t), fake), withIfMatch(patchRequest("site-1", `{"labels": {"location": "rome"}}`), h))
 		if rec.Code != http.StatusUnprocessableEntity || len(fake.Calls) != 0 {
 			t.Errorf("If-Match %s = %d %s, calls %v; want 422 and no call", h, rec.Code, rec.Body.String(), fake.Calls)
 		}
-	}
-}
-
-// A PATCH that repeats the stored values writes nothing: the maps are
-// compared, not the presence of the fields.
-func TestNoOpClusterPatchDoesNotWrite(t *testing.T) {
-	fake := &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{{Name: "site-1", ResourceVersion: "7",
-		Labels:      map[string]string{LabelEnabled: "true", LabelLocation: "paris"},
-		Annotations: map[string]string{AnnotationLatitude: "48.8566"}}}}
-	app := newTestApp(t, testConfig(t), fake)
-	for _, body := range []string{
-		`{"aiGridEnabled": true, "location": "paris"}`,
-		`{"site": "", "region": ""}`, // removing labels that are not there
-		`{"latitude": 48.8566, "longitude": null, "siteName": ""}`,
-	} {
-		fake.Calls = nil
-		rec := serve(app, withIfMatch(patchRequest("site-1", body), `"7"`))
-		if rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"7"` {
-			t.Fatalf("%s = %d %s", body, rec.Code, rec.Body.String())
-		}
-		if fake.Reached("UpdateManagedCluster") {
-			t.Errorf("%s repeats the stored values but wrote", body)
-		}
-	}
-	// One changed map is the only path in the mask.
-	if rec := serve(app, withIfMatch(patchRequest("site-1", `{"aiGridEnabled": true, "latitude": 40}`), `"7"`)); rec.Code != http.StatusOK || strings.Join(fake.LastUpdate.GetUpdateMask().GetPaths(), ",") != "annotations" {
-		t.Errorf("mask = %v (%d)", fake.LastUpdate.GetUpdateMask().GetPaths(), rec.Code)
 	}
 }
 

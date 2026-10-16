@@ -99,7 +99,11 @@ Failure modes:
 A spec change bumps the model's generation. A change of the LLMInferenceService's own spec
 (everything but `placement` and `rollout`) bumps its generation too: the controller observes it at
 T1 after the change, and at T2 the Deployment rolls out again from `Progressing`; `url` and
-`addresses` are kept.
+`addresses` are kept. An update after which the spec, labels and annotations equal the stored
+ones is not written: `UpdateModel` answers the stored model without bumping `resource_version`
+or `generation`, as the API server skips an unchanged update (`k8s.io/apiserver` v0.35.8
+`pkg/storage/etcd3/store.go:553-577`); the lock and the admission checks run first. Removing
+the placement without naming `spec.rollout` drops the rollout with it.
 
 Placement (`mock/research/acm.md` 3, items 6 and 7), recomputed on every pass from the clusters
 and the previous decision: the sets bound into the namespace (`global` = every cluster,
@@ -295,9 +299,11 @@ filter in "filter"`), `GET/PATCH/DELETE /api/v1/models/{namespace}/{name}`,
 backend), with the JSON shape in `docs/plan/bff-api.md`: the POC's `ManagedModel` without its
 inventions, plus `placement` (selector, selected clusters, `PlacementSatisfied`) and `rollout`
 (strategy, summary without `updated`, per-site works with their condition statuses and the
-`ready` and `url` feedback); `url` is omitted when empty; PATCH is a locked read-modify-write with
-the present fields that differ from the stored ones as the mask (none: no write), locked on the
-`If-Match` version the client must send (428 without it); DELETE needs `If-Match` too and passes
+`ready` and `url` feedback); `url` is omitted when empty; PATCH is one `UpdateModel` with every
+present field in the mask (no read first, no comparison; `labels` and `annotations` are whole
+maps, and the display name and description are their `openshift.io/*` annotation keys, not PATCH
+fields), locked on the `If-Match` version the client must send (428 without it), and a body that
+names no field is answered like the GET; DELETE needs `If-Match` too and passes
 it as `DeleteModelRequest.resource_version`, which the fake checks like a Kubernetes
 delete precondition (`Aborted` with the update's wording when stale); GET, POST and PATCH send
 the `resourceVersion` as the `ETag`.

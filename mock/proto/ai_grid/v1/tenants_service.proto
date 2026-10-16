@@ -43,7 +43,9 @@ service Tenants {
   // included, is AlreadyExists, and so is a blank name (Keycloak's exact
   // search treats a blank name as no filter and finds the tenant itself).
   // Aborted when `object.resource_version` is set and is not the stored
-  // version.
+  // version. A merge that changes nothing is not PUT (the console's
+  // proposal: no Keycloak admin event is written): the tenant comes back
+  // with its stored `resource_version`.
   rpc UpdateTenant(UpdateTenantRequest) returns (UpdateTenantResponse);
   // Deletes a tenant and its memberships; unmanaged members stay realm
   // users. NotFound when absent; Aborted when `resource_version` is set and
@@ -148,8 +150,11 @@ message UpdateTenantRequest {
   // UpdateManagedCluster and UpdateModel; empty skips it). It is never
   // written: every successful update bumps the stored version.
   Tenant object = 1;
-  // Supported paths: `name`, `domains`, `enabled`, `description`,
-  // `attributes`, `domain_details`. The backend reads the full Keycloak
+  // Supported paths: `name`, `alias`, `domains`, `enabled`, `description`,
+  // `attributes`, `domain_details`. `alias` writes nothing, because the
+  // alias is immutable: it lets a client send back the alias it loaded, and
+  // a different non-blank `object.alias` is InvalidArgument "Cannot change
+  // the alias" (Keycloak's text) with or without the path. The backend reads the full Keycloak
   // representation, overwrites the named fields and PUTs the whole result,
   // so everything else, `alias` and `redirectUrl` included, is written back
   // as stored. This matters: Keycloak's PUT replaces `description` and

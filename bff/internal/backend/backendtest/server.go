@@ -32,10 +32,9 @@ import (
 // incoming metadata of the last call so tests can assert on identity
 // forwarding. Clusters are served as given: the derived `status.state` is
 // whatever the test put there, so handler tests control it directly.
-// GetManagedCluster hands out a copy and then runs AfterGet on the stored
-// object, so a test can simulate a write that lands between the BFF's read
-// and its update. Updates mutate the slice in place and bump
-// `resource_version`; LastUpdate keeps the last request, reached or refused.
+// Updates mutate the slice in place and bump `resource_version`, except an
+// update that changes nothing, which keeps it (as the fake backend and the
+// API server do); LastUpdate keeps the last request, reached or refused.
 // Tenants follow the same idea with the few Keycloak rules a handler test
 // needs (ids `t-<n>`, duplicate name 409, NotFound); the Last*Tenant fields
 // keep the last request of each tenant RPC, reached or refused; a tenant's
@@ -65,7 +64,6 @@ type Fake struct {
 	Calls      []string
 	Metadata   metadata.MD
 	LastUpdate *aigridv1.UpdateManagedClusterRequest
-	AfterGet   func(stored *aigridv1.ManagedCluster)
 
 	LastListTenants  *aigridv1.ListTenantsRequest
 	LastCreateTenant *aigridv1.CreateTenantRequest
@@ -81,9 +79,6 @@ type Fake struct {
 	LastCreateModel *aigridv1.CreateModelRequest
 	LastUpdateModel *aigridv1.UpdateModelRequest
 	LastDeleteModel *aigridv1.DeleteModelRequest
-	// AfterGetModel runs on the stored model after GetModel copied it, to
-	// simulate a write between the BFF's read and its update.
-	AfterGetModel func(stored *aigridv1.Model)
 
 	// ShippedLists serves the lists without paging, filtering or counts.
 	ShippedLists bool
@@ -149,16 +144,13 @@ func (f *Fake) GetManagedCluster(ctx context.Context, req *aigridv1.GetManagedCl
 	if c == nil {
 		return nil, status.Errorf(codes.NotFound, "object with identifier '%s' not found", req.GetName())
 	}
-	out := proto.Clone(c).(*aigridv1.ManagedCluster)
-	if f.AfterGet != nil {
-		f.AfterGet(c)
-	}
-	return &aigridv1.GetManagedClusterResponse{Object: out}, nil
+	return &aigridv1.GetManagedClusterResponse{Object: proto.Clone(c).(*aigridv1.ManagedCluster)}, nil
 }
 
 // UpdateManagedCluster implements ManagedClusters: mask paths `labels`,
 // `annotations`, `hub_accepts_client`; `lock` compares `resource_version`
-// and answers Aborted on a mismatch.
+// and answers Aborted on a mismatch; an update that changes nothing keeps
+// the version.
 func (f *Fake) UpdateManagedCluster(ctx context.Context, req *aigridv1.UpdateManagedClusterRequest) (*aigridv1.UpdateManagedClusterResponse, error) {
 	f.LastUpdate = req
 	if err := f.begin(ctx, "UpdateManagedCluster"); err != nil {
@@ -171,18 +163,23 @@ func (f *Fake) UpdateManagedCluster(ctx context.Context, req *aigridv1.UpdateMan
 	if req.GetLock() && req.GetObject().GetResourceVersion() != c.GetResourceVersion() {
 		return nil, status.Errorf(codes.Aborted, "object with identifier '%s' has resource version %s, the request carries %q", c.GetName(), c.GetResourceVersion(), req.GetObject().GetResourceVersion())
 	}
+	next := proto.Clone(c).(*aigridv1.ManagedCluster)
 	for _, p := range req.GetUpdateMask().GetPaths() {
 		switch p {
 		case "labels":
-			c.Labels = maps.Clone(req.GetObject().GetLabels())
+			next.Labels = maps.Clone(req.GetObject().GetLabels())
 		case "annotations":
-			c.Annotations = maps.Clone(req.GetObject().GetAnnotations())
+			next.Annotations = maps.Clone(req.GetObject().GetAnnotations())
 		case "hub_accepts_client":
-			c.HubAcceptsClient = req.GetObject().GetHubAcceptsClient()
+			next.HubAcceptsClient = req.GetObject().GetHubAcceptsClient()
 		default:
 			return nil, status.Errorf(codes.InvalidArgument, "update_mask path %q is not supported", p)
 		}
 	}
+	if proto.Equal(next, c) {
+		return &aigridv1.UpdateManagedClusterResponse{Object: c}, nil
+	}
+	c.Labels, c.Annotations, c.HubAcceptsClient = next.Labels, next.Annotations, next.HubAcceptsClient
 	rv, err := strconv.Atoi(c.GetResourceVersion())
 	if err != nil {
 		rv = 0 // a fixture without a numeric version starts counting here
@@ -284,7 +281,10 @@ func (f *Fake) CreateTenant(ctx context.Context, req *aigridv1.CreateTenantReque
 	return &aigridv1.CreateTenantResponse{Object: t}, nil
 }
 
-// UpdateTenant implements Tenants: applies the mask paths in place.
+// UpdateTenant implements Tenants: applies the mask paths in place. `alias`
+// keeps the stored alias (a different non-blank one is Keycloak's
+// InvalidArgument, whatever the mask); an update that changes nothing keeps
+// the version, as the fake backend skips the PUT.
 func (f *Fake) UpdateTenant(ctx context.Context, req *aigridv1.UpdateTenantRequest) (*aigridv1.UpdateTenantResponse, error) {
 	f.LastUpdateTenant = req
 	if err := f.begin(ctx, "UpdateTenant"); err != nil {
@@ -301,8 +301,10 @@ func (f *Fake) UpdateTenant(ctx context.Context, req *aigridv1.UpdateTenantReque
 		return nil, status.Error(codes.InvalidArgument, "Cannot change the alias")
 	}
 	obj := req.GetObject()
+	before := proto.Clone(t).(*aigridv1.Tenant)
 	for _, p := range req.GetUpdateMask().GetPaths() {
 		switch p {
+		case "alias":
 		case "name":
 			// Keycloak's PUT answers a blank name with 409: its exact name
 			// search treats a blank term as no filter and finds the
@@ -335,7 +337,9 @@ func (f *Fake) UpdateTenant(ctx context.Context, req *aigridv1.UpdateTenantReque
 			return nil, status.Errorf(codes.InvalidArgument, "update_mask path %q is not supported", p)
 		}
 	}
-	t.ResourceVersion = nextVersion(t.GetResourceVersion())
+	if !proto.Equal(before, t) {
+		t.ResourceVersion = nextVersion(t.GetResourceVersion())
+	}
 	return &aigridv1.UpdateTenantResponse{Object: t}, nil
 }
 
@@ -444,11 +448,7 @@ func (f *Fake) GetModel(ctx context.Context, req *aigridv1.GetModelRequest) (*ai
 	if m == nil {
 		return nil, status.Errorf(codes.NotFound, "object with identifier '%s/%s' not found", req.GetNamespace(), req.GetName())
 	}
-	out := proto.Clone(m).(*aigridv1.Model)
-	if f.AfterGetModel != nil {
-		f.AfterGetModel(m)
-	}
-	return &aigridv1.GetModelResponse{Object: out}, nil
+	return &aigridv1.GetModelResponse{Object: proto.Clone(m).(*aigridv1.Model)}, nil
 }
 
 // CreateModel implements Models: AlreadyExists on a taken namespace/name,
@@ -474,7 +474,8 @@ func (f *Fake) CreateModel(ctx context.Context, req *aigridv1.CreateModelRequest
 }
 
 // UpdateModel implements Models: the supported mask paths applied in place,
-// `lock` against `metadata.resource_version` with Aborted on a mismatch.
+// `lock` against `metadata.resource_version` with Aborted on a mismatch; an
+// update that changes nothing keeps the version.
 func (f *Fake) UpdateModel(ctx context.Context, req *aigridv1.UpdateModelRequest) (*aigridv1.UpdateModelResponse, error) {
 	f.LastUpdateModel = req
 	if err := f.begin(ctx, "UpdateModel"); err != nil {
@@ -488,6 +489,7 @@ func (f *Fake) UpdateModel(ctx context.Context, req *aigridv1.UpdateModelRequest
 	if req.GetLock() && obj.GetMetadata().GetResourceVersion() != m.GetMetadata().GetResourceVersion() {
 		return nil, status.Errorf(codes.Aborted, "object with identifier '%s/%s' has resource version %s, the request carries %q", m.GetMetadata().GetNamespace(), m.GetName(), m.GetMetadata().GetResourceVersion(), obj.GetMetadata().GetResourceVersion())
 	}
+	before := proto.Clone(m).(*aigridv1.Model)
 	if m.Spec == nil {
 		m.Spec = &aigridv1.ModelSpec{}
 	}
@@ -516,6 +518,9 @@ func (f *Fake) UpdateModel(ctx context.Context, req *aigridv1.UpdateModelRequest
 		default:
 			return nil, status.Errorf(codes.InvalidArgument, "update_mask path %q is not supported", p)
 		}
+	}
+	if proto.Equal(before.GetSpec(), m.GetSpec()) && maps.Equal(before.GetMetadata().GetLabels(), m.GetMetadata().GetLabels()) && maps.Equal(before.GetMetadata().GetAnnotations(), m.GetMetadata().GetAnnotations()) {
+		return &aigridv1.UpdateModelResponse{Object: m}, nil
 	}
 	rv, _ := strconv.Atoi(m.GetMetadata().GetResourceVersion())
 	m.Metadata.ResourceVersion = strconv.Itoa(rv + 1)

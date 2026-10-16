@@ -38,8 +38,15 @@ service ManagedClusters {
   // or annotation write the hub's webhook and controllers put back what they
   // own (`name`, the default clusterset label, the add-on labels, `clusterID`,
   // `openshiftVersion*`, `open-cluster-management/created-via`), but not a
-  // removed `cloud` or `vendor`. Requires `patch` on managedclusters for the
-  // caller.
+  // removed `cloud` or `vendor`. An update after which the labels,
+  // annotations and `hub_accepts_client` equal the stored ones is not
+  // written: the stored cluster comes back with `resource_version` and
+  // `generation` unchanged, as the Kubernetes API server answers an unchanged
+  // update. The backend owns the AI Grid annotation convention: an
+  // `ai-grid/latitude` or `ai-grid/longitude` annotation, when present, must
+  // be a number within -90..90 or -180..180, else InvalidArgument (a console
+  // proposal; the hub itself accepts any string). Requires `patch` on
+  // managedclusters for the caller.
   rpc UpdateManagedCluster(UpdateManagedClusterRequest) returns (UpdateManagedClusterResponse);
 }
 
@@ -89,9 +96,10 @@ message UpdateManagedClusterRequest {
   // The cluster with the new values. `name` identifies it.
   ManagedCluster object = 1;
   // Paths to update. Supported: `labels`, `annotations`, `hub_accepts_client`.
-  // A map path replaces the whole map; to change one key, send the full map
-  // as returned by Get. (Alternative under discussion: per-key paths such
-  // as `labels.ai-grid/enabled`; see the research's open questions.)
+  // A map path replaces the whole map (FieldMask semantics, as in OSAC); to
+  // change one key, send the full map as returned by Get with that key
+  // changed. Per-key paths such as `labels.ai-grid/enabled` are not
+  // supported.
   google.protobuf.FieldMask update_mask = 2;
   // When true, the update fails with Aborted unless `object.resource_version`
   // matches the hub's current value.

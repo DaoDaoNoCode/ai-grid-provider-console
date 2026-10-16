@@ -44,10 +44,12 @@ type TenantDomain struct {
 }
 
 // Tenant JSON maps. Keys of the PATCH body; they double as the field-mask
-// paths the backend accepts, apart from `alias`, which travels in the object
-// so the backend can answer "Cannot change the alias" like Keycloak.
+// paths the backend accepts. `alias` is immutable: the backend keeps the
+// stored one and answers a different one with Keycloak's "Cannot change the
+// alias".
 const (
 	maskName        = "name"
+	maskAlias       = "alias"
 	maskDomains     = "domains"
 	maskEnabled     = "enabled"
 	maskDescription = "description"
@@ -179,10 +181,10 @@ func pagedOrFiltered(offset, limit *int, filtered bool) bool {
 	return filtered || limit != nil || (offset != nil && *offset > 0)
 }
 
-// getTenant answers GET /api/v1/tenants/{id}. Unlike GET /clusters/{name}
-// it has no list fallback: the shipped backend has no GetTenant RPC, so
-// against it this is 501 (Unimplemented), like every tenant write and a
-// PATCH that sets no field (which reads with GetTenant).
+// getTenant answers GET /api/v1/tenants/{id}, and a PATCH that names no
+// field. Unlike GET /clusters/{name} it has no list fallback: the shipped
+// backend has no GetTenant RPC, so against it this is 501 (Unimplemented),
+// like every tenant write.
 func (a *App) getTenant(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := a.backend.Context(r.Context())
 	defer cancel()
@@ -236,7 +238,8 @@ func (a *App) createTenant(w http.ResponseWriter, r *http.Request) {
 // TenantPatch is the body of PATCH /api/v1/tenants/{id}. Every field is
 // optional and an absent field is left alone; a present field replaces the
 // stored one as a whole (`domains: []` removes every domain, `attributes: {}`
-// every attribute). `alias` may be sent but must equal the stored alias.
+// every attribute). `alias` may be sent, but the backend refuses a value
+// other than the stored alias.
 type TenantPatch struct {
 	Name        *string            `json:"name"`
 	Alias       *string            `json:"alias"`
@@ -247,10 +250,12 @@ type TenantPatch struct {
 }
 
 // patchTenant answers PATCH /api/v1/tenants/{id}: the present fields become
-// the field mask of one UpdateTenant call; the backend does Keycloak's GET,
-// merge and PUT. The If-Match version, which the client must send
+// the field mask of one UpdateTenant call (`alias` included); the backend
+// does Keycloak's GET, merge and PUT, refuses a changed alias, and skips a
+// PUT that changes nothing. The If-Match version, which the client must send
 // (requireIfMatch), travels as `object.resource_version`, which the backend
-// compares with the version it keeps (a stale tab gets 409).
+// compares with the version it keeps (a stale tab gets 409). A body that
+// names no field is answered like GET (getTenant), with no write.
 func (a *App) patchTenant(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := requireJSON(r); err != nil {
@@ -275,6 +280,7 @@ func (a *App) patchTenant(w http.ResponseWriter, r *http.Request) {
 	}
 	if patch.Alias != nil {
 		obj.Alias = *patch.Alias
+		paths = append(paths, maskAlias)
 	}
 	if patch.Description != nil {
 		obj.Description = *patch.Description
@@ -298,30 +304,12 @@ func (a *App) patchTenant(w http.ResponseWriter, r *http.Request) {
 		}
 		paths = append(paths, maskAttributes)
 	}
-
-	ctx, cancel := a.backend.Context(r.Context())
-	defer cancel()
 	if len(paths) == 0 {
-		// Nothing to write: answer with the current object. An alias on its
-		// own is only checked against it (Keycloak's wording), so a no-op
-		// round trip does not become a PUT and an admin event.
-		resp, err := a.backend.Tenants.GetTenant(ctx, &aigridv1.GetTenantRequest{Id: id})
-		if err != nil {
-			a.respondError(w, r, err)
-			return
-		}
-		// Compared with the alias the console shows (toTenant falls back to
-		// the name when the backend sends none), so a form that sends the
-		// displayed alias back is not refused.
-		cur := toTenant(resp.GetObject())
-		if patch.Alias != nil && *patch.Alias != "" && *patch.Alias != cur.Alias {
-			a.respondError(w, r, Errorf(http.StatusUnprocessableEntity, "Cannot change the alias"))
-			return
-		}
-		setETag(w, cur.ResourceVersion)
-		writeData(w, http.StatusOK, cur)
+		a.getTenant(w, r)
 		return
 	}
+	ctx, cancel := a.backend.Context(r.Context())
+	defer cancel()
 	resp, err := a.backend.Tenants.UpdateTenant(ctx, &aigridv1.UpdateTenantRequest{Object: obj, UpdateMask: &fieldmaskpb.FieldMask{Paths: paths}})
 	if err != nil {
 		a.respondError(w, r, err)

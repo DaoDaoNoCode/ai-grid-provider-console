@@ -72,6 +72,10 @@ type ModelsClient interface {
 	// `rollout` or `placement` re-applies none, as the ManifestWorkReplicaSet
 	// controller compares each work with its template alone (a new placement
 	// adds and removes the works of clusters entering and leaving the decision).
+	// An update after which the spec, labels and annotations equal the stored
+	// ones is not written: the stored model comes back with `resource_version`
+	// and `generation` unchanged, as the Kubernetes API server answers an
+	// unchanged update; the lock and the validation still apply.
 	UpdateModel(ctx context.Context, in *UpdateModelRequest, opts ...grpc.CallOption) (*UpdateModelResponse, error)
 	// Deletes a model and, for a placed model, its Placement and
 	// ManifestWorkReplicaSet. The console's template uses the CRD default,
@@ -175,6 +179,10 @@ type ModelsServer interface {
 	// `rollout` or `placement` re-applies none, as the ManifestWorkReplicaSet
 	// controller compares each work with its template alone (a new placement
 	// adds and removes the works of clusters entering and leaving the decision).
+	// An update after which the spec, labels and annotations equal the stored
+	// ones is not written: the stored model comes back with `resource_version`
+	// and `generation` unchanged, as the Kubernetes API server answers an
+	// unchanged update; the lock and the validation still apply.
 	UpdateModel(context.Context, *UpdateModelRequest) (*UpdateModelResponse, error)
 	// Deletes a model and, for a placed model, its Placement and
 	// ManifestWorkReplicaSet. The console's template uses the CRD default,

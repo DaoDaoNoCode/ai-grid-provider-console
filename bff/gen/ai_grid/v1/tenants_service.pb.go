@@ -400,8 +400,11 @@ type UpdateTenantRequest struct {
 	// UpdateManagedCluster and UpdateModel; empty skips it). It is never
 	// written: every successful update bumps the stored version.
 	Object *Tenant `protobuf:"bytes,1,opt,name=object,proto3" json:"object,omitempty"`
-	// Supported paths: `name`, `domains`, `enabled`, `description`,
-	// `attributes`, `domain_details`. The backend reads the full Keycloak
+	// Supported paths: `name`, `alias`, `domains`, `enabled`, `description`,
+	// `attributes`, `domain_details`. `alias` writes nothing, because the
+	// alias is immutable: it lets a client send back the alias it loaded, and
+	// a different non-blank `object.alias` is InvalidArgument "Cannot change
+	// the alias" (Keycloak's text) with or without the path. The backend reads the full Keycloak
 	// representation, overwrites the named fields and PUTs the whole result,
 	// so everything else, `alias` and `redirectUrl` included, is written back
 	// as stored. This matters: Keycloak's PUT replaces `description` and

@@ -78,6 +78,7 @@ const (
 
 	// Field-mask paths UpdateTenant accepts.
 	PathName          = "name"
+	PathAlias         = "alias"
 	PathDomains       = "domains"
 	PathEnabled       = "enabled"
 	PathDescription   = "description"
@@ -94,7 +95,7 @@ const MsgKeycloakDownPref = "Keycloak is unavailable: "
 const wildcardPrefix = "*."
 
 // tenantPaths is the list UpdateTenant names in its InvalidArgument messages.
-var tenantPaths = []string{PathName, PathDomains, PathEnabled, PathDescription, PathAttributes, PathDomainDetails}
+var tenantPaths = []string{PathName, PathAlias, PathDomains, PathEnabled, PathDescription, PathAttributes, PathDomainDetails}
 
 // uuidPattern is a lower-case version 4 UUID as KeycloakModelUtils.generateId()
 // (java.util.UUID.randomUUID) writes it: version nibble 4, variant 8-b.

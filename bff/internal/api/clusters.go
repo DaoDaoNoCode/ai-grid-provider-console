@@ -261,38 +261,26 @@ func (a *App) fetchCluster(ctx context.Context, name string) (*aigridv1.ManagedC
 }
 
 // ClusterPatch is the body of PATCH /api/v1/clusters/{name}. Every field is
-// optional; an absent field is left alone, an empty string removes the label
-// or annotation, `null` removes a coordinate.
+// optional and `null` is the same as absent; a present map replaces the
+// stored one as a whole (FieldMask semantics, OSAC's; there are no per-key
+// paths), so a client that changes one label sends the `labels` map it
+// loaded with that label set, and removes a label by leaving it out. The BFF
+// neither merges, compares nor validates the maps: the backend applies them
+// under optimistic locking, puts back what the hub owns, checks the AI Grid
+// annotations it understands (`ai-grid/latitude`, `ai-grid/longitude`) and
+// does not write an update that changes nothing.
 type ClusterPatch struct {
-	AIGridEnabled *bool           `json:"aiGridEnabled"`
-	Provisioned   *bool           `json:"provisioned"`
-	Location      *string         `json:"location"`
-	Site          *string         `json:"site"`
-	Region        *string         `json:"region"`
-	SiteName      *string         `json:"siteName"`
-	Latitude      optionalFloat64 `json:"latitude"`
-	Longitude     optionalFloat64 `json:"longitude"`
+	Labels           *map[string]string `json:"labels"`
+	Annotations      *map[string]string `json:"annotations"`
+	HubAcceptsClient *bool              `json:"hubAcceptsClient"`
 }
 
-// optionalFloat64 tells apart absent, null and a number.
-type optionalFloat64 struct {
-	Set   bool
-	Valid bool
-	Value float64
-}
-
-func (o *optionalFloat64) UnmarshalJSON(b []byte) error {
-	o.Set = true
-	if string(b) == "null" {
-		o.Valid = false
-		return nil
-	}
-	if err := json.Unmarshal(b, &o.Value); err != nil {
-		return err
-	}
-	o.Valid = true
-	return nil
-}
+// Field-mask paths of UpdateManagedCluster.
+const (
+	maskClusterLabels      = "labels"
+	maskClusterAnnotations = "annotations"
+	maskHubAcceptsClient   = "hub_accepts_client"
+)
 
 // maxBodyBytes bounds a JSON request body; a patch or a tenant is a handful
 // of fields.
@@ -360,13 +348,13 @@ func decodeObject(dec *json.Decoder, into any) error {
 	return strict.Decode(into)
 }
 
-// patchCluster answers PATCH /api/v1/clusters/{name}: reads the cluster,
-// applies the patch to its labels and annotations and writes them back with
-// `UpdateManagedCluster` under optimistic locking, so a concurrent change on
-// the hub surfaces as 409 instead of being overwritten. The lock is on the
-// If-Match version the client must send (the version its page showed, so a
-// stale tab gets 409; requireIfMatch). A patch that leaves both maps as they
-// are writes nothing and answers the current cluster.
+// patchCluster answers PATCH /api/v1/clusters/{name} with one
+// UpdateManagedCluster: the present body fields become the object and the
+// field mask, the If-Match version (required, requireIfMatch) the object's
+// `resource_version` with `lock: true`, so a stale tab or a concurrent
+// change is the backend's Aborted, 409. The BFF does not read the cluster
+// first. A body that names no field is answered like GET (getCluster), with
+// no write: a transport shortcut, not a comparison.
 func (a *App) patchCluster(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if err := requireJSON(r); err != nil {
@@ -383,80 +371,30 @@ func (a *App) patchCluster(w http.ResponseWriter, r *http.Request) {
 		a.respondError(w, r, err)
 		return
 	}
-	if patch.Latitude.Valid && (patch.Latitude.Value < -90 || patch.Latitude.Value > 90) {
-		a.respondError(w, r, Errorf(http.StatusUnprocessableEntity, "latitude must be between -90 and 90"))
-		return
-	}
-	if patch.Longitude.Valid && (patch.Longitude.Value < -180 || patch.Longitude.Value > 180) {
-		a.respondError(w, r, Errorf(http.StatusUnprocessableEntity, "longitude must be between -180 and 180"))
-		return
-	}
-
-	ctx, cancel := a.backend.Context(r.Context())
-	defer cancel()
-	current, err := a.backend.Clusters.GetManagedCluster(ctx, &aigridv1.GetManagedClusterRequest{Name: name})
-	if err != nil {
-		a.respondError(w, r, err)
-		return
-	}
-	obj := current.GetObject()
-	labels := copyMap(obj.GetLabels())
-	annotations := copyMap(obj.GetAnnotations())
-
-	setBool := func(m map[string]string, key string, v *bool) {
-		if v != nil {
-			m[key] = strconv.FormatBool(*v)
-		}
-	}
-	setString := func(m map[string]string, key string, v *string) {
-		switch {
-		case v == nil:
-		case *v == "":
-			delete(m, key)
-		default:
-			m[key] = *v
-		}
-	}
-	setCoord := func(m map[string]string, key string, v optionalFloat64) {
-		switch {
-		case !v.Set:
-		case v.Valid:
-			m[key] = strconv.FormatFloat(v.Value, 'f', -1, 64)
-		default:
-			delete(m, key)
-		}
-	}
-	setBool(labels, LabelEnabled, patch.AIGridEnabled)
-	setBool(labels, LabelProvisioned, patch.Provisioned)
-	setString(labels, LabelLocation, patch.Location)
-	setString(labels, LabelSite, patch.Site)
-	setString(labels, LabelRegion, patch.Region)
-	setString(annotations, AnnotationSiteName, patch.SiteName)
-	setCoord(annotations, AnnotationLatitude, patch.Latitude)
-	setCoord(annotations, AnnotationLongitude, patch.Longitude)
-	// Only a map that now differs from the stored one goes in the mask, so a
-	// patch that repeats the current values (or sets nothing) writes nothing.
+	// An empty map is absent on the wire; the mask path is what tells the
+	// backend to clear it.
+	obj := &aigridv1.ManagedCluster{Name: name, ResourceVersion: expected}
 	var paths []string
-	if !maps.Equal(labels, obj.GetLabels()) {
-		paths = append(paths, "labels")
+	if patch.Labels != nil {
+		obj.Labels = *patch.Labels
+		paths = append(paths, maskClusterLabels)
 	}
-	if !maps.Equal(annotations, obj.GetAnnotations()) {
-		paths = append(paths, "annotations")
+	if patch.Annotations != nil {
+		obj.Annotations = *patch.Annotations
+		paths = append(paths, maskClusterAnnotations)
+	}
+	if patch.HubAcceptsClient != nil {
+		obj.HubAcceptsClient = *patch.HubAcceptsClient
+		paths = append(paths, maskHubAcceptsClient)
 	}
 	if len(paths) == 0 {
-		// Nothing to change: answer with the current object, no write.
-		setETag(w, obj.GetResourceVersion())
-		writeData(w, http.StatusOK, toGridCluster(obj))
+		a.getCluster(w, r)
 		return
 	}
-
+	ctx, cancel := a.backend.Context(r.Context())
+	defer cancel()
 	updated, err := a.backend.Clusters.UpdateManagedCluster(ctx, &aigridv1.UpdateManagedClusterRequest{
-		Object: &aigridv1.ManagedCluster{
-			Name:            name,
-			ResourceVersion: expected,
-			Labels:          labels,
-			Annotations:     annotations,
-		},
+		Object:     obj,
 		UpdateMask: &fieldmaskpb.FieldMask{Paths: paths},
 		Lock:       true,
 	})
@@ -469,8 +407,8 @@ func (a *App) patchCluster(w http.ResponseWriter, r *http.Request) {
 	writeData(w, http.StatusOK, toGridCluster(updated.GetObject()))
 }
 
-// copyMap is nil-safe: the patch needs a map to write into even when the
-// hub object has none.
+// copyMap is nil-safe: the JSON carries an empty map rather than null when
+// the backend sends none.
 func copyMap(m map[string]string) map[string]string {
 	if m == nil {
 		return map[string]string{}

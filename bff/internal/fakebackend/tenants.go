@@ -321,6 +321,18 @@ func (s *Server) checkDomainsFree(t *aigridv1.Tenant, selfID string) error {
 // with the same name already exists.", not "Name can not be null". Then
 // toModel: a different alias is 400 "Cannot change the alias", then the
 // domains as on create.
+//
+// The mask path `alias` exists for a client that sends back the alias it
+// loaded: it writes nothing (the PUT always carries the stored alias) and a
+// different non-blank alias is the same InvalidArgument as above.
+//
+// A merge that leaves the organization as stored is not PUT (console
+// proposal: the backend compares its GET with the merged representation and
+// skips a PUT that changes nothing, so Keycloak writes no admin event and the
+// version attribute is not bumped; Keycloak itself would accept the PUT and
+// write the event). The tenant comes back with its stored resource_version;
+// the version precondition and Keycloak's checks run before, so a stale or
+// invalid request still fails.
 func (s *Server) UpdateTenant(ctx context.Context, req *aigridv1.UpdateTenantRequest) (*aigridv1.UpdateTenantResponse, error) {
 	token, err := s.begin(ctx)
 	if err != nil {
@@ -433,6 +445,10 @@ func (s *Server) UpdateTenant(ctx context.Context, req *aigridv1.UpdateTenantReq
 	}
 	if err := checkIdentityProviders(next); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	if proto.Equal(next, cur) {
+		s.logger.Debug("organization update changes nothing; no PUT", "id", cur.GetId(), "paths", paths, "resourceVersion", cur.GetResourceVersion())
+		return &aigridv1.UpdateTenantResponse{Object: cloneTenant(cur)}, nil
 	}
 	bumpTenantVersion(next)
 	s.tenants[cur.GetId()] = next
