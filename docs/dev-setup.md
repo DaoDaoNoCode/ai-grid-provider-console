@@ -10,9 +10,21 @@ way kube-auth-proxy would, and the BFF forwards them to the backend.
 - Go 1.26 or newer, `golangci-lint`
 - Node 22 and pnpm 11 (`npm install -g pnpm@11.22.0`)
 - `oc`, `kustomize`, `jq`
-- `oc login` to an ACM hub. The backend lists `ManagedClusters` with your kubeconfig
+- To run against a real cluster or deploy (not for `make dev-fake`): `oc login` to an ACM hub. The backend lists `ManagedClusters` with your kubeconfig
   locally; in a cluster it uses its ServiceAccount. The BFF asks the same hub whether you
   may patch `ManagedClusters` (`isProviderAdmin`), using your token.
+
+## Run without a cluster
+
+```sh
+make install     # once: frontend dependencies
+make dev-fake    # fake backend :9090 and hub :9091, BFF :8080, frontend :9000
+```
+
+Open http://127.0.0.1:9000. You're signed in as `dev-user`, a provider admin; set
+`AUTH_TOKEN=viewer-token AUTH_USER=viewer` to see the console as a user who isn't one. The fake backend serves
+the backend's gRPC services from `mock/fixtures/`. For what it simulates, the fixture files, and
+the other tokens, see [mock/README.md](../mock/README.md).
 
 ## Run against a real cluster
 

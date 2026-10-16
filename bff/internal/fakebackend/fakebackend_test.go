@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -22,6 +24,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/types/dynamicpb"
 )
 
 // repoFixtures is the directory the console ships; the test proves it loads
@@ -151,9 +154,15 @@ func TestNewCopiesTheFixtures(t *testing.T) {
 
 func dial(t *testing.T, s *Server) *grpc.ClientConn {
 	t.Helper()
-	lis := bufconn.Listen(1 << 20)
 	srv := grpc.NewServer()
 	s.Register(srv)
+	return dialServer(t, srv)
+}
+
+// dialServer serves srv over bufconn and returns a client connection to it.
+func dialServer(t *testing.T, srv *grpc.Server) *grpc.ClientConn {
+	t.Helper()
+	lis := bufconn.Listen(1 << 20)
 	go func() { _ = srv.Serve(lis) }()
 	conn, err := grpc.NewClient("passthrough:///bufconn", grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return lis.DialContext(ctx) }))
@@ -307,30 +316,72 @@ func TestHubAccessReview(t *testing.T) {
 	}
 }
 
-// TestFakeImplementsEveryProtoService fails when the pinned proto gains a
-// service the fake does not register: the signal to extend the fake (or add
-// an explicit Unimplemented registration) the same day the backend changes.
-func TestFakeImplementsEveryProtoService(t *testing.T) {
-	s, _ := New(&Fixtures{}, slog.New(slog.DiscardHandler))
+// TestFakeImplementsEveryProtoMethod fails when the pinned proto gains a
+// service or a method the fake does not implement: the signal to extend the
+// fake the same day the backend changes. Registration alone proves nothing,
+// because the embedded Unimplemented*Server structs register every method in
+// the generated ServiceDesc, so the test calls each method and requires an
+// answer other than Unimplemented.
+func TestFakeImplementsEveryProtoMethod(t *testing.T) {
+	s, err := New(&Fixtures{}, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
 	srv := grpc.NewServer()
 	s.Register(srv)
-	registered := srv.GetServiceInfo()
+	if missing, _ := unimplementedMethods(t, srv); len(missing) > 0 {
+		t.Errorf("the fake does not implement: %s", strings.Join(missing, ", "))
+	}
+}
+
+// unimplementedMethods serves srv over bufconn, calls every method of every
+// service in the pinned proto with an empty request, and returns the full
+// names of the methods with no handler, then every method it called. A method
+// has no handler when it answers Unimplemented, which an unregistered service
+// does too. Each call gets its own deadline, and an answer that can come from
+// the client side (DeadlineExceeded, Unavailable, Canceled) also counts as no
+// handler, so a timeout can't pass a method unchecked. Any other answer, such
+// as InvalidArgument or NotFound for the empty request, means a handler ran.
+func unimplementedMethods(t *testing.T, srv *grpc.Server) (missing, called []string) {
+	t.Helper()
+	conn := dialServer(t, srv)
 	file := aigridv1.File_proto_ai_grid_v1_ai_grid_proto
 	for i := 0; i < file.Services().Len(); i++ {
 		svc := file.Services().Get(i)
-		info, ok := registered[string(svc.FullName())]
-		if !ok {
-			t.Errorf("proto service %s is not registered by the fake", svc.FullName())
-			continue
-		}
-		methods := map[string]bool{}
-		for _, m := range info.Methods {
-			methods[m.Name] = true
-		}
 		for j := 0; j < svc.Methods().Len(); j++ {
-			if name := string(svc.Methods().Get(j).Name()); !methods[name] {
-				t.Errorf("fake registers %s without method %s", svc.FullName(), name)
+			m := svc.Methods().Get(j)
+			full := fmt.Sprintf("/%s/%s", svc.FullName(), m.Name())
+			if m.IsStreamingClient() || m.IsStreamingServer() {
+				t.Fatalf("%s is a streaming method; extend unimplementedMethods to call it", full)
+			}
+			called = append(called, full)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer test-token", "x-forwarded-user", "test-user")
+			err := conn.Invoke(ctx, full, dynamicpb.NewMessage(m.Input()), dynamicpb.NewMessage(m.Output()))
+			cancel()
+			switch code := status.Code(err); code {
+			case codes.Unimplemented, codes.DeadlineExceeded, codes.Unavailable, codes.Canceled:
+				missing = append(missing, fmt.Sprintf("%s (%s)", full, code))
 			}
 		}
+	}
+	return missing, called
+}
+
+// TestUnimplementedMethodsCatchesStubs proves the guard bites: a server built
+// only from the generated stubs registers every service and method, and the
+// check still reports every method as missing.
+func TestUnimplementedMethodsCatchesStubs(t *testing.T) {
+	srv := grpc.NewServer()
+	aigridv1.RegisterAiGridServer(srv, aigridv1.UnimplementedAiGridServer{})
+	aigridv1.RegisterManagedClustersServer(srv, aigridv1.UnimplementedManagedClustersServer{})
+	aigridv1.RegisterTenantsServer(srv, aigridv1.UnimplementedTenantsServer{})
+	missing, called := unimplementedMethods(t, srv)
+	want := make([]string, len(called))
+	for i, m := range called {
+		want[i] = m + " (Unimplemented)"
+	}
+	if len(called) == 0 || !slices.Equal(missing, want) {
+		t.Errorf("stub-only server: got missing %v, want every method %v", missing, want)
 	}
 }
