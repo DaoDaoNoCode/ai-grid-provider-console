@@ -1,12 +1,20 @@
+import { Fragment } from 'react';
 import { PageSection } from '@patternfly/react-core';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useParams } from 'react-router-dom';
 import type { ConsoleService } from './api/ConsoleService';
 import { NotFoundPage } from './components/NotFoundPage';
 import { NotYetPortedPage } from './components/NotYetPortedPage';
 import { ClustersPage } from './pages/ClustersPage';
-import { TenantsPage } from './pages/TenantsPage';
+import { OrganizationDetailsPage } from './pages/organizations/OrganizationDetailsPage';
+import { OrganizationListPage } from './pages/organizations/OrganizationListPage';
+import { OrganizationWizardPage } from './pages/organizations/OrganizationWizardPage';
 
 type Props = { service: ConsoleService };
+
+/** Mounts its page afresh for each record, so another :id loads that record and resets its form. */
+const ByParams: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <Fragment key={Object.values(useParams()).join('/')}>{children}</Fragment>
+);
 
 // Ported from krisv/ai-grid-cloud-provider-poc src/app/App.tsx at 62319b8.
 // Later tasks replace each NotYetPortedPage with its page.
@@ -27,13 +35,38 @@ export const AppRoutes: React.FC<Props> = ({ service }) => (
       path="/organizations"
       element={
         <PageSection>
-          <TenantsPage service={service} />
+          <OrganizationListPage service={service} />
         </PageSection>
       }
     />
-    <Route path="/organizations/create" element={<NotYetPortedPage title="Create organization" />} />
-    <Route path="/organizations/:id" element={<NotYetPortedPage title="Organization" />} />
-    <Route path="/organizations/:id/edit" element={<NotYetPortedPage title="Edit organization" />} />
+    <Route
+      path="/organizations/create"
+      element={
+        <PageSection>
+          <OrganizationWizardPage service={service} />
+        </PageSection>
+      }
+    />
+    <Route
+      path="/organizations/:id"
+      element={
+        <PageSection>
+          <ByParams>
+            <OrganizationDetailsPage service={service} />
+          </ByParams>
+        </PageSection>
+      }
+    />
+    <Route
+      path="/organizations/:id/edit"
+      element={
+        <PageSection>
+          <ByParams>
+            <OrganizationWizardPage service={service} />
+          </ByParams>
+        </PageSection>
+      }
+    />
     <Route path="/models" element={<NotYetPortedPage title="Models" />} />
     <Route path="/models/deploy" element={<NotYetPortedPage title="Deploy model" />} />
     <Route path="/subscriptions" element={<NotYetPortedPage title="Subscriptions" />} />
