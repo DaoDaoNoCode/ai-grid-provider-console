@@ -15,9 +15,11 @@ import (
 )
 
 // Tenant is a consumer organisation. The backend reads them from Keycloak
-// Organizations in the AI Grid realm; the JSON carries what Keycloak's full
-// representation carries, with the collections always present (Keycloak
-// omits an empty `domains`, the console does not).
+// Organizations in the AI Grid realm; the JSON carries the fields of
+// Keycloak's representation that the draft proto maps (not `redirectUrl`,
+// which has no Tenant field, nor `members`, `identityProviders` and
+// `groups`, which a GET never fills), with the collections always present
+// (Keycloak omits an empty `domains`, the console does not).
 type Tenant struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
@@ -153,7 +155,10 @@ func (a *App) listTenants(w http.ResponseWriter, r *http.Request) {
 	writeList(w, http.StatusOK, out, meta)
 }
 
-// getTenant answers GET /api/v1/tenants/{id}.
+// getTenant answers GET /api/v1/tenants/{id}. Unlike GET /clusters/{name}
+// it has no list fallback: the shipped backend has no GetTenant RPC, so
+// against it this is 501 (Unimplemented), like every tenant write and a
+// PATCH that sets no field (which reads with GetTenant).
 func (a *App) getTenant(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := a.backend.Context(r.Context())
 	defer cancel()

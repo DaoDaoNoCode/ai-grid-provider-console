@@ -38,10 +38,14 @@ const (
 // an empty request.
 type ListTenantsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Zero-based index of the first result. Default zero.
+	// Zero-based index of the first result. Default zero; negative is
+	// InvalidArgument (Keycloak itself ignores a negative `first`, so the
+	// backend checks it).
 	Offset *int32 `protobuf:"varint,1,opt,name=offset,proto3,oneof" json:"offset,omitempty"`
 	// Maximum number of results. Omitted means all; zero means count only;
-	// negative is InvalidArgument.
+	// negative is InvalidArgument. These are the contract's rules, not
+	// Keycloak's: its `max` defaults to 10 and a negative value is ignored,
+	// so the backend sends an explicit `max` when `limit` is omitted.
 	Limit *int32 `protobuf:"varint,2,opt,name=limit,proto3,oneof" json:"limit,omitempty"`
 	// CEL over `this` (a Tenant). The only form supported today is the one
 	// that means what Keycloak's `search` parameter does, a case-insensitive
@@ -49,9 +53,12 @@ type ListTenantsRequest struct {
 	//   this.name.contains("<term>") || this.domains.exists(d, d.contains("<term>"))
 	// with the same string literal in both places (CEL escapes `"` and `\`).
 	// The term is a literal substring: `%` and `_` match themselves, never act
-	// as wildcards. The backend may evaluate the expression in memory or push
-	// the term down to Keycloak's `search` parameter, which is a SQL LIKE
-	// built without escaping, so it MUST escape `%`, `_` and `\` in the term
+	// as wildcards. A blank term (empty or whitespace only) matches every
+	// tenant, as Keycloak's `search` does. The backend may evaluate the
+	// expression in memory or push the term down to Keycloak's `search`
+	// parameter, which is a SQL LIKE built without escaping and without an
+	// ESCAPE clause (so the database's default escape character, backslash on
+	// PostgreSQL, applies), so it MUST escape `%`, `_` and `\` in the term
 	// first; the fake's literal match is the reference behaviour. Any other
 	// expression is InvalidArgument naming it.
 	Filter *string `protobuf:"bytes,3,opt,name=filter,proto3,oneof" json:"filter,omitempty"`
@@ -376,17 +383,26 @@ func (x *CreateTenantResponse) GetObject() *Tenant {
 // Request of UpdateTenant.
 type UpdateTenantRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The tenant with the new values. `id` identifies it. `alias`, when set,
-	// must equal the stored alias.
+	// The tenant with the new values. `id` identifies it. `alias`, when set
+	// (not blank), must equal the stored alias; when unset the stored alias is
+	// kept.
 	Object *Tenant `protobuf:"bytes,1,opt,name=object,proto3" json:"object,omitempty"`
 	// Supported paths: `name`, `domains`, `enabled`, `description`,
-	// `attributes`, `domain_details`. A path replaces that field as a whole
-	// (`domains` replaces the set of names and keeps the metadata of a domain
-	// that stays; `domain_details` replaces names and metadata). Without a
-	// mask the request is Keycloak's PUT of a body without the `attributes` and
-	// `domains` keys: `name`, `enabled` (true when omitted, as Keycloak
-	// defaults it) and `description` are replaced, `attributes` and the
-	// domains are left unchanged.
+	// `attributes`, `domain_details`. The backend reads the full Keycloak
+	// representation, overwrites the named fields and PUTs the whole result,
+	// so everything else, `alias` and `redirectUrl` included, is written back
+	// as stored. This matters: Keycloak's PUT replaces `description` and
+	// `redirectUrl` with whatever the body has (absent clears them) and
+	// defaults an absent `alias` to the new `name`, which is "Cannot change
+	// the alias" unless the two are equal. A path replaces that field as a
+	// whole (`domains` replaces the set of names and keeps the metadata of a
+	// domain that stays, because the backend copies the stored metadata of
+	// those names into the PUT; Keycloak itself would reset it from a body
+	// with names only; `domain_details` replaces names and metadata). Without
+	// a mask `name`, `enabled` (true when omitted, as Keycloak defaults it)
+	// and `description` are taken from the request and everything else,
+	// `alias`, `attributes` and the domains included, is kept; an omitted
+	// `name` is then a blank name, AlreadyExists.
 	UpdateMask    *fieldmaskpb.FieldMask `protobuf:"bytes,2,opt,name=update_mask,json=updateMask,proto3" json:"update_mask,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

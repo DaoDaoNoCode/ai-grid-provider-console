@@ -46,12 +46,16 @@ func searchTerm(filter string) (string, error) {
 
 // matchesSearch is the contract's search: a case-insensitive literal
 // substring match on the name or on any domain (domains are stored
-// lower-case). Keycloak's `search` is a SQL `LIKE %term%` built without
-// escaping, so a backend that pushes the term down must escape `%` and `_`
-// first (ListTenantsRequest.filter in the proto); the fake's literal match is
-// the reference behaviour.
+// lower-case). A blank term (empty or whitespace only, StringUtil.isBlank)
+// matches every organization, as Keycloak's search does
+// (JpaOrganizationProvider.java L468-470). Keycloak's `search` is
+// `LIKE '%' + term.toLowerCase() + '%'` built without escaping and without
+// an ESCAPE clause (L482-483), so the database's default escape character
+// applies (backslash on PostgreSQL): a backend that pushes the term down
+// must escape `%`, `_` and `\` first (ListTenantsRequest.filter in the
+// proto); the fake's literal match is the reference behaviour.
 func matchesSearch(t *aigridv1.Tenant, term string) bool {
-	if term == "" {
+	if javaIsBlank(term) {
 		return true
 	}
 	term = strings.ToLower(term)
@@ -87,14 +91,19 @@ func (s *Server) beginTenants() error {
 	return nil
 }
 
-// ListTenants implements Tenants: `offset`/`limit` are Keycloak's `first`/`max`
-// (omitted limit means all, zero means count only, negative is
-// InvalidArgument), `total` is what `GET /organizations/count` returns for
-// the same search, results are ordered by name and disabled organizations
-// are included like Keycloak includes them. The order is Go byte order, an
-// approximation of the realm database's collation (PostgreSQL on the hub,
-// whose typical locale is case-insensitive); the fixtures are all lower-case
-// so the two agree today.
+// ListTenants implements Tenants. `offset`/`limit` travel to Keycloak as
+// `first`/`max`, but their meaning is the contract's, not Keycloak's: an
+// omitted limit means all, zero means count only and a negative value is
+// InvalidArgument, whereas Keycloak defaults `first` to 0 and `max` to 10
+// (OrganizationsResource.java L157-158) and ignores a negative value of
+// either (L138-139; PaginationUtils.paginateQuery L26-41), so the backend
+// must send an explicit `max` for an omitted limit and reject negatives
+// itself. `total` is what `GET /organizations/count` returns for the same
+// search, disabled organizations are included like Keycloak includes them,
+// and results are ordered by name (JpaOrganizationProvider.java L454,
+// `ORDER BY name ASC`). That order is the realm database's collation for
+// the name column, which the console has not checked on the hub; the fake
+// uses Go byte order, which equals it for the all-lower-case fixtures.
 func (s *Server) ListTenants(ctx context.Context, req *aigridv1.ListTenantsRequest) (*aigridv1.ListTenantsResponse, error) {
 	if _, err := s.begin(ctx); err != nil {
 		return nil, err
@@ -149,7 +158,8 @@ func (s *Server) GetTenant(ctx context.Context, req *aigridv1.GetTenantRequest) 
 	}
 	if req.GetId() == "" {
 		// Request-shape check before Keycloak is called; the text is the
-		// console's (Keycloak would say "Id cannot be null.").
+		// console's (Keycloak would say "Id cannot be null.",
+		// OrganizationsResource.java L206-207).
 		return nil, status.Error(codes.InvalidArgument, "id is required")
 	}
 	s.mu.RLock()
@@ -170,10 +180,12 @@ func (s *Server) tenantNotFound(id string) error {
 }
 
 // CreateTenant implements Tenants in the order Keycloak checks a POST
-// (OrganizationsResource.create L112-118, then JpaOrganizationProvider.create
-// L102-121, then RepresentationToModel.toModel): explicit alias characters,
+// (OrganizationsResource.java L112-118, then JpaOrganizationProvider.create
+// L102-121, then RepresentationToModel.toModel L1939-1958 and
+// OrganizationAdapter.setDomains L184-229): explicit alias characters,
 // blank name, alias defaulting to the name and the name's characters,
-// duplicate name, duplicate alias, and only then the domains. Everything
+// duplicate name, duplicate alias, and only then the domains (format, other
+// owners, identity provider aliases). Everything
 // Keycloak decides comes after the Keycloak gate (beginTenants), because the
 // real backend learns those answers from Keycloak and answers Unavailable
 // without it; only the request-shape checks precede it. The real backend
@@ -203,16 +215,19 @@ func (s *Server) CreateTenant(ctx context.Context, req *aigridv1.CreateTenantReq
 	if err := s.beginTenants(); err != nil {
 		return nil, err
 	}
+	// OrganizationsResource.java L112: an explicit alias, even a blank one,
+	// is checked first (validateNoSpace skips only null, which the proto
+	// sends as "").
 	if obj.GetAlias() != "" {
 		if err := validateAlias(obj.GetAlias()); err != nil {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
 	}
-	if strings.TrimSpace(obj.GetName()) == "" {
+	if javaIsBlank(obj.GetName()) { // JpaOrganizationProvider.java L103-104
 		return nil, status.Error(codes.InvalidArgument, MsgNameRequired)
 	}
 	t := cloneTenant(obj)
-	if strings.TrimSpace(t.GetAlias()) == "" {
+	if javaIsBlank(t.GetAlias()) { // JpaOrganizationProvider.java L107-113
 		t.Alias = t.GetName()
 		if err := validateAlias(t.GetAlias()); err != nil {
 			return nil, status.Error(codes.InvalidArgument, MsgNameNotAliasPrefix+err.Error())
@@ -234,8 +249,11 @@ func (s *Server) CreateTenant(ctx context.Context, req *aigridv1.CreateTenantReq
 	if err := s.checkDomainsFree(t, ""); err != nil {
 		return nil, err
 	}
+	if err := checkIdentityProviders(t); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
 	if t.Enabled == nil {
-		t.Enabled = proto.Bool(true) // OrganizationRepresentation.enabled defaults to true
+		t.Enabled = proto.Bool(true) // OrganizationRepresentation.java L33: enabled defaults to true
 	}
 	if t.Attributes == nil {
 		t.Attributes = map[string]string{}
@@ -247,7 +265,9 @@ func (s *Server) CreateTenant(ctx context.Context, req *aigridv1.CreateTenantReq
 }
 
 // checkDomainsFree is the realm-wide domain uniqueness Keycloak enforces
-// when it claims domains for an organization. Must be called under s.mu.
+// when it claims domains for an organization (OrganizationAdapter.java
+// L304-309: a conflict is another organization holding exactly that name).
+// Must be called under s.mu.
 func (s *Server) checkDomainsFree(t *aigridv1.Tenant, selfID string) error {
 	for _, d := range t.GetDomains() {
 		for id, other := range s.tenants {
@@ -259,15 +279,35 @@ func (s *Server) checkDomainsFree(t *aigridv1.Tenant, selfID string) error {
 	return nil
 }
 
-// UpdateTenant implements Tenants as the backend's GET, merge, PUT: the
-// mask names the fields to replace; without a mask the scalars are replaced
-// (`enabled` to true when unset, as Keycloak defaults it) and `attributes`
-// and the domains are left alone, which is what a Keycloak PUT does with a
-// body that lacks those keys (keycloak.md 5.6). Keycloak's own checks
-// follow: a new name that matches another organization's name or any
-// organization's domain, its own included (OrganizationResource.update
-// L123-126 searches with exact=true and no self-exclusion), is 409; a
-// different alias is 400 "Cannot change the alias".
+// UpdateTenant implements Tenants as the backend's GET, merge, PUT (the
+// console's proposal, keycloak.md 8.1): the backend reads the full
+// representation, overwrites the fields the mask names with the request's
+// values and PUTs the result, so everything else, `alias` and
+// `redirectUrl` included, goes back as stored. Without a mask `name`,
+// `enabled` (true when unset, OrganizationRepresentation.java L33) and
+// `description` are taken from the request and `attributes` and the domains
+// are kept, which is what a Keycloak PUT does with a body that lacks those
+// two keys (RepresentationToModel.toModel L1949-1955; OrganizationAdapter
+// setAttributes L144-147 and setDomains L184-187 return on null).
+//
+// The alias is never taken from an omitted request field: the PUT carries
+// the stored alias unless the request names a non-blank one. That matters,
+// because a PUT straight to Keycloak without `alias` does not keep it:
+// toModel sets the new name first (L1944) and setAlias then defaults a blank
+// alias to that name (OrganizationAdapter.java L100-110), which is 400
+// "Cannot change the alias" whenever the new name differs from the stored
+// alias (for globex-research, whose alias is globex, always).
+//
+// Keycloak's own checks follow, in its order. First the name
+// (OrganizationResource.java L123-125): a name different from the stored
+// one is looked up with exact=true, which matches organization names and
+// domain names and does not exclude the organization itself, and any hit is
+// 409; a blank name always hits, because a blank search is no filter at all
+// (JpaOrganizationProvider.java L468-470) and the organization being
+// updated is in the realm, so a blank name is AlreadyExists "A organization
+// with the same name already exists.", not "Name can not be null". Then
+// toModel: a different alias is 400 "Cannot change the alias", then the
+// domains as on create.
 func (s *Server) UpdateTenant(ctx context.Context, req *aigridv1.UpdateTenantRequest) (*aigridv1.UpdateTenantResponse, error) {
 	token, err := s.begin(ctx)
 	if err != nil {
@@ -299,22 +339,26 @@ func (s *Server) UpdateTenant(ctx context.Context, req *aigridv1.UpdateTenantReq
 	}
 	next := cloneTenant(cur)
 	if has(PathName) {
-		if strings.TrimSpace(obj.GetName()) == "" {
-			return nil, status.Error(codes.InvalidArgument, MsgNameRequired)
-		}
 		next.Name = obj.GetName()
 	}
 	if next.GetName() != cur.GetName() {
-		// OrganizationResource.update searches with exact=true, which matches
-		// names and domains, and does not exclude the organization itself: a
-		// rename to one of its own domains is a conflict too.
+		// OrganizationResource.java L123-125 with
+		// JpaOrganizationProvider.getAllStream(name, exact=true) (L345-359,
+		// L462-489): blank matches everything, otherwise names and domains
+		// are compared for equality, the organization's own included.
+		if javaIsBlank(next.GetName()) {
+			return nil, status.Error(codes.AlreadyExists, MsgDuplicateName)
+		}
 		for id, other := range s.tenants {
 			if (id != cur.GetId() && other.GetName() == next.GetName()) || slices.Contains(other.GetDomains(), next.GetName()) {
 				return nil, status.Error(codes.AlreadyExists, MsgDuplicateName)
 			}
 		}
 	}
-	if obj.GetAlias() != "" && obj.GetAlias() != cur.GetAlias() {
+	// The PUT carries the request's alias when it is not blank, the stored
+	// one otherwise; OrganizationAdapter.setAlias (L100-110) refuses any
+	// other value than the stored one.
+	if !javaIsBlank(obj.GetAlias()) && obj.GetAlias() != cur.GetAlias() {
 		return nil, status.Error(codes.InvalidArgument, MsgAliasImmutable)
 	}
 	switch {
@@ -337,9 +381,13 @@ func (s *Server) UpdateTenant(ctx context.Context, req *aigridv1.UpdateTenantReq
 		next.Domains = nil
 		next.DomainDetails = obj.GetDomainDetails()
 	case slices.Contains(paths, PathDomains):
-		// The names are replaced; a domain that stays keeps its metadata, as
-		// OrganizationAdapter.setDomains keeps the entity and a client that
-		// sends only names has no metadata to offer.
+		// The names are replaced; a domain that stays keeps its metadata
+		// because the backend's merge copies the stored `verified`,
+		// identity provider alias and `autoRedirect` of every name that
+		// stays into the PUT body. That is the console's proposal, not
+		// Keycloak's behaviour: OrganizationAdapter.setDomains overwrites
+		// all three on a kept domain from the body (L200-205), so a body
+		// with names only would reset them.
 		kept := map[string]*aigridv1.TenantDomain{}
 		for _, d := range cur.GetDomainDetails() {
 			kept[d.GetName()] = d
@@ -359,6 +407,9 @@ func (s *Server) UpdateTenant(ctx context.Context, req *aigridv1.UpdateTenantReq
 	}
 	if err := s.checkDomainsFree(next, cur.GetId()); err != nil {
 		return nil, err
+	}
+	if err := checkIdentityProviders(next); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	s.tenants[cur.GetId()] = next
 	s.logger.Debug("organization updated", "id", next.GetId(), "name", next.GetName(), "paths", paths)
@@ -394,16 +445,18 @@ func (s *Server) DeleteTenant(ctx context.Context, req *aigridv1.DeleteTenantReq
 
 // seedTenant validates one fixture organization the way Keycloak would have
 // accepted it, so the shipped fixtures can only contain organizations that
-// could exist in a realm. Must be called under s.mu, before Serve.
+// could exist in a realm without identity providers (the fake has none, so
+// a domain `identityProviderAlias` is rejected as on create). Must be
+// called under s.mu, before Serve.
 func (s *Server) seedTenant(t *aigridv1.Tenant) error {
 	if !uuidPattern.MatchString(t.GetId()) {
 		return fmt.Errorf("fixture tenant %q: id %q is not a lower-case UUID as Keycloak assigns them", t.GetName(), t.GetId())
 	}
-	if strings.TrimSpace(t.GetName()) == "" {
+	if javaIsBlank(t.GetName()) {
 		return fmt.Errorf("fixture tenant %s: %s", t.GetId(), MsgNameRequired)
 	}
 	t = cloneTenant(t)
-	if strings.TrimSpace(t.GetAlias()) == "" {
+	if javaIsBlank(t.GetAlias()) {
 		t.Alias = t.GetName()
 	}
 	if t.Enabled == nil {
@@ -413,6 +466,9 @@ func (s *Server) seedTenant(t *aigridv1.Tenant) error {
 		return fmt.Errorf("fixture tenant %q: alias %q: %w", t.GetName(), t.GetAlias(), err)
 	}
 	if err := normalizeDomains(t); err != nil {
+		return fmt.Errorf("fixture tenant %q: %w", t.GetName(), err)
+	}
+	if err := checkIdentityProviders(t); err != nil {
 		return fmt.Errorf("fixture tenant %q: %w", t.GetName(), err)
 	}
 	if t.Attributes == nil {

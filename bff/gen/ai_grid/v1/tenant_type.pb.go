@@ -43,16 +43,20 @@ type Tenant struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Keycloak Organization id (UUID v4). Output only; the identifier for Get/Update/Delete.
 	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	// Organization name. Required on create, unique within the realm
-	// (Keycloak: 409 "A organization with the same name already exists.").
+	// Organization name. Required on create (Keycloak: 400 "Name can not be
+	// null"), unique within the realm (Keycloak: 409 "A organization with the
+	// same name already exists."; on update a blank name gets that 409 too).
 	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	// E-mail domains owned by the tenant: the `name` of each `domain_details`
 	// entry, in the same order. Keycloak trims and lower-cases them, validates
-	// them as the domain part of an e-mail address (hibernate-validator's rule:
-	// labels of letters, digits, `!#$%&'*+/=?^`{|}~` (no underscore) and non-ASCII characters
-	// with inner hyphens, at most 63 characters each and 255 in all) or as one
-	// wildcard `*.base.tld` whose base has 2 to 10 parts, and keeps them unique
-	// across the realm (mock/research/keycloak.md 5.7).
+	// them as the domain part of an e-mail address (hibernate-validator's rule
+	// as copied by Keycloak's EmailValidationUtil: labels of letters, digits,
+	// `!#$%&'*+/=?^`{|}~` (no underscore) and non-ASCII characters with inner
+	// hyphens, no trailing dot, at most 63 characters per label and 255 in all
+	// counted on the IDN (punycode) form, or a bracketed IPv4 or `IPv6:`
+	// literal) or as one wildcard `*.base.tld` whose base has 2 to 10 parts,
+	// and keeps them unique across the realm (mock/research/keycloak.md 5.7;
+	// mock/areas/tenants.md lists where the fake approximates the rule).
 	Domains []string `protobuf:"bytes,3,rep,name=domains,proto3" json:"domains,omitempty"`
 	// URL-safe alias (no whitespace or RFC 3986 reserved characters). Defaults
 	// to `name` on create. Immutable (Keycloak: 400 "Cannot change the alias").
@@ -171,7 +175,13 @@ type TenantDomain struct {
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	// Whether the provider marked the domain as verified. Default false.
 	Verified bool `protobuf:"varint,2,opt,name=verified,proto3" json:"verified,omitempty"`
-	// Alias of the organization identity provider that handles this domain, or empty.
+	// Alias of the organization identity provider that handles this domain, or
+	// empty. It must name an identity provider of the realm that is linked to
+	// the organization; otherwise Keycloak answers 400 "Identity provider with
+	// alias '<alias>' does not exist in realm <realm>" or "Identity provider
+	// '<alias>' is not associated with organization <name>" (InvalidArgument).
+	// The console's fake realm has no identity providers, so it rejects every
+	// non-empty value with the first message.
 	IdentityProviderAlias string `protobuf:"bytes,3,opt,name=identity_provider_alias,json=identityProviderAlias,proto3" json:"identity_provider_alias,omitempty"`
 	// Redirect logins for this domain straight to that identity provider.
 	AutoRedirect  bool `protobuf:"varint,4,opt,name=auto_redirect,json=autoRedirect,proto3" json:"auto_redirect,omitempty"`

@@ -46,22 +46,25 @@ const (
 // the caller to be a provider admin; the backend then uses its own Keycloak
 // service credential.
 type TenantsClient interface {
-	// Lists tenants, ordered by name as Keycloak returns them, which is the
-	// realm database's collation (case-insensitive on a typical PostgreSQL
-	// locale; the fake uses byte order, so a client must not rely on how
-	// upper- and lower-case names interleave). Disabled tenants are included;
-	// there is no filter for `enabled`.
+	// Lists tenants, ordered by name as Keycloak returns them (`ORDER BY name`
+	// in the realm database, so in that database's collation, which the
+	// console has not checked on the hub; the fake uses byte order, so a
+	// client must not rely on how upper- and lower-case names interleave).
+	// Disabled tenants are included; there is no filter for `enabled`.
 	ListTenants(ctx context.Context, in *ListTenantsRequest, opts ...grpc.CallOption) (*ListTenantsResponse, error)
 	// Returns one tenant by id. NotFound when absent.
 	GetTenant(ctx context.Context, in *GetTenantRequest, opts ...grpc.CallOption) (*GetTenantResponse, error)
 	// Creates a tenant (Keycloak POST, then GET of the Location). AlreadyExists
 	// with Keycloak's message when the name or alias is taken; InvalidArgument
 	// with Keycloak's message for a blank name, an alias with whitespace or
-	// reserved characters, a malformed domain or a domain another tenant owns.
+	// reserved characters, a malformed domain, a domain another tenant owns or
+	// a domain identity provider alias the realm does not have.
 	CreateTenant(ctx context.Context, in *CreateTenantRequest, opts ...grpc.CallOption) (*CreateTenantResponse, error)
 	// Updates the fields named in `update_mask` (Keycloak GET, merge, PUT).
 	// `alias` is immutable; a different value is InvalidArgument. A new name
-	// that matches another tenant's name or domain is AlreadyExists.
+	// that matches any tenant's name or domain, this tenant's domains
+	// included, is AlreadyExists, and so is a blank name (Keycloak's exact
+	// search treats a blank name as no filter and finds the tenant itself).
 	UpdateTenant(ctx context.Context, in *UpdateTenantRequest, opts ...grpc.CallOption) (*UpdateTenantResponse, error)
 	// Deletes a tenant and its memberships; unmanaged members stay realm
 	// users. NotFound when absent.
@@ -134,22 +137,25 @@ func (c *tenantsClient) DeleteTenant(ctx context.Context, in *DeleteTenantReques
 // the caller to be a provider admin; the backend then uses its own Keycloak
 // service credential.
 type TenantsServer interface {
-	// Lists tenants, ordered by name as Keycloak returns them, which is the
-	// realm database's collation (case-insensitive on a typical PostgreSQL
-	// locale; the fake uses byte order, so a client must not rely on how
-	// upper- and lower-case names interleave). Disabled tenants are included;
-	// there is no filter for `enabled`.
+	// Lists tenants, ordered by name as Keycloak returns them (`ORDER BY name`
+	// in the realm database, so in that database's collation, which the
+	// console has not checked on the hub; the fake uses byte order, so a
+	// client must not rely on how upper- and lower-case names interleave).
+	// Disabled tenants are included; there is no filter for `enabled`.
 	ListTenants(context.Context, *ListTenantsRequest) (*ListTenantsResponse, error)
 	// Returns one tenant by id. NotFound when absent.
 	GetTenant(context.Context, *GetTenantRequest) (*GetTenantResponse, error)
 	// Creates a tenant (Keycloak POST, then GET of the Location). AlreadyExists
 	// with Keycloak's message when the name or alias is taken; InvalidArgument
 	// with Keycloak's message for a blank name, an alias with whitespace or
-	// reserved characters, a malformed domain or a domain another tenant owns.
+	// reserved characters, a malformed domain, a domain another tenant owns or
+	// a domain identity provider alias the realm does not have.
 	CreateTenant(context.Context, *CreateTenantRequest) (*CreateTenantResponse, error)
 	// Updates the fields named in `update_mask` (Keycloak GET, merge, PUT).
 	// `alias` is immutable; a different value is InvalidArgument. A new name
-	// that matches another tenant's name or domain is AlreadyExists.
+	// that matches any tenant's name or domain, this tenant's domains
+	// included, is AlreadyExists, and so is a blank name (Keycloak's exact
+	// search treats a blank name as no filter and finds the tenant itself).
 	UpdateTenant(context.Context, *UpdateTenantRequest) (*UpdateTenantResponse, error)
 	// Deletes a tenant and its memberships; unmanaged members stay realm
 	// users. NotFound when absent.

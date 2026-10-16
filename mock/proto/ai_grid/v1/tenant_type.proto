@@ -32,16 +32,20 @@ message Tenant {
 
   // Keycloak Organization id (UUID v4). Output only; the identifier for Get/Update/Delete.
   string id = 1;
-  // Organization name. Required on create, unique within the realm
-  // (Keycloak: 409 "A organization with the same name already exists.").
+  // Organization name. Required on create (Keycloak: 400 "Name can not be
+  // null"), unique within the realm (Keycloak: 409 "A organization with the
+  // same name already exists."; on update a blank name gets that 409 too).
   string name = 2;
   // E-mail domains owned by the tenant: the `name` of each `domain_details`
   // entry, in the same order. Keycloak trims and lower-cases them, validates
-  // them as the domain part of an e-mail address (hibernate-validator's rule:
-  // labels of letters, digits, `!#$%&'*+/=?^`{|}~` (no underscore) and non-ASCII characters
-  // with inner hyphens, at most 63 characters each and 255 in all) or as one
-  // wildcard `*.base.tld` whose base has 2 to 10 parts, and keeps them unique
-  // across the realm (mock/research/keycloak.md 5.7).
+  // them as the domain part of an e-mail address (hibernate-validator's rule
+  // as copied by Keycloak's EmailValidationUtil: labels of letters, digits,
+  // `!#$%&'*+/=?^`{|}~` (no underscore) and non-ASCII characters with inner
+  // hyphens, no trailing dot, at most 63 characters per label and 255 in all
+  // counted on the IDN (punycode) form, or a bracketed IPv4 or `IPv6:`
+  // literal) or as one wildcard `*.base.tld` whose base has 2 to 10 parts,
+  // and keeps them unique across the realm (mock/research/keycloak.md 5.7;
+  // mock/areas/tenants.md lists where the fake approximates the rule).
   repeated string domains = 3;
   // URL-safe alias (no whitespace or RFC 3986 reserved characters). Defaults
   // to `name` on create. Immutable (Keycloak: 400 "Cannot change the alias").
@@ -71,7 +75,13 @@ message TenantDomain {
   string name = 1;
   // Whether the provider marked the domain as verified. Default false.
   bool verified = 2;
-  // Alias of the organization identity provider that handles this domain, or empty.
+  // Alias of the organization identity provider that handles this domain, or
+  // empty. It must name an identity provider of the realm that is linked to
+  // the organization; otherwise Keycloak answers 400 "Identity provider with
+  // alias '<alias>' does not exist in realm <realm>" or "Identity provider
+  // '<alias>' is not associated with organization <name>" (InvalidArgument).
+  // The console's fake realm has no identity providers, so it rejects every
+  // non-empty value with the first message.
   string identity_provider_alias = 3;
   // Redirect logins for this domain straight to that identity provider.
   bool auto_redirect = 4;

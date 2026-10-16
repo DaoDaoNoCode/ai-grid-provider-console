@@ -1,5 +1,5 @@
 {
-  "_comment": "ai_grid.v1.Tenant in protojson, as the backend maps Keycloak 26.8 Organizations in the ai-grid realm (mock/research/keycloak.md section 4): id = organization UUID, name and alias unique in the realm (alias defaults to name and never changes), domains = the names of domainDetails in the same order, lower-case, unique across organizations; verified is free-form metadata, identityProviderAlias/autoRedirect route a domain's logins to an organization IdP. attributes carry the first value of each Keycloak attribute. All values are fictional. The fake validates the file like Keycloak would (duplicate name/alias/domain, bad domain, non-UUID id fail at start). Other modes, one at a time: {\"unavailable\": \"request Keycloak token: dial tcp ...: connection refused\"} makes every Tenants RPC Unavailable (Keycloak unreachable); {\"realmMissing\": true} makes them FailedPrecondition (the dev hub today, whose Keycloak has no ai-grid realm).",
+  "_comment": "ai_grid.v1.Tenant in protojson, as the backend maps Keycloak 26.8 Organizations in the ai-grid realm (mock/research/keycloak.md section 4): id = organization UUID, name and alias unique in the realm (alias defaults to name and never changes), domains = the names of domainDetails in the same order, lower-case, unique across organizations; verified is free-form metadata, identityProviderAlias/autoRedirect route a domain's logins to an organization IdP. The fake realm has no identity providers, so no domain may set identityProviderAlias (Keycloak rejects an unknown alias with \"Identity provider with alias '<alias>' does not exist in realm ai-grid\"); autoRedirect is stored without a check, as Keycloak stores it. attributes carry the first value of each Keycloak attribute. All values are fictional. The fake validates the file like Keycloak would (duplicate name/alias/domain, bad domain, identity provider alias, non-UUID id fail at start). Other modes, one at a time: {\"unavailable\": \"request Keycloak token: dial tcp ...: connection refused\"} makes every Tenants RPC Unavailable (Keycloak unreachable); {\"realmMissing\": true} makes them FailedPrecondition with Realm not found. (the dev hub today, whose Keycloak has no ai-grid realm); {\"organizationsDisabled\": true} makes them FailedPrecondition with Organizations not enabled for this realm.",
   "tenants": [
     {
       "id": "3f1c9a72-5b6e-4d2a-8c01-2d3e4f5a6b7c",
@@ -10,7 +10,7 @@
       "attributes": { "ai-grid/region": "europe-west", "billing-account": "ACME-0042" },
       "domains": ["acme-robotics.example.com", "acme.example.org"],
       "domainDetails": [
-        { "name": "acme-robotics.example.com", "verified": true, "identityProviderAlias": "acme-oidc", "autoRedirect": true },
+        { "name": "acme-robotics.example.com", "verified": true, "autoRedirect": true },
         { "name": "acme.example.org", "verified": false }
       ]
     },
@@ -54,7 +54,7 @@
       "enabled": true,
       "description": "Wayne Aerospace research cluster tenant",
       "domains": ["wayne-aero.example.com"],
-      "domainDetails": [{ "name": "wayne-aero.example.com", "verified": true, "identityProviderAlias": "wayne-saml", "autoRedirect": false }]
+      "domainDetails": [{ "name": "wayne-aero.example.com", "verified": true, "autoRedirect": false }]
     }
   ]
 }

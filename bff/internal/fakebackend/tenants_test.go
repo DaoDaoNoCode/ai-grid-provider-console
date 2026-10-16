@@ -25,7 +25,7 @@ func seedOrgs() []*aigridv1.Tenant {
 	return []*aigridv1.Tenant{
 		{Id: idGlobex, Name: "globex-research", Alias: "globex", Enabled: proto.Bool(true), Domains: []string{"globex.example.com"}},
 		{Id: idAcme, Name: "acme-robotics", Enabled: proto.Bool(true), Description: "Acme", Attributes: map[string]string{"billing-account": "ACME-0042"},
-			DomainDetails: []*aigridv1.TenantDomain{{Name: "Acme.example.com", Verified: true, IdentityProviderAlias: "acme-oidc", AutoRedirect: true}, {Name: "*.acme.example.org"}}},
+			DomainDetails: []*aigridv1.TenantDomain{{Name: "Acme.example.com", Verified: true, AutoRedirect: true}, {Name: "*.acme.example.org"}}},
 		{Id: "c5a4d3e2-f1b0-4987-a6c5-d4e3f2a1b0c9", Name: "initech-labs", Enabled: proto.Bool(false)},
 	}
 }
@@ -116,6 +116,8 @@ func TestSeedRejectsWhatKeycloakWouldReject(t *testing.T) {
 		"bad domain":       {{Id: idAcme, Name: "x", Domains: []string{"not a domain"}}},
 		"alias with space": {{Id: idAcme, Name: "x", Alias: "a b"}},
 		"details disagree": {{Id: idAcme, Name: "x", Domains: []string{"a.example.com"}, DomainDetails: []*aigridv1.TenantDomain{{Name: "b.example.com"}}}},
+		// The fake realm has no identity providers, so no domain can name one.
+		"identity provider": {{Id: idAcme, Name: "x", DomainDetails: []*aigridv1.TenantDomain{{Name: "x.example.com", IdentityProviderAlias: "x-oidc"}}}},
 	} {
 		if err := ok(bad...); err == nil {
 			t.Errorf("%s: fixture must be rejected", name)
@@ -132,6 +134,7 @@ func TestValidateDomainUsesKeycloakMessages(t *testing.T) {
 	cases := map[string]string{
 		"":                                       MsgDomainEmpty,
 		"   ":                                    MsgDomainEmpty,
+		"\u2003":                                 MsgDomainEmpty, // String.isBlank: an em space is whitespace to Java
 		"not a domain":                           "Invalid domain format: not a domain",
 		"-acme.example.com":                      "Invalid domain format: -acme.example.com",
 		"a-.example.com":                         "Invalid domain format: a-.example.com",
@@ -151,15 +154,22 @@ func TestValidateDomainUsesKeycloakMessages(t *testing.T) {
 		"bücher.example":                         "", // IDN accepted through the non-ASCII range
 		"localhost":                              "", // the e-mail rule alone governs plain domains
 		"[192.0.2.1]":                            "",
-		"*acme.example.com":                      "", // no `*.`: an ordinary e-mail domain with a `*` in a label
+		"[ipv6:2001:db8::1]":                     "", // IP_V6_DOMAIN, matched case-insensitively
+		"[ipv6:::ffff:192.0.2.1]":                "",
+		"[ipv6:2001:db8::zz]":                    "Invalid domain format: [ipv6:2001:db8::zz]",
+		"[2001:db8::1]":                          "Invalid domain format: [2001:db8::1]", // the IPv6: tag is required
+		"*acme.example.com":                      "",                                     // no `*.`: an ordinary e-mail domain with a `*` in a label
 		"ac*me.example.com":                      "",
 		"acme*.example.com":                      MsgWildcardNotFirst, // contains `*.` (star then dot): a wildcard that does not start with one
 		"*.acme.example.org":                     "",
 		"a.b.c.d.e.f.g.h.i.j.k":                  "", // the parts rule is for wildcards only
 		strings.Repeat("a", 63) + ".example.com": "",
 		strings.Repeat("a", 64) + ".example.com": "Invalid domain format: " + strings.Repeat("a", 64) + ".example.com",
-		strings.Repeat("a.", 126) + strings.Repeat("b", 4): "Invalid domain format: " + strings.Repeat("a.", 126) + strings.Repeat("b", 4), // 256 chars
-		strings.Repeat("a.", 126) + strings.Repeat("b", 3): "",                                                                             // 255 chars
+		// java.net.IDN splits labels at U+3002 too, so this is two labels of
+		// 40 for the 63 cap; the pattern accepts U+3002 as a label character.
+		strings.Repeat("a", 40) + "\u3002" + strings.Repeat("b", 40) + ".com": "",
+		strings.Repeat("a.", 126) + strings.Repeat("b", 4):                    "Invalid domain format: " + strings.Repeat("a.", 126) + strings.Repeat("b", 4), // 256 chars
+		strings.Repeat("a.", 126) + strings.Repeat("b", 3):                    "",                                                                             // 255 chars
 	}
 	for domain, want := range cases {
 		err := validateDomain(domain)
@@ -194,10 +204,23 @@ func TestNormalizeDomainsCanonicalisesFirst(t *testing.T) {
 	if err := normalizeDomains(&aigridv1.Tenant{Domains: []string{"a.example.com"}, DomainDetails: []*aigridv1.TenantDomain{{Name: " A.EXAMPLE.COM "}}}); err != nil {
 		t.Errorf("names and details are compared canonically: %v", err)
 	}
+	// String.trim() strips every character up to U+0020, control
+	// characters included, and nothing above it.
+	tn = &aigridv1.Tenant{Domains: []string{"\x01Acme.Example.com\x1f\t"}}
+	if err := normalizeDomains(tn); err != nil || tn.GetDomains()[0] != "acme.example.com" {
+		t.Errorf("control characters are trimmed like Java's trim: %v, %v", tn.GetDomains(), err)
+	}
 }
 
 func TestValidateAliasUsesKeycloakMessages(t *testing.T) {
-	cases := map[string]string{"acme": "", "acme-robotics_2": "", "acme robotics": MsgEmptySpace, "acme\trobotics": MsgEmptySpace, "acme/eu": "Character '/' not allowed.", "a@b": "Character '@' not allowed.", `a\b`: `Character '\' not allowed.`}
+	cases := map[string]string{
+		"acme": "", "acme-robotics_2": "", "acme robotics": MsgEmptySpace, "acme\trobotics": MsgEmptySpace, "a\vb": MsgEmptySpace,
+		"acme/eu": "Character '/' not allowed.", "a@b": "Character '@' not allowed.", `a\b`: `Character '\' not allowed.`,
+		"a?b#c": "Character '?' not allowed.", // the first reserved character is named
+		"a/b c": MsgEmptySpace,                // whitespace is looked for in the whole alias first
+		// java.util.regex \s is ASCII only: Unicode spaces pass.
+		"a\u00a0b": "", "a\u2003b": "", "a\u0085b": "",
+	}
 	for alias, want := range cases {
 		err := validateAlias(alias)
 		switch {
@@ -248,7 +271,10 @@ func TestListTenants(t *testing.T) {
 		t.Errorf("search by domain = %v", page)
 	}
 	if page := list(&aigridv1.ListTenantsRequest{Filter: filter("")}); page.GetTotal() != 3 {
-		t.Errorf("blank search returns everything: %v", page)
+		t.Errorf("empty search returns everything: %v", page)
+	}
+	if page := list(&aigridv1.ListTenantsRequest{Filter: filter("  ")}); page.GetTotal() != 3 {
+		t.Errorf("a whitespace-only search is blank to Keycloak and returns everything: %v", page)
 	}
 	if page := list(&aigridv1.ListTenantsRequest{Filter: filter(`say \"hi\"`)}); page.GetTotal() != 0 {
 		t.Errorf("escaped term parses: %v", page)
@@ -334,7 +360,7 @@ func TestCreateTenant(t *testing.T) {
 			t.Errorf("total = %d", list.GetTotal())
 		}
 		got2, err := create(s, &aigridv1.Tenant{Name: "Stark Industries", Alias: "stark", Description: "d", Enabled: proto.Bool(false), Attributes: map[string]string{"k": "v"},
-			DomainDetails: []*aigridv1.TenantDomain{{Name: " Stark.Example.com ", Verified: true, IdentityProviderAlias: "stark-oidc", AutoRedirect: true}}})
+			DomainDetails: []*aigridv1.TenantDomain{{Name: " Stark.Example.com ", Verified: true, AutoRedirect: true}}})
 		if err != nil || got2.GetAlias() != "stark" || got2.GetEnabled() || got2.GetDomains()[0] != "stark.example.com" || !got2.GetDomainDetails()[0].GetAutoRedirect() || got2.GetAttributes()["k"] != "v" {
 			t.Errorf("explicit alias, details and attributes kept, names canonicalised; enabled false stays false as Keycloak stores what it is sent: %v, %v", got2, err)
 		}
@@ -345,6 +371,13 @@ func TestCreateTenant(t *testing.T) {
 		got4, err := create(s, &aigridv1.Tenant{Name: "star", Domains: []string{"*acme.example.com", "ac*me.example.com"}})
 		if err != nil || len(got4.GetDomains()) != 2 {
 			t.Errorf("a star inside a label is an ordinary e-mail domain character: %v, %v", got4, err)
+		}
+		// U+2003 is not java.util.regex \s, so the explicit alias passes
+		// validateNoSpace, but it is blank to StringUtil.isBlank, so the
+		// alias defaults to the name.
+		got5, err := create(s, &aigridv1.Tenant{Name: "em-space", Alias: "\u2003"})
+		if err != nil || got5.GetAlias() != "em-space" {
+			t.Errorf("a Unicode-blank alias defaults to the name: %v, %v", got5, err)
 		}
 	})
 
@@ -357,6 +390,7 @@ func TestCreateTenant(t *testing.T) {
 			msg  string
 		}{
 			{"blank name", &aigridv1.Tenant{Name: " "}, codes.InvalidArgument, MsgNameRequired},
+			{"unicode-blank name", &aigridv1.Tenant{Name: "\u2003\x1c"}, codes.InvalidArgument, MsgNameRequired},
 			{"no object", nil, codes.InvalidArgument, ""},
 			{"id given", &aigridv1.Tenant{Id: idAcme, Name: "x"}, codes.InvalidArgument, ""},
 			{"name with space and no alias", &aigridv1.Tenant{Name: "Acme Robotics EU"}, codes.InvalidArgument, "Name cannot be used as alias: Empty Space not allowed."},
@@ -375,6 +409,11 @@ func TestCreateTenant(t *testing.T) {
 			{"empty domain", &aigridv1.Tenant{Name: "x", Domains: []string{""}}, codes.InvalidArgument, MsgDomainEmpty},
 			{"domain owned by another org", &aigridv1.Tenant{Name: "x", Domains: []string{"GLOBEX.example.com"}}, codes.InvalidArgument, "Domain globex.example.com is already linked to organization globex-research in realm ai-grid"},
 			{"details disagree with names", &aigridv1.Tenant{Name: "x", Domains: []string{"a.example.com"}, DomainDetails: []*aigridv1.TenantDomain{{Name: "b.example.com"}}}, codes.InvalidArgument, ""},
+			{"explicit alias: whitespace before a reserved char", &aigridv1.Tenant{Name: "x", Alias: "a/b c"}, codes.InvalidArgument, MsgEmptySpace},
+			{"name as alias: whitespace before a reserved char", &aigridv1.Tenant{Name: "a/b c"}, codes.InvalidArgument, "Name cannot be used as alias: Empty Space not allowed."},
+			{"unknown identity provider", &aigridv1.Tenant{Name: "x", DomainDetails: []*aigridv1.TenantDomain{{Name: "x.example.com", IdentityProviderAlias: "x-oidc"}}}, codes.InvalidArgument, "Identity provider with alias 'x-oidc' does not exist in realm ai-grid"},
+			{"bad domain wins over an identity provider", &aigridv1.Tenant{Name: "x", DomainDetails: []*aigridv1.TenantDomain{{Name: "x.example.com", IdentityProviderAlias: "x-oidc"}, {Name: "not a domain"}}}, codes.InvalidArgument, "Invalid domain format: not a domain"},
+			{"owned domain wins over an identity provider", &aigridv1.Tenant{Name: "x", DomainDetails: []*aigridv1.TenantDomain{{Name: "x.example.com", IdentityProviderAlias: "x-oidc"}, {Name: "globex.example.com"}}}, codes.InvalidArgument, "Domain globex.example.com is already linked to organization globex-research in realm ai-grid"},
 		}
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
@@ -457,7 +496,7 @@ func TestUpdateTenant(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(got.GetDomainDetails()) != 2 || !got.GetDomainDetails()[0].GetVerified() || got.GetDomainDetails()[0].GetIdentityProviderAlias() != "acme-oidc" || got.GetDomainDetails()[1].GetName() != "new.example.com" || got.GetDomainDetails()[1].GetVerified() {
+		if len(got.GetDomainDetails()) != 2 || !got.GetDomainDetails()[0].GetVerified() || !got.GetDomainDetails()[0].GetAutoRedirect() || got.GetDomainDetails()[1].GetName() != "new.example.com" || got.GetDomainDetails()[1].GetVerified() || got.GetDomainDetails()[1].GetAutoRedirect() {
 			t.Errorf("details = %v", got.GetDomainDetails())
 		}
 		if strings.Join(got.GetDomains(), ",") != "acme.example.com,new.example.com" {
@@ -465,12 +504,12 @@ func TestUpdateTenant(t *testing.T) {
 		}
 		// A name submitted with surrounding whitespace and a different case is
 		// the same domain (OrganizationDomainModel canonicalises it), so its
-		// verified flag, identity provider and redirect survive.
+		// verified flag and redirect survive.
 		got, err = update(s, &aigridv1.Tenant{Id: idAcme, Domains: []string{"  ACME.Example.COM  ", "*.ACME.example.org"}}, mask(PathDomains))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if d := got.GetDomainDetails()[0]; d.GetName() != "acme.example.com" || !d.GetVerified() || d.GetIdentityProviderAlias() != "acme-oidc" || !d.GetAutoRedirect() {
+		if d := got.GetDomainDetails()[0]; d.GetName() != "acme.example.com" || !d.GetVerified() || !d.GetAutoRedirect() {
 			t.Errorf("metadata lost on a non-canonical resubmission: %v", d)
 		}
 		got, err = update(s, &aigridv1.Tenant{Id: idAcme, Domains: []string{}}, mask(PathDomains))
@@ -482,9 +521,11 @@ func TestUpdateTenant(t *testing.T) {
 	t.Run("domain_details path replaces metadata", func(t *testing.T) {
 		s := tenantServer(t)
 		got, err := update(s, &aigridv1.Tenant{Id: idAcme, DomainDetails: []*aigridv1.TenantDomain{{Name: "acme.example.com", Verified: false}}}, mask(PathDomainDetails))
-		if err != nil || len(got.GetDomainDetails()) != 1 || got.GetDomainDetails()[0].GetVerified() || got.GetDomainDetails()[0].GetIdentityProviderAlias() != "" || len(got.GetDomains()) != 1 {
+		if err != nil || len(got.GetDomainDetails()) != 1 || got.GetDomainDetails()[0].GetVerified() || got.GetDomainDetails()[0].GetAutoRedirect() || len(got.GetDomains()) != 1 {
 			t.Errorf("details = %v, %v", got, err)
 		}
+		_, err = update(s, &aigridv1.Tenant{Id: idAcme, DomainDetails: []*aigridv1.TenantDomain{{Name: "acme.example.com", IdentityProviderAlias: "acme-oidc"}}}, mask(PathDomainDetails))
+		mustCode(t, err, codes.InvalidArgument, "Identity provider with alias 'acme-oidc' does not exist in realm ai-grid")
 	})
 
 	t.Run("no mask is a keycloak PUT without attributes and domains", func(t *testing.T) {
@@ -502,6 +543,21 @@ func TestUpdateTenant(t *testing.T) {
 		if got, err := update(s, &aigridv1.Tenant{Id: idAcme, Name: "acme-2", Enabled: proto.Bool(false)}, nil); err != nil || got.GetEnabled() {
 			t.Errorf("an explicit false is kept: %v, %v", got, err)
 		}
+		// The backend's PUT carries the stored alias: a rename of an
+		// organization whose alias differs from its name succeeds without
+		// `alias` (a bare Keycloak PUT would default it to the new name and
+		// answer "Cannot change the alias").
+		if got, err := update(s, &aigridv1.Tenant{Id: idGlobex, Name: "globex-labs"}, nil); err != nil || got.GetAlias() != "globex" || got.GetName() != "globex-labs" {
+			t.Errorf("omitted alias keeps the stored one: %v, %v", got, err)
+		}
+		_, err = update(s, &aigridv1.Tenant{Id: idGlobex, Name: "globex-labs", Alias: "globex-labs"}, nil)
+		mustCode(t, err, codes.InvalidArgument, MsgAliasImmutable)
+		if got, err := update(s, &aigridv1.Tenant{Id: idGlobex, Name: "globex-labs", Alias: "  "}, nil); err != nil || got.GetAlias() != "globex" {
+			t.Errorf("a blank alias is an omitted one: %v, %v", got, err)
+		}
+		// An omitted name is a blank name in the PUT: 409, see below.
+		_, err = update(s, &aigridv1.Tenant{Id: idGlobex}, nil)
+		mustCode(t, err, codes.AlreadyExists, MsgDuplicateName)
 	})
 
 	t.Run("keycloak rejections", func(t *testing.T) {
@@ -520,8 +576,13 @@ func TestUpdateTenant(t *testing.T) {
 		if got, err := update(s, &aigridv1.Tenant{Id: idAcme, Name: "acme-robotics"}, mask(PathName)); err != nil || got.GetName() != "acme-robotics" {
 			t.Errorf("keeping the name is not a conflict: %v, %v", got, err)
 		}
+		// A blank name differs from the stored one and Keycloak's exact search
+		// treats a blank term as no filter, so the organization finds itself:
+		// 409, not "Name can not be null" (OrganizationResource L123-125).
 		_, err = update(s, &aigridv1.Tenant{Id: idAcme, Name: ""}, mask(PathName))
-		mustCode(t, err, codes.InvalidArgument, MsgNameRequired)
+		mustCode(t, err, codes.AlreadyExists, MsgDuplicateName)
+		_, err = update(s, &aigridv1.Tenant{Id: idAcme, Name: " \u2003"}, mask(PathName))
+		mustCode(t, err, codes.AlreadyExists, MsgDuplicateName)
 		_, err = update(s, &aigridv1.Tenant{Id: idAcme, Domains: []string{"globex.example.com"}}, mask(PathDomains))
 		mustCode(t, err, codes.InvalidArgument, "Domain globex.example.com is already linked to organization globex-research in realm ai-grid")
 		_, err = update(s, &aigridv1.Tenant{Id: idAcme, Domains: []string{"Bad Domain"}}, mask(PathDomains))
@@ -605,8 +666,9 @@ func TestTenantMutationsNeedAProviderAdmin(t *testing.T) {
 	}
 }
 
-// TestTenantsErrorModes: the two Keycloak failure modes the fixtures can
-// select, mapped with the conventions' codes.
+// TestTenantsErrorModes: the three Keycloak failure modes the fixtures can
+// select (unavailable, realmMissing, organizationsDisabled), mapped with the
+// conventions' codes.
 func TestTenantsErrorModes(t *testing.T) {
 	ctx := authed(context.Background())
 	down, err := New(&Fixtures{TenantsUnavailable: "request Keycloak token: dial tcp 192.0.2.1:8080: connect: connection refused", Access: Access{DefaultAllowed: true}}, slog.New(slog.DiscardHandler))

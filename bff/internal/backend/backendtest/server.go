@@ -280,6 +280,12 @@ func (f *Fake) UpdateTenant(ctx context.Context, req *aigridv1.UpdateTenantReque
 	for _, p := range req.GetUpdateMask().GetPaths() {
 		switch p {
 		case "name":
+			// Keycloak's PUT answers a blank name with 409: its exact name
+			// search treats a blank term as no filter and finds the
+			// organization itself (OrganizationResource.java L123-125).
+			if strings.TrimSpace(obj.GetName()) == "" {
+				return nil, status.Error(codes.AlreadyExists, "A organization with the same name already exists.")
+			}
 			t.Name = obj.GetName()
 		case "enabled":
 			t.Enabled = proto.Bool(obj.GetEnabled())

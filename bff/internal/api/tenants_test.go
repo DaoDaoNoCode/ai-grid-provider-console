@@ -345,6 +345,10 @@ func TestPatchTenant(t *testing.T) {
 				t.Errorf("%s -> %d %s, want 422 %q", body, rec.Code, rec.Body.String(), want)
 			}
 		}
+		// A blank name is Keycloak's 409, not a 422 (see UpdateTenant in the fake backend).
+		if rec := serve(app, jsonRequest(http.MethodPatch, "/api/v1/tenants/t-1", `{"name": ""}`)); rec.Code != http.StatusConflict || decodeError(t, rec).Error.Message != "A organization with the same name already exists." {
+			t.Errorf("blank name = %d %s, want 409 with Keycloak's message", rec.Code, rec.Body.String())
+		}
 		fake.Err = backendtest.Status(codes.AlreadyExists, "A organization with the same name already exists.")
 		if rec := serve(app, jsonRequest(http.MethodPatch, "/api/v1/tenants/t-1", `{"name": "globex-research"}`)); rec.Code != http.StatusConflict {
 			t.Errorf("rename conflict = %d", rec.Code)

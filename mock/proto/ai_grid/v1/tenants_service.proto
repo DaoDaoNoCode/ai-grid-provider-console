@@ -23,22 +23,25 @@ option go_package = "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/a
 // the caller to be a provider admin; the backend then uses its own Keycloak
 // service credential.
 service Tenants {
-  // Lists tenants, ordered by name as Keycloak returns them, which is the
-  // realm database's collation (case-insensitive on a typical PostgreSQL
-  // locale; the fake uses byte order, so a client must not rely on how
-  // upper- and lower-case names interleave). Disabled tenants are included;
-  // there is no filter for `enabled`.
+  // Lists tenants, ordered by name as Keycloak returns them (`ORDER BY name`
+  // in the realm database, so in that database's collation, which the
+  // console has not checked on the hub; the fake uses byte order, so a
+  // client must not rely on how upper- and lower-case names interleave).
+  // Disabled tenants are included; there is no filter for `enabled`.
   rpc ListTenants(ListTenantsRequest) returns (ListTenantsResponse);
   // Returns one tenant by id. NotFound when absent.
   rpc GetTenant(GetTenantRequest) returns (GetTenantResponse);
   // Creates a tenant (Keycloak POST, then GET of the Location). AlreadyExists
   // with Keycloak's message when the name or alias is taken; InvalidArgument
   // with Keycloak's message for a blank name, an alias with whitespace or
-  // reserved characters, a malformed domain or a domain another tenant owns.
+  // reserved characters, a malformed domain, a domain another tenant owns or
+  // a domain identity provider alias the realm does not have.
   rpc CreateTenant(CreateTenantRequest) returns (CreateTenantResponse);
   // Updates the fields named in `update_mask` (Keycloak GET, merge, PUT).
   // `alias` is immutable; a different value is InvalidArgument. A new name
-  // that matches another tenant's name or domain is AlreadyExists.
+  // that matches any tenant's name or domain, this tenant's domains
+  // included, is AlreadyExists, and so is a blank name (Keycloak's exact
+  // search treats a blank name as no filter and finds the tenant itself).
   rpc UpdateTenant(UpdateTenantRequest) returns (UpdateTenantResponse);
   // Deletes a tenant and its memberships; unmanaged members stay realm
   // users. NotFound when absent.
@@ -48,10 +51,14 @@ service Tenants {
 // Request of ListTenants. Every field is optional; the shipped backend takes
 // an empty request.
 message ListTenantsRequest {
-  // Zero-based index of the first result. Default zero.
+  // Zero-based index of the first result. Default zero; negative is
+  // InvalidArgument (Keycloak itself ignores a negative `first`, so the
+  // backend checks it).
   optional int32 offset = 1;
   // Maximum number of results. Omitted means all; zero means count only;
-  // negative is InvalidArgument.
+  // negative is InvalidArgument. These are the contract's rules, not
+  // Keycloak's: its `max` defaults to 10 and a negative value is ignored,
+  // so the backend sends an explicit `max` when `limit` is omitted.
   optional int32 limit = 2;
   // CEL over `this` (a Tenant). The only form supported today is the one
   // that means what Keycloak's `search` parameter does, a case-insensitive
@@ -59,9 +66,12 @@ message ListTenantsRequest {
   //   this.name.contains("<term>") || this.domains.exists(d, d.contains("<term>"))
   // with the same string literal in both places (CEL escapes `"` and `\`).
   // The term is a literal substring: `%` and `_` match themselves, never act
-  // as wildcards. The backend may evaluate the expression in memory or push
-  // the term down to Keycloak's `search` parameter, which is a SQL LIKE
-  // built without escaping, so it MUST escape `%`, `_` and `\` in the term
+  // as wildcards. A blank term (empty or whitespace only) matches every
+  // tenant, as Keycloak's `search` does. The backend may evaluate the
+  // expression in memory or push the term down to Keycloak's `search`
+  // parameter, which is a SQL LIKE built without escaping and without an
+  // ESCAPE clause (so the database's default escape character, backslash on
+  // PostgreSQL, applies), so it MUST escape `%`, `_` and `\` in the term
   // first; the fake's literal match is the reference behaviour. Any other
   // expression is InvalidArgument naming it.
   optional string filter = 3;
@@ -116,17 +126,26 @@ message UpdateTenantRequest {
   reserved 3;
   reserved "lock";
 
-  // The tenant with the new values. `id` identifies it. `alias`, when set,
-  // must equal the stored alias.
+  // The tenant with the new values. `id` identifies it. `alias`, when set
+  // (not blank), must equal the stored alias; when unset the stored alias is
+  // kept.
   Tenant object = 1;
   // Supported paths: `name`, `domains`, `enabled`, `description`,
-  // `attributes`, `domain_details`. A path replaces that field as a whole
-  // (`domains` replaces the set of names and keeps the metadata of a domain
-  // that stays; `domain_details` replaces names and metadata). Without a
-  // mask the request is Keycloak's PUT of a body without the `attributes` and
-  // `domains` keys: `name`, `enabled` (true when omitted, as Keycloak
-  // defaults it) and `description` are replaced, `attributes` and the
-  // domains are left unchanged.
+  // `attributes`, `domain_details`. The backend reads the full Keycloak
+  // representation, overwrites the named fields and PUTs the whole result,
+  // so everything else, `alias` and `redirectUrl` included, is written back
+  // as stored. This matters: Keycloak's PUT replaces `description` and
+  // `redirectUrl` with whatever the body has (absent clears them) and
+  // defaults an absent `alias` to the new `name`, which is "Cannot change
+  // the alias" unless the two are equal. A path replaces that field as a
+  // whole (`domains` replaces the set of names and keeps the metadata of a
+  // domain that stays, because the backend copies the stored metadata of
+  // those names into the PUT; Keycloak itself would reset it from a body
+  // with names only; `domain_details` replaces names and metadata). Without
+  // a mask `name`, `enabled` (true when omitted, as Keycloak defaults it)
+  // and `description` are taken from the request and everything else,
+  // `alias`, `attributes` and the domains included, is kept; an omitted
+  // `name` is then a blank name, AlreadyExists.
   google.protobuf.FieldMask update_mask = 2;
 }
 
