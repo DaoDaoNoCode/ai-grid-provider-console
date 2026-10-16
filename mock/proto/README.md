@@ -38,8 +38,8 @@ What keeps it honest:
   `Unimplemented` answer, except for the methods listed in `intentionallyUnimplemented`
   (`fakebackend_test.go`), each with its reason: the placeholder `Grid`, `Models`,
   `CatalogItems` and `Subscriptions` methods until they are agreed with the backend team,
-  the `ManagedClusters` and `Tenants` methods until the clusters and tenants areas
-  implement them, and `GetCurrentUser`, which the BFF does not need yet. An entry whose
+  the `Tenants` methods until the tenants area implements them, and `GetCurrentUser`, which
+  the BFF does not need yet. An entry whose
   method starts answering fails the test until the entry is removed, so the allowlist is
   always exactly the set of stubs.
 - **The allowlist refines `mock/README.md`.** That page says the test fails on any
@@ -59,10 +59,14 @@ working against the real server because the wire format is the same. When the ba
 shipped all of it, the console switches its import from `bff/gen/ai_grid/v1` back to the
 backend's generated package, deletes `mock/proto/` and `bff/gen`, and the fake stays as it is.
 
-Fields from `mock/research/acm.md`'s richer `ManagedCluster` proposal that are not in the draft
-(taints, add-on status, the flattened claim fields, `status_message`, the finer
-`ClusterStatus` enum) are left for the Clusters area to propose once the fake simulates them;
-the draft follows `mock/research/backend-conventions.md` section 6 as written.
+The Clusters area added, additively, what `mock/research/acm.md`'s richer `ManagedCluster`
+proposal needs and the fake now simulates: `taints` (with `time_added`), `generation`,
+`finalizers`, `status.state_message`, and the finer `ManagedClusterState` values
+(`PENDING_IMPORT`, `IMPORTING`, `IMPORT_FAILED`, `NOT_ACCEPTED`, `UNKNOWN`) with the ACM
+console's derivation order documented on the enum. The flattened claim fields and the
+`addon_status` map from that proposal were not added: the BFF derives them from
+`cluster_claims` and the `feature.open-cluster-management.io/addon-*` labels, which the proto
+already carries verbatim.
 
 ## Working with the backend team
 
