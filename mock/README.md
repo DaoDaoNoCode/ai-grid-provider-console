@@ -2,8 +2,12 @@
 
 This directory is the console's stand-in for everything that will one day come from
 `ai-grid-backend` and the hub: fixtures for a fake gRPC backend, the research that says how
-the real systems behave, and a plan per area for keeping the fake faithful. Nothing here is
-real data. Every name, id, host and number is invented.
+the real systems behave, and a plan per area for keeping the fake faithful. The fixtures are
+fictional: every name, id, host and number in them is invented.
+
+To build pages or clients against the fake, start at [AGENTS.md](AGENTS.md): it lists the
+endpoints, the tokens, the seeded states, the timed scenarios and the errors you can provoke.
+This file explains why the fake exists and how it grows.
 
 ## Why this exists
 
@@ -18,39 +22,48 @@ small changes, because the fake already produced the same field names, the same 
 and reason strings, the same error codes and the same timing the hub produces. Anything
 the fake invents is a future bug, so nothing in it is invented without a source: every
 behaviour comes from a CRD on the dev hub, from upstream controller source, from vendor
-documentation, or from the backend's own conventions. The sources are in `research/`.
+documentation, from the POC, or from the backend's own conventions. The sources are in
+`research/`.
 
 ## Principles
 
-1. **The proto is the contract.** The console imports only the backend's generated
-   `ai_grid.v1` package. The fake implements the same services from the same package.
-   `TestFakeImplementsEveryProtoMethod` calls every method in the pinned proto over an
-   in-memory connection and fails on any that still answers `Unimplemented`, so the fake can
-   never silently fall behind the backend. It guards against stubs, not behaviour; the
-   per-area tests cover behaviour.
+1. **The proto is the contract.** The BFF and the fake compile against one generated
+   `ai_grid.v1` package (`bff/gen`), built from the console's draft proto in `proto/`. The
+   draft carries the backend's shipped services unchanged, and `bff/internal/protodrift`
+   fails if the backend's proto, vendored in `proto/upstream`, has anything the draft lacks
+   or defines differently. `TestFakeImplementsEveryProtoMethod` calls every method of the
+   draft over an in-memory connection and fails on any that answers `Unimplemented`, except
+   the deliberate stubs listed with a reason in `intentionallyUnimplemented` (today
+   `GetCurrentUser` and the `Grid`, `CatalogItems` and `Subscriptions` services), so the fake
+   can never silently fall behind the proto. It guards against stubs, not behaviour; the
+   per-area tests cover behaviour. `proto/README.md` has the details.
 2. **Mirror the real objects, not the POC's inventions.** ACM `ManagedCluster`, `Placement`,
    `ManifestWorkReplicaSet`, Keycloak Organizations, KServe `LLMInferenceService`, MaaS
-   `MaaSModelRef`, `MaaSSubscription`, `MaaSAuthPolicy`, Kuadrant policies and Praxis grid
-   CRDs are what runs on the cluster. The fake carries their fields, phases, condition types
-   and reason strings verbatim. Fields the POC invented (`revision`, `status: Saved`,
+   `MaaSModelRef`, `MaaSSubscription`, `MaaSAuthPolicy`, Kuadrant policies and the Praxis
+   grid CRDs are the objects the console's pages stand for. Wherever the fake models one of
+   them (today clusters, tenants and models), it carries their fields, phases, condition
+   types and reason strings verbatim. Fields the POC invented (`revision`, `status: Saved`,
    `hasDeployment`) do not exist here.
 3. **"Not implemented yet" is a normal state.** RPCs that are not agreed yet answer
    `Unimplemented`, exactly as the real server does for a stub. The BFF maps it to 501 and
    the UI shows "not available on this backend yet", so a page can ship before its RPC.
 4. **Errors use the same codes the backend will use.** `NotFound`, `AlreadyExists`,
    `InvalidArgument` with the CRD's own validation message, `FailedPrecondition` when the
-   hub lacks a feature gate, `Unavailable` when the hub or Keycloak is down, `Unimplemented`
-   for stubs. The BFF already maps all of them to HTTP; the UI's error paths are exercised
-   against the fake, not discovered in production. One differs from the target today: the
-   `tenants.json` `unavailable` fixture answers `Unknown` (`502`), as the shipped backend does,
-   not `Unavailable`.
+   hub lacks a feature gate or Keycloak lacks the realm, `Unavailable` when Keycloak is down,
+   `Aborted` for a stale version, `PermissionDenied`, `Unauthenticated`, and `Unimplemented`
+   for stubs. The BFF maps all of them to HTTP, so the UI's error paths are exercised against
+   the fake, not discovered in production. The shipped backend still answers every Keycloak
+   failure `Unknown` (`502`); the fake's `tenants.json` modes answer what the backend should,
+   `Unavailable` (`503`) or `FailedPrecondition` (`412`).
 5. **Time passes.** Objects do not appear Ready. They go through the same transitions the
-   controllers drive, on timers the fixtures control: a cluster imports in stages, a model
-   starts Pending with the real reason strings and becomes Ready, a subscription waits for
-   its rate-limit policy to be accepted, a lease expires and a cluster becomes Unknown.
+   controllers drive, on a clock the fixtures control (`settings.json` `speed`): a cluster
+   joins, imports and gains its add-ons in stages, a lost lease recovers, a cluster detaches
+   and goes away (`scenarios.json`); a model walks KServe's conditions to `Ready` or stops at
+   a failure, and a placed model rolls out site by site. Once the subscriptions area lands, a
+   subscription will wait for its models' rate-limit policies to be accepted.
 6. **No real data, ever.** Fixtures use `example.com`, invented UUIDs and fictional sites.
-   Research notes name field paths and string constants from the real cluster, never its
-   hosts, ids or people.
+   Research notes quote field paths, string constants, versions and in-cluster object names
+   from the real systems, never the dev hub's routes, cluster ids or people.
 
 ## How to run it
 
@@ -93,21 +106,26 @@ Both grow together as RPCs are added.
 
 ## Fixtures (`fixtures/`)
 
-| File | Shape | Notes |
-|---|---|---|
-| `managedclusters.json` | `ai_grid.v1.ManagedCluster[]` in protojson | Labels are exactly what ACM writes on an imported cluster (`name`, `cloud`, `vendor`, `clusterID`, `openshiftVersion*`, `clusterset=default`, `feature.open-cluster-management.io/addon-*`) plus the console's `ai-grid/*` conventions. Includes the hub's own `local-cluster` and one cluster the hub hasn't accepted (`hubAcceptsClient: false`), which `research/acm.md` would show as `notaccepted` once its conditions are modelled. No fixture is in the unreachable (`unknown`) state yet. |
-| `tenants.json` | `ai_grid.v1.Tenant[]` | Keycloak Organizations as the backend maps them. Replace with `{"unavailable": "..."}` to reproduce the dev hub, where the `ai-grid` realm does not exist. |
-| `access.json` | who is a provider admin | Drives the fake hub's access review. |
-| `settings.json` | latency | A Go duration such as `"40ms"` added to every RPC; a hub list from a pod on the hub takes tens of milliseconds. |
+`fixtures/README.md` describes every file and field. In short:
 
-The cluster and tenant entries are protojson, so they use the field names grpcurl shows and
-fail to load on any unknown field; a fixture that fails to load stops the fake with an error.
-The file envelopes, `access.json` and `settings.json` are plain JSON and ignore unknown keys,
-so check their spelling: while `defaultAllowed` is true, a misspelled `deniedTokens` makes
-that token a provider admin. A missing file leaves its part empty, except `access.json`:
-without it every token is a provider admin. The directory itself must exist. A test loads the
-shipped directory and checks the ACM labels are present. Fixture names, labels and ids must
-never be real: this repository is public.
+| File | Shape | What it seeds |
+|---|---|---|
+| `managedclusters.json` | `{"clusters": [ai_grid.v1.ManagedCluster...]}` in protojson | Full hub objects: the labels ACM writes, the console's `ai-grid/*` and `location` labels and `ai-grid/*` annotations, and a `status` with every condition. The hub's own `local-cluster` and at least one cluster in each state the ACM console distinguishes (ready, unknown, offline, importing, pending import, import failed, not accepted, detaching). |
+| `tenants.json` | `{"tenants": [ai_grid.v1.Tenant...]}` in protojson, or one error mode | Six fictional Keycloak organizations. In place of `tenants`, `{"unavailable": "<text>"}` makes every tenant RPC `Unavailable` (Keycloak cannot be reached), `{"realmMissing": true}` makes it `FailedPrecondition` as on the dev hub, where the `ai-grid` realm does not exist, and `{"organizationsDisabled": true}` does the same for a realm without Organizations. |
+| `models.json` | `{"models": [ai_grid.v1.Model...]}` in protojson, plus `bindings` | `LLMInferenceService` models, some placed on clusters, and the cluster sets bound into each model namespace. |
+| `presets.json` | plain JSON | The installed `LLMInferenceServiceConfig` presets that a model's `baseRefs` resolve against. |
+| `scenarios.json` | `{"events": [...]}` | Timed cluster transitions: an import in stages, a lease recovery, a detach. |
+| `access.json` | plain JSON | Who the fake hub treats as a provider admin; `viewer-token` is denied and `expired-token` rejected. |
+| `settings.json` | plain JSON | The per-RPC latency, the scenario clock's `speed`, and the hub capabilities `GetHubCapabilities` reports (the ManifestWorkReplicaSet gate, observability, ACM version). |
+
+The cluster, tenant and model entries are protojson, so they use the field names grpcurl
+shows and fail to load on any unknown field; a fixture that fails to load stops the fake with
+an error. The file envelopes and the other files are plain JSON and ignore unknown keys, so
+check their spelling: while `defaultAllowed` is true, a misspelled `deniedTokens` makes that
+token a provider admin. A missing file leaves its part empty or at its default, except
+`access.json`: without it every token is a provider admin. The directory itself must exist.
+A test loads the shipped directory and checks the ACM labels are present. Fixture names,
+labels and ids must never be real: this repository is public.
 
 ## What the research found, in one paragraph each
 
@@ -115,10 +133,12 @@ The full reports are in `research/`. Read them before changing a fixture or addi
 simulated behaviour; they cite the CRD path or source file for every string.
 
 **ACM hub** (`research/acm.md`). A `ManagedCluster`'s health is five conditions with fixed
-reason strings, written by three controllers; the ACM console derives
+reason strings, written by three actors (the hub's registration controller, the spoke agent
+and ACM's import controller); the ACM console derives
 `pendingimport | importing | importfailed | ready | offline | unknown | detaching | notaccepted`
-from them, and the fake will do the same. ACM auto-labels every imported cluster; the hub
-adds `unreachable`/`unavailable` taints that Placements must tolerate. Placements only see
+from them, and the fake derives the same state on every read. ACM auto-labels every imported
+cluster; the hub adds `unreachable`/`unavailable` taints, which a Placement must tolerate to
+keep such a cluster selected through an outage. Placements only see
 cluster sets bound into their namespace, write `PlacementDecision`s named
 `<placement>-decision-<n>` sorted by cluster name, and recompute within seconds when labels
 change. `ManifestWorkReplicaSet` fans one `ManifestWork` per selected cluster with
@@ -128,10 +148,11 @@ so the backend must detect that and answer `FailedPrecondition`.
 
 **Keycloak tenants** (`research/keycloak.md`). The hub runs Keycloak 26.8 with Organizations
 available but no `ai-grid` realm. The Organizations admin API lists by name with offset
-paging (default page 10), returns 201 plus a `Location` header on create, replaces the whole
-representation on update, enforces unique `name`, `alias` and domains with exact 409 and 400
-messages, and needs `view-organizations` to return anything (`query-organizations` alone
-yields an empty list). The backend today logs in as the master realm admin with a password
+paging (default page 10), returns 201 plus a `Location` header on create, replaces `name`,
+`enabled`, `description` and `redirectUrl` on update but keeps the `attributes` and domains a
+body omits, enforces unique `name`, `alias` and domains with exact 409 and 400 messages, and
+needs `view-organizations` to return anything (`query-organizations` alone yields an empty
+list). The backend today logs in as the master realm admin with a password
 grant on every call and returns every failure as `Unknown`. The report proposes the
 `Tenants` CRUD proto, the gRPC code for each Keycloak outcome, and the bootstrap steps for a
 realm plus a scoped service-account client.
@@ -139,9 +160,10 @@ realm plus a scoped service-account client.
 **Models, MaaS, Kuadrant, Praxis** (`research/models-maas.md`). Models are KServe
 `LLMInferenceService` (v1alpha2) with Knative-style conditions; there is no phase, so
 Pending/Ready/Failed is derived from `Ready`, and the reason strings on failure are known.
-MaaS entitlement is a dual check: `MaaSAuthPolicy` grants access by group, `MaaSSubscription`
-sets quota per model; a `MaaSModelRef` stays `Pending/NoPairingFound` until both reference
-it, and each subscription materialises a Kuadrant `TokenRateLimitPolicy`. On the hub the
+MaaS entitlement is a dual check: `MaaSAuthPolicy` grants access by group or user,
+`MaaSSubscription` sets quota per model; a `MaaSModelRef` stays `Pending/NoPairingFound` until
+both reference it, and the controller materialises one Kuadrant `TokenRateLimitPolicy` per model
+(`maas-trlp-<model>`), shared by every subscription that lists the model. On the hub the
 model MaaS serves is an `ExternalModel` pointing at the Praxis grid gateway, not a local
 model. Praxis grid CRDs are documented but not installed; their phase machines are in the
 report. API keys live in `maas-api`, not in a CRD. The POC stores CR-shaped JSON in Git and
@@ -157,11 +179,12 @@ counter is doubled: every query on collector metrics must pin
 assumed do not exist; Istio ones are wired but empty, and GPU utilisation arrives divided by
 100. No metric carries a tenant label yet, so per-tenant usage is `unavailable` until a Kuadrant
 `TelemetryPolicy` or the Praxis metering service exists. The POC's overview JSON and its
-deterministic demo generator are transcribed so the fake reproduces them sample for sample.
+deterministic demo generator are transcribed so the fake can reproduce them sample for sample.
 
 **Backend conventions** (`research/backend-conventions.md`). The backend is a single-file
 proto with three RPCs, generated code committed by hand, no interceptors and errors returned
-as plain Go errors. It says it is aligned with OSAC, whose conventions are precise:
+as plain Go errors. It says it is aligned with OSAC's fulfillment-service, whose conventions
+are precise:
 `List/Get/Create/Update/Delete`, offset and limit paging with `size` and `total`, CEL
 filters, field masks with optimistic locking, `id/metadata/spec/status` objects, a shared
 condition type, and a fixed gRPC error table. The report proposes a style guide that keeps
@@ -171,51 +194,61 @@ implements, nightly drift build.
 
 ## Plan per area
 
-Each area lists what the fake will simulate, what the frontend builds against it, and what
-the backend has to agree to. Field names and strings are in the research; this is the order
-of work.
+Each area lists what the fake simulates, what the frontend builds against it, and what the
+backend has to agree to. Areas 1 to 3 are implemented in the fake and the BFF;
+`areas/<area>.md` is the reference for what each implements, where it deviates from the real
+systems and what remains, and the UI for them is being ported separately. Areas 4 to 6 are
+plans: their RPCs in the draft are stubs that answer `Unimplemented`.
 
-### 1. Clusters (ACM ManagedCluster)
+### 1. Clusters (ACM ManagedCluster), implemented
 
-Fake: grow `ManagedCluster` with annotations, conditions, claims, capacity, taints and a
-derived status enum; seed clusters in every state (ready with GPUs, ready but not enrolled,
-unknown with the `unreachable` taint, offline, pending import, detaching); simulate enrol
-(accepted, joined, imported, add-ons appear over about a minute), lease loss and recovery,
-label and annotation updates, and detach with finalizers.
-Frontend: cluster status badges from the derived enum, console link from the claim, GPU
-capacity, a map from the `ai-grid/*` annotations, enrol and location editing.
-Backend ask: the `GetManagedCluster` and `UpdateManagedCluster` RPCs and the richer message
-drafted in `research/backend-conventions.md` section 6.4, derived status computed server-side
-as in `research/acm.md`.
+Fake: `ManagedCluster` with annotations, conditions, claims, capacity, taints, finalizers and
+a `status.state` derived on every read in the ACM console's order; seeded clusters in every
+state the console distinguishes; `scenarios.json` drives join, import, add-ons, lease loss and
+recovery, an API-server outage, detaching and removal; `UpdateManagedCluster` edits labels,
+annotations and hub acceptance, then puts back the labels the hub owns. See
+`areas/clusters.md`.
+Frontend: cluster status badges from the derived state, console link from the claim, GPU
+capacity, enrol and location editing. The map belongs to area 5.
+Backend ask: `GetManagedCluster`, `UpdateManagedCluster` and the richer message as drafted in
+`proto/ai_grid/v1/managed_cluster*.proto`, with the state derived server-side as in
+`research/acm.md`.
 
-### 2. Tenants (Keycloak Organizations)
+### 2. Tenants (Keycloak Organizations), implemented
 
-Fake: an in-memory organization store with UUID ids, unique name and alias, alias defaulting
-to name and immutable, domain validation with Keycloak's messages, full-replace update
-semantics unless a field mask is given, offset paging and search, delete, and members from a
-small fictional user list; error injection for a missing realm (`FailedPrecondition`) and an
-unreachable Keycloak (`Unavailable`).
+Fake: an in-memory organization store with UUID ids that answers like the backend's mapping of
+Keycloak 26.8: Keycloak's checks in Keycloak's order with its messages (unique name, alias and
+domains, alias defaulting to the name and immutable, domain format); without a field mask an
+update replaces `name`, `enabled` (true when omitted) and `description` and keeps everything
+else; case-insensitive search on name and domains, offset paging, delete; a version kept in an
+organization attribute, checked on update and delete; and the `tenants.json` error modes for
+an unreachable Keycloak (`Unavailable`) and a missing realm or Organizations feature
+(`FailedPrecondition`). Members are not drafted yet. See `areas/tenants.md`.
 Frontend: tenant list with search and paging, create and edit forms whose validation errors
-are the ones Keycloak would send, delete with confirmation, a members view.
-Backend ask: the `Tenants` CRUD proto in `research/backend-conventions.md` section 6.6, keyed
-by `id`; the gRPC code table in `research/keycloak.md` section 8.2; a scoped service-account
-client instead of the master admin.
+are the ones Keycloak would send, delete with confirmation, and a members view once the member
+RPCs exist.
+Backend ask: the `Tenants` CRUD proto as drafted in `proto/ai_grid/v1/tenant*.proto`, keyed by
+`id`; the gRPC code table in `research/keycloak.md` section 8.2 (today every failure is
+`Unknown`); a scoped service-account client instead of the master admin.
 
-### 3. Models (LLMInferenceService, Placement, ManifestWorkReplicaSet)
+### 3. Models (LLMInferenceService, Placement, ManifestWorkReplicaSet), implemented
 
-Fake: `CreateModel` returns an object with no conditions, then on timers walks through the
-real condition set to `Ready` or stops at a failure chosen by name or URI
-(`ConfigNotFound`, `ReconcileSingleNodeWorkloadError`, `GatewaysNotReady`); multi-site models
-get a Placement whose decisions are recomputed from cluster labels and taints, and an MWRS
-whose per-cluster works go `Applied`, `Available`, `Progressing`, then complete, with
-progressive rollout and failure injection; a capability flag reproduces the dev hub's
-disabled MWRS gate with `FailedPrecondition`.
+Fake: `CreateModel` admits a model with the API server's and the CRD's own validation messages
+and returns it with no conditions; the model then walks KServe's condition set to `Ready` on
+timers, or stops at a failure: an unknown `baseRef` (`ConfigNotFound`), an image or model name
+containing `oom` or `fail` (`MinimumReplicasUnavailable`), a Gateway that does not exist
+(`RefsInvalid`). A placed model gets a Placement whose decision is recomputed from cluster
+labels, taints and the cluster sets bound into its namespace, and a ManifestWorkReplicaSet
+whose per-cluster works are applied all at once or progressively; a cluster labelled
+`ai-grid-mock/fail-apply=true` fails to apply its work. `settings.json` reproduces the dev
+hub's disabled ManifestWorkReplicaSet gate with `FailedPrecondition`. See `areas/models.md`.
 Frontend: model list and detail with per-site status from the works, create wizard with the
 POC's inputs mapped to the real spec, delete blocked while a subscription references the
 model.
-Backend ask: the `Models` service shape in `research/models-maas.md` section 8.1, the
-`Placements` and `ManifestWorkReplicaSets` messages in `research/acm.md`, and a
-`GetHubCapabilities` RPC so the UI can explain a disabled gate.
+Backend ask: the `Models` service and `Model` message as drafted in
+`proto/ai_grid/v1/model*.proto`, with the phase derived server-side;
+`AiGrid/GetHubCapabilities` so the UI can explain a disabled gate; the ManifestWorkReplicaSet
+feature gate on the hub.
 
 ### 4. Catalog and subscriptions (MaaSModelRef, MaaSSubscription, MaaSAuthPolicy)
 
@@ -224,11 +257,11 @@ subscription and an auth policy reference it (in any phase; the pairing check ig
 `status.phase`) and its model is ready, turns `Unhealthy` when its model fails; a
 subscription validates the CRD rules (`tokenRateLimits` or `unlimited`, window regex, limit
 range), has no phase until its first reconcile, is `Degraded`
-(`Ready=False/PartialFailure`) while its generated `TokenRateLimitPolicy` isn't accepted,
-flips to `Active` once it is, and optionally creates its `<name>-policy` auth policy
-with the same description annotation the hub uses. The pairing of subscription and auth
-policy is a mode switch, because the product decision on whether they are mirrored or
-managed separately is still open.
+(`Ready=False/PartialFailure`) while the `TokenRateLimitPolicy` of any of its models isn't
+accepted, flips to `Active` once they all are, and optionally creates its `<name>-policy` auth
+policy with the same description annotation the hub uses. Whether the console creates the auth
+policy together with the subscription or leaves it to be managed separately is a product
+decision the research does not settle, so the fake should make the pairing a mode switch.
 Frontend: subscriptions table keyed on phase, create and edit with per-model quotas,
 tenant linkage through `tokenMetadata.organizationId`, a visible consistency check between a
 subscription's owners and the auth policies that cover its models.
@@ -262,25 +295,31 @@ Backend ask: `Grid/GetNetwork` once the CRDs ship through the AI Gateway compone
 
 ## Working in parallel with the backend team
 
-1. **Proto first.** A new RPC starts as a backend PR that touches only `proto/` and `gen/`;
-   the embedded `Unimplemented*Server` makes it compile and answer `Unimplemented`. Both
-   teams review the shape. On merge the backend tags a version.
-2. **Console bumps and the fake follows.** The console bumps the pin, the drift test fails
-   until the fake registers the new service, the fake gains the behaviour from the research,
-   the BFF handler lands, the page switches from mock to real types. Each step is a small
-   PR.
+`proto/README.md` has the full steps; in short:
+
+1. **Proto first.** A new RPC starts in the console's draft (`proto/ai_grid/v1`) and is
+   proposed to the backend as a PR that touches only its `proto/` and `gen/`; the embedded
+   `Unimplemented*Server` makes it compile and answer `Unimplemented`. Both teams review the
+   shape.
+2. **Console syncs and the fake follows.** `hack/sync-upstream-proto.sh` refreshes the vendored
+   copy, the drift test shows where the shipped shape differs from the draft and the draft is
+   reconciled, the fake implements the new methods (or lists them as intentional stubs) with
+   the behaviour from the research, the BFF handler lands, the page switches from mock to real
+   types. Each step is a small PR.
 3. **Stubs are fine in production.** A deployed console in front of a backend that lacks an
    RPC shows "not available yet" on that page and works everywhere else.
-4. **Drift is caught nightly.** A scheduled build against the backend's `main` reports a
-   breaking proto change the day it merges.
+4. **Drift is caught nightly.** `.github/workflows/drift.yaml` syncs the vendored copy from the
+   backend's `main` every night and runs the drift test, so a change to the backend's proto
+   shows up within a day of its merge.
 5. **The research is the shared source.** When the backend team implements an area, the
    report for that area is the specification both sides test against; disagreements go into
    the report's open questions and are resolved there before code.
 
 ## Open questions that affect the mock
 
-- Subscription and auth policy: mirrored one-to-one by the provider console, or managed
-  separately? The fake supports both; the UI differs.
+- Subscription and auth policy: created together by the provider console (the POC's
+  `<name>-policy` convention), or managed separately? The UI differs; the fake should
+  support both.
 - Which Keycloak realm holds tenants: a new `ai-grid` realm, or the organization-enabled
   realm the hub already imports?
 - Will the backend act as the caller on the hub (so hub RBAC decides) or validate tokens
@@ -292,4 +331,5 @@ Backend ask: `Grid/GetNetwork` once the CRDs ship through the AI Gateway compone
 - Can the MWRS feature gate be enabled on an MCE-owned `ClusterManager` without being
   reverted?
 
-The complete lists, with context, are at the end of each report in `research/`.
+The other lists, with context, are at the end of each report in `research/`; the
+subscription question is the console's own.
