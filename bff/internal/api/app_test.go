@@ -926,25 +926,6 @@ func TestNoOpClusterPatchDoesNotWrite(t *testing.T) {
 	}
 }
 
-func TestCELString(t *testing.T) {
-	for in, want := range map[string]string{
-		`acme`:            `"acme"`,
-		`a"b\c`:           `"a\"b\\c"`,
-		"line\nbreak":     `"line\nbreak"`,
-		"cr\rtab\t":       `"cr\rtab\t"`,
-		"bell\x07del\x7f": `"bell\u0007del\u007f"`,
-		"é ü 日本":          `"é ü 日本"`,
-		"bad\xffutf8":     "\"bad�utf8\"",
-	} {
-		if got := celString(in); got != want {
-			t.Errorf("celString(%q) = %s, want %s", in, got, want)
-		}
-	}
-	if got := searchFilter("A\nb É"); got != `this.name.lowerAscii().contains("a\nb É") || this.domains.exists(d, d.lowerAscii().contains("a\nb É"))` {
-		t.Errorf("searchFilter = %s", got)
-	}
-}
-
 func TestListMeta(t *testing.T) {
 	n := func(v int) *int { return &v }
 	for _, tc := range []struct {

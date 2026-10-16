@@ -488,9 +488,9 @@ func fromEnv(env []EnvVar) []*aigridv1.EnvVar {
 	return out
 }
 
-// listModels answers GET /api/v1/models?namespace=&label=k=v&offset=&limit=.
-// `namespace` and each `label` become filter terms; the backend returns the
-// models by namespace and name.
+// listModels answers GET /api/v1/models?offset=&limit=&filter=: the backend
+// evaluates `filter` (listFilter) and returns the models by namespace and
+// name.
 func (a *App) listModels(w http.ResponseWriter, r *http.Request) {
 	offset, err := queryInt(r, "offset")
 	if err != nil {
@@ -502,31 +502,17 @@ func (a *App) listModels(w http.ResponseWriter, r *http.Request) {
 		a.respondError(w, r, err)
 		return
 	}
-	var terms []string
-	if ns := strings.TrimSpace(r.URL.Query().Get("namespace")); ns != "" {
-		terms = append(terms, "this.metadata.namespace == "+celString(ns))
+	filter, err := listFilter(r, "namespace", "label")
+	if err != nil {
+		a.respondError(w, r, err)
+		return
 	}
-	for _, label := range r.URL.Query()["label"] {
-		k, v, ok := strings.Cut(label, "=")
-		if !ok || strings.TrimSpace(k) == "" {
-			a.respondError(w, r, Errorf(http.StatusUnprocessableEntity, `query parameter "label" must be key=value`))
-			return
-		}
-		// Guarded with `in`: in CEL a missing map key is a `no such key`
-		// error, not false, so an unguarded index fails on every model
-		// without the label.
-		key := celString(strings.TrimSpace(k))
-		terms = append(terms, key+" in this.metadata.labels && this.metadata.labels["+key+"] == "+celString(v))
-	}
-	req := &aigridv1.ListModelsRequest{}
+	req := &aigridv1.ListModelsRequest{Filter: filter}
 	if offset != nil {
 		req.Offset = proto.Int32(int32(*offset))
 	}
 	if limit != nil {
 		req.Limit = proto.Int32(int32(*limit))
-	}
-	if len(terms) > 0 {
-		req.Filter = proto.String(strings.Join(terms, " && "))
 	}
 	ctx, cancel := a.backend.Context(r.Context())
 	defer cancel()

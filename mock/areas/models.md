@@ -209,11 +209,17 @@ PENDING with the reason of `PlacementVerified` when it is False, of `PlacementRo
 `ManifestworkApplied` is True, else of `ManifestworkApplied`.
 
 `GetHubCapabilities` answers from `settings.json`. Mutations are gated by the provider-admin rule
-(a viewer gets PermissionDenied, 403 at the BFF); every RPC needs `authorization`; `ListModels`
-evaluates `this.metadata.namespace == "x"` and the guarded label term `"k" in
-this.metadata.labels && this.metadata.labels["k"] == "v"` (in CEL a missing key is a `no such
-key` error, so the index needs the `in` guard) joined with `&&`; values are CEL string literals,
-their escapes decoded, and a quoted `&&` stays inside its literal.
+(a viewer gets PermissionDenied, 403 at the BFF); every RPC needs `authorization`. `ListModels`
+evaluates `filter` as CEL over `this` (an `ai_grid.v1.Model` as the read derives it, status
+included, proto field names) and `now`, with cel-go and its strings extension, over every model
+and before paging, so `total` counts the matches (`bff/internal/fakebackend/celfilter`, the
+List rule of `mock/research/backend-conventions.md` 5.3). Any expression works, for example
+`this.metadata.namespace == "ai-grid-models" && "ai-grid/family" in this.metadata.labels &&
+this.metadata.labels["ai-grid/family"] == "granite"` or `this.status.phase ==
+ai_grid.v1.ModelPhase.MODEL_PHASE_FAILED`; in CEL a missing key is a `no such key` error, not
+false, so an unguarded `this.metadata.labels["k"]` on a model without `k` makes the list
+`InvalidArgument` (`filter <f> failed on '<namespace>/<name>': no such key: k`), as cel-go
+answers. A filter that does not compile or is not a bool is `InvalidArgument` too.
 
 ## Deviations from the real controllers
 
@@ -275,12 +281,16 @@ their escapes decoded, and a quoted `&&` stays inside its literal.
 Invented texts (console wording, not hub messages): the admission messages other than the CEL, CRD
 schema and DNS-1123 texts, "ManifestWorkReplicaSet feature gate disabled on hub", the `referencedBy`
 message, the template's rule messages ("LLMInferenceService rolling out", "LLMInferenceService
-not ready"), the ListModels filter and paging messages, and the hosts and domains
+not ready"), the ListModels filter and paging messages (`filter <f> is not a valid CEL
+expression: ...`, `filter <f> must evaluate to a bool, not <type>`, `filter <f> failed on '<id>':
+...`, with cel-go's own error after the colon), and the hosts and domains
 (`*.example.com`, `apps.hub.example.com`).
 
 ## BFF
 
-`GET /api/v1/models?namespace=&label=`, `GET/PATCH/DELETE /api/v1/models/{namespace}/{name}`,
+`GET /api/v1/models?offset=&limit=&filter=` (the client's CEL forwarded unchanged; the removed
+`namespace` and `label` parameters are 422 `query parameter "<name>" is not supported; send a CEL
+filter in "filter"`), `GET/PATCH/DELETE /api/v1/models/{namespace}/{name}`,
 `POST /api/v1/models` (201 + Location) and `GET /api/v1/capabilities` (501 against today's
 backend), with the JSON shape in `docs/plan/bff-api.md`: the POC's `ManagedModel` without its
 inventions, plus `placement` (selector, selected clusters, `PlacementSatisfied`) and `rollout`

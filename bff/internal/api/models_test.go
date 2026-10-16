@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -122,17 +123,38 @@ func TestListModels(t *testing.T) {
 		t.Errorf("other = %+v (collections are always present)", other)
 	}
 
-	rec = serve(app, asUser(http.MethodGet, "/api/v1/models?namespace=ai-grid-models&label=ai-grid/family%3Dtiny&offset=0&limit=5"))
+	// The client writes the CEL (the guarded label form, so a model without
+	// the label is false instead of a `no such key` error); the BFF forwards it.
+	const tinyFamily = `this.metadata.namespace == "ai-grid-models" && "ai-grid/family" in this.metadata.labels && this.metadata.labels["ai-grid/family"] == "tiny"`
+	rec = serve(app, asUser(http.MethodGet, "/api/v1/models?offset=0&limit=5&filter="+url.QueryEscape(tinyFamily)))
 	meta = decodeList(t, rec, &list)
-	if fake.LastListModels.GetFilter() != `this.metadata.namespace == "ai-grid-models" && "ai-grid/family" in this.metadata.labels && this.metadata.labels["ai-grid/family"] == "tiny"` || fake.LastListModels.GetLimit() != 5 {
+	if fake.LastListModels.GetFilter() != tinyFamily || fake.LastListModels.GetLimit() != 5 {
 		t.Errorf("query not mapped: %v", fake.LastListModels)
 	}
-	if len(list) != 1 || list[0].Name != "tiny-llm" || meta.Limit == nil || *meta.Limit != 5 {
+	if len(list) != 1 || list[0].Name != "tiny-llm" || meta.Limit == nil || *meta.Limit != 5 || total(meta) != 1 {
 		t.Errorf("filtered = %+v %+v", list, meta)
 	}
-	for _, q := range []string{"label=nokey", "offset=-1", "limit=x"} {
-		if rec := serve(app, asUser(http.MethodGet, "/api/v1/models?"+q)); rec.Code != http.StatusUnprocessableEntity {
-			t.Errorf("%s -> %d, want 422", q, rec.Code)
+	rec = serve(app, asUser(http.MethodGet, "/api/v1/models?filter="+url.QueryEscape(`this.status.phase == ai_grid.v1.ModelPhase.MODEL_PHASE_FAILED`)))
+	if decodeList(t, rec, &list); rec.Code != http.StatusOK || len(list) != 1 || list[0].Name != "other" {
+		t.Errorf("any CEL over the model = %d %+v", rec.Code, list)
+	}
+	// An unguarded index fails on a model without the key: the backend's
+	// InvalidArgument, 422.
+	rec = serve(app, asUser(http.MethodGet, "/api/v1/models?filter="+url.QueryEscape(`this.metadata.labels["ai-grid/family"] == "tiny"`)))
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(decodeError(t, rec).Error.Message, "no such key") {
+		t.Errorf("unguarded index = %d %s", rec.Code, rec.Body.String())
+	}
+	for q, want := range map[string]string{
+		"namespace=team-b":             `query parameter "namespace" is not supported; send a CEL filter in "filter"`,
+		"label=ai-grid/family%3Dtiny":  `query parameter "label" is not supported; send a CEL filter in "filter"`,
+		"label=nokey":                  `query parameter "label" is not supported; send a CEL filter in "filter"`,
+		"offset=-1":                    `query parameter "offset" must be an integer between 0 and 2147483647`,
+		"limit=x":                      `query parameter "limit" must be an integer between 0 and 2147483647`,
+		"filter=true&namespace=team-b": `query parameter "namespace" is not supported; send a CEL filter in "filter"`,
+	} {
+		fake.Calls = nil
+		if rec := serve(app, asUser(http.MethodGet, "/api/v1/models?"+q)); rec.Code != http.StatusUnprocessableEntity || decodeError(t, rec).Error.Message != want || len(fake.Calls) != 0 {
+			t.Errorf("%s -> %d %s, calls %v; want 422 %q", q, rec.Code, rec.Body.String(), fake.Calls, want)
 		}
 	}
 }
@@ -443,9 +465,9 @@ func TestNoOpModelPatchDoesNotWrite(t *testing.T) {
 func TestModelFilterOnTheShippedBackend(t *testing.T) {
 	fake := &backendtest.Fake{Models: seedModels(), ShippedLists: true}
 	app := newTestApp(t, testConfig(t), fake)
-	for _, q := range []string{"namespace=team-b", "label=ai-grid/family%3Dtiny", "limit=1", "offset=2"} {
+	for _, q := range []string{"filter=" + url.QueryEscape(`this.metadata.namespace == "team-b"`), "limit=1", "offset=2"} {
 		rec := serve(app, asUser(http.MethodGet, "/api/v1/models?"+q))
-		if rec.Code != http.StatusNotImplemented || !strings.Contains(decodeError(t, rec).Error.Message, "searching or paging models") {
+		if rec.Code != http.StatusNotImplemented || !strings.Contains(decodeError(t, rec).Error.Message, "filtering or paging models") {
 			t.Errorf("%s = %d %s, want 501", q, rec.Code, rec.Body.String())
 		}
 	}

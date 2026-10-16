@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -58,7 +59,7 @@ func total(meta ListMeta) int {
 	return *meta.Total
 }
 
-func TestListTenantsPagesAndSearches(t *testing.T) {
+func TestListTenantsPagesAndFilters(t *testing.T) {
 	fake := &backendtest.Fake{Tenants: seedTenants()}
 	app := newTestApp(t, testConfig(t), fake)
 
@@ -91,31 +92,52 @@ func TestListTenantsPagesAndSearches(t *testing.T) {
 		t.Errorf("no query means an empty request: %v", fake.LastListTenants)
 	}
 
-	rec = serve(app, asUser(http.MethodGet, "/api/v1/tenants?offset=1&limit=1&search=%22Bio%22"))
+	// The filter is the client's CEL, forwarded byte for byte (the BFF
+	// neither builds nor lowers nor checks it); the backend evaluates it.
+	const byName = `this.name.lowerAscii().contains("\"bio\"") || this.domains.exists(d, d.lowerAscii().contains("\"bio\""))`
+	rec = serve(app, asUser(http.MethodGet, "/api/v1/tenants?offset=1&limit=1&filter="+url.QueryEscape(byName)))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
 	}
 	meta = decodeList(t, rec, &list)
-	if fake.LastListTenants.GetOffset() != 1 || fake.LastListTenants.GetLimit() != 1 || fake.LastListTenants.GetFilter() != `this.name.lowerAscii().contains("\"bio\"") || this.domains.exists(d, d.lowerAscii().contains("\"bio\""))` {
+	if fake.LastListTenants.GetOffset() != 1 || fake.LastListTenants.GetLimit() != 1 || fake.LastListTenants.GetFilter() != byName {
 		t.Errorf("query not mapped to the request, got %v", fake.LastListTenants)
 	}
 	if meta.Offset != 1 || meta.Limit == nil || *meta.Limit != 1 {
 		t.Errorf("meta echoes the page: %+v", meta)
 	}
-	rec = serve(app, asUser(http.MethodGet, "/api/v1/tenants?search=bio"))
-	meta = decodeList(t, rec, &list)
-	if len(list) != 1 || list[0].Name != "umbrella-biotech" || total(meta) != 1 {
-		t.Errorf("search = %+v %+v", list, meta)
+	for filter, want := range map[string]string{
+		`this.name.lowerAscii().contains("bio") || this.domains.exists(d, d.lowerAscii().contains("bio"))`: "umbrella-biotech",
+		`this.domains.exists(d, d.endsWith(".example.org"))`:                                               "acme-robotics",
+		`this.alias != this.name`:            "globex-research",
+		`!this.enabled`:                      "umbrella-biotech",
+		"  this.name.startsWith(\"acme\")\n": "acme-robotics", // whitespace and all
+	} {
+		rec = serve(app, asUser(http.MethodGet, "/api/v1/tenants?filter="+url.QueryEscape(filter)))
+		meta = decodeList(t, rec, &list)
+		if rec.Code != http.StatusOK || len(list) != 1 || list[0].Name != want || total(meta) != 1 || fake.LastListTenants.GetFilter() != filter {
+			t.Errorf("filter %q = %d %+v %+v, request %q", filter, rec.Code, list, meta, fake.LastListTenants.GetFilter())
+		}
 	}
-	rec = serve(app, asUser(http.MethodGet, "/api/v1/tenants?search=example.org"))
-	decodeList(t, rec, &list)
-	if len(list) != 1 || list[0].Name != "acme-robotics" {
-		t.Errorf("search matches domains too: %+v", list)
-	}
-	rec = serve(app, asUser(http.MethodGet, "/api/v1/tenants?search=%20%20"))
+	// An empty parameter is no filter.
+	rec = serve(app, asUser(http.MethodGet, "/api/v1/tenants?filter="))
 	meta = decodeList(t, rec, &list)
 	if fake.LastListTenants.Filter != nil || total(meta) != 3 {
-		t.Errorf("a blank search sends no filter: %v", fake.LastListTenants)
+		t.Errorf("an empty filter sends none: %v", fake.LastListTenants)
+	}
+	// The backend's answer to a bad filter is the 422, with its message.
+	rec = serve(app, asUser(http.MethodGet, "/api/v1/tenants?filter="+url.QueryEscape(`this.name ==`)))
+	if rec.Code != http.StatusUnprocessableEntity || !strings.HasPrefix(decodeError(t, rec).Error.Message, "filter this.name == is not a valid CEL expression: ") {
+		t.Errorf("bad filter = %d %s", rec.Code, rec.Body.String())
+	}
+	// The parameter the BFF used to turn into CEL is refused, so an old
+	// client does not get the unfiltered list as its search result.
+	for _, q := range []string{"search=bio", "search=", "filter=true&search=x"} {
+		fake.Calls = nil
+		rec = serve(app, asUser(http.MethodGet, "/api/v1/tenants?"+q))
+		if rec.Code != http.StatusUnprocessableEntity || decodeError(t, rec).Error.Message != `query parameter "search" is not supported; send a CEL filter in "filter"` || len(fake.Calls) != 0 {
+			t.Errorf("%s = %d %s, calls %v", q, rec.Code, rec.Body.String(), fake.Calls)
+		}
 	}
 	rec = serve(app, asUser(http.MethodGet, "/api/v1/tenants?limit=0"))
 	meta = decodeList(t, rec, &list)
@@ -468,28 +490,28 @@ func TestTenantVersions(t *testing.T) {
 }
 
 // The shipped backend's ListTenantsRequest is empty: it drops offset, limit
-// and filter and returns every tenant with no total. Asking it for a search
+// and filter and returns every tenant with no total. Asking it for a filter
 // or a page is 501, never the unfiltered rows as if they were the result.
-func TestTenantSearchAndPagingOnTheShippedBackend(t *testing.T) {
+func TestTenantFilterAndPagingOnTheShippedBackend(t *testing.T) {
 	var many []*aigridv1.Tenant
 	for i := range 8 {
 		many = append(many, &aigridv1.Tenant{Id: fmt.Sprintf("t-%d", i+1), Name: fmt.Sprintf("org-%d", i+1)})
 	}
 	fake := &backendtest.Fake{Tenants: many, ShippedLists: true}
 	app := newTestApp(t, testConfig(t), fake)
-	for _, q := range []string{"search=zzz&limit=5", "search=org", "limit=5", "offset=3", "offset=1&limit=100"} {
+	for _, q := range []string{"filter=false&limit=5", "filter=" + url.QueryEscape(`this.name == "org-1"`), "limit=5", "offset=3", "offset=1&limit=100"} {
 		rec := serve(app, asUser(http.MethodGet, "/api/v1/tenants?"+q))
 		if rec.Code != http.StatusNotImplemented {
 			t.Errorf("%s on the shipped backend = %d %s, want 501", q, rec.Code, rec.Body.String())
 			continue
 		}
-		if msg := decodeError(t, rec).Error.Message; msg != "the AI Grid backend does not support searching or paging tenants yet; list them without search, filter, offset or limit" {
+		if msg := decodeError(t, rec).Error.Message; msg != "the AI Grid backend does not support filtering or paging tenants yet; list them without filter, offset or limit" {
 			t.Errorf("message = %q", msg)
 		}
 	}
-	// No search and no page (offset=0 is the start anyway): the full list,
+	// No filter and no page (offset=0 is the start anyway): the full list,
 	// with the size as the total because nothing precedes it.
-	for _, q := range []string{"", "?offset=0", "?search=%20"} {
+	for _, q := range []string{"", "?offset=0", "?filter="} {
 		var list []Tenant
 		rec := serve(app, asUser(http.MethodGet, "/api/v1/tenants"+q))
 		if rec.Code != http.StatusOK {

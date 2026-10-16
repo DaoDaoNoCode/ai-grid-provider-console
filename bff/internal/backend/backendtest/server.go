@@ -5,12 +5,12 @@ import (
 	"context"
 	"maps"
 	"net"
-	"regexp"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -21,6 +21,7 @@ import (
 
 	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/backend"
+	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/fakebackend/celfilter"
 )
 
 // Fake answers the ManagedClusters, Tenants and AiGrid services from fixed
@@ -199,13 +200,11 @@ func (f *Fake) find(name string) *aigridv1.ManagedCluster {
 	return nil
 }
 
-// tenantFilter is the one filter form the draft supports (see
-// ListTenantsRequest.filter): the same term in both halves.
-var tenantFilter = regexp.MustCompile(`^this\.name\.lowerAscii\(\)\.contains\("((?:[^"\\]|\\.)*)"\) \|\| this\.domains\.exists\(d, d\.lowerAscii\(\)\.contains\("((?:[^"\\]|\\.)*)"\)\)$`)
-
 // ListTenants implements Tenants: name order, `offset`/`limit` paging and
-// the name-or-domain contains filter (case-insensitive), with `total`
-// counted over the filtered set.
+// `filter` evaluated as CEL over `this` (a Tenant) with the fake backend's
+// evaluator (celfilter: cel-go plus its strings extension), so a handler test
+// sees the same matches and the same InvalidArgument answers; `total` counts
+// the filtered set.
 func (f *Fake) ListTenants(ctx context.Context, req *aigridv1.ListTenantsRequest) (*aigridv1.ListTenantsResponse, error) {
 	if err := f.begin(ctx, "ListTenants"); err != nil {
 		return nil, err
@@ -214,29 +213,22 @@ func (f *Fake) ListTenants(ctx context.Context, req *aigridv1.ListTenantsRequest
 	if f.ShippedLists {
 		return &aigridv1.ListTenantsResponse{Tenants: f.Tenants}, nil
 	}
-	term := ""
-	if filter := req.GetFilter(); filter != "" {
-		m := tenantFilter.FindStringSubmatch(filter)
-		if m == nil || m[1] != m[2] {
-			return nil, status.Errorf(codes.InvalidArgument, "filter %s is not supported", filter)
-		}
-		unquoted, err := strconv.Unquote(`"` + m[1] + `"`)
-		if err != nil {
-			return nil, status.Errorf(codes.InvalidArgument, "filter %s is not supported", filter)
-		}
-		term = strings.ToLower(unquoted)
+	filter, err := celfilter.Compile(req.GetFilter(), &aigridv1.Tenant{})
+	if err != nil {
+		return nil, err
 	}
-	all := make([]*aigridv1.Tenant, 0, len(f.Tenants))
-	for _, t := range f.Tenants {
-		match := strings.Contains(strings.ToLower(t.GetName()), term)
-		for _, d := range t.GetDomains() {
-			match = match || strings.Contains(strings.ToLower(d), term)
+	sorted := slices.Clone(f.Tenants)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].GetName() < sorted[j].GetName() })
+	var all []*aigridv1.Tenant
+	for _, t := range sorted {
+		ok, err := filter.Match(t, t.GetId(), time.Now())
+		if err != nil {
+			return nil, err
 		}
-		if match {
+		if ok {
 			all = append(all, t)
 		}
 	}
-	sort.Slice(all, func(i, j int) bool { return all[i].GetName() < all[j].GetName() })
 	total := len(all)
 	page := all[min(int(req.GetOffset()), total):]
 	if req.Limit != nil && int(req.GetLimit()) < len(page) {
@@ -403,62 +395,9 @@ func (f *Fake) GetHubCapabilities(ctx context.Context, _ *aigridv1.GetHubCapabil
 	return &aigridv1.GetHubCapabilitiesResponse{Capabilities: f.Capabilities}, nil
 }
 
-// Model filter terms the draft supports (see ListModelsRequest.filter), read
-// from the front of the filter so a quoted ` && ` stays in its literal.
-var (
-	modelFilterLiteral   = `"(?:[^"\\]|\\.)*"`
-	modelFilterNamespace = regexp.MustCompile(`^this\.metadata\.namespace == (` + modelFilterLiteral + `)`)
-	modelFilterLabel     = regexp.MustCompile(`^(` + modelFilterLiteral + `) in this\.metadata\.labels && this\.metadata\.labels\[(` + modelFilterLiteral + `)\] == (` + modelFilterLiteral + `)`)
-)
-
-// modelFilterChecks parses a ListModels filter into its term checks.
-func modelFilterChecks(filter string) ([]func(*aigridv1.Model) bool, bool) {
-	var checks []func(*aigridv1.Model) bool
-	unquote := func(literals []string) ([]string, bool) {
-		out := make([]string, len(literals))
-		for i, l := range literals {
-			v, err := strconv.Unquote(l)
-			if err != nil {
-				return nil, false
-			}
-			out[i] = v
-		}
-		return out, true
-	}
-	for rest := filter; ; {
-		if m := modelFilterNamespace.FindStringSubmatch(rest); m != nil {
-			v, ok := unquote(m[1:])
-			if !ok {
-				return nil, false
-			}
-			checks = append(checks, func(x *aigridv1.Model) bool { return x.GetMetadata().GetNamespace() == v[0] })
-			rest = rest[len(m[0]):]
-		} else if m := modelFilterLabel.FindStringSubmatch(rest); m != nil {
-			v, ok := unquote(m[1:])
-			if !ok || v[0] != v[1] {
-				return nil, false
-			}
-			checks = append(checks, func(x *aigridv1.Model) bool {
-				got, ok := x.GetMetadata().GetLabels()[v[1]]
-				return ok && got == v[2]
-			})
-			rest = rest[len(m[0]):]
-		} else {
-			return nil, false
-		}
-		if rest == "" {
-			return checks, true
-		}
-		after, ok := strings.CutPrefix(rest, " && ")
-		if !ok {
-			return nil, false
-		}
-		rest = after
-	}
-}
-
-// ListModels implements Models: namespace then name order, the two filter
-// term forms joined with ` && `, offset/limit paging.
+// ListModels implements Models: namespace then name order, `filter`
+// evaluated as CEL over `this` (a Model, as stored) like ListTenants,
+// offset/limit paging.
 func (f *Fake) ListModels(ctx context.Context, req *aigridv1.ListModelsRequest) (*aigridv1.ListModelsResponse, error) {
 	f.LastListModels = req
 	if err := f.begin(ctx, "ListModels"); err != nil {
@@ -467,29 +406,27 @@ func (f *Fake) ListModels(ctx context.Context, req *aigridv1.ListModelsRequest) 
 	if f.ShippedLists {
 		return &aigridv1.ListModelsResponse{Items: f.Models}, nil
 	}
-	var checks []func(*aigridv1.Model) bool
-	if filter := req.GetFilter(); filter != "" {
-		var ok bool
-		if checks, ok = modelFilterChecks(filter); !ok {
-			return nil, status.Errorf(codes.InvalidArgument, "filter %s is not supported", filter)
-		}
+	filter, err := celfilter.Compile(req.GetFilter(), &aigridv1.Model{})
+	if err != nil {
+		return nil, err
 	}
+	sorted := slices.Clone(f.Models)
+	sort.Slice(sorted, func(i, j int) bool {
+		if a, b := sorted[i].GetMetadata().GetNamespace(), sorted[j].GetMetadata().GetNamespace(); a != b {
+			return a < b
+		}
+		return sorted[i].GetName() < sorted[j].GetName()
+	})
 	var all []*aigridv1.Model
-	for _, m := range f.Models {
-		ok := true
-		for _, check := range checks {
-			ok = ok && check(m)
+	for _, m := range sorted {
+		ok, err := filter.Match(m, m.GetMetadata().GetNamespace()+"/"+m.GetName(), time.Now())
+		if err != nil {
+			return nil, err
 		}
 		if ok {
 			all = append(all, m)
 		}
 	}
-	sort.Slice(all, func(i, j int) bool {
-		if a, b := all[i].GetMetadata().GetNamespace(), all[j].GetMetadata().GetNamespace(); a != b {
-			return a < b
-		}
-		return all[i].GetName() < all[j].GetName()
-	})
 	total := len(all)
 	page := all[min(int(req.GetOffset()), total):]
 	if req.Limit != nil && int(req.GetLimit()) < len(page) {

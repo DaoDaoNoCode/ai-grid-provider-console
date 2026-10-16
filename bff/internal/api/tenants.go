@@ -103,64 +103,33 @@ func queryInt(r *http.Request, name string) (*int, error) {
 	return &v, nil
 }
 
-// celString quotes s as a CEL string literal: `\` and `"` are escaped,
-// newline, carriage return and tab get their short escapes and every other
-// control character (C0 and DEL) a `\uXXXX` escape, so no query value can end
-// the literal or make the expression fail to compile; invalid UTF-8, which a
-// CEL source cannot carry, becomes U+FFFD. Every filter the BFF builds quotes
-// its values with it.
-func celString(s string) string {
-	var b strings.Builder
-	b.WriteByte('"')
-	for _, r := range strings.ToValidUTF8(s, "\uFFFD") {
-		switch {
-		case r == '\\' || r == '"':
-			b.WriteByte('\\')
-			b.WriteRune(r)
-		case r == '\n':
-			b.WriteString(`\n`)
-		case r == '\r':
-			b.WriteString(`\r`)
-		case r == '\t':
-			b.WriteString(`\t`)
-		case r < 0x20 || r == 0x7f:
-			fmt.Fprintf(&b, `\u%04x`, r)
-		default:
-			b.WriteRune(r)
+// listFilter reads the `filter` query parameter of a list endpoint: a CEL
+// expression over `this` that the client wrote, forwarded as the request's
+// `filter` exactly as received (nil when the parameter is absent or empty).
+// The BFF neither builds nor checks it; the backend evaluates it and answers
+// a bad one with InvalidArgument (422). The query parameters the BFF used to
+// turn into CEL itself (`removed`: `search` for tenants, `namespace` and
+// `label` for models) are 422 rather than ignored, so a client written for
+// them gets an error instead of the unfiltered list.
+func listFilter(r *http.Request, removed ...string) (*string, error) {
+	q := r.URL.Query()
+	for _, name := range removed {
+		if q.Has(name) {
+			return nil, Errorf(http.StatusUnprocessableEntity, fmt.Sprintf(`query parameter %q is not supported; send a CEL filter in "filter"`, name))
 		}
 	}
-	b.WriteByte('"')
-	return b.String()
+	if f := q.Get("filter"); f != "" {
+		return proto.String(f), nil
+	}
+	return nil, nil
 }
 
-// searchFilter turns the `search` query into the CEL expression that means
-// what Keycloak's `search` parameter does, a case-insensitive contains on the
-// name or on any domain: both sides lowered with `lowerAscii()` (cel-go's
-// strings extension, `ext.Strings()`), the term lowered the same way before
-// it is quoted, so a backend that evaluates the filter as written and one
-// that pushes the term down to Keycloak return the same tenants (for ASCII
-// letters; CEL compares other letters exactly, where Keycloak's SQL lower()
-// may fold them). The term is a CEL string literal.
-func searchFilter(term string) string {
-	literal := celString(lowerASCII(term))
-	return `this.name.lowerAscii().contains(` + literal + `) || this.domains.exists(d, d.lowerAscii().contains(` + literal + `))`
-}
-
-// lowerASCII is CEL's `lowerAscii()`: A-Z lowered, every other rune kept.
-func lowerASCII(s string) string {
-	return strings.Map(func(r rune) rune {
-		if 'A' <= r && r <= 'Z' {
-			return r + ('a' - 'A')
-		}
-		return r
-	}, s)
-}
-
-// listTenants answers GET /api/v1/tenants?offset=&limit=&search=. The
-// backend returns them in Keycloak's order (by name); `meta` carries the
-// page, with `total` counted over the whole search result. A backend that
-// answers without `total` has not honoured search or paging (requireTotal):
-// 501 when the caller asked for either, the plain list otherwise.
+// listTenants answers GET /api/v1/tenants?offset=&limit=&filter=. The
+// backend returns them in Keycloak's order (by name) and evaluates `filter`
+// (listFilter); `meta` carries the page, with `total` counted over the whole
+// filtered list. A backend that answers without `total` has not honoured the
+// filter or the page (requireTotal): 501 when the caller asked for either,
+// the plain list otherwise.
 func (a *App) listTenants(w http.ResponseWriter, r *http.Request) {
 	offset, err := queryInt(r, "offset")
 	if err != nil {
@@ -172,15 +141,17 @@ func (a *App) listTenants(w http.ResponseWriter, r *http.Request) {
 		a.respondError(w, r, err)
 		return
 	}
-	req := &aigridv1.ListTenantsRequest{}
+	filter, err := listFilter(r, "search")
+	if err != nil {
+		a.respondError(w, r, err)
+		return
+	}
+	req := &aigridv1.ListTenantsRequest{Filter: filter}
 	if offset != nil {
 		req.Offset = proto.Int32(int32(*offset))
 	}
 	if limit != nil {
 		req.Limit = proto.Int32(int32(*limit))
-	}
-	if search := strings.TrimSpace(r.URL.Query().Get("search")); search != "" {
-		req.Filter = proto.String(searchFilter(search))
 	}
 	ctx, cancel := a.backend.Context(r.Context())
 	defer cancel()

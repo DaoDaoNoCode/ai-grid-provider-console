@@ -3,7 +3,6 @@ package fakebackend
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -14,6 +13,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
+	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/fakebackend/celfilter"
 )
 
 // Tenants are Keycloak Organizations behind the backend's mapping
@@ -22,37 +22,6 @@ import (
 // real backend does with Keycloak 26.8: the same uniqueness rules, the same
 // validation messages, the same defaults, and the gRPC code the error table
 // in keycloak.md 8.2 assigns to each Keycloak outcome.
-
-// filterPattern is the one CEL form ListTenants supports, the expression that
-// means what Keycloak's `search` does, a case-insensitive contains:
-// `this.name.lowerAscii().contains("<term>") || this.domains.exists(d, d.lowerAscii().contains("<term>"))`
-// (cel-go's strings extension) with the same string literal (CEL escapes
-// `\"` and `\\`) in both places; the BFF lowers the term before quoting it.
-// No other form, the case-sensitive `contains` without `lowerAscii()`
-// included, is accepted.
-var filterPattern = regexp.MustCompile(`^this\.name\.lowerAscii\(\)\.contains\("((?:[^"\\]|\\.)*)"\) \|\| this\.domains\.exists\(d, d\.lowerAscii\(\)\.contains\("((?:[^"\\]|\\.)*)"\)\)$`)
-
-const supportedFilter = `this.name.lowerAscii().contains("<term>") || this.domains.exists(d, d.lowerAscii().contains("<term>"))`
-
-// searchTerm extracts the Keycloak `search` value from the filter, or
-// reports InvalidArgument for any other expression.
-func searchTerm(filter string) (string, error) {
-	if filter == "" {
-		return "", nil
-	}
-	m := filterPattern.FindStringSubmatch(filter)
-	if m == nil || m[1] != m[2] {
-		return "", status.Errorf(codes.InvalidArgument, "filter %s is not supported; this server only evaluates %s", filter, supportedFilter)
-	}
-	// The literal's escapes (`\"`, `\\`, `\n`, `\r`, `\t`, `\uXXXX`, what the
-	// BFF writes) decoded with Go's rules, which agree with CEL's for those;
-	// a malformed escape is InvalidArgument like a CEL compile error.
-	term, err := strconv.Unquote(`"` + m[1] + `"`)
-	if err != nil {
-		return "", status.Errorf(codes.InvalidArgument, "filter %s is not a valid CEL string literal", filter)
-	}
-	return term, nil
-}
 
 // TenantVersionAttribute is the organization attribute the backend keeps a
 // tenant's version in (the console's proposal, mock/areas/tenants.md,
@@ -88,32 +57,6 @@ func bumpTenantVersion(t *aigridv1.Tenant) {
 	t.ResourceVersion = strconv.FormatInt(n+1, 10)
 }
 
-// matchesSearch is the contract's search: a case-insensitive literal
-// substring match on the name or on any domain (domains are stored
-// lower-case). A blank term (empty or whitespace only, StringUtil.isBlank)
-// matches every organization, as Keycloak's search does
-// (JpaOrganizationProvider.java L468-470). Keycloak's `search` is
-// `LIKE '%' + term.toLowerCase() + '%'` built without escaping and without
-// an ESCAPE clause (L482-483), so the database's default escape character
-// applies (backslash on PostgreSQL): a backend that pushes the term down
-// must escape `%`, `_` and `\` first (ListTenantsRequest.filter in the
-// proto); the fake's literal match is the reference behaviour.
-func matchesSearch(t *aigridv1.Tenant, term string) bool {
-	if javaIsBlank(term) {
-		return true
-	}
-	term = strings.ToLower(term)
-	if strings.Contains(strings.ToLower(t.GetName()), term) {
-		return true
-	}
-	for _, d := range t.GetDomains() {
-		if strings.Contains(d, term) {
-			return true
-		}
-	}
-	return false
-}
-
 // beginTenants is what every Tenants RPC does after authentication and the
 // round trip: fail the way the backend fails when Keycloak is unreachable or
 // the realm is missing, before touching the store. Must be called under s.mu.
@@ -142,17 +85,28 @@ func (s *Server) beginTenants() error {
 // (OrganizationsResource.java L157-158) and ignores a negative value of
 // either (L138-139; PaginationUtils.paginateQuery L26-41), so the backend
 // must send an explicit `max` for an omitted limit and reject negatives
-// itself. `total` is what `GET /organizations/count` returns for the same
-// search, disabled organizations are included like Keycloak includes them,
+// itself. Disabled organizations are included like Keycloak includes them,
 // and results are ordered by name (JpaOrganizationProvider.java L454,
 // `ORDER BY name ASC`). That order is the realm database's collation for
 // the name column, which the console has not checked on the hub; the fake
 // uses Go byte order, which equals it for the all-lower-case fixtures.
+//
+// `filter` is CEL over `this` (a Tenant) and `now` (celfilter), evaluated in
+// memory over the whole realm list before paging, as the List rule of
+// mock/research/backend-conventions.md 5.3 says (a realm's organizations are
+// few), so `total` counts the filtered set. The evaluation is strict CEL:
+// `lowerAscii()` folds A-Z only and `contains` is a literal substring, so a
+// caller that wants a case-insensitive search lowers its term itself. A
+// backend may instead push a simple term down to Keycloak's `search`, a SQL
+// LIKE built without escaping and without an ESCAPE clause
+// (JpaOrganizationProvider.java L482-483, so `%`, `_` and `\` must be
+// escaped first), but only where that returns what the CEL expression
+// means; the fake's in-memory evaluation is the reference.
 func (s *Server) ListTenants(ctx context.Context, req *aigridv1.ListTenantsRequest) (*aigridv1.ListTenantsResponse, error) {
 	if _, err := s.begin(ctx); err != nil {
 		return nil, err
 	}
-	term, err := searchTerm(req.GetFilter())
+	filter, err := celfilter.Compile(req.GetFilter(), &aigridv1.Tenant{})
 	if err != nil {
 		return nil, err
 	}
@@ -170,16 +124,26 @@ func (s *Server) ListTenants(ctx context.Context, req *aigridv1.ListTenantsReque
 	if err := s.beginTenants(); err != nil {
 		return nil, err
 	}
-	// Filter and sort references under the lock; only the page that leaves
-	// the lock is cloned, so a count-only or small-page request does not
-	// copy the whole realm.
-	all := make([]*aigridv1.Tenant, 0, len(s.tenants))
+	// Sort and filter references under the lock, in name order so that an
+	// evaluation error names the same tenant every time; only the page that
+	// leaves the lock is cloned, so a count-only or small-page request does
+	// not copy the whole realm.
+	sorted := make([]*aigridv1.Tenant, 0, len(s.tenants))
 	for _, t := range s.tenants {
-		if matchesSearch(t, term) {
+		sorted = append(sorted, t)
+	}
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].GetName() < sorted[j].GetName() })
+	now := s.clock()
+	all := make([]*aigridv1.Tenant, 0, len(sorted))
+	for _, t := range sorted {
+		ok, err := filter.Match(t, t.GetId(), now)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
 			all = append(all, t)
 		}
 	}
-	sort.Slice(all, func(i, j int) bool { return all[i].GetName() < all[j].GetName() })
 	total := len(all)
 	offset := min(int(req.GetOffset()), total)
 	window := all[offset:]

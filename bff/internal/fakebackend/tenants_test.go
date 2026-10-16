@@ -260,24 +260,38 @@ func TestListTenants(t *testing.T) {
 	if page := list(&aigridv1.ListTenantsRequest{Offset: proto.Int32(10)}); len(page.GetTenants()) != 0 || page.GetTotal() != 3 {
 		t.Errorf("offset past the end: %v", page)
 	}
-	// search: case-insensitive contains on the name or a domain, total follows the filter.
+	// The form the BFF used to write, a case-insensitive contains on the
+	// name or a domain, is plain CEL and still works; total follows the filter.
 	filter := func(term string) *string {
 		return proto.String(`this.name.lowerAscii().contains("` + term + `") || this.domains.exists(d, d.lowerAscii().contains("` + term + `"))`)
 	}
-	if page := list(&aigridv1.ListTenantsRequest{Filter: filter("GLOBEX")}); strings.Join(tenantNames(page), ",") != "globex-research" || page.GetTotal() != 1 {
+	if page := list(&aigridv1.ListTenantsRequest{Filter: filter("globex")}); strings.Join(tenantNames(page), ",") != "globex-research" || page.GetTotal() != 1 {
 		t.Errorf("search by name = %v", page)
 	}
 	if page := list(&aigridv1.ListTenantsRequest{Filter: filter("example.org")}); strings.Join(tenantNames(page), ",") != "acme-robotics" {
 		t.Errorf("search by domain = %v", page)
 	}
 	if page := list(&aigridv1.ListTenantsRequest{Filter: filter("")}); page.GetTotal() != 3 {
-		t.Errorf("empty search returns everything: %v", page)
+		t.Errorf("contains(\"\") is true for every tenant: %v", page)
 	}
-	if page := list(&aigridv1.ListTenantsRequest{Filter: filter("  ")}); page.GetTotal() != 3 {
-		t.Errorf("a whitespace-only search is blank to Keycloak and returns everything: %v", page)
+	// Strict CEL: the term is compared as written. An upper-case term
+	// matches nothing (the caller lowers it, as the BFF used to), and a
+	// whitespace term is a literal substring, not Keycloak's blank search.
+	if page := list(&aigridv1.ListTenantsRequest{Filter: filter("GLOBEX")}); page.GetTotal() != 0 {
+		t.Errorf("lowerAscii() lowers the name, not the term: %v", page)
+	}
+	if page := list(&aigridv1.ListTenantsRequest{Filter: filter("  ")}); page.GetTotal() != 0 {
+		t.Errorf("a whitespace term is a substring like any other: %v", page)
 	}
 	if page := list(&aigridv1.ListTenantsRequest{Filter: filter(`say \"hi\"`)}); page.GetTotal() != 0 {
 		t.Errorf("escaped term parses: %v", page)
+	}
+	// Paging applies after filtering, and total counts the filtered set.
+	if page := list(&aigridv1.ListTenantsRequest{Filter: proto.String(`this.name.contains("-")`), Offset: proto.Int32(1), Limit: proto.Int32(1)}); strings.Join(tenantNames(page), ",") != "globex-research" || page.GetSize() != 1 || page.GetTotal() != 3 {
+		t.Errorf("page of the filtered list = %v", page)
+	}
+	if page := list(&aigridv1.ListTenantsRequest{Filter: proto.String(`this.enabled`), Offset: proto.Int32(1)}); strings.Join(tenantNames(page), ",") != "globex-research" || page.GetTotal() != 2 {
+		t.Errorf("offset into the filtered list = %v", page)
 	}
 	// `%` and `_` are literal characters of the term, never LIKE wildcards
 	// (the browser mock runs the same cases).
@@ -293,17 +307,42 @@ func TestListTenants(t *testing.T) {
 	if _, err := s.DeleteTenant(ctx, &aigridv1.DeleteTenantRequest{Id: "00000000-0000-4000-8000-000000000001"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, bad := range []string{
-		`this.name == "a"`, `this.name.startsWith("a")`, `name.contains("a")`, `this.name.contains(a)`,
-		`this.name.contains("a")`, // name only is not what the UI means
-		`this.name.contains("a") || this.domains.exists(d, d.contains("a"))`, // case-sensitive in CEL
-		`this.name.lowerAscii().contains("a") || this.domains.exists(d, d.contains("a"))`,
-		`this.name.lowerAscii().contains("a") || this.domains.exists(d, d.lowerAscii().contains("b"))`, // two different terms
-		`this.domains.exists(d, d.lowerAscii().contains("a")) || this.name.lowerAscii().contains("a")`,
+	// Any CEL over the Tenant message, proto field names, the strings
+	// extension and `now`.
+	for expr, want := range map[string]string{
+		`this.name == "initech-labs"`:                                             "initech-labs",
+		`this.alias != this.name`:                                                 "globex-research",
+		`!this.enabled`:                                                           "initech-labs",
+		`this.attributes["billing-account"] == "ACME-0042"`:                       "", // initech-labs and globex have no attributes: an error, below
+		`"billing-account" in this.attributes`:                                    "acme-robotics",
+		`this.domain_details.exists(d, d.verified && d.auto_redirect)`:            "acme-robotics",
+		`this.domains.size() == 0`:                                                "initech-labs",
+		`this.name.upperAscii().startsWith("GLOBEX")`:                             "globex-research",
+		`this.resource_version == "1" && now > timestamp("2026-01-01T00:00:00Z")`: "acme-robotics,globex-research,initech-labs",
+	} {
+		if want == "" {
+			continue
+		}
+		page := list(&aigridv1.ListTenantsRequest{Filter: proto.String(expr)})
+		if got := strings.Join(tenantNames(page), ","); got != want {
+			t.Errorf("%s = %q, want %q", expr, got, want)
+		}
+	}
+	// Errors are InvalidArgument naming the filter: a syntax or type error, a
+	// result that is not a bool, and an evaluation error such as indexing a
+	// missing key (CEL has no "false on error"; the `in` guard avoids it).
+	for bad, want := range map[string]string{
+		`this.name ==`:             "filter this.name == is not a valid CEL expression: ",
+		`this.nope == "a"`:         `filter this.nope == "a" is not a valid CEL expression: `,
+		`name.contains("a")`:       `filter name.contains("a") is not a valid CEL expression: `,
+		`this.name`:                "filter this.name must evaluate to a bool, not string",
+		`size(this.domains)`:       "filter size(this.domains) must evaluate to a bool, not int",
+		`this.name.contains("\q")`: `filter this.name.contains("\q") is not a valid CEL expression: `,
+		`this.attributes["billing-account"] == "ACME-0042"`: `filter this.attributes["billing-account"] == "ACME-0042" failed on '` + idGlobex + `': no such key: billing-account`,
 	} {
 		_, err := s.ListTenants(ctx, &aigridv1.ListTenantsRequest{Filter: proto.String(bad)})
-		if status.Code(err) != codes.InvalidArgument || !strings.Contains(status.Convert(err).Message(), bad) {
-			t.Errorf("filter %s = %v, want InvalidArgument naming it", bad, err)
+		if status.Code(err) != codes.InvalidArgument || !strings.HasPrefix(status.Convert(err).Message(), want) {
+			t.Errorf("filter %s = %v, want InvalidArgument starting %q", bad, err, want)
 		}
 	}
 	if _, err := s.ListTenants(ctx, &aigridv1.ListTenantsRequest{Order: proto.String("name desc")}); status.Code(err) != codes.InvalidArgument {
@@ -818,19 +857,30 @@ func TestTenantVersion(t *testing.T) {
 }
 
 // TestListTenantsDecodesTheFilterLiteral: the term is a CEL string literal,
-// so the escapes the BFF writes for quotes, backslashes and control
-// characters are decoded before the search.
+// so the escapes for quotes, backslashes and control characters are decoded
+// by CEL before the comparison.
 func TestListTenantsDecodesTheFilterLiteral(t *testing.T) {
 	s := tenantServer(t, &aigridv1.Tenant{Id: idAcme, Name: `a"b\c`, Alias: "quotes"}, &aigridv1.Tenant{Id: idGlobex, Name: "tab\there", Alias: "tab"})
 	ctx := authed(context.Background())
-	for literal, want := range map[string]string{`"a\"b\\c"`: `a"b\c`, `"tab\there"`: "tab\there", `"tab\u0009"`: "tab\there"} {
+	for literal, want := range map[string]string{`"a\"b\\c"`: `a"b\c`, `"tab\there"`: "tab\there", `"tab\u0009"`: "tab\there", `'a"b'`: `a"b\c`, `r"b\c"`: `a"b\c`} {
 		filter := `this.name.lowerAscii().contains(` + literal + `) || this.domains.exists(d, d.lowerAscii().contains(` + literal + `))`
 		resp, err := s.ListTenants(ctx, &aigridv1.ListTenantsRequest{Filter: proto.String(filter)})
 		if err != nil || len(resp.GetTenants()) != 1 || resp.GetTenants()[0].GetName() != want {
 			t.Errorf("%s = %v, %v; want %q", literal, tenantNames(resp), err, want)
 		}
 	}
-	bad := `this.name.lowerAscii().contains("\q") || this.domains.exists(d, d.lowerAscii().contains("\q"))`
-	_, err := s.ListTenants(ctx, &aigridv1.ListTenantsRequest{Filter: proto.String(bad)})
-	mustCode(t, err, codes.InvalidArgument, "filter "+bad+" is not a valid CEL string literal")
+}
+
+// TestListTenantsFilterErrorsAfterTheKeycloakGate: a filter that does not
+// compile is a request-shape error, answered before Keycloak is asked; one
+// that fails on an organization needs the organizations, so with Keycloak
+// unreachable it is Unavailable like every other Keycloak-backed answer.
+func TestListTenantsFilterErrorsAfterTheKeycloakGate(t *testing.T) {
+	s := tenantServer(t)
+	s.TenantsErr = status.Error(codes.Unavailable, MsgKeycloakDownPref+"connection refused")
+	ctx := authed(context.Background())
+	_, err := s.ListTenants(ctx, &aigridv1.ListTenantsRequest{Filter: proto.String(`this.name ==`)})
+	mustCode(t, err, codes.InvalidArgument, "")
+	_, err = s.ListTenants(ctx, &aigridv1.ListTenantsRequest{Filter: proto.String(`this.attributes["x"] == "y"`)})
+	mustCode(t, err, codes.Unavailable, "")
 }

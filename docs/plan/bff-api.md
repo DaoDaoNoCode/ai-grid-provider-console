@@ -77,12 +77,12 @@ Paths are under `/api/v1`, except `/healthcheck` and `/readyz` at the root.
 | GET | `/api/v1/clusters` | `GridCluster[]` sorted by name | `ManagedClusters/ListManagedClusters` |
 | GET | `/api/v1/clusters/{name}` | `GridCluster`, `ETag: "<resourceVersion>"` | `ManagedClusters/GetManagedCluster`; 404 with the backend's message when absent. Against a backend without that RPC (the shipped one answers `Unimplemented`) the BFF filters `ListManagedClusters` by name instead, so the detail works either way |
 | PATCH | `/api/v1/clusters/{name}` | `GridCluster` after the write, with its `ETag` | `GetManagedCluster` then `UpdateManagedCluster` with mask `labels` and/or `annotations` (only the maps that changed) and `lock: true` on the `If-Match` version, or on the fetched `resource_version` without one; 409 when the hub object is not at that version, 422 on a bad body or `If-Match`, 413 over 1 MiB, 415 when the body is not `application/json` |
-| GET | `/api/v1/tenants?offset=&limit=&search=` | `Tenant[]` in Keycloak's order (by name, the realm database's collation) plus `meta`; `search` is a case-insensitive literal substring of the name or a domain (`%` and `_` are not wildcards: a backend that pushes the term to Keycloak's `search`, a SQL LIKE without an ESCAPE clause, must escape `%`, `_` and `\` first); `limit` omitted returns everything | `Tenants/ListTenants` with `offset`, `limit` and `filter: this.name.lowerAscii().contains("<search>") \|\| this.domains.exists(d, d.lowerAscii().contains("<search>"))` with the search lower-cased (ASCII); `lowerAscii()` needs cel-go's strings extension (`ext.Strings()`) |
+| GET | `/api/v1/tenants?offset=&limit=&filter=` | `Tenant[]` in Keycloak's order (by name, the realm database's collation) plus `meta`; `filter` is a CEL expression the client writes, over `this` (a Tenant), see "Writes, versions and lists"; `limit` omitted returns everything; the removed `search` is 422 | `Tenants/ListTenants` with `offset`, `limit` and `filter` exactly as sent |
 | GET | `/api/v1/tenants/{id}` | `Tenant`, `ETag: "<resourceVersion>"` | `Tenants/GetTenant`; 404 with the backend's message when absent |
 | POST | `/api/v1/tenants` | 201, `Tenant` as created, `Location: /api/v1/tenants/{id}`, `ETag` | `Tenants/CreateTenant`; 422 with Keycloak's message on a bad name, alias or domain, 409 on a taken name or alias |
 | PATCH | `/api/v1/tenants/{id}` | `Tenant` after the write, with its `ETag` | `Tenants/UpdateTenant` with the present body fields as the mask and the `If-Match` version as `object.resource_version`; 422 "Cannot change the alias", 409 on a taken or blank name (Keycloak's own answer to a blank one) or a stale `If-Match` |
 | DELETE | `/api/v1/tenants/{id}` | 204 | `Tenants/DeleteTenant` with the `If-Match` version as `resource_version`; 404 when absent, 409 on a stale `If-Match` |
-| GET | `/api/v1/models?namespace=&label=k=v&offset=&limit=` | `Model[]` by namespace and name plus `meta`; `label` may repeat | `Models/ListModels` with `filter: this.metadata.namespace == "<ns>" && "<k>" in this.metadata.labels && this.metadata.labels["<k>"] == "<v>"` (the `in` guard keeps a model without the label from being a CEL `no such key` error) |
+| GET | `/api/v1/models?offset=&limit=&filter=` | `Model[]` by namespace and name plus `meta`; `filter` is CEL over `this` (a Model) as for tenants; the removed `namespace` and `label` are 422 | `Models/ListModels` with `offset`, `limit` and `filter` exactly as sent |
 | GET | `/api/v1/models/{namespace}/{name}` | `Model`, `ETag: "<resourceVersion>"` | `Models/GetModel`; 404 with the backend's message (`object with identifier '<ns>/<name>' not found`) |
 | POST | `/api/v1/models` | 201, `Model` with no conditions yet, `Location: /api/v1/models/{namespace}/{name}`, `ETag` | `Models/CreateModel`; 422 with the API server's or the CRD's message (a name that is not a DNS-1123 subdomain, a negative `replicas`, `replicas` with `scaling`, `scaling` without `maxReplicas`, without a trigger, with `maxReplicas` below 1 or a negative `minReplicas` (`minReplicas: 0` counts as unset and defaults to 1) or with `minReplicas` above `maxReplicas`) or the console's own (URI scheme, Placement operators, rollout fields, `rollout` without `placement`), 409 on a taken name, 412 `ManifestWorkReplicaSet feature gate disabled on hub` when `placement` is set on a hub without the controller |
 | PATCH | `/api/v1/models/{namespace}/{name}` | `Model` after the write, with its `ETag` | `GetModel` then `UpdateModel` with the present fields that differ from the stored ones as the mask (`spec.replicas`, `spec.main.image`, `spec.main.env`, `spec.placement`, `spec.rollout`, `metadata.labels`, `metadata.annotations`) and `lock: true` on the `If-Match` version, or on the fetched `resource_version` without one; 409 when the object is not at that version, 412 when a placement is added on a gated hub |
@@ -346,17 +346,43 @@ decides.
   field other than `alias` is written. A PATCH that changes nothing answers 200 with the
   current object and `ETag` even when its `If-Match` is stale, because nothing is written
   (RFC 9110 would answer 412; no stale write can happen this way).
+- **`filter` is the client's CEL.** `GET /tenants` and `GET /models` take `filter`, a CEL
+  expression over `this` (the proto message, `ai_grid.v1.Tenant` or `ai_grid.v1.Model` with its
+  status, fields by their proto names) and `now` (the backend's time), in cel-go's standard
+  library plus its strings extension (`ext.Strings()`). The BFF puts the decoded query value in
+  the request's `filter` unchanged (an empty `filter=` is no filter) and never builds, rewrites
+  or checks it; the backend evaluates it over the whole list before paging, so `meta.total`
+  counts the matches. The client writes it, for example:
+
+  | The page wants | `filter` |
+  |---|---|
+  | tenants whose name or a domain contains `acme`, ignoring ASCII case (the client lowers the term: `lowerAscii()` folds A-Z only) | `this.name.lowerAscii().contains("acme") \|\| this.domains.exists(d, d.lowerAscii().contains("acme"))` |
+  | disabled tenants | `!this.enabled` |
+  | models in one namespace | `this.metadata.namespace == "ai-grid-models"` |
+  | models with a label, guarded | `"ai-grid/family" in this.metadata.labels && this.metadata.labels["ai-grid/family"] == "granite"` |
+  | failed models | `this.status.phase == ai_grid.v1.ModelPhase.MODEL_PHASE_FAILED` |
+
+  Values are CEL string literals (escape `"` and `\`), and the whole expression is URL-encoded
+  in the query. CEL is strict: `contains` is a literal substring (`%` and `_` match
+  themselves), and indexing a missing map key is a `no such key` error, not false, so a label
+  term without the `in` guard fails on the first model that lacks the label. A filter that does
+  not compile, is not a bool or fails on an object is the backend's `InvalidArgument`, 422 with
+  its message: `filter <f> is not a valid CEL expression: <cel-go's error>`, `filter <f> must
+  evaluate to a bool, not <type>`, `filter <f> failed on '<id>': no such key: <key>`. The
+  parameters earlier versions of the BFF turned into CEL themselves, `search` on tenants and
+  `namespace` and `label` on models, are 422 `query parameter "<name>" is not supported; send a
+  CEL filter in "filter"`, so a client written for them gets an error, not the unfiltered list.
 - **`meta.total` and backends that do not page.** `total` is the backend's count over the whole
   filtered list. The list responses carry it as an optional field: the draft's backends always
   set it, and a backend without it (today's: its `ListTenantsRequest` is empty, so `offset`,
   `limit` and `filter` are dropped on the wire) returns every item unfiltered. When the caller
-  asked for a search or a filter (`search`, `namespace`, `label`), a `limit` or an `offset`
-  above 0 and the answer has no `total`, the BFF answers 501 `the AI Grid backend does not
-  support searching or paging tenants yet; list them without search, filter, offset or limit`
-  (`models` for the models list) instead of showing unfiltered rows as the result. Without
-  those parameters the list is the whole list and `total` falls back to `offset + size`; in
-  general the BFF omits `total` (unknown) when a page without a count is full (`size ==
-  limit`), because more may follow.
+  sent a `filter`, a `limit` or an `offset` above 0 and the answer has no `total`, the BFF
+  answers 501 `the AI Grid backend does not support filtering or paging tenants yet; list them
+  without filter, offset or limit` (`models` for the models list) instead of showing unfiltered
+  rows as the result. Without those parameters the list is the whole list and `total` falls
+  back to `offset + size`; in general the BFF omits `total` (unknown) when a page without a
+  count is full (`size == limit`), because more may follow. This is compatibility with the
+  shipped backend, not a check of the filter: the BFF only notices the missing count.
 
 ### Waiting on backend RPCs
 
@@ -385,11 +411,11 @@ exists; the frontend uses the mock service meanwhile.
 | Backend `Unauthenticated` | 401 |
 | Backend `PermissionDenied` (the hub's RBAC denies the caller, e.g. a PATCH by a user who may not patch ManagedClusters) | 403, backend message kept |
 | Backend `NotFound` | 404, backend message kept (`object with identifier '<name>' not found`) |
-| Invalid POST or PATCH body (unknown field, wrong type, trailing content, coordinate out of range), bad `offset`/`limit` query, malformed `If-Match` | 422, BFF message |
+| Invalid POST or PATCH body (unknown field, wrong type, trailing content, coordinate out of range), bad `offset`/`limit` query, a removed list parameter (`search`, `namespace`, `label`), malformed `If-Match` | 422, BFF message |
 | POST or PATCH body not declared `application/json` | 415, BFF message |
-| Search, filter, `limit` or `offset` against a backend whose list answer has no `total` | 501, BFF message |
+| `filter`, `limit` or `offset` against a backend whose list answer has no `total` | 501, BFF message |
 | Request body over 1 MiB | 413 |
-| Backend `InvalidArgument`, `OutOfRange`: Keycloak's validation messages ("Name can not be null", "Invalid domain format: x", "Cannot change the alias", "Domain x is already linked to organization y in realm ai-grid"), the API server's and the CRD's for a model (the DNS-1123 name message, the schema's "spec.replicas: Invalid value: -1: spec.replicas in body should be greater than or equal to 0" and "spec.scaling.maxReplicas: Required value", "replicas and scaling are mutually exclusive; ...", "at least one trigger is required when using direct KEDA scaling", "minReplicas cannot exceed maxReplicas"), and the backend's own checks with the console's proposed wording (URI scheme, Placement operators, rollout fields, `spec.rollout requires spec.placement`, the reserved tenant version attribute) | 422, backend message kept |
+| Backend `InvalidArgument`, `OutOfRange`: Keycloak's validation messages ("Name can not be null", "Invalid domain format: x", "Cannot change the alias", "Domain x is already linked to organization y in realm ai-grid"), the API server's and the CRD's for a model (the DNS-1123 name message, the schema's "spec.replicas: Invalid value: -1: spec.replicas in body should be greater than or equal to 0" and "spec.scaling.maxReplicas: Required value", "replicas and scaling are mutually exclusive; ...", "at least one trigger is required when using direct KEDA scaling", "minReplicas cannot exceed maxReplicas"), and the backend's own checks with the console's proposed wording (URI scheme, Placement operators, rollout fields, `spec.rollout requires spec.placement`, the reserved tenant version attribute, a list `filter` that does not compile, is not a bool or fails on an object) | 422, backend message kept |
 | Backend `AlreadyExists` (Keycloak: "A organization with the same name already exists.", also for a blank name on update), `Aborted` (the object is not at the `If-Match` version, or changed between the BFF's read and write) | 409, backend message kept |
 | Backend `FailedPrecondition` (hub feature gate missing, e.g. "ManifestWorkReplicaSet feature gate disabled on hub"; a model still referenced by a catalog entry or subscription; Keycloak realm missing or organizations disabled) | 412, backend message kept |
 | Backend `ResourceExhausted` | 429 |

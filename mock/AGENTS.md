@@ -71,12 +71,12 @@ adds `"meta": {"size", "total", "offset", "limit"}` (`limit` only when the reque
 | GET | `/api/v1/clusters` | | `GridCluster[]` by name |
 | GET | `/api/v1/clusters/{name}` | | `GridCluster`, `ETag` |
 | PATCH | `/api/v1/clusters/{name}` | `{aiGridEnabled?, provisioned?, location?, site?, region?, siteName?, latitude?, longitude?}` | `GridCluster` after the write, `ETag` |
-| GET | `/api/v1/tenants?offset=&limit=&search=` | | `Tenant[]` by name, plus `meta` |
+| GET | `/api/v1/tenants?offset=&limit=&filter=` | | `Tenant[]` by name, plus `meta` |
 | GET | `/api/v1/tenants/{id}` | | `Tenant`, `ETag` |
 | POST | `/api/v1/tenants` | `{name, alias?, description?, enabled?, domains?, attributes?}` | 201, `Tenant`, `Location` and `ETag` headers |
 | PATCH | `/api/v1/tenants/{id}` | `{name?, description?, enabled?, domains?, attributes?, alias?}` (alias must be unchanged) | `Tenant` after the write, `ETag` |
 | DELETE | `/api/v1/tenants/{id}` | | 204 |
-| GET | `/api/v1/models?namespace=&label=k=v&offset=&limit=` | | `Model[]` by namespace and name, plus `meta` |
+| GET | `/api/v1/models?offset=&limit=&filter=` | | `Model[]` by namespace and name, plus `meta` |
 | GET | `/api/v1/models/{namespace}/{name}` | | `Model`, `ETag` |
 | POST | `/api/v1/models` | `{name, namespace, modelUri, displayName?, description?, modelName?, runtimeImage?, runtime?, replicas? or scaling?, baseRefs?, cpu?, memory?, gpuCount?, env?, gateway?, placement?, rollout?, labels?, annotations?}` | 201, `Model` with no conditions yet, `Location` and `ETag` headers |
 | PATCH | `/api/v1/models/{namespace}/{name}` | `{replicas?, runtimeImage?, env?, placement? (null removes it), rollout?, labels?, annotations?, displayName?, description?}` | `Model` after the write, `ETag` |
@@ -90,6 +90,15 @@ request body: must be a JSON object`), so are unknown fields, wrong types and an
 the object, and a larger body is 413. The BFF checks the body before it calls the hub or the
 backend. Field semantics (what an absent field, an empty string or `null` inside the object
 means) are in `bff-api.md`.
+
+List filters. `GET /tenants` and `GET /models` take `filter`, a CEL expression over `this` (the
+proto message, proto field names) that the page writes and the BFF forwards unchanged; the fake
+evaluates it with cel-go and its strings extension before paging, so `meta.total` counts the
+matches. For example `this.name.lowerAscii().contains("acme") || this.domains.exists(d,
+d.lowerAscii().contains("acme"))` (lower the term yourself) or `"ai-grid/family" in
+this.metadata.labels && this.metadata.labels["ai-grid/family"] == "granite"` (the `in` guard is
+needed: CEL fails on a missing key instead of answering false). `bff-api.md`, "Writes, versions
+and lists", has more examples and the error texts.
 
 What a PATCH writes. A cluster or model PATCH reads the object first and writes only what
 differs from it: a body that sets no field, or only fields that already have those values
@@ -254,8 +263,8 @@ doesn't have a resource type "LLMInferenceService"`, is in the gRPC status only)
 | 412 | `manifestWorkReplicaSetEnabled: false` in `settings.json`, then a model with `placement` (a POST, or a PATCH that adds one); `{"realmMissing": true}` or `{"organizationsDisabled": true}` in `tenants.json` | `ManifestWorkReplicaSet feature gate disabled on hub`; `Keycloak realm "ai-grid": Realm not found.`, `Keycloak realm "ai-grid": Organizations not enabled for this realm.` |
 | 413 | a body over 1 MiB | `request body must not exceed 1048576 bytes` |
 | 415 | a POST or PATCH without `Content-Type: application/json` (an HTML form, `text/plain`) | `request body must be JSON: send Content-Type: application/json` |
-| 422 | a body the BFF rejects (unknown field, wrong type, out-of-range coordinate, trailing content), a malformed `If-Match`, or a value the backend rejects | Keycloak's texts (`Name can not be null`, `Invalid domain format: <d>`, `Cannot change the alias`, `Domain <d> is already linked to organization <o> in realm ai-grid`), the CRD's (`replicas and scaling are mutually exclusive; ...`) and the console's own checks (`spec.rollout requires spec.placement`, `attribute "ai-grid/resource-version" is reserved ...`); Keycloak's `Identity provider with alias '<a>' does not exist in realm ai-grid` exists in the fake but no BFF body can send a domain's identity provider |
-| 501 | not reachable through today's endpoints on the fake. The shipped backend answers it for every RPC it lacks: `PATCH /clusters/{name}`, `GET /tenants/{id}`, every tenant write and a tenant PATCH that sets no field (it reads with `GetTenant`), every `/models` endpoint and `/capabilities` (`GET /clusters/{name}` falls back to the list); and the BFF answers it for `GET /tenants` with `search`, `limit` or an `offset` above 0 there, because that backend ignores them | `the AI Grid backend does not support this operation yet`, or `the AI Grid backend does not support searching or paging tenants yet; ...`: show "not available on this backend yet", not an error page |
+| 422 | a body the BFF rejects (unknown field, wrong type, out-of-range coordinate, trailing content), a malformed `If-Match`, a list query with the removed `search`, `namespace` or `label`, a `filter` the backend cannot evaluate (`GET /api/v1/models?filter=this.metadata.labels[%22x%22]==%22y%22`: no model has `x`, and the index is not guarded), or a value the backend rejects | `query parameter "search" is not supported; send a CEL filter in "filter"`, `filter <f> is not a valid CEL expression: ...`, `filter <f> failed on '<id>': no such key: <k>`, Keycloak's texts (`Name can not be null`, `Invalid domain format: <d>`, `Cannot change the alias`, `Domain <d> is already linked to organization <o> in realm ai-grid`), the CRD's (`replicas and scaling are mutually exclusive; ...`) and the console's own checks (`spec.rollout requires spec.placement`, `attribute "ai-grid/resource-version" is reserved ...`); Keycloak's `Identity provider with alias '<a>' does not exist in realm ai-grid` exists in the fake but no BFF body can send a domain's identity provider |
+| 501 | not reachable through today's endpoints on the fake. The shipped backend answers it for every RPC it lacks: `PATCH /clusters/{name}`, `GET /tenants/{id}`, every tenant write and a tenant PATCH that sets no field (it reads with `GetTenant`), every `/models` endpoint and `/capabilities` (`GET /clusters/{name}` falls back to the list); and the BFF answers it for `GET /tenants` with `filter`, `limit` or an `offset` above 0 there, because that backend ignores them | `the AI Grid backend does not support this operation yet`, or `the AI Grid backend does not support filtering or paging tenants yet; ...`: show "not available on this backend yet", not an error page |
 | 503 | `{"unavailable": "..."}` in `tenants.json`, then any tenants endpoint as a provider admin (a viewer's write stays 403, an expired token 401: the token checks come first) | `the AI Grid backend is unavailable; try again` |
 
 The full table, including 502 and 504, is in `bff-api.md`, "Errors".

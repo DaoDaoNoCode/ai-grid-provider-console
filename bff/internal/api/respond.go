@@ -32,7 +32,7 @@ type ListMeta struct {
 // prove, the items before this page plus this page (offset+size), and omits
 // the total when the page is full (size == limit), because more may follow.
 // The handlers only get here without a total when the caller asked for no
-// search, offset or limit (see requireTotal), so today that bound is the size.
+// filter, offset or limit (see requireTotal), so today that bound is the size.
 func listMeta(offset, limit *int, size int, total *int32) ListMeta {
 	meta := ListMeta{Size: size, Limit: limit}
 	if offset != nil {
@@ -49,16 +49,18 @@ func listMeta(offset, limit *int, size int, total *int32) ListMeta {
 
 func intPtr(v int) *int { return &v }
 
-// requireTotal refuses a search or a page the backend did not honour. A list
+// requireTotal refuses a filter or a page the backend did not honour. A list
 // response without `total` comes from a backend that ignores `offset`,
 // `limit` and `filter` (the shipped one: its ListTenantsRequest is empty, so
 // the fields are dropped as unknown on the wire), and its rows are the
 // unfiltered first page, not the result the caller asked for. Showing them
-// as search results would be wrong data, so the answer is 501 with a message
-// that says which feature is missing.
+// as filtered results would be wrong data, so the answer is 501 with a
+// message that says which feature is missing. This is transport
+// compatibility with the shipped backend, not a check of the filter: the BFF
+// only notices that the answer carries no count.
 func requireTotal(asked bool, total *int32, what string) error {
 	if asked && total == nil {
-		return Errorf(http.StatusNotImplemented, fmt.Sprintf("the AI Grid backend does not support searching or paging %s yet; list them without search, filter, offset or limit", what))
+		return Errorf(http.StatusNotImplemented, fmt.Sprintf("the AI Grid backend does not support filtering or paging %s yet; list them without filter, offset or limit", what))
 	}
 	return nil
 }
