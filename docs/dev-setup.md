@@ -22,11 +22,16 @@ make dev-fake    # fake backend :9090 and hub :9091, BFF :8080, frontend :9000
 ```
 
 No `oc login` is needed. Open http://127.0.0.1:9000. You're signed in as `dev-user`, a provider
-admin; set `AUTH_TOKEN=viewer-token AUTH_USER=viewer` to see the console as a user who isn't one.
-The fake backend serves the backend's gRPC services from `mock/fixtures/` and answers the BFF's
-access review like a hub would. For what it simulates and how faithful it is, the fixture files,
+admin; set `AUTH_TOKEN=viewer-token AUTH_USER=viewer` to see the console as a user who isn't one
+(no enrol or remove actions, and the fake backend answers `PermissionDenied` to a write), and
+`AUTH_TOKEN=expired-token` for the signed-out path. The fake backend (`bff/cmd/fake-backend`)
+serves the backend's gRPC services from `mock/fixtures/` and answers the BFF's access review like
+a hub would; the gRPC services need `authorization` metadata like the real backend, which the BFF
+forwards from the proxy headers. For what it simulates and how faithful it is, the fixture files,
 and the other tokens, see [mock/README.md](../mock/README.md). Edit the fixtures and restart to
-change the fleet.
+change the fleet. The fake also moves clusters over time (`mock/fixtures/scenarios.json`: a
+cluster imports, one detaches, one recovers its lease); set `speed` in
+`mock/fixtures/settings.json` to play those faster.
 
 ## Run against a real cluster
 
