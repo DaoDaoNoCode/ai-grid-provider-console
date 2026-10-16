@@ -8,3 +8,4 @@ manifests
 frontend/dist
 bff/bin
 **/*.md
+frontend/.pnpm-store

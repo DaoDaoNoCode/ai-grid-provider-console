@@ -17,3 +17,6 @@ frontend/.vite/
 
 # local checkout of ai-grid-backend (hack/dev-backend.sh)
 .cache/
+
+.local/
+frontend/.pnpm-store/

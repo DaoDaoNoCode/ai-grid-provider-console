@@ -28,7 +28,9 @@ type Caller = { token: string; user: string };
 let cached: Caller | undefined;
 
 const oc = (...args: string[]): string =>
-  execFileSync('oc', args, { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+  execFileSync('oc', args, { stdio: ['ignore', 'pipe', 'ignore'] })
+    .toString()
+    .trim();
 
 const caller = (): Caller => {
   if (cached) {
@@ -44,7 +46,9 @@ const caller = (): Caller => {
   const token = process.env.AUTH_TOKEN ?? whoami('-t');
   if (!token) {
     cached = { token: '', user: '' };
-    console.warn('[dev-proxy] no oc login found; API calls will fail with 401 until you run `oc login` or set AUTH_TOKEN');
+    console.warn(
+      '[dev-proxy] no oc login found; API calls will fail with 401 until you run `oc login` or set AUTH_TOKEN',
+    );
     return cached;
   }
   // With AUTH_TOKEN set, `oc` may not be logged in; fall back to a fixed name.

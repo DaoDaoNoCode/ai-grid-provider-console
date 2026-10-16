@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 /**
  * Loads data from the service and optionally re-polls it.
  * Returns [data, loaded, error, refresh].
  */
-export const useServiceData = <T,>(
+export const useServiceData = <T>(
   request: () => Promise<T>,
   initial: T,
   pollIntervalMs = 30000,
@@ -13,7 +13,10 @@ export const useServiceData = <T,>(
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<Error | undefined>();
   const requestRef = useRef(request);
-  requestRef.current = request;
+  // Keep the latest request without re-running the effect; refs are written after render, not during it.
+  useLayoutEffect(() => {
+    requestRef.current = request;
+  });
 
   const refresh = useCallback(async () => {
     try {

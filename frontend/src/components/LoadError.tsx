@@ -19,8 +19,8 @@ export const LoadError: React.FC<Props> = ({ subject, error }) => {
     return (
       <EmptyState titleText={`${subject} are not available on this backend yet`} headingLevel="h3" variant="sm">
         <EmptyStateBody>
-          The AI Grid backend this console talks to does not implement this capability yet. The page will work
-          without changes once it does.
+          The AI Grid backend this console talks to does not implement this capability yet. The page will work without
+          changes once it does.
         </EmptyStateBody>
       </EmptyState>
     );

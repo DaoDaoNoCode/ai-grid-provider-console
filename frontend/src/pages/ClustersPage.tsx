@@ -49,7 +49,9 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
                   <Td dataLabel="Region">{c.region ?? '-'}</Td>
                   <Td dataLabel="Location">{c.location ?? '-'}</Td>
                   <Td dataLabel="AI Grid">
-                    <Label color={c.aiGridEnabled ? 'green' : 'grey'}>{c.aiGridEnabled ? 'Member' : 'Not enrolled'}</Label>
+                    <Label color={c.aiGridEnabled ? 'green' : 'grey'}>
+                      {c.aiGridEnabled ? 'Member' : 'Not enrolled'}
+                    </Label>
                   </Td>
                   <Td dataLabel="Provisioned">{c.provisioned ? 'Yes' : 'No'}</Td>
                   <Td dataLabel="Hub">{c.hubAcceptsClient ? 'Accepted' : 'Pending'}</Td>
