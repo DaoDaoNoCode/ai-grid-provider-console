@@ -167,11 +167,17 @@ type work struct {
 	// frozenAt is set while the agent is disconnected after it reported: the
 	// hub keeps the status as it was at that instant until the agent is back.
 	frozenAt *time.Time
-	// generation the work carries (bumped by an update of the template) and
-	// the spec it applied: a work waiting its turn in a Progressive update
-	// keeps serving the spec it was applied with.
+	// generation is the model generation whose template the work carries,
+	// which the rollout compares with the model's to find stale works, and
+	// spec the spec it applied: a work waiting its turn in a Progressive
+	// update keeps serving the spec it was applied with.
 	generation int64
 	spec       *aigridv1.ModelSpec
+	// workGeneration is the ManifestWork's own `metadata.generation`: 1 when
+	// the controller creates it, bumped by the API server each time an update
+	// changes its spec. A work created while the model is at generation N
+	// (a cluster joining later, a placement added by a PATCH) starts at 1.
+	workGeneration int64
 	// failApply mirrors the cluster's `ai-grid-mock/fail-apply` label when
 	// the work was applied.
 	failApply bool
@@ -218,7 +224,7 @@ const noDeadline = time.Duration(math.MaxInt64)
 // unapplied cluster holds its Progressive slot indefinitely. `at` converts
 // scenario time to wall time.
 func deriveWork(w *work, in llmisvcInput, now time.Time, deadline time.Duration, at func(time.Time) time.Time) workView {
-	st := &aigridv1.ManifestWorkStatus{ClusterName: w.cluster, WorkName: w.name, Generation: w.generation}
+	st := &aigridv1.ManifestWorkStatus{ClusterName: w.cluster, WorkName: w.name, Generation: w.workGeneration}
 	view := workView{status: st, state: rolloutToApply}
 	hubNow := now // the rollout's clock: timeouts run on the hub
 	if w.agentStart == nil || now.Before(*w.agentStart) {
@@ -228,7 +234,7 @@ func deriveWork(w *work, in llmisvcInput, now time.Time, deadline time.Duration,
 		now = *w.frozenAt // the agent is gone: the hub keeps its last report
 	}
 	start := *w.agentStart
-	st.ObservedGeneration = w.generation
+	st.ObservedGeneration = w.workGeneration
 	nsManifest := &aigridv1.ManifestStatus{Resource: &aigridv1.ResourceIdentifier{Ordinal: 0, Version: "v1", Resource: manifestNamespace, Kind: kindNamespace, Name: in.namespace}}
 	modelManifest := &aigridv1.ManifestStatus{Resource: &aigridv1.ResourceIdentifier{Ordinal: 1, Group: llmisvcGroup, Version: llmisvcVersion, Resource: llmisvcResource, Kind: llmisvcKind, Namespace: in.namespace, Name: in.name}}
 	if w.failApply {
@@ -243,7 +249,7 @@ func deriveWork(w *work, in llmisvcInput, now time.Time, deadline time.Duration,
 	// (reader.go:77-109, availablestatus_controller.go:179-212): plain.
 	gen := func(conds []*aigridv1.Condition, t time.Time, typ string, status aigridv1.ConditionStatus, reason, message string) []*aigridv1.Condition {
 		conds = writeCondition(conds, at(t), typ, status, reason, message)
-		condition(conds, typ).ObservedGeneration = w.generation
+		condition(conds, typ).ObservedGeneration = w.workGeneration
 		return conds
 	}
 	plain := func(conds []*aigridv1.Condition, t time.Time, typ string, status aigridv1.ConditionStatus, reason, message string) []*aigridv1.Condition {

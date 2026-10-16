@@ -44,8 +44,11 @@ type ListModelsRequest struct {
 	Limit *int32 `protobuf:"varint,2,opt,name=limit,proto3,oneof" json:"limit,omitempty"`
 	// CEL over `this` (a Model). Supported today: terms of the form
 	// `this.metadata.namespace == "<ns>"` and
-	// `this.metadata.labels["<key>"] == "<value>"`, joined with `&&`. Any other
-	// expression is InvalidArgument naming it.
+	// `"<key>" in this.metadata.labels && this.metadata.labels["<key>"] == "<value>"`,
+	// joined with `&&`. The label term is guarded with `in` because indexing a
+	// missing map key is a CEL `no such key` error, not false; both literals name
+	// the same key. Values are CEL string literals (escapes `\"` and `\\`). Any
+	// other expression is InvalidArgument naming it.
 	Filter *string `protobuf:"bytes,3,opt,name=filter,proto3,oneof" json:"filter,omitempty"`
 	// Sort order. Only the default (namespace, then name) is supported; a
 	// non-empty value is InvalidArgument.

@@ -113,7 +113,8 @@ event changes in the BFF's `GridCluster`:
 - The default clusterset label is put back for every token the fake hub accepts; the real
   webhook does so only for a caller allowed to join the `default` ManagedClusterSet.
 - `generation` bumps on `hub_accepts_client` and hub taint changes, the only spec changes the
-  fake makes; fixture generations are fictional but consistent with that history.
+  fake makes, and once when deletion is requested (the API server's `markAsDeleting`); fixture
+  generations follow that history.
   `resourceVersion` is a counter.
 - Finalizers are static fixture data; the fake neither adds nor removes them.
 - No CertificateSigningRequests, HostedClusters or ClusterDeployments: the ACM console's

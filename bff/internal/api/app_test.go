@@ -940,7 +940,7 @@ func TestCELString(t *testing.T) {
 			t.Errorf("celString(%q) = %s, want %s", in, got, want)
 		}
 	}
-	if got := searchFilter("a\nb"); got != `this.name.contains("a\nb") || this.domains.exists(d, d.contains("a\nb"))` {
+	if got := searchFilter("A\nb É"); got != `this.name.lowerAscii().contains("a\nb É") || this.domains.exists(d, d.lowerAscii().contains("a\nb É"))` {
 		t.Errorf("searchFilter = %s", got)
 	}
 }

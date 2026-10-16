@@ -150,7 +150,7 @@ enum ThingConditionType { THING_CONDITION_TYPE_UNSPECIFIED = 0; ..._PROGRESSING 
 ### Error handling
 
 - Status codes from DAO errors (`fulfillment-service/internal/servers/dao_error_converter.go`): not found -> `NotFound`; duplicate name -> `AlreadyExists`; singleton/"single default" invariant -> `FailedPrecondition`; optimistic-lock conflict and deadlock -> `Aborted`; denied -> `PermissionDenied`; immutable field / validation / invalid filter / bad reference on create -> `InvalidArgument`; bad reference on update/delete, object in use -> `FailedPrecondition`; unknown -> `Internal` with a generic message (details logged). Tenant assignment errors -> `PermissionDenied` (`tenant_errors.go`). Missing `id`/`object` -> `InvalidArgument "object identifier is mandatory"` (37 sites; the shorter `"identifier is mandatory"` appears 3 times) / `"object is mandatory"` (46 sites). Code histogram across `internal/servers` excluding `*_test.go` (reproduced 2026-10-15): InvalidArgument 541, Internal 236, FailedPrecondition 69, NotFound 55, PermissionDenied 18, Aborted 11, AlreadyExists 7, Unimplemented 2. `API.md` says, in "Error responses" (L230-231, at `334a01c`): "Consumers must match on the gRPC status code rather than assuming every uniqueness conflict is `AlreadyExists`.", and in "When not to use protovalidate" (L355-356): "Match on the gRPC status code, not on message text." 
-- Logging interceptor logs, at **Debug** level only (it returns early otherwise, L135), `method`, the peer `address`, `metadata`, then `duration`, `code` (`grpcstatus.Code(err).String()`) and `error` with `slog` (`internal/logging/logging_interceptor.go` L135-196).
+- Logging interceptor logs, at **Debug** level only (it returns early otherwise, L135), `method`, the peer `address`, `metadata`, then `duration`, `code` (`grpcstatus.Code(err).String()`) and `error` with `slog` (`internal/logging/logging_interceptor.go` L135-196); with body logging enabled it also adds the `request` and `response` messages as JSON (redacted when redaction is on, L159-171, L186-191).
 
 ### Generated code publishing
 
@@ -504,8 +504,8 @@ Rationale for strings in `capacity`/`allocatable`: Kubernetes quantities (`16`, 
 ### 6.5 `proto/ai_grid/v1/managed_clusters_service.proto`
 
 The authoritative draft (`mock/proto/ai_grid/v1/managed_clusters_service.proto`) has the same three RPCs and
-message numbers. Its filter comment points to `docs/FILTER.md`, which means OSAC's
-`fulfillment-service/docs/FILTER.md`; the console has no such file.
+message numbers. Its filter comment points to OSAC's `fulfillment-service/docs/FILTER.md` (a CEL subset) and notes
+that the fake answers `InvalidArgument` for any filter or order.
 
 ```protobuf
 syntax = "proto3";
@@ -580,7 +580,7 @@ message UpdateManagedClusterResponse {
 
 ### 6.6 `proto/ai_grid/v1/tenant_type.proto` and `tenants_service.proto`
 
-This was the single tenant proto draft of the research (the page-token sketch that used to live in `keycloak.md` 8.1 was removed). The authoritative version is now `mock/proto/ai_grid/v1/tenant_type.proto` and `tenants_service.proto`, which differ from the sketch below: `Tenant` has `reserved 8; reserved "version";` and `UpdateTenantRequest` has `reserved 3; reserved "lock";` (Keycloak has no server-side version, `keycloak.md` 8.1); `enabled = 5` is `optional bool` (unset on create means Keycloak's default, true); `repeated TenantDomain domain_details = 9` was added with `TenantDomain{name = 1, verified = 2, identity_provider_alias = 3, auto_redirect = 4}`, and `domains` stays the list of names; `UpdateTenantRequest.update_mask` also accepts `domain_details`; `ListTenantsRequest.filter` is narrowed to the one form that pushes down to Keycloak's `search`, `this.name.contains("<term>") || this.domains.exists(d, d.contains("<term>"))`. Do not reuse fields 8 and 3. Keeps the shipped flat `Tenant{id, name, domains}` with field numbers 1-3 frozen and grows it additively (OSAC permits flat objects; `Tenant` in OSAC also has no `status` and carries `// buf:lint:ignore OSAC_OBJECT_SHAPE`).
+This was the single tenant proto draft of the research (the page-token sketch that used to live in `keycloak.md` 8.1 was removed). The authoritative version is now `mock/proto/ai_grid/v1/tenant_type.proto` and `tenants_service.proto`, which differ from the sketch below: `Tenant` has `reserved 8; reserved "version";` and `UpdateTenantRequest` has `reserved 3; reserved "lock";` (Keycloak has no server-side version, `keycloak.md` 8.1); `enabled = 5` is `optional bool` (unset on create means Keycloak's default, true); `repeated TenantDomain domain_details = 9` was added with `TenantDomain{name = 1, verified = 2, identity_provider_alias = 3, auto_redirect = 4}`, and `domains` stays the list of names; `UpdateTenantRequest.update_mask` also accepts `domain_details`; `ListTenantsRequest.filter` is narrowed to the one form that pushes down to Keycloak's `search`, `this.name.lowerAscii().contains("<term>") || this.domains.exists(d, d.lowerAscii().contains("<term>"))` (case-insensitive; `lowerAscii()` is cel-go's strings extension). `Tenant` adds `string resource_version = 10` (an opaque version the backend keeps in the organization attribute `ai-grid/resource-version`; `UpdateTenantRequest` compares `object.resource_version` instead of `lock`, Aborted on mismatch), `DeleteTenantRequest` adds `string resource_version = 2`, and `ListTenantsResponse.total` is `optional`. Do not reuse `Tenant` fields 8 and 10 or `UpdateTenantRequest` field 3 from this sketch. Keeps the shipped flat `Tenant{id, name, domains}` with field numbers 1-3 frozen and grows it additively (OSAC permits flat objects; `Tenant` in OSAC also has no `status` and carries `// buf:lint:ignore OSAC_OBJECT_SHAPE`).
 
 ```protobuf
 syntax = "proto3";
@@ -799,6 +799,6 @@ marked not verified: the logging interceptor's fields (Debug only), the `<compon
 `RELEASING.md`, `CLUSTER_CONDITION_TYPE_FAILED` (plus `DEGRADED` and two worker values), and `buf lint` (run on the
 console's draft with `make -C bff lint-proto`, passing). Sections 6.3-6.7 are marked as the research record: the
 authoritative draft is `mock/proto/ai_grid/v1`, and each section lists how it differs (ManagedCluster fields 12-14,
-`state_message = 7`, enum values 5-9; Tenant `version`/`lock` reserved, optional `enabled`, `domain_details = 9`,
+`state_message = 7`, enum values 5-9; Tenant `version`/`lock` reserved, optional `enabled`, `domain_details = 9`, `resource_version` 10,
 narrowed filter; `GetHubCapabilities`; filled `Models`). Section 7 items 4 and 5 note what has been implemented.
 Still not verified: Keycloak's `ORG.NAME` length limit (6.6).

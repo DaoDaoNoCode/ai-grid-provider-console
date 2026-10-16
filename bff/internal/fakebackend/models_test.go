@@ -219,7 +219,9 @@ func TestRepoModelFixturesDeriveTheirStates(t *testing.T) {
 	msg := `LLMInferenceServiceConfig "v3-6-0-kserve-config-llm-template-tpu" not found in namespaces [ai-grid-models redhat-ods-applications]`
 	wantCond(t, llama.GetStatus().GetConditions(), CondPresetsCombined, cFalse, ReasonConfigNotFound, msg)
 	wantCond(t, llama.GetStatus().GetConditions(), CondReady, cFalse, ReasonConfigNotFound, msg)
-	if len(llama.GetStatus().GetConditions()) != 2 || llama.GetStatus().GetMessage() != msg {
+	wantCond(t, llama.GetStatus().GetConditions(), CondWorkloadsReady, cUnknown, "", "")
+	wantCond(t, llama.GetStatus().GetConditions(), CondRouterReady, cUnknown, "", "")
+	if len(llama.GetStatus().GetConditions()) != 4 || llama.GetStatus().GetMessage() != msg {
 		t.Errorf("llama stops at the preset merge: %v", llama.GetStatus())
 	}
 
@@ -438,6 +440,38 @@ func TestLLMISvcLifecycle(t *testing.T) {
 	}
 }
 
+// TestZeroReplicasIsReadyAtOnce: a Deployment with `replicas: 0` is Available
+// at its first status sync (0 >= 0 - maxUnavailable), so KServe never reports
+// MinimumReplicasUnavailable, even for an image that would never start.
+func TestZeroReplicasIsReadyAtOnce(t *testing.T) {
+	s, advance := modelServer(t, &Fixtures{})
+	for _, name := range []string{"zero", "zero-oom"} {
+		m := hubModel(name)
+		m.Spec.Replicas = proto.Int32(0)
+		if name == "zero-oom" {
+			m.Spec.Main.Image = "quay.io/example/oom:1"
+		}
+		createModel(t, s, m)
+	}
+	advance(llmisvcT2 + time.Second)
+	for _, name := range []string{"zero", "zero-oom"} {
+		m := getModel(t, s, name)
+		wantPhase(t, m, aigridv1.ModelPhase_MODEL_PHASE_READY, "")
+		wantCond(t, m.GetStatus().GetConditions(), CondMainWorkloadReady, cTrue, "", "")
+		if r := m.GetStatus().GetWorkloads().GetPrimary().GetReadyReplicas(); r != 0 {
+			t.Errorf("%s readyReplicas = %d", name, r)
+		}
+	}
+	advance(llmisvcT3 + time.Second)
+	for _, name := range []string{"zero", "zero-oom"} {
+		m := getModel(t, s, name)
+		wantPhase(t, m, aigridv1.ModelPhase_MODEL_PHASE_READY, "")
+		if lt := condition(m.GetStatus().GetConditions(), CondMainWorkloadReady).GetLastTransitionTime().AsTime(); !lt.Equal(testStart.Add(llmisvcT2)) {
+			t.Errorf("%s MainWorkloadReady True since T2, got %s", name, lt)
+		}
+	}
+}
+
 func TestLLMISvcFailureModes(t *testing.T) {
 	s, advance := modelServer(t, &Fixtures{})
 	bad := hubModel("bad-preset")
@@ -465,7 +499,10 @@ func TestLLMISvcFailureModes(t *testing.T) {
 	msg := `LLMInferenceServiceConfig "v3-6-0-kserve-config-llm-template-tpu" not found in namespaces [ai-grid-models redhat-ods-applications]`
 	wantCond(t, m.GetStatus().GetConditions(), CondPresetsCombined, cFalse, ReasonConfigNotFound, msg)
 	wantCond(t, m.GetStatus().GetConditions(), CondReady, cFalse, ReasonConfigNotFound, msg)
-	if len(m.GetStatus().GetConditions()) != 2 || len(m.GetStatus().GetAppliedConfigs()) != 0 || m.GetStatus().GetWorkloads() != nil || m.GetStatus().GetUrl() != "" {
+	// Knative initialises the other dependents of Ready to Unknown before the reconcile.
+	wantCond(t, m.GetStatus().GetConditions(), CondWorkloadsReady, cUnknown, "", "")
+	wantCond(t, m.GetStatus().GetConditions(), CondRouterReady, cUnknown, "", "")
+	if len(m.GetStatus().GetConditions()) != 4 || len(m.GetStatus().GetAppliedConfigs()) != 0 || m.GetStatus().GetWorkloads() != nil || m.GetStatus().GetUrl() != "" {
 		t.Errorf("a bad preset stops the controller before anything else: %v", m.GetStatus())
 	}
 	wantPhase(t, m, aigridv1.ModelPhase_MODEL_PHASE_FAILED, ReasonConfigNotFound)
@@ -575,7 +612,16 @@ func TestCreateModelValidation(t *testing.T) {
 		{"scaling without max", func(m *aigridv1.Model) {
 			m.Spec.Replicas = nil
 			m.Spec.Scaling = &aigridv1.Scaling{Keda: true, Triggers: trigger}
-		}, codes.InvalidArgument, MsgScalingMaxReplicas},
+		}, codes.InvalidArgument, MsgMaxReplicasRequired},
+		{"negative max", func(m *aigridv1.Model) {
+			m.Spec.Replicas = nil
+			m.Spec.Scaling = &aigridv1.Scaling{MaxReplicas: -2, Keda: true, Triggers: trigger}
+		}, codes.InvalidArgument, "spec.scaling.maxReplicas: Invalid value: -2: spec.scaling.maxReplicas in body should be greater than or equal to 1"},
+		{"negative min", func(m *aigridv1.Model) {
+			m.Spec.Replicas = nil
+			m.Spec.Scaling = &aigridv1.Scaling{MinReplicas: -1, MaxReplicas: 3, Keda: true, Triggers: trigger}
+		}, codes.InvalidArgument, "spec.scaling.minReplicas: Invalid value: -1: spec.scaling.minReplicas in body should be greater than or equal to 1"},
+		{"negative replicas", func(m *aigridv1.Model) { m.Spec.Replicas = proto.Int32(-1) }, codes.InvalidArgument, "spec.replicas: Invalid value: -1: spec.replicas in body should be greater than or equal to 0"},
 		{"min above max", func(m *aigridv1.Model) {
 			m.Spec.Replicas = nil
 			m.Spec.Scaling = &aigridv1.Scaling{MinReplicas: 5, MaxReplicas: 3, Keda: true, Triggers: trigger}
@@ -1197,6 +1243,11 @@ func TestUpdateModel(t *testing.T) {
 	if err != nil || len(updated.GetStatus().GetRollout().GetWorks()) != 1 || updated.GetStatus().GetPlacement().GetNumberOfSelectedClusters() != 1 {
 		t.Errorf("placement added = %v, %v", updated.GetStatus(), err)
 	}
+	// The new ManifestWork is a new object: its own generation starts at 1,
+	// whatever the model's generation is.
+	if ws := updated.GetStatus().GetRollout().GetWorks(); len(ws) == 1 && (updated.GetMetadata().GetGeneration() <= 1 || ws[0].GetGeneration() != 1) {
+		t.Errorf("work created at model generation %d has generation %d, want 1", updated.GetMetadata().GetGeneration(), ws[0].GetGeneration())
+	}
 	// Replicas and scaling stay exclusive through an update.
 	_, err = update(&aigridv1.Model{Name: "hub", Metadata: &aigridv1.ObjectMeta{Namespace: testNS}, Spec: &aigridv1.ModelSpec{Replicas: proto.Int32(2), Scaling: &aigridv1.Scaling{Keda: true, MaxReplicas: 4}}}, false, PathSpecReplicas)
 	if err != nil {
@@ -1232,7 +1283,7 @@ func TestDeleteModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := s.GetModel(ctx, &aigridv1.GetModelRequest{Namespace: testNS, Name: "hub"}); status.Code(err) != codes.NotFound {
-		t.Errorf("a hub deployment is gone at once, got %v", err)
+		t.Errorf("a hub deployment is gone at once (the KServe finalizer window is a declared deviation), got %v", err)
 	}
 	advance(time.Second)
 	if _, err := s.DeleteModel(ctx, &aigridv1.DeleteModelRequest{Namespace: testNS, Name: "placed"}); err != nil {
@@ -1250,6 +1301,29 @@ func TestDeleteModel(t *testing.T) {
 	if list.GetTotal() != 1 {
 		t.Errorf("total = %d", list.GetTotal())
 	}
+}
+
+// TestListModelsFilterDecodesLiterals: the filter's values are CEL string
+// literals as the BFF's celString writes them, so escaped quotes and
+// backslashes are decoded and a quoted ` && ` does not split a term.
+func TestListModelsFilterDecodesLiterals(t *testing.T) {
+	s, _ := modelServer(t, &Fixtures{})
+	for name, v := range map[string]string{"quote": `say "hi"`, "slash": `a\b`, "and": `x && y`, "plain": "x"} {
+		m := hubModel(name)
+		m.Metadata.Labels = map[string]string{"k": v}
+		createModel(t, s, m)
+	}
+	ctx := authed(context.Background())
+	for literal, want := range map[string]string{`"say \"hi\""`: "quote", `"a\\b"`: "slash", `"x && y"`: "and", `"\u0078"`: "plain"} {
+		filter := `this.metadata.namespace == "` + testNS + `" && "k" in this.metadata.labels && this.metadata.labels["k"] == ` + literal
+		resp, err := s.ListModels(ctx, &aigridv1.ListModelsRequest{Filter: proto.String(filter)})
+		if err != nil || len(resp.GetItems()) != 1 || resp.GetItems()[0].GetName() != want {
+			t.Errorf("%s = %v, %v; want %s", literal, resp.GetItems(), err, want)
+		}
+	}
+	bad := `"k" in this.metadata.labels && this.metadata.labels["k"] == "\q"`
+	_, err := s.ListModels(ctx, &aigridv1.ListModelsRequest{Filter: proto.String(bad)})
+	mustCode(t, err, codes.InvalidArgument, "filter "+bad+" is not a valid CEL string literal")
 }
 
 func TestListModelsFilterAndPaging(t *testing.T) {
@@ -1279,11 +1353,15 @@ func TestListModelsFilterAndPaging(t *testing.T) {
 	if got := list(&aigridv1.ListModelsRequest{Filter: proto.String(`this.metadata.namespace == "alpha"`)}); !slices.Equal(got, []string{"alpha/a", "alpha/z"}) {
 		t.Errorf("namespace filter = %v", got)
 	}
-	if got := list(&aigridv1.ListModelsRequest{Filter: proto.String(`this.metadata.labels["team"] == "x"`)}); !slices.Equal(got, []string{"alpha/z", "zeta/b"}) {
+	if got := list(&aigridv1.ListModelsRequest{Filter: proto.String(`"team" in this.metadata.labels && this.metadata.labels["team"] == "x"`)}); !slices.Equal(got, []string{"alpha/z", "zeta/b"}) {
 		t.Errorf("label filter = %v", got)
 	}
-	if got := list(&aigridv1.ListModelsRequest{Filter: proto.String(`this.metadata.namespace == "alpha" && this.metadata.labels["team"] == "x"`)}); !slices.Equal(got, []string{"alpha/z"}) {
+	if got := list(&aigridv1.ListModelsRequest{Filter: proto.String(`this.metadata.namespace == "alpha" && "team" in this.metadata.labels && this.metadata.labels["team"] == "x"`)}); !slices.Equal(got, []string{"alpha/z"}) {
 		t.Errorf("combined filter = %v", got)
+	}
+	// A label no model carries: the guard makes it false, not an error.
+	if got := list(&aigridv1.ListModelsRequest{Filter: proto.String(`"absent" in this.metadata.labels && this.metadata.labels["absent"] == "x"`)}); len(got) != 0 {
+		t.Errorf("missing label = %v", got)
 	}
 	if got := list(&aigridv1.ListModelsRequest{Offset: proto.Int32(1), Limit: proto.Int32(1)}); !slices.Equal(got, []string{"alpha/z"}) {
 		t.Errorf("page = %v", got)
@@ -1294,6 +1372,11 @@ func TestListModelsFilterAndPaging(t *testing.T) {
 	}
 	for _, req := range []*aigridv1.ListModelsRequest{
 		{Filter: proto.String(`this.name == "a"`)},
+		{Filter: proto.String(`this.metadata.labels["team"] == "x"`)},                                    // unguarded index
+		{Filter: proto.String(`"other" in this.metadata.labels && this.metadata.labels["team"] == "x"`)}, // guard names another key
+		{Filter: proto.String(`this.metadata.namespace == "alpha" &&`)},                                  // dangling &&
+		{Filter: proto.String(`this.metadata.namespace == "alpha" this.metadata.namespace == "alpha"`)},  // no &&
+		{Filter: proto.String(`this.metadata.namespace == "a\q"`)},                                       // malformed escape
 		{Order: proto.String("name desc")},
 		{Offset: proto.Int32(-1)},
 		{Limit: proto.Int32(-1)},

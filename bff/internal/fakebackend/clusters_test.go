@@ -585,6 +585,10 @@ func TestScenarioLeaseAndDetach(t *testing.T) {
 		resp, err := s.GetManagedCluster(ctx, &aigridv1.GetManagedClusterRequest{Name: name})
 		return resp.GetObject(), err
 	}
+	lyonBefore, err := get("lyon")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	now = start.Add(10 * time.Second)
 	m, err := get("madrid")
@@ -609,6 +613,9 @@ func TestScenarioLeaseAndDetach(t *testing.T) {
 	l, _ := get("lyon")
 	if l.GetStatus().GetState() != aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_DETACHING || l.GetDeletionTimestamp().AsTime() != now || l.GetStatus().GetStateMessage() != MessageDetaching {
 		t.Errorf("detaching: %v", l)
+	}
+	if l.GetGeneration() != lyonBefore.GetGeneration()+1 {
+		t.Errorf("the API server bumps generation once when it marks the cluster deleting: %d -> %d", lyonBefore.GetGeneration(), l.GetGeneration())
 	}
 	if imp := findCondition(l, CondImportSucceeded); imp.GetStatus() != cFalse || imp.GetReason() != ReasonDetaching {
 		t.Errorf("detaching import condition = %v", imp)

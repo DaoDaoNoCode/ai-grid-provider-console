@@ -317,6 +317,16 @@
             "reason": "ConfigNotFound",
             "message": "LLMInferenceServiceConfig \"v3-6-0-kserve-config-llm-template-tpu\" not found in namespaces [ai-grid-models redhat-ods-applications]",
             "lastTransitionTime": "2026-10-12T16:30:05Z"
+          },
+          {
+            "type": "RouterReady",
+            "status": "Unknown",
+            "lastTransitionTime": "2026-10-12T16:30:05Z"
+          },
+          {
+            "type": "WorkloadsReady",
+            "status": "Unknown",
+            "lastTransitionTime": "2026-10-12T16:30:05Z"
           }
         ],
         "appliedConfigs": [],

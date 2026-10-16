@@ -201,7 +201,7 @@ func (f *Fake) find(name string) *aigridv1.ManagedCluster {
 
 // tenantFilter is the one filter form the draft supports (see
 // ListTenantsRequest.filter): the same term in both halves.
-var tenantFilter = regexp.MustCompile(`^this\.name\.contains\("((?:[^"\\]|\\.)*)"\) \|\| this\.domains\.exists\(d, d\.contains\("((?:[^"\\]|\\.)*)"\)\)$`)
+var tenantFilter = regexp.MustCompile(`^this\.name\.lowerAscii\(\)\.contains\("((?:[^"\\]|\\.)*)"\) \|\| this\.domains\.exists\(d, d\.lowerAscii\(\)\.contains\("((?:[^"\\]|\\.)*)"\)\)$`)
 
 // ListTenants implements Tenants: name order, `offset`/`limit` paging and
 // the name-or-domain contains filter (case-insensitive), with `total`
@@ -220,7 +220,11 @@ func (f *Fake) ListTenants(ctx context.Context, req *aigridv1.ListTenantsRequest
 		if m == nil || m[1] != m[2] {
 			return nil, status.Errorf(codes.InvalidArgument, "filter %s is not supported", filter)
 		}
-		term = strings.ToLower(strings.NewReplacer(`\"`, `"`, `\\`, `\`).Replace(m[1]))
+		unquoted, err := strconv.Unquote(`"` + m[1] + `"`)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "filter %s is not supported", filter)
+		}
+		term = strings.ToLower(unquoted)
 	}
 	all := make([]*aigridv1.Tenant, 0, len(f.Tenants))
 	for _, t := range f.Tenants {
@@ -399,11 +403,59 @@ func (f *Fake) GetHubCapabilities(ctx context.Context, _ *aigridv1.GetHubCapabil
 	return &aigridv1.GetHubCapabilitiesResponse{Capabilities: f.Capabilities}, nil
 }
 
-// Model filter terms the draft supports.
+// Model filter terms the draft supports (see ListModelsRequest.filter), read
+// from the front of the filter so a quoted ` && ` stays in its literal.
 var (
-	modelFilterNamespace = regexp.MustCompile(`^this\.metadata\.namespace == "([^"]*)"$`)
-	modelFilterLabel     = regexp.MustCompile(`^this\.metadata\.labels\["([^"]+)"\] == "([^"]*)"$`)
+	modelFilterLiteral   = `"(?:[^"\\]|\\.)*"`
+	modelFilterNamespace = regexp.MustCompile(`^this\.metadata\.namespace == (` + modelFilterLiteral + `)`)
+	modelFilterLabel     = regexp.MustCompile(`^(` + modelFilterLiteral + `) in this\.metadata\.labels && this\.metadata\.labels\[(` + modelFilterLiteral + `)\] == (` + modelFilterLiteral + `)`)
 )
+
+// modelFilterChecks parses a ListModels filter into its term checks.
+func modelFilterChecks(filter string) ([]func(*aigridv1.Model) bool, bool) {
+	var checks []func(*aigridv1.Model) bool
+	unquote := func(literals []string) ([]string, bool) {
+		out := make([]string, len(literals))
+		for i, l := range literals {
+			v, err := strconv.Unquote(l)
+			if err != nil {
+				return nil, false
+			}
+			out[i] = v
+		}
+		return out, true
+	}
+	for rest := filter; ; {
+		if m := modelFilterNamespace.FindStringSubmatch(rest); m != nil {
+			v, ok := unquote(m[1:])
+			if !ok {
+				return nil, false
+			}
+			checks = append(checks, func(x *aigridv1.Model) bool { return x.GetMetadata().GetNamespace() == v[0] })
+			rest = rest[len(m[0]):]
+		} else if m := modelFilterLabel.FindStringSubmatch(rest); m != nil {
+			v, ok := unquote(m[1:])
+			if !ok || v[0] != v[1] {
+				return nil, false
+			}
+			checks = append(checks, func(x *aigridv1.Model) bool {
+				got, ok := x.GetMetadata().GetLabels()[v[1]]
+				return ok && got == v[2]
+			})
+			rest = rest[len(m[0]):]
+		} else {
+			return nil, false
+		}
+		if rest == "" {
+			return checks, true
+		}
+		after, ok := strings.CutPrefix(rest, " && ")
+		if !ok {
+			return nil, false
+		}
+		rest = after
+	}
+}
 
 // ListModels implements Models: namespace then name order, the two filter
 // term forms joined with ` && `, offset/limit paging.
@@ -417,16 +469,9 @@ func (f *Fake) ListModels(ctx context.Context, req *aigridv1.ListModelsRequest) 
 	}
 	var checks []func(*aigridv1.Model) bool
 	if filter := req.GetFilter(); filter != "" {
-		for _, term := range strings.Split(filter, " && ") {
-			if m := modelFilterNamespace.FindStringSubmatch(term); m != nil {
-				ns := m[1]
-				checks = append(checks, func(x *aigridv1.Model) bool { return x.GetMetadata().GetNamespace() == ns })
-			} else if m := modelFilterLabel.FindStringSubmatch(term); m != nil {
-				k, v := m[1], m[2]
-				checks = append(checks, func(x *aigridv1.Model) bool { return x.GetMetadata().GetLabels()[k] == v })
-			} else {
-				return nil, status.Errorf(codes.InvalidArgument, "filter %s is not supported", filter)
-			}
+		var ok bool
+		if checks, ok = modelFilterChecks(filter); !ok {
+			return nil, status.Errorf(codes.InvalidArgument, "filter %s is not supported", filter)
 		}
 	}
 	var all []*aigridv1.Model

@@ -50,8 +50,9 @@ already exists.", not "Name can not be null".
 `ListTenants` orders by name (byte order; Keycloak's `ORDER BY name` follows the realm
 database's collation, not checked on the hub), pages with `offset`/`limit` (`total` from the
 whole search like `/count`), includes disabled organizations and evaluates the one filter
-form `this.name.contains("<term>") || this.domains.exists(d, d.contains("<term>"))`, the
-expression that means what Keycloak's `search` does (contains on name or any domain; a blank
+form `this.name.lowerAscii().contains("<term>") || this.domains.exists(d, d.lowerAscii().contains("<term>"))`
+(`lowerAscii()` from cel-go's strings extension, `ext.Strings()`; the BFF lowers the term), the
+expression that means what Keycloak's `search` does (a case-insensitive contains on name or any domain; a blank
 or whitespace-only term matches everything, as in Keycloak). The paging rules are the
 contract's, not Keycloak's: Keycloak's `max` defaults to 10 and it ignores a negative `first`
 or `max`, so the backend must send an explicit `max` for an omitted `limit` and reject
@@ -119,7 +120,7 @@ proposed here). A client only displays them. Fake backend (gRPC status messages)
   name, domains, enabled, description, attributes, domain_details`, `domains and
   domain_details name different domains`.
 - List, all `InvalidArgument`: `filter <filter> is not supported; this server only evaluates
-  this.name.contains("<term>") || this.domains.exists(d, d.contains("<term>"))`, `filter
+  this.name.lowerAscii().contains("<term>") || this.domains.exists(d, d.lowerAscii().contains("<term>"))`, `filter
   <filter> is not a valid CEL string literal` (the term's escapes are decoded with Go's
   string-literal rules, which agree with CEL's for `\"`, `\\`, `\n`, `\r`, `\t` and `\uXXXX`,
   the escapes the BFF writes), `order is not supported by this server yet; Keycloak returns

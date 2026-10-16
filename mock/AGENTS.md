@@ -218,10 +218,10 @@ KServe's conditions, counted from its creation:
 | At | `Ready` and what else changes |
 |---|---|
 | 0 s | no conditions yet |
-| 5 s | `False/WaitingForGateway`: nine conditions; presets combined (`appliedConfigs` filled), gateways ready, the Deployment and the route created, so `workloads`, `url` and the six `addresses` appear now, before the model is ready |
+| 5 s | `False/WaitingForGateway`: nine conditions; presets combined (`appliedConfigs` filled), gateways ready, the Deployment and the route created, so `url` and the six `addresses` appear now, before the model is ready |
 | 15 s | `False/Progressing`: route, pool and scheduler accepted and ready |
 | 20 s | `False/MinimumReplicasUnavailable` |
-| 45 s | `True`; the ready replica count appears |
+| 45 s | `True`, so `phase` reads `ready` (the Deployment's ready replica count is in the gRPC `status.workloads` only; the BFF does not return it yet) |
 
 A hub deployment's `phase` follows `Ready`, so while it starts it reads `failed` with reason
 `WaitingForGateway`, `Progressing` or `MinimumReplicasUnavailable`: those three reasons mean
@@ -238,8 +238,10 @@ exist" from 5 s, with no `url`, while the workload still deploys; a `runtimeImag
 model keeps its work `Progressing` and the placed model reads `pending`/`Processing` for good;
 the rollout's `progressDeadline` times that cluster out (a `Progressive` rollout moves on to the
 next one), which no condition shows; a cluster labelled
-`ai-grid-mock/fail-apply=true` fails to apply its work (`Failed to apply manifest: the server
-doesn't have a resource type "LLMInferenceService"`).
+`ai-grid-mock/fail-apply=true` fails to apply its work: the model reads `failed`/`NotAsExpected`
+and the work `applied: "False"`, `available: "Unknown"`, with `Applied=False/AppliedManifestWorkFailed`
+"Failed to apply manifest work" (the manifest's own text, `Failed to apply manifest: the server
+doesn't have a resource type "LLMInferenceService"`, is in the gRPC status only).
 
 ## Errors worth building UI for
 
@@ -253,7 +255,7 @@ doesn't have a resource type "LLMInferenceService"`).
 | 413 | a body over 1 MiB | `request body must not exceed 1048576 bytes` |
 | 415 | a POST or PATCH without `Content-Type: application/json` (an HTML form, `text/plain`) | `request body must be JSON: send Content-Type: application/json` |
 | 422 | a body the BFF rejects (unknown field, wrong type, out-of-range coordinate, trailing content), a malformed `If-Match`, or a value the backend rejects | Keycloak's texts (`Name can not be null`, `Invalid domain format: <d>`, `Cannot change the alias`, `Domain <d> is already linked to organization <o> in realm ai-grid`), the CRD's (`replicas and scaling are mutually exclusive; ...`) and the console's own checks (`spec.rollout requires spec.placement`, `attribute "ai-grid/resource-version" is reserved ...`); Keycloak's `Identity provider with alias '<a>' does not exist in realm ai-grid` exists in the fake but no BFF body can send a domain's identity provider |
-| 501 | not reachable through today's endpoints on the fake. The shipped backend answers it for every RPC it lacks: `PATCH /clusters/{name}`, `GET /tenants/{id}` and every tenant write, every `/models` endpoint and `/capabilities` (`GET /clusters/{name}` falls back to the list); and the BFF answers it for `GET /tenants` with `search`, `limit` or an `offset` above 0 there, because that backend ignores them | `the AI Grid backend does not support this operation yet`, or `the AI Grid backend does not support searching or paging tenants yet; ...`: show "not available on this backend yet", not an error page |
+| 501 | not reachable through today's endpoints on the fake. The shipped backend answers it for every RPC it lacks: `PATCH /clusters/{name}`, `GET /tenants/{id}`, every tenant write and a tenant PATCH that sets no field (it reads with `GetTenant`), every `/models` endpoint and `/capabilities` (`GET /clusters/{name}` falls back to the list); and the BFF answers it for `GET /tenants` with `search`, `limit` or an `offset` above 0 there, because that backend ignores them | `the AI Grid backend does not support this operation yet`, or `the AI Grid backend does not support searching or paging tenants yet; ...`: show "not available on this backend yet", not an error page |
 | 503 | `{"unavailable": "..."}` in `tenants.json`, then any tenants endpoint as a provider admin (a viewer's write stays 403, an expired token 401: the token checks come first) | `the AI Grid backend is unavailable; try again` |
 
 The full table, including 502 and 504, is in `bff-api.md`, "Errors".

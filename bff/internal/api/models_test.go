@@ -124,7 +124,7 @@ func TestListModels(t *testing.T) {
 
 	rec = serve(app, asUser(http.MethodGet, "/api/v1/models?namespace=ai-grid-models&label=ai-grid/family%3Dtiny&offset=0&limit=5"))
 	meta = decodeList(t, rec, &list)
-	if fake.LastListModels.GetFilter() != `this.metadata.namespace == "ai-grid-models" && this.metadata.labels["ai-grid/family"] == "tiny"` || fake.LastListModels.GetLimit() != 5 {
+	if fake.LastListModels.GetFilter() != `this.metadata.namespace == "ai-grid-models" && "ai-grid/family" in this.metadata.labels && this.metadata.labels["ai-grid/family"] == "tiny"` || fake.LastListModels.GetLimit() != 5 {
 		t.Errorf("query not mapped: %v", fake.LastListModels)
 	}
 	if len(list) != 1 || list[0].Name != "tiny-llm" || meta.Limit == nil || *meta.Limit != 5 {

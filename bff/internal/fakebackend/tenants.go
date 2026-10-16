@@ -24,12 +24,15 @@ import (
 // in keycloak.md 8.2 assigns to each Keycloak outcome.
 
 // filterPattern is the one CEL form ListTenants supports, the expression that
-// means what Keycloak's `search` does:
-// `this.name.contains("<term>") || this.domains.exists(d, d.contains("<term>"))`
-// with the same string literal (CEL escapes `\"` and `\\`) in both places.
-var filterPattern = regexp.MustCompile(`^this\.name\.contains\("((?:[^"\\]|\\.)*)"\) \|\| this\.domains\.exists\(d, d\.contains\("((?:[^"\\]|\\.)*)"\)\)$`)
+// means what Keycloak's `search` does, a case-insensitive contains:
+// `this.name.lowerAscii().contains("<term>") || this.domains.exists(d, d.lowerAscii().contains("<term>"))`
+// (cel-go's strings extension) with the same string literal (CEL escapes
+// `\"` and `\\`) in both places; the BFF lowers the term before quoting it.
+// No other form, the case-sensitive `contains` without `lowerAscii()`
+// included, is accepted.
+var filterPattern = regexp.MustCompile(`^this\.name\.lowerAscii\(\)\.contains\("((?:[^"\\]|\\.)*)"\) \|\| this\.domains\.exists\(d, d\.lowerAscii\(\)\.contains\("((?:[^"\\]|\\.)*)"\)\)$`)
 
-const supportedFilter = `this.name.contains("<term>") || this.domains.exists(d, d.contains("<term>"))`
+const supportedFilter = `this.name.lowerAscii().contains("<term>") || this.domains.exists(d, d.lowerAscii().contains("<term>"))`
 
 // searchTerm extracts the Keycloak `search` value from the filter, or
 // reports InvalidArgument for any other expression.

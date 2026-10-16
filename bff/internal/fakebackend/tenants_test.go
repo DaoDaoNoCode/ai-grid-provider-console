@@ -262,7 +262,7 @@ func TestListTenants(t *testing.T) {
 	}
 	// search: case-insensitive contains on the name or a domain, total follows the filter.
 	filter := func(term string) *string {
-		return proto.String(`this.name.contains("` + term + `") || this.domains.exists(d, d.contains("` + term + `"))`)
+		return proto.String(`this.name.lowerAscii().contains("` + term + `") || this.domains.exists(d, d.lowerAscii().contains("` + term + `"))`)
 	}
 	if page := list(&aigridv1.ListTenantsRequest{Filter: filter("GLOBEX")}); strings.Join(tenantNames(page), ",") != "globex-research" || page.GetTotal() != 1 {
 		t.Errorf("search by name = %v", page)
@@ -296,8 +296,10 @@ func TestListTenants(t *testing.T) {
 	for _, bad := range []string{
 		`this.name == "a"`, `this.name.startsWith("a")`, `name.contains("a")`, `this.name.contains(a)`,
 		`this.name.contains("a")`, // name only is not what the UI means
-		`this.name.contains("a") || this.domains.exists(d, d.contains("b"))`, // two different terms
-		`this.domains.exists(d, d.contains("a")) || this.name.contains("a")`,
+		`this.name.contains("a") || this.domains.exists(d, d.contains("a"))`, // case-sensitive in CEL
+		`this.name.lowerAscii().contains("a") || this.domains.exists(d, d.contains("a"))`,
+		`this.name.lowerAscii().contains("a") || this.domains.exists(d, d.lowerAscii().contains("b"))`, // two different terms
+		`this.domains.exists(d, d.lowerAscii().contains("a")) || this.name.lowerAscii().contains("a")`,
 	} {
 		_, err := s.ListTenants(ctx, &aigridv1.ListTenantsRequest{Filter: proto.String(bad)})
 		if status.Code(err) != codes.InvalidArgument || !strings.Contains(status.Convert(err).Message(), bad) {
@@ -822,13 +824,13 @@ func TestListTenantsDecodesTheFilterLiteral(t *testing.T) {
 	s := tenantServer(t, &aigridv1.Tenant{Id: idAcme, Name: `a"b\c`, Alias: "quotes"}, &aigridv1.Tenant{Id: idGlobex, Name: "tab\there", Alias: "tab"})
 	ctx := authed(context.Background())
 	for literal, want := range map[string]string{`"a\"b\\c"`: `a"b\c`, `"tab\there"`: "tab\there", `"tab\u0009"`: "tab\there"} {
-		filter := `this.name.contains(` + literal + `) || this.domains.exists(d, d.contains(` + literal + `))`
+		filter := `this.name.lowerAscii().contains(` + literal + `) || this.domains.exists(d, d.lowerAscii().contains(` + literal + `))`
 		resp, err := s.ListTenants(ctx, &aigridv1.ListTenantsRequest{Filter: proto.String(filter)})
 		if err != nil || len(resp.GetTenants()) != 1 || resp.GetTenants()[0].GetName() != want {
 			t.Errorf("%s = %v, %v; want %q", literal, tenantNames(resp), err, want)
 		}
 	}
-	bad := `this.name.contains("\q") || this.domains.exists(d, d.contains("\q"))`
+	bad := `this.name.lowerAscii().contains("\q") || this.domains.exists(d, d.lowerAscii().contains("\q"))`
 	_, err := s.ListTenants(ctx, &aigridv1.ListTenantsRequest{Filter: proto.String(bad)})
 	mustCode(t, err, codes.InvalidArgument, "filter "+bad+" is not a valid CEL string literal")
 }

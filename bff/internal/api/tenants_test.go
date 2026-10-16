@@ -96,7 +96,7 @@ func TestListTenantsPagesAndSearches(t *testing.T) {
 		t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
 	}
 	meta = decodeList(t, rec, &list)
-	if fake.LastListTenants.GetOffset() != 1 || fake.LastListTenants.GetLimit() != 1 || fake.LastListTenants.GetFilter() != `this.name.contains("\"Bio\"") || this.domains.exists(d, d.contains("\"Bio\""))` {
+	if fake.LastListTenants.GetOffset() != 1 || fake.LastListTenants.GetLimit() != 1 || fake.LastListTenants.GetFilter() != `this.name.lowerAscii().contains("\"bio\"") || this.domains.exists(d, d.lowerAscii().contains("\"bio\""))` {
 		t.Errorf("query not mapped to the request, got %v", fake.LastListTenants)
 	}
 	if meta.Offset != 1 || meta.Limit == nil || *meta.Limit != 1 {

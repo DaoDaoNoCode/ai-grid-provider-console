@@ -52,9 +52,10 @@ What keeps it honest:
   pinned versions, all run through `go run`, so nothing is installed). Both `generate` and
   `check-generated` run under `GOTOOLCHAIN` set to the `bff/go.mod` version, the one CI's
   `setup-go` installs: protoc-gen-go formats its output with the `go/printer` of the Go that
-  builds it, and Go 1.26 rewrites an indented line in a doc comment into a code block where
-  1.27 does not, so a generation with another local Go could differ from CI's. (The draft
-  avoids indented comment lines for the same reason.) `make -C bff lint-proto`
+  builds it, and Go 1.26 rewrites an indented line in a message field's comment into a code
+  block where 1.27 does not, so a generation with another local Go could differ from CI's.
+  (The draft keeps indented lines out of field comments for that reason; the indented blocks
+  in the `ModelPhase` and `ManagedClusterState` enum comments generate the same under both.) `make -C bff lint-proto`
   runs `buf lint` (STANDARD minus `SERVICE_SUFFIX`); `make -C bff check-generated` generates
   into a temporary directory and `diff -r`s it against `gen/`, so CI fails on a stale file,
   on a missing one and on one the proto no longer produces, not only on uncommitted edits.
@@ -106,7 +107,8 @@ the new `DeleteTenantRequest.resource_version = 2` is set (no flag; `lock` stays
 `repeated TenantDomain domain_details = 9` (`name`, `verified`, `identity_provider_alias`,
 `auto_redirect`, the fields Keycloak 26.8 keeps per domain), kept `domains` as the list of
 names, and narrowed `ListTenantsRequest.filter` to the one CEL form the backend can push down
-to Keycloak's `search`, `this.name.contains("<term>") || this.domains.exists(d, d.contains("<term>"))`.
+to Keycloak's `search`, `this.name.lowerAscii().contains("<term>") || this.domains.exists(d, d.lowerAscii().contains("<term>"))`
+(`lowerAscii()` needs cel-go's strings extension, `ext.Strings()`).
 
 ## Working with the backend team
 

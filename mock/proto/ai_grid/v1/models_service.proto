@@ -64,8 +64,11 @@ message ListModelsRequest {
   optional int32 limit = 2;
   // CEL over `this` (a Model). Supported today: terms of the form
   // `this.metadata.namespace == "<ns>"` and
-  // `this.metadata.labels["<key>"] == "<value>"`, joined with `&&`. Any other
-  // expression is InvalidArgument naming it.
+  // `"<key>" in this.metadata.labels && this.metadata.labels["<key>"] == "<value>"`,
+  // joined with `&&`. The label term is guarded with `in` because indexing a
+  // missing map key is a CEL `no such key` error, not false; both literals name
+  // the same key. Values are CEL string literals (escapes `\"` and `\\`). Any
+  // other expression is InvalidArgument naming it.
   optional string filter = 3;
   // Sort order. Only the default (namespace, then name) is supported; a
   // non-empty value is InvalidArgument.

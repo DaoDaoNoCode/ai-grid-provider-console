@@ -436,8 +436,20 @@ func llmisvcEvents(in llmisvcInput, base time.Duration, gen int64) []llmisvcEven
 		st.ObservedGeneration = gen // knative:reconciler/reconcile_common.go:82
 		if in.unknownPreset != "" {
 			// reconcileBaseRefs fails before any child resource is touched.
+			// PreProcessReconcile has already initialised every dependent of
+			// the living condition set that is absent to Unknown, without a
+			// reason (kserve:controller.go:250 ->
+			// knative:reconciler/reconcile_common.go:64-66,
+			// knative:apis/condition_set.go:416-450; dependents
+			// kserve:llm_inference_service_lifecycle.go:164-168), and the
+			// workload and router never run to overwrite them.
 			msg := fmt.Sprintf(MessageConfigNotFoundFm, in.unknownPreset, []string{in.namespace, in.presetsNamespace})
 			setModelCondition(st, now, CondPresetsCombined, cFalse, ReasonConfigNotFound, msg)
+			for _, typ := range []string{CondWorkloadsReady, CondRouterReady} {
+				if condition(st.Conditions, typ) == nil {
+					setModelCondition(st, now, typ, cUnknown, "", "")
+				}
+			}
 			setModelCondition(st, now, CondReady, cFalse, ReasonConfigNotFound, msg)
 			return
 		}
@@ -528,6 +540,23 @@ func llmisvcWorkloadEvents(in llmisvcInput, base time.Duration) []llmisvcEvent {
 	t2b := func(st *aigridv1.ModelStatus, now time.Time) {
 		setModelCondition(st, now, CondMainWorkloadReady, cFalse, ReasonMinimumReplicasUnavailable, MessageMinimumReplicasUnavailable)
 		rollUp(st, now)
+	}
+	if in.replicas == 0 {
+		// `replicas: 0` (the CRD's minimum): the Deployment controller marks
+		// it Available at its first status sync, availableReplicas 0 >= 0
+		// replicas - maxUnavailable (kubernetes:pkg/controller/deployment/
+		// sync.go:525-531, v1.35.8), and KServe copies that verdict
+		// (kserve:workload_single_node.go:433-436). No pod runs, so neither
+		// MinimumReplicasUnavailable nor a stuck image shows; the fake puts
+		// that sync at T2.
+		ready := func(st *aigridv1.ModelStatus, now time.Time) {
+			setModelCondition(st, now, CondMainWorkloadReady, cTrue, "", "")
+			if len(in.missingGateways) == 0 {
+				st.Workloads = workloads(in, 0, 1)
+			}
+			rollUp(st, now)
+		}
+		return []llmisvcEvent{{base + llmisvcT2, ready}}
 	}
 	if in.stuck {
 		return []llmisvcEvent{{base + llmisvcT2b, t2b}}

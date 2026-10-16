@@ -217,6 +217,9 @@ func (s *Server) applyEvent(c *aigridv1.ManagedCluster, sc *scenario, now time.T
 		setCondition(c, now, CondAvailable, aigridv1.ConditionStatus_CONDITION_STATUS_TRUE, ReasonAvailable, MessageAvailable)
 		syncTaints(c, now)
 	case EventDetaching:
+		if c.DeletionTimestamp == nil {
+			c.Generation++ // the API server bumps generation when it marks an object deleting (apiserver registry/generic/registry/store.go markAsDeleting L1016-1021)
+		}
 		c.DeletionTimestamp = timestamppb.New(now)
 		setCondition(c, now, CondImportSucceeded, aigridv1.ConditionStatus_CONDITION_STATUS_FALSE, ReasonDetaching, MessageDetaching)
 		setDeletingCondition(c, now)

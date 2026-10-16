@@ -50,8 +50,11 @@ type ListTenantsRequest struct {
 	// CEL over `this` (a Tenant). The only form supported today is the one
 	// that means what Keycloak's `search` parameter does, a case-insensitive
 	// contains on the name or on any domain,
-	// `this.name.contains("<term>") || this.domains.exists(d, d.contains("<term>"))`,
+	// `this.name.lowerAscii().contains("<term>") || this.domains.exists(d, d.lowerAscii().contains("<term>"))`,
 	// with the same string literal in both places (CEL escapes `"` and `\`).
+	// `lowerAscii()` is cel-go's strings extension (`ext.Strings()`), which a
+	// backend evaluating the expression must enable; the BFF writes the term
+	// lower-cased (ASCII), and `contains` without it would be case-sensitive.
 	// The term is a literal substring: `%` and `_` match themselves, never act
 	// as wildcards. A blank term (empty or whitespace only) matches every
 	// tenant, as Keycloak's `search` does. The backend may evaluate the

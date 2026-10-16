@@ -135,12 +135,25 @@ func celString(s string) string {
 
 // searchFilter turns the `search` query into the CEL expression that means
 // what Keycloak's `search` parameter does, a case-insensitive contains on the
-// name or on any domain, so a backend that evaluates the filter as written
-// and one that pushes it down to Keycloak return the same tenants. The term
-// is a CEL string literal.
+// name or on any domain: both sides lowered with `lowerAscii()` (cel-go's
+// strings extension, `ext.Strings()`), the term lowered the same way before
+// it is quoted, so a backend that evaluates the filter as written and one
+// that pushes the term down to Keycloak return the same tenants (for ASCII
+// letters; CEL compares other letters exactly, where Keycloak's SQL lower()
+// may fold them). The term is a CEL string literal.
 func searchFilter(term string) string {
-	literal := celString(term)
-	return `this.name.contains(` + literal + `) || this.domains.exists(d, d.contains(` + literal + `))`
+	literal := celString(lowerASCII(term))
+	return `this.name.lowerAscii().contains(` + literal + `) || this.domains.exists(d, d.lowerAscii().contains(` + literal + `))`
+}
+
+// lowerASCII is CEL's `lowerAscii()`: A-Z lowered, every other rune kept.
+func lowerASCII(s string) string {
+	return strings.Map(func(r rune) rune {
+		if 'A' <= r && r <= 'Z' {
+			return r + ('a' - 'A')
+		}
+		return r
+	}, s)
 }
 
 // listTenants answers GET /api/v1/tenants?offset=&limit=&search=. The

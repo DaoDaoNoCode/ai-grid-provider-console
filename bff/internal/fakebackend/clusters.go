@@ -140,7 +140,8 @@ func (s *Server) UpdateManagedCluster(ctx context.Context, req *aigridv1.UpdateM
 			c.Generation++ // a spec change
 			// The registration controller
 			// (ocm:pkg/registration/hub/managedcluster/controller.go): accepting
-			// always writes True (L262-271); denying writes False only for a
+			// writes True (L264-270), or False/`Error` when applying the
+			// cluster's RBAC fails (L272-277, not simulated); denying writes False only for a
 			// cluster that was accepted, and does nothing for one that never
 			// was (L164-167).
 			switch {

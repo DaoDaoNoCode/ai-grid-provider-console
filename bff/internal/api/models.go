@@ -512,7 +512,11 @@ func (a *App) listModels(w http.ResponseWriter, r *http.Request) {
 			a.respondError(w, r, Errorf(http.StatusUnprocessableEntity, `query parameter "label" must be key=value`))
 			return
 		}
-		terms = append(terms, "this.metadata.labels["+celString(strings.TrimSpace(k))+"] == "+celString(v))
+		// Guarded with `in`: in CEL a missing map key is a `no such key`
+		// error, not false, so an unguarded index fails on every model
+		// without the label.
+		key := celString(strings.TrimSpace(k))
+		terms = append(terms, key+" in this.metadata.labels && this.metadata.labels["+key+"] == "+celString(v))
 	}
 	req := &aigridv1.ListModelsRequest{}
 	if offset != nil {

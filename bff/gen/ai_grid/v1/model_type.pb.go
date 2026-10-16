@@ -432,12 +432,14 @@ func (x *ModelSource) GetName() string {
 
 // `spec.scaling`. The CRD's CEL rules (read from the hub): a scaling block
 // must carry `keda` (the webhook forbids `wva`), `keda.triggers` needs at
-// least one entry, and `minReplicas` cannot exceed `maxReplicas`.
+// least one entry, and `minReplicas` cannot exceed `maxReplicas`. Its openAPI
+// schema requires `maxReplicas` and sets a minimum of 1 on both counts.
 type Scaling struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// `spec.scaling.minReplicas`, default 1. Must not exceed `max_replicas`.
+	// `spec.scaling.minReplicas`, minimum 1, default 1 (0 here means unset).
+	// Must not exceed `max_replicas`.
 	MinReplicas int32 `protobuf:"varint,1,opt,name=min_replicas,json=minReplicas,proto3" json:"min_replicas,omitempty"`
-	// `spec.scaling.maxReplicas`, required inside `scaling`.
+	// `spec.scaling.maxReplicas`, required inside `scaling`, minimum 1.
 	MaxReplicas int32 `protobuf:"varint,2,opt,name=max_replicas,json=maxReplicas,proto3" json:"max_replicas,omitempty"`
 	// Whether `spec.scaling.keda` is set. Requires at least one trigger.
 	Keda bool `protobuf:"varint,3,opt,name=keda,proto3" json:"keda,omitempty"`
@@ -2152,7 +2154,10 @@ type ManifestWorkStatus struct {
 	Conditions []*Condition `protobuf:"bytes,3,rep,name=conditions,proto3" json:"conditions,omitempty"`
 	// `status.resourceStatus.manifests[]`, in ordinal order.
 	Manifests []*ManifestStatus `protobuf:"bytes,4,rep,name=manifests,proto3" json:"manifests,omitempty"`
-	// `metadata.generation`.
+	// The ManifestWork's own `metadata.generation`: 1 when the controller
+	// creates it, bumped each time an update changes its spec. It is not the
+	// model's generation: a work created for a cluster that joins later starts
+	// at 1.
 	Generation int64 `protobuf:"varint,5,opt,name=generation,proto3" json:"generation,omitempty"`
 	// `observedGeneration` of the `Applied` condition.
 	ObservedGeneration int64 `protobuf:"varint,6,opt,name=observed_generation,json=observedGeneration,proto3" json:"observed_generation,omitempty"`

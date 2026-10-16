@@ -79,11 +79,13 @@ message ModelSource {
 
 // `spec.scaling`. The CRD's CEL rules (read from the hub): a scaling block
 // must carry `keda` (the webhook forbids `wva`), `keda.triggers` needs at
-// least one entry, and `minReplicas` cannot exceed `maxReplicas`.
+// least one entry, and `minReplicas` cannot exceed `maxReplicas`. Its openAPI
+// schema requires `maxReplicas` and sets a minimum of 1 on both counts.
 message Scaling {
-  // `spec.scaling.minReplicas`, default 1. Must not exceed `max_replicas`.
+  // `spec.scaling.minReplicas`, minimum 1, default 1 (0 here means unset).
+  // Must not exceed `max_replicas`.
   int32 min_replicas = 1;
-  // `spec.scaling.maxReplicas`, required inside `scaling`.
+  // `spec.scaling.maxReplicas`, required inside `scaling`, minimum 1.
   int32 max_replicas = 2;
   // Whether `spec.scaling.keda` is set. Requires at least one trigger.
   bool keda = 3;
@@ -454,7 +456,10 @@ message ManifestWorkStatus {
   repeated Condition conditions = 3;
   // `status.resourceStatus.manifests[]`, in ordinal order.
   repeated ManifestStatus manifests = 4;
-  // `metadata.generation`.
+  // The ManifestWork's own `metadata.generation`: 1 when the controller
+  // creates it, bumped each time an update changes its spec. It is not the
+  // model's generation: a work created for a cluster that joins later starts
+  // at 1.
   int64 generation = 5;
   // `observedGeneration` of the `Applied` condition.
   int64 observed_generation = 6;

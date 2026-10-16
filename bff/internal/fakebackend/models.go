@@ -56,6 +56,13 @@ const (
 	MsgScalingNeedsKeda    = "either wva or keda must be specified when scaling is configured"
 	MsgKedaTriggerRequired = "at least one trigger is required when using direct KEDA scaling"
 	MsgMinMaxReplicas      = "minReplicas cannot exceed maxReplicas"
+	// The CRD's openAPI schema rules, in the API server's field-error format
+	// (hub CRD v1alpha2: spec.replicas minimum 0; spec.scaling required
+	// [maxReplicas]; maxReplicas minimum 1; minReplicas minimum 1, default 1).
+	MsgReplicasMinimumFm    = "spec.replicas: Invalid value: %d: spec.replicas in body should be greater than or equal to 0"
+	MsgMaxReplicasRequired  = "spec.scaling.maxReplicas: Required value"
+	MsgMaxReplicasMinimumFm = "spec.scaling.maxReplicas: Invalid value: %d: spec.scaling.maxReplicas in body should be greater than or equal to 1"
+	MsgMinReplicasMinimumFm = "spec.scaling.minReplicas: Invalid value: %d: spec.scaling.minReplicas in body should be greater than or equal to 1"
 	// MsgDNS1123SubdomainFm is apimachinery's IsDNS1123Subdomain message, the
 	// check the API server applies to a custom resource's metadata.name
 	// (NameIsDNSSubdomain); MsgDNS1123LabelFm is IsDNS1123Label, applied to a
@@ -67,7 +74,6 @@ const (
 	// Console wording.
 	MsgModelURIRequired   = "spec.model.uri is required"
 	MsgModelURISchemeFm   = "spec.model.uri %q: unsupported scheme; expected one of hf://, s3://, pvc://, oci://"
-	MsgScalingMaxReplicas = "spec.scaling.max_replicas is required when scaling is configured"
 	MsgRolloutNoPlacement = "spec.rollout requires spec.placement"
 )
 
@@ -81,13 +87,20 @@ const (
 	maxDNSSubdomainLength = 253
 )
 
-// filterTerm forms ListModels evaluates, joined with ` && `.
+// celLiteral is a CEL double-quoted string literal: any character but `"` and
+// `\`, or a backslash escape (what the BFF's celString writes).
+const celLiteral = `"(?:[^"\\]|\\.)*"`
+
+// The term forms ListModels evaluates, matched at the start of the rest of
+// the filter so that ` && ` inside a quoted literal never splits a term. The
+// label term is guarded with `in`: in CEL a missing map key is a
+// `no such key` error, not false.
 var (
-	filterNamespace = regexp.MustCompile(`^this\.metadata\.namespace == "([^"]*)"$`)
-	filterLabel     = regexp.MustCompile(`^this\.metadata\.labels\["([^"]+)"\] == "([^"]*)"$`)
+	filterNamespace = regexp.MustCompile(`^this\.metadata\.namespace == (` + celLiteral + `)`)
+	filterLabel     = regexp.MustCompile(`^(` + celLiteral + `) in this\.metadata\.labels && this\.metadata\.labels\[(` + celLiteral + `)\] == (` + celLiteral + `)`)
 )
 
-const supportedModelFilter = `this.metadata.namespace == "<ns>" and this.metadata.labels["<key>"] == "<value>", joined with &&`
+const supportedModelFilter = `this.metadata.namespace == "<ns>" and "<key>" in this.metadata.labels && this.metadata.labels["<key>"] == "<value>", joined with &&`
 
 // model is one stored model with the controller facts the derivation needs.
 // Times are scenario time (see Server.scenarioTime).
@@ -184,12 +197,16 @@ func validateNamespaceName(field, name string) error {
 
 // validateModelSpec is what the API server (CRD schema and CEL rules) rejects
 // on an LLMInferenceService, plus the console's (and the backend's) own
-// checks, as InvalidArgument. The CEL texts are the CRD's; the URI scheme, the
-// replicas sign, the scaling maxReplicas presence, the Placement operators,
+// checks, as InvalidArgument. The replicas minimum, the scaling maxReplicas
+// presence and minimum and the minReplicas minimum are the CRD's openAPI
+// schema, with the API server's field-error texts; the CEL texts are the
+// CRD's. Schema errors come before CEL errors, as the API server lists them
+// (the fake returns the first). The URI scheme, the Placement operators,
 // numberOfClusters and cluster-set existence, and the rollout field rules are
 // console checks with console wording: the CRD types `spec.model.uri` as a
 // plain string (hub CRD, v1alpha2 spec.model.uri) and the KServe webhook does
-// not check the scheme.
+// not check the scheme. A `min_replicas` of 0 is proto's unset, the CRD's
+// default 1.
 func validateModelSpec(spec *aigridv1.ModelSpec) error {
 	if spec == nil {
 		return status.Error(codes.InvalidArgument, "spec is required")
@@ -202,9 +219,17 @@ func validateModelSpec(spec *aigridv1.ModelSpec) error {
 		return status.Errorf(codes.InvalidArgument, MsgModelURISchemeFm, uri)
 	}
 	if spec.Replicas != nil && spec.GetReplicas() < 0 {
-		return status.Errorf(codes.InvalidArgument, "spec.replicas must not be negative, got %d", spec.GetReplicas())
+		return status.Errorf(codes.InvalidArgument, MsgReplicasMinimumFm, spec.GetReplicas())
 	}
 	if sc := spec.GetScaling(); sc != nil {
+		switch {
+		case sc.GetMaxReplicas() == 0:
+			return status.Error(codes.InvalidArgument, MsgMaxReplicasRequired)
+		case sc.GetMaxReplicas() < 1:
+			return status.Errorf(codes.InvalidArgument, MsgMaxReplicasMinimumFm, sc.GetMaxReplicas())
+		case sc.GetMinReplicas() < 0:
+			return status.Errorf(codes.InvalidArgument, MsgMinReplicasMinimumFm, sc.GetMinReplicas())
+		}
 		if spec.Replicas != nil {
 			return status.Error(codes.InvalidArgument, MsgReplicasScalingExclusive)
 		}
@@ -214,10 +239,7 @@ func validateModelSpec(spec *aigridv1.ModelSpec) error {
 		if len(sc.GetTriggers()) == 0 {
 			return status.Error(codes.InvalidArgument, MsgKedaTriggerRequired)
 		}
-		if sc.GetMaxReplicas() < 1 {
-			return status.Error(codes.InvalidArgument, MsgScalingMaxReplicas)
-		}
-		if sc.GetMinReplicas() > sc.GetMaxReplicas() {
+		if max(sc.GetMinReplicas(), 1) > sc.GetMaxReplicas() {
 			return status.Error(codes.InvalidArgument, MsgMinMaxReplicas)
 		}
 	}
@@ -451,8 +473,10 @@ func (s *Server) applyWork(m *model, cluster string, t time.Time) {
 		}
 	}
 	if w == nil {
-		w = &work{cluster: cluster, name: workNameFor(placementName(m.obj.GetName()), s.newSuffix())}
+		w = &work{cluster: cluster, name: workNameFor(placementName(m.obj.GetName()), s.newSuffix()), workGeneration: 1}
 		m.works = append(m.works, w)
+	} else if !proto.Equal(w.spec, m.obj.GetSpec()) {
+		w.workGeneration++ // the template update changes the work's spec
 	}
 	w.startedAt, w.generation, w.agentStart, w.frozenAt = t, m.obj.GetMetadata().GetGeneration(), nil, nil
 	w.spec = cloneSpec(m.obj.GetSpec())
@@ -745,28 +769,64 @@ func derivePlacedPhase(rollout *aigridv1.RolloutStatus) (aigridv1.ModelPhase, st
 	}
 }
 
-// matchesFilter evaluates the supported ListModels filter terms.
+// parseModelFilter evaluates the supported ListModels filter terms. It reads
+// one term at a time from the front of the filter, so a quoted ` && ` stays
+// in its literal, and decodes each literal's escapes (`\"`, `\\`, `\n`,
+// `\uXXXX`, what the BFF writes) with Go's rules, which agree with CEL's for
+// those; a malformed escape is InvalidArgument like a CEL compile error.
 func parseModelFilter(filter string) (func(*aigridv1.Model) bool, error) {
-	if strings.TrimSpace(filter) == "" {
+	rest := strings.TrimSpace(filter)
+	if rest == "" {
 		return func(*aigridv1.Model) bool { return true }, nil
 	}
-	var checks []func(*aigridv1.Model) bool
-	for _, term := range strings.Split(filter, " && ") {
-		term = strings.TrimSpace(term)
-		if m := filterNamespace.FindStringSubmatch(term); m != nil {
-			ns := m[1]
-			checks = append(checks, func(x *aigridv1.Model) bool { return x.GetMetadata().GetNamespace() == ns })
-			continue
+	unsupported := status.Errorf(codes.InvalidArgument, "filter %s is not supported; this server only evaluates %s", filter, supportedModelFilter)
+	unquote := func(literals ...string) ([]string, error) {
+		out := make([]string, len(literals))
+		for i, l := range literals {
+			v, err := strconv.Unquote(l)
+			if err != nil {
+				return nil, status.Errorf(codes.InvalidArgument, "filter %s is not a valid CEL string literal", filter)
+			}
+			out[i] = v
 		}
-		if m := filterLabel.FindStringSubmatch(term); m != nil {
-			k, v := m[1], m[2]
+		return out, nil
+	}
+	var checks []func(*aigridv1.Model) bool
+	for {
+		if m := filterNamespace.FindStringSubmatch(rest); m != nil {
+			vals, err := unquote(m[1])
+			if err != nil {
+				return nil, err
+			}
+			ns := vals[0]
+			checks = append(checks, func(x *aigridv1.Model) bool { return x.GetMetadata().GetNamespace() == ns })
+			rest = rest[len(m[0]):]
+		} else if m := filterLabel.FindStringSubmatch(rest); m != nil {
+			vals, err := unquote(m[1], m[2], m[3])
+			if err != nil {
+				return nil, err
+			}
+			if vals[0] != vals[1] {
+				return nil, unsupported // the guard names another key
+			}
+			k, v := vals[1], vals[2]
 			checks = append(checks, func(x *aigridv1.Model) bool {
 				got, ok := x.GetMetadata().GetLabels()[k]
 				return ok && got == v
 			})
-			continue
+			rest = rest[len(m[0]):]
+		} else {
+			return nil, unsupported
 		}
-		return nil, status.Errorf(codes.InvalidArgument, "filter %s is not supported; this server only evaluates %s", filter, supportedModelFilter)
+		rest = strings.TrimLeft(rest, " ")
+		if rest == "" {
+			break
+		}
+		after, ok := strings.CutPrefix(rest, "&&")
+		if !ok {
+			return nil, unsupported
+		}
+		rest = strings.TrimLeft(after, " ")
 	}
 	return func(x *aigridv1.Model) bool {
 		for _, check := range checks {
@@ -995,9 +1055,13 @@ func (s *Server) UpdateModel(ctx context.Context, req *aigridv1.UpdateModelReque
 	return &aigridv1.UpdateModelResponse{Object: s.viewModel(m, now)}, nil
 }
 
-// DeleteModel implements Models. The model disappears at once: the hub
-// deployment has no finalizer the console knows of, and the MWRS uses the
-// CRD default cascade `Background`, under which the finalize reconciler
+// DeleteModel implements Models. The model disappears at once. A hub
+// deployment really carries KServe's `serving.kserve.io/llmisvc-finalizer`
+// (kserve:controller.go:204-211) and stays, with a deletionTimestamp, until
+// its finalize pass completes (:215-231, :330-354), normally one reconcile;
+// the fake does not model that window (a declared deviation in
+// mock/areas/models.md) and shows no finalizers. The MWRS uses the CRD
+// default cascade `Background`, under which the finalize reconciler
 // deletes the works and removes the finalizer in the same pass
 // (ocm:manifestworkreplicaset_finalize_reconcile.go); the works drain in the
 // cluster namespaces afterwards, invisibly to this API (only `Foreground`

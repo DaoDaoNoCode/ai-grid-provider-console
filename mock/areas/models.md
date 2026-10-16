@@ -18,14 +18,17 @@ model was created, when each generated work was applied, the last Placement deci
 derives everything else on every read from the clock and the current clusters.
 
 Admission. `CreateModel` checks, as InvalidArgument: a DNS-1123 subdomain name and a DNS-1123
-label namespace with apimachinery's messages, and the CRD's four CEL rules verbatim ("replicas
+label namespace with apimachinery's messages; the CRD's openAPI schema rules with the API
+server's field-error texts (`replicas` minimum 0, "spec.replicas: Invalid value: -1:
+spec.replicas in body should be greater than or equal to 0"; `scaling.maxReplicas` required,
+"spec.scaling.maxReplicas: Required value", and minimum 1; `scaling.minReplicas` minimum 1,
+default 1, so the proto's unset 0 reads as 1); and the CRD's four CEL rules verbatim ("replicas
 and scaling are mutually exclusive; use scaling for autoscaled deployments or replicas for
 static deployments", "either wva or keda must be specified when scaling is configured", "at
 least one trigger is required when using direct KEDA scaling", "minReplicas cannot exceed
-maxReplicas"). The rest are console checks with console wording, which the API server would
-accept: `spec.model.uri` with a known scheme (the CRD types it as a plain string), a
-non-negative `replicas`, `scaling.maxReplicas` present, Placement selector and toleration
-operators, a non-negative `numberOfClusters`, existing cluster sets (only the toleration
+maxReplicas"), schema errors first as the API server lists them. The rest are console checks
+with console wording, which the API server would accept: `spec.model.uri` with a known scheme
+(the CRD types it as a plain string), Placement selector and toleration operators, a non-negative `numberOfClusters`, existing cluster sets (only the toleration
 effect is a CRD enum), and the rollout fields (`maxConcurrency` and `maxFailures` against the
 CRD pattern `^((100|[0-9]{1,2})%|[0-9]+)$`, `progressDeadline` against
 `^(([0-9])+[h|m|s])|None$` and also parsable, `maxConcurrency` only with `Progressive`, since
@@ -58,6 +61,10 @@ are sorted by type.
 - T2b (20 s): the Deployment reports `Available=False`: `MainWorkloadReady`, `WorkloadsReady` and
   `Ready` False/`MinimumReplicasUnavailable` "Deployment does not have minimum availability.".
 - T3 (45 s): everything True, `workloads.primary.readyReplicas` = replicas.
+- `replicas: 0` skips T2b and T3: the Deployment controller marks a zero-replica Deployment
+  `Available` at its first status sync (0 available >= 0 - maxUnavailable, Kubernetes
+  `pkg/controller/deployment/sync.go:525-531`), so at T2 `MainWorkloadReady` is True and the model
+  Ready with `readyReplicas` 0, whatever the image.
 
 Roll-ups: `WorkloadsReady` copies `MainWorkloadReady` when False; `RouterReady` copies the
 first False of `GatewaysReady`, `HTTPRoutesReady`, `InferencePoolReady`,
@@ -68,7 +75,8 @@ reads `WaitingForGateway`, then `Progressing`, then `MinimumReplicasUnavailable`
 Failure modes:
 - An unknown `baseRef` stops at T1 with `PresetsCombined` and `Ready` False/`ConfigNotFound`
   and KServe's message (`LLMInferenceServiceConfig "<name>" not found in namespaces [<ns>
-  <apps-ns>]`); nothing else is written.
+  <apps-ns>]`); `WorkloadsReady` and `RouterReady` Unknown (Knative initialises every dependent
+  of `Ready` before the reconcile, `knative:reconciler/reconcile_common.go:64-66`); nothing else.
 - An image or model name containing `oom` or `fail`: the pods never become available, and KServe
   ends on the Deployment's `Available` condition, so the model keeps
   `MinimumReplicasUnavailable` for good. It never shows `ProgressDeadlineExceeded`: KServe marks
@@ -164,8 +172,12 @@ one.
   `Progressing`; `ManifestworkApplied` `AsExpected`, `Processing`, `NotAsExpected` or
   `PlacementDecisionEmpty` from the summary.
 - A template change re-applies the works at the new generation (all at once for `All`, in name
-  order as slots free for `Progressive`); a cluster leaving the decision loses its work;
-  `DeleteModel` removes the model at once (the console's MWRS uses the CRD default cascade
+  order as slots free for `Progressive`); a work's own `generation` is the ManifestWork's
+  counter, 1 when it is created (also for a cluster that joins later or a placement added by a
+  PATCH) and bumped by each update that changes its spec; a cluster leaving the decision loses
+  its work;
+  `DeleteModel` removes the model at once (a hub model's finalizer window is a declared
+  deviation, below; the console's MWRS uses the CRD default cascade
   `Background`: the finalize reconciler deletes the works and drops the finalizer in one pass, so
   the MWRS is gone immediately and the works drain in the cluster namespaces out of sight), and
   answers `FailedPrecondition` through a `referencedBy` hook that the catalog and subscriptions
@@ -180,8 +192,10 @@ PENDING with the reason of `PlacementVerified` when it is False, of `PlacementRo
 
 `GetHubCapabilities` answers from `settings.json`. Mutations are gated by the provider-admin rule
 (a viewer gets PermissionDenied, 403 at the BFF); every RPC needs `authorization`; `ListModels`
-evaluates `this.metadata.namespace == "x"` and `this.metadata.labels["k"] == "v"` joined with
-`&&`.
+evaluates `this.metadata.namespace == "x"` and the guarded label term `"k" in
+this.metadata.labels && this.metadata.labels["k"] == "v"` (in CEL a missing key is a `no such
+key` error, so the index needs the `in` guard) joined with `&&`; values are CEL string literals,
+their escapes decoded, and a quoted `&&` stays inside its literal.
 
 ## Deviations from the real controllers
 
@@ -229,12 +243,18 @@ evaluates `this.metadata.namespace == "x"` and `this.metadata.labels["k"] == "v"
   `%`.
 - Generated work names are random unless a test injects a suffix; the `ai-grid-mock/fail-apply`
   label is a mock-only switch for the missing-CRD case.
+- A hub model disappears at once on `DeleteModel`. KServe adds `serving.kserve.io/llmisvc-finalizer`
+  on its first reconcile (`controller.go:204-211`) and on delete runs its finalize pass (group
+  membership, platform resources, scheduler service account; requeued every 5 s while incomplete,
+  `controller.go:215-231`, `:330-354`) before removing it, so on the hub the object is first seen
+  with a `deletionTimestamp` and the finalizer, normally for one reconcile. `metadata.finalizers`
+  is not shown.
 - The `apierror` name marker (`ReconcileSingleNodeWorkloadError`) is deferred: its message is the
   free-form `err.Error()` of the failed Deployment write, so any plausible API-server error would
   do.
 
-Invented texts (console wording, not hub messages): the admission messages other than the CEL and
-DNS-1123 texts, "ManifestWorkReplicaSet feature gate disabled on hub", the `referencedBy`
+Invented texts (console wording, not hub messages): the admission messages other than the CEL, CRD
+schema and DNS-1123 texts, "ManifestWorkReplicaSet feature gate disabled on hub", the `referencedBy`
 message, the template's rule messages ("LLMInferenceService rolling out", "LLMInferenceService
 not ready"), the ListModels filter and paging messages, and the hosts and domains
 (`*.example.com`, `apps.hub.example.com`).
