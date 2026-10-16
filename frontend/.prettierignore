@@ -1,0 +1,9 @@
+dist
+node_modules
+.pnpm-store
+pnpm-lock.yaml
+playwright-report
+test-results
+.playwright-cli
+.vite
+coverage

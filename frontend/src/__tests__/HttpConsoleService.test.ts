@@ -5,7 +5,9 @@ const jsonResponse = (status: number, body: unknown) =>
 
 describe('HttpConsoleService', () => {
   it('unwraps the data envelope', async () => {
-    const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, { data: { username: 'u', groups: [], isProviderAdmin: true } }));
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(200, { data: { username: 'u', groups: [], isProviderAdmin: true } }));
     const service = new HttpConsoleService(fetchFn);
     await expect(service.getUser()).resolves.toEqual({ username: 'u', groups: [], isProviderAdmin: true });
     expect(fetchFn).toHaveBeenCalledWith('/api/v1/user', expect.objectContaining({ method: 'GET' }));
