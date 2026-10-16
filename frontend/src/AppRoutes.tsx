@@ -5,6 +5,8 @@ import type { ConsoleService } from './api/ConsoleService';
 import { NotFoundPage } from './components/NotFoundPage';
 import { NotYetPortedPage } from './components/NotYetPortedPage';
 import { ClustersPage } from './pages/ClustersPage';
+import { ModelWizard } from './pages/models/ModelWizard';
+import { ModelsPage } from './pages/models/ModelsPage';
 import { OrganizationDetailsPage } from './pages/organizations/OrganizationDetailsPage';
 import { OrganizationListPage } from './pages/organizations/OrganizationListPage';
 import { OrganizationWizardPage } from './pages/organizations/OrganizationWizardPage';
@@ -67,8 +69,22 @@ export const AppRoutes: React.FC<Props> = ({ service }) => (
         </PageSection>
       }
     />
-    <Route path="/models" element={<NotYetPortedPage title="Models" />} />
-    <Route path="/models/deploy" element={<NotYetPortedPage title="Deploy model" />} />
+    <Route
+      path="/models"
+      element={
+        <PageSection>
+          <ModelsPage service={service} />
+        </PageSection>
+      }
+    />
+    <Route
+      path="/models/deploy"
+      element={
+        <PageSection>
+          <ModelWizard service={service} />
+        </PageSection>
+      }
+    />
     <Route path="/subscriptions" element={<NotYetPortedPage title="Subscriptions" />} />
     <Route path="/subscriptions/create" element={<NotYetPortedPage title="Create subscription" />} />
     <Route path="/subscriptions/view/:name" element={<NotYetPortedPage title="Subscription" />} />
