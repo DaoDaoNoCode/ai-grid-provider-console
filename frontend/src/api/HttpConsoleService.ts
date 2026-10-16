@@ -31,11 +31,14 @@ export class HttpConsoleService implements ConsoleService {
     try {
       response = await this.fetchFn(`${API_PREFIX}${path}`, {
         method,
-        headers: body === undefined ? { Accept: 'application/json' } : { Accept: 'application/json', 'Content-Type': 'application/json' },
+        headers:
+          body === undefined
+            ? { Accept: 'application/json' }
+            : { Accept: 'application/json', 'Content-Type': 'application/json' },
         body: body === undefined ? undefined : JSON.stringify(body),
         credentials: 'same-origin',
       });
-    } catch (cause) {
+    } catch {
       throw new ServiceError(0, 'The console backend could not be reached.');
     }
     if (!response.ok) {

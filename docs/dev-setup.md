@@ -82,7 +82,7 @@ in `bff/` for the flags.
 ## Checks
 
 ```sh
-make lint    # go vet, golangci-lint, tsc
+make lint    # go vet, golangci-lint; ESLint, Prettier check, tsc (fix formatting with: cd frontend && pnpm format)
 make test    # go test -race (in-memory gRPC backend), vitest
 make build   # BFF binary and frontend bundle
 ```

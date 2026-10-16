@@ -51,9 +51,9 @@ install: ## Install frontend dependencies
 
 ##@ Quality
 
-lint: ## Lint the BFF and typecheck the frontend
+lint: ## Lint the BFF (vet, golangci-lint) and the frontend (ESLint, Prettier, tsc)
 	$(MAKE) -C bff vet lint
-	cd frontend && pnpm typecheck
+	cd frontend && pnpm lint && pnpm format:check && pnpm typecheck
 
 test: ## Run all tests
 	$(MAKE) -C bff test
