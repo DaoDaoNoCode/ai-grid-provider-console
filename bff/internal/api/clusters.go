@@ -9,6 +9,7 @@ import (
 	"io"
 	"maps"
 	"math"
+	"mime"
 	"net/http"
 	"sort"
 	"strconv"
@@ -153,20 +154,6 @@ func toGridCluster(mc *aigridv1.ManagedCluster) GridCluster {
 			addons[name] = v
 		}
 	}
-	conditions := make([]ClusterCondition, 0, len(st.GetConditions()))
-	for _, c := range st.GetConditions() {
-		cond := ClusterCondition{
-			Type:    c.GetType(),
-			Status:  conditionStatusStrings[c.GetStatus()],
-			Reason:  c.GetReason(),
-			Message: c.GetMessage(),
-		}
-		if ts := c.GetLastTransitionTime(); ts != nil {
-			t := ts.AsTime().UTC()
-			cond.LastTransitionTime = &t
-		}
-		conditions = append(conditions, cond)
-	}
 	gpu, _ := strconv.Atoi(st.GetCapacity()[CapacityGPU])
 	return GridCluster{
 		Name:              mc.GetName(),
@@ -188,7 +175,7 @@ func toGridCluster(mc *aigridv1.ManagedCluster) GridCluster {
 		Latitude:          parseCoordinate(annotations[AnnotationLatitude], 90),
 		Longitude:         parseCoordinate(annotations[AnnotationLongitude], 180),
 		Addons:            addons,
-		Conditions:        conditions,
+		Conditions:        toConditions(st.GetConditions()),
 		ResourceVersion:   mc.GetResourceVersion(),
 		Labels:            labels,
 		Annotations:       annotations,
@@ -244,6 +231,7 @@ func (a *App) getCluster(w http.ResponseWriter, r *http.Request) {
 		a.respondError(w, r, err)
 		return
 	}
+	setETag(w, mc.GetResourceVersion())
 	writeData(w, http.StatusOK, toGridCluster(mc))
 }
 
@@ -311,12 +299,18 @@ func (o *optionalFloat64) UnmarshalJSON(b []byte) error {
 const maxBodyBytes = 1 << 20
 
 // decodeBody reads a JSON request body strictly, for every handler that takes
-// one: exactly one JSON object (not null, an array or a scalar) of at most
-// maxBodyBytes bytes with nothing after it, no unknown fields. A body that is
-// too large is 413 (also when the excess is after the value); anything else
-// wrong with it is 422 with a message that names the problem. The body is
-// fully validated before any backend call.
+// one (every POST, PATCH and PUT): a Content-Type other than
+// application/json (parameters such as charset are allowed) is 415, so a
+// cross-site HTML form or a text/plain fetch, which a browser sends without a
+// CORS preflight, can never write; then exactly one JSON object (not null, an
+// array or a scalar) of at most maxBodyBytes bytes with nothing after it, no
+// unknown fields. A body that is too large is 413 (also when the excess is
+// after the value); anything else wrong with it is 422 with a message that
+// names the problem. The body is fully validated before any backend call.
 func decodeBody(w http.ResponseWriter, r *http.Request, into any) error {
+	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
+		return Errorf(http.StatusUnsupportedMediaType, "request body must be JSON: send Content-Type: application/json")
+	}
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodyBytes))
 	if err := decodeObject(dec, into); err != nil {
 		var tooLarge *http.MaxBytesError
@@ -359,11 +353,20 @@ func decodeObject(dec *json.Decoder, into any) error {
 // patchCluster answers PATCH /api/v1/clusters/{name}: reads the cluster,
 // applies the patch to its labels and annotations and writes them back with
 // `UpdateManagedCluster` under optimistic locking, so a concurrent change on
-// the hub surfaces as 409 instead of being overwritten.
+// the hub surfaces as 409 instead of being overwritten. The lock is on the
+// If-Match version when the client sent one (the version its page showed,
+// so a stale tab gets 409), else on the version just read, which only
+// catches a write between this read and the update. A patch that leaves
+// both maps as they are writes nothing and answers the current cluster.
 func (a *App) patchCluster(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	var patch ClusterPatch
 	if err := decodeBody(w, r, &patch); err != nil {
+		a.respondError(w, r, err)
+		return
+	}
+	expected, err := ifMatch(r)
+	if err != nil {
 		a.respondError(w, r, err)
 		return
 	}
@@ -386,61 +389,62 @@ func (a *App) patchCluster(w http.ResponseWriter, r *http.Request) {
 	obj := current.GetObject()
 	labels := copyMap(obj.GetLabels())
 	annotations := copyMap(obj.GetAnnotations())
-	var paths []string
 
-	setBool := func(m map[string]string, key string, v *bool) bool {
-		if v == nil {
-			return false
+	setBool := func(m map[string]string, key string, v *bool) {
+		if v != nil {
+			m[key] = strconv.FormatBool(*v)
 		}
-		m[key] = strconv.FormatBool(*v)
-		return true
 	}
-	setString := func(m map[string]string, key string, v *string) bool {
-		if v == nil {
-			return false
-		}
-		if *v == "" {
+	setString := func(m map[string]string, key string, v *string) {
+		switch {
+		case v == nil:
+		case *v == "":
 			delete(m, key)
-		} else {
+		default:
 			m[key] = *v
 		}
-		return true
 	}
-	setCoord := func(m map[string]string, key string, v optionalFloat64) bool {
-		if !v.Set {
-			return false
-		}
-		if v.Valid {
+	setCoord := func(m map[string]string, key string, v optionalFloat64) {
+		switch {
+		case !v.Set:
+		case v.Valid:
 			m[key] = strconv.FormatFloat(v.Value, 'f', -1, 64)
-		} else {
+		default:
 			delete(m, key)
 		}
-		return true
 	}
-	labelsChanged := setBool(labels, LabelEnabled, patch.AIGridEnabled)
-	labelsChanged = setBool(labels, LabelProvisioned, patch.Provisioned) || labelsChanged
-	labelsChanged = setString(labels, LabelLocation, patch.Location) || labelsChanged
-	labelsChanged = setString(labels, LabelSite, patch.Site) || labelsChanged
-	labelsChanged = setString(labels, LabelRegion, patch.Region) || labelsChanged
-	annotationsChanged := setString(annotations, AnnotationSiteName, patch.SiteName)
-	annotationsChanged = setCoord(annotations, AnnotationLatitude, patch.Latitude) || annotationsChanged
-	annotationsChanged = setCoord(annotations, AnnotationLongitude, patch.Longitude) || annotationsChanged
-	if labelsChanged {
+	setBool(labels, LabelEnabled, patch.AIGridEnabled)
+	setBool(labels, LabelProvisioned, patch.Provisioned)
+	setString(labels, LabelLocation, patch.Location)
+	setString(labels, LabelSite, patch.Site)
+	setString(labels, LabelRegion, patch.Region)
+	setString(annotations, AnnotationSiteName, patch.SiteName)
+	setCoord(annotations, AnnotationLatitude, patch.Latitude)
+	setCoord(annotations, AnnotationLongitude, patch.Longitude)
+	// Only a map that now differs from the stored one goes in the mask, so a
+	// patch that repeats the current values (or sets nothing) writes nothing.
+	var paths []string
+	if !maps.Equal(labels, obj.GetLabels()) {
 		paths = append(paths, "labels")
 	}
-	if annotationsChanged {
+	if !maps.Equal(annotations, obj.GetAnnotations()) {
 		paths = append(paths, "annotations")
 	}
 	if len(paths) == 0 {
 		// Nothing to change: answer with the current object, no write.
+		setETag(w, obj.GetResourceVersion())
 		writeData(w, http.StatusOK, toGridCluster(obj))
 		return
 	}
 
+	version := obj.GetResourceVersion()
+	if expected != "" {
+		version = expected
+	}
 	updated, err := a.backend.Clusters.UpdateManagedCluster(ctx, &aigridv1.UpdateManagedClusterRequest{
 		Object: &aigridv1.ManagedCluster{
 			Name:            name,
-			ResourceVersion: obj.GetResourceVersion(),
+			ResourceVersion: version,
 			Labels:          labels,
 			Annotations:     annotations,
 		},
@@ -452,6 +456,7 @@ func (a *App) patchCluster(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.logger.Info("cluster updated", "name", name, "paths", paths)
+	setETag(w, updated.GetObject().GetResourceVersion())
 	writeData(w, http.StatusOK, toGridCluster(updated.GetObject()))
 }
 

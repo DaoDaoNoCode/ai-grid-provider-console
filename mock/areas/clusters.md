@@ -29,8 +29,11 @@ when it is granted, and answers `PermissionDenied` with the API server's forbidd
 a token `access.json` denies. Every RPC but `Ping` needs `authorization` metadata
 (`Unauthenticated` otherwise).
 
-BFF: `GET /api/v1/clusters/{name}` uses the Get RPC; `PATCH /api/v1/clusters/{name}` writes
-labels and annotations through the Update RPC under optimistic locking; `GridCluster` exposes
+BFF: `GET /api/v1/clusters/{name}` uses the Get RPC and sends the `resourceVersion` as the
+`ETag`; `PATCH /api/v1/clusters/{name}` writes labels and annotations through the Update RPC
+under optimistic locking, on the `If-Match` version when the client sends one (a stale tab
+gets 409) and on the version it just read otherwise, and only the maps that differ from the
+stored ones (a PATCH that repeats the stored values writes nothing); `GridCluster` exposes
 `status`, `statusMessage`, `consoleUrl`, `kubernetesVersion`, `platform`, `product`,
 `gpuCapacity`, `siteName`, `latitude`, `longitude`, `addons`, `conditions`, `resourceVersion`.
 

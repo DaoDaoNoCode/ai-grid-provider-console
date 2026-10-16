@@ -739,3 +739,96 @@ func TestNewUUIDIsVersion4(t *testing.T) {
 		seen[id] = true
 	}
 }
+
+// TestTenantVersion: the backend keeps a version per organization (the
+// proposed `ai-grid/resource-version` attribute), starting at 1, bumped by
+// every write it makes; a stale expected version is Aborted and changes
+// nothing; the attribute is never visible or settable.
+func TestTenantVersion(t *testing.T) {
+	s := tenantServer(t)
+	ctx := authed(context.Background())
+	get := func(id string) *aigridv1.Tenant {
+		t.Helper()
+		resp, err := s.GetTenant(ctx, &aigridv1.GetTenantRequest{Id: id})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp.GetObject()
+	}
+	if v := get(idAcme).GetResourceVersion(); v != "1" {
+		t.Fatalf("a seeded organization starts at 1, got %q", v)
+	}
+	upd := func(obj *aigridv1.Tenant, paths ...string) (*aigridv1.Tenant, error) {
+		resp, err := s.UpdateTenant(ctx, &aigridv1.UpdateTenantRequest{Object: obj, UpdateMask: &fieldmaskpb.FieldMask{Paths: paths}})
+		return resp.GetObject(), err
+	}
+	got, err := upd(&aigridv1.Tenant{Id: idAcme, Description: "one", ResourceVersion: "1"}, PathDescription)
+	if err != nil || got.GetResourceVersion() != "2" {
+		t.Fatalf("matching update = %v, %v", got, err)
+	}
+	got, err = upd(&aigridv1.Tenant{Id: idAcme, Description: "two"}, PathDescription)
+	if err != nil || got.GetResourceVersion() != "3" {
+		t.Fatalf("an update without a version is not checked and still bumps: %v, %v", got, err)
+	}
+	_, err = upd(&aigridv1.Tenant{Id: idAcme, Description: "stale", ResourceVersion: "2"}, PathDescription)
+	mustCode(t, err, codes.Aborted, "object with identifier '"+idAcme+"' has resource version 3, the request carries \"2\"; fetch it again and retry")
+	// The precondition comes before Keycloak's own checks.
+	_, err = upd(&aigridv1.Tenant{Id: idAcme, Name: "", ResourceVersion: "2"}, PathName)
+	mustCode(t, err, codes.Aborted, "")
+	if cur := get(idAcme); cur.GetDescription() != "two" || cur.GetResourceVersion() != "3" {
+		t.Errorf("a stale update must not land: %v", cur)
+	}
+
+	// The attribute the version lives in is the backend's.
+	reserved := "attribute \"ai-grid/resource-version\" is reserved for the tenant's version; it cannot be set"
+	_, err = upd(&aigridv1.Tenant{Id: idAcme, Attributes: map[string]string{TenantVersionAttribute: "99"}}, PathAttributes)
+	mustCode(t, err, codes.InvalidArgument, reserved)
+	_, err = s.CreateTenant(ctx, &aigridv1.CreateTenantRequest{Object: &aigridv1.Tenant{Name: "sneaky", Attributes: map[string]string{TenantVersionAttribute: "99"}}})
+	mustCode(t, err, codes.InvalidArgument, reserved)
+	created, err := s.CreateTenant(ctx, &aigridv1.CreateTenantRequest{Object: &aigridv1.Tenant{Name: "fresh", ResourceVersion: "42", Attributes: map[string]string{"k": "v"}}})
+	if err != nil || created.GetObject().GetResourceVersion() != "1" || len(created.GetObject().GetAttributes()) != 1 {
+		t.Fatalf("a created organization starts at 1 whatever the request says: %v, %v", created, err)
+	}
+
+	// Delete: stale is Aborted and keeps the organization, current deletes.
+	_, err = s.DeleteTenant(ctx, &aigridv1.DeleteTenantRequest{Id: idAcme, ResourceVersion: "1"})
+	mustCode(t, err, codes.Aborted, "")
+	get(idAcme)
+	if _, err := s.DeleteTenant(ctx, &aigridv1.DeleteTenantRequest{Id: idAcme, ResourceVersion: "3"}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.DeleteTenant(ctx, &aigridv1.DeleteTenantRequest{Id: idAcme, ResourceVersion: "3"})
+	mustCode(t, err, codes.NotFound, "")
+
+	// Fixtures: an explicit version is kept, the attribute is refused.
+	s = tenantServer(t, &aigridv1.Tenant{Id: idAcme, Name: "acme", ResourceVersion: "7"})
+	if v := get(idAcme).GetResourceVersion(); v != "7" {
+		t.Errorf("fixture version = %q, want 7", v)
+	}
+	for _, bad := range []*aigridv1.Tenant{
+		{Id: idAcme, Name: "acme", Attributes: map[string]string{TenantVersionAttribute: "1"}},
+		{Id: idAcme, Name: "acme", ResourceVersion: "v1"},
+	} {
+		if _, err := New(&Fixtures{Tenants: []*aigridv1.Tenant{bad}}, slog.New(slog.DiscardHandler)); err == nil {
+			t.Errorf("fixture %v must not load", bad)
+		}
+	}
+}
+
+// TestListTenantsDecodesTheFilterLiteral: the term is a CEL string literal,
+// so the escapes the BFF writes for quotes, backslashes and control
+// characters are decoded before the search.
+func TestListTenantsDecodesTheFilterLiteral(t *testing.T) {
+	s := tenantServer(t, &aigridv1.Tenant{Id: idAcme, Name: `a"b\c`, Alias: "quotes"}, &aigridv1.Tenant{Id: idGlobex, Name: "tab\there", Alias: "tab"})
+	ctx := authed(context.Background())
+	for literal, want := range map[string]string{`"a\"b\\c"`: `a"b\c`, `"tab\there"`: "tab\there", `"tab\u0009"`: "tab\there"} {
+		filter := `this.name.contains(` + literal + `) || this.domains.exists(d, d.contains(` + literal + `))`
+		resp, err := s.ListTenants(ctx, &aigridv1.ListTenantsRequest{Filter: proto.String(filter)})
+		if err != nil || len(resp.GetTenants()) != 1 || resp.GetTenants()[0].GetName() != want {
+			t.Errorf("%s = %v, %v; want %q", literal, tenantNames(resp), err, want)
+		}
+	}
+	bad := `this.name.contains("\q") || this.domains.exists(d, d.contains("\q"))`
+	_, err := s.ListTenants(ctx, &aigridv1.ListTenantsRequest{Filter: proto.String(bad)})
+	mustCode(t, err, codes.InvalidArgument, "filter "+bad+" is not a valid CEL string literal")
+}

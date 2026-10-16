@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"google.golang.org/grpc/codes"
@@ -40,8 +41,48 @@ func searchTerm(filter string) (string, error) {
 	if m == nil || m[1] != m[2] {
 		return "", status.Errorf(codes.InvalidArgument, "filter %s is not supported; this server only evaluates %s", filter, supportedFilter)
 	}
-	term := strings.NewReplacer(`\"`, `"`, `\\`, `\`).Replace(m[1])
+	// The literal's escapes (`\"`, `\\`, `\n`, `\r`, `\t`, `\uXXXX`, what the
+	// BFF writes) decoded with Go's rules, which agree with CEL's for those;
+	// a malformed escape is InvalidArgument like a CEL compile error.
+	term, err := strconv.Unquote(`"` + m[1] + `"`)
+	if err != nil {
+		return "", status.Errorf(codes.InvalidArgument, "filter %s is not a valid CEL string literal", filter)
+	}
 	return term, nil
+}
+
+// TenantVersionAttribute is the organization attribute the backend keeps a
+// tenant's version in (the console's proposal, mock/areas/tenants.md,
+// "Version"): Keycloak Organizations have none, so the backend writes this
+// attribute with every PUT it makes, starting at 1, and maps it to
+// `Tenant.resource_version` instead of `attributes`. The fake keeps the value
+// in the stored Tenant's `resource_version` and answers as that backend would:
+// the key never appears in `attributes`, and a request that sets it is
+// InvalidArgument.
+const TenantVersionAttribute = "ai-grid/resource-version"
+
+// checkReservedAttributes refuses the attribute the backend owns.
+func checkReservedAttributes(attrs map[string]string) error {
+	if _, ok := attrs[TenantVersionAttribute]; ok {
+		return status.Errorf(codes.InvalidArgument, "attribute %q is reserved for the tenant's version; it cannot be set", TenantVersionAttribute)
+	}
+	return nil
+}
+
+// checkTenantVersion is the precondition of UpdateTenant and DeleteTenant:
+// a non-empty expected version must equal the stored one.
+func checkTenantVersion(t *aigridv1.Tenant, expected string) error {
+	if expected != "" && expected != t.GetResourceVersion() {
+		return status.Errorf(codes.Aborted, "object with identifier '%s' has resource version %s, the request carries %q; fetch it again and retry", t.GetId(), t.GetResourceVersion(), expected)
+	}
+	return nil
+}
+
+// bumpTenantVersion is what the backend writes into TenantVersionAttribute
+// with each PUT: the stored version plus one.
+func bumpTenantVersion(t *aigridv1.Tenant) {
+	n, _ := strconv.ParseInt(t.GetResourceVersion(), 10, 64)
+	t.ResourceVersion = strconv.FormatInt(n+1, 10)
 }
 
 // matchesSearch is the contract's search: a case-insensitive literal
@@ -146,7 +187,7 @@ func (s *Server) ListTenants(ctx context.Context, req *aigridv1.ListTenantsReque
 	for _, t := range window {
 		page = append(page, cloneTenant(t))
 	}
-	return &aigridv1.ListTenantsResponse{Tenants: page, Size: int32(len(page)), Total: int32(total)}, nil
+	return &aigridv1.ListTenantsResponse{Tenants: page, Size: int32(len(page)), Total: proto.Int32(int32(total))}, nil
 }
 
 // GetTenant implements Tenants. Keycloak answers 404 "Organization not
@@ -209,6 +250,9 @@ func (s *Server) CreateTenant(ctx context.Context, req *aigridv1.CreateTenantReq
 		// itself ignores a client id on POST.
 		return nil, status.Error(codes.InvalidArgument, "object.id must be empty; Keycloak assigns it")
 	}
+	if err := checkReservedAttributes(obj.GetAttributes()); err != nil {
+		return nil, err
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -259,6 +303,8 @@ func (s *Server) CreateTenant(ctx context.Context, req *aigridv1.CreateTenantReq
 		t.Attributes = map[string]string{}
 	}
 	t.Id = s.newID()
+	t.ResourceVersion = "" // output only; the first write makes it 1
+	bumpTenantVersion(t)
 	s.tenants[t.Id] = t
 	s.logger.Debug("organization created", "id", t.GetId(), "name", t.GetName(), "alias", t.GetAlias())
 	return &aigridv1.CreateTenantResponse{Object: cloneTenant(t)}, nil
@@ -326,6 +372,11 @@ func (s *Server) UpdateTenant(ctx context.Context, req *aigridv1.UpdateTenantReq
 			return nil, status.Errorf(codes.InvalidArgument, "update_mask path %q is not supported; supported paths: %s", p, strings.Join(tenantPaths, ", "))
 		}
 	}
+	if slices.Contains(paths, PathAttributes) {
+		if err := checkReservedAttributes(obj.GetAttributes()); err != nil {
+			return nil, err
+		}
+	}
 	has := func(p string) bool { return len(paths) == 0 || slices.Contains(paths, p) }
 
 	s.mu.Lock()
@@ -336,6 +387,11 @@ func (s *Server) UpdateTenant(ctx context.Context, req *aigridv1.UpdateTenantReq
 	cur, ok := s.tenants[obj.GetId()]
 	if !ok {
 		return nil, s.tenantNotFound(obj.GetId())
+	}
+	// The backend's precondition, checked on its GET before Keycloak's own
+	// checks: a stale version is Aborted whatever else the request says.
+	if err := checkTenantVersion(cur, obj.GetResourceVersion()); err != nil {
+		return nil, err
 	}
 	next := cloneTenant(cur)
 	if has(PathName) {
@@ -411,13 +467,16 @@ func (s *Server) UpdateTenant(ctx context.Context, req *aigridv1.UpdateTenantReq
 	if err := checkIdentityProviders(next); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
+	bumpTenantVersion(next)
 	s.tenants[cur.GetId()] = next
-	s.logger.Debug("organization updated", "id", next.GetId(), "name", next.GetName(), "paths", paths)
+	s.logger.Debug("organization updated", "id", next.GetId(), "name", next.GetName(), "paths", paths, "resourceVersion", next.GetResourceVersion())
 	return &aigridv1.UpdateTenantResponse{Object: cloneTenant(next)}, nil
 }
 
 // DeleteTenant implements Tenants: Keycloak's DELETE answers 204 and removes
-// the organization with its memberships; 404 when it is already gone.
+// the organization with its memberships; 404 when it is already gone. A
+// non-empty `resource_version` is compared first (the backend's GET), and a
+// stale one is Aborted.
 func (s *Server) DeleteTenant(ctx context.Context, req *aigridv1.DeleteTenantRequest) (*aigridv1.DeleteTenantResponse, error) {
 	token, err := s.begin(ctx)
 	if err != nil {
@@ -437,6 +496,9 @@ func (s *Server) DeleteTenant(ctx context.Context, req *aigridv1.DeleteTenantReq
 	t, ok := s.tenants[req.GetId()]
 	if !ok {
 		return nil, s.tenantNotFound(req.GetId())
+	}
+	if err := checkTenantVersion(t, req.GetResourceVersion()); err != nil {
+		return nil, err
 	}
 	delete(s.tenants, req.GetId())
 	s.logger.Debug("organization deleted", "id", t.GetId(), "name", t.GetName())
@@ -470,6 +532,15 @@ func (s *Server) seedTenant(t *aigridv1.Tenant) error {
 	}
 	if err := checkIdentityProviders(t); err != nil {
 		return fmt.Errorf("fixture tenant %q: %w", t.GetName(), err)
+	}
+	if _, ok := t.GetAttributes()[TenantVersionAttribute]; ok {
+		return fmt.Errorf("fixture tenant %q: attribute %q is the backend's version; set resourceVersion instead", t.GetName(), TenantVersionAttribute)
+	}
+	switch n, err := strconv.ParseInt(t.GetResourceVersion(), 10, 64); {
+	case t.GetResourceVersion() == "":
+		t.ResourceVersion = "1" // the backend wrote the attribute when it created the organization
+	case err != nil || n < 1:
+		return fmt.Errorf("fixture tenant %q: resourceVersion %q is not a positive integer", t.GetName(), t.GetResourceVersion())
 	}
 	if t.Attributes == nil {
 		t.Attributes = map[string]string{}

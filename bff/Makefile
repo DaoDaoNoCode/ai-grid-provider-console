@@ -13,6 +13,11 @@ LDFLAGS := -X github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/api
 
 BUF := go run github.com/bufbuild/buf/cmd/buf@v1.57.2
 PROTO_DIR := ../mock/proto
+# The Go toolchain that generates gen/: the go.mod `toolchain` line, else its `go` line, which is
+# what CI's setup-go installs (go-version-file). protoc-gen-go formats its output with the
+# go/printer of the Go that builds it, and go/printer's doc-comment rewriting differs between
+# releases, so generating with whatever Go is installed can produce a gen/ that CI calls stale.
+GEN_TOOLCHAIN := go$(shell awk '$$1 == "toolchain" { t = substr($$2, 3) } $$1 == "go" { g = $$2 } END { print (t != "" ? t : g) }' go.mod)
 
 .PHONY: all fmt vet lint test golden build run run-fake fake-backend tidy generate lint-proto check-generated
 
@@ -49,8 +54,8 @@ run-fake: ## run the BFF against the fake backend and fake hub; no cluster neede
 tidy:
 	go mod tidy
 
-generate: ## regenerate gen/ from ../mock/proto (buf and the protoc plugins run through go run; nothing to install)
-	cd $(PROTO_DIR) && $(BUF) generate
+generate: ## regenerate gen/ from ../mock/proto with the go.mod toolchain (buf and the protoc plugins run through go run; nothing to install)
+	cd $(PROTO_DIR) && GOTOOLCHAIN=$(GEN_TOOLCHAIN) $(BUF) generate
 
 lint-proto: ## buf lint on the draft proto
 	cd $(PROTO_DIR) && $(BUF) lint
@@ -58,5 +63,5 @@ lint-proto: ## buf lint on the draft proto
 check-generated: ## fail when gen/ differs from what ../mock/proto generates: stale, missing or left-over files
 	tmp="$$(mktemp -d)" && trap 'rm -rf "$$tmp"' EXIT && \
 	sed "s#\.\./\.\./bff/gen#$$tmp/gen#" $(PROTO_DIR)/buf.gen.yaml > "$$tmp/buf.gen.yaml" && \
-	(cd $(PROTO_DIR) && $(BUF) generate --template "$$tmp/buf.gen.yaml") && \
+	(cd $(PROTO_DIR) && GOTOOLCHAIN=$(GEN_TOOLCHAIN) $(BUF) generate --template "$$tmp/buf.gen.yaml") && \
 	diff -r --exclude=README.md "$$tmp/gen/ai_grid/v1" gen/ai_grid/v1

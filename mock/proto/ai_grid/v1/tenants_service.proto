@@ -42,9 +42,12 @@ service Tenants {
   // that matches any tenant's name or domain, this tenant's domains
   // included, is AlreadyExists, and so is a blank name (Keycloak's exact
   // search treats a blank name as no filter and finds the tenant itself).
+  // Aborted when `object.resource_version` is set and is not the stored
+  // version.
   rpc UpdateTenant(UpdateTenantRequest) returns (UpdateTenantResponse);
   // Deletes a tenant and its memberships; unmanaged members stay realm
-  // users. NotFound when absent.
+  // users. NotFound when absent; Aborted when `resource_version` is set and
+  // is not the stored version.
   rpc DeleteTenant(DeleteTenantRequest) returns (DeleteTenantResponse);
 }
 
@@ -62,8 +65,8 @@ message ListTenantsRequest {
   optional int32 limit = 2;
   // CEL over `this` (a Tenant). The only form supported today is the one
   // that means what Keycloak's `search` parameter does, a case-insensitive
-  // contains on the name or on any domain:
-  //   this.name.contains("<term>") || this.domains.exists(d, d.contains("<term>"))
+  // contains on the name or on any domain,
+  // `this.name.contains("<term>") || this.domains.exists(d, d.contains("<term>"))`,
   // with the same string literal in both places (CEL escapes `"` and `\`).
   // The term is a literal substring: `%` and `_` match themselves, never act
   // as wildcards. A blank term (empty or whitespace only) matches every
@@ -86,8 +89,14 @@ message ListTenantsResponse {
   repeated Tenant tenants = 1;
   // Number of tenants returned.
   int32 size = 2;
-  // Number of tenants matching the filter regardless of paging.
-  int32 total = 3;
+  // Number of tenants matching the filter regardless of paging. Optional so
+  // that absence is visible: a backend that honours `offset`, `limit` and
+  // `filter` always sets it (zero included), and one that does not (the
+  // shipped backend, whose ListTenantsRequest is empty and drops those
+  // fields as unknown) leaves it unset. A client that sent any of them and
+  // gets no `total` must not present the result as a page or a search
+  // result; the console's BFF answers 501 then.
+  optional int32 total = 3;
 }
 
 // Request of GetTenant.
@@ -121,14 +130,20 @@ message CreateTenantResponse {
 
 // Request of UpdateTenant.
 message UpdateTenantRequest {
-  // Field 3 was `lock`: optimistic locking cannot be honoured against
-  // Keycloak (no server-side version), see `Tenant` field 8.
+  // Field 3 was `lock`, removed while the tenant had no version (see
+  // `Tenant` field 8). The precondition is now `object.resource_version`
+  // itself, without a flag; field 3 and the name stay reserved so an old
+  // client's `lock` can never be read as something else.
   reserved 3;
   reserved "lock";
 
   // The tenant with the new values. `id` identifies it. `alias`, when set
   // (not blank), must equal the stored alias; when unset the stored alias is
-  // kept.
+  // kept. `resource_version`, when set (not empty), is the version the
+  // caller last read: the update fails with Aborted unless it equals the
+  // stored `resource_version` (the same check `lock` makes on
+  // UpdateManagedCluster and UpdateModel; empty skips it). It is never
+  // written: every successful update bumps the stored version.
   Tenant object = 1;
   // Supported paths: `name`, `domains`, `enabled`, `description`,
   // `attributes`, `domain_details`. The backend reads the full Keycloak
@@ -159,6 +174,11 @@ message UpdateTenantResponse {
 message DeleteTenantRequest {
   // Keycloak Organization id.
   string id = 1;
+  // Expected version: when set (not empty), the delete fails with Aborted
+  // unless it equals the tenant's stored `resource_version`, so a caller
+  // that read an older version does not delete changes it has not seen.
+  // Empty skips the check.
+  string resource_version = 2;
 }
 
 // Response of DeleteTenant. Empty.

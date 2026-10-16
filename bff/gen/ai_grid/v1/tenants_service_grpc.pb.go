@@ -65,9 +65,12 @@ type TenantsClient interface {
 	// that matches any tenant's name or domain, this tenant's domains
 	// included, is AlreadyExists, and so is a blank name (Keycloak's exact
 	// search treats a blank name as no filter and finds the tenant itself).
+	// Aborted when `object.resource_version` is set and is not the stored
+	// version.
 	UpdateTenant(ctx context.Context, in *UpdateTenantRequest, opts ...grpc.CallOption) (*UpdateTenantResponse, error)
 	// Deletes a tenant and its memberships; unmanaged members stay realm
-	// users. NotFound when absent.
+	// users. NotFound when absent; Aborted when `resource_version` is set and
+	// is not the stored version.
 	DeleteTenant(ctx context.Context, in *DeleteTenantRequest, opts ...grpc.CallOption) (*DeleteTenantResponse, error)
 }
 
@@ -156,9 +159,12 @@ type TenantsServer interface {
 	// that matches any tenant's name or domain, this tenant's domains
 	// included, is AlreadyExists, and so is a blank name (Keycloak's exact
 	// search treats a blank name as no filter and finds the tenant itself).
+	// Aborted when `object.resource_version` is set and is not the stored
+	// version.
 	UpdateTenant(context.Context, *UpdateTenantRequest) (*UpdateTenantResponse, error)
 	// Deletes a tenant and its memberships; unmanaged members stay realm
-	// users. NotFound when absent.
+	// users. NotFound when absent; Aborted when `resource_version` is set and
+	// is not the stored version.
 	DeleteTenant(context.Context, *DeleteTenantRequest) (*DeleteTenantResponse, error)
 	mustEmbedUnimplementedTenantsServer()
 }

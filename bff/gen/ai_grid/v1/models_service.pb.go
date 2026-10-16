@@ -119,8 +119,11 @@ type ListModelsResponse struct {
 	Items []*Model `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
 	// Number of models returned.
 	Size int32 `protobuf:"varint,2,opt,name=size,proto3" json:"size,omitempty"`
-	// Number of models matching the filter regardless of paging.
-	Total         int32 `protobuf:"varint,3,opt,name=total,proto3" json:"total,omitempty"`
+	// Number of models matching the filter regardless of paging. Always set
+	// by a backend that honours `offset`, `limit` and `filter` (zero
+	// included); optional so that a backend that does not is visible, as for
+	// ListTenantsResponse.total.
+	Total         *int32 `protobuf:"varint,3,opt,name=total,proto3,oneof" json:"total,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -170,8 +173,8 @@ func (x *ListModelsResponse) GetSize() int32 {
 }
 
 func (x *ListModelsResponse) GetTotal() int32 {
-	if x != nil {
-		return x.Total
+	if x != nil && x.Total != nil {
+		return *x.Total
 	}
 	return 0
 }
@@ -492,9 +495,15 @@ type DeleteModelRequest struct {
 	// Model name.
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	// Model namespace.
-	Namespace     string `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Namespace string `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	// Expected version: when set (not empty), the delete fails with Aborted
+	// unless it equals the stored `metadata.resource_version` (the
+	// LLMInferenceService's; a Kubernetes delete precondition), so a caller
+	// that read an older version does not delete changes it has not seen.
+	// Empty skips the check.
+	ResourceVersion string `protobuf:"bytes,3,opt,name=resource_version,json=resourceVersion,proto3" json:"resource_version,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *DeleteModelRequest) Reset() {
@@ -537,6 +546,13 @@ func (x *DeleteModelRequest) GetName() string {
 func (x *DeleteModelRequest) GetNamespace() string {
 	if x != nil {
 		return x.Namespace
+	}
+	return ""
+}
+
+func (x *DeleteModelRequest) GetResourceVersion() string {
+	if x != nil {
+		return x.ResourceVersion
 	}
 	return ""
 }
@@ -592,11 +608,12 @@ const file_ai_grid_v1_models_service_proto_rawDesc = "" +
 	"\a_offsetB\b\n" +
 	"\x06_limitB\t\n" +
 	"\a_filterB\b\n" +
-	"\x06_order\"g\n" +
+	"\x06_order\"v\n" +
 	"\x12ListModelsResponse\x12'\n" +
 	"\x05items\x18\x01 \x03(\v2\x11.ai_grid.v1.ModelR\x05items\x12\x12\n" +
-	"\x04size\x18\x02 \x01(\x05R\x04size\x12\x14\n" +
-	"\x05total\x18\x03 \x01(\x05R\x05total\"C\n" +
+	"\x04size\x18\x02 \x01(\x05R\x04size\x12\x19\n" +
+	"\x05total\x18\x03 \x01(\x05H\x00R\x05total\x88\x01\x01B\b\n" +
+	"\x06_total\"C\n" +
 	"\x0fGetModelRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1c\n" +
 	"\tnamespace\x18\x02 \x01(\tR\tnamespace\"=\n" +
@@ -612,10 +629,11 @@ const file_ai_grid_v1_models_service_proto_rawDesc = "" +
 	"updateMask\x12\x12\n" +
 	"\x04lock\x18\x03 \x01(\bR\x04lock\"@\n" +
 	"\x13UpdateModelResponse\x12)\n" +
-	"\x06object\x18\x01 \x01(\v2\x11.ai_grid.v1.ModelR\x06object\"F\n" +
+	"\x06object\x18\x01 \x01(\v2\x11.ai_grid.v1.ModelR\x06object\"q\n" +
 	"\x12DeleteModelRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1c\n" +
-	"\tnamespace\x18\x02 \x01(\tR\tnamespace\"\x15\n" +
+	"\tnamespace\x18\x02 \x01(\tR\tnamespace\x12)\n" +
+	"\x10resource_version\x18\x03 \x01(\tR\x0fresourceVersion\"\x15\n" +
 	"\x13DeleteModelResponse2\x8c\x03\n" +
 	"\x06Models\x12K\n" +
 	"\n" +
@@ -684,6 +702,7 @@ func file_ai_grid_v1_models_service_proto_init() {
 	}
 	file_ai_grid_v1_model_type_proto_init()
 	file_ai_grid_v1_models_service_proto_msgTypes[0].OneofWrappers = []any{}
+	file_ai_grid_v1_models_service_proto_msgTypes[1].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

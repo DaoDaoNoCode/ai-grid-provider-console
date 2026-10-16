@@ -64,6 +64,25 @@ unreachable a bad domain is `Unavailable`, as it would be from the real backend.
 are gated by the provider-admin rule of `access.json` (`PermissionDenied`); every RPC needs
 `authorization`. `tenants.json` selects the three failure modes (`unavailable`,
 `realmMissing`, `organizationsDisabled`); latency applies.
+Version (the console's proposal to the backend). Keycloak Organizations carry no version,
+etag or `Last-Modified` (`mock/research/keycloak.md` 8.1), so the backend keeps one itself:
+the organization attribute `ai-grid/resource-version`, a decimal counter it writes as `1` on
+create and as the stored value plus one with every PUT it makes, and maps to
+`Tenant.resource_version` (field 10; field 8 and the name `version` stay reserved), never to
+`attributes`. `UpdateTenant` compares a non-empty `object.resource_version`, and
+`DeleteTenant` a non-empty `resource_version`, with the stored value after its Keycloak GET
+and before any other check, and answers `Aborted` on a mismatch; an empty one is not checked.
+The fake keeps the counter in the stored tenant instead of an attribute, which a client
+cannot tell apart: the key never appears in `attributes`, a create or an `attributes` update
+that sets it is `InvalidArgument`, a fixture organization starts at `1` (or at the
+`resourceVersion` it names) and a fixture that sets the attribute does not load. Two limits
+of the attribute, for the backend team: an edit made in Keycloak directly (the admin console
+or another client) does not bump it, so it guards only writes through the backend; and the
+GET, compare and PUT are not atomic in Keycloak, so two backend replicas could both pass the
+check for the same version (a single replica can serialise them with a per-tenant lock, as
+the fake does with its store lock).
+The BFF maps `If-Match` to these fields and sends the version as the `ETag`
+(`docs/plan/bff-api.md`, "Writes, versions and lists").
 Known differences of the e-mail domain rule (`EmailValidationUtil`, Keycloak's copy of
 hibernate-validator). ASCII domains are decided exactly as Keycloak decides them, the
 bracketed IPv4 and `IPv6:` literals included; the differences are:
@@ -100,9 +119,16 @@ proposed here). A client only displays them. Fake backend (gRPC status messages)
   name, domains, enabled, description, attributes, domain_details`, `domains and
   domain_details name different domains`.
 - List, all `InvalidArgument`: `filter <filter> is not supported; this server only evaluates
-  this.name.contains("<term>") || this.domains.exists(d, d.contains("<term>"))`, `order is not
-  supported by this server yet; Keycloak returns organizations by name`, `offset must not be
-  negative, got <n>`, `limit must not be negative, got <n>`.
+  this.name.contains("<term>") || this.domains.exists(d, d.contains("<term>"))`, `filter
+  <filter> is not a valid CEL string literal` (the term's escapes are decoded with Go's
+  string-literal rules, which agree with CEL's for `\"`, `\\`, `\n`, `\r`, `\t` and `\uXXXX`,
+  the escapes the BFF writes), `order is not supported by this server yet; Keycloak returns
+  organizations by name`, `offset must not be negative, got <n>`, `limit must not be
+  negative, got <n>`.
+- Version: `Aborted` `object with identifier '<id>' has resource version <v>, the request
+  carries "<v>"; fetch it again and retry` (the clusters' wording); `InvalidArgument`
+  `attribute "ai-grid/resource-version" is reserved for the tenant's version; it cannot be
+  set`.
 - `NotFound`: `object with identifier '<id>' not found` is the conventions' text, not
   Keycloak's.
 - `Unauthenticated` (shared with the other areas, `server.go`): `missing authorization
@@ -110,16 +136,22 @@ proposed here). A client only displays them. Fake backend (gRPC status messages)
   Unauthorized`.
 BFF (`bff/internal/api/tenants.go`): `query parameter "offset"` (or `"limit"`) `must be an
 integer between 0 and 2147483647` (422); an alias-only PATCH with a different alias is
-answered by the BFF itself with Keycloak's "Cannot change the alias" (422) and no write; the
+answered by the BFF itself with Keycloak's "Cannot change the alias" (422) and no write, the
+alias compared with the one the BFF shows (the name when the backend sends none); the
 body-decoding (`invalid request body: ...`) and status texts (`errors.go`) are shared with the
 other areas.
 BFF: `GET /api/v1/tenants?offset=&limit=&search=` with a `meta` page (a whitespace-only
 `search` is no filter), `GET/PATCH/DELETE /api/v1/tenants/{id}`, `POST /api/v1/tenants` (201 +
 Location); Keycloak's messages reach the client as 422 and 409 (a blank name on PATCH is 409,
 see above); an absent `enabled` from today's backend (fields 1-3 only) reads as enabled; the
-JSON has no `redirectUrl`. Against the shipped backend, which has only `ListTenants`, `GET
+JSON has no `redirectUrl` and carries `resourceVersion` (also the `ETag` of a single tenant);
+PATCH and DELETE map `If-Match` to the version fields above (409 when stale; without it, no
+check). Against the shipped backend, which has only `ListTenants`, `GET
 /api/v1/tenants/{id}` has no list fallback (unlike `GET /api/v1/clusters/{name}`) and answers
-501, as do every tenant write and a PATCH that sets no field (it reads with `GetTenant`).
+501, as do every tenant write and a PATCH that sets no field (it reads with `GetTenant`), and
+so does a list with `search`, `limit` or an `offset` above 0: the shipped `ListTenantsRequest`
+is empty and its response has no `total`, so the BFF cannot tell a search result from the
+unfiltered list and refuses it (`docs/plan/bff-api.md`).
 UI: main already has a basic, read-only Tenants page (`frontend/src/pages/TenantsPage.tsx`:
 name, domains, id), which keeps working because the list's `data` is still an array of
 tenants with those fields. Porting the fuller UI for this area (search, paging, create, edit,
@@ -130,7 +162,8 @@ question 3 in `mock/research/keycloak.md`), identity providers (the fake realm h
 domain can be routed to one), the realm and service-account bootstrap (section 9) and the
 `exact` search form.
 Backend ask: the `Tenants` CRUD proto as now drafted in `mock/proto/ai_grid/v1/tenant*.proto`
-(without `version`/`lock`, with `domain_details` and `optional bool enabled`), keyed by `id`;
+(`resource_version` kept in an organization attribute as above, `domain_details`, `optional
+bool enabled`, an optional `ListTenantsResponse.total`), keyed by `id`;
 an update that merges onto a full GET so the PUT carries the stored `alias`, `redirectUrl`
 and domain metadata; the gRPC code table and the proposed message texts in
 `mock/research/keycloak.md` 8.2 (today every failure is `Unknown`); reading both Keycloak

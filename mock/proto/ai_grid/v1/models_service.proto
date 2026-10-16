@@ -50,7 +50,8 @@ service Models {
   // cascade `Background`: the MWRS is gone at once and the generated works
   // are deleted in the cluster namespaces shortly after, invisibly to this
   // API. FailedPrecondition while a catalog entry or a subscription
-  // references the model.
+  // references the model; Aborted when `resource_version` is set and is not
+  // the stored version.
   rpc DeleteModel(DeleteModelRequest) returns (DeleteModelResponse);
 }
 
@@ -77,8 +78,11 @@ message ListModelsResponse {
   repeated Model items = 1;
   // Number of models returned.
   int32 size = 2;
-  // Number of models matching the filter regardless of paging.
-  int32 total = 3;
+  // Number of models matching the filter regardless of paging. Always set
+  // by a backend that honours `offset`, `limit` and `filter` (zero
+  // included); optional so that a backend that does not is visible, as for
+  // ListTenantsResponse.total.
+  optional int32 total = 3;
 }
 
 // Request of GetModel.
@@ -136,6 +140,12 @@ message DeleteModelRequest {
   string name = 1;
   // Model namespace.
   string namespace = 2;
+  // Expected version: when set (not empty), the delete fails with Aborted
+  // unless it equals the stored `metadata.resource_version` (the
+  // LLMInferenceService's; a Kubernetes delete precondition), so a caller
+  // that read an older version does not delete changes it has not seen.
+  // Empty skips the check.
+  string resource_version = 3;
 }
 
 // Response of DeleteModel. Empty.

@@ -1223,7 +1223,12 @@ func TestDeleteModel(t *testing.T) {
 	_, err = s.DeleteModel(ctx, &aigridv1.DeleteModelRequest{Name: "hub"})
 	mustCode(t, err, codes.InvalidArgument, "name and namespace are required")
 
-	if _, err := s.DeleteModel(ctx, &aigridv1.DeleteModelRequest{Namespace: testNS, Name: "hub"}); err != nil {
+	// A delete precondition on the stored resource version.
+	rv := getModel(t, s, "hub").GetMetadata().GetResourceVersion()
+	_, err = s.DeleteModel(ctx, &aigridv1.DeleteModelRequest{Namespace: testNS, Name: "hub", ResourceVersion: "1"})
+	mustCode(t, err, codes.Aborted, "object with identifier 'ai-grid-models/hub' has resource version "+rv+", the request carries \"1\"; fetch it again and retry")
+	getModel(t, s, "hub")
+	if _, err := s.DeleteModel(ctx, &aigridv1.DeleteModelRequest{Namespace: testNS, Name: "hub", ResourceVersion: rv}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.GetModel(ctx, &aigridv1.GetModelRequest{Namespace: testNS, Name: "hub"}); status.Code(err) != codes.NotFound {

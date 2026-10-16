@@ -49,8 +49,8 @@ type ListTenantsRequest struct {
 	Limit *int32 `protobuf:"varint,2,opt,name=limit,proto3,oneof" json:"limit,omitempty"`
 	// CEL over `this` (a Tenant). The only form supported today is the one
 	// that means what Keycloak's `search` parameter does, a case-insensitive
-	// contains on the name or on any domain:
-	//   this.name.contains("<term>") || this.domains.exists(d, d.contains("<term>"))
+	// contains on the name or on any domain,
+	// `this.name.contains("<term>") || this.domains.exists(d, d.contains("<term>"))`,
 	// with the same string literal in both places (CEL escapes `"` and `\`).
 	// The term is a literal substring: `%` and `_` match themselves, never act
 	// as wildcards. A blank term (empty or whitespace only) matches every
@@ -134,8 +134,14 @@ type ListTenantsResponse struct {
 	Tenants []*Tenant `protobuf:"bytes,1,rep,name=tenants,proto3" json:"tenants,omitempty"`
 	// Number of tenants returned.
 	Size int32 `protobuf:"varint,2,opt,name=size,proto3" json:"size,omitempty"`
-	// Number of tenants matching the filter regardless of paging.
-	Total         int32 `protobuf:"varint,3,opt,name=total,proto3" json:"total,omitempty"`
+	// Number of tenants matching the filter regardless of paging. Optional so
+	// that absence is visible: a backend that honours `offset`, `limit` and
+	// `filter` always sets it (zero included), and one that does not (the
+	// shipped backend, whose ListTenantsRequest is empty and drops those
+	// fields as unknown) leaves it unset. A client that sent any of them and
+	// gets no `total` must not present the result as a page or a search
+	// result; the console's BFF answers 501 then.
+	Total         *int32 `protobuf:"varint,3,opt,name=total,proto3,oneof" json:"total,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -185,8 +191,8 @@ func (x *ListTenantsResponse) GetSize() int32 {
 }
 
 func (x *ListTenantsResponse) GetTotal() int32 {
-	if x != nil {
-		return x.Total
+	if x != nil && x.Total != nil {
+		return *x.Total
 	}
 	return 0
 }
@@ -385,7 +391,11 @@ type UpdateTenantRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The tenant with the new values. `id` identifies it. `alias`, when set
 	// (not blank), must equal the stored alias; when unset the stored alias is
-	// kept.
+	// kept. `resource_version`, when set (not empty), is the version the
+	// caller last read: the update fails with Aborted unless it equals the
+	// stored `resource_version` (the same check `lock` makes on
+	// UpdateManagedCluster and UpdateModel; empty skips it). It is never
+	// written: every successful update bumps the stored version.
 	Object *Tenant `protobuf:"bytes,1,opt,name=object,proto3" json:"object,omitempty"`
 	// Supported paths: `name`, `domains`, `enabled`, `description`,
 	// `attributes`, `domain_details`. The backend reads the full Keycloak
@@ -502,9 +512,14 @@ func (x *UpdateTenantResponse) GetObject() *Tenant {
 type DeleteTenantRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Keycloak Organization id.
-	Id            string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Expected version: when set (not empty), the delete fails with Aborted
+	// unless it equals the tenant's stored `resource_version`, so a caller
+	// that read an older version does not delete changes it has not seen.
+	// Empty skips the check.
+	ResourceVersion string `protobuf:"bytes,2,opt,name=resource_version,json=resourceVersion,proto3" json:"resource_version,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *DeleteTenantRequest) Reset() {
@@ -540,6 +555,13 @@ func (*DeleteTenantRequest) Descriptor() ([]byte, []int) {
 func (x *DeleteTenantRequest) GetId() string {
 	if x != nil {
 		return x.Id
+	}
+	return ""
+}
+
+func (x *DeleteTenantRequest) GetResourceVersion() string {
+	if x != nil {
+		return x.ResourceVersion
 	}
 	return ""
 }
@@ -595,11 +617,12 @@ const file_ai_grid_v1_tenants_service_proto_rawDesc = "" +
 	"\a_offsetB\b\n" +
 	"\x06_limitB\t\n" +
 	"\a_filterB\b\n" +
-	"\x06_order\"m\n" +
+	"\x06_order\"|\n" +
 	"\x13ListTenantsResponse\x12,\n" +
 	"\atenants\x18\x01 \x03(\v2\x12.ai_grid.v1.TenantR\atenants\x12\x12\n" +
-	"\x04size\x18\x02 \x01(\x05R\x04size\x12\x14\n" +
-	"\x05total\x18\x03 \x01(\x05R\x05total\"\"\n" +
+	"\x04size\x18\x02 \x01(\x05R\x04size\x12\x19\n" +
+	"\x05total\x18\x03 \x01(\x05H\x00R\x05total\x88\x01\x01B\b\n" +
+	"\x06_total\"\"\n" +
 	"\x10GetTenantRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"?\n" +
 	"\x11GetTenantResponse\x12*\n" +
@@ -613,9 +636,10 @@ const file_ai_grid_v1_tenants_service_proto_rawDesc = "" +
 	"\vupdate_mask\x18\x02 \x01(\v2\x1a.google.protobuf.FieldMaskR\n" +
 	"updateMaskJ\x04\b\x03\x10\x04R\x04lock\"B\n" +
 	"\x14UpdateTenantResponse\x12*\n" +
-	"\x06object\x18\x01 \x01(\v2\x12.ai_grid.v1.TenantR\x06object\"%\n" +
+	"\x06object\x18\x01 \x01(\v2\x12.ai_grid.v1.TenantR\x06object\"P\n" +
 	"\x13DeleteTenantRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\x16\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12)\n" +
+	"\x10resource_version\x18\x02 \x01(\tR\x0fresourceVersion\"\x16\n" +
 	"\x14DeleteTenantResponse2\x9c\x03\n" +
 	"\aTenants\x12N\n" +
 	"\vListTenants\x12\x1e.ai_grid.v1.ListTenantsRequest\x1a\x1f.ai_grid.v1.ListTenantsResponse\x12H\n" +
@@ -683,6 +707,7 @@ func file_ai_grid_v1_tenants_service_proto_init() {
 	}
 	file_ai_grid_v1_tenant_type_proto_init()
 	file_ai_grid_v1_tenants_service_proto_msgTypes[0].OneofWrappers = []any{}
+	file_ai_grid_v1_tenants_service_proto_msgTypes[1].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

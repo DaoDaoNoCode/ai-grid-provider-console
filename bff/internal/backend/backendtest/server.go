@@ -37,11 +37,17 @@ import (
 // `resource_version`; LastUpdate keeps the last request, reached or refused.
 // Tenants follow the same idea with the few Keycloak rules a handler test
 // needs (ids `t-<n>`, duplicate name 409, NotFound); the Last*Tenant fields
-// keep the last request of each tenant RPC, reached or refused. Models are
+// keep the last request of each tenant RPC, reached or refused; a tenant's
+// `resource_version` is compared when Update or Delete carries one (Aborted
+// on a mismatch) and bumped by every update, counting from whatever the test
+// seeded (empty counts as 0). Models are
 // served as given (status included, so a handler test controls the derived
 // phase directly) with NotFound, AlreadyExists, the mask paths and the
-// resource-version lock; Capabilities is what GetHubCapabilities answers,
-// Unimplemented when nil like today's backend.
+// resource-version lock (and DeleteModel's `resource_version` precondition);
+// Capabilities is what GetHubCapabilities answers, Unimplemented when nil like
+// today's backend. ShippedLists makes ListTenants and ListModels answer like
+// the shipped backend, whose empty ListTenantsRequest drops `offset`, `limit`
+// and `filter`: every item, no `size` and no `total`.
 type Fake struct {
 	aigridv1.UnimplementedAiGridServer
 	aigridv1.UnimplementedManagedClustersServer
@@ -77,6 +83,21 @@ type Fake struct {
 	// AfterGetModel runs on the stored model after GetModel copied it, to
 	// simulate a write between the BFF's read and its update.
 	AfterGetModel func(stored *aigridv1.Model)
+
+	// ShippedLists serves the lists without paging, filtering or counts.
+	ShippedLists bool
+}
+
+// stale is the Aborted answer to an expected version that is not the stored one.
+func stale(id, stored, expected string) error {
+	return status.Errorf(codes.Aborted, "object with identifier '%s' has resource version %s, the request carries %q", id, stored, expected)
+}
+
+// nextVersion is the stored version plus one; a non-numeric or empty one
+// counts as 0.
+func nextVersion(v string) string {
+	n, _ := strconv.Atoi(v)
+	return strconv.Itoa(n + 1)
 }
 
 // begin records the call and returns the injected error for it, if any. It
@@ -190,6 +211,9 @@ func (f *Fake) ListTenants(ctx context.Context, req *aigridv1.ListTenantsRequest
 		return nil, err
 	}
 	f.LastListTenants = req
+	if f.ShippedLists {
+		return &aigridv1.ListTenantsResponse{Tenants: f.Tenants}, nil
+	}
 	term := ""
 	if filter := req.GetFilter(); filter != "" {
 		m := tenantFilter.FindStringSubmatch(filter)
@@ -214,7 +238,7 @@ func (f *Fake) ListTenants(ctx context.Context, req *aigridv1.ListTenantsRequest
 	if req.Limit != nil && int(req.GetLimit()) < len(page) {
 		page = page[:req.GetLimit()]
 	}
-	return &aigridv1.ListTenantsResponse{Tenants: page, Size: int32(len(page)), Total: int32(total)}, nil
+	return &aigridv1.ListTenantsResponse{Tenants: page, Size: int32(len(page)), Total: proto.Int32(int32(total))}, nil
 }
 
 // GetTenant implements Tenants with the backend's NotFound message.
@@ -259,6 +283,7 @@ func (f *Fake) CreateTenant(ctx context.Context, req *aigridv1.CreateTenantReque
 		}
 	}
 	t.Id = f.nextTenantID()
+	t.ResourceVersion = "1"
 	f.Tenants = append(f.Tenants, t)
 	return &aigridv1.CreateTenantResponse{Object: t}, nil
 }
@@ -272,6 +297,9 @@ func (f *Fake) UpdateTenant(ctx context.Context, req *aigridv1.UpdateTenantReque
 	t := f.findTenant(req.GetObject().GetId())
 	if t == nil {
 		return nil, status.Errorf(codes.NotFound, "object with identifier '%s' not found", req.GetObject().GetId())
+	}
+	if rv := req.GetObject().GetResourceVersion(); rv != "" && rv != t.GetResourceVersion() {
+		return nil, stale(t.GetId(), t.GetResourceVersion(), rv)
 	}
 	if alias := req.GetObject().GetAlias(); alias != "" && alias != t.GetAlias() {
 		return nil, status.Error(codes.InvalidArgument, "Cannot change the alias")
@@ -311,6 +339,7 @@ func (f *Fake) UpdateTenant(ctx context.Context, req *aigridv1.UpdateTenantReque
 			return nil, status.Errorf(codes.InvalidArgument, "update_mask path %q is not supported", p)
 		}
 	}
+	t.ResourceVersion = nextVersion(t.GetResourceVersion())
 	return &aigridv1.UpdateTenantResponse{Object: t}, nil
 }
 
@@ -322,6 +351,9 @@ func (f *Fake) DeleteTenant(ctx context.Context, req *aigridv1.DeleteTenantReque
 	}
 	for i, t := range f.Tenants {
 		if t.GetId() == req.GetId() {
+			if rv := req.GetResourceVersion(); rv != "" && rv != t.GetResourceVersion() {
+				return nil, stale(t.GetId(), t.GetResourceVersion(), rv)
+			}
 			f.Tenants = slices.Delete(f.Tenants, i, i+1)
 			return &aigridv1.DeleteTenantResponse{}, nil
 		}
@@ -380,6 +412,9 @@ func (f *Fake) ListModels(ctx context.Context, req *aigridv1.ListModelsRequest) 
 	if err := f.begin(ctx, "ListModels"); err != nil {
 		return nil, err
 	}
+	if f.ShippedLists {
+		return &aigridv1.ListModelsResponse{Items: f.Models}, nil
+	}
 	var checks []func(*aigridv1.Model) bool
 	if filter := req.GetFilter(); filter != "" {
 		for _, term := range strings.Split(filter, " && ") {
@@ -415,7 +450,7 @@ func (f *Fake) ListModels(ctx context.Context, req *aigridv1.ListModelsRequest) 
 	if req.Limit != nil && int(req.GetLimit()) < len(page) {
 		page = page[:req.GetLimit()]
 	}
-	return &aigridv1.ListModelsResponse{Items: page, Size: int32(len(page)), Total: int32(total)}, nil
+	return &aigridv1.ListModelsResponse{Items: page, Size: int32(len(page)), Total: proto.Int32(int32(total))}, nil
 }
 
 // GetModel implements Models with the backend's NotFound message.
@@ -513,6 +548,9 @@ func (f *Fake) DeleteModel(ctx context.Context, req *aigridv1.DeleteModelRequest
 	}
 	for i, m := range f.Models {
 		if m.GetMetadata().GetNamespace() == req.GetNamespace() && m.GetName() == req.GetName() {
+			if rv := req.GetResourceVersion(); rv != "" && rv != m.GetMetadata().GetResourceVersion() {
+				return nil, stale(req.GetNamespace()+"/"+req.GetName(), m.GetMetadata().GetResourceVersion(), rv)
+			}
 			f.Models = slices.Delete(f.Models, i, i+1)
 			return &aigridv1.DeleteModelResponse{}, nil
 		}

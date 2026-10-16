@@ -23,10 +23,11 @@ option go_package = "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/a
 // and an organization without domains arrive without those keys; in proto
 // that is the empty string and the empty list, nothing more to do.
 message Tenant {
-  // Field 8 was `version`. Keycloak Organizations have no server-side
-  // version, etag or Last-Modified (mock/research/keycloak.md 8.1), so a
-  // Keycloak-backed backend could never fill it; it was removed together with
-  // `UpdateTenantRequest.lock` before the first tagged release.
+  // Field 8 was `version`, removed together with `UpdateTenantRequest.lock`
+  // before the first tagged release because Keycloak Organizations have no
+  // server-side version, etag or Last-Modified (mock/research/keycloak.md
+  // 8.1). The version is now `resource_version` (field 10), which the
+  // backend keeps itself; 8 and the old name stay reserved.
   reserved 8;
   reserved "version";
 
@@ -66,6 +67,15 @@ message Tenant {
   // route logins for that domain to one of the organization's identity
   // providers. Always consistent with `domains`.
   repeated TenantDomain domain_details = 9;
+  // Opaque version for optimistic concurrency, compared by UpdateTenant and
+  // DeleteTenant when the request carries one. Keycloak keeps no version, so
+  // the backend stores it itself, in the organization attribute
+  // `ai-grid/resource-version`, and bumps it on every write it makes; the
+  // attribute never appears in `attributes`, and a request that tries to set
+  // it is InvalidArgument (mock/areas/tenants.md, "Version"). An edit made
+  // in Keycloak directly, past the backend, does not bump it. Output only;
+  // empty from a backend that does not keep one (the shipped one).
+  string resource_version = 10;
 }
 
 // One organization domain, as Keycloak 26.8 represents it

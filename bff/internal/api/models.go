@@ -3,8 +3,10 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -501,9 +503,8 @@ func (a *App) listModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var terms []string
-	quote := func(s string) string { return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(s) + `"` }
 	if ns := strings.TrimSpace(r.URL.Query().Get("namespace")); ns != "" {
-		terms = append(terms, "this.metadata.namespace == "+quote(ns))
+		terms = append(terms, "this.metadata.namespace == "+celString(ns))
 	}
 	for _, label := range r.URL.Query()["label"] {
 		k, v, ok := strings.Cut(label, "=")
@@ -511,7 +512,7 @@ func (a *App) listModels(w http.ResponseWriter, r *http.Request) {
 			a.respondError(w, r, Errorf(http.StatusUnprocessableEntity, `query parameter "label" must be key=value`))
 			return
 		}
-		terms = append(terms, "this.metadata.labels["+quote(strings.TrimSpace(k))+"] == "+quote(v))
+		terms = append(terms, "this.metadata.labels["+celString(strings.TrimSpace(k))+"] == "+celString(v))
 	}
 	req := &aigridv1.ListModelsRequest{}
 	if offset != nil {
@@ -530,18 +531,17 @@ func (a *App) listModels(w http.ResponseWriter, r *http.Request) {
 		a.respondError(w, r, err)
 		return
 	}
+	// The same rule as for tenants: no `total` means the backend did not
+	// honour the filter or the page, so a filtered or paged request is 501.
+	if err := requireTotal(pagedOrFiltered(offset, limit, req.Filter != nil), resp.Total, "models"); err != nil {
+		a.respondError(w, r, err)
+		return
+	}
 	out := make([]Model, 0, len(resp.GetItems()))
 	for _, m := range resp.GetItems() {
 		out = append(out, toModel(m))
 	}
-	meta := ListMeta{Size: len(out), Total: int(resp.GetTotal()), Limit: limit}
-	if offset != nil {
-		meta.Offset = *offset
-	}
-	if meta.Total < meta.Size {
-		meta.Total = meta.Size
-	}
-	writeList(w, http.StatusOK, out, meta)
+	writeList(w, http.StatusOK, out, listMeta(offset, limit, len(out), resp.Total))
 }
 
 // getModel answers GET /api/v1/models/{namespace}/{name}.
@@ -553,6 +553,7 @@ func (a *App) getModel(w http.ResponseWriter, r *http.Request) {
 		a.respondError(w, r, err)
 		return
 	}
+	setETag(w, resp.GetObject().GetMetadata().GetResourceVersion())
 	writeData(w, http.StatusOK, toModel(resp.GetObject()))
 }
 
@@ -659,6 +660,7 @@ func (a *App) createModel(w http.ResponseWriter, r *http.Request) {
 	m := toModel(resp.GetObject())
 	a.logger.Info("model created", "namespace", m.Namespace, "name", m.Name, "placed", m.Placement != nil)
 	w.Header().Set("Location", APIPrefix+"/models/"+url.PathEscape(m.Namespace)+"/"+url.PathEscape(m.Name))
+	setETag(w, m.ResourceVersion)
 	writeData(w, http.StatusCreated, m)
 }
 
@@ -702,7 +704,10 @@ type ModelPatch struct {
 
 // patchModel answers PATCH /api/v1/models/{namespace}/{name}: reads the
 // model, applies the patch and writes it back with `UpdateModel` under
-// optimistic locking, so a concurrent change surfaces as 409.
+// optimistic locking, so a concurrent change surfaces as 409. The lock is on
+// the If-Match version when the client sent one (a stale tab gets 409), else
+// on the version just read. Only fields whose value differs from the stored
+// one go in the mask; a patch that changes nothing writes nothing.
 func (a *App) patchModel(w http.ResponseWriter, r *http.Request) {
 	namespace, name := r.PathValue("namespace"), r.PathValue("name")
 	var patch ModelPatch
@@ -710,9 +715,13 @@ func (a *App) patchModel(w http.ResponseWriter, r *http.Request) {
 		a.respondError(w, r, err)
 		return
 	}
+	expected, err := ifMatch(r)
+	if err != nil {
+		a.respondError(w, r, err)
+		return
+	}
 	var rollout *aigridv1.Rollout
 	if patch.Rollout != nil {
-		var err error
 		if rollout, err = fromRolloutSpec(patch.Rollout); err != nil {
 			a.respondError(w, r, err)
 			return
@@ -726,58 +735,68 @@ func (a *App) patchModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cur := current.GetObject()
-	obj := &aigridv1.Model{Name: name, Metadata: &aigridv1.ObjectMeta{Namespace: namespace, ResourceVersion: cur.GetMetadata().GetResourceVersion()}, Spec: &aigridv1.ModelSpec{Main: &aigridv1.Container{}}}
+	curSpec := cur.GetSpec()
+	version := cur.GetMetadata().GetResourceVersion()
+	if expected != "" {
+		version = expected
+	}
+	obj := &aigridv1.Model{Name: name, Metadata: &aigridv1.ObjectMeta{Namespace: namespace, ResourceVersion: version}, Spec: &aigridv1.ModelSpec{Main: &aigridv1.Container{}}}
+	// Each present field is compared with the stored value and only a
+	// change goes in the mask, so resending what the page loaded is no write.
 	var paths []string
-	if patch.Replicas != nil {
+	if patch.Replicas != nil && (curSpec == nil || curSpec.Replicas == nil || curSpec.GetReplicas() != *patch.Replicas) {
 		obj.Spec.Replicas = proto.Int32(*patch.Replicas)
 		paths = append(paths, maskReplicas)
 	}
-	if patch.RuntimeImage != nil {
+	if patch.RuntimeImage != nil && *patch.RuntimeImage != curSpec.GetMain().GetImage() {
 		obj.Spec.Main.Image = *patch.RuntimeImage
 		paths = append(paths, maskImage)
 	}
 	if patch.Env != nil {
-		obj.Spec.Main.Env = fromEnv(*patch.Env)
-		paths = append(paths, maskEnv)
+		if env := fromEnv(*patch.Env); !slices.EqualFunc(env, curSpec.GetMain().GetEnv(), func(a, b *aigridv1.EnvVar) bool { return proto.Equal(a, b) }) {
+			obj.Spec.Main.Env = env
+			paths = append(paths, maskEnv)
+		}
 	}
 	if patch.Placement.Set {
 		if patch.Placement.Value != nil {
 			obj.Spec.Placement = fromPlacementSpec(patch.Placement.Value)
 		}
-		paths = append(paths, maskPlacement)
+		if !proto.Equal(obj.Spec.Placement, curSpec.GetPlacement()) {
+			paths = append(paths, maskPlacement)
+		}
 	}
-	if rollout != nil {
+	// A rollout sent with a placement change stays in the mask even when it
+	// equals the stored one, so the backend sees the pair the client meant.
+	if rollout != nil && (slices.Contains(paths, maskPlacement) || !proto.Equal(rollout, curSpec.GetRollout())) {
 		obj.Spec.Rollout = rollout
 		paths = append(paths, maskRollout)
 	}
-	if patch.Labels != nil {
+	if patch.Labels != nil && !maps.Equal(*patch.Labels, cur.GetMetadata().GetLabels()) {
 		obj.Metadata.Labels = copyMap(*patch.Labels)
 		paths = append(paths, maskLabels)
 	}
 	annotations := copyMap(cur.GetMetadata().GetAnnotations())
-	annotationsChanged := false
 	if patch.Annotations != nil {
 		annotations = copyMap(*patch.Annotations)
-		annotationsChanged = true
 	}
 	setAnnotation := func(key string, v *string) {
-		if v == nil {
-			return
-		}
-		annotationsChanged = true
-		if *v == "" {
+		switch {
+		case v == nil:
+		case *v == "":
 			delete(annotations, key)
-		} else {
+		default:
 			annotations[key] = *v
 		}
 	}
 	setAnnotation(AnnotationDisplayName, patch.DisplayName)
 	setAnnotation(AnnotationDescription, patch.Description)
-	if annotationsChanged {
+	if !maps.Equal(annotations, cur.GetMetadata().GetAnnotations()) {
 		obj.Metadata.Annotations = annotations
 		paths = append(paths, maskAnnotations)
 	}
 	if len(paths) == 0 {
+		setETag(w, cur.GetMetadata().GetResourceVersion())
 		writeData(w, http.StatusOK, toModel(cur)) // nothing to change: no write
 		return
 	}
@@ -787,16 +806,24 @@ func (a *App) patchModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.logger.Info("model updated", "namespace", namespace, "name", name, "paths", paths)
+	setETag(w, updated.GetObject().GetMetadata().GetResourceVersion())
 	writeData(w, http.StatusOK, toModel(updated.GetObject()))
 }
 
 // deleteModel answers DELETE /api/v1/models/{namespace}/{name} with 204; 412
-// while a catalog entry or a subscription references the model.
+// while a catalog entry or a subscription references the model. An If-Match
+// version is the request's `resource_version` precondition (409 when the
+// model changed since); without it the delete is unconditional.
 func (a *App) deleteModel(w http.ResponseWriter, r *http.Request) {
 	namespace, name := r.PathValue("namespace"), r.PathValue("name")
+	expected, err := ifMatch(r)
+	if err != nil {
+		a.respondError(w, r, err)
+		return
+	}
 	ctx, cancel := a.backend.Context(r.Context())
 	defer cancel()
-	if _, err := a.backend.Models.DeleteModel(ctx, &aigridv1.DeleteModelRequest{Namespace: namespace, Name: name}); err != nil {
+	if _, err := a.backend.Models.DeleteModel(ctx, &aigridv1.DeleteModelRequest{Namespace: namespace, Name: name, ResourceVersion: expected}); err != nil {
 		a.respondError(w, r, err)
 		return
 	}

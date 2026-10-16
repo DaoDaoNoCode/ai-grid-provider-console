@@ -44,7 +44,7 @@ backend service for cluster access and this BFF for the browser.
 | Login in development | The Vite dev server and `hack/api.sh` set the same headers from `oc whoami` and `oc whoami -t`. The backend runs locally with `--kubeconfig` (`hack/dev-backend.sh`). | Any developer who has run `oc login` works against a real hub. |
 | Deployment | One pod: kube-auth-proxy (:8443), bff on `127.0.0.1:8080`, ai-grid-backend on `127.0.0.1:9090`. The BFF dials the backend in plaintext over loopback; plaintext to any other address is refused unless `BACKEND_INSECURE=true`. The kubelet probes `/readyz` through the proxy (`--skip-auth-route=^/readyz$`); neither the BFF nor the backend has a probe of its own. | Nothing on the pod network can reach the BFF with forged identity headers or the backend at all. When the backend gets its own Deployment, set `BACKEND_ADDRESS` to its Service and `BACKEND_CA_FILE` to its serving CA. |
 | Cluster labels | `ai-grid/enabled`, `ai-grid/provisioned`, `location`, `ai-grid/site`, `ai-grid/region`, and ACM's `openshiftVersion`. | The POC's conventions (site and region were added to the POC on 2026-10-14) so that Placements written by either tool select the same clusters. The BFF derives fields from the labels the backend returns. |
-| Response envelope | Success: `{"data": ...}`; a paged list adds `"meta": {"size", "total", "offset", "limit"}` next to `data` (`limit` omitted when the caller asked for everything). Error: `{"error": {"code": "<http status>", "message": "..."}}`. `DELETE` answers 204 with no body. | Same as the odh-dashboard BFFs; `meta` is only on list endpoints that page, so the shape of `data` never changes. |
+| Response envelope | Success: `{"data": ...}`; a paged list adds `"meta": {"size", "total", "offset", "limit"}` next to `data` (`limit` omitted when the caller asked for everything, `total` omitted when it is unknown; see "Writes, versions and lists"). Error: `{"error": {"code": "<http status>", "message": "..."}}`. `DELETE` answers 204 with no body. | Same as the odh-dashboard BFFs; `meta` is only on list endpoints that page, so the shape of `data` never changes. |
 | Tests | `httptest` against an in-memory backend (`internal/backend/backendtest`, gRPC over `bufconn`). | No cluster, no binaries; the fake records incoming metadata so identity forwarding is tested. `hack/smoke.sh` checks a live backend. |
 
 ## Modules
@@ -75,18 +75,18 @@ Paths are under `/api/v1`.
 | GET | `/api/v1/user` | `{username, email, groups, isProviderAdmin}` | none; from the proxy headers |
 | GET | `/api/v1/config` | `{gridEndpoint, mapTileUrl, billingUrl, version}` | none; env `GRID_CONSUMER_URL`, `MAP_TILE_URL`, `BILLING_URL` |
 | GET | `/api/v1/clusters` | `GridCluster[]` sorted by name | `ManagedClusters/ListManagedClusters` |
-| GET | `/api/v1/clusters/{name}` | `GridCluster` | `ManagedClusters/GetManagedCluster`; 404 with the backend's message when absent. Against a backend without that RPC (the shipped one answers `Unimplemented`) the BFF filters `ListManagedClusters` by name instead, so the detail works either way |
-| PATCH | `/api/v1/clusters/{name}` | `GridCluster` after the write | `GetManagedCluster` then `UpdateManagedCluster` with mask `labels` and/or `annotations` and `lock: true` on the fetched `resource_version`; 409 when the hub object changed in between, 422 on a bad body, 413 over 1 MiB |
+| GET | `/api/v1/clusters/{name}` | `GridCluster`, `ETag: "<resourceVersion>"` | `ManagedClusters/GetManagedCluster`; 404 with the backend's message when absent. Against a backend without that RPC (the shipped one answers `Unimplemented`) the BFF filters `ListManagedClusters` by name instead, so the detail works either way |
+| PATCH | `/api/v1/clusters/{name}` | `GridCluster` after the write, with its `ETag` | `GetManagedCluster` then `UpdateManagedCluster` with mask `labels` and/or `annotations` (only the maps that changed) and `lock: true` on the `If-Match` version, or on the fetched `resource_version` without one; 409 when the hub object is not at that version, 422 on a bad body or `If-Match`, 413 over 1 MiB, 415 when the body is not `application/json` |
 | GET | `/api/v1/tenants?offset=&limit=&search=` | `Tenant[]` in Keycloak's order (by name, the realm database's collation) plus `meta`; `search` is a case-insensitive literal substring of the name or a domain (`%` and `_` are not wildcards: a backend that pushes the term to Keycloak's `search`, a SQL LIKE, must escape them first); `limit` omitted returns everything | `Tenants/ListTenants` with `offset`, `limit` and `filter: this.name.contains("<search>") \|\| this.domains.exists(d, d.contains("<search>"))` |
-| GET | `/api/v1/tenants/{id}` | `Tenant` | `Tenants/GetTenant`; 404 with the backend's message when absent |
-| POST | `/api/v1/tenants` | 201, `Tenant` as created, `Location: /api/v1/tenants/{id}` | `Tenants/CreateTenant`; 422 with Keycloak's message on a bad name, alias or domain, 409 on a taken name or alias |
-| PATCH | `/api/v1/tenants/{id}` | `Tenant` after the write | `Tenants/UpdateTenant` with the present body fields as the mask; 422 "Cannot change the alias", 409 on a taken name |
-| DELETE | `/api/v1/tenants/{id}` | 204 | `Tenants/DeleteTenant`; 404 when absent |
+| GET | `/api/v1/tenants/{id}` | `Tenant`, `ETag: "<resourceVersion>"` | `Tenants/GetTenant`; 404 with the backend's message when absent |
+| POST | `/api/v1/tenants` | 201, `Tenant` as created, `Location: /api/v1/tenants/{id}`, `ETag` | `Tenants/CreateTenant`; 422 with Keycloak's message on a bad name, alias or domain, 409 on a taken name or alias |
+| PATCH | `/api/v1/tenants/{id}` | `Tenant` after the write, with its `ETag` | `Tenants/UpdateTenant` with the present body fields as the mask and the `If-Match` version as `object.resource_version`; 422 "Cannot change the alias", 409 on a taken name or a stale `If-Match` |
+| DELETE | `/api/v1/tenants/{id}` | 204 | `Tenants/DeleteTenant` with the `If-Match` version as `resource_version`; 404 when absent, 409 on a stale `If-Match` |
 | GET | `/api/v1/models?namespace=&label=k=v&offset=&limit=` | `Model[]` by namespace and name plus `meta`; `label` may repeat | `Models/ListModels` with `filter: this.metadata.namespace == "<ns>" && this.metadata.labels["<k>"] == "<v>"` |
-| GET | `/api/v1/models/{namespace}/{name}` | `Model` | `Models/GetModel`; 404 with the backend's message (`object with identifier '<ns>/<name>' not found`) |
-| POST | `/api/v1/models` | 201, `Model` with no conditions yet, `Location: /api/v1/models/{namespace}/{name}` | `Models/CreateModel`; 422 with the CRD's message (bad name, URI scheme, `replicas` with `scaling`, scaling without `keda`), 409 on a taken name, 412 `ManifestWorkReplicaSet feature gate disabled on hub` when `placement` is set on a hub without the controller |
-| PATCH | `/api/v1/models/{namespace}/{name}` | `Model` after the write | `GetModel` then `UpdateModel` with the present fields as the mask (`spec.replicas`, `spec.main.image`, `spec.main.env`, `spec.placement`, `spec.rollout`, `metadata.labels`, `metadata.annotations`) and `lock: true` on the fetched `resource_version`; 409 when the object changed in between, 412 when a placement is added on a gated hub |
-| DELETE | `/api/v1/models/{namespace}/{name}` | 204; the model is gone at once (the MWRS cascades `Background`, its works drain out of sight) | `Models/DeleteModel`; 404 when absent, 412 while a catalog entry or a subscription references the model |
+| GET | `/api/v1/models/{namespace}/{name}` | `Model`, `ETag: "<resourceVersion>"` | `Models/GetModel`; 404 with the backend's message (`object with identifier '<ns>/<name>' not found`) |
+| POST | `/api/v1/models` | 201, `Model` with no conditions yet, `Location: /api/v1/models/{namespace}/{name}`, `ETag` | `Models/CreateModel`; 422 with the CRD's message (bad name, URI scheme, `replicas` with `scaling`, scaling without `keda`), 409 on a taken name, 412 `ManifestWorkReplicaSet feature gate disabled on hub` when `placement` is set on a hub without the controller |
+| PATCH | `/api/v1/models/{namespace}/{name}` | `Model` after the write, with its `ETag` | `GetModel` then `UpdateModel` with the present fields that differ from the stored ones as the mask (`spec.replicas`, `spec.main.image`, `spec.main.env`, `spec.placement`, `spec.rollout`, `metadata.labels`, `metadata.annotations`) and `lock: true` on the `If-Match` version, or on the fetched `resource_version` without one; 409 when the object is not at that version, 412 when a placement is added on a gated hub |
+| DELETE | `/api/v1/models/{namespace}/{name}` | 204; the model is gone at once (the MWRS cascades `Background`, its works drain out of sight) | `Models/DeleteModel` with the `If-Match` version as `resource_version`; 404 when absent, 409 on a stale `If-Match`, 412 while a catalog entry or a subscription references the model |
 | GET | `/api/v1/capabilities` | `{manifestWorkReplicaSetEnabled, observabilityInstalled, acmVersion}` | `AiGrid/GetHubCapabilities`; 501 against a backend without the RPC, which a client reads as "unknown" |
 
 `GridCluster` (fields the shipped backend does not fill are omitted or empty, so a client
@@ -166,7 +166,8 @@ the collections are always present even though Keycloak omits an empty `domains`
     {"name": "acme-robotics.example.com", "verified": true, "identityProviderAlias": "acme-oidc", "autoRedirect": true},
     {"name": "acme.example.org", "verified": false, "autoRedirect": false}
   ],
-  "attributes": {"ai-grid/region": "europe-west", "billing-account": "ACME-0042"}
+  "attributes": {"ai-grid/region": "europe-west", "billing-account": "ACME-0042"},
+  "resourceVersion": "1"
 }
 ```
 
@@ -176,6 +177,8 @@ the collections are always present even though Keycloak omits an empty `domains`
   (Keycloak's default), so a client does not see every tenant as disabled.
 - `domains` are the names of `domainDetails`, lower-case, unique across tenants; Keycloak
   accepts the domain part of an e-mail address or one wildcard `*.base.tld`.
+- `resourceVersion` is the version the backend keeps for the tenant (Keycloak has none), also
+  sent as the `ETag`; omitted from a backend that keeps none (today's).
 
 `POST /api/v1/tenants` body: `{"name": "acme-robotics", "alias": "acme", "description": "...",
 "enabled": true, "domains": ["acme.example.com"], "attributes": {"k": "v"}}`; only `name` is
@@ -191,8 +194,11 @@ removes every domain, `attributes: {}` every attribute; a domain that stays keep
 `verified` and identity-provider metadata); `null` is the same as absent. `alias` may be sent
 for a round trip but must equal the stored alias. The present fields become the field mask of
 one `UpdateTenant` call; an empty body, or one with only `alias`, reads the tenant and answers
-without a write (422 "Cannot change the alias" when the alias differs). There is no optimistic
-locking: Keycloak Organizations carry no version.
+without a write (422 "Cannot change the alias" when the alias differs from the one the BFF
+shows, which is the name when the backend sends no alias). Unlike a cluster or model PATCH,
+the BFF does not read the tenant first, so a present field always writes, even with the stored
+value. Keycloak Organizations carry no version; the backend keeps one for them (see "Writes,
+versions and lists").
 
 `Model` (a KServe `LLMInferenceService`, `mock/research/models-maas.md` 2.1, with the ACM
 `Placement` and `ManifestWorkReplicaSet` the backend keeps for a multi-site model,
@@ -279,6 +285,57 @@ The list response:
 {"data": [...], "meta": {"size": 10, "total": 42, "offset": 0, "limit": 10}}
 ```
 
+### Writes, versions and lists
+
+Rules every handler shares; the BFF only moves them between HTTP and the RPCs, the backend
+decides.
+
+- **Request bodies must be JSON.** Every POST, PATCH and PUT whose `Content-Type` is not
+  `application/json` (case-insensitive, parameters such as `charset` allowed) is 415
+  `request body must be JSON: send Content-Type: application/json`, before the body is read
+  and before the hub or the backend is called. A browser sends an HTML form or a `text/plain`
+  `fetch` cross-site without a CORS preflight; this is what keeps another app under the
+  cluster's `apps` domain from writing with an admin's session.
+- **`ETag` and `If-Match`.** `GET` of one cluster, tenant or model, and the answer to its POST
+  or PATCH, carry `ETag: "<resourceVersion>"` (the same value as `resourceVersion` in the
+  JSON; no header when the backend reports no version, as today's backend does for tenants).
+  A PATCH or DELETE may send it back as `If-Match`; the BFF passes it to the backend as the
+  request's expected version and the backend refuses a stale one with `Aborted`, 409, so a tab
+  opened before a colleague's change cannot overwrite or delete it:
+
+  | Request | `If-Match` becomes | Without `If-Match` (unchanged behaviour) |
+  |---|---|---|
+  | PATCH `/clusters/{name}` | `object.resource_version` with `lock: true` | lock on the version the BFF just read: catches only a write between that read and the update |
+  | PATCH `/models/{namespace}/{name}` | `object.metadata.resource_version` with `lock: true` | the same |
+  | PATCH `/tenants/{id}` | `object.resource_version` (the draft's precondition: set means checked) | no version check |
+  | DELETE `/tenants/{id}` | `DeleteTenantRequest.resource_version` | unconditional |
+  | DELETE `/models/{namespace}/{name}` | `DeleteModelRequest.resource_version` | unconditional |
+
+  `If-Match` must be one strong entity tag exactly as `ETag` sent it (`"42"`) or `*`, which
+  means no precondition; a bare value, a weak tag (`W/"42"`) or a list is 422 `If-Match must
+  be one entity tag as the ETag header sent it, for example "42", or *` before any call. A
+  PATCH that writes nothing (below) does not check `If-Match` and answers the current object
+  with its `ETag`. The tenant version is the backend's (`Tenant.resource_version`, kept in an
+  organization attribute; `mock/areas/tenants.md`, "Version"), so it changes only on writes
+  through the backend.
+- **A PATCH that changes nothing writes nothing.** For clusters and models the BFF reads the
+  object and compares: a cluster's new `labels` and `annotations` maps with the stored ones, a
+  model's present fields with the stored values (an unchanged `rollout` stays in the mask when
+  `placement` changes). If nothing differs it answers the current object with 200 and no
+  write, for a caller without write rights too. A tenant PATCH is not read first: any present
+  field other than `alias` is written.
+- **`meta.total` and backends that do not page.** `total` is the backend's count over the whole
+  filtered list. The list responses carry it as an optional field: the draft's backends always
+  set it, and a backend without it (today's: its `ListTenantsRequest` is empty, so `offset`,
+  `limit` and `filter` are dropped on the wire) returns every item unfiltered. When the caller
+  asked for a search or a filter (`search`, `namespace`, `label`), a `limit` or an `offset`
+  above 0 and the answer has no `total`, the BFF answers 501 `the AI Grid backend does not
+  support searching or paging tenants yet; list them without search, filter, offset or limit`
+  (`models` for the models list) instead of showing unfiltered rows as the result. Without
+  those parameters the list is the whole list and `total` falls back to `offset + size`; in
+  general the BFF omits `total` (unknown) when a page without a count is full (`size ==
+  limit`), because more may follow.
+
 ### Waiting on backend RPCs
 
 Each row is a request to the backend repository. The BFF mapping is small once the RPC
@@ -306,10 +363,12 @@ exists; the frontend uses the mock service meanwhile.
 | Backend `Unauthenticated` | 401 |
 | Backend `PermissionDenied` (the hub's RBAC denies the caller, e.g. a PATCH by a user who may not patch ManagedClusters) | 403, backend message kept |
 | Backend `NotFound` | 404, backend message kept (`object with identifier '<name>' not found`) |
-| Invalid POST or PATCH body (unknown field, wrong type, trailing content, coordinate out of range), bad `offset`/`limit` query | 422, BFF message |
+| Invalid POST or PATCH body (unknown field, wrong type, trailing content, coordinate out of range), bad `offset`/`limit` query, malformed `If-Match` | 422, BFF message |
+| POST or PATCH body not declared `application/json` | 415, BFF message |
+| Search, filter, `limit` or `offset` against a backend whose list answer has no `total` | 501, BFF message |
 | Request body over 1 MiB | 413 |
 | Backend `InvalidArgument`, `OutOfRange` (including Keycloak's validation messages: "Name can not be null", "Invalid domain format: x", "Cannot change the alias", "Domain x is already linked to organization y in realm ai-grid") | 422, backend message kept |
-| Backend `AlreadyExists` (Keycloak: "A organization with the same name already exists."), `Aborted` (the cluster changed between the BFF's read and write) | 409, backend message kept |
+| Backend `AlreadyExists` (Keycloak: "A organization with the same name already exists."), `Aborted` (the object is not at the `If-Match` version, or changed between the BFF's read and write) | 409, backend message kept |
 | Backend `FailedPrecondition` (hub feature gate missing, e.g. "ManifestWorkReplicaSet feature gate disabled on hub"; a model still referenced by a catalog entry or subscription; Keycloak realm missing or organizations disabled) | 412, backend message kept |
 | Backend `ResourceExhausted` | 429 |
 | Backend `Unimplemented` | 501 |

@@ -243,7 +243,11 @@ backend), with the JSON shape in `docs/plan/bff-api.md`: the POC's `ManagedModel
 inventions, plus `placement` (selector, selected clusters, `PlacementSatisfied`) and `rollout`
 (strategy, summary without `updated`, per-site works with their condition statuses and the
 `ready` and `url` feedback); `url` is omitted when empty; PATCH is a locked read-modify-write with
-the present fields as the mask.
+the present fields that differ from the stored ones as the mask (none: no write), locked on the
+`If-Match` version when the client sends one and on the version read otherwise; DELETE passes
+`If-Match` as `DeleteModelRequest.resource_version`, which the fake checks like a Kubernetes
+delete precondition (`Aborted` with the update's wording when stale); GET, POST and PATCH send
+the `resourceVersion` as the `ETag`.
 
 UI: not built yet; main has no Models page.
 

@@ -73,7 +73,8 @@ type ModelsClient interface {
 	// cascade `Background`: the MWRS is gone at once and the generated works
 	// are deleted in the cluster namespaces shortly after, invisibly to this
 	// API. FailedPrecondition while a catalog entry or a subscription
-	// references the model.
+	// references the model; Aborted when `resource_version` is set and is not
+	// the stored version.
 	DeleteModel(ctx context.Context, in *DeleteModelRequest, opts ...grpc.CallOption) (*DeleteModelResponse, error)
 }
 
@@ -170,7 +171,8 @@ type ModelsServer interface {
 	// cascade `Background`: the MWRS is gone at once and the generated works
 	// are deleted in the cluster namespaces shortly after, invisibly to this
 	// API. FailedPrecondition while a catalog entry or a subscription
-	// references the model.
+	// references the model; Aborted when `resource_version` is set and is not
+	// the stored version.
 	DeleteModel(context.Context, *DeleteModelRequest) (*DeleteModelResponse, error)
 	mustEmbedUnimplementedModelsServer()
 }

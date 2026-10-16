@@ -77,8 +77,17 @@ type Tenant struct {
 	// route logins for that domain to one of the organization's identity
 	// providers. Always consistent with `domains`.
 	DomainDetails []*TenantDomain `protobuf:"bytes,9,rep,name=domain_details,json=domainDetails,proto3" json:"domain_details,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Opaque version for optimistic concurrency, compared by UpdateTenant and
+	// DeleteTenant when the request carries one. Keycloak keeps no version, so
+	// the backend stores it itself, in the organization attribute
+	// `ai-grid/resource-version`, and bumps it on every write it makes; the
+	// attribute never appears in `attributes`, and a request that tries to set
+	// it is InvalidArgument (mock/areas/tenants.md, "Version"). An edit made
+	// in Keycloak directly, past the backend, does not bump it. Output only;
+	// empty from a backend that does not keep one (the shipped one).
+	ResourceVersion string `protobuf:"bytes,10,opt,name=resource_version,json=resourceVersion,proto3" json:"resource_version,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Tenant) Reset() {
@@ -167,6 +176,13 @@ func (x *Tenant) GetDomainDetails() []*TenantDomain {
 	return nil
 }
 
+func (x *Tenant) GetResourceVersion() string {
+	if x != nil {
+		return x.ResourceVersion
+	}
+	return ""
+}
+
 // One organization domain, as Keycloak 26.8 represents it
 // (`OrganizationDomainRepresentation`).
 type TenantDomain struct {
@@ -252,7 +268,7 @@ var File_ai_grid_v1_tenant_type_proto protoreflect.FileDescriptor
 const file_ai_grid_v1_tenant_type_proto_rawDesc = "" +
 	"\n" +
 	"\x1cai_grid/v1/tenant_type.proto\x12\n" +
-	"ai_grid.v1\"\xfc\x02\n" +
+	"ai_grid.v1\"\xa7\x03\n" +
 	"\x06Tenant\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
@@ -263,7 +279,9 @@ const file_ai_grid_v1_tenant_type_proto_rawDesc = "" +
 	"\n" +
 	"attributes\x18\a \x03(\v2\".ai_grid.v1.Tenant.AttributesEntryR\n" +
 	"attributes\x12?\n" +
-	"\x0edomain_details\x18\t \x03(\v2\x18.ai_grid.v1.TenantDomainR\rdomainDetails\x1a=\n" +
+	"\x0edomain_details\x18\t \x03(\v2\x18.ai_grid.v1.TenantDomainR\rdomainDetails\x12)\n" +
+	"\x10resource_version\x18\n" +
+	" \x01(\tR\x0fresourceVersion\x1a=\n" +
 	"\x0fAttributesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\n" +

@@ -30,6 +30,9 @@ type Tenant struct {
 	Domains       []string          `json:"domains"`
 	DomainDetails []TenantDomain    `json:"domainDetails"`
 	Attributes    map[string]string `json:"attributes"`
+	// ResourceVersion is the version the backend keeps for the tenant (also
+	// the ETag of GET /tenants/{id}); absent from a backend that keeps none.
+	ResourceVersion string `json:"resourceVersion,omitempty"`
 }
 
 // TenantDomain is one organization domain with Keycloak's metadata.
@@ -80,7 +83,7 @@ func toTenant(t *aigridv1.Tenant) Tenant {
 	enabled := t.Enabled == nil || t.GetEnabled()
 	return Tenant{
 		ID: t.GetId(), Name: t.GetName(), Alias: alias, Enabled: enabled, Description: t.GetDescription(),
-		Domains: domains, DomainDetails: details, Attributes: attributes,
+		Domains: domains, DomainDetails: details, Attributes: attributes, ResourceVersion: t.GetResourceVersion(),
 	}
 }
 
@@ -100,19 +103,51 @@ func queryInt(r *http.Request, name string) (*int, error) {
 	return &v, nil
 }
 
+// celString quotes s as a CEL string literal: `\` and `"` are escaped,
+// newline, carriage return and tab get their short escapes and every other
+// control character (C0 and DEL) a `\uXXXX` escape, so no query value can end
+// the literal or make the expression fail to compile; invalid UTF-8, which a
+// CEL source cannot carry, becomes U+FFFD. Every filter the BFF builds quotes
+// its values with it.
+func celString(s string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range strings.ToValidUTF8(s, "\uFFFD") {
+		switch {
+		case r == '\\' || r == '"':
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\r':
+			b.WriteString(`\r`)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case r < 0x20 || r == 0x7f:
+			fmt.Fprintf(&b, `\u%04x`, r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
+}
+
 // searchFilter turns the `search` query into the CEL expression that means
 // what Keycloak's `search` parameter does, a case-insensitive contains on the
 // name or on any domain, so a backend that evaluates the filter as written
 // and one that pushes it down to Keycloak return the same tenants. The term
 // is a CEL string literal.
 func searchFilter(term string) string {
-	literal := `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(term) + `"`
+	literal := celString(term)
 	return `this.name.contains(` + literal + `) || this.domains.exists(d, d.contains(` + literal + `))`
 }
 
 // listTenants answers GET /api/v1/tenants?offset=&limit=&search=. The
 // backend returns them in Keycloak's order (by name); `meta` carries the
-// page, with `total` counted over the whole search result.
+// page, with `total` counted over the whole search result. A backend that
+// answers without `total` has not honoured search or paging (requireTotal):
+// 501 when the caller asked for either, the plain list otherwise.
 func (a *App) listTenants(w http.ResponseWriter, r *http.Request) {
 	offset, err := queryInt(r, "offset")
 	if err != nil {
@@ -141,18 +176,23 @@ func (a *App) listTenants(w http.ResponseWriter, r *http.Request) {
 		a.respondError(w, r, err)
 		return
 	}
+	if err := requireTotal(pagedOrFiltered(offset, limit, req.Filter != nil), resp.Total, "tenants"); err != nil {
+		a.respondError(w, r, err)
+		return
+	}
 	out := make([]Tenant, 0, len(resp.GetTenants()))
 	for _, t := range resp.GetTenants() {
 		out = append(out, toTenant(t))
 	}
-	meta := ListMeta{Size: len(out), Total: int(resp.GetTotal()), Limit: limit}
-	if offset != nil {
-		meta.Offset = *offset
-	}
-	if meta.Total < meta.Size {
-		meta.Total = meta.Size // a backend that does not count (today's) at least reports what it sent
-	}
-	writeList(w, http.StatusOK, out, meta)
+	writeList(w, http.StatusOK, out, listMeta(offset, limit, len(out), resp.Total))
+}
+
+// pagedOrFiltered reports whether a list request asks for anything a
+// backend that ignores the request would get wrong: a filter, a limit or an
+// offset past the first item (`offset=0` alone is what such a backend does
+// anyway).
+func pagedOrFiltered(offset, limit *int, filtered bool) bool {
+	return filtered || limit != nil || (offset != nil && *offset > 0)
 }
 
 // getTenant answers GET /api/v1/tenants/{id}. Unlike GET /clusters/{name}
@@ -167,6 +207,7 @@ func (a *App) getTenant(w http.ResponseWriter, r *http.Request) {
 		a.respondError(w, r, err)
 		return
 	}
+	setETag(w, resp.GetObject().GetResourceVersion())
 	writeData(w, http.StatusOK, toTenant(resp.GetObject()))
 }
 
@@ -204,6 +245,7 @@ func (a *App) createTenant(w http.ResponseWriter, r *http.Request) {
 	t := toTenant(resp.GetObject())
 	a.logger.Info("tenant created", "id", t.ID, "name", t.Name)
 	w.Header().Set("Location", APIPrefix+"/tenants/"+url.PathEscape(t.ID))
+	setETag(w, t.ResourceVersion)
 	writeData(w, http.StatusCreated, t)
 }
 
@@ -222,7 +264,10 @@ type TenantPatch struct {
 
 // patchTenant answers PATCH /api/v1/tenants/{id}: the present fields become
 // the field mask of one UpdateTenant call; the backend does Keycloak's GET,
-// merge and PUT.
+// merge and PUT. The If-Match version travels as `object.resource_version`,
+// which the backend compares with the version it keeps (a stale tab gets
+// 409); without If-Match the update is not version-checked, because the BFF
+// does not read the tenant before writing it.
 func (a *App) patchTenant(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var patch TenantPatch
@@ -230,7 +275,12 @@ func (a *App) patchTenant(w http.ResponseWriter, r *http.Request) {
 		a.respondError(w, r, err)
 		return
 	}
-	obj := &aigridv1.Tenant{Id: id}
+	expected, err := ifMatch(r)
+	if err != nil {
+		a.respondError(w, r, err)
+		return
+	}
+	obj := &aigridv1.Tenant{Id: id, ResourceVersion: expected}
 	var paths []string
 	if patch.Name != nil {
 		obj.Name = *patch.Name
@@ -273,12 +323,16 @@ func (a *App) patchTenant(w http.ResponseWriter, r *http.Request) {
 			a.respondError(w, r, err)
 			return
 		}
-		cur := resp.GetObject()
-		if patch.Alias != nil && *patch.Alias != "" && *patch.Alias != cur.GetAlias() {
+		// Compared with the alias the console shows (toTenant falls back to
+		// the name when the backend sends none), so a form that sends the
+		// displayed alias back is not refused.
+		cur := toTenant(resp.GetObject())
+		if patch.Alias != nil && *patch.Alias != "" && *patch.Alias != cur.Alias {
 			a.respondError(w, r, Errorf(http.StatusUnprocessableEntity, "Cannot change the alias"))
 			return
 		}
-		writeData(w, http.StatusOK, toTenant(cur))
+		setETag(w, cur.ResourceVersion)
+		writeData(w, http.StatusOK, cur)
 		return
 	}
 	resp, err := a.backend.Tenants.UpdateTenant(ctx, &aigridv1.UpdateTenantRequest{Object: obj, UpdateMask: &fieldmaskpb.FieldMask{Paths: paths}})
@@ -287,15 +341,23 @@ func (a *App) patchTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.logger.Info("tenant updated", "id", id, "paths", paths)
+	setETag(w, resp.GetObject().GetResourceVersion())
 	writeData(w, http.StatusOK, toTenant(resp.GetObject()))
 }
 
-// deleteTenant answers DELETE /api/v1/tenants/{id} with 204.
+// deleteTenant answers DELETE /api/v1/tenants/{id} with 204. An If-Match
+// version is the request's `resource_version` precondition (409 when the
+// tenant changed since); without it the delete is unconditional.
 func (a *App) deleteTenant(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	expected, err := ifMatch(r)
+	if err != nil {
+		a.respondError(w, r, err)
+		return
+	}
 	ctx, cancel := a.backend.Context(r.Context())
 	defer cancel()
-	if _, err := a.backend.Tenants.DeleteTenant(ctx, &aigridv1.DeleteTenantRequest{Id: id}); err != nil {
+	if _, err := a.backend.Tenants.DeleteTenant(ctx, &aigridv1.DeleteTenantRequest{Id: id, ResourceVersion: expected}); err != nil {
 		a.respondError(w, r, err)
 		return
 	}

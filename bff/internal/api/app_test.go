@@ -726,11 +726,13 @@ func TestPatchCluster(t *testing.T) {
 			t.Fatalf("a consistent read-then-write succeeds: %d %s", rec.Code, rec.Body.String())
 		}
 		// The backend answers Aborted when something else wrote between the Get and the Update.
-		rec = updateFails(t, fake, backendtest.Status(codes.Aborted, "object with identifier 'site-1' has resource version 9, the request carries \"8\""), `{"aiGridEnabled": true}`)
+		// The cluster is enrolled now, so the next patches un-enrol it (a
+		// repeat of the stored value would not write at all).
+		rec = updateFails(t, fake, backendtest.Status(codes.Aborted, "object with identifier 'site-1' has resource version 9, the request carries \"8\""), `{"aiGridEnabled": false}`)
 		if rec.Code != http.StatusConflict || !strings.Contains(decodeError(t, rec).Error.Message, "resource version 9") {
 			t.Errorf("Aborted -> %d %s, want 409 with the backend's message", rec.Code, rec.Body.String())
 		}
-		rec = updateFails(t, fake, backendtest.Status(codes.InvalidArgument, "update_mask path \"labels\" is not supported"), `{"aiGridEnabled": true}`)
+		rec = updateFails(t, fake, backendtest.Status(codes.InvalidArgument, "update_mask path \"labels\" is not supported"), `{"aiGridEnabled": false}`)
 		if rec.Code != http.StatusUnprocessableEntity {
 			t.Errorf("InvalidArgument -> %d, want 422", rec.Code)
 		}
@@ -790,4 +792,177 @@ func TestPatchCluster(t *testing.T) {
 			t.Errorf("status = %d", rec.Code)
 		}
 	})
+}
+
+// Every write is refused with 415 unless its body is declared JSON, before
+// anything reaches the backend: a cross-site form or a text/plain fetch,
+// which a browser sends without a CORS preflight, cannot create or change
+// anything.
+func TestWritesRequireJSONContentType(t *testing.T) {
+	writes := []struct{ method, path, body string }{
+		{http.MethodPost, "/api/v1/tenants", `{"name": "evil"}`},
+		{http.MethodPatch, "/api/v1/tenants/t-1", `{"enabled": false}`},
+		{http.MethodPost, "/api/v1/models", `{"name": "m", "namespace": "ns", "modelUri": "hf://x/y"}`},
+		{http.MethodPatch, "/api/v1/models/ai-grid-models/tiny-llm", `{"replicas": 2}`},
+		{http.MethodPatch, "/api/v1/clusters/site-1", `{"aiGridEnabled": true}`},
+	}
+	for _, ct := range []string{"", "text/plain", "text/plain;charset=UTF-8", "application/x-www-form-urlencoded", "multipart/form-data; boundary=x", "application/jsonp", "application/merge-patch+json", "json", "application/json;;"} {
+		for _, wr := range writes {
+			fake := &backendtest.Fake{Tenants: seedTenants(), Models: seedModels(), Clusters: []*aigridv1.ManagedCluster{{Name: "site-1", ResourceVersion: "7"}}}
+			app := newTestApp(t, testConfig(t), fake)
+			req := jsonRequest(wr.method, wr.path, wr.body)
+			if ct == "" {
+				req.Header.Del("Content-Type")
+			} else {
+				req.Header.Set("Content-Type", ct)
+			}
+			rec := serve(app, req)
+			if rec.Code != http.StatusUnsupportedMediaType {
+				t.Errorf("%s %s with Content-Type %q -> %d %s, want 415", wr.method, wr.path, ct, rec.Code, rec.Body.String())
+				continue
+			}
+			if e := decodeError(t, rec); e.Error.Code != "415" || e.Error.Message != "request body must be JSON: send Content-Type: application/json" {
+				t.Errorf("415 body = %+v", e)
+			}
+			if len(fake.Calls) != 0 {
+				t.Errorf("%s %s with %q reached the backend: %v", wr.method, wr.path, ct, fake.Calls)
+			}
+		}
+	}
+	// application/json in any case, with parameters, is accepted.
+	for _, ct := range []string{"application/json", "application/json; charset=utf-8", "Application/JSON"} {
+		fake := &backendtest.Fake{Tenants: seedTenants()}
+		app := newTestApp(t, testConfig(t), fake)
+		req := jsonRequest(http.MethodPost, "/api/v1/tenants", `{"name": "ok"}`)
+		req.Header.Set("Content-Type", ct)
+		if rec := serve(app, req); rec.Code != http.StatusCreated {
+			t.Errorf("Content-Type %q -> %d %s, want 201", ct, rec.Code, rec.Body.String())
+		}
+	}
+	// A DELETE has no body to check.
+	fake := &backendtest.Fake{Tenants: seedTenants()}
+	if rec := serve(newTestApp(t, testConfig(t), fake), asUser(http.MethodDelete, "/api/v1/tenants/t-1")); rec.Code != http.StatusNoContent {
+		t.Errorf("DELETE without a Content-Type -> %d", rec.Code)
+	}
+}
+
+func TestClusterETagAndIfMatch(t *testing.T) {
+	fresh := func() *backendtest.Fake {
+		return &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{{Name: "site-1", ResourceVersion: "9", Labels: map[string]string{LabelLocation: "paris"}}}}
+	}
+	withIfMatch := func(req *http.Request, v string) *http.Request { req.Header.Set("If-Match", v); return req }
+
+	fake := fresh()
+	app := newTestApp(t, testConfig(t), fake)
+	if rec := serve(app, asUser(http.MethodGet, "/api/v1/clusters/site-1")); rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"9"` {
+		t.Fatalf("GET = %d, ETag %q, want \"9\"", rec.Code, rec.Header().Get("ETag"))
+	}
+
+	// The tab loaded version 3; the hub has 9: the lock is on 3 and the write is refused.
+	rec := serve(app, withIfMatch(patchRequest("site-1", `{"location": "rome"}`), `"3"`))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("stale If-Match = %d %s, want 409", rec.Code, rec.Body.String())
+	}
+	if up := fake.LastUpdate; !up.GetLock() || up.GetObject().GetResourceVersion() != "3" {
+		t.Errorf("the lock must carry the If-Match version, got %v", up)
+	}
+	if fake.Clusters[0].GetLabels()[LabelLocation] != "paris" || fake.Clusters[0].GetResourceVersion() != "9" {
+		t.Errorf("a stale write must not land: %v", fake.Clusters[0])
+	}
+
+	// The current version writes and answers the new ETag.
+	rec = serve(app, withIfMatch(patchRequest("site-1", `{"location": "rome"}`), `"9"`))
+	if rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"10"` || fake.LastUpdate.GetObject().GetResourceVersion() != "9" {
+		t.Fatalf("matching If-Match = %d, ETag %q, update %v", rec.Code, rec.Header().Get("ETag"), fake.LastUpdate)
+	}
+
+	// `*` and no If-Match lock on the version just read (today's behaviour).
+	for _, h := range []string{"", "*"} {
+		fake := fresh()
+		app := newTestApp(t, testConfig(t), fake)
+		req := patchRequest("site-1", `{"location": "rome"}`)
+		if h != "" {
+			req.Header.Set("If-Match", h)
+		}
+		if rec := serve(app, req); rec.Code != http.StatusOK || !fake.LastUpdate.GetLock() || fake.LastUpdate.GetObject().GetResourceVersion() != "9" {
+			t.Errorf("If-Match %q = %d, update %v", h, rec.Code, fake.LastUpdate)
+		}
+	}
+
+	// A header the backend cannot compare is 422 before any call.
+	for _, h := range []string{`9`, `W/"9"`, `"9", "10"`, `""`, `"a b"`} {
+		fake := fresh()
+		rec := serve(newTestApp(t, testConfig(t), fake), withIfMatch(patchRequest("site-1", `{"location": "rome"}`), h))
+		if rec.Code != http.StatusUnprocessableEntity || len(fake.Calls) != 0 {
+			t.Errorf("If-Match %s = %d %s, calls %v; want 422 and no call", h, rec.Code, rec.Body.String(), fake.Calls)
+		}
+	}
+}
+
+// A PATCH that repeats the stored values writes nothing: the maps are
+// compared, not the presence of the fields.
+func TestNoOpClusterPatchDoesNotWrite(t *testing.T) {
+	fake := &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{{Name: "site-1", ResourceVersion: "7",
+		Labels:      map[string]string{LabelEnabled: "true", LabelLocation: "paris"},
+		Annotations: map[string]string{AnnotationLatitude: "48.8566"}}}}
+	app := newTestApp(t, testConfig(t), fake)
+	for _, body := range []string{
+		`{"aiGridEnabled": true, "location": "paris"}`,
+		`{"site": "", "region": ""}`, // removing labels that are not there
+		`{"latitude": 48.8566, "longitude": null, "siteName": ""}`,
+	} {
+		fake.Calls = nil
+		rec := serve(app, patchRequest("site-1", body))
+		if rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"7"` {
+			t.Fatalf("%s = %d %s", body, rec.Code, rec.Body.String())
+		}
+		if fake.Reached("UpdateManagedCluster") {
+			t.Errorf("%s repeats the stored values but wrote", body)
+		}
+	}
+	// One changed map is the only path in the mask.
+	if rec := serve(app, patchRequest("site-1", `{"aiGridEnabled": true, "latitude": 40}`)); rec.Code != http.StatusOK || strings.Join(fake.LastUpdate.GetUpdateMask().GetPaths(), ",") != "annotations" {
+		t.Errorf("mask = %v (%d)", fake.LastUpdate.GetUpdateMask().GetPaths(), rec.Code)
+	}
+}
+
+func TestCELString(t *testing.T) {
+	for in, want := range map[string]string{
+		`acme`:            `"acme"`,
+		`a"b\c`:           `"a\"b\\c"`,
+		"line\nbreak":     `"line\nbreak"`,
+		"cr\rtab\t":       `"cr\rtab\t"`,
+		"bell\x07del\x7f": `"bell\u0007del\u007f"`,
+		"é ü 日本":          `"é ü 日本"`,
+		"bad\xffutf8":     "\"bad�utf8\"",
+	} {
+		if got := celString(in); got != want {
+			t.Errorf("celString(%q) = %s, want %s", in, got, want)
+		}
+	}
+	if got := searchFilter("a\nb"); got != `this.name.contains("a\nb") || this.domains.exists(d, d.contains("a\nb"))` {
+		t.Errorf("searchFilter = %s", got)
+	}
+}
+
+func TestListMeta(t *testing.T) {
+	n := func(v int) *int { return &v }
+	for _, tc := range []struct {
+		name          string
+		offset, limit *int
+		size          int
+		total         *int32
+		want          string
+	}{
+		{"backend count wins", n(10), n(10), 10, proto.Int32(25), `{"size":10,"total":25,"offset":10,"limit":10}`},
+		{"zero is a count", nil, n(0), 0, proto.Int32(0), `{"size":0,"total":0,"offset":0,"limit":0}`},
+		{"no count, everything", nil, nil, 8, nil, `{"size":8,"total":8,"offset":0}`},
+		{"no count, a short page ends the list", n(10), n(10), 5, nil, `{"size":5,"total":15,"offset":10,"limit":10}`},
+		{"no count, a full page leaves the total unknown", n(10), n(10), 10, nil, `{"size":10,"offset":10,"limit":10}`},
+	} {
+		b, err := json.Marshal(listMeta(tc.offset, tc.limit, tc.size, tc.total))
+		if err != nil || string(b) != tc.want {
+			t.Errorf("%s: %s, want %s (%v)", tc.name, b, tc.want, err)
+		}
+	}
 }

@@ -819,7 +819,7 @@ func (s *Server) ListModels(ctx context.Context, req *aigridv1.ListModelsRequest
 	if req.Limit != nil && int(req.GetLimit()) < len(page) {
 		page = page[:req.GetLimit()]
 	}
-	return &aigridv1.ListModelsResponse{Items: page, Size: int32(len(page)), Total: int32(total)}, nil
+	return &aigridv1.ListModelsResponse{Items: page, Size: int32(len(page)), Total: proto.Int32(int32(total))}, nil
 }
 
 // GetModel implements Models.
@@ -1001,7 +1001,8 @@ func (s *Server) UpdateModel(ctx context.Context, req *aigridv1.UpdateModelReque
 // deletes the works and removes the finalizer in the same pass
 // (ocm:manifestworkreplicaset_finalize_reconcile.go); the works drain in the
 // cluster namespaces afterwards, invisibly to this API (only `Foreground`
-// would keep the MWRS until they are gone). FailedPrecondition while
+// would keep the MWRS until they are gone). Aborted when `resource_version`
+// is set and stale. FailedPrecondition while
 // something references the model: the check is `referencedBy`, which the
 // catalog and subscriptions area will wire; today nothing references a model.
 func (s *Server) DeleteModel(ctx context.Context, req *aigridv1.DeleteModelRequest) (*aigridv1.DeleteModelResponse, error) {
@@ -1019,8 +1020,14 @@ func (s *Server) DeleteModel(ctx context.Context, req *aigridv1.DeleteModelReque
 	defer s.mu.Unlock()
 	s.advance()
 	key := modelKey(req.GetNamespace(), req.GetName())
-	if _, ok := s.models[key]; !ok {
+	m, ok := s.models[key]
+	if !ok {
 		return nil, notFound(key)
+	}
+	// A Kubernetes delete precondition (DeleteOptions.preconditions): the API
+	// server answers 409 Conflict, which the backend maps to Aborted.
+	if rv := req.GetResourceVersion(); rv != "" && rv != m.obj.GetMetadata().GetResourceVersion() {
+		return nil, status.Errorf(codes.Aborted, "object with identifier '%s' has resource version %s, the request carries %q; fetch it again and retry", key, m.obj.GetMetadata().GetResourceVersion(), rv)
 	}
 	if refs := s.referencedBy(req.GetNamespace(), req.GetName()); len(refs) > 0 {
 		return nil, status.Errorf(codes.FailedPrecondition, MessageReferencedByCatalogFm, key, strings.Join(refs, ", "))

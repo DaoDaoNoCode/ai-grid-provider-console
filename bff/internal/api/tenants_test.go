@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -49,6 +50,14 @@ func decodeList(t *testing.T, rec *httptest.ResponseRecorder, into any) ListMeta
 	return env.Meta
 }
 
+// total is meta.Total, -1 when it is omitted.
+func total(meta ListMeta) int {
+	if meta.Total == nil {
+		return -1
+	}
+	return *meta.Total
+}
+
 func TestListTenantsPagesAndSearches(t *testing.T) {
 	fake := &backendtest.Fake{Tenants: seedTenants()}
 	app := newTestApp(t, testConfig(t), fake)
@@ -62,7 +71,7 @@ func TestListTenantsPagesAndSearches(t *testing.T) {
 	if len(list) != 3 || list[0].Name != "acme-robotics" || list[2].Name != "umbrella-biotech" {
 		t.Fatalf("list = %+v", list)
 	}
-	if meta.Size != 3 || meta.Total != 3 || meta.Offset != 0 || meta.Limit != nil {
+	if meta.Size != 3 || total(meta) != 3 || meta.Offset != 0 || meta.Limit != nil {
 		t.Errorf("meta = %+v", meta)
 	}
 	if !strings.Contains(rec.Body.String(), `"meta":{"size":3,"total":3,"offset":0}`) {
@@ -95,7 +104,7 @@ func TestListTenantsPagesAndSearches(t *testing.T) {
 	}
 	rec = serve(app, asUser(http.MethodGet, "/api/v1/tenants?search=bio"))
 	meta = decodeList(t, rec, &list)
-	if len(list) != 1 || list[0].Name != "umbrella-biotech" || meta.Total != 1 {
+	if len(list) != 1 || list[0].Name != "umbrella-biotech" || total(meta) != 1 {
 		t.Errorf("search = %+v %+v", list, meta)
 	}
 	rec = serve(app, asUser(http.MethodGet, "/api/v1/tenants?search=example.org"))
@@ -105,17 +114,17 @@ func TestListTenantsPagesAndSearches(t *testing.T) {
 	}
 	rec = serve(app, asUser(http.MethodGet, "/api/v1/tenants?search=%20%20"))
 	meta = decodeList(t, rec, &list)
-	if fake.LastListTenants.Filter != nil || meta.Total != 3 {
+	if fake.LastListTenants.Filter != nil || total(meta) != 3 {
 		t.Errorf("a blank search sends no filter: %v", fake.LastListTenants)
 	}
 	rec = serve(app, asUser(http.MethodGet, "/api/v1/tenants?limit=0"))
 	meta = decodeList(t, rec, &list)
-	if len(list) != 0 || meta.Size != 0 || meta.Total != 3 || meta.Limit == nil || *meta.Limit != 0 {
+	if len(list) != 0 || meta.Size != 0 || total(meta) != 3 || meta.Limit == nil || *meta.Limit != 0 {
 		t.Errorf("limit=0 counts only: %+v %+v", list, meta)
 	}
 	rec = serve(app, asUser(http.MethodGet, "/api/v1/tenants?offset=10&limit=5"))
 	meta = decodeList(t, rec, &list)
-	if len(list) != 0 || meta.Total != 3 || meta.Offset != 10 {
+	if len(list) != 0 || total(meta) != 3 || meta.Offset != 10 {
 		t.Errorf("offset past the end is an empty page with the total: %+v %+v", list, meta)
 	}
 	for _, q := range []string{"offset=-1", "limit=x", "limit=-2", "limit=2147483648", "offset=4294967296", "limit=99999999999999999999"} {
@@ -389,5 +398,123 @@ func TestDeleteTenant(t *testing.T) {
 	}
 	if rec := serve(app, httptest.NewRequest(http.MethodDelete, "/api/v1/tenants/t-1", nil)); rec.Code != http.StatusUnauthorized {
 		t.Errorf("anonymous delete = %d", rec.Code)
+	}
+}
+
+func TestTenantVersions(t *testing.T) {
+	tenants := seedTenants()
+	tenants[1].ResourceVersion = "4" // acme-robotics, t-1
+	fake := &backendtest.Fake{Tenants: tenants}
+	app := newTestApp(t, testConfig(t), fake)
+	withIfMatch := func(req *http.Request, v string) *http.Request { req.Header.Set("If-Match", v); return req }
+
+	rec := serve(app, asUser(http.MethodGet, "/api/v1/tenants/t-1"))
+	var got Tenant
+	decodeData(t, rec, &got)
+	if rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"4"` || got.ResourceVersion != "4" {
+		t.Fatalf("GET = %d, ETag %q, resourceVersion %q", rec.Code, rec.Header().Get("ETag"), got.ResourceVersion)
+	}
+
+	// A stale tab: 409, nothing written.
+	rec = serve(app, withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/tenants/t-1", `{"description": "stale"}`), `"3"`))
+	if rec.Code != http.StatusConflict || fake.LastUpdateTenant.GetObject().GetResourceVersion() != "3" {
+		t.Fatalf("stale PATCH = %d %s, request %v", rec.Code, rec.Body.String(), fake.LastUpdateTenant)
+	}
+	if fake.Tenants[1].GetDescription() != "Acme" || fake.Tenants[1].GetResourceVersion() != "4" {
+		t.Errorf("a stale write must not land: %v", fake.Tenants[1])
+	}
+	// The current version writes and answers the next one.
+	rec = serve(app, withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/tenants/t-1", `{"description": "fresh"}`), `"4"`))
+	decodeData(t, rec, &got)
+	if rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"5"` || got.Description != "fresh" || got.ResourceVersion != "5" {
+		t.Fatalf("matching PATCH = %d, ETag %q, %+v", rec.Code, rec.Header().Get("ETag"), got)
+	}
+	// Without If-Match the update carries no version: not checked, as before.
+	rec = serve(app, jsonRequest(http.MethodPatch, "/api/v1/tenants/t-1", `{"description": "unchecked"}`))
+	if rec.Code != http.StatusOK || fake.LastUpdateTenant.GetObject().GetResourceVersion() != "" || rec.Header().Get("ETag") != `"6"` {
+		t.Errorf("PATCH without If-Match = %d, request %v", rec.Code, fake.LastUpdateTenant)
+	}
+	// A PATCH that sets no field writes nothing, so it does not check a version.
+	if rec := serve(app, withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/tenants/t-1", `{}`), `"1"`)); rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"6"` {
+		t.Errorf("empty PATCH with a stale If-Match = %d, ETag %q", rec.Code, rec.Header().Get("ETag"))
+	}
+	if rec := serve(app, withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/tenants/t-1", `{"enabled": false}`), `6`)); rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("an unquoted If-Match = %d, want 422", rec.Code)
+	}
+
+	// DELETE: stale is 409 and keeps the tenant, current deletes.
+	rec = serve(app, withIfMatch(asUser(http.MethodDelete, "/api/v1/tenants/t-1"), `"5"`))
+	if rec.Code != http.StatusConflict || fake.LastDeleteTenant.GetResourceVersion() != "5" || len(fake.Tenants) != 3 {
+		t.Fatalf("stale DELETE = %d %s, request %v", rec.Code, rec.Body.String(), fake.LastDeleteTenant)
+	}
+	if rec := serve(app, withIfMatch(asUser(http.MethodDelete, "/api/v1/tenants/t-1"), `"6"`)); rec.Code != http.StatusNoContent || len(fake.Tenants) != 2 {
+		t.Errorf("matching DELETE = %d", rec.Code)
+	}
+	// Without If-Match the delete is unconditional.
+	if rec := serve(app, asUser(http.MethodDelete, "/api/v1/tenants/t-2")); rec.Code != http.StatusNoContent || fake.LastDeleteTenant.GetResourceVersion() != "" {
+		t.Errorf("DELETE without If-Match = %d, request %v", rec.Code, fake.LastDeleteTenant)
+	}
+	// A created tenant comes back with its first version.
+	rec = serve(app, jsonRequest(http.MethodPost, "/api/v1/tenants", `{"name": "new-org"}`))
+	if rec.Code != http.StatusCreated || rec.Header().Get("ETag") != `"1"` {
+		t.Errorf("POST = %d, ETag %q", rec.Code, rec.Header().Get("ETag"))
+	}
+	// A backend that keeps no version (today's) sends no ETag and no field.
+	fake.Tenants = append(fake.Tenants, &aigridv1.Tenant{Id: "t-9", Name: "unversioned"})
+	rec = serve(app, asUser(http.MethodGet, "/api/v1/tenants/t-9"))
+	if rec.Header().Get("ETag") != "" || strings.Contains(rec.Body.String(), "resourceVersion") {
+		t.Errorf("no version: ETag %q, body %s", rec.Header().Get("ETag"), rec.Body.String())
+	}
+}
+
+// The shipped backend's ListTenantsRequest is empty: it drops offset, limit
+// and filter and returns every tenant with no total. Asking it for a search
+// or a page is 501, never the unfiltered rows as if they were the result.
+func TestTenantSearchAndPagingOnTheShippedBackend(t *testing.T) {
+	var many []*aigridv1.Tenant
+	for i := range 8 {
+		many = append(many, &aigridv1.Tenant{Id: fmt.Sprintf("t-%d", i+1), Name: fmt.Sprintf("org-%d", i+1)})
+	}
+	fake := &backendtest.Fake{Tenants: many, ShippedLists: true}
+	app := newTestApp(t, testConfig(t), fake)
+	for _, q := range []string{"search=zzz&limit=5", "search=org", "limit=5", "offset=3", "offset=1&limit=100"} {
+		rec := serve(app, asUser(http.MethodGet, "/api/v1/tenants?"+q))
+		if rec.Code != http.StatusNotImplemented {
+			t.Errorf("%s on the shipped backend = %d %s, want 501", q, rec.Code, rec.Body.String())
+			continue
+		}
+		if msg := decodeError(t, rec).Error.Message; msg != "the AI Grid backend does not support searching or paging tenants yet; list them without search, filter, offset or limit" {
+			t.Errorf("message = %q", msg)
+		}
+	}
+	// No search and no page (offset=0 is the start anyway): the full list,
+	// with the size as the total because nothing precedes it.
+	for _, q := range []string{"", "?offset=0", "?search=%20"} {
+		var list []Tenant
+		rec := serve(app, asUser(http.MethodGet, "/api/v1/tenants"+q))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%q = %d %s", q, rec.Code, rec.Body.String())
+		}
+		if meta := decodeList(t, rec, &list); len(list) != 8 || meta.Size != 8 || total(meta) != 8 {
+			t.Errorf("%q = %d tenants, meta %+v", q, len(list), meta)
+		}
+	}
+}
+
+// The displayed alias (the name, when the backend sends no alias) can be
+// sent back unchanged.
+func TestDisplayedAliasRoundTrip(t *testing.T) {
+	fake := &backendtest.Fake{Tenants: []*aigridv1.Tenant{{Id: "t-9", Name: "noalias"}}}
+	app := newTestApp(t, testConfig(t), fake)
+	var shown Tenant
+	decodeData(t, serve(app, asUser(http.MethodGet, "/api/v1/tenants/t-9")), &shown)
+	if shown.Alias != "noalias" {
+		t.Fatalf("shown alias = %q", shown.Alias)
+	}
+	if rec := serve(app, jsonRequest(http.MethodPatch, "/api/v1/tenants/t-9", `{"alias": "noalias"}`)); rec.Code != http.StatusOK || fake.Reached("UpdateTenant") {
+		t.Errorf("displayed alias sent back = %d %s, calls %v", rec.Code, rec.Body.String(), fake.Calls)
+	}
+	if rec := serve(app, jsonRequest(http.MethodPatch, "/api/v1/tenants/t-9", `{"alias": "other"}`)); rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("a different alias = %d, want 422", rec.Code)
 	}
 }

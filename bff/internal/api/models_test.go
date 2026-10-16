@@ -85,7 +85,7 @@ func TestListModels(t *testing.T) {
 		t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
 	}
 	meta := decodeList(t, rec, &list)
-	if len(list) != 3 || list[0].Name != "granite-8b-instruct" || list[2].Namespace != "team-b" || meta.Total != 3 {
+	if len(list) != 3 || list[0].Name != "granite-8b-instruct" || list[2].Namespace != "team-b" || total(meta) != 3 {
 		t.Fatalf("list = %+v meta %+v", list, meta)
 	}
 	if fake.LastListModels.Filter != nil {
@@ -375,5 +375,93 @@ func TestModelFromTodaysShapes(t *testing.T) {
 	m = toModel(&aigridv1.Model{Name: "p", Metadata: &aigridv1.ObjectMeta{Namespace: "ns"}, Spec: &aigridv1.ModelSpec{Placement: &aigridv1.Placement{}}})
 	if m.Placement == nil || m.Placement.SelectedClusters == nil || m.Placement.Conditions == nil || m.Rollout == nil || m.Rollout.Works == nil || m.Rollout.Strategy != StrategyAll {
 		t.Errorf("placed = %+v", m)
+	}
+}
+
+func TestModelVersions(t *testing.T) {
+	fake := &backendtest.Fake{Models: seedModels()}
+	app := newTestApp(t, testConfig(t), fake)
+	withIfMatch := func(req *http.Request, v string) *http.Request { req.Header.Set("If-Match", v); return req }
+	const path = "/api/v1/models/ai-grid-models/tiny-llm"
+
+	if rec := serve(app, asUser(http.MethodGet, path)); rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"7"` {
+		t.Fatalf("GET = %d, ETag %q", rec.Code, rec.Header().Get("ETag"))
+	}
+	rec := serve(app, withIfMatch(jsonRequest(http.MethodPatch, path, `{"replicas": 2}`), `"6"`))
+	if rec.Code != http.StatusConflict || !fake.LastUpdateModel.GetLock() || fake.LastUpdateModel.GetObject().GetMetadata().GetResourceVersion() != "6" {
+		t.Fatalf("stale PATCH = %d %s, request %v", rec.Code, rec.Body.String(), fake.LastUpdateModel)
+	}
+	if fake.Models[0].GetSpec().GetReplicas() != 1 {
+		t.Errorf("a stale write must not land")
+	}
+	rec = serve(app, withIfMatch(jsonRequest(http.MethodPatch, path, `{"replicas": 2}`), `"7"`))
+	if rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"8"` {
+		t.Fatalf("matching PATCH = %d, ETag %q", rec.Code, rec.Header().Get("ETag"))
+	}
+	rec = serve(app, withIfMatch(asUser(http.MethodDelete, path), `"7"`))
+	if rec.Code != http.StatusConflict || fake.LastDeleteModel.GetResourceVersion() != "7" || len(fake.Models) != 3 {
+		t.Fatalf("stale DELETE = %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := serve(app, withIfMatch(asUser(http.MethodDelete, path), `"8"`)); rec.Code != http.StatusNoContent || len(fake.Models) != 2 {
+		t.Errorf("matching DELETE = %d", rec.Code)
+	}
+	if rec := serve(app, withIfMatch(asUser(http.MethodDelete, "/api/v1/models/team-b/other"), `W/"3"`)); rec.Code != http.StatusUnprocessableEntity || len(fake.Models) != 2 {
+		t.Errorf("weak If-Match on DELETE = %d", rec.Code)
+	}
+	if rec := serve(app, asUser(http.MethodDelete, "/api/v1/models/team-b/other")); rec.Code != http.StatusNoContent || fake.LastDeleteModel.GetResourceVersion() != "" {
+		t.Errorf("DELETE without If-Match = %d, request %v", rec.Code, fake.LastDeleteModel)
+	}
+}
+
+// Resending what the page loaded is not a write; only changed fields go in
+// the mask.
+func TestNoOpModelPatchDoesNotWrite(t *testing.T) {
+	fake := &backendtest.Fake{Models: seedModels()}
+	app := newTestApp(t, testConfig(t), fake)
+	const tiny = "/api/v1/models/ai-grid-models/tiny-llm"
+	for _, body := range []string{
+		`{"replicas": 1, "runtimeImage": "", "env": [{"name": "VLLM_CPU_KVCACHE_SPACE", "value": "8"}]}`,
+		`{"labels": {"ai-grid/family": "tiny"}, "displayName": "Tiny LLM", "description": "CPU smoke test"}`,
+		`{"annotations": {"openshift.io/display-name": "Tiny LLM", "openshift.io/description": "CPU smoke test"}}`,
+		`{"placement": null}`,
+	} {
+		fake.Calls = nil
+		if rec := serve(app, jsonRequest(http.MethodPatch, tiny, body)); rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"7"` || fake.Reached("UpdateModel") {
+			t.Errorf("%s = %d, calls %v; want 200 without a write", body, rec.Code, fake.Calls)
+		}
+	}
+	const granite = "/api/v1/models/ai-grid-models/granite-8b-instruct"
+	fake.Calls = nil
+	if rec := serve(app, jsonRequest(http.MethodPatch, granite, `{"rollout": {"strategy": "Progressive", "maxConcurrency": "1", "progressDeadline": "15m"}}`)); rec.Code != http.StatusOK || fake.Reached("UpdateModel") {
+		t.Errorf("unchanged rollout = %d, calls %v", rec.Code, fake.Calls)
+	}
+	if rec := serve(app, jsonRequest(http.MethodPatch, tiny, `{"replicas": 1, "displayName": "Tiny"}`)); rec.Code != http.StatusOK || strings.Join(fake.LastUpdateModel.GetUpdateMask().GetPaths(), ",") != "metadata.annotations" {
+		t.Errorf("only the changed field is in the mask: %d %v", rec.Code, fake.LastUpdateModel.GetUpdateMask().GetPaths())
+	}
+}
+
+func TestModelFilterOnTheShippedBackend(t *testing.T) {
+	fake := &backendtest.Fake{Models: seedModels(), ShippedLists: true}
+	app := newTestApp(t, testConfig(t), fake)
+	for _, q := range []string{"namespace=team-b", "label=ai-grid/family%3Dtiny", "limit=1", "offset=2"} {
+		rec := serve(app, asUser(http.MethodGet, "/api/v1/models?"+q))
+		if rec.Code != http.StatusNotImplemented || !strings.Contains(decodeError(t, rec).Error.Message, "searching or paging models") {
+			t.Errorf("%s = %d %s, want 501", q, rec.Code, rec.Body.String())
+		}
+	}
+	var list []Model
+	rec := serve(app, asUser(http.MethodGet, "/api/v1/models"))
+	if meta := decodeList(t, rec, &list); rec.Code != http.StatusOK || len(list) != 3 || total(meta) != 3 {
+		t.Errorf("unfiltered = %d, %d models, meta %+v", rec.Code, len(list), meta)
+	}
+}
+
+// A backend model without a spec must not break the comparison.
+func TestPatchModelWithoutStoredSpec(t *testing.T) {
+	fake := &backendtest.Fake{Models: []*aigridv1.Model{{Name: "bare", Metadata: &aigridv1.ObjectMeta{Namespace: "ns", ResourceVersion: "1"}}}}
+	app := newTestApp(t, testConfig(t), fake)
+	rec := serve(app, jsonRequest(http.MethodPatch, "/api/v1/models/ns/bare", `{"replicas": 1, "runtimeImage": "img", "env": [], "placement": null, "labels": {}, "annotations": {}}`))
+	if rec.Code != http.StatusOK || strings.Join(fake.LastUpdateModel.GetUpdateMask().GetPaths(), ",") != "spec.replicas,spec.main.image" {
+		t.Errorf("bare model = %d %s, mask %v", rec.Code, rec.Body.String(), fake.LastUpdateModel.GetUpdateMask().GetPaths())
 	}
 }
