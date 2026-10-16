@@ -27,7 +27,7 @@ Owner: Yuval Turgeman. Everything that touches the hub, Keycloak or metrics.
    Keycloak stays on a service credential used only after a provider-admin check.
 3. Grow `ManagedCluster`: Available condition as `status`, the `consoleurl` claim,
    annotations (`ai-grid/site-name`, `ai-grid/latitude`, `ai-grid/longitude`). Add
-   `UpdateManagedCluster` for enrol and location, with `patch` in the ClusterRole.
+   `UpdateManagedCluster` for enrol and location, after item 2 (see item 5, "RBAC").
 4. `Grid/GetOverview` with the POC's metric contract (`docs/grid-monitoring.md` in the POC):
    Thanos query_range for request rate, 5xx rate, p95 latency and GPU utilisation scoped by
    `cluster`, explicit `metricsSource: demo` when Thanos is not configured. Verify the real
@@ -35,6 +35,27 @@ Owner: Yuval Turgeman. Everything that touches the hub, Keycloak or metrics.
 5. Models over Placement and ManifestWorkReplicaSet (feature plan 3a to 3d), then
    subscriptions and catalog. Needs the `ManifestWorkReplicaSet` feature gate and a
    `ManagedClusterSetBinding` on the hub.
+
+   RBAC: the backend's ServiceAccount (`manifests/base/rbac.yaml`) can only `get`, `list`
+   and `watch` ManagedClusters, so every write RPC it ships while it still calls the hub as
+   itself fails with 403. The cluster write (`UpdateManagedCluster`, item 3) and the model
+   writes (`CreateModel`, `UpdateModel`, `DeleteModel`) should land after item 2 (act as
+   the caller): the hub then checks each user's own RBAC, the ServiceAccount gets no write
+   rules at all, and its ClusterRole is deleted. If a write has to ship before item 2, the
+   ClusterRole needs, explicitly:
+   - for `UpdateManagedCluster` (item 3): `patch` on `managedclusters`
+     (`cluster.open-cluster-management.io`); `update` on `managedclusters/accept` only if
+     the backend writes `hub_accepts_client`, which the console does not;
+   - for the model writes: `get`, `list`, `watch`, `create`, `update`, `patch`, `delete` on
+     `llminferenceservices` (`serving.kserve.io`), `placements`
+     (`cluster.open-cluster-management.io`) and `manifestworkreplicasets`
+     (`work.open-cluster-management.io`); `get`, `list`, `watch` on `placementdecisions`
+     and `managedclustersetbindings` (`cluster.open-cluster-management.io`), on
+     `manifestworks` (`work.open-cluster-management.io`, the per-site status in the
+     cluster namespaces) and on `llminferenceserviceconfigs` (`serving.kserve.io`, the
+     presets); and, if the backend creates the `ManagedClusterSetBinding` itself, `create`
+     on `managedclustersetbindings` plus `create` on `managedclustersets/bind` for the
+     bound set.
 6. Tenant create, update and delete on Keycloak Organizations; create the `ai-grid` realm
    on the dev hub's Keycloak (`grid-sso`).
 
@@ -42,10 +63,11 @@ Owner: Yuval Turgeman. Everything that touches the hub, Keycloak or metrics.
 
 Owner: console team. A handler per RPC, nothing else.
 
-1. Bump the backend pseudo-version in `bff/go.mod` as RPCs land and map each one in
-   `internal/api`: `UpdateManagedCluster` to `PATCH /clusters/{name}`, `GetOverview` to
-   `GET /grid/overview`, `GetCurrentUser` into `/user`, models, catalog, subscriptions,
-   tenant mutations. Keep the error table in `bff-api.md` true.
+1. As RPCs land in the backend, sync the vendored proto (`hack/sync-upstream-proto.sh`) and
+   reconcile the draft in `mock/proto` (cluster PATCH, tenants, models and capabilities are
+   already mapped against it), and map the rest in `internal/api`: `GetOverview` to
+   `GET /grid/overview`, `GetCurrentUser` into `/user`, catalog, subscriptions. Keep the
+   error table in `bff-api.md` true.
 2. When the backend moves to its own Deployment: `BACKEND_ADDRESS` to its Service,
    `BACKEND_CA_FILE` to its serving CA, a NetworkPolicy, and drop the backend container and
    its ClusterRole from `manifests/`.
@@ -77,7 +99,7 @@ Owner: console team.
 | Auth setup for AI Grid: OpenShift OAuth as deployed here, or a Keycloak realm shared with tenants? | Lindani Phiri, Andrew Ballantyne | Decides the kube-auth-proxy provider; the dev hub already has Keycloak in `grid-sso` |
 | Are Keycloak Organizations the tenant model, or will the tenant layer defined with Swati's team look different? | Swati's team, Yuval Turgeman | The backend's `ListTenants` already assumes Organizations |
 | Which Thanos (ACM observability or user-workload monitoring) and which metric names? | Kevin Howell, Praxis team | Unblocks `GetOverview` with real data; the POC's names are assumptions |
-| Where does the backend's image get published, and does the repository move to `osac-project`? | Yuval Turgeman | Removes the `replace` in `bff/go.mod` and the placeholder image in `manifests/` |
+| Where does the backend's image get published, and does the repository move to `osac-project`? | Yuval Turgeman | Decides the import path the console switches to when it drops the draft proto in `mock/proto`, and replaces the placeholder image in `manifests/` |
 | Is there a cost or spend view for AI Grid at all? | Myriam Fentanes, Jenny Yi, Daniele Zonca | Decides whether `billingUrl` ever points anywhere |
 
 ## Shared rules

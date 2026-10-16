@@ -17,12 +17,13 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	aigridv1 "github.com/osac-project/ai-grid-backend/gen/ai_grid/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
@@ -30,6 +31,9 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+
+	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
 )
 
 // Server holds the in-memory state behind the fake RPCs. It is safe for
@@ -38,16 +42,52 @@ type Server struct {
 	aigridv1.UnimplementedAiGridServer
 	aigridv1.UnimplementedManagedClustersServer
 	aigridv1.UnimplementedTenantsServer
+	// Services whose shape is drafted but not agreed answer Unimplemented, as
+	// the real server does for a stub; see mock/proto/ai_grid/v1/*_service.proto.
+	aigridv1.UnimplementedGridServer
+	aigridv1.UnimplementedModelsServer
+	aigridv1.UnimplementedCatalogItemsServer
+	aigridv1.UnimplementedSubscriptionsServer
 
 	mu       sync.RWMutex
 	clusters map[string]*aigridv1.ManagedCluster
 	tenants  map[string]*aigridv1.Tenant
+	models   map[string]*model
 	access   Access
+	// presets are the installed LLMInferenceServiceConfigs baseRefs resolve
+	// against; bindings the ManagedClusterSets bound per model namespace
+	// (absent namespace: `global`); capabilities what GetHubCapabilities
+	// answers and what gates a placed model.
+	presets      *Presets
+	bindings     map[string][]string
+	capabilities *aigridv1.HubCapabilities
+	// newSuffix draws generated ManifestWork name suffixes; referencedBy is
+	// DeleteModel's in-use check (see SetReferencedBy).
+	newSuffix    func() string
+	referencedBy func(namespace, name string) []string
+	// resourceVersion is the last value handed out, like etcd's revision:
+	// one counter for the whole store, bumped on every write.
+	resourceVersion int64
+	// Scenario state: timed transitions evaluated lazily against Clock.
+	scenarios []*scenario
+	start     time.Time
+	speed     float64
+	// clock is the time source for scenarios, condition transition times
+	// and taint stamps; time.Now unless SetClock replaced it.
+	clock func() time.Time
+	// newID assigns Keycloak organization ids; random UUID v4 unless
+	// SetIDGenerator replaced it.
+	newID func() string
+	// realmMissing makes every Tenants RPC answer FailedPrecondition, the
+	// state of the dev hub today (Keycloak without an ai-grid realm);
+	// orgsDisabled does the same for a realm with organizationsEnabled=false.
+	realmMissing bool
+	orgsDisabled bool
 	// Latency is added to every RPC to resemble a hub round trip.
 	Latency time.Duration
 	// TenantsErr, when set, makes every Tenants RPC fail with it. It models a
-	// backend whose Keycloak is unreachable or has no realm, the state of the
-	// dev hub today, so the UI's error path is exercised with a real code.
+	// backend whose Keycloak is unreachable, so the UI's error path is
+	// exercised with a real code.
 	TenantsErr error
 	// stopTimeout bounds GracefulStop in Serve; zero means defaultStopTimeout.
 	stopTimeout time.Duration
@@ -68,11 +108,32 @@ func New(fx *Fixtures, logger *slog.Logger) (*Server, error) {
 		logger = slog.Default()
 	}
 	s := &Server{
-		clusters: map[string]*aigridv1.ManagedCluster{},
-		tenants:  map[string]*aigridv1.Tenant{},
-		access:   fx.Access,
-		Latency:  fx.Latency.Duration(),
-		logger:   logger,
+		clusters:     map[string]*aigridv1.ManagedCluster{},
+		tenants:      map[string]*aigridv1.Tenant{},
+		models:       map[string]*model{},
+		access:       fx.Access,
+		presets:      fx.Presets,
+		bindings:     fx.ModelBindings,
+		capabilities: &aigridv1.HubCapabilities{ManifestWorkReplicaSetEnabled: true, ObservabilityInstalled: fx.ObservabilityInstalled, AcmVersion: fx.ACMVersion},
+		speed:        fx.Speed,
+		clock:        time.Now,
+		newID:        newUUID,
+		newSuffix:    newWorkSuffix,
+		referencedBy: func(string, string) []string { return nil },
+		Latency:      fx.Latency.Duration(),
+		logger:       logger,
+	}
+	if s.speed <= 0 {
+		s.speed = 1
+	}
+	if s.presets == nil {
+		s.presets = defaultPresets()
+	}
+	if fx.ManifestWorkReplicaSetEnabled != nil {
+		s.capabilities.ManifestWorkReplicaSetEnabled = *fx.ManifestWorkReplicaSetEnabled
+	}
+	if s.capabilities.AcmVersion == "" {
+		s.capabilities.AcmVersion = defaultACMVersion
 	}
 	for _, c := range fx.Clusters {
 		if c.GetName() == "" {
@@ -81,29 +142,91 @@ func New(fx *Fixtures, logger *slog.Logger) (*Server, error) {
 		if _, dup := s.clusters[c.GetName()]; dup {
 			return nil, fmt.Errorf("fixture cluster %q listed twice", c.GetName())
 		}
-		s.clusters[c.GetName()] = cloneCluster(c)
+		c = cloneCluster(c)
+		sortClaims(c)
+		if rv, err := strconv.ParseInt(c.GetResourceVersion(), 10, 64); err == nil && rv > s.resourceVersion {
+			s.resourceVersion = rv
+		}
+		s.clusters[c.GetName()] = c
 	}
+	names := make([]string, 0, len(s.clusters))
+	for name := range s.clusters {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if c := s.clusters[name]; c.GetResourceVersion() == "" {
+			s.bumpResourceVersion(c)
+		}
+	}
+	scenarios, err := parseScenarios(fx.Scenarios, s.clusters)
+	if err != nil {
+		return nil, err
+	}
+	s.scenarios = scenarios
+	s.start = s.clock()
 	for _, t := range fx.Tenants {
-		if t.GetId() == "" || t.GetName() == "" {
-			return nil, fmt.Errorf("fixture tenant needs id and name: %v", t)
+		if err := s.seedTenant(t); err != nil {
+			return nil, err
 		}
-		if _, dup := s.tenants[t.GetId()]; dup {
-			return nil, fmt.Errorf("fixture tenant id %q listed twice", t.GetId())
-		}
-		s.tenants[t.GetId()] = cloneTenant(t)
 	}
 	if fx.Tenants == nil && fx.TenantsUnavailable != "" {
-		s.TenantsErr = status.Error(codes.Unknown, fx.TenantsUnavailable)
+		// backend-conventions.md 5.7: Keycloak unreachable is Unavailable with
+		// a message that names Keycloak. The shipped backend still returns
+		// Unknown here (keycloak.md 7); the fake implements the convention.
+		s.TenantsErr = status.Error(codes.Unavailable, MsgKeycloakDownPref+fx.TenantsUnavailable)
 	}
+	s.realmMissing = fx.TenantsRealmMissing
+	s.orgsDisabled = fx.TenantsOrgsDisabled
+	for _, m := range fx.Models {
+		if err := s.seedModel(m); err != nil {
+			return nil, err
+		}
+	}
+	s.reconcileModels(s.start)
 	return s, nil
 }
 
-// Register attaches every service, the health service and reflection, the
-// same set the real backend registers.
+// defaultACMVersion is the hub's MultiClusterHub version (acm.md, "Feature
+// gate and installation facts").
+const defaultACMVersion = "2.17.3"
+
+// SetIDGenerator replaces the source of organization ids, so tests can
+// predict the id of a created tenant.
+func (s *Server) SetIDGenerator(next func() string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.newID = next
+}
+
+// SetClock replaces the time source and restarts the scenario clock from it,
+// so tests drive transitions deterministically. The fixture models restart
+// from the new clock (a fixture without creationTimestamp is created at the
+// new start); models created through the API keep their times.
+func (s *Server) SetClock(clock func() time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.clock = clock
+	s.start = clock()
+	for _, m := range s.models {
+		if m.live || m.obj.GetMetadata().GetCreationTimestamp().AsTime().Before(s.start) {
+			s.resetSeeded(m)
+		}
+	}
+	s.reconcileModels(s.start)
+}
+
+// Register attaches every service of the draft proto, the health service and
+// reflection, the same set the real backend registers. Methods the fake does
+// not implement answer Unimplemented from the embedded Unimplemented*Server.
 func (s *Server) Register(srv *grpc.Server) {
 	aigridv1.RegisterAiGridServer(srv, s)
 	aigridv1.RegisterManagedClustersServer(srv, s)
 	aigridv1.RegisterTenantsServer(srv, s)
+	aigridv1.RegisterGridServer(srv, s)
+	aigridv1.RegisterModelsServer(srv, s)
+	aigridv1.RegisterCatalogItemsServer(srv, s)
+	aigridv1.RegisterSubscriptionsServer(srv, s)
 	h := health.NewServer()
 	h.SetServingStatus("", healthv1.HealthCheckResponse_SERVING)
 	healthv1.RegisterHealthServer(srv, h)
@@ -174,6 +297,101 @@ func (s *Server) logCalls(ctx context.Context, req any, info *grpc.UnaryServerIn
 	return resp, err
 }
 
+// bumpResourceVersion stamps a written object with the next store revision.
+// Must be called under s.mu.
+func (s *Server) bumpResourceVersion(c *aigridv1.ManagedCluster) {
+	s.resourceVersion++
+	c.ResourceVersion = strconv.FormatInt(s.resourceVersion, 10)
+}
+
+// authenticate enforces the identity contract of
+// mock/research/backend-conventions.md section 5.6: every RPC except Ping,
+// health and reflection needs an `authorization` metadata value of the form
+// `Bearer <token>`; the x-forwarded-* headers are advisory and only logged.
+// It returns the bearer token.
+func authenticate(ctx context.Context) (string, error) {
+	md, _ := metadata.FromIncomingContext(ctx)
+	values := md.Get("authorization")
+	if len(values) != 1 {
+		return "", status.Error(codes.Unauthenticated, "missing authorization metadata")
+	}
+	token, ok := strings.CutPrefix(values[0], "Bearer ")
+	if !ok || strings.TrimSpace(token) == "" {
+		return "", status.Error(codes.Unauthenticated, "authorization metadata must be 'Bearer <token>'")
+	}
+	return token, nil
+}
+
+// isProviderAdmin is the hub's RBAC answer for the token, taken from the same
+// access fixture the fake hub uses for the BFF's SelfSubjectAccessReview, so
+// a token that is not a provider admin there cannot write here either
+// (backend-conventions.md section 5.6: hub 401 -> Unauthenticated, hub 403 ->
+// PermissionDenied). It returns the advisory user name for the message.
+func (s *Server) isProviderAdmin(ctx context.Context, token string) (user string, allowed bool, err error) {
+	if err := s.rejected(token); err != nil {
+		return "", false, err
+	}
+	md, _ := metadata.FromIncomingContext(ctx)
+	user = strings.Join(md.Get("x-forwarded-user"), ",")
+	return user, s.access.DefaultAllowed && !slices.Contains(s.access.DeniedTokens, token), nil
+}
+
+// authorizePatch gates a hub write. The message is shaped like the API
+// server's Forbidden status for a patch on the named ManagedCluster.
+func (s *Server) authorizePatch(ctx context.Context, token, name string) error {
+	user, allowed, err := s.isProviderAdmin(ctx, token)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return status.Errorf(codes.PermissionDenied,
+			"managedclusters.cluster.open-cluster-management.io %q is forbidden: User %q cannot patch resource \"managedclusters\" in API group \"cluster.open-cluster-management.io\" at the cluster scope", name, user)
+	}
+	return nil
+}
+
+// rejected is the hub's 401 for a token in access.json's rejectedTokens (an
+// expired or revoked OpenShift token), which the backend reports as
+// Unauthenticated on any call, reads included; a merely denied token still
+// reads and fails only on writes (authorizePatch).
+func (s *Server) rejected(token string) error {
+	if slices.Contains(s.access.RejectedTokens, token) {
+		return status.Error(codes.Unauthenticated, "the hub rejected the token: Unauthorized")
+	}
+	return nil
+}
+
+// authorizeProviderAdmin gates a Keycloak mutation: the backend uses its own
+// Keycloak credential but first checks that the caller may patch
+// ManagedClusters on the hub (backend-conventions.md 5.6, "provider admin").
+// The conventions fix only the code; the message text is the console's
+// proposal (keycloak.md 8.2), nothing on the hub or in Keycloak produces it.
+func (s *Server) authorizeProviderAdmin(ctx context.Context, token string) error {
+	user, allowed, err := s.isProviderAdmin(ctx, token)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return status.Errorf(codes.PermissionDenied,
+			"User %q is not a provider admin: cannot patch resource \"managedclusters\" in API group \"cluster.open-cluster-management.io\" at the cluster scope", user)
+	}
+	return nil
+}
+
+// begin is what every authenticated RPC does first: check the caller's
+// bearer token is present and not rejected, then take the hub round trip.
+// It returns the token for the RBAC check a mutating RPC adds.
+func (s *Server) begin(ctx context.Context) (string, error) {
+	token, err := authenticate(ctx)
+	if err != nil {
+		return "", err
+	}
+	if err := s.rejected(token); err != nil {
+		return "", err
+	}
+	return token, s.wait(ctx)
+}
+
 // wait simulates the hub round trip and honours cancellation like a real call.
 func (s *Server) wait(ctx context.Context) error {
 	if s.Latency <= 0 {
@@ -195,49 +413,11 @@ func (s *Server) Ping(ctx context.Context, req *aigridv1.PingRequest) (*aigridv1
 	return &aigridv1.PingResponse{Message: fmt.Sprintf("Hello, %s!", req.GetName())}, nil
 }
 
-// ListManagedClusters implements ManagedClusters. Like a hub list, the result
-// is sorted by name and every cluster carries the labels ACM sets.
-func (s *Server) ListManagedClusters(ctx context.Context, _ *aigridv1.ListManagedClustersRequest) (*aigridv1.ListManagedClustersResponse, error) {
-	if err := s.wait(ctx); err != nil {
-		return nil, err
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	out := make([]*aigridv1.ManagedCluster, 0, len(s.clusters))
-	for _, c := range s.clusters {
-		out = append(out, cloneCluster(c))
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].GetName() < out[j].GetName() })
-	return &aigridv1.ListManagedClustersResponse{Clusters: out}, nil
-}
-
-// ListTenants implements Tenants. Keycloak returns organizations ordered by
-// name; the real backend passes that order through.
-func (s *Server) ListTenants(ctx context.Context, _ *aigridv1.ListTenantsRequest) (*aigridv1.ListTenantsResponse, error) {
-	if err := s.wait(ctx); err != nil {
-		return nil, err
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.TenantsErr != nil {
-		return nil, s.TenantsErr
-	}
-	out := make([]*aigridv1.Tenant, 0, len(s.tenants))
-	for _, t := range s.tenants {
-		out = append(out, cloneTenant(t))
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].GetName() < out[j].GetName() })
-	return &aigridv1.ListTenantsResponse{Tenants: out}, nil
-}
-
+// Responses are deep copies so a caller cannot mutate the fixture state.
 func cloneCluster(c *aigridv1.ManagedCluster) *aigridv1.ManagedCluster {
-	labels := make(map[string]string, len(c.GetLabels()))
-	for k, v := range c.GetLabels() {
-		labels[k] = v
-	}
-	return &aigridv1.ManagedCluster{Name: c.GetName(), Labels: labels, HubAcceptsClient: c.GetHubAcceptsClient()}
+	return proto.Clone(c).(*aigridv1.ManagedCluster)
 }
 
 func cloneTenant(t *aigridv1.Tenant) *aigridv1.Tenant {
-	return &aigridv1.Tenant{Id: t.GetId(), Name: t.GetName(), Domains: append([]string(nil), t.GetDomains()...)}
+	return proto.Clone(t).(*aigridv1.Tenant)
 }

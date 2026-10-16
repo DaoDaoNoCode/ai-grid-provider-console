@@ -1,0 +1,13 @@
+{
+  "request": "GET /api/v1/user",
+  "token": "dev-token",
+  "user": "dev-user",
+  "status": 200,
+  "body": {
+    "data": {
+      "username": "dev-user",
+      "groups": [],
+      "isProviderAdmin": true
+    }
+  }
+}

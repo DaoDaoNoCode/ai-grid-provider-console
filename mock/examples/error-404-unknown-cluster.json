@@ -1,0 +1,12 @@
+{
+  "request": "GET /api/v1/clusters/site-unknown-1",
+  "token": "dev-token",
+  "user": "dev-user",
+  "status": 404,
+  "body": {
+    "error": {
+      "code": "404",
+      "message": "object with identifier 'site-unknown-1' not found"
+    }
+  }
+}

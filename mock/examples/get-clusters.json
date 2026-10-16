@@ -1,0 +1,750 @@
+{
+  "request": "GET /api/v1/clusters",
+  "token": "dev-token",
+  "user": "dev-user",
+  "status": 200,
+  "body": {
+    "data": [
+      {
+        "name": "edge-lyon-2",
+        "aiGridEnabled": false,
+        "provisioned": false,
+        "hubAcceptsClient": true,
+        "openshiftVersion": "4.22.15",
+        "status": "detaching",
+        "statusMessage": "The managed cluster is being detached now",
+        "consoleUrl": "https://console-openshift-console.apps.edge-lyon-2.example.com",
+        "kubernetesVersion": "v1.35.6",
+        "platform": "BareMetal",
+        "product": "OpenShift",
+        "gpuCapacity": 2,
+        "addons": {
+          "application-manager": "available",
+          "cert-policy-controller": "available",
+          "cluster-proxy": "available",
+          "config-policy-controller": "available",
+          "governance-policy-framework": "available",
+          "managed-serviceaccount": "available",
+          "work-manager": "available"
+        },
+        "conditions": [
+          {
+            "type": "ManagedClusterImportSucceeded",
+            "status": "False",
+            "reason": "ManagedClusterDetaching",
+            "message": "The managed cluster is being detached now",
+            "lastTransitionTime": "2026-10-15T12:00:00Z"
+          },
+          {
+            "type": "HubAcceptedManagedCluster",
+            "status": "True",
+            "reason": "HubClusterAdminAccepted",
+            "message": "Accepted by hub cluster admin",
+            "lastTransitionTime": "2026-10-10T11:20:02Z"
+          },
+          {
+            "type": "ManagedClusterJoined",
+            "status": "True",
+            "reason": "ManagedClusterJoined",
+            "message": "Managed cluster joined",
+            "lastTransitionTime": "2026-10-10T11:22:40Z"
+          },
+          {
+            "type": "ManagedClusterConditionAvailable",
+            "status": "True",
+            "reason": "ManagedClusterAvailable",
+            "message": "Managed cluster is available",
+            "lastTransitionTime": "2026-10-10T11:22:40Z"
+          },
+          {
+            "type": "ManagedClusterConditionClockSynced",
+            "status": "True",
+            "reason": "ManagedClusterClockSynced",
+            "message": "The clock of the managed cluster is synced with the hub.",
+            "lastTransitionTime": "2026-10-10T11:22:40Z"
+          },
+          {
+            "type": "Deleting",
+            "status": "False",
+            "reason": "ResourceRemaining",
+            "message": "The resource managedclusteraddons is remaning, the remaining count is 7, the finalizer pending count is 1",
+            "lastTransitionTime": "2026-10-15T12:00:00Z"
+          }
+        ],
+        "resourceVersion": "48812755",
+        "labels": {
+          "cloud": "BareMetal",
+          "cluster.open-cluster-management.io/clusterset": "default",
+          "clusterID": "0a1b2c3d-4e5f-4607-8899-aabbccddeeff",
+          "feature.open-cluster-management.io/addon-application-manager": "available",
+          "feature.open-cluster-management.io/addon-cert-policy-controller": "available",
+          "feature.open-cluster-management.io/addon-cluster-proxy": "available",
+          "feature.open-cluster-management.io/addon-config-policy-controller": "available",
+          "feature.open-cluster-management.io/addon-governance-policy-framework": "available",
+          "feature.open-cluster-management.io/addon-managed-serviceaccount": "available",
+          "feature.open-cluster-management.io/addon-work-manager": "available",
+          "name": "edge-lyon-2",
+          "openshiftVersion": "4.22.15",
+          "openshiftVersion-major": "4",
+          "openshiftVersion-major-minor": "4.22",
+          "vendor": "OpenShift"
+        },
+        "annotations": {
+          "installer.multicluster.openshift.io/release-version": "2.17.3",
+          "open-cluster-management/created-via": "other"
+        }
+      },
+      {
+        "name": "local-cluster",
+        "aiGridEnabled": false,
+        "provisioned": false,
+        "hubAcceptsClient": true,
+        "openshiftVersion": "4.22.15",
+        "status": "ready",
+        "statusMessage": "Managed cluster is available",
+        "consoleUrl": "https://console-openshift-console.apps.hub.example.com",
+        "kubernetesVersion": "v1.35.6",
+        "platform": "AWS",
+        "product": "ROSA",
+        "gpuCapacity": 0,
+        "addons": {
+          "application-manager": "available",
+          "cert-policy-controller": "available",
+          "cluster-proxy": "available",
+          "config-policy-controller": "available",
+          "governance-policy-framework": "available",
+          "hypershift-addon": "available",
+          "managed-serviceaccount": "available",
+          "multicluster-observability-addon": "available",
+          "submariner": "available",
+          "work-manager": "available"
+        },
+        "conditions": [
+          {
+            "type": "ManagedClusterImportSucceeded",
+            "status": "True",
+            "reason": "ManagedClusterImported",
+            "message": "Import succeeded",
+            "lastTransitionTime": "2026-09-01T07:30:12Z"
+          },
+          {
+            "type": "HubAcceptedManagedCluster",
+            "status": "True",
+            "reason": "HubClusterAdminAccepted",
+            "message": "Accepted by hub cluster admin",
+            "lastTransitionTime": "2026-09-01T07:30:02Z"
+          },
+          {
+            "type": "ManagedClusterJoined",
+            "status": "True",
+            "reason": "ManagedClusterJoined",
+            "message": "Managed cluster joined",
+            "lastTransitionTime": "2026-09-01T07:30:08Z"
+          },
+          {
+            "type": "ManagedClusterConditionAvailable",
+            "status": "True",
+            "reason": "ManagedClusterAvailable",
+            "message": "Managed cluster is available",
+            "lastTransitionTime": "2026-09-01T07:30:08Z"
+          },
+          {
+            "type": "ManagedClusterConditionClockSynced",
+            "status": "True",
+            "reason": "ManagedClusterClockSynced",
+            "message": "The clock of the managed cluster is synced with the hub.",
+            "lastTransitionTime": "2026-09-01T07:30:08Z"
+          }
+        ],
+        "resourceVersion": "48812031",
+        "labels": {
+          "cloud": "Amazon",
+          "cluster.open-cluster-management.io/clusterset": "default",
+          "clusterID": "7f0c2a6e-1d2b-4a3c-9e8f-0123456789ab",
+          "feature.open-cluster-management.io/addon-application-manager": "available",
+          "feature.open-cluster-management.io/addon-cert-policy-controller": "available",
+          "feature.open-cluster-management.io/addon-cluster-proxy": "available",
+          "feature.open-cluster-management.io/addon-config-policy-controller": "available",
+          "feature.open-cluster-management.io/addon-governance-policy-framework": "available",
+          "feature.open-cluster-management.io/addon-hypershift-addon": "available",
+          "feature.open-cluster-management.io/addon-managed-serviceaccount": "available",
+          "feature.open-cluster-management.io/addon-multicluster-observability-addon": "available",
+          "feature.open-cluster-management.io/addon-submariner": "available",
+          "feature.open-cluster-management.io/addon-work-manager": "available",
+          "local-cluster": "true",
+          "name": "local-cluster",
+          "openshiftVersion": "4.22.15",
+          "openshiftVersion-major": "4",
+          "openshiftVersion-major-minor": "4.22",
+          "velero.io/exclude-from-backup": "true",
+          "vendor": "OpenShift"
+        },
+        "annotations": {
+          "installer.multicluster.openshift.io/release-version": "2.17.3",
+          "open-cluster-management/created-via": "other",
+          "open-cluster-management/tolerations": "[{\"effect\": \"NoSchedule\", \"key\": \"node-role.kubernetes.io/infra\", \"operator\": \"Exists\"}]"
+        }
+      },
+      {
+        "name": "site-ashburn-1",
+        "aiGridEnabled": true,
+        "provisioned": false,
+        "hubAcceptsClient": true,
+        "location": "ashburn",
+        "site": "ashburn-dc1",
+        "region": "us-east",
+        "openshiftVersion": "4.22.15",
+        "status": "offline",
+        "statusMessage": "The kube-apiserver is not ok, status code: 503, the server is currently unable to handle the request",
+        "consoleUrl": "https://console-openshift-console.apps.site-ashburn-1.example.com",
+        "kubernetesVersion": "v1.35.6",
+        "platform": "AWS",
+        "product": "OpenShift",
+        "gpuCapacity": 8,
+        "siteName": "Ashburn DC1",
+        "latitude": 39.0438,
+        "longitude": -77.4874,
+        "addons": {
+          "application-manager": "available",
+          "cert-policy-controller": "available",
+          "cluster-proxy": "available",
+          "config-policy-controller": "available",
+          "governance-policy-framework": "available",
+          "managed-serviceaccount": "available",
+          "work-manager": "available"
+        },
+        "conditions": [
+          {
+            "type": "ManagedClusterImportSucceeded",
+            "status": "True",
+            "reason": "ManagedClusterImported",
+            "message": "Import succeeded",
+            "lastTransitionTime": "2026-09-28T16:47:44Z"
+          },
+          {
+            "type": "HubAcceptedManagedCluster",
+            "status": "True",
+            "reason": "HubClusterAdminAccepted",
+            "message": "Accepted by hub cluster admin",
+            "lastTransitionTime": "2026-09-28T16:45:02Z"
+          },
+          {
+            "type": "ManagedClusterJoined",
+            "status": "True",
+            "reason": "ManagedClusterJoined",
+            "message": "Managed cluster joined",
+            "lastTransitionTime": "2026-09-28T16:47:31Z"
+          },
+          {
+            "type": "ManagedClusterConditionAvailable",
+            "status": "False",
+            "reason": "ManagedClusterKubeAPIServerUnavailable",
+            "message": "The kube-apiserver is not ok, status code: 503, the server is currently unable to handle the request",
+            "lastTransitionTime": "2026-10-15T11:42:17Z"
+          },
+          {
+            "type": "ManagedClusterConditionClockSynced",
+            "status": "True",
+            "reason": "ManagedClusterClockSynced",
+            "message": "The clock of the managed cluster is synced with the hub.",
+            "lastTransitionTime": "2026-09-28T16:47:31Z"
+          }
+        ],
+        "resourceVersion": "48812610",
+        "labels": {
+          "ai-grid/enabled": "true",
+          "ai-grid/provisioned": "false",
+          "ai-grid/region": "us-east",
+          "ai-grid/site": "ashburn-dc1",
+          "cloud": "Amazon",
+          "cluster.open-cluster-management.io/clusterset": "default",
+          "clusterID": "9e3f5b21-7d8a-4c93-b0e4-56789abcdef0",
+          "feature.open-cluster-management.io/addon-application-manager": "available",
+          "feature.open-cluster-management.io/addon-cert-policy-controller": "available",
+          "feature.open-cluster-management.io/addon-cluster-proxy": "available",
+          "feature.open-cluster-management.io/addon-config-policy-controller": "available",
+          "feature.open-cluster-management.io/addon-governance-policy-framework": "available",
+          "feature.open-cluster-management.io/addon-managed-serviceaccount": "available",
+          "feature.open-cluster-management.io/addon-work-manager": "available",
+          "location": "ashburn",
+          "name": "site-ashburn-1",
+          "openshiftVersion": "4.22.15",
+          "openshiftVersion-major": "4",
+          "openshiftVersion-major-minor": "4.22",
+          "vendor": "OpenShift"
+        },
+        "annotations": {
+          "ai-grid/latitude": "39.0438",
+          "ai-grid/longitude": "-77.4874",
+          "ai-grid/site-name": "Ashburn DC1",
+          "installer.multicluster.openshift.io/release-version": "2.17.3",
+          "open-cluster-management/created-via": "other"
+        }
+      },
+      {
+        "name": "site-berlin-1",
+        "aiGridEnabled": false,
+        "provisioned": false,
+        "hubAcceptsClient": true,
+        "status": "importing",
+        "statusMessage": "Importing resources are applied, wait for resources be available",
+        "gpuCapacity": 0,
+        "addons": {},
+        "conditions": [
+          {
+            "type": "HubAcceptedManagedCluster",
+            "status": "True",
+            "reason": "HubClusterAdminAccepted",
+            "message": "Accepted by hub cluster admin",
+            "lastTransitionTime": "2026-10-15T10:00:01Z"
+          },
+          {
+            "type": "ManagedClusterImportSucceeded",
+            "status": "False",
+            "reason": "ManagedClusterImporting",
+            "message": "Importing resources are applied, wait for resources be available",
+            "lastTransitionTime": "2026-10-15T10:00:05Z"
+          }
+        ],
+        "resourceVersion": "48812702",
+        "labels": {
+          "cloud": "auto-detect",
+          "cluster.open-cluster-management.io/clusterset": "default",
+          "name": "site-berlin-1",
+          "vendor": "auto-detect"
+        },
+        "annotations": {
+          "open-cluster-management/created-via": "other"
+        }
+      },
+      {
+        "name": "site-dublin-1",
+        "aiGridEnabled": false,
+        "provisioned": false,
+        "hubAcceptsClient": true,
+        "status": "importfailed",
+        "statusMessage": "Try to import managed cluster, error: Get \"https://api.site-dublin-1.example.com:6443/api?timeout=32s\": dial tcp 192.0.2.10:6443: i/o timeout",
+        "gpuCapacity": 0,
+        "addons": {},
+        "conditions": [
+          {
+            "type": "HubAcceptedManagedCluster",
+            "status": "True",
+            "reason": "HubClusterAdminAccepted",
+            "message": "Accepted by hub cluster admin",
+            "lastTransitionTime": "2026-10-14T09:15:01Z"
+          },
+          {
+            "type": "ManagedClusterImportSucceeded",
+            "status": "False",
+            "reason": "ManagedClusterImportFailed",
+            "message": "Try to import managed cluster, error: Get \"https://api.site-dublin-1.example.com:6443/api?timeout=32s\": dial tcp 192.0.2.10:6443: i/o timeout",
+            "lastTransitionTime": "2026-10-14T09:16:12Z"
+          }
+        ],
+        "resourceVersion": "48812401",
+        "labels": {
+          "cloud": "auto-detect",
+          "cluster.open-cluster-management.io/clusterset": "default",
+          "name": "site-dublin-1",
+          "vendor": "auto-detect"
+        },
+        "annotations": {
+          "open-cluster-management/created-via": "other"
+        }
+      },
+      {
+        "name": "site-frankfurt-1",
+        "aiGridEnabled": false,
+        "provisioned": false,
+        "hubAcceptsClient": true,
+        "openshiftVersion": "4.21.9",
+        "status": "ready",
+        "statusMessage": "Managed cluster is available",
+        "consoleUrl": "https://console-openshift-console.apps.site-frankfurt-1.example.com",
+        "kubernetesVersion": "v1.34.3",
+        "platform": "BareMetal",
+        "product": "OpenShift",
+        "gpuCapacity": 8,
+        "addons": {
+          "application-manager": "unhealthy",
+          "cert-policy-controller": "available",
+          "cluster-proxy": "available",
+          "config-policy-controller": "available",
+          "governance-policy-framework": "available",
+          "managed-serviceaccount": "available",
+          "work-manager": "available"
+        },
+        "conditions": [
+          {
+            "type": "ManagedClusterImportSucceeded",
+            "status": "True",
+            "reason": "ManagedClusterImported",
+            "message": "Import succeeded",
+            "lastTransitionTime": "2026-10-03T14:14:51Z"
+          },
+          {
+            "type": "HubAcceptedManagedCluster",
+            "status": "True",
+            "reason": "HubClusterAdminAccepted",
+            "message": "Accepted by hub cluster admin",
+            "lastTransitionTime": "2026-10-03T14:12:02Z"
+          },
+          {
+            "type": "ManagedClusterJoined",
+            "status": "True",
+            "reason": "ManagedClusterJoined",
+            "message": "Managed cluster joined",
+            "lastTransitionTime": "2026-10-03T14:14:40Z"
+          },
+          {
+            "type": "ManagedClusterConditionAvailable",
+            "status": "True",
+            "reason": "ManagedClusterAvailable",
+            "message": "Managed cluster is available",
+            "lastTransitionTime": "2026-10-03T14:14:40Z"
+          },
+          {
+            "type": "ManagedClusterConditionClockSynced",
+            "status": "True",
+            "reason": "ManagedClusterClockSynced",
+            "message": "The clock of the managed cluster is synced with the hub.",
+            "lastTransitionTime": "2026-10-03T14:14:40Z"
+          }
+        ],
+        "resourceVersion": "48809977",
+        "labels": {
+          "cloud": "BareMetal",
+          "cluster.open-cluster-management.io/clusterset": "default",
+          "clusterID": "c41e8a77-3b5d-4f60-9c12-345678abcdef",
+          "feature.open-cluster-management.io/addon-application-manager": "unhealthy",
+          "feature.open-cluster-management.io/addon-cert-policy-controller": "available",
+          "feature.open-cluster-management.io/addon-cluster-proxy": "available",
+          "feature.open-cluster-management.io/addon-config-policy-controller": "available",
+          "feature.open-cluster-management.io/addon-governance-policy-framework": "available",
+          "feature.open-cluster-management.io/addon-managed-serviceaccount": "available",
+          "feature.open-cluster-management.io/addon-work-manager": "available",
+          "name": "site-frankfurt-1",
+          "openshiftVersion": "4.21.9",
+          "openshiftVersion-major": "4",
+          "openshiftVersion-major-minor": "4.21",
+          "vendor": "OpenShift"
+        },
+        "annotations": {
+          "installer.multicluster.openshift.io/release-version": "2.17.3",
+          "open-cluster-management/created-via": "other"
+        }
+      },
+      {
+        "name": "site-lisbon-1",
+        "aiGridEnabled": false,
+        "provisioned": false,
+        "hubAcceptsClient": false,
+        "openshiftVersion": "4.21.9",
+        "status": "notaccepted",
+        "statusMessage": "Denied by hub cluster admin",
+        "consoleUrl": "https://console-openshift-console.apps.site-lisbon-1.example.com",
+        "kubernetesVersion": "v1.34.3",
+        "platform": "Azure",
+        "product": "OpenShift",
+        "gpuCapacity": 4,
+        "addons": {
+          "application-manager": "unreachable",
+          "cert-policy-controller": "unreachable",
+          "cluster-proxy": "unreachable",
+          "config-policy-controller": "unreachable",
+          "governance-policy-framework": "unreachable",
+          "managed-serviceaccount": "unreachable",
+          "work-manager": "unreachable"
+        },
+        "conditions": [
+          {
+            "type": "ManagedClusterImportSucceeded",
+            "status": "True",
+            "reason": "ManagedClusterImported",
+            "message": "Import succeeded",
+            "lastTransitionTime": "2026-09-12T10:00:12Z"
+          },
+          {
+            "type": "HubAcceptedManagedCluster",
+            "status": "False",
+            "reason": "HubClusterAdminDenied",
+            "message": "Denied by hub cluster admin",
+            "lastTransitionTime": "2026-10-14T15:20:00Z"
+          },
+          {
+            "type": "ManagedClusterJoined",
+            "status": "True",
+            "reason": "ManagedClusterJoined",
+            "message": "Managed cluster joined",
+            "lastTransitionTime": "2026-09-12T10:00:08Z"
+          },
+          {
+            "type": "ManagedClusterConditionAvailable",
+            "status": "Unknown",
+            "reason": "ManagedClusterLeaseUpdateStopped",
+            "message": "Registration agent stopped updating its lease.",
+            "lastTransitionTime": "2026-10-14T15:25:00Z"
+          },
+          {
+            "type": "ManagedClusterConditionClockSynced",
+            "status": "True",
+            "reason": "ManagedClusterClockSynced",
+            "message": "The clock of the managed cluster is synced with the hub.",
+            "lastTransitionTime": "2026-09-12T10:00:08Z"
+          }
+        ],
+        "resourceVersion": "48812688",
+        "labels": {
+          "cloud": "Azure",
+          "cluster.open-cluster-management.io/clusterset": "default",
+          "clusterID": "d7e8f9a0-b1c2-4d3e-8f4a-5b6c7d8e9f00",
+          "feature.open-cluster-management.io/addon-application-manager": "unreachable",
+          "feature.open-cluster-management.io/addon-cert-policy-controller": "unreachable",
+          "feature.open-cluster-management.io/addon-cluster-proxy": "unreachable",
+          "feature.open-cluster-management.io/addon-config-policy-controller": "unreachable",
+          "feature.open-cluster-management.io/addon-governance-policy-framework": "unreachable",
+          "feature.open-cluster-management.io/addon-managed-serviceaccount": "unreachable",
+          "feature.open-cluster-management.io/addon-work-manager": "unreachable",
+          "name": "site-lisbon-1",
+          "openshiftVersion": "4.21.9",
+          "openshiftVersion-major": "4",
+          "openshiftVersion-major-minor": "4.21",
+          "vendor": "OpenShift"
+        },
+        "annotations": {
+          "installer.multicluster.openshift.io/release-version": "2.17.3",
+          "open-cluster-management/created-via": "other"
+        }
+      },
+      {
+        "name": "site-madrid-1",
+        "aiGridEnabled": true,
+        "provisioned": true,
+        "hubAcceptsClient": true,
+        "location": "madrid",
+        "site": "madrid-dc1",
+        "region": "europe-south",
+        "openshiftVersion": "4.21.9",
+        "status": "unknown",
+        "statusMessage": "Registration agent stopped updating its lease.",
+        "consoleUrl": "https://console-openshift-console.apps.site-madrid-1.example.com",
+        "kubernetesVersion": "v1.34.3",
+        "platform": "AWS",
+        "product": "OpenShift",
+        "gpuCapacity": 4,
+        "siteName": "Madrid DC1",
+        "latitude": 40.4168,
+        "longitude": -3.7038,
+        "addons": {
+          "application-manager": "unreachable",
+          "cert-policy-controller": "unreachable",
+          "cluster-proxy": "unreachable",
+          "config-policy-controller": "unreachable",
+          "governance-policy-framework": "unreachable",
+          "managed-serviceaccount": "unreachable",
+          "work-manager": "unreachable"
+        },
+        "conditions": [
+          {
+            "type": "ManagedClusterImportSucceeded",
+            "status": "True",
+            "reason": "ManagedClusterImported",
+            "message": "Import succeeded",
+            "lastTransitionTime": "2026-09-20T08:00:12Z"
+          },
+          {
+            "type": "HubAcceptedManagedCluster",
+            "status": "True",
+            "reason": "HubClusterAdminAccepted",
+            "message": "Accepted by hub cluster admin",
+            "lastTransitionTime": "2026-09-20T08:00:02Z"
+          },
+          {
+            "type": "ManagedClusterJoined",
+            "status": "True",
+            "reason": "ManagedClusterJoined",
+            "message": "Managed cluster joined",
+            "lastTransitionTime": "2026-09-20T08:00:08Z"
+          },
+          {
+            "type": "ManagedClusterConditionAvailable",
+            "status": "Unknown",
+            "reason": "ManagedClusterLeaseUpdateStopped",
+            "message": "Registration agent stopped updating its lease.",
+            "lastTransitionTime": "2026-10-15T11:05:00Z"
+          },
+          {
+            "type": "ManagedClusterConditionClockSynced",
+            "status": "True",
+            "reason": "ManagedClusterClockSynced",
+            "message": "The clock of the managed cluster is synced with the hub.",
+            "lastTransitionTime": "2026-09-20T08:00:08Z"
+          }
+        ],
+        "resourceVersion": "48812499",
+        "labels": {
+          "ai-grid/enabled": "true",
+          "ai-grid/provisioned": "true",
+          "ai-grid/region": "europe-south",
+          "ai-grid/site": "madrid-dc1",
+          "cloud": "Amazon",
+          "cluster.open-cluster-management.io/clusterset": "default",
+          "clusterID": "9b2d4f60-1e3a-4c7b-8d9e-0a1b2c3d4e5f",
+          "feature.open-cluster-management.io/addon-application-manager": "unreachable",
+          "feature.open-cluster-management.io/addon-cert-policy-controller": "unreachable",
+          "feature.open-cluster-management.io/addon-cluster-proxy": "unreachable",
+          "feature.open-cluster-management.io/addon-config-policy-controller": "unreachable",
+          "feature.open-cluster-management.io/addon-governance-policy-framework": "unreachable",
+          "feature.open-cluster-management.io/addon-managed-serviceaccount": "unreachable",
+          "feature.open-cluster-management.io/addon-work-manager": "unreachable",
+          "location": "madrid",
+          "name": "site-madrid-1",
+          "openshiftVersion": "4.21.9",
+          "openshiftVersion-major": "4",
+          "openshiftVersion-major-minor": "4.21",
+          "vendor": "OpenShift"
+        },
+        "annotations": {
+          "ai-grid/latitude": "40.4168",
+          "ai-grid/longitude": "-3.7038",
+          "ai-grid/site-name": "Madrid DC1",
+          "installer.multicluster.openshift.io/release-version": "2.17.3",
+          "open-cluster-management/created-via": "other"
+        }
+      },
+      {
+        "name": "site-oslo-1",
+        "aiGridEnabled": false,
+        "provisioned": false,
+        "hubAcceptsClient": true,
+        "status": "pendingimport",
+        "statusMessage": "Wait for importing",
+        "gpuCapacity": 0,
+        "addons": {},
+        "conditions": [
+          {
+            "type": "HubAcceptedManagedCluster",
+            "status": "True",
+            "reason": "HubClusterAdminAccepted",
+            "message": "Accepted by hub cluster admin",
+            "lastTransitionTime": "2026-10-15T12:30:01Z"
+          },
+          {
+            "type": "ManagedClusterImportSucceeded",
+            "status": "False",
+            "reason": "ManagedClusterWaitForImporting",
+            "message": "Wait for importing",
+            "lastTransitionTime": "2026-10-15T12:30:02Z"
+          }
+        ],
+        "resourceVersion": "48812790",
+        "labels": {
+          "cloud": "auto-detect",
+          "cluster.open-cluster-management.io/clusterset": "default",
+          "name": "site-oslo-1",
+          "vendor": "auto-detect"
+        },
+        "annotations": {
+          "open-cluster-management/created-via": "other"
+        }
+      },
+      {
+        "name": "site-paris-1",
+        "aiGridEnabled": true,
+        "provisioned": true,
+        "hubAcceptsClient": true,
+        "location": "paris",
+        "site": "paris-dc1",
+        "region": "europe-west",
+        "openshiftVersion": "4.22.15",
+        "status": "ready",
+        "statusMessage": "Managed cluster is available",
+        "consoleUrl": "https://console-openshift-console.apps.site-paris-1.example.com",
+        "kubernetesVersion": "v1.35.6",
+        "platform": "BareMetal",
+        "product": "OpenShift",
+        "gpuCapacity": 16,
+        "siteName": "Paris DC1",
+        "latitude": 48.8566,
+        "longitude": 2.3522,
+        "addons": {
+          "application-manager": "available",
+          "cert-policy-controller": "available",
+          "cluster-proxy": "available",
+          "config-policy-controller": "available",
+          "governance-policy-framework": "available",
+          "managed-serviceaccount": "available",
+          "work-manager": "available"
+        },
+        "conditions": [
+          {
+            "type": "ManagedClusterImportSucceeded",
+            "status": "True",
+            "reason": "ManagedClusterImported",
+            "message": "Import succeeded",
+            "lastTransitionTime": "2026-10-01T09:00:12Z"
+          },
+          {
+            "type": "HubAcceptedManagedCluster",
+            "status": "True",
+            "reason": "HubClusterAdminAccepted",
+            "message": "Accepted by hub cluster admin",
+            "lastTransitionTime": "2026-10-01T09:00:02Z"
+          },
+          {
+            "type": "ManagedClusterJoined",
+            "status": "True",
+            "reason": "ManagedClusterJoined",
+            "message": "Managed cluster joined",
+            "lastTransitionTime": "2026-10-01T09:00:08Z"
+          },
+          {
+            "type": "ManagedClusterConditionAvailable",
+            "status": "True",
+            "reason": "ManagedClusterAvailable",
+            "message": "Managed cluster is available",
+            "lastTransitionTime": "2026-10-01T09:00:08Z"
+          },
+          {
+            "type": "ManagedClusterConditionClockSynced",
+            "status": "True",
+            "reason": "ManagedClusterClockSynced",
+            "message": "The clock of the managed cluster is synced with the hub.",
+            "lastTransitionTime": "2026-10-01T09:00:08Z"
+          }
+        ],
+        "resourceVersion": "48811204",
+        "labels": {
+          "ai-grid/enabled": "true",
+          "ai-grid/provisioned": "true",
+          "ai-grid/region": "europe-west",
+          "ai-grid/site": "paris-dc1",
+          "cloud": "BareMetal",
+          "cluster.open-cluster-management.io/clusterset": "default",
+          "clusterID": "3f1c9c3e-8a4b-4e1d-9f0a-2b7d5e6c1a90",
+          "feature.open-cluster-management.io/addon-application-manager": "available",
+          "feature.open-cluster-management.io/addon-cert-policy-controller": "available",
+          "feature.open-cluster-management.io/addon-cluster-proxy": "available",
+          "feature.open-cluster-management.io/addon-config-policy-controller": "available",
+          "feature.open-cluster-management.io/addon-governance-policy-framework": "available",
+          "feature.open-cluster-management.io/addon-managed-serviceaccount": "available",
+          "feature.open-cluster-management.io/addon-work-manager": "available",
+          "location": "paris",
+          "name": "site-paris-1",
+          "openshiftVersion": "4.22.15",
+          "openshiftVersion-major": "4",
+          "openshiftVersion-major-minor": "4.22",
+          "vendor": "OpenShift"
+        },
+        "annotations": {
+          "ai-grid/latitude": "48.8566",
+          "ai-grid/longitude": "2.3522",
+          "ai-grid/site-name": "Paris DC1",
+          "installer.multicluster.openshift.io/release-version": "2.17.3",
+          "open-cluster-management/created-via": "other"
+        }
+      }
+    ]
+  }
+}

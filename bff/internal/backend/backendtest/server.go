@@ -3,42 +3,129 @@ package backendtest
 
 import (
 	"context"
+	"maps"
 	"net"
+	"regexp"
+	"slices"
+	"sort"
+	"strconv"
+	"strings"
 	"testing"
 
-	aigridv1 "github.com/osac-project/ai-grid-backend/gen/ai_grid/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/proto"
 
+	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/backend"
 )
 
-// Fake answers the three backend services from fixed data. Set Err to make
-// every RPC fail with that status. Metadata records the incoming metadata of
-// the last call so tests can assert on identity forwarding.
+// Fake answers the ManagedClusters, Tenants and AiGrid services from fixed
+// data and the draft-only services with Unimplemented. Set Err to make every
+// RPC fail with that status, or Errs to fail one RPC by method name
+// ("UpdateManagedCluster"), so a read can succeed and the write that follows
+// it fail. Calls lists the methods reached, in order, and Metadata records the
+// incoming metadata of the last call so tests can assert on identity
+// forwarding. Clusters are served as given: the derived `status.state` is
+// whatever the test put there, so handler tests control it directly.
+// GetManagedCluster hands out a copy and then runs AfterGet on the stored
+// object, so a test can simulate a write that lands between the BFF's read
+// and its update. Updates mutate the slice in place and bump
+// `resource_version`; LastUpdate keeps the last request, reached or refused.
+// Tenants follow the same idea with the few Keycloak rules a handler test
+// needs (ids `t-<n>`, duplicate name 409, NotFound); the Last*Tenant fields
+// keep the last request of each tenant RPC, reached or refused; a tenant's
+// `resource_version` is compared when Update or Delete carries one (Aborted
+// on a mismatch) and bumped by every update, counting from whatever the test
+// seeded (empty counts as 0). Models are
+// served as given (status included, so a handler test controls the derived
+// phase directly) with NotFound, AlreadyExists, the mask paths and the
+// resource-version lock (and DeleteModel's `resource_version` precondition);
+// Capabilities is what GetHubCapabilities answers, Unimplemented when nil like
+// today's backend. ShippedLists makes ListTenants and ListModels answer like
+// the shipped backend, whose empty ListTenantsRequest drops `offset`, `limit`
+// and `filter`: every item, no `size` and no `total`.
 type Fake struct {
 	aigridv1.UnimplementedAiGridServer
 	aigridv1.UnimplementedManagedClustersServer
 	aigridv1.UnimplementedTenantsServer
+	aigridv1.UnimplementedGridServer
+	aigridv1.UnimplementedModelsServer
+	aigridv1.UnimplementedCatalogItemsServer
+	aigridv1.UnimplementedSubscriptionsServer
 
-	Clusters []*aigridv1.ManagedCluster
-	Tenants  []*aigridv1.Tenant
-	Err      error
-	Metadata metadata.MD
+	Clusters   []*aigridv1.ManagedCluster
+	Tenants    []*aigridv1.Tenant
+	Err        error
+	Errs       map[string]error
+	Calls      []string
+	Metadata   metadata.MD
+	LastUpdate *aigridv1.UpdateManagedClusterRequest
+	AfterGet   func(stored *aigridv1.ManagedCluster)
+
+	LastListTenants  *aigridv1.ListTenantsRequest
+	LastCreateTenant *aigridv1.CreateTenantRequest
+	LastUpdateTenant *aigridv1.UpdateTenantRequest
+	LastDeleteTenant *aigridv1.DeleteTenantRequest
+	// lastTenantID is the highest `t-<n>` handed out or seeded, so an id is
+	// never reused after a delete.
+	lastTenantID int
+
+	Models          []*aigridv1.Model
+	Capabilities    *aigridv1.HubCapabilities
+	LastListModels  *aigridv1.ListModelsRequest
+	LastCreateModel *aigridv1.CreateModelRequest
+	LastUpdateModel *aigridv1.UpdateModelRequest
+	LastDeleteModel *aigridv1.DeleteModelRequest
+	// AfterGetModel runs on the stored model after GetModel copied it, to
+	// simulate a write between the BFF's read and its update.
+	AfterGetModel func(stored *aigridv1.Model)
+
+	// ShippedLists serves the lists without paging, filtering or counts.
+	ShippedLists bool
 }
 
-func (f *Fake) record(ctx context.Context) error {
+// stale is the Aborted answer to an expected version that is not the stored one.
+func stale(id, stored, expected string) error {
+	return status.Errorf(codes.Aborted, "object with identifier '%s' has resource version %s, the request carries %q", id, stored, expected)
+}
+
+// nextVersion is the stored version plus one; a non-numeric or empty one
+// counts as 0.
+func nextVersion(v string) string {
+	n, _ := strconv.Atoi(v)
+	return strconv.Itoa(n + 1)
+}
+
+// begin records the call and returns the injected error for it, if any. It
+// also notes the tenant ids present so far, before a delete can remove one.
+func (f *Fake) begin(ctx context.Context, method string) error {
 	md, _ := metadata.FromIncomingContext(ctx)
 	f.Metadata = md
-	return f.Err
+	f.noteTenantIDs()
+	f.Calls = append(f.Calls, method)
+	if f.Err != nil {
+		return f.Err
+	}
+	return f.Errs[method]
+}
+
+// Reached reports whether the named RPC was called.
+func (f *Fake) Reached(method string) bool {
+	for _, m := range f.Calls {
+		if m == method {
+			return true
+		}
+	}
+	return false
 }
 
 // Ping implements AiGrid.
 func (f *Fake) Ping(ctx context.Context, req *aigridv1.PingRequest) (*aigridv1.PingResponse, error) {
-	if err := f.record(ctx); err != nil {
+	if err := f.begin(ctx, "Ping"); err != nil {
 		return nil, err
 	}
 	return &aigridv1.PingResponse{Message: "pong " + req.GetName()}, nil
@@ -46,18 +133,483 @@ func (f *Fake) Ping(ctx context.Context, req *aigridv1.PingRequest) (*aigridv1.P
 
 // ListManagedClusters implements ManagedClusters.
 func (f *Fake) ListManagedClusters(ctx context.Context, _ *aigridv1.ListManagedClustersRequest) (*aigridv1.ListManagedClustersResponse, error) {
-	if err := f.record(ctx); err != nil {
+	if err := f.begin(ctx, "ListManagedClusters"); err != nil {
 		return nil, err
 	}
 	return &aigridv1.ListManagedClustersResponse{Clusters: f.Clusters}, nil
 }
 
-// ListTenants implements Tenants.
-func (f *Fake) ListTenants(ctx context.Context, _ *aigridv1.ListTenantsRequest) (*aigridv1.ListTenantsResponse, error) {
-	if err := f.record(ctx); err != nil {
+// GetManagedCluster implements ManagedClusters with the backend's NotFound message.
+func (f *Fake) GetManagedCluster(ctx context.Context, req *aigridv1.GetManagedClusterRequest) (*aigridv1.GetManagedClusterResponse, error) {
+	if err := f.begin(ctx, "GetManagedCluster"); err != nil {
 		return nil, err
 	}
-	return &aigridv1.ListTenantsResponse{Tenants: f.Tenants}, nil
+	c := f.find(req.GetName())
+	if c == nil {
+		return nil, status.Errorf(codes.NotFound, "object with identifier '%s' not found", req.GetName())
+	}
+	out := proto.Clone(c).(*aigridv1.ManagedCluster)
+	if f.AfterGet != nil {
+		f.AfterGet(c)
+	}
+	return &aigridv1.GetManagedClusterResponse{Object: out}, nil
+}
+
+// UpdateManagedCluster implements ManagedClusters: mask paths `labels`,
+// `annotations`, `hub_accepts_client`; `lock` compares `resource_version`
+// and answers Aborted on a mismatch.
+func (f *Fake) UpdateManagedCluster(ctx context.Context, req *aigridv1.UpdateManagedClusterRequest) (*aigridv1.UpdateManagedClusterResponse, error) {
+	f.LastUpdate = req
+	if err := f.begin(ctx, "UpdateManagedCluster"); err != nil {
+		return nil, err
+	}
+	c := f.find(req.GetObject().GetName())
+	if c == nil {
+		return nil, status.Errorf(codes.NotFound, "object with identifier '%s' not found", req.GetObject().GetName())
+	}
+	if req.GetLock() && req.GetObject().GetResourceVersion() != c.GetResourceVersion() {
+		return nil, status.Errorf(codes.Aborted, "object with identifier '%s' has resource version %s, the request carries %q", c.GetName(), c.GetResourceVersion(), req.GetObject().GetResourceVersion())
+	}
+	for _, p := range req.GetUpdateMask().GetPaths() {
+		switch p {
+		case "labels":
+			c.Labels = maps.Clone(req.GetObject().GetLabels())
+		case "annotations":
+			c.Annotations = maps.Clone(req.GetObject().GetAnnotations())
+		case "hub_accepts_client":
+			c.HubAcceptsClient = req.GetObject().GetHubAcceptsClient()
+		default:
+			return nil, status.Errorf(codes.InvalidArgument, "update_mask path %q is not supported", p)
+		}
+	}
+	rv, err := strconv.Atoi(c.GetResourceVersion())
+	if err != nil {
+		rv = 0 // a fixture without a numeric version starts counting here
+	}
+	c.ResourceVersion = strconv.Itoa(rv + 1)
+	return &aigridv1.UpdateManagedClusterResponse{Object: c}, nil
+}
+
+func (f *Fake) find(name string) *aigridv1.ManagedCluster {
+	for _, c := range f.Clusters {
+		if c.GetName() == name {
+			return c
+		}
+	}
+	return nil
+}
+
+// tenantFilter is the one filter form the draft supports (see
+// ListTenantsRequest.filter): the same term in both halves.
+var tenantFilter = regexp.MustCompile(`^this\.name\.lowerAscii\(\)\.contains\("((?:[^"\\]|\\.)*)"\) \|\| this\.domains\.exists\(d, d\.lowerAscii\(\)\.contains\("((?:[^"\\]|\\.)*)"\)\)$`)
+
+// ListTenants implements Tenants: name order, `offset`/`limit` paging and
+// the name-or-domain contains filter (case-insensitive), with `total`
+// counted over the filtered set.
+func (f *Fake) ListTenants(ctx context.Context, req *aigridv1.ListTenantsRequest) (*aigridv1.ListTenantsResponse, error) {
+	if err := f.begin(ctx, "ListTenants"); err != nil {
+		return nil, err
+	}
+	f.LastListTenants = req
+	if f.ShippedLists {
+		return &aigridv1.ListTenantsResponse{Tenants: f.Tenants}, nil
+	}
+	term := ""
+	if filter := req.GetFilter(); filter != "" {
+		m := tenantFilter.FindStringSubmatch(filter)
+		if m == nil || m[1] != m[2] {
+			return nil, status.Errorf(codes.InvalidArgument, "filter %s is not supported", filter)
+		}
+		unquoted, err := strconv.Unquote(`"` + m[1] + `"`)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "filter %s is not supported", filter)
+		}
+		term = strings.ToLower(unquoted)
+	}
+	all := make([]*aigridv1.Tenant, 0, len(f.Tenants))
+	for _, t := range f.Tenants {
+		match := strings.Contains(strings.ToLower(t.GetName()), term)
+		for _, d := range t.GetDomains() {
+			match = match || strings.Contains(strings.ToLower(d), term)
+		}
+		if match {
+			all = append(all, t)
+		}
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].GetName() < all[j].GetName() })
+	total := len(all)
+	page := all[min(int(req.GetOffset()), total):]
+	if req.Limit != nil && int(req.GetLimit()) < len(page) {
+		page = page[:req.GetLimit()]
+	}
+	return &aigridv1.ListTenantsResponse{Tenants: page, Size: int32(len(page)), Total: proto.Int32(int32(total))}, nil
+}
+
+// GetTenant implements Tenants with the backend's NotFound message.
+func (f *Fake) GetTenant(ctx context.Context, req *aigridv1.GetTenantRequest) (*aigridv1.GetTenantResponse, error) {
+	if err := f.begin(ctx, "GetTenant"); err != nil {
+		return nil, err
+	}
+	t := f.findTenant(req.GetId())
+	if t == nil {
+		return nil, status.Errorf(codes.NotFound, "object with identifier '%s' not found", req.GetId())
+	}
+	return &aigridv1.GetTenantResponse{Object: t}, nil
+}
+
+// CreateTenant implements Tenants: assigns the next `t-<n>` (monotonic, past
+// every seeded or deleted id), defaults the alias to the name and `enabled`
+// to true, mirrors `domains` into `domain_details`, 409 on a taken name with
+// Keycloak's message.
+func (f *Fake) CreateTenant(ctx context.Context, req *aigridv1.CreateTenantRequest) (*aigridv1.CreateTenantResponse, error) {
+	f.LastCreateTenant = req
+	if err := f.begin(ctx, "CreateTenant"); err != nil {
+		return nil, err
+	}
+	t := proto.Clone(req.GetObject()).(*aigridv1.Tenant)
+	if t.GetName() == "" {
+		return nil, status.Error(codes.InvalidArgument, "Name can not be null")
+	}
+	for _, other := range f.Tenants {
+		if other.GetName() == t.GetName() {
+			return nil, status.Error(codes.AlreadyExists, "A organization with the same name already exists.")
+		}
+	}
+	if t.GetAlias() == "" {
+		t.Alias = t.GetName()
+	}
+	if t.Enabled == nil {
+		t.Enabled = proto.Bool(true)
+	}
+	if len(t.GetDomainDetails()) == 0 {
+		for _, d := range t.GetDomains() {
+			t.DomainDetails = append(t.DomainDetails, &aigridv1.TenantDomain{Name: d})
+		}
+	}
+	t.Id = f.nextTenantID()
+	t.ResourceVersion = "1"
+	f.Tenants = append(f.Tenants, t)
+	return &aigridv1.CreateTenantResponse{Object: t}, nil
+}
+
+// UpdateTenant implements Tenants: applies the mask paths in place.
+func (f *Fake) UpdateTenant(ctx context.Context, req *aigridv1.UpdateTenantRequest) (*aigridv1.UpdateTenantResponse, error) {
+	f.LastUpdateTenant = req
+	if err := f.begin(ctx, "UpdateTenant"); err != nil {
+		return nil, err
+	}
+	t := f.findTenant(req.GetObject().GetId())
+	if t == nil {
+		return nil, status.Errorf(codes.NotFound, "object with identifier '%s' not found", req.GetObject().GetId())
+	}
+	if rv := req.GetObject().GetResourceVersion(); rv != "" && rv != t.GetResourceVersion() {
+		return nil, stale(t.GetId(), t.GetResourceVersion(), rv)
+	}
+	if alias := req.GetObject().GetAlias(); alias != "" && alias != t.GetAlias() {
+		return nil, status.Error(codes.InvalidArgument, "Cannot change the alias")
+	}
+	obj := req.GetObject()
+	for _, p := range req.GetUpdateMask().GetPaths() {
+		switch p {
+		case "name":
+			// Keycloak's PUT answers a blank name with 409: its exact name
+			// search treats a blank term as no filter and finds the
+			// organization itself (OrganizationResource.java L123-125).
+			if strings.TrimSpace(obj.GetName()) == "" {
+				return nil, status.Error(codes.AlreadyExists, "A organization with the same name already exists.")
+			}
+			t.Name = obj.GetName()
+		case "enabled":
+			t.Enabled = proto.Bool(obj.GetEnabled())
+		case "description":
+			t.Description = obj.GetDescription()
+		case "attributes":
+			t.Attributes = maps.Clone(obj.GetAttributes())
+		case "domains":
+			// Names only; unlike the real fake this drops the metadata of a
+			// domain that stays, which handler tests do not depend on.
+			t.Domains = slices.Clone(obj.GetDomains())
+			t.DomainDetails = nil
+			for _, d := range t.Domains {
+				t.DomainDetails = append(t.DomainDetails, &aigridv1.TenantDomain{Name: d})
+			}
+		case "domain_details":
+			t.DomainDetails = obj.GetDomainDetails()
+			t.Domains = nil
+			for _, d := range t.DomainDetails {
+				t.Domains = append(t.Domains, d.GetName())
+			}
+		default:
+			return nil, status.Errorf(codes.InvalidArgument, "update_mask path %q is not supported", p)
+		}
+	}
+	t.ResourceVersion = nextVersion(t.GetResourceVersion())
+	return &aigridv1.UpdateTenantResponse{Object: t}, nil
+}
+
+// DeleteTenant implements Tenants.
+func (f *Fake) DeleteTenant(ctx context.Context, req *aigridv1.DeleteTenantRequest) (*aigridv1.DeleteTenantResponse, error) {
+	f.LastDeleteTenant = req
+	if err := f.begin(ctx, "DeleteTenant"); err != nil {
+		return nil, err
+	}
+	for i, t := range f.Tenants {
+		if t.GetId() == req.GetId() {
+			if rv := req.GetResourceVersion(); rv != "" && rv != t.GetResourceVersion() {
+				return nil, stale(t.GetId(), t.GetResourceVersion(), rv)
+			}
+			f.Tenants = slices.Delete(f.Tenants, i, i+1)
+			return &aigridv1.DeleteTenantResponse{}, nil
+		}
+	}
+	return nil, status.Errorf(codes.NotFound, "object with identifier '%s' not found", req.GetId())
+}
+
+// noteTenantIDs raises lastTenantID to the highest `t-<n>` currently
+// present (seeded ids included), so a later delete cannot free a number.
+func (f *Fake) noteTenantIDs() {
+	for _, t := range f.Tenants {
+		if n, err := strconv.Atoi(strings.TrimPrefix(t.GetId(), "t-")); err == nil && n > f.lastTenantID {
+			f.lastTenantID = n
+		}
+	}
+}
+
+// nextTenantID returns the next unused `t-<n>`: one past the highest number
+// ever seen among the seeded ids and the ids handed out, deleted or not.
+func (f *Fake) nextTenantID() string {
+	f.noteTenantIDs()
+	f.lastTenantID++
+	return "t-" + strconv.Itoa(f.lastTenantID)
+}
+
+func (f *Fake) findTenant(id string) *aigridv1.Tenant {
+	for _, t := range f.Tenants {
+		if t.GetId() == id {
+			return t
+		}
+	}
+	return nil
+}
+
+// GetHubCapabilities implements AiGrid: Unimplemented until Capabilities is set.
+func (f *Fake) GetHubCapabilities(ctx context.Context, _ *aigridv1.GetHubCapabilitiesRequest) (*aigridv1.GetHubCapabilitiesResponse, error) {
+	if err := f.begin(ctx, "GetHubCapabilities"); err != nil {
+		return nil, err
+	}
+	if f.Capabilities == nil {
+		return nil, status.Error(codes.Unimplemented, "method GetHubCapabilities not implemented")
+	}
+	return &aigridv1.GetHubCapabilitiesResponse{Capabilities: f.Capabilities}, nil
+}
+
+// Model filter terms the draft supports (see ListModelsRequest.filter), read
+// from the front of the filter so a quoted ` && ` stays in its literal.
+var (
+	modelFilterLiteral   = `"(?:[^"\\]|\\.)*"`
+	modelFilterNamespace = regexp.MustCompile(`^this\.metadata\.namespace == (` + modelFilterLiteral + `)`)
+	modelFilterLabel     = regexp.MustCompile(`^(` + modelFilterLiteral + `) in this\.metadata\.labels && this\.metadata\.labels\[(` + modelFilterLiteral + `)\] == (` + modelFilterLiteral + `)`)
+)
+
+// modelFilterChecks parses a ListModels filter into its term checks.
+func modelFilterChecks(filter string) ([]func(*aigridv1.Model) bool, bool) {
+	var checks []func(*aigridv1.Model) bool
+	unquote := func(literals []string) ([]string, bool) {
+		out := make([]string, len(literals))
+		for i, l := range literals {
+			v, err := strconv.Unquote(l)
+			if err != nil {
+				return nil, false
+			}
+			out[i] = v
+		}
+		return out, true
+	}
+	for rest := filter; ; {
+		if m := modelFilterNamespace.FindStringSubmatch(rest); m != nil {
+			v, ok := unquote(m[1:])
+			if !ok {
+				return nil, false
+			}
+			checks = append(checks, func(x *aigridv1.Model) bool { return x.GetMetadata().GetNamespace() == v[0] })
+			rest = rest[len(m[0]):]
+		} else if m := modelFilterLabel.FindStringSubmatch(rest); m != nil {
+			v, ok := unquote(m[1:])
+			if !ok || v[0] != v[1] {
+				return nil, false
+			}
+			checks = append(checks, func(x *aigridv1.Model) bool {
+				got, ok := x.GetMetadata().GetLabels()[v[1]]
+				return ok && got == v[2]
+			})
+			rest = rest[len(m[0]):]
+		} else {
+			return nil, false
+		}
+		if rest == "" {
+			return checks, true
+		}
+		after, ok := strings.CutPrefix(rest, " && ")
+		if !ok {
+			return nil, false
+		}
+		rest = after
+	}
+}
+
+// ListModels implements Models: namespace then name order, the two filter
+// term forms joined with ` && `, offset/limit paging.
+func (f *Fake) ListModels(ctx context.Context, req *aigridv1.ListModelsRequest) (*aigridv1.ListModelsResponse, error) {
+	f.LastListModels = req
+	if err := f.begin(ctx, "ListModels"); err != nil {
+		return nil, err
+	}
+	if f.ShippedLists {
+		return &aigridv1.ListModelsResponse{Items: f.Models}, nil
+	}
+	var checks []func(*aigridv1.Model) bool
+	if filter := req.GetFilter(); filter != "" {
+		var ok bool
+		if checks, ok = modelFilterChecks(filter); !ok {
+			return nil, status.Errorf(codes.InvalidArgument, "filter %s is not supported", filter)
+		}
+	}
+	var all []*aigridv1.Model
+	for _, m := range f.Models {
+		ok := true
+		for _, check := range checks {
+			ok = ok && check(m)
+		}
+		if ok {
+			all = append(all, m)
+		}
+	}
+	sort.Slice(all, func(i, j int) bool {
+		if a, b := all[i].GetMetadata().GetNamespace(), all[j].GetMetadata().GetNamespace(); a != b {
+			return a < b
+		}
+		return all[i].GetName() < all[j].GetName()
+	})
+	total := len(all)
+	page := all[min(int(req.GetOffset()), total):]
+	if req.Limit != nil && int(req.GetLimit()) < len(page) {
+		page = page[:req.GetLimit()]
+	}
+	return &aigridv1.ListModelsResponse{Items: page, Size: int32(len(page)), Total: proto.Int32(int32(total))}, nil
+}
+
+// GetModel implements Models with the backend's NotFound message.
+func (f *Fake) GetModel(ctx context.Context, req *aigridv1.GetModelRequest) (*aigridv1.GetModelResponse, error) {
+	if err := f.begin(ctx, "GetModel"); err != nil {
+		return nil, err
+	}
+	m := f.findModel(req.GetNamespace(), req.GetName())
+	if m == nil {
+		return nil, status.Errorf(codes.NotFound, "object with identifier '%s/%s' not found", req.GetNamespace(), req.GetName())
+	}
+	out := proto.Clone(m).(*aigridv1.Model)
+	if f.AfterGetModel != nil {
+		f.AfterGetModel(m)
+	}
+	return &aigridv1.GetModelResponse{Object: out}, nil
+}
+
+// CreateModel implements Models: AlreadyExists on a taken namespace/name,
+// metadata filled, no status (the controllers have not run).
+func (f *Fake) CreateModel(ctx context.Context, req *aigridv1.CreateModelRequest) (*aigridv1.CreateModelResponse, error) {
+	f.LastCreateModel = req
+	if err := f.begin(ctx, "CreateModel"); err != nil {
+		return nil, err
+	}
+	m := proto.Clone(req.GetObject()).(*aigridv1.Model)
+	if m.GetName() == "" || m.GetMetadata().GetNamespace() == "" {
+		return nil, status.Error(codes.InvalidArgument, "metadata.name is required")
+	}
+	if f.findModel(m.GetMetadata().GetNamespace(), m.GetName()) != nil {
+		return nil, status.Errorf(codes.AlreadyExists, "llminferenceservices.serving.kserve.io %q already exists", m.GetName())
+	}
+	m.Metadata.Uid = "uid-" + strconv.Itoa(len(f.Models)+1)
+	m.Metadata.ResourceVersion = "1"
+	m.Metadata.Generation = 1
+	m.Status = &aigridv1.ModelStatus{Phase: aigridv1.ModelPhase_MODEL_PHASE_PENDING}
+	f.Models = append(f.Models, m)
+	return &aigridv1.CreateModelResponse{Object: m}, nil
+}
+
+// UpdateModel implements Models: the supported mask paths applied in place,
+// `lock` against `metadata.resource_version` with Aborted on a mismatch.
+func (f *Fake) UpdateModel(ctx context.Context, req *aigridv1.UpdateModelRequest) (*aigridv1.UpdateModelResponse, error) {
+	f.LastUpdateModel = req
+	if err := f.begin(ctx, "UpdateModel"); err != nil {
+		return nil, err
+	}
+	obj := req.GetObject()
+	m := f.findModel(obj.GetMetadata().GetNamespace(), obj.GetName())
+	if m == nil {
+		return nil, status.Errorf(codes.NotFound, "object with identifier '%s/%s' not found", obj.GetMetadata().GetNamespace(), obj.GetName())
+	}
+	if req.GetLock() && obj.GetMetadata().GetResourceVersion() != m.GetMetadata().GetResourceVersion() {
+		return nil, status.Errorf(codes.Aborted, "object with identifier '%s/%s' has resource version %s, the request carries %q", m.GetMetadata().GetNamespace(), m.GetName(), m.GetMetadata().GetResourceVersion(), obj.GetMetadata().GetResourceVersion())
+	}
+	if m.Spec == nil {
+		m.Spec = &aigridv1.ModelSpec{}
+	}
+	if m.Spec.Main == nil {
+		m.Spec.Main = &aigridv1.Container{}
+	}
+	for _, p := range req.GetUpdateMask().GetPaths() {
+		switch p {
+		case "spec.replicas":
+			m.Spec.Replicas = nil
+			if obj.GetSpec().Replicas != nil {
+				m.Spec.Replicas = proto.Int32(obj.GetSpec().GetReplicas())
+			}
+		case "spec.main.image":
+			m.Spec.Main.Image = obj.GetSpec().GetMain().GetImage()
+		case "spec.main.env":
+			m.Spec.Main.Env = obj.GetSpec().GetMain().GetEnv()
+		case "spec.placement":
+			m.Spec.Placement = obj.GetSpec().GetPlacement()
+		case "spec.rollout":
+			m.Spec.Rollout = obj.GetSpec().GetRollout()
+		case "metadata.labels":
+			m.Metadata.Labels = maps.Clone(obj.GetMetadata().GetLabels())
+		case "metadata.annotations":
+			m.Metadata.Annotations = maps.Clone(obj.GetMetadata().GetAnnotations())
+		default:
+			return nil, status.Errorf(codes.InvalidArgument, "update_mask path %q is not supported", p)
+		}
+	}
+	rv, _ := strconv.Atoi(m.GetMetadata().GetResourceVersion())
+	m.Metadata.ResourceVersion = strconv.Itoa(rv + 1)
+	return &aigridv1.UpdateModelResponse{Object: m}, nil
+}
+
+// DeleteModel implements Models.
+func (f *Fake) DeleteModel(ctx context.Context, req *aigridv1.DeleteModelRequest) (*aigridv1.DeleteModelResponse, error) {
+	f.LastDeleteModel = req
+	if err := f.begin(ctx, "DeleteModel"); err != nil {
+		return nil, err
+	}
+	for i, m := range f.Models {
+		if m.GetMetadata().GetNamespace() == req.GetNamespace() && m.GetName() == req.GetName() {
+			if rv := req.GetResourceVersion(); rv != "" && rv != m.GetMetadata().GetResourceVersion() {
+				return nil, stale(req.GetNamespace()+"/"+req.GetName(), m.GetMetadata().GetResourceVersion(), rv)
+			}
+			f.Models = slices.Delete(f.Models, i, i+1)
+			return &aigridv1.DeleteModelResponse{}, nil
+		}
+	}
+	return nil, status.Errorf(codes.NotFound, "object with identifier '%s/%s' not found", req.GetNamespace(), req.GetName())
+}
+
+func (f *Fake) findModel(namespace, name string) *aigridv1.Model {
+	for _, m := range f.Models {
+		if m.GetMetadata().GetNamespace() == namespace && m.GetName() == name {
+			return m
+		}
+	}
+	return nil
 }
 
 // Status is a shorthand for a gRPC error.
@@ -72,6 +624,10 @@ func Start(t *testing.T, fake *Fake) *backend.Client {
 	aigridv1.RegisterAiGridServer(srv, fake)
 	aigridv1.RegisterManagedClustersServer(srv, fake)
 	aigridv1.RegisterTenantsServer(srv, fake)
+	aigridv1.RegisterGridServer(srv, fake)
+	aigridv1.RegisterModelsServer(srv, fake)
+	aigridv1.RegisterCatalogItemsServer(srv, fake)
+	aigridv1.RegisterSubscriptionsServer(srv, fake)
 	go func() { _ = srv.Serve(lis) }()
 
 	client, err := backend.Dial(backend.Config{Address: "passthrough:///bufconn", Insecure: true},

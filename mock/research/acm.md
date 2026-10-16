@@ -27,7 +27,10 @@ Citation keys used throughout:
    `capacity`, `allocatable`, `version`, `clusterClaims`) and ACM's import controller
    (`ManagedClusterImportSucceeded`, labels `name`, annotation `open-cluster-management/created-via`).
 2. ACM's foundation controller derives the labels `cloud`, `vendor`, `clusterID`, `openshiftVersion`,
-   `openshiftVersion-major`, `openshiftVersion-major-minor` from `ManagedClusterInfo`/claims; the OCM
+   `openshiftVersion-major`, `openshiftVersion-major-minor` from `ManagedClusterInfo`/claims (`cloud` and
+   `vendor` only while they read `auto-detect`, so they are not re-added once removed; `clusterID` and
+   `openshiftVersion*` are rewritten on every reconcile; `found:pkg/controllers/clusterinfo/autodetect_controller.go`
+   L68-121); the OCM
    registration hub's addon feature-discovery controller sets
    `feature.open-cluster-management.io/addon-<name>=available|unhealthy|unreachable` from each add-on's
    `Available` condition (True -> `available`, False -> `unhealthy`, Unknown or missing -> `unreachable`).
@@ -36,7 +39,9 @@ Citation keys used throughout:
    `deletionTimestamp`; the ACM console maps that to `notaccepted | pendingimport | importing |
    importfailed | ready | offline | unknown | detaching`.
 4. Clusters without a `cluster.open-cluster-management.io/clusterset` label are in no exclusive set;
-   ACM labels every imported cluster `clusterset=default`. The `global` set (`LabelSelector {}`) always
+   OCM's ManagedCluster mutating webhook labels every cluster that has no set label `clusterset=default`
+   (with the `DefaultClusterSet` feature on and when the requester may add clusters to `default`;
+   `ocm:pkg/registration/webhook/v1/managedcluster_mutating.go` L50-63). The `global` set (`LabelSelector {}`) always
    contains every cluster and is bound into `open-cluster-management-global-set`.
 5. A `Placement` only sees clusters of sets bound (`ManagedClusterSetBinding`, condition `Bound`) in its
    own namespace; it writes `status.numberOfSelectedClusters`, `status.decisionGroups`, and the conditions
@@ -45,7 +50,8 @@ Citation keys used throughout:
    (`Succeedconfigured` | `Misconfigured`).
 6. `PlacementDecision`s are named `<placement>-decision-<n>` (n from 1, max 100 clusters each), labelled
    `cluster.open-cluster-management.io/placement=<placement>`, `decision-group-index`, `decision-group-name`;
-   `status.decisions[].clusterName` is sorted by name; `reason` is `""`. Label changes on a cluster recompute
+   `status.decisions[].clusterName` is sorted by name; the controller writes only `clusterName` (no `reason`,
+   no `score`; `ocm:pkg/placement/controllers/scheduling/scheduling_controller.go` L443, L736, L748-753). Label changes on a cluster recompute
    the decision within seconds (cluster informer) and the console must treat decisions as live.
 7. `ManifestWork` status is `Applied` (`AppliedManifestWorkComplete`/`AppliedManifestWorkFailed`), `Available`
    (`ResourcesAvailable`/`ResourcesNotAvailable`/`ResourcesStatusUnknown`), optional rule-driven
@@ -57,8 +63,10 @@ Citation keys used throughout:
 9. When enabled, MWRS creates one ManifestWork per selected cluster in the cluster namespace, labelled
    `work.open-cluster-management.io/placementname` and (on MCE 2.17.3, the certain one) the legacy
    `work.open-cluster-management.io/manifestworkreplicaset=<ns>.<name>`; upstream main additionally uses
-   `generateName=<mwrs-name>` (since 2026-03) and the `ownerkey-hash` label plus owner annotation (since
-   2026-10). It reports `summary{total,applied,available,degraded,progressing}` plus `PlacementVerified`,
+   `generateName=<mwrs-name>` with no separator, so names read `<mwrs-name><5 random chars>` (since 2026-03;
+   `ocm:.../manifestworkreplicaset_deploy_reconcile.go` L433) and the `ownerkey-hash` label plus owner annotation (since
+   2026-10). It reports `summary{total,applied,available,degraded,progressing}` (`total` counts the works that
+   exist and match the current template, not the selected clusters) plus `PlacementVerified`,
    `PlacementRolledOut`, `ManifestworkApplied` conditions. At current upstream main a work without a
    `Progressing` condition never counts as Succeeded, so the template needs a condition rule that yields
    `Progressing` for a rollout to complete.
@@ -75,18 +83,18 @@ Citation keys used throughout:
 |---|---|---|---|
 | `metadata.name` | string | importer / agent | Cluster name. Also the hub namespace that holds the cluster's ManifestWorks, add-ons and import secret (`explain:managedcluster.spec.hubAcceptsClient`). |
 | `metadata.labels.name` | string | ACM import controller | Always equals `metadata.name` (`mcic:pkg/controller/managedcluster/managedcluster_controller.go`, `clusterNameLabel = "name"`). |
-| `metadata.labels.cloud` | string | ACM foundation autodetect | `Amazon`, `Azure`, `Google`, `IBM`, `VSphere`, `OpenStack`, `AlibabaCloud`, `BareMetal`, `Nutanix`, `RHV`, `IBMZPlatform`, `IBMPowerPlatform`, `Other`. Only overwritten while the label is `auto-detect` (`cla:clusterinfo/v1beta1/types.go`, `found:pkg/controllers/clusterinfo/autodetect_controller.go`). |
+| `metadata.labels.cloud` | string | ACM foundation autodetect | `Amazon`, `Azure`, `Google`, `IBM`, `VSphere`, `OpenStack`, `AlibabaCloud`, `BareMetal`, `Nutanix`, `RHV`, `IBMZPlatform`, `IBMPowerPlatform`, `Other`. Only overwritten while the label is `auto-detect`, so a removed `cloud` or `vendor` label is not re-added (`cla:clusterinfo/v1beta1/types.go`, `found:pkg/controllers/clusterinfo/autodetect_controller.go` L68-81). |
 | `metadata.labels.vendor` | string | ACM foundation autodetect | `OpenShift`, `OpenShiftDedicated` (rewritten to `OpenShift` + `managed-by=platform`), `AKS`, `EKS`, `GKE`, `IKS`, `ICP`, `MicroShift`, `Other`. |
-| `metadata.labels.clusterID` | string | ACM foundation autodetect | OpenShift `ClusterVersion` id (UUID). Same value as claim `id.k8s.io` / `id.openshift.io`. |
-| `metadata.labels.openshiftVersion`, `openshiftVersion-major`, `openshiftVersion-major-minor` | string | ACM foundation autodetect | From claim `version.openshift.io`, e.g. `4.22.15`, `4`, `4.22`. |
+| `metadata.labels.clusterID` | string | ACM foundation autodetect | OpenShift `ClusterVersion` id (UUID), from `ManagedClusterInfo.status.clusterID`; same value as claim `id.k8s.io` / `id.openshift.io`. Rewritten whenever it differs, so re-added after removal (`autodetect_controller.go` L83-86). |
+| `metadata.labels.openshiftVersion`, `openshiftVersion-major`, `openshiftVersion-major-minor` | string | ACM foundation autodetect | From claim `version.openshift.io`, e.g. `4.22.15`, `4`, `4.22`; rewritten from the claim on every reconcile (`autodetect_controller.go` L95-121), so only joined OpenShift clusters carry them. |
 | `metadata.labels.local-cluster` | `"true"` | ACM | Only on the hub's own ManagedCluster (`mcic:pkg/constants/constants.go`, `SelfManagedLabel`). |
-| `metadata.labels.cluster.open-cluster-management.io/clusterset` | string | ACM / user | Exclusive set membership; ACM sets `default` on import (`api:cluster/v1beta2/types_managedclusterset.go`, `ClusterSetLabel`). `hub:` present with value `default`. |
-| `metadata.labels.feature.open-cluster-management.io/addon-<addon>` | string | registration hub (addon feature-discovery controller, `ocm:pkg/registration/hub/addon/discovery_controller.go`) | `available` (Available=True), `unhealthy` (Available=False) or `unreachable` (Available Unknown **or condition missing**); mirrors each `ManagedClusterAddOn`'s `Available` condition. `hub:` nine such labels, all `available` (`addon-application-manager`, `addon-cert-policy-controller`, `addon-cluster-proxy`, `addon-config-policy-controller`, `addon-governance-policy-framework`, `addon-hypershift-addon`, `addon-managed-serviceaccount`, `addon-multicluster-observability-addon`, `addon-work-manager`). |
+| `metadata.labels.cluster.open-cluster-management.io/clusterset` | string | ACM / user | Exclusive set membership; OCM's ManagedCluster mutating webhook sets `default` when the label is empty (`ocm:pkg/registration/webhook/v1/managedcluster_mutating.go` L50-63, `defaultClusterSetName` L25; `api:cluster/v1beta2/types_managedclusterset.go`, `ClusterSetLabel`). `hub:` present with value `default`. |
+| `metadata.labels.feature.open-cluster-management.io/addon-<addon>` | string | registration hub (addon feature-discovery controller, `ocm:pkg/registration/hub/addon/discovery_controller.go`) | `available` (Available=True), `unhealthy` (Available=False) or `unreachable` (Available Unknown **or condition missing**); mirrors each `ManagedClusterAddOn`'s `Available` condition. `hub:` ten such labels on 2026-10-16, all `available` (`addon-application-manager`, `addon-cert-policy-controller`, `addon-cluster-proxy`, `addon-config-policy-controller`, `addon-governance-policy-framework`, `addon-hypershift-addon`, `addon-managed-serviceaccount`, `addon-multicluster-observability-addon`, `addon-submariner`, `addon-work-manager`; `addon-submariner` was added after 2026-10-15). |
 | `metadata.labels.velero.io/exclude-from-backup` | `"true"` | ACM | On `local-cluster` only (`hub:`). |
 | `metadata.annotations.open-cluster-management/created-via` | string | ACM import controller | `other` (default), `discovery`, `hive`, `assisted-installer`, `hypershift` (`mcic:pkg/constants/constants.go`, `mcic:.../managedcluster_controller.go`). |
 | `metadata.annotations.installer.multicluster.openshift.io/release-version` | string | MCH | ACM version, e.g. `2.17.3` (`hub:`). |
 | `metadata.annotations.open-cluster-management/tolerations` | JSON string | ACM | Klusterlet pod tolerations (`hub:`). |
-| `metadata.annotations.import.open-cluster-management.io/klusterlet-deploy-mode` | string | ACM | `Default` or `Hosted` (`mcic:pkg/constants/constants.go`). |
+| `metadata.annotations.import.open-cluster-management.io/klusterlet-deploy-mode` | string | ACM | `Default`, `Singleton` (what an unset annotation means), `Hosted` or `SingletonHosted`, compared case-insensitively (`mcic:pkg/helpers/helpers.go` `DetermineKlusterletMode` L882-900; annotation key in `mcic:pkg/constants/constants.go` L114). |
 | `metadata.annotations.import.open-cluster-management.io/hosting-cluster-name` | string | ACM | Hosting cluster for hosted-mode klusterlet. |
 | `metadata.finalizers` | []string | several | `hub:` six finalizers: `managedcluster-import-controller.open-cluster-management.io/cleanup`, `managedclusterinfo.finalizers.open-cluster-management.io`, `cluster.open-cluster-management.io/resource-cleanup`, `open-cluster-management.io/managedclusterrole`, `managedcluster-import-controller.open-cluster-management.io/manifestwork-cleanup`, `cluster.open-cluster-management.io/api-resource-cleanup`. Deletion takes seconds to minutes while they drain. |
 | `spec.hubAcceptsClient` | bool | hub admin (RBAC `update` on `managedclusters/accept`) | Default `false`. `true` creates the cluster namespace + RBAC; `false` denies/removes (`explain:managedcluster.spec.hubAcceptsClient`). ACM's import flow sets it `true` immediately (not verified in source). |
@@ -97,7 +105,7 @@ Citation keys used throughout:
 | `status.capacity` | map[string]Quantity | agent (+ ACM) | Sum of `node.status.capacity` over all nodes incl. unschedulable (`ocm:pkg/registration/spoke/managedcluster/resource_reconcile.go`). ACM adds `core_worker` and `socket_worker` (`hub:`; `found:pkg/controllers/clusterinfo/capacity_controller.go`, `resourceCoreWorker`/`resourceSocketWorker`, verified). Keys seen: `cpu`, `memory`, `pods`, `ephemeral-storage`, `hugepages-1Gi`, `hugepages-2Mi`, `core_worker`, `socket_worker`. |
 | `status.allocatable` | map[string]Quantity | agent | Sum of `node.status.allocatable` over schedulable nodes only. GPU clusters additionally show `nvidia.com/gpu` when the device plugin advertises it (not on the dev hub). |
 | `status.version.kubernetes` | string | agent | e.g. `v1.35.6`. |
-| `status.clusterClaims[]` | `{name, value}` | agent, from `ClusterClaim` objects on the spoke | On the hub (MCE 2.17.3) one list sorted by name, reserved and custom claims interleaved (`hub:` `above.threshold...` comes before `id.k8s.io`). Current upstream main puts the reserved names first and caps custom claims at 20 (`--max-custom-cluster-claims`, `ocm:pkg/registration/spoke/managedcluster/claim_reconcile.go`); a mock should simply sort by name. Only synced once `ManagedClusterJoined=True`. |
+| `status.clusterClaims[]` | `{name, value}` | agent, from `ClusterClaim` objects on the spoke | The spoke agent writes the reserved claims first, each group sorted by name, and caps custom claims at 20 (`--max-custom-cluster-claims`; `ocm:pkg/registration/spoke/managedcluster/claim_reconcile.go` L90-123). A claim is reserved when its name is in `ReservedClusterClaimNames` or ends with a reserved suffix, and ACM's import controller configures the suffixes `openshift.io` and `open-cluster-management.io` for every klusterlet (`mcic:pkg/bootstrap/render.go` L57-60, L454-457). So on an ACM-imported cluster every claim ACM and OpenShift create is reserved, and the hub (no custom claims) shows one name-sorted list (`hub:` `above.threshold...hypershift.openshift.io` comes before `id.k8s.io`); a custom claim would follow the reserved ones. A mock should simply sort by name. Only synced once `ManagedClusterJoined=True`. |
 | `status.managedNamespaces[]` | list | agent | Namespaces managed via clusterset `managedNamespaces` (new; empty on the hub). |
 
 #### Standard claim names and example values
@@ -113,7 +121,7 @@ Created by ACM's klusterlet (`found:pkg/klusterlet/clusterclaim/clusterclaimer.g
 | `id.openshift.io` | same UUID | |
 | `platform.open-cluster-management.io` | `AWS` | `AWS`, `GCP`, `Azure`, `IBM`, `IBMPowerPlatform`, `IBMZPlatform`, `OpenStack`, `VSphere`, `RHV`, `AlibabaCloud`, `BareMetal`, `KubeVirt`, `Nutanix`, `Other` |
 | `product.open-cluster-management.io` | `OpenShift` | `OpenShift`, `OpenShiftDedicated`, `ROSA`, `ARO`, `ROKS`, `MicroShift`, `AKS`, `EKS`, `GKE`, `IKS`, `ICP`, `Other` |
-| `region.open-cluster-management.io` | `eu-west-3` | cloud region from Infrastructure; `Other` on bare metal |
+| `region.open-cluster-management.io` | `eu-west-3` | from `Infrastructure` on AWS and GCP, else the nodes' topology region labels joined by commas; **omitted** when no region is known, never `Other` (`found:pkg/klusterlet/clusterclaim/clusterclaimer.go` L250-257, L435-487) |
 | `version.openshift.io` | `4.22.15` | |
 | `kubeversion.open-cluster-management.io` | `v1.35.6` | |
 | `consoleurl.cluster.open-cluster-management.io` | `https://console-openshift-console.apps.site-paris-1.example.com` | |
@@ -133,9 +141,9 @@ Created by ACM's klusterlet (`found:pkg/klusterlet/clusterclaim/clusterclaimer.g
 | `ManagedClusterJoined` | `True` / `ManagedClusterJoined` / "Managed cluster joined". Set once the agent holds a signed client cert and HubAccepted is true; never set to False | spoke agent (`ocm:pkg/registration/spoke/managedcluster/joining_reconcile.go`) |
 | `ManagedClusterConditionAvailable` | `True` / `ManagedClusterAvailable` / "Managed cluster is available" (agent, `/livez` 200, falling back to `/healthz` when livez is 404/403); `False` / `ManagedClusterKubeAPIServerUnavailable` / "The kube-apiserver is not ok, status code: %d, %v" (agent); `Unknown` / `ManagedClusterLeaseUpdateStopped` / "Registration agent stopped updating its lease." (hub, after 5 x leaseDurationSeconds) | spoke (`ocm:pkg/registration/spoke/managedcluster/available_reconcile.go`), hub (`ocm:pkg/registration/hub/lease/controller.go`) |
 | `ManagedClusterConditionClockSynced` | `True` / `ManagedClusterClockSynced` / "The clock of the managed cluster is synced with the hub."; `False` / `ManagedClusterClockOutOfSync` / "The clock of hub and agent is out of sync. This may cause the Unknown status and affect agent functionalities." Threshold is one lease window (5 x leaseDurationSeconds). Annotation `registration.open-cluster-management.io/skip-clock-sync-check: "true"` forces True | hub (`ocm:pkg/registration/hub/lease/clocksynccontroller.go`) |
-| `ManagedClusterImportSucceeded` | `False` / `ManagedClusterWaitForImporting` / "Wait for importing"; `False` / `ManagedClusterImporting` / "Start to import managed cluster", "Wait for import secret", "Importing resources are applied, wait for resources be available", "Expect klusterlet manifestworks created, but got none. Will retry"; `False` / `ManagedClusterImportFailed` / "Try to import managed cluster, error: %v", "Try to import managed cluster, apply resources error: %v. Will Retry", "AutoImportSecretInvalid <ns>/<secret>; ..."; `True` / `ManagedClusterImported` / "Import succeeded" (set once ManifestWork `<cluster>-klusterlet` is Available); `False` / `ManagedClusterDetaching` / "The managed cluster is being detached now" and `False` / `ManagedClusterForceDetaching` / "The managed cluster is being detached by force" during deletion (`mcic:pkg/controller/resourcecleanup/resourcecleanup_controller.go`). Hosted mode also emits "Wait for import secret to be created" | ACM import controller (`mcic:pkg/constants/constants.go`, `mcic:pkg/helpers/autoimport.go`, `mcic:pkg/controller/importstatus/importstatus_controller.go`) |
+| `ManagedClusterImportSucceeded` | `False` / `ManagedClusterWaitForImporting` / "Wait for importing"; `False` / `ManagedClusterImporting` / "Start to import managed cluster", "Wait for import secret", "Importing resources are applied, wait for resources be available", "Expect klusterlet manifestworks created, but got none. Will retry", "Try to import managed cluster, apply resources error: %v. Will Retry" (an internal server error while applying, which does not count as a failed attempt; `mcic:pkg/helpers/autoimport.go` L221-227); `False` / `ManagedClusterImportFailed` / "Try to import managed cluster, error: %v" (`autoimport.go` L209-213), "Get import secret failed: %v. Will retry" (L200-203), "AutoImportSecretInvalid <ns>/<secret>; ..."; the `WaitForImporting` row is written by the import-status controller when the condition is missing (`mcic:pkg/controller/importstatus/importstatus_controller.go` L85-97); `True` / `ManagedClusterImported` / "Import succeeded" (set once ManifestWork `<cluster>-klusterlet` is Available); `False` / `ManagedClusterDetaching` / "The managed cluster is being detached now" and `False` / `ManagedClusterForceDetaching` / "The managed cluster is being detached by force" during deletion (`mcic:pkg/controller/resourcecleanup/resourcecleanup_controller.go`). Hosted mode also emits "Wait for import secret to be created" | ACM import controller (`mcic:pkg/constants/constants.go`, `mcic:pkg/helpers/autoimport.go`, `mcic:pkg/controller/importstatus/importstatus_controller.go`) |
 | `HubDeniedManagedCluster` | defined in API, rarely seen | `api:cluster/v1/types.go` |
-| `Deleting` | reasons `ResourceRemaining`, `NoResource`, `DeletingError` while the hub's resource-cleanup finalizer drains ManifestWorks/add-ons | hub gc controller (`api:cluster/v1/types.go`) |
+| `Deleting` | `False` / `ResourceRemaining` / "The resource %v is remaning, the remaining count is %v, the finalizer pending count is %v" (upstream spelling) while the hub's resource-cleanup finalizer drains add-ons/ManifestWorks; `True` / `NoResource` / "No cleaned resource in cluster ns." once nothing is left (`ocm:pkg/registration/hub/gc/gc_resources.go` L65-73, L94-100). `DeletingError` is defined in `api:cluster/v1/types.go` but not written by the gc controller | hub gc controller |
 | `Upgradeable` (on `ManagedClusterInfo`, not on ManagedCluster) | e.g. `False` / `IncompatibleOperatorsInstalled` | ACM foundation; `hub:` shows ACM copies all ManagedCluster conditions into `ManagedClusterInfo.status.conditions` and adds `ManagedClusterInfoSynced` and `Upgradeable` |
 
 `oc get managedcluster` columns (`hub:`): `HUB ACCEPTED` = `spec.hubAcceptsClient`; `MANAGED CLUSTER URLS` =
@@ -156,13 +164,13 @@ below means absent **or** False:
 
 | State | `hubAcceptsClient` | Conditions present | Taints | Labels of note |
 |---|---|---|---|---|
-| Created by ACM, agent not yet running ("Pending import") | true | `HubAcceptedManagedCluster=True`, `ManagedClusterImportSucceeded=False/ManagedClusterImporting` | none yet (taint controller adds `unreachable` once it sees no Available condition) | `name`, `cloud=auto-detect`, `vendor=auto-detect`, `clusterset=default`; no `clusterID`/`openshiftVersion` yet; no `feature.../addon-*` yet |
-| Agent registered, cert signed ("Importing") | true | + `ManagedClusterJoined=True`, `ManagedClusterConditionAvailable=True`, `ManagedClusterConditionClockSynced=True`; `ImportSucceeded` still False until `<cluster>-klusterlet` ManifestWork is Available | `unreachable` removed | status.capacity/allocatable/version/clusterClaims appear; autodetect fills `cloud`, `vendor`, `clusterID`, `openshiftVersion*` |
+| Created by ACM, agent not yet running (console `pendingimport`, then `importing`) | true | `HubAcceptedManagedCluster=True`, `ManagedClusterImportSucceeded=False/ManagedClusterWaitForImporting` "Wait for importing" (console `pendingimport`); once the import controller applies the klusterlet, `False/ManagedClusterImporting` (console `importing`; `console:.../get-cluster.ts` L1486-1499) | none yet (taint controller adds `unreachable` once it sees no Available condition) | `name`, `cloud=auto-detect`, `vendor=auto-detect`, `clusterset=default`; no `clusterID`/`openshiftVersion` yet; no `feature.../addon-*` yet |
+| Agent registered, cert signed (console `ready`: the console reads `ImportSucceeded` only while not joined, `get-cluster.ts` L1540-1543) | true | + `ManagedClusterJoined=True`, `ManagedClusterConditionAvailable=True`, `ManagedClusterConditionClockSynced=True`; `ImportSucceeded` still False until `<cluster>-klusterlet` ManifestWork is Available | `unreachable` removed | status.capacity/allocatable/version/clusterClaims appear; autodetect fills `cloud`, `vendor`, `clusterID`, `openshiftVersion*` |
 | Ready | true | all five True; `ImportSucceeded=True/ManagedClusterImported` | none | `feature.../addon-*=available` as add-ons come up (30-120 s each) |
 | Offline (API server down, agent alive) | true | `Available=False/ManagedClusterKubeAPIServerUnavailable` | `cluster.open-cluster-management.io/unavailable` NoSelect | addon labels flip to `unhealthy`/`unreachable` |
 | Unknown (lease expired: cluster off, network cut) | true | `Available=Unknown/ManagedClusterLeaseUpdateStopped` after ~300 s; other conditions keep last values; `ClockSynced` may go False | `cluster.open-cluster-management.io/unreachable` NoSelect | addon labels `unreachable` |
 | Denied | false | `HubAcceptedManagedCluster=False/HubClusterAdminDenied`; namespace and RBAC removed | | |
-| Detaching | any | `deletionTimestamp` set, finalizers draining; `ImportSucceeded=False/ManagedClusterDetaching` ("The managed cluster is being detached now"); `Deleting` condition with `ResourceRemaining` while ManifestWorks exist | | object disappears after ManifestWorks and add-ons are gone (tens of seconds to minutes) |
+| Detaching | any | `deletionTimestamp` set, finalizers draining; `ImportSucceeded=False/ManagedClusterDetaching` ("The managed cluster is being detached now"); `Deleting=False/ResourceRemaining` while add-ons or ManifestWorks remain, `Deleting=True/NoResource` once none are left | | object disappears after ManifestWorks and add-ons are gone (tens of seconds to minutes) |
 
 Timing observed on the hub for the local cluster: `HubAccepted` at t0+2 s, `Joined`/`Available`/`ClockSynced`
 at t0+8 s, `ImportSucceeded=True` at t0+12 s (`hub:` lastTransitionTime deltas). Real remote imports take
@@ -249,7 +257,6 @@ status:
   - {name: oauthredirecturis.openshift.io, value: "https://oauth.site-paris-1.example.com:6443/oauth/token/implicit"}
   - {name: platform.open-cluster-management.io, value: BareMetal}
   - {name: product.open-cluster-management.io, value: OpenShift}
-  - {name: region.open-cluster-management.io, value: Other}
   - {name: schedulable.open-cluster-management.io, value: "true"}
   - {name: version.openshift.io, value: 4.22.15}
   conditions:
@@ -280,7 +287,7 @@ status:
     lastTransitionTime: "2026-10-01T09:00:08Z"
 ```
 
-### Example: just created by ACM, agent not yet joined ("Pending import")
+### Example: just created by ACM, agent not yet joined ("Pending import" in the ACM console)
 
 ```yaml
 apiVersion: cluster.open-cluster-management.io/v1
@@ -313,10 +320,14 @@ status:
     lastTransitionTime: "2026-10-15T10:00:01Z"
   - type: ManagedClusterImportSucceeded
     status: "False"
-    reason: ManagedClusterImporting
-    message: Importing resources are applied, wait for resources be available
+    reason: ManagedClusterWaitForImporting
+    message: Wait for importing
     lastTransitionTime: "2026-10-15T10:00:05Z"
 ```
+
+As soon as the import controller has applied the klusterlet the reason becomes `ManagedClusterImporting`
+("Importing resources are applied, wait for resources be available") and the ACM console shows the cluster
+as `importing`, not `pendingimport` (`console:frontend/src/resources/utils/get-cluster.ts` L1486-1499).
 
 ### Example: joined earlier, lease expired ("Unknown")
 
@@ -372,7 +383,9 @@ Offline (API server down but agent alive) differs only in
 and taint key `cluster.open-cluster-management.io/unavailable`.
 
 Detaching: same object with `metadata.deletionTimestamp: "2026-10-15T12:00:00Z"`, finalizers still
-present, and `ManagedClusterImportSucceeded: {status: "False", reason: ManagedClusterDetaching, message: "The managed cluster is being detached now"}`.
+present, `ManagedClusterImportSucceeded: {status: "False", reason: ManagedClusterDetaching, message: "The managed cluster is being detached now"}`,
+and `Deleting: {status: "False", reason: ResourceRemaining, message: "The resource manifestworks is remaning, the remaining count is 2, the finalizer pending count is 0"}`
+until the cluster namespace is empty (`ocm:pkg/registration/hub/gc/gc_resources.go` L65-73).
 
 ### Companion object: `ManagedClusterInfo` (`internal.open-cluster-management.io/v1beta1`, namespaced, name = cluster)
 
@@ -481,18 +494,22 @@ item 5), to `global` or to `default`.
 | `spec.numberOfClusters` | int | cap on selected clusters; unset = all matching (`api:cluster/v1beta1/types_placement.go`). |
 | `spec.predicates[].requiredClusterSelector.labelSelector` | metav1.LabelSelector | on ManagedCluster labels; predicates are OR-ed, selectors inside AND-ed (`explain:placement.spec.predicates.requiredClusterSelector`). |
 | `spec.predicates[].requiredClusterSelector.claimSelector.matchExpressions[]` | `{key, operator, values}` | on `status.clusterClaims` (e.g. `platform.open-cluster-management.io In [AWS]`). |
-| `spec.predicates[].requiredClusterSelector.celSelector.celExpressions[]` | []string | CEL over `managedCluster` and scores (OCM >= 0.16). |
+| `spec.predicates[].requiredClusterSelector.celSelector.celExpressions[]` | []string | CEL over `managedCluster` and scores. Present in the API from `open-cluster-management-io/api` v1.0.0; absent at v0.15.0, v0.16.0 and v0.16.1 (checked per tag with `gh api .../contents/cluster/v1beta1/types_placement.go?ref=<tag>`). |
 | `spec.prioritizerPolicy.mode` | `Additive` (default) \| `Exact` | Additive keeps `Steady` and `Balance` at weight 1 (`explain:placement.spec.prioritizerPolicy`). |
 | `spec.prioritizerPolicy.configurations[].scoreCoordinate.{type: BuiltIn\|AddOn, builtIn, addOn{resourceName, scoreName}}`, `weight` (-10..10) | | BuiltIn names: `Balance`, `Steady`, `ResourceAllocatableCPU`, `ResourceAllocatableMemory` (`explain:`), `Spread` (not verified on the hub). |
 | `spec.tolerations[]` | `{key, operator Equal\|Exists, value, effect, tolerationSeconds}` | tolerate `cluster.open-cluster-management.io/unreachable` or `/unavailable` so decisions survive outages; `tolerationSeconds` counts from taint `timeAdded`. ACM's own placements tolerate both (`hub:`). |
 | `spec.spreadPolicy.spreadConstraints[]` | `{topologyKey, topologyKeyType Label\|Claim, maxSkew (default 1), whenUnsatisfiable DoNotSchedule\|ScheduleAnyway}` | spread across e.g. `ai-grid/region` (`explain:placement.spec.spreadPolicy.spreadConstraints`). |
 | `spec.decisionStrategy.groupStrategy.clustersPerDecisionGroup` | int or percent string, CRD default `"100%"` (applied only when the caller sends a `groupStrategy` object) | splits selected clusters into groups for progressive rollouts. |
 | `spec.decisionStrategy.groupStrategy.decisionGroups[]` | `{groupName, groupClusterSelector{labelSelector, claimSelector}}` | named canary groups. |
-| `spec.scoreRateLimit` | duration string | CRD default `1m` (`hub:` on every Placement). |
-| `spec.sortBy` | `ClusterName` \| `Score` | CRD default `ClusterName` (`hub:` on every Placement). |
+| `spec.scoreRateLimit` | duration string | CRD default `1m` (`hub:` on every Placement). Defined in the API only (`api:cluster/v1beta1/types_placement.go` L113-119); the placement controller does not read it. |
+| `spec.sortBy` | `ClusterName` \| `Score` | CRD default `ClusterName` (`hub:` on every Placement). Defined in the API only (`types_placement.go` L104-111); the controller always sorts decisions by cluster name (`scheduling_controller.go` L748-753). |
 
-Defaults actually applied on create: there is **no Placement mutating webhook** on the hub (the only OCM
-mutating webhook is for `managedclusters`; none exists in `ocm:pkg`). The API server applies CRD defaults
+Defaults actually applied on create: there is **no Placement mutating webhook** on the hub. The hub has two
+mutating webhooks from this stack: OCM's `managedclustermutators.admission.cluster.open-cluster-management.io`
+(`managedclusters` only; `ocm:manifests/cluster-manager/hub/registration/webhook-mutatingconfiguration.yaml`)
+and ACM's `ocm-mutating-webhook` (`deployables`, `channels`, `subscriptions`, `placementrules`,
+`applications`, `clusterdeployments`, `clusterpools`, `clusterclaims`; `hub:` 2026-10-16); neither covers
+`placements`. The API server applies CRD defaults
 only: `scoreRateLimit: 1m` and `sortBy: ClusterName` always; `prioritizerPolicy.mode: Additive`,
 `clustersPerDecisionGroup: "100%"`, `spreadConstraints[].maxSkew: 1`, `whenUnsatisfiable: ScheduleAnyway`
 and `tolerations[].operator: Equal` only when the caller sent the parent object. Observed (`hub:`): the
@@ -510,7 +527,7 @@ sent.
 |---|---|
 | `status.numberOfSelectedClusters` | `len(decisions)` after prioritising (`ocm:pkg/placement/controllers/scheduling/scheduling_controller.go`). |
 | `status.decisionGroups[]{decisionGroupIndex, decisionGroupName, decisions[] (PlacementDecision names), clusterCount}` | always at least one group, index 0, name `""`. |
-| `status.lastScoreUpdateTime` | when prioritizer scores were last refreshed. |
+| `status.lastScoreUpdateTime` | defined in the API ("the last time that placement scores were updated", `api:cluster/v1beta1/types_placement.go` L474-475) but never written by the placement controller. |
 | `status.conditions[]` `PlacementSatisfied` | `True`/`AllDecisionsScheduled`/"All cluster decisions scheduled"; `False`/`NotAllDecisionsScheduled`/"<n> cluster decisions unscheduled" (numberOfClusters > matches); `False`/`NoManagedClusterSetBindings`/"No valid ManagedClusterSetBindings found in placement namespace"; `False`/`NoIntersection`/"None of ManagedClusterSets [a,b] is bound to placement namespace"; `False`/`AllManagedClusterSetsEmpty`/"All ManagedClusterSets [a] have no member ManagedCluster"; `False`/`NoManagedClusterMatched`/"No ManagedCluster matches any of the cluster predicate". |
 | `status.conditions[]` `PlacementMisconfigured` | `False`/`Succeedconfigured`/"Placement configurations check pass" (normal); `True`/`Misconfigured`/"<plugin>:<detail>". |
 
@@ -525,9 +542,11 @@ sent.
   `cluster.open-cluster-management.io/decision-group-index="0"`, `cluster.open-cluster-management.io/decision-group-name=""`
   (`api:cluster/v1beta1/types_placementdecision.go`, `hub:`).
 - `ownerReferences` -> the Placement (controller=true, blockOwnerDeletion=true); deleted with it.
-- `status.decisions[]{clusterName, reason, score}`; `reason` is `""` in practice, `score` omitted unless
-  prioritizers are configured (`explain:placementdecision.status.decisions`, `hub:`).
-- Sorted by `clusterName` ascending (`sortBy: ClusterName`).
+- `status.decisions[]{clusterName, reason, score}` in the API; the controller builds every decision with
+  `ClusterName` only, so `reason` is `""` and `score` (`omitzero`) is always omitted, even with prioritizers:
+  scores only rank clusters before the cut to `numberOfClusters` (`ocm:.../scheduling_controller.go` L443,
+  L736; `ocm:.../schedule.go` L280-293; `explain:placementdecision.status.decisions`, `hub:`).
+- Sorted by `clusterName` ascending whatever `sortBy` says (`divideDecisionGroups`, `scheduling_controller.go` L748-753).
 - When nothing matches, one PlacementDecision with `status.decisions: []` is still written.
 
 Consumers (MWRS, GitOps, Policy) list decisions with the `placement` label and union the cluster names
@@ -687,7 +706,7 @@ and owned by the `ManagedCluster`.
 apiVersion: work.open-cluster-management.io/v1
 kind: ManifestWork
 metadata:
-  name: model-granite-8b-x7k2p          # generateName from the MWRS at upstream main (since 2026-03); older controllers may use a fixed name
+  name: model-granite-8bx7k2p           # generateName = the MWRS name with no separator at upstream main (since 2026-03; deploy reconcile L433); older controllers may use a fixed name
   namespace: site-paris-1
   labels:
     ai-grid/model: granite-8b
@@ -767,9 +786,12 @@ status:
 While the InferenceService is still coming up the same work shows `Progressing=True`, the `ready` feedback
 `"False"` (or absent until the status field exists) and `Available=True` (the object exists). A CRD missing on
 the spoke yields manifest `Applied=False/AppliedManifestFailed` with message
-"Failed to apply manifest: no matches for kind \"InferenceService\" ...", work `Applied=False/AppliedManifestWorkFailed`,
-and on the next status sync manifest `Available=False/ResourceNotAvailable` and work
-`Available=False/ResourcesNotAvailable` "1 of 2 resources are not available"; the status controller skips the
+`Failed to apply manifest: the server doesn't have a resource type "InferenceService"` (the REST mapping fails in
+`ocm:pkg/work/helper/helpers.go` L558-561; prefix from `manifestwork_reconciler.go` L416), work
+`Applied=False/AppliedManifestWorkFailed`; because that mapping failure leaves the manifest's `resourceMeta.resource`
+empty, the next status sync sets manifest `Available=Unknown/IncompleteResourceMeta` "Resource meta is incomplete"
+(`ocm:pkg/work/spoke/objectreader/reader.go` L76-83) and work `Available=Unknown/ResourcesStatusUnknown`
+"1 of 2 resources have unknown status" (`ocm:pkg/work/spoke/conditions/helpers.go` L100-108); the status controller skips the
 feedback rules and the condition rules of a manifest it cannot fetch (`ocm:pkg/work/spoke/controllers/statuscontroller/availablestatus_controller.go`,
 `continue` after `objectReader.Get` fails), so that work carries no `Progressing` or `Degraded` condition.
 Only the spoke agent writes a ManifestWork's status: a work in the namespace of a cluster whose agent is not
@@ -787,10 +809,10 @@ or an empty workload).
 | `spec.placementRefs[].rolloutStrategy.type` | `All` \| `Progressive` \| `ProgressivePerGroup` | (`api:cluster/v1alpha1/types_rolloutstrategy.go` via `explain:manifestworkreplicaset.spec.placementRefs.rolloutStrategy`) |
 | `...rolloutStrategy.all{minSuccessTime, progressDeadline, maxFailures}` | | All: everything at once; only `progressDeadline` matters. |
 | `...rolloutStrategy.progressive{maxConcurrency (int or "20%"), maxFailures (int or percent), minSuccessTime, progressDeadline, mandatoryDecisionGroups[]{groupName, groupIndex}}` | | `maxConcurrency` default = all non-mandatory clusters (`sdk:pkg/apis/cluster/v1alpha1/rollout.go`); `maxFailures` default 0; `progressDeadline` default `None` (wait forever); durations like `5m`, `1h`. |
-| `...rolloutStrategy.progressivePerGroup{maxFailures, minSuccessTime, progressDeadline, mandatoryDecisionGroups[]}` | | group by group in `decisionGroupIndex` order; `maxFailures` is per group. |
+| `...rolloutStrategy.progressivePerGroup{maxFailures, minSuccessTime, progressDeadline, mandatoryDecisionGroups[]}` | | group by group in `decisionGroupIndex` order; `maxFailures` is per group. There is no `maxConcurrency`: every cluster of the current group is rolled out at once, so with the single default decision group (`clustersPerDecisionGroup: "100%"`) every selected cluster gets its work together (`sdk:pkg/apis/cluster/v1alpha1/rollout.go` `getProgressivePerGroupClusters` L195-240). |
 | `spec.cascadeDeletionPolicy` | `Background` (default) \| `Foreground` | Foreground keeps the MWRS until all ManifestWorks are gone (`ocm:.../manifestworkreplicaset_finalize_reconcile.go`). |
-| `status.summary{total, desiredTotal, applied, available, progressing, degraded, updated}` | | counts of generated ManifestWorks by condition (`explain:manifestworkreplicaset.status.summary`). |
-| `status.placementSummary[]{name, availableDecisionGroups, summary{...}}` | | per placement; `availableDecisionGroups` is a string "<n> (<applied> / <total> clusters applied)". |
+| `status.summary{total, desiredTotal, applied, available, progressing, degraded, updated}` | | `total` = generated works that exist and whose spec matches the current template (works with a stale template are skipped until re-applied); `applied`/`available`/`progressing`/`degraded` = those works with that condition True (`ocm:.../manifestworkreplicaset_deploy_reconcile.go` L79-90, L175-191; `..._status_reconcile.go` L40-87). `desiredTotal` and `updated` are in the API (`api:work/v1alpha1/types_manifestworkreplicaset.go` L132-135) but no controller writes them, so they stay 0. |
+| `status.placementSummary[]{name, availableDecisionGroups, summary{...}}` | | per placement; `availableDecisionGroups` is the string "<number of decision groups> (<works that exist> / <selected clusters> clusters applied)" (`getAvailableDecisionGroupProgressMessage`, deploy reconcile L171-172, L437-439). |
 | `status.conditions[]` | | `PlacementVerified`, `PlacementRolledOut`, `ManifestworkApplied` (`api:work/v1alpha1/types_manifestworkreplicaset.go`). |
 
 Condition semantics (`ocm:pkg/work/hub/controllers/manifestworkreplicasetcontroller/manifestworkreplicaset_deploy_reconcile.go`
@@ -813,7 +835,8 @@ Generated ManifestWork: namespace = cluster name; labels copied from the MWRS pl
 `work.open-cluster-management.io/placementname=<placement>` and
 `work.open-cluster-management.io/manifestworkreplicaset=<ns>.<name>` (written when it fits 63 chars; on
 MCE 2.17.3 this legacy label is the one that can be relied on). Upstream main additionally uses
-`generateName = <mwrs name>` (names like `model-granite-8b-x7k2p`; ocm #1421, 2026-03-19), the label
+`generateName = <mwrs name>` with no separator (names like `model-granite-8bx7k2p`; deploy reconcile L433;
+ocm #1421, 2026-03-19), the label
 `work.open-cluster-management.io/ownerkey-hash=<hex of the first 16 bytes of sha256("<ns>/<name>")>` and the
 annotation `work.open-cluster-management.io/manifestworkreplicaset-owner=<ns>/<name>` (ocm #1684,
 2026-10-01; `ocm:pkg/work/helper/helpers.go`). Which of these the MCE 2.17.3 controller writes is not
@@ -827,7 +850,9 @@ Rollout counting (`sdk:pkg/apis/cluster/v1alpha1/rollout.go` states; mapping in
 `Applied` is missing or not True at the current generation, **or when the `Progressing` condition is missing
 or stale** (`shouldReturnToApply`); `Progressing` (work `Progressing=True`, or Unknown); `Failed`
 (`Progressing=True` and `Degraded=True`); `Succeeded` (`Progressing=False` at the current generation);
-`TimeOut` after `progressDeadline`, but only from `Progressing` or `Failed` (`sdk:rollout.go` `determineRolloutStatus`:
+`TimeOut` after `progressDeadline` counted from the work's `Progressing` condition's `lastTransitionTime` (the
+`Degraded` condition's for a `Failed` work; deploy reconcile `clusterRolloutStatusFunc` L228-271), but only from
+`Progressing` or `Failed` (`sdk:rollout.go` `determineRolloutStatus`:
 `ToApply` is appended to the rollout set with no timeout, so a cluster whose work is never applied or never
 reported holds its slot indefinitely); plus `Skip`. `Progressive` fills `maxConcurrency` slots alphabetically
 (`progressivePerCluster`); a `Succeeded` cluster keeps its slot for `minSuccessTime`; a `Failed` cluster keeps
@@ -887,9 +912,10 @@ status:
   - {type: ManifestworkApplied, status: "True", reason: AsExpected, message: "", lastTransitionTime: "2026-10-15T09:14:40Z"}
 ```
 
-Mid-rollout the same object reads `summary: {total: 2, applied: 1, available: 1, progressing: 1, degraded: 0}`,
-`PlacementRolledOut=False/Progressing`, `ManifestworkApplied=False/Processing`, and the second cluster has no
-ManifestWork yet (maxConcurrency 1). With a broken manifest on one cluster: `degraded: 1`,
+Mid-rollout (first cluster still progressing, maxConcurrency 1) the same object reads
+`summary: {total: 1, applied: 1, available: 1, progressing: 1, degraded: 0}` (the second cluster has no
+ManifestWork yet, and `total` counts works that exist), `placementSummary[0].availableDecisionGroups:
+"1 (1 / 2 clusters applied)"`, `PlacementRolledOut=False/Progressing`, `ManifestworkApplied=False/Processing`. With a broken manifest on one cluster: `degraded: 1`,
 `ManifestworkApplied=False/NotAsExpected`, `PlacementRolledOut=False/Progressing` and rollout halts
 (`maxFailures: 0`). Placement selecting nothing: `summary.total: 0`,
 `PlacementVerified=False/PlacementDecisionEmpty`, `ManifestworkApplied=False/PlacementDecisionEmpty`.
@@ -899,8 +925,9 @@ ManifestWork yet (maxConcurrency 1). With a broken manifest on one cluster: `deg
 The CRD `manifestworkreplicasets.work.open-cluster-management.io` is installed (listed under
 `ClusterManager.status.relatedResources`, `hub:`), so `oc create` of an MWRS succeeds and the object is
 stored. Nothing watches it: no `cluster-manager-work-controller` Deployment exists in
-`open-cluster-management-hub` (only `registration-controller`, `registration-webhook`, `work-webhook`,
-`placement-controller`, `addon-webhook`, `addon-manager-controller`; `hub:`). The object keeps no
+`open-cluster-management-hub` (only `cluster-manager-registration-controller`,
+`cluster-manager-registration-webhook`, `cluster-manager-work-webhook`, `cluster-manager-placement-controller`,
+`cluster-manager-addon-webhook`, `cluster-manager-addon-manager-controller`; `hub:` 2026-10-16). The object keeps no
 finalizer, `status` stays empty (`oc get mwrs` shows blank `Placement`/`Found`/`ManifestWorks`/`Applied`
 columns), no ManifestWorks appear in cluster namespaces, and deletion is immediate (inferred from the
 absence of a controller; not exercised, read-only). A backend writing MWRS
@@ -984,12 +1011,25 @@ later, the Hive object sits in the cluster namespace with the same name and `cre
 | ClusterSets | `default` (ExclusiveClusterSetLabel) and `global` (LabelSelector `{}`), both with 1 member. Bindings of `global` into `open-cluster-management-global-set` and into the POC's GitOps namespace. |
 | Observability | `MultiClusterObservability` `observability` present, status `Installing=True`, `Failed=True/StatefulSetNotReady`. |
 | Hive / HyperShift | CRDs installed, no instances. |
-| Add-ons on `local-cluster` | nine, all Available True. `ClusterManagementAddOn`s available hub-wide: application-manager, cert-policy-controller, cluster-proxy, config-policy-controller, gitops-addon, governance-policy-framework, governance-standalone-hub-templating, hypershift-addon, managed-serviceaccount, multicluster-observability-addon, search-collector, submariner, volsync, work-manager. |
+| Add-ons on `local-cluster` | ten on 2026-10-16 (nine on 2026-10-15; `submariner` was added), all Available True. `ClusterManagementAddOn`s available hub-wide: application-manager, cert-policy-controller, cluster-proxy, config-policy-controller, gitops-addon, governance-policy-framework, governance-standalone-hub-templating, hypershift-addon, managed-serviceaccount, multicluster-observability-addon, search-collector, submariner, volsync, work-manager. |
 | Cluster namespace labels | `cluster.open-cluster-management.io/managedCluster=<name>`, `open-cluster-management.io/cluster-name=<name>`, PSA `restricted` audit/warn. |
 
 ## Proposal: gRPC surface and what the fake backend must simulate
 
 ### `ManagedClusters` service
+
+**Superseded for field numbers.** `mock/proto/ai_grid/v1/managed_cluster_type.proto` and
+`managed_clusters_service.proto` are the authoritative draft; do not reuse the numbers below. The draft
+differs: it keeps the CRD's shape (`annotations` 4, `uid` 5, `resource_version` 6, `creation_timestamp` 7,
+`deletion_timestamp` 8, `lease_duration_seconds` 9, `managed_cluster_client_configs` 10 with `ca_bundle`,
+`status` 11 as a nested `ManagedClusterStatus`, `taints` 12, `generation` 13, `finalizers` 14), puts
+conditions, capacity, allocatable, `kubernetes_version`, `cluster_claims`, the derived `state` and
+`state_message` (7) inside `ManagedClusterStatus`, uses the shared `Condition` with a `ConditionStatus` enum,
+has no flattened claim fields (`console_url`, `openshift_version`, `platform`, `product`, `region`) and no
+`addon_status` map (the BFF derives them), names the state enum `ManagedClusterState` with values
+`UNSPECIFIED` 0, `PENDING` 1, `AVAILABLE` 2, `UNAVAILABLE` 3, `DETACHING` 4, `PENDING_IMPORT` 5, `IMPORTING` 6,
+`IMPORT_FAILED` 7, `NOT_ACCEPTED` 8, `UNKNOWN` 9, and has one `UpdateManagedCluster` (field mask + `lock`)
+instead of `UpdateManagedClusterLabels`, and no `Watch`. The sketch below is kept as the research record.
 
 Keep `name`, `labels`, `hub_accepts_client` and add the fields below (field numbers continue from 4).
 Everything is derived from one ManagedCluster read plus its annotations; no `ManagedClusterInfo` needed.
@@ -1118,7 +1158,8 @@ ManagedCluster:
    expired, taint `unreachable`, addon labels `unreachable`), OFFLINE (`unavailable` taint), one
    PENDING_IMPORT. Include `local-cluster` with `local-cluster: "true"` and no `ai-grid/*` labels.
 2. "Enrol a cluster" (create ManagedCluster, `hubAcceptsClient: true`): t+0 `HubAcceptedManagedCluster=True`,
-   `ImportSucceeded=False/ManagedClusterImporting` ("Start to import managed cluster"), labels `name`,
+   `ImportSucceeded=False/ManagedClusterWaitForImporting` ("Wait for importing", console `pendingimport`), then
+   `False/ManagedClusterImporting` ("Start to import managed cluster", console `importing`), labels `name`,
    `cloud=auto-detect`, `vendor=auto-detect`, `clusterset=default`, taint `unreachable`; t+20..60 s
    `ManagedClusterJoined=True`, `Available=True/ManagedClusterAvailable`, `ClockSynced=True`, taint removed,
    `capacity`/`allocatable`/`version`/`clusterClaims` populated, `cloud`/`vendor`/`clusterID`/`openshiftVersion*`
@@ -1130,9 +1171,12 @@ ManagedCluster:
    `False/ManagedClusterKubeAPIServerUnavailable` and taint `unavailable`.
 4. Label/annotation patch: only mutates `labels`/`annotations`; `resourceVersion`-style conflict on
    concurrent writes is optional. Attempting to remove `name`, `cloud`, `vendor`, `clusterID`, `openshiftVersion*`
-   should be allowed by the mock but is a UI bug to guard against (ACM re-adds them).
+   should be allowed by the mock but is a UI bug to guard against: ACM re-adds `name` (import controller,
+   `mcic:pkg/controller/managedcluster/managedcluster_controller.go` L125), `clusterID` and `openshiftVersion*`
+   (foundation autodetect), but **not** `cloud` or `vendor`, which it only rewrites while they read `auto-detect`.
 5. Delete: set `deletion_time`, status DETACHING, `ImportSucceeded=False/ManagedClusterDetaching` ("The managed
-   cluster is being detached now"); object
+   cluster is being detached now"), `Deleting=False/ResourceRemaining` while works or add-ons remain and
+   `Deleting=True/NoResource` "No cleaned resource in cluster ns." once they are gone; object
    disappears after 10-30 s; any PlacementDecision drops the cluster at once (terminating clusters are never
    selected) and the MWRS deletes that cluster's work.
 
@@ -1160,7 +1204,7 @@ ManifestWorkReplicaSet:
 9. On create or when a Placement's decisions change: `PlacementVerified` per section 4
    (`PlacementDecisionNotFound` only when the Placement object is missing; 0 selected clusters ->
    `PlacementDecisionEmpty`); create one `ManifestWorkStatus` per selected cluster (`work_name =
-   <mwrs>-<5 random chars>` mirrors upstream `generateName`; label it with the legacy
+   <mwrs><5 random chars>`, no separator, mirrors upstream `generateName`; label it with the legacy
    `work.open-cluster-management.io/manifestworkreplicaset=<ns>.<name>` and `placementname`; the
    `ownerkey-hash` label and owner annotation are upstream-main only), respecting `max_concurrency` for
    Progressive (next cluster starts only when the previous is Succeeded for `min_success_time`). Per work:
@@ -1177,21 +1221,24 @@ ManifestWorkReplicaSet:
    manifests: only the spoke agent writes it) and counts as `ToApply` for as long as the agent is silent;
    `ToApply` has no timeout in sdk-go, so it holds its Progressive slot and never counts towards
    `max_failures`.
-10. Summary recomputed from the works: `total` = works, `applied`/`available`/`progressing`/`degraded` =
-    counts with that condition True; `PlacementRolledOut=True/Complete` only when every cluster is Succeeded
+10. Summary recomputed from the works: `total` = works that exist and match the current template (not the
+    selected clusters), `applied`/`available`/`progressing`/`degraded` = counts of those with that condition
+    True; `desired_total` and `updated` stay 0; `PlacementRolledOut=True/Complete` only when every cluster is Succeeded
     by the rule in step 9; `ManifestworkApplied` by the three rules (AsExpected / Processing / NotAsExpected /
-    PlacementDecisionEmpty). `placement_summary[].available_decision_groups = "1 (<applied> / <total> clusters applied)"`.
+    PlacementDecisionEmpty). `placement_summary[].available_decision_groups = "<decision groups> (<works that exist> / <selected clusters> clusters applied)"`.
 11. Failure injection: a cluster label such as `ai-grid-mock/fail-apply=true` makes its work
-    `Applied=False/AppliedManifestWorkFailed`, manifest `AppliedManifestFailed` with a "no matches for kind"
-    message and `Available=False/ResourceNotAvailable`, work `Available=False/ResourcesNotAvailable`; no
+    `Applied=False/AppliedManifestWorkFailed`, manifest `AppliedManifestFailed` with
+    `Failed to apply manifest: the server doesn't have a resource type "<Kind>"` and
+    `Available=Unknown/IncompleteResourceMeta` "Resource meta is incomplete", work
+    `Available=Unknown/ResourcesStatusUnknown` "<k> of <n> resources have unknown status" (section 4); no
     `Progressing` or `Degraded` condition exists (the status controller skips the rules of a manifest it
     cannot fetch), `summary.degraded` stays 0, `ManifestworkApplied=False/NotAsExpected` because
     `available != total`, `PlacementRolledOut=False/Progressing`, and the cluster stays `ToApply`, holding
     its Progressive slot without a timeout. A `Failed` cluster (rule `Degraded=True` from a terminal spoke
     condition) counts towards `max_failures` at once.
 12. Update of the template bumps `generation`; works go back to `Applied` True with new
-    `observed_generation` and re-run the Progressing cycle; `summary.updated` counts works at the new
-    generation.
+    `observed_generation` and re-run the Progressing cycle. Until a work is re-applied with the new template it
+    drops out of every summary count (`summary.updated` is never written upstream, so it stays 0).
 13. Delete: with `cascade_deletion_policy` Background (the default) the finalize reconciler deletes every
     work and removes the finalizer in the same pass (`ocm:manifestworkreplicaset_finalize_reconcile.go`), so
     the MWRS disappears within one reconcile and the works drain in the cluster namespaces afterwards;
@@ -1219,8 +1266,9 @@ render as "no data", not zero.
 4. `status.capacity` extras `core_worker` / `socket_worker` come from ACM's foundation capacity controller
    (verified: `found:pkg/controllers/clusterinfo/capacity_controller.go`). GPU keys such as `nvidia.com/gpu`
    appear only when the device plugin runs; not observable on the dev hub.
-5. `PlacementDecision.status.decisions[].score` population: only when prioritizers are configured
-   (`omitzero` in the API); the hub examples had none. Mock should omit it unless `Score` sorting is used.
+5. (Resolved by the 2026-10-16 audit.) `PlacementDecision.status.decisions[].score` is never written: the
+   controller sets `clusterName` only, and `sortBy`/`scoreRateLimit`/`lastScoreUpdateTime` exist only in the
+   API (section 3). The mock should always omit `score`.
 6. Observability on the dev hub was still `Installing`/`Failed` (thanos-compact StatefulSet not ready);
    whether `rbac-query-proxy` answers queries for `local-cluster` is unverified.
 7. No second managed cluster exists on the dev hub, so multi-cluster PlacementDecision pagination, `Spread`
@@ -1266,3 +1314,24 @@ Still uncheckable from here: which OCM commit MCE 2.17.3 bundles (hub images are
 builds), MWRS runtime behaviour on this hub (would require a write; no controller is deployed),
 multi-cluster PlacementDecision ordering/pagination and Progressive rollout timing (one managed cluster
 only), and whether `rbac-query-proxy` answers queries for `local-cluster`.
+
+Audit (2026-10-16). Re-checked against `ocm` 8b0d31f, `api` (shallow clone plus per-tag reads with
+`gh api`), `sdk-go`, `managedcluster-import-controller` f05b4e13, `multicloud-operators-foundation`,
+`stolostron/console` a2b2f57 and the hub (read-only `oc get`). Corrected: the missing-CRD failure strings
+(`the server doesn't have a resource type "<Kind>"`, manifest `Available=Unknown/IncompleteResourceMeta`, work
+`Available=Unknown/ResourcesStatusUnknown`; section 4 and fake item 11); generated work names have no separator
+after the MWRS name; `summary.total` counts existing works matching the current template, `availableDecisionGroups`
+is `<groups> (<existing works> / <selected> clusters applied)`, `desiredTotal`/`updated` are never written; the
+mid-rollout example; `progressDeadline` counts from the work's `Progressing` (or `Degraded`) transition and
+`ProgressivePerGroup` has no `maxConcurrency`; the "Pending import" example and lifecycle rows now match the ACM
+console code (`ManagedClusterImporting` shows `importing`, joined plus Available shows `ready`, a pending import
+carries `ManagedClusterWaitForImporting`); the region claim is omitted when unknown, never `Other`; `score`,
+`sortBy`, `scoreRateLimit` and `lastScoreUpdateTime` exist only in the API and decisions are always name-sorted;
+the claim ordering is explained by ACM's reserved suffixes; "apply resources error ... Will Retry" is a
+`ManagedClusterImporting` message; the CEL selector arrived in `api` v1.0.0, not 0.16; ten add-ons on the hub;
+klusterlet modes include `Singleton` and `SingletonHosted`; `cloud`/`vendor` are not re-added once removed;
+`clusterset=default` comes from OCM's webhook; hub Deployment names carry the `cluster-manager-` prefix; ACM's
+`ocm-mutating-webhook` exists beside OCM's (neither covers placements); the `Deleting` condition is
+`False/ResourceRemaining` while resources remain and `True/NoResource` when done; the `ManagedClusters` proto
+sketch is marked superseded by `mock/proto/ai_grid/v1`. Still not verified: which OCM commit MCE 2.17.3 bundles,
+so the upstream-main MWRS behaviour above remains dated by commit.

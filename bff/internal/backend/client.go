@@ -12,12 +12,12 @@ import (
 	"strings"
 	"time"
 
-	aigridv1 "github.com/osac-project/ai-grid-backend/gen/ai_grid/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 
+	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/identity"
 )
 
@@ -52,6 +52,7 @@ type Client struct {
 	Health   aigridv1.AiGridClient
 	Clusters aigridv1.ManagedClustersClient
 	Tenants  aigridv1.TenantsClient
+	Models   aigridv1.ModelsClient
 }
 
 // Dial creates the connection. It does not connect until the first RPC, so a
@@ -89,6 +90,7 @@ func Dial(cfg Config, extra ...grpc.DialOption) (*Client, error) {
 		Health:   aigridv1.NewAiGridClient(conn),
 		Clusters: aigridv1.NewManagedClustersClient(conn),
 		Tenants:  aigridv1.NewTenantsClient(conn),
+		Models:   aigridv1.NewModelsClient(conn),
 	}, nil
 }
 

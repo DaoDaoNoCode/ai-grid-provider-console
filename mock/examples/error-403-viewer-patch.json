@@ -1,0 +1,15 @@
+{
+  "request": "PATCH /api/v1/clusters/site-frankfurt-1",
+  "requestBody": {
+    "aiGridEnabled": true
+  },
+  "token": "viewer-token",
+  "user": "viewer",
+  "status": 403,
+  "body": {
+    "error": {
+      "code": "403",
+      "message": "managedclusters.cluster.open-cluster-management.io \"site-frankfurt-1\" is forbidden: User \"viewer\" cannot patch resource \"managedclusters\" in API group \"cluster.open-cluster-management.io\" at the cluster scope"
+    }
+  }
+}
