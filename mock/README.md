@@ -41,13 +41,13 @@ documentation, or from the backend's own conventions. The sources are in `resear
    `InvalidArgument` with the CRD's own validation message, `FailedPrecondition` when the
    hub lacks a feature gate, `Unavailable` when the hub or Keycloak is down, `Unimplemented`
    for stubs. The BFF already maps all of them to HTTP; the UI's error paths are exercised
-   against the fake, not discovered in production. Not every one is simulated yet: the
-   `tenants.json` `unavailable` fixture answers `Unknown` (`502`), as the backend does today,
+   against the fake, not discovered in production. One differs from the target today: the
+   `tenants.json` `unavailable` fixture answers `Unknown` (`502`), as the shipped backend does,
    not `Unavailable`.
 5. **Time passes.** Objects do not appear Ready. They go through the same transitions the
    controllers drive, on timers the fixtures control: a cluster imports in stages, a model
    starts Pending with the real reason strings and becomes Ready, a subscription waits for
-   its rate-limit policy to be enforced, a lease expires and a cluster becomes Unknown.
+   its rate-limit policy to be accepted, a lease expires and a cluster becomes Unknown.
 6. **No real data, ever.** Fixtures use `example.com`, invented UUIDs and fictional sites.
    Research notes name field paths and string constants from the real cluster, never its
    hosts, ids or people.
@@ -105,9 +105,9 @@ fail to load on any unknown field; a fixture that fails to load stops the fake w
 The file envelopes, `access.json` and `settings.json` are plain JSON and ignore unknown keys,
 so check their spelling: while `defaultAllowed` is true, a misspelled `deniedTokens` makes
 that token a provider admin. A missing file leaves its part empty, except `access.json`:
-without it every token is a provider admin. The directory itself must exist. A test loads the shipped directory
-and checks the ACM labels are present. Fixture names, labels and ids must never be real: this
-repository is public.
+without it every token is a provider admin. The directory itself must exist. A test loads the
+shipped directory and checks the ACM labels are present. Fixture names, labels and ids must
+never be real: this repository is public.
 
 ## What the research found, in one paragraph each
 
@@ -151,10 +151,11 @@ does not use ConfigMaps for the catalog.
 `rbac-query-proxy` is the right endpoint and labels every series with `cluster=<ManagedCluster
 name>`. AI metrics reach it through RHOAI's OpenTelemetry collector at a 300 second cadence,
 so rate windows must be 15 minutes or more. vLLM metrics with `model_name` are real and
-fleet-visible today, but two scrape configs collect them, so every unfiltered fleet counter is
-doubled: every query on collector metrics must pin `scrape_source="rhai-metrics-sourced"`. The gateway request, error and latency metrics the POC assumed do not
-exist; Istio ones are wired but empty, and GPU utilisation arrives divided by 100. No metric
-carries a tenant label yet, so per-tenant usage is `unavailable` until a Kuadrant
+fleet-visible today, but two scrape configs collect them, so every unfiltered collector
+counter is doubled: every query on collector metrics must pin
+`scrape_source="rhai-metrics-sourced"`. The gateway request, error and latency metrics the POC
+assumed do not exist; Istio ones are wired but empty, and GPU utilisation arrives divided by
+100. No metric carries a tenant label yet, so per-tenant usage is `unavailable` until a Kuadrant
 `TelemetryPolicy` or the Praxis metering service exists. The POC's overview JSON and its
 deterministic demo generator are transcribed so the fake reproduces them sample for sample.
 
@@ -197,7 +198,8 @@ unreachable Keycloak (`Unavailable`).
 Frontend: tenant list with search and paging, create and edit forms whose validation errors
 are the ones Keycloak would send, delete with confirmation, a members view.
 Backend ask: the `Tenants` CRUD proto in `research/backend-conventions.md` section 6.6, keyed
-by `id`; the gRPC code table in `research/keycloak.md` section 8.2; a scoped service-account client instead of the master admin.
+by `id`; the gRPC code table in `research/keycloak.md` section 8.2; a scoped service-account
+client instead of the master admin.
 
 ### 3. Models (LLMInferenceService, Placement, ManifestWorkReplicaSet)
 
@@ -221,9 +223,9 @@ Fake: a catalog entry starts `Pending/NoPairingFound` and becomes `Ready` once a
 subscription and an auth policy reference it (in any phase; the pairing check ignores
 `status.phase`) and its model is ready, turns `Unhealthy` when its model fails; a
 subscription validates the CRD rules (`tokenRateLimits` or `unlimited`, window regex, limit
-range), is `Pending` only until its first reconcile, is `Degraded`
-(`Ready=False/PartialFailure`) while its generated `TokenRateLimitPolicy` isn't yet accepted
-and enforced, flips to `Active` when it is, and optionally creates its `<name>-policy` auth policy
+range), has no phase until its first reconcile, is `Degraded`
+(`Ready=False/PartialFailure`) while its generated `TokenRateLimitPolicy` isn't accepted,
+flips to `Active` once it is, and optionally creates its `<name>-policy` auth policy
 with the same description annotation the hub uses. The pairing of subscription and auth
 policy is a mode switch, because the product decision on whether they are mirrored or
 managed separately is still open.
@@ -240,8 +242,9 @@ Fake: the POC's `GetOverview` contract with the four metric series, per-metric s
 verbatim so browser mock and fake agree, 300 second sample cadence when emulating the fleet,
 clusters that are not Ready emitting nothing, and a fake Thanos HTTP server that reproduces
 the observed error cases (JSON `bad_data`, plain-text resolution error, 302 on a bad token,
-warnings, more than one series), with every series in both `scrape_source` variants so the
-queries' filter is exercised. Per-model usage from the vLLM metric names that exist;
+warnings, more than one series), with every series both labelled
+`scrape_source="rhai-metrics-sourced"` and as an unlabelled twin, so the queries' filter is
+exercised. Per-model usage from the vLLM metric names that exist;
 per-tenant usage `unavailable` until the platform has a tenant label.
 Frontend: map and monitoring pages with a simulation banner driven by `metricsSource`, charts
 that show gaps rather than zeros.
