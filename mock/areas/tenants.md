@@ -156,8 +156,8 @@ BFF: `GET /api/v1/tenants?offset=&limit=&filter=` with a `meta` page and the cli
 `GET/PATCH/DELETE /api/v1/tenants/{id}`, `POST /api/v1/tenants` (201 + Location); Keycloak's messages reach the client as 422 and 409 (a blank name on PATCH is 409,
 see above); an absent `enabled` from today's backend (fields 1-3 only) reads as enabled; the
 JSON has no `redirectUrl` and carries `resourceVersion` (also the `ETag` of a single tenant);
-PATCH and DELETE map `If-Match` to the version fields above (409 when stale; without it, no
-check). Against the shipped backend, which has only `ListTenants`, `GET
+PATCH and DELETE need `If-Match` (428 without it) and map it to the version fields above (409
+when stale). Against the shipped backend, which has only `ListTenants`, `GET
 /api/v1/tenants/{id}` has no list fallback (unlike `GET /api/v1/clusters/{name}`) and answers
 501, as do every tenant write and a PATCH that sets no field (it reads with `GetTenant`), and
 so does a list with `filter`, `limit` or an `offset` above 0: the shipped `ListTenantsRequest`

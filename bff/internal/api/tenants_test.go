@@ -20,12 +20,12 @@ import (
 
 func seedTenants() []*aigridv1.Tenant {
 	return []*aigridv1.Tenant{
-		{Id: "t-2", Name: "globex-research", Alias: "globex", Enabled: proto.Bool(true), Domains: []string{"globex.example.com"},
+		{Id: "t-2", Name: "globex-research", Alias: "globex", Enabled: proto.Bool(true), ResourceVersion: "1", Domains: []string{"globex.example.com"},
 			DomainDetails: []*aigridv1.TenantDomain{{Name: "globex.example.com", Verified: true}}},
-		{Id: "t-1", Name: "acme-robotics", Alias: "acme-robotics", Enabled: proto.Bool(true), Description: "Acme", Attributes: map[string]string{"billing-account": "ACME-0042"},
+		{Id: "t-1", Name: "acme-robotics", Alias: "acme-robotics", Enabled: proto.Bool(true), ResourceVersion: "1", Description: "Acme", Attributes: map[string]string{"billing-account": "ACME-0042"},
 			Domains:       []string{"acme.example.com", "*.acme.example.org"},
 			DomainDetails: []*aigridv1.TenantDomain{{Name: "acme.example.com", Verified: true, IdentityProviderAlias: "acme-oidc", AutoRedirect: true}, {Name: "*.acme.example.org"}}},
-		{Id: "t-3", Name: "umbrella-biotech", Alias: "umbrella-biotech", Enabled: proto.Bool(false)},
+		{Id: "t-3", Name: "umbrella-biotech", Alias: "umbrella-biotech", Enabled: proto.Bool(false), ResourceVersion: "1"},
 	}
 }
 
@@ -280,11 +280,16 @@ func TestCreateTenant(t *testing.T) {
 	})
 }
 
+// patchTenant is a tenant PATCH that carries If-Match: "<version>".
+func patchTenant(id, version, body string) *http.Request {
+	return withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/tenants/"+id, body), `"`+version+`"`)
+}
+
 func TestPatchTenant(t *testing.T) {
 	t.Run("present fields become the mask", func(t *testing.T) {
 		fake := &backendtest.Fake{Tenants: seedTenants()}
 		app := newTestApp(t, testConfig(t), fake)
-		rec := serve(app, jsonRequest(http.MethodPatch, "/api/v1/tenants/t-1", `{"enabled": false, "description": "", "domains": ["acme.example.com"]}`))
+		rec := serve(app, patchTenant("t-1", "1", `{"enabled": false, "description": "", "domains": ["acme.example.com"]}`))
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
 		}
@@ -297,10 +302,10 @@ func TestPatchTenant(t *testing.T) {
 		if paths := up.GetUpdateMask().GetPaths(); strings.Join(paths, ",") != "description,enabled,domains" {
 			t.Errorf("mask = %v", paths)
 		}
-		if up.GetObject().GetId() != "t-1" || up.GetObject().GetName() != "" || up.GetObject().GetAlias() != "" {
-			t.Errorf("only the patched fields travel: %v", up.GetObject())
+		if up.GetObject().GetId() != "t-1" || up.GetObject().GetName() != "" || up.GetObject().GetAlias() != "" || up.GetObject().GetResourceVersion() != "1" {
+			t.Errorf("only the patched fields and the If-Match version travel: %v", up.GetObject())
 		}
-		rec = serve(app, jsonRequest(http.MethodPatch, "/api/v1/tenants/t-1", `{"attributes": {}, "domains": [], "name": "acme-eu", "alias": "acme-robotics"}`))
+		rec = serve(app, patchTenant("t-1", "2", `{"attributes": {}, "domains": [], "name": "acme-eu", "alias": "acme-robotics"}`))
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
 		}
@@ -322,7 +327,7 @@ func TestPatchTenant(t *testing.T) {
 	t.Run("null leaves a field alone and is not in the mask", func(t *testing.T) {
 		fake := &backendtest.Fake{Tenants: seedTenants()}
 		app := newTestApp(t, testConfig(t), fake)
-		rec := serve(app, jsonRequest(http.MethodPatch, "/api/v1/tenants/t-1", `{"domains": null, "attributes": null, "description": null, "enabled": false}`))
+		rec := serve(app, patchTenant("t-1", "1", `{"domains": null, "attributes": null, "description": null, "enabled": false}`))
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
 		}
@@ -339,20 +344,20 @@ func TestPatchTenant(t *testing.T) {
 	t.Run("empty and alias-only patches read without writing", func(t *testing.T) {
 		fake := &backendtest.Fake{Tenants: seedTenants()}
 		app := newTestApp(t, testConfig(t), fake)
-		rec := serve(app, jsonRequest(http.MethodPatch, "/api/v1/tenants/t-2", `{}`))
+		rec := serve(app, patchTenant("t-2", "1", `{}`))
 		if rec.Code != http.StatusOK || fake.LastUpdateTenant != nil {
 			t.Errorf("empty patch = %d, update %v", rec.Code, fake.LastUpdateTenant)
 		}
-		rec = serve(app, jsonRequest(http.MethodPatch, "/api/v1/tenants/t-2", `{"alias": "globex"}`))
+		rec = serve(app, patchTenant("t-2", "1", `{"alias": "globex"}`))
 		if rec.Code != http.StatusOK || fake.LastUpdateTenant != nil {
 			t.Errorf("same alias = %d %s, update %v", rec.Code, rec.Body.String(), fake.LastUpdateTenant)
 		}
-		rec = serve(app, jsonRequest(http.MethodPatch, "/api/v1/tenants/t-2", `{"alias": "globex-2"}`))
+		rec = serve(app, patchTenant("t-2", "1", `{"alias": "globex-2"}`))
 		if rec.Code != http.StatusUnprocessableEntity || decodeError(t, rec).Error.Message != "Cannot change the alias" || fake.LastUpdateTenant != nil {
 			t.Errorf("alias change = %d %s, update %v", rec.Code, rec.Body.String(), fake.LastUpdateTenant)
 		}
 		// With another field present the alias travels to the backend, which answers like Keycloak.
-		rec = serve(app, jsonRequest(http.MethodPatch, "/api/v1/tenants/t-2", `{"alias": "globex-2", "enabled": false}`))
+		rec = serve(app, patchTenant("t-2", "1", `{"alias": "globex-2", "enabled": false}`))
 		if rec.Code != http.StatusUnprocessableEntity || decodeError(t, rec).Error.Message != "Cannot change the alias" || fake.LastUpdateTenant == nil {
 			t.Errorf("alias change with a write = %d %s", rec.Code, rec.Body.String())
 		}
@@ -361,7 +366,7 @@ func TestPatchTenant(t *testing.T) {
 	t.Run("errors", func(t *testing.T) {
 		fake := &backendtest.Fake{Tenants: seedTenants()}
 		app := newTestApp(t, testConfig(t), fake)
-		if rec := serve(app, jsonRequest(http.MethodPatch, "/api/v1/tenants/missing", `{"enabled": true}`)); rec.Code != http.StatusNotFound {
+		if rec := serve(app, patchTenant("missing", "1", `{"enabled": true}`)); rec.Code != http.StatusNotFound {
 			t.Errorf("missing = %d", rec.Code)
 		}
 		for body, want := range map[string]string{
@@ -371,17 +376,17 @@ func TestPatchTenant(t *testing.T) {
 			`{"enabled": true}}`: "invalid request body: unexpected content after the JSON object",
 			`null`:               "invalid request body: must be a JSON object",
 		} {
-			rec := serve(app, jsonRequest(http.MethodPatch, "/api/v1/tenants/t-1", body))
+			rec := serve(app, patchTenant("t-1", "1", body))
 			if rec.Code != http.StatusUnprocessableEntity || decodeError(t, rec).Error.Message != want {
 				t.Errorf("%s -> %d %s, want 422 %q", body, rec.Code, rec.Body.String(), want)
 			}
 		}
 		// A blank name is Keycloak's 409, not a 422 (see UpdateTenant in the fake backend).
-		if rec := serve(app, jsonRequest(http.MethodPatch, "/api/v1/tenants/t-1", `{"name": ""}`)); rec.Code != http.StatusConflict || decodeError(t, rec).Error.Message != "A organization with the same name already exists." {
+		if rec := serve(app, patchTenant("t-1", "1", `{"name": ""}`)); rec.Code != http.StatusConflict || decodeError(t, rec).Error.Message != "A organization with the same name already exists." {
 			t.Errorf("blank name = %d %s, want 409 with Keycloak's message", rec.Code, rec.Body.String())
 		}
 		fake.Err = backendtest.Status(codes.AlreadyExists, "A organization with the same name already exists.")
-		if rec := serve(app, jsonRequest(http.MethodPatch, "/api/v1/tenants/t-1", `{"name": "globex-research"}`)); rec.Code != http.StatusConflict {
+		if rec := serve(app, patchTenant("t-1", "1", `{"name": "globex-research"}`)); rec.Code != http.StatusConflict {
 			t.Errorf("rename conflict = %d", rec.Code)
 		}
 	})
@@ -390,14 +395,14 @@ func TestPatchTenant(t *testing.T) {
 func TestDeleteTenant(t *testing.T) {
 	fake := &backendtest.Fake{Tenants: seedTenants()}
 	app := newTestApp(t, testConfig(t), fake)
-	rec := serve(app, asUser(http.MethodDelete, "/api/v1/tenants/t-3"))
+	rec := serve(app, withIfMatch(asUser(http.MethodDelete, "/api/v1/tenants/t-3"), `"1"`))
 	if rec.Code != http.StatusNoContent || rec.Body.Len() != 0 {
 		t.Fatalf("delete = %d %q", rec.Code, rec.Body.String())
 	}
 	if fake.LastDeleteTenant.GetId() != "t-3" || len(fake.Tenants) != 2 {
 		t.Errorf("delete request = %v, tenants left %d", fake.LastDeleteTenant, len(fake.Tenants))
 	}
-	rec = serve(app, asUser(http.MethodDelete, "/api/v1/tenants/t-3"))
+	rec = serve(app, withIfMatch(asUser(http.MethodDelete, "/api/v1/tenants/t-3"), `"1"`))
 	if rec.Code != http.StatusNotFound || decodeError(t, rec).Error.Message != "object with identifier 't-3' not found" {
 		t.Errorf("second delete = %d %s", rec.Code, rec.Body.String())
 	}
@@ -415,7 +420,7 @@ func TestDeleteTenant(t *testing.T) {
 		t.Errorf("get after delete = %d", rec.Code)
 	}
 	fake.Err = backendtest.Status(codes.PermissionDenied, "User \"alice\" is not a provider admin")
-	if rec := serve(app, asUser(http.MethodDelete, "/api/v1/tenants/t-1")); rec.Code != http.StatusForbidden {
+	if rec := serve(app, withIfMatch(asUser(http.MethodDelete, "/api/v1/tenants/t-1"), `"1"`)); rec.Code != http.StatusForbidden {
 		t.Errorf("denied delete = %d", rec.Code)
 	}
 	if rec := serve(app, httptest.NewRequest(http.MethodDelete, "/api/v1/tenants/t-1", nil)); rec.Code != http.StatusUnauthorized {
@@ -428,7 +433,6 @@ func TestTenantVersions(t *testing.T) {
 	tenants[1].ResourceVersion = "4" // acme-robotics, t-1
 	fake := &backendtest.Fake{Tenants: tenants}
 	app := newTestApp(t, testConfig(t), fake)
-	withIfMatch := func(req *http.Request, v string) *http.Request { req.Header.Set("If-Match", v); return req }
 
 	rec := serve(app, asUser(http.MethodGet, "/api/v1/tenants/t-1"))
 	var got Tenant
@@ -451,30 +455,33 @@ func TestTenantVersions(t *testing.T) {
 	if rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"5"` || got.Description != "fresh" || got.ResourceVersion != "5" {
 		t.Fatalf("matching PATCH = %d, ETag %q, %+v", rec.Code, rec.Header().Get("ETag"), got)
 	}
-	// Without If-Match the update carries no version: not checked, as before.
+	// Without If-Match the PATCH is 428 and reaches nothing: every write
+	// carries the version the client read.
+	fake.Calls = nil
 	rec = serve(app, jsonRequest(http.MethodPatch, "/api/v1/tenants/t-1", `{"description": "unchecked"}`))
-	if rec.Code != http.StatusOK || fake.LastUpdateTenant.GetObject().GetResourceVersion() != "" || rec.Header().Get("ETag") != `"6"` {
-		t.Errorf("PATCH without If-Match = %d, request %v", rec.Code, fake.LastUpdateTenant)
+	if rec.Code != http.StatusPreconditionRequired || decodeError(t, rec).Error.Code != "428" || len(fake.Calls) != 0 {
+		t.Errorf("PATCH without If-Match = %d %s, calls %v", rec.Code, rec.Body.String(), fake.Calls)
 	}
 	// A PATCH that sets no field writes nothing, so it does not check a version.
-	if rec := serve(app, withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/tenants/t-1", `{}`), `"1"`)); rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"6"` {
+	if rec := serve(app, withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/tenants/t-1", `{}`), `"1"`)); rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"5"` {
 		t.Errorf("empty PATCH with a stale If-Match = %d, ETag %q", rec.Code, rec.Header().Get("ETag"))
 	}
-	if rec := serve(app, withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/tenants/t-1", `{"enabled": false}`), `6`)); rec.Code != http.StatusUnprocessableEntity {
+	if rec := serve(app, withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/tenants/t-1", `{"enabled": false}`), `5`)); rec.Code != http.StatusUnprocessableEntity {
 		t.Errorf("an unquoted If-Match = %d, want 422", rec.Code)
 	}
 
 	// DELETE: stale is 409 and keeps the tenant, current deletes.
-	rec = serve(app, withIfMatch(asUser(http.MethodDelete, "/api/v1/tenants/t-1"), `"5"`))
-	if rec.Code != http.StatusConflict || fake.LastDeleteTenant.GetResourceVersion() != "5" || len(fake.Tenants) != 3 {
+	rec = serve(app, withIfMatch(asUser(http.MethodDelete, "/api/v1/tenants/t-1"), `"4"`))
+	if rec.Code != http.StatusConflict || fake.LastDeleteTenant.GetResourceVersion() != "4" || len(fake.Tenants) != 3 {
 		t.Fatalf("stale DELETE = %d %s, request %v", rec.Code, rec.Body.String(), fake.LastDeleteTenant)
 	}
-	if rec := serve(app, withIfMatch(asUser(http.MethodDelete, "/api/v1/tenants/t-1"), `"6"`)); rec.Code != http.StatusNoContent || len(fake.Tenants) != 2 {
+	if rec := serve(app, withIfMatch(asUser(http.MethodDelete, "/api/v1/tenants/t-1"), `"5"`)); rec.Code != http.StatusNoContent || len(fake.Tenants) != 2 {
 		t.Errorf("matching DELETE = %d", rec.Code)
 	}
-	// Without If-Match the delete is unconditional.
-	if rec := serve(app, asUser(http.MethodDelete, "/api/v1/tenants/t-2")); rec.Code != http.StatusNoContent || fake.LastDeleteTenant.GetResourceVersion() != "" {
-		t.Errorf("DELETE without If-Match = %d, request %v", rec.Code, fake.LastDeleteTenant)
+	// Without If-Match the delete is 428 and reaches nothing.
+	fake.Calls = nil
+	if rec := serve(app, asUser(http.MethodDelete, "/api/v1/tenants/t-2")); rec.Code != http.StatusPreconditionRequired || len(fake.Calls) != 0 || len(fake.Tenants) != 2 {
+		t.Errorf("DELETE without If-Match = %d, calls %v", rec.Code, fake.Calls)
 	}
 	// A created tenant comes back with its first version.
 	rec = serve(app, jsonRequest(http.MethodPost, "/api/v1/tenants", `{"name": "new-org"}`))
@@ -533,10 +540,10 @@ func TestDisplayedAliasRoundTrip(t *testing.T) {
 	if shown.Alias != "noalias" {
 		t.Fatalf("shown alias = %q", shown.Alias)
 	}
-	if rec := serve(app, jsonRequest(http.MethodPatch, "/api/v1/tenants/t-9", `{"alias": "noalias"}`)); rec.Code != http.StatusOK || fake.Reached("UpdateTenant") {
+	if rec := serve(app, patchTenant("t-9", "1", `{"alias": "noalias"}`)); rec.Code != http.StatusOK || fake.Reached("UpdateTenant") {
 		t.Errorf("displayed alias sent back = %d %s, calls %v", rec.Code, rec.Body.String(), fake.Calls)
 	}
-	if rec := serve(app, jsonRequest(http.MethodPatch, "/api/v1/tenants/t-9", `{"alias": "other"}`)); rec.Code != http.StatusUnprocessableEntity {
+	if rec := serve(app, patchTenant("t-9", "1", `{"alias": "other"}`)); rec.Code != http.StatusUnprocessableEntity {
 		t.Errorf("a different alias = %d, want 422", rec.Code)
 	}
 }

@@ -297,8 +297,8 @@ inventions, plus `placement` (selector, selected clusters, `PlacementSatisfied`)
 (strategy, summary without `updated`, per-site works with their condition statuses and the
 `ready` and `url` feedback); `url` is omitted when empty; PATCH is a locked read-modify-write with
 the present fields that differ from the stored ones as the mask (none: no write), locked on the
-`If-Match` version when the client sends one and on the version read otherwise; DELETE passes
-`If-Match` as `DeleteModelRequest.resource_version`, which the fake checks like a Kubernetes
+`If-Match` version the client must send (428 without it); DELETE needs `If-Match` too and passes
+it as `DeleteModelRequest.resource_version`, which the fake checks like a Kubernetes
 delete precondition (`Aborted` with the update's wording when stale); GET, POST and PATCH send
 the `resourceVersion` as the `ETag`.
 

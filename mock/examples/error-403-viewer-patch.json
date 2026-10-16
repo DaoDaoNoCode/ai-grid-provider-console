@@ -1,5 +1,8 @@
 {
   "request": "PATCH /api/v1/clusters/site-frankfurt-1",
+  "requestHeaders": {
+    "If-Match": "\"48809977\""
+  },
   "requestBody": {
     "aiGridEnabled": true
   },

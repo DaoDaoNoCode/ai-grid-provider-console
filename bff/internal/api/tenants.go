@@ -248,19 +248,22 @@ type TenantPatch struct {
 
 // patchTenant answers PATCH /api/v1/tenants/{id}: the present fields become
 // the field mask of one UpdateTenant call; the backend does Keycloak's GET,
-// merge and PUT. The If-Match version travels as `object.resource_version`,
-// which the backend compares with the version it keeps (a stale tab gets
-// 409); without If-Match the update is not version-checked, because the BFF
-// does not read the tenant before writing it.
+// merge and PUT. The If-Match version, which the client must send
+// (requireIfMatch), travels as `object.resource_version`, which the backend
+// compares with the version it keeps (a stale tab gets 409).
 func (a *App) patchTenant(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	var patch TenantPatch
-	if err := decodeBody(w, r, &patch); err != nil {
+	if err := requireJSON(r); err != nil {
 		a.respondError(w, r, err)
 		return
 	}
-	expected, err := ifMatch(r)
+	expected, err := requireIfMatch(r)
 	if err != nil {
+		a.respondError(w, r, err)
+		return
+	}
+	var patch TenantPatch
+	if err := decodeBody(w, r, &patch); err != nil {
 		a.respondError(w, r, err)
 		return
 	}
@@ -329,12 +332,12 @@ func (a *App) patchTenant(w http.ResponseWriter, r *http.Request) {
 	writeData(w, http.StatusOK, toTenant(resp.GetObject()))
 }
 
-// deleteTenant answers DELETE /api/v1/tenants/{id} with 204. An If-Match
-// version is the request's `resource_version` precondition (409 when the
-// tenant changed since); without it the delete is unconditional.
+// deleteTenant answers DELETE /api/v1/tenants/{id} with 204. The If-Match
+// version (required, requireIfMatch) is the request's `resource_version`
+// precondition: 409 when the tenant changed since.
 func (a *App) deleteTenant(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	expected, err := ifMatch(r)
+	expected, err := requireIfMatch(r)
 	if err != nil {
 		a.respondError(w, r, err)
 		return

@@ -284,7 +284,7 @@ func TestCreateModel(t *testing.T) {
 func TestPatchModel(t *testing.T) {
 	fake := &backendtest.Fake{Models: seedModels()}
 	app := newTestApp(t, testConfig(t), fake)
-	rec := serve(app, jsonRequest(http.MethodPatch, "/api/v1/models/ai-grid-models/tiny-llm", `{"replicas": 3, "runtimeImage": "quay.io/example/vllm:v2", "env": [], "displayName": "Tiny LLM v2", "labels": {"team": "a"}}`))
+	rec := serve(app, withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/models/ai-grid-models/tiny-llm", `{"replicas": 3, "runtimeImage": "quay.io/example/vllm:v2", "env": [], "displayName": "Tiny LLM v2", "labels": {"team": "a"}}`), `"7"`))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
 	}
@@ -305,7 +305,7 @@ func TestPatchModel(t *testing.T) {
 	}
 
 	// Placement and rollout, then placement removed.
-	rec = serve(app, jsonRequest(http.MethodPatch, "/api/v1/models/ai-grid-models/tiny-llm", `{"placement": {"matchLabels": {"ai-grid/enabled": "true"}}, "rollout": {"strategy": "All", "progressDeadline": "10m"}}`))
+	rec = serve(app, withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/models/ai-grid-models/tiny-llm", `{"placement": {"matchLabels": {"ai-grid/enabled": "true"}}, "rollout": {"strategy": "All", "progressDeadline": "10m"}}`), `"8"`))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
 	}
@@ -313,14 +313,14 @@ func TestPatchModel(t *testing.T) {
 	if strings.Join(req.GetUpdateMask().GetPaths(), ",") != "spec.placement,spec.rollout" || req.GetObject().GetSpec().GetPlacement().GetLabelSelector().GetMatchLabels()["ai-grid/enabled"] != "true" || req.GetObject().GetSpec().GetRollout().GetProgressDeadline() != "10m" {
 		t.Errorf("placement update = %v", req)
 	}
-	rec = serve(app, jsonRequest(http.MethodPatch, "/api/v1/models/ai-grid-models/tiny-llm", `{"placement": null}`))
+	rec = serve(app, withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/models/ai-grid-models/tiny-llm", `{"placement": null}`), `"9"`))
 	if rec.Code != http.StatusOK || fake.LastUpdateModel.GetObject().GetSpec().GetPlacement() != nil || strings.Join(fake.LastUpdateModel.GetUpdateMask().GetPaths(), ",") != "spec.placement" {
 		t.Errorf("placement: null removes it: %d %v", rec.Code, fake.LastUpdateModel)
 	}
 
 	// An empty patch reads and answers without a write.
 	calls := len(fake.Calls)
-	rec = serve(app, jsonRequest(http.MethodPatch, "/api/v1/models/ai-grid-models/tiny-llm", `{}`))
+	rec = serve(app, withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/models/ai-grid-models/tiny-llm", `{}`), `"10"`))
 	if rec.Code != http.StatusOK || len(fake.Calls) != calls+1 || fake.Calls[calls] != "GetModel" {
 		t.Errorf("empty patch = %d, calls %v", rec.Code, fake.Calls[calls:])
 	}
@@ -329,18 +329,18 @@ func TestPatchModel(t *testing.T) {
 		{`{"rollout": {"strategy": "Blue"}}`, "rollout.strategy must be All, Progressive or ProgressivePerGroup"},
 		{`{"placement": {"nope": 1}}`, `invalid request body: json: unknown field "nope"`},
 	} {
-		rec := serve(app, jsonRequest(http.MethodPatch, "/api/v1/models/ai-grid-models/tiny-llm", tc.body))
+		rec := serve(app, withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/models/ai-grid-models/tiny-llm", tc.body), `"10"`))
 		if rec.Code != http.StatusUnprocessableEntity || decodeError(t, rec).Error.Message != tc.message {
 			t.Errorf("%s: %d %s", tc.body, rec.Code, rec.Body.String())
 		}
 	}
-	rec = serve(app, jsonRequest(http.MethodPatch, "/api/v1/models/ai-grid-models/nope", `{"replicas": 1}`))
+	rec = serve(app, withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/models/ai-grid-models/nope", `{"replicas": 1}`), `"1"`))
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("unknown model = %d", rec.Code)
 	}
 	// A write that lands between the read and the update is a 409.
 	fake.AfterGetModel = func(stored *aigridv1.Model) { stored.Metadata.ResourceVersion = "99" }
-	rec = serve(app, jsonRequest(http.MethodPatch, "/api/v1/models/ai-grid-models/tiny-llm", `{"replicas": 4}`))
+	rec = serve(app, withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/models/ai-grid-models/tiny-llm", `{"replicas": 4}`), `"10"`))
 	if rec.Code != http.StatusConflict {
 		t.Errorf("stale write = %d %s", rec.Code, rec.Body.String())
 	}
@@ -349,15 +349,15 @@ func TestPatchModel(t *testing.T) {
 func TestDeleteModel(t *testing.T) {
 	fake := &backendtest.Fake{Models: seedModels()}
 	app := newTestApp(t, testConfig(t), fake)
-	rec := serve(app, asUser(http.MethodDelete, "/api/v1/models/team-b/other"))
+	rec := serve(app, withIfMatch(asUser(http.MethodDelete, "/api/v1/models/team-b/other"), `"3"`))
 	if rec.Code != http.StatusNoContent || rec.Body.Len() != 0 || fake.LastDeleteModel.GetNamespace() != "team-b" || fake.LastDeleteModel.GetName() != "other" {
 		t.Errorf("delete = %d %q %v", rec.Code, rec.Body.String(), fake.LastDeleteModel)
 	}
-	if rec := serve(app, asUser(http.MethodDelete, "/api/v1/models/team-b/other")); rec.Code != http.StatusNotFound {
+	if rec := serve(app, withIfMatch(asUser(http.MethodDelete, "/api/v1/models/team-b/other"), `"3"`)); rec.Code != http.StatusNotFound {
 		t.Errorf("second delete = %d", rec.Code)
 	}
 	fake.Errs = map[string]error{"DeleteModel": backendtest.Status(codes.FailedPrecondition, "model ai-grid-models/tiny-llm is referenced by subscription acme/gold; remove those references first")}
-	rec = serve(app, asUser(http.MethodDelete, "/api/v1/models/ai-grid-models/tiny-llm"))
+	rec = serve(app, withIfMatch(asUser(http.MethodDelete, "/api/v1/models/ai-grid-models/tiny-llm"), `"7"`))
 	if rec.Code != http.StatusPreconditionFailed || !strings.Contains(decodeError(t, rec).Error.Message, "referenced by") {
 		t.Errorf("referenced = %d %s", rec.Code, rec.Body.String())
 	}
@@ -403,7 +403,6 @@ func TestModelFromTodaysShapes(t *testing.T) {
 func TestModelVersions(t *testing.T) {
 	fake := &backendtest.Fake{Models: seedModels()}
 	app := newTestApp(t, testConfig(t), fake)
-	withIfMatch := func(req *http.Request, v string) *http.Request { req.Header.Set("If-Match", v); return req }
 	const path = "/api/v1/models/ai-grid-models/tiny-llm"
 
 	if rec := serve(app, asUser(http.MethodGet, path)); rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"7"` {
@@ -430,8 +429,9 @@ func TestModelVersions(t *testing.T) {
 	if rec := serve(app, withIfMatch(asUser(http.MethodDelete, "/api/v1/models/team-b/other"), `W/"3"`)); rec.Code != http.StatusUnprocessableEntity || len(fake.Models) != 2 {
 		t.Errorf("weak If-Match on DELETE = %d", rec.Code)
 	}
-	if rec := serve(app, asUser(http.MethodDelete, "/api/v1/models/team-b/other")); rec.Code != http.StatusNoContent || fake.LastDeleteModel.GetResourceVersion() != "" {
-		t.Errorf("DELETE without If-Match = %d, request %v", rec.Code, fake.LastDeleteModel)
+	fake.Calls = nil
+	if rec := serve(app, asUser(http.MethodDelete, "/api/v1/models/team-b/other")); rec.Code != http.StatusPreconditionRequired || len(fake.Calls) != 0 || len(fake.Models) != 2 {
+		t.Errorf("DELETE without If-Match = %d, calls %v; want 428 and no call", rec.Code, fake.Calls)
 	}
 }
 
@@ -448,16 +448,16 @@ func TestNoOpModelPatchDoesNotWrite(t *testing.T) {
 		`{"placement": null}`,
 	} {
 		fake.Calls = nil
-		if rec := serve(app, jsonRequest(http.MethodPatch, tiny, body)); rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"7"` || fake.Reached("UpdateModel") {
+		if rec := serve(app, withIfMatch(jsonRequest(http.MethodPatch, tiny, body), `"7"`)); rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"7"` || fake.Reached("UpdateModel") {
 			t.Errorf("%s = %d, calls %v; want 200 without a write", body, rec.Code, fake.Calls)
 		}
 	}
 	const granite = "/api/v1/models/ai-grid-models/granite-8b-instruct"
 	fake.Calls = nil
-	if rec := serve(app, jsonRequest(http.MethodPatch, granite, `{"rollout": {"strategy": "Progressive", "maxConcurrency": "1", "progressDeadline": "15m"}}`)); rec.Code != http.StatusOK || fake.Reached("UpdateModel") {
+	if rec := serve(app, withIfMatch(jsonRequest(http.MethodPatch, granite, `{"rollout": {"strategy": "Progressive", "maxConcurrency": "1", "progressDeadline": "15m"}}`), `"9"`)); rec.Code != http.StatusOK || fake.Reached("UpdateModel") {
 		t.Errorf("unchanged rollout = %d, calls %v", rec.Code, fake.Calls)
 	}
-	if rec := serve(app, jsonRequest(http.MethodPatch, tiny, `{"replicas": 1, "displayName": "Tiny"}`)); rec.Code != http.StatusOK || strings.Join(fake.LastUpdateModel.GetUpdateMask().GetPaths(), ",") != "metadata.annotations" {
+	if rec := serve(app, withIfMatch(jsonRequest(http.MethodPatch, tiny, `{"replicas": 1, "displayName": "Tiny"}`), `"7"`)); rec.Code != http.StatusOK || strings.Join(fake.LastUpdateModel.GetUpdateMask().GetPaths(), ",") != "metadata.annotations" {
 		t.Errorf("only the changed field is in the mask: %d %v", rec.Code, fake.LastUpdateModel.GetUpdateMask().GetPaths())
 	}
 }
@@ -482,7 +482,7 @@ func TestModelFilterOnTheShippedBackend(t *testing.T) {
 func TestPatchModelWithoutStoredSpec(t *testing.T) {
 	fake := &backendtest.Fake{Models: []*aigridv1.Model{{Name: "bare", Metadata: &aigridv1.ObjectMeta{Namespace: "ns", ResourceVersion: "1"}}}}
 	app := newTestApp(t, testConfig(t), fake)
-	rec := serve(app, jsonRequest(http.MethodPatch, "/api/v1/models/ns/bare", `{"replicas": 1, "runtimeImage": "img", "env": [], "placement": null, "labels": {}, "annotations": {}}`))
+	rec := serve(app, withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/models/ns/bare", `{"replicas": 1, "runtimeImage": "img", "env": [], "placement": null, "labels": {}, "annotations": {}}`), `"1"`))
 	if rec.Code != http.StatusOK || strings.Join(fake.LastUpdateModel.GetUpdateMask().GetPaths(), ",") != "spec.replicas,spec.main.image" {
 		t.Errorf("bare model = %d %s, mask %v", rec.Code, rec.Body.String(), fake.LastUpdateModel.GetUpdateMask().GetPaths())
 	}

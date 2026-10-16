@@ -298,18 +298,28 @@ func (o *optionalFloat64) UnmarshalJSON(b []byte) error {
 // of fields.
 const maxBodyBytes = 1 << 20
 
-// decodeBody reads a JSON request body strictly, for every handler that takes
-// one (every POST, PATCH and PUT): a Content-Type other than
-// application/json (parameters such as charset are allowed) is 415, so a
-// cross-site HTML form or a text/plain fetch, which a browser sends without a
-// CORS preflight, can never write; then exactly one JSON object (not null, an
-// array or a scalar) of at most maxBodyBytes bytes with nothing after it, no
-// unknown fields. A body that is too large is 413 (also when the excess is
-// after the value); anything else wrong with it is 422 with a message that
-// names the problem. The body is fully validated before any backend call.
-func decodeBody(w http.ResponseWriter, r *http.Request, into any) error {
+// requireJSON is the first check of every handler that takes a body (every
+// POST, PATCH and PUT): a Content-Type other than application/json
+// (parameters such as charset are allowed) is 415, so a cross-site HTML form
+// or a text/plain fetch, which a browser sends without a CORS preflight, can
+// never write. A PATCH runs it before requireIfMatch, so such a request is
+// 415 whatever its other headers say.
+func requireJSON(r *http.Request) error {
 	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
 		return Errorf(http.StatusUnsupportedMediaType, "request body must be JSON: send Content-Type: application/json")
+	}
+	return nil
+}
+
+// decodeBody reads a JSON request body strictly: requireJSON, then exactly
+// one JSON object (not null, an array or a scalar) of at most maxBodyBytes
+// bytes with nothing after it, no unknown fields. A body that is too large is
+// 413 (also when the excess is after the value); anything else wrong with it
+// is 422 with a message that names the problem. The body is fully validated
+// before any backend call.
+func decodeBody(w http.ResponseWriter, r *http.Request, into any) error {
+	if err := requireJSON(r); err != nil {
+		return err
 	}
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodyBytes))
 	if err := decodeObject(dec, into); err != nil {
@@ -354,19 +364,22 @@ func decodeObject(dec *json.Decoder, into any) error {
 // applies the patch to its labels and annotations and writes them back with
 // `UpdateManagedCluster` under optimistic locking, so a concurrent change on
 // the hub surfaces as 409 instead of being overwritten. The lock is on the
-// If-Match version when the client sent one (the version its page showed,
-// so a stale tab gets 409), else on the version just read, which only
-// catches a write between this read and the update. A patch that leaves
-// both maps as they are writes nothing and answers the current cluster.
+// If-Match version the client must send (the version its page showed, so a
+// stale tab gets 409; requireIfMatch). A patch that leaves both maps as they
+// are writes nothing and answers the current cluster.
 func (a *App) patchCluster(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	var patch ClusterPatch
-	if err := decodeBody(w, r, &patch); err != nil {
+	if err := requireJSON(r); err != nil {
 		a.respondError(w, r, err)
 		return
 	}
-	expected, err := ifMatch(r)
+	expected, err := requireIfMatch(r)
 	if err != nil {
+		a.respondError(w, r, err)
+		return
+	}
+	var patch ClusterPatch
+	if err := decodeBody(w, r, &patch); err != nil {
 		a.respondError(w, r, err)
 		return
 	}
@@ -437,14 +450,10 @@ func (a *App) patchCluster(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	version := obj.GetResourceVersion()
-	if expected != "" {
-		version = expected
-	}
 	updated, err := a.backend.Clusters.UpdateManagedCluster(ctx, &aigridv1.UpdateManagedClusterRequest{
 		Object: &aigridv1.ManagedCluster{
 			Name:            name,
-			ResourceVersion: version,
+			ResourceVersion: expected,
 			Labels:          labels,
 			Annotations:     annotations,
 		},

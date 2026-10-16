@@ -694,19 +694,23 @@ type ModelPatch struct {
 
 // patchModel answers PATCH /api/v1/models/{namespace}/{name}: reads the
 // model, applies the patch and writes it back with `UpdateModel` under
-// optimistic locking, so a concurrent change surfaces as 409. The lock is on
-// the If-Match version when the client sent one (a stale tab gets 409), else
-// on the version just read. Only fields whose value differs from the stored
-// one go in the mask; a patch that changes nothing writes nothing.
+// optimistic locking on the If-Match version the client must send
+// (requireIfMatch), so a stale tab or a concurrent change surfaces as 409.
+// Only fields whose value differs from the stored one go in the mask; a
+// patch that changes nothing writes nothing.
 func (a *App) patchModel(w http.ResponseWriter, r *http.Request) {
 	namespace, name := r.PathValue("namespace"), r.PathValue("name")
-	var patch ModelPatch
-	if err := decodeBody(w, r, &patch); err != nil {
+	if err := requireJSON(r); err != nil {
 		a.respondError(w, r, err)
 		return
 	}
-	expected, err := ifMatch(r)
+	expected, err := requireIfMatch(r)
 	if err != nil {
+		a.respondError(w, r, err)
+		return
+	}
+	var patch ModelPatch
+	if err := decodeBody(w, r, &patch); err != nil {
 		a.respondError(w, r, err)
 		return
 	}
@@ -726,11 +730,7 @@ func (a *App) patchModel(w http.ResponseWriter, r *http.Request) {
 	}
 	cur := current.GetObject()
 	curSpec := cur.GetSpec()
-	version := cur.GetMetadata().GetResourceVersion()
-	if expected != "" {
-		version = expected
-	}
-	obj := &aigridv1.Model{Name: name, Metadata: &aigridv1.ObjectMeta{Namespace: namespace, ResourceVersion: version}, Spec: &aigridv1.ModelSpec{Main: &aigridv1.Container{}}}
+	obj := &aigridv1.Model{Name: name, Metadata: &aigridv1.ObjectMeta{Namespace: namespace, ResourceVersion: expected}, Spec: &aigridv1.ModelSpec{Main: &aigridv1.Container{}}}
 	// Each present field is compared with the stored value and only a
 	// change goes in the mask, so resending what the page loaded is no write.
 	var paths []string
@@ -801,12 +801,12 @@ func (a *App) patchModel(w http.ResponseWriter, r *http.Request) {
 }
 
 // deleteModel answers DELETE /api/v1/models/{namespace}/{name} with 204; 412
-// while a catalog entry or a subscription references the model. An If-Match
-// version is the request's `resource_version` precondition (409 when the
-// model changed since); without it the delete is unconditional.
+// while a catalog entry or a subscription references the model. The
+// If-Match version (required, requireIfMatch) is the request's
+// `resource_version` precondition: 409 when the model changed since.
 func (a *App) deleteModel(w http.ResponseWriter, r *http.Request) {
 	namespace, name := r.PathValue("namespace"), r.PathValue("name")
-	expected, err := ifMatch(r)
+	expected, err := requireIfMatch(r)
 	if err != nil {
 		a.respondError(w, r, err)
 		return

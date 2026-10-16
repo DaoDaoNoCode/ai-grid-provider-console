@@ -70,9 +70,10 @@ var examples = []example{
 	{file: "get-model.json", method: http.MethodGet, path: "/api/v1/models/ai-grid-models/mistral-7b-instruct", as: admin},
 	{file: "get-capabilities.json", method: http.MethodGet, path: "/api/v1/capabilities", as: admin},
 	{file: "error-401-expired-token.json", method: http.MethodGet, path: "/api/v1/user", as: expired},
-	{file: "error-403-viewer-patch.json", method: http.MethodPatch, path: "/api/v1/clusters/site-frankfurt-1", body: `{"aiGridEnabled": true}`, as: viewer},
+	{file: "error-403-viewer-patch.json", method: http.MethodPatch, path: "/api/v1/clusters/site-frankfurt-1", body: `{"aiGridEnabled": true}`, header: map[string]string{"If-Match": `"48809977"`}, as: viewer},
 	{file: "error-404-unknown-cluster.json", method: http.MethodGet, path: "/api/v1/clusters/site-unknown-1", as: admin},
 	{file: "error-409-stale-if-match.json", method: http.MethodPatch, path: "/api/v1/clusters/site-paris-1", body: `{"location": "rome"}`, header: map[string]string{"If-Match": `"48811203"`}, as: admin},
+	{file: "error-428-missing-if-match.json", method: http.MethodPatch, path: "/api/v1/tenants/3f1c9a72-5b6e-4d2a-8c01-2d3e4f5a6b7c", body: `{"enabled": false}`, as: admin},
 	{file: "error-415-not-json.json", method: http.MethodPost, path: "/api/v1/tenants", body: `{"name": "from-a-form"}`, header: map[string]string{"Content-Type": "text/plain"}, as: admin},
 }
 
