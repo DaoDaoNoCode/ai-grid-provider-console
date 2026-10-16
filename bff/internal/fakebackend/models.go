@@ -565,7 +565,9 @@ func (s *Server) applyWork(m *model, tmpl *aigridv1.ModelSpec, cluster string, t
 // counts too; beyond `maxFailures` nothing more is applied. The fake computes
 // the exact instant a slot freed, so timing does not depend on how often it is
 // polled; across a decision change reconcileModels first catches up under the
-// previous decision, and advance() reconciles before each scenario event.
+// previous decision, and advance() reconciles before each scenario event. The
+// one exception is a change only time makes (a tolerationSeconds running out),
+// noticed at the next read; see the declared deviation in mock/areas/models.md.
 func (s *Server) rollout(m *model, decisions *aigridv1.PlacementStatus, now time.Time) {
 	params, err := validateRollout(m.obj.GetSpec().GetRollout())
 	if err != nil {

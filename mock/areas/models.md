@@ -137,7 +137,8 @@ out of the summary, and its cluster is to apply again like a new one.
   never), frees its slot and counts too; beyond `maxFailures` nothing more is applied. A
   `ToApply` cluster (no work yet, or a work whose `Applied` is not True or whose `Progressing` is
   missing) never times out, so it holds its slot and the rollout stalls on it, as on the hub. The
-  fake computes the exact instant a slot frees, so timing does not depend on polling.
+  fake computes the exact instant a slot frees, so timing does not depend on polling, with one
+  exception declared below: a decision change that only time makes.
 - Only the spoke agent writes a work's status: a cluster that is not Available has a work with an
   empty status (no conditions, no manifests), `ToApply` for as long as the agent is silent; a
   cluster that loses its lease after reporting keeps its last report, and its lifecycle resumes
@@ -185,7 +186,11 @@ out of the summary, and its cluster is to apply again like a new one.
   moment, so a slot that freed before the change is used when it freed however often the fake is
   read. Scenario events and API writes are noticed at their own time; a change that only time
   makes (a `tolerationSeconds` running out) is noticed at the next read, and up to then the
-  previous decision counts as held. A work's own `generation` is the ManifestWork's
+  previous decision counts as held. That delays a rollout in two cases: a percentage
+  `maxConcurrency` or `maxFailures` whose slot count changes with the decision, and a cluster
+  whose toleration expires while it holds a Progressive slot, which keeps the slot until the next
+  read (the hub's scheduler requeues the Placement at the expiry and frees the slot then). No
+  fixture uses `tolerationSeconds`, so the shipped scenarios are not affected. A work's own `generation` is the ManifestWork's
   counter, 1 when it is created (also for a cluster that joins later or a placement added by a
   PATCH) and bumped by each update that changes its spec; a cluster leaving the decision loses
   its work;
