@@ -94,7 +94,7 @@ it("follows placement cross-links on PR 12's model JSON", async () => {
   expect(screen.getByRole('heading', { name: 'Site and cluster' })).toBeVisible();
 });
 
-it('uses the configured tile URL, or none', () => {
+it('uses the configured tile URL, or none for the bundled land outline', () => {
   expect(tileLayerConfig({ mapTileUrl: '', mapTileAttribution: '' })).toEqual({ url: '', attribution: '' });
   expect(
     tileLayerConfig({ mapTileUrl: 'https://tiles.example.com/{z}/{x}/{y}.png', mapTileAttribution: 'Example tiles' }),

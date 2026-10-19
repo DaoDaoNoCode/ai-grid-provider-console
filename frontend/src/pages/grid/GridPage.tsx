@@ -83,7 +83,7 @@ export const GridPage: React.FC<Props> = ({ service, monitoring = false }) => {
     setRefreshing(false);
   };
 
-  // Until the config loads there is no basemap; if it can't be read, the map says tiles are unavailable. An empty tile URL means none is configured.
+  // Until the config loads there is no basemap; if it can't be read, the map says tiles are unavailable. An empty tile URL draws the bundled land outline.
   const tiles = config ? tileLayerConfig(config) : configError ? null : undefined;
   const modelsError = modelsLoadError && modelsErrorOf(modelsLoadError);
 

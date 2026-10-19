@@ -7,3 +7,4 @@ test-results
 .playwright-cli
 .vite
 coverage
+src/pages/grid/ne_110m_land.json

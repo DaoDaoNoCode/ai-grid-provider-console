@@ -4,16 +4,22 @@ import { expect, test } from '@playwright/test';
 // can show more pins once other specs enroll another cluster, so the spec checks these by name.
 const PINS = ['San Francisco', 'New York', 'Brussels'];
 
-test('shows the fixture pins, the no-basemap notice, and a pin opens its details', async ({ page }) => {
+test('shows the fixture pins on the bundled land outline, and a pin opens its details', async ({ page, baseURL }) => {
+  const requests: string[] = [];
+  page.on('request', (request) => requests.push(request.url()));
   await page.goto('/ai-grid');
   const map = page.getByLabel('AI Grid map of clusters');
   // Leaflet briefly duplicates tooltips after load, so these locators take the first match.
   for (const pin of PINS) {
     await expect(map.getByText(pin, { exact: true }).first()).toBeVisible();
   }
+  // The outline's paths share the overlay pane with the pins but aren't interactive.
   await expect(
-    page.getByText('No basemap configured. Cluster pins and the cluster list remain available.'),
-  ).toBeVisible();
+    map.locator('.leaflet-overlay-pane path.fleet-map-land:not(.leaflet-interactive)').first(),
+  ).toBeAttached();
+  await expect(page.getByText(/basemap/i)).toHaveCount(0);
+  const origin = new URL(baseURL!).origin;
+  expect(requests.filter((url) => /^https?:/.test(url) && new URL(url).origin !== origin)).toEqual([]);
 
   await map.locator('path.leaflet-interactive').first().click({ force: true });
   await expect(page.getByText('Site and cluster')).toBeVisible();

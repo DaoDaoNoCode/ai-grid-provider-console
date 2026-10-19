@@ -76,6 +76,31 @@ export const GridFleetMap: React.FC<Props> = ({ clusters, selected, onSelect, ti
     };
   }, [tilesUnavailable, tileUrl, tileAttribution]);
 
+  // With no tile server configured, draw the bundled Natural Earth land outline under the pins.
+  useEffect(() => {
+    if (tileUrl !== '') {
+      return;
+    }
+    let land: L.GeoJSON | undefined;
+    let cancelled = false;
+    // A JSON import types each "type" field as string, not as a GeoJSON literal, so the data is cast.
+    void import('./ne_110m_land.json').then(({ default: data }) => {
+      if (cancelled || !map.current) {
+        return;
+      }
+      land = L.geoJSON(data as unknown as GeoJSON.FeatureCollection, {
+        interactive: false,
+        style: { className: 'fleet-map-land' },
+      })
+        .addTo(map.current)
+        .bringToBack();
+    });
+    return () => {
+      cancelled = true;
+      land?.remove();
+    };
+  }, [tileUrl]);
+
   useEffect(() => {
     if (!map.current || !layer.current) {
       return;
@@ -132,10 +157,9 @@ export const GridFleetMap: React.FC<Props> = ({ clusters, selected, onSelect, ti
   return (
     <div className="vision-fleet-map">
       <div ref={container} className="vision-fleet-map__leaflet" role="region" aria-label="AI Grid map of clusters" />
-      {(tileError || tileUrl === '') && (
+      {tileError && (
         <p className="fleet-map-notice">
-          {tileError ? 'Basemap tiles unavailable' : 'No basemap configured'}. Cluster pins and the cluster list remain
-          available.
+          Basemap tiles unavailable. Cluster pins and the cluster list remain available.
         </p>
       )}
       {!clusters.some(isMapped) && (

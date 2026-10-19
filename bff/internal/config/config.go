@@ -67,7 +67,8 @@ type Config struct {
 
 	// GridEndpoint is the consumer-facing inference URL shown to admins.
 	GridEndpoint string
-	// MapTileURL is the tile server for the fleet map; empty shows no basemap.
+	// MapTileURL is the tile server for the fleet map; empty draws a bundled
+	// land outline.
 	MapTileURL string
 	// MapTileAttribution is the attribution shown with MapTileURL's tiles;
 	// unused when MapTileURL is empty.
@@ -111,7 +112,7 @@ func Parse(args []string, lookupEnv func(string) (string, bool)) (Config, error)
 	fs.DurationVar(&cfg.BackendTimeout, "backend-timeout", env.duration("BACKEND_TIMEOUT", 10*time.Second), "Per-RPC timeout towards the backend")
 	fs.StringVar(&cfg.StaticAssetsDir, "static-assets-dir", env.str("STATIC_ASSETS_DIR", ""), "Directory with the built frontend; empty disables")
 	fs.StringVar(&cfg.GridEndpoint, "grid-endpoint", env.str("GRID_CONSUMER_URL", ""), "Consumer-facing AI Grid inference URL")
-	fs.StringVar(&cfg.MapTileURL, "map-tile-url", env.str("MAP_TILE_URL", ""), "Tile server URL template for the fleet map; empty shows no basemap")
+	fs.StringVar(&cfg.MapTileURL, "map-tile-url", env.str("MAP_TILE_URL", ""), "Tile server URL template for the fleet map; empty draws a bundled land outline")
 	fs.StringVar(&cfg.MapTileAttribution, "map-tile-attribution", env.str("MAP_TILE_ATTRIBUTION", ""), "Attribution shown with the map-tile-url tiles")
 	fs.StringVar(&cfg.BillingURL, "billing-url", env.str("BILLING_URL", ""), "External billing UI URL")
 	fs.StringVar(&cfg.ModelsNamespace, "models-namespace", env.str("MODELS_NAMESPACE", DefaultModelsNamespace), "Namespace the console creates models in")
