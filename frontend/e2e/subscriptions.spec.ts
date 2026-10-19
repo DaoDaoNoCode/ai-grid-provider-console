@@ -44,6 +44,8 @@ test('creates, views, edits and deletes a subscription', async ({ page }) => {
   await page.reload();
   await expect(page.getByRole('heading', { name: unique })).toBeVisible();
   await expect(page.getByTestId('subscription-models-table')).toContainText('5,000');
+  // The Details tab bar keeps its height on a page that scrolls (style.css).
+  expect((await page.locator('.pf-v6-c-tabs').boundingBox())?.height).toBeGreaterThan(20);
 
   // Edit the priority.
   await page.getByTestId('subscription-actions-toggle').click();

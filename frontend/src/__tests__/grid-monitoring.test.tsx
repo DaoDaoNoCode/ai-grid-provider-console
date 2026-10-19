@@ -88,6 +88,23 @@ it('shows all sites without a selector and recalculates overview totals for the 
   expect(screen.getByRole('cell', { name: 'New York' })).toBeVisible();
 });
 
+it('shows the request count in the window as a whole number', async () => {
+  const service = withOrganizations();
+  const value = await service.getGridOverview('1h');
+  const points = [
+    { timestamp: 0, value: 1.1 },
+    { timestamp: 3, value: 1.1 },
+  ];
+  vi.spyOn(service, 'getGridOverview').mockResolvedValue({
+    ...value,
+    metrics: value.metrics.map((m) => (m.key === 'requests' ? { ...m, status: 'ok' as const, points } : m)),
+  });
+  renderAt('/monitoring', service);
+  await screen.findByRole('img', { name: 'Gateway request rate over time' });
+  const card = screen.getByText('Requests in window').closest('.observability-stat-card')!;
+  expect(card.textContent).toBe('Requests in window3');
+});
+
 it('changes simulated model charts with model selection and organization usage with the time window', async () => {
   const service = withOrganizations();
   const models = await service.listModels();

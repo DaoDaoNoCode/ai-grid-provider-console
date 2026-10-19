@@ -197,8 +197,8 @@ export function ObservabilityPanel({
     requestTotal !== undefined && requestTotal > 0 && errorTotal !== undefined
       ? Math.max(0, 100 * (1 - errorTotal / requestTotal))
       : undefined;
-  const metricText = (v: number | undefined) =>
-    v === undefined ? '—' : v.toLocaleString(undefined, { maximumFractionDigits: 1 });
+  const metricText = (v: number | undefined, fractionDigits = 1) =>
+    v === undefined ? '—' : v.toLocaleString(undefined, { maximumFractionDigits: fractionDigits });
   const charts = (keys: string[], columns = 2) => (
     <div className={`observability-chart-grid observability-chart-grid--${columns}col`}>
       {keys.map((key) => {
@@ -395,7 +395,7 @@ export function ObservabilityPanel({
                   label="Available clusters"
                   value={`${clusters.filter((c) => c.status === 'Ready').length}/${clusters.length}`}
                 />
-                <Stat label="Requests in window" value={metricText(requestTotal)} />
+                <Stat label="Requests in window" value={metricText(requestTotal, 0)} />
                 <Stat
                   label="Average GPU utilization"
                   value={metricText(gpu)}

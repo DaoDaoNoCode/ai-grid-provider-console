@@ -14,6 +14,20 @@ export const fieldErrorsOf = (schema: z.ZodTypeAny, input: unknown): Record<stri
   return out;
 };
 
+/**
+ * The schema's message for a text field that has input but fails, so a disabled Next comes with a
+ * reason. An empty field shows nothing, so a step never opens with errors. A number field passes
+ * `Number` as `parse`.
+ */
+export const fieldMessage = (
+  schema: z.ZodTypeAny,
+  value: string,
+  parse: (text: string) => unknown = (text) => text,
+): string | undefined => {
+  const result = value.trim() ? schema.safeParse(parse(value)) : undefined;
+  return result && !result.success ? result.error.issues[0]?.message : undefined;
+};
+
 // Ported from krisv/ai-grid-cloud-provider-poc shared/tenant-validation.mjs at 62319b8.
 // Adapted from OSAC tenant validation and IdentityProvider/CreateWizard validation.
 const domainLabel = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;

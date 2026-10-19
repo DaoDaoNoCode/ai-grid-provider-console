@@ -1,6 +1,6 @@
 // The map with real Leaflet (review focus 5). grid-map.test.tsx mocks the map, so these
 // cases live in their own file (A31).
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import L from 'leaflet';
 import { seedClusters } from '../api/MockConsoleService';
 import { GridFleetMap } from '../pages/grid/GridFleetMap';
@@ -31,14 +31,55 @@ it('keeps pins when tiles fail', () => {
   ).not.toBeInTheDocument();
 });
 
-it('adds no tile layer without a tile URL', () => {
+it('draws the bundled land outline instead of tiles without a tile URL', async () => {
   const tileLayer = vi.spyOn(L, 'tileLayer');
+  const geoJSON = vi.spyOn(L, 'geoJSON');
   render(<GridFleetMap clusters={members} selected={null} onSelect={() => {}} tiles={{ url: '', attribution: '' }} />);
+  await waitFor(() => expect(geoJSON).toHaveBeenCalledTimes(1));
   expect(tileLayer).not.toHaveBeenCalled();
-  expect(
-    screen.getByText('No basemap configured. Cluster pins and the cluster list remain available.'),
-  ).toBeInTheDocument();
+  expect(geoJSON).toHaveBeenCalledWith(
+    expect.objectContaining({ type: 'FeatureCollection' }),
+    expect.objectContaining({ interactive: false, style: { className: 'fleet-map-land' } }),
+  );
+  const land = geoJSON.mock.results[0].value as L.GeoJSON;
+  expect(land.getLayers().length).toBeGreaterThan(100);
+  expect(screen.queryByText(/basemap/i)).not.toBeInTheDocument();
   expect(screen.getByText('San Francisco')).toBeInTheDocument();
+});
+
+it('draws no land outline when tiles are configured', async () => {
+  const geoJSON = vi.spyOn(L, 'geoJSON');
+  render(<GridFleetMap clusters={members} selected={null} onSelect={() => {}} tiles={tiles} />);
+  await act(() => import('../pages/grid/ne_110m_land.json'));
+  expect(geoJSON).not.toHaveBeenCalled();
+});
+
+it('draws no land outline when tiles are configured while it loads', async () => {
+  const geoJSON = vi.spyOn(L, 'geoJSON');
+  const consoleError = vi.spyOn(console, 'error');
+  const { rerender } = render(
+    <GridFleetMap clusters={members} selected={null} onSelect={() => {}} tiles={{ url: '', attribution: '' }} />,
+  );
+  rerender(<GridFleetMap clusters={members} selected={null} onSelect={() => {}} tiles={tiles} />);
+  await act(() => import('../pages/grid/ne_110m_land.json'));
+  expect(geoJSON).not.toHaveBeenCalled();
+  expect(consoleError).not.toHaveBeenCalled();
+});
+
+it('says there is no basemap when the land outline fails to load', async () => {
+  vi.resetModules();
+  vi.doMock('../pages/grid/ne_110m_land.json', () => {
+    throw new Error('chunk failed to load');
+  });
+  try {
+    const { GridFleetMap: Map } = await import('../pages/grid/GridFleetMap');
+    render(<Map clusters={members} selected={null} onSelect={() => {}} tiles={{ url: '', attribution: '' }} />);
+    expect(
+      await screen.findByText('No basemap configured. Cluster pins and the cluster list remain available.'),
+    ).toBeInTheDocument();
+  } finally {
+    vi.doUnmock('../pages/grid/ne_110m_land.json');
+  }
 });
 
 it('explains a map without coordinates', () => {

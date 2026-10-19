@@ -1020,3 +1020,35 @@ func TestManagedPolicyKeepsTheModelNamespace(t *testing.T) {
 		t.Fatalf("team-b/mistral-7b-instruct: %v", err)
 	}
 }
+
+// TestPolicyModelRefsCarryTheDefaultNamespace: a policy reads back with the
+// models namespace on each reference that names none, as a subscription does,
+// whether the policy is a fixture or a managed mirror.
+func TestPolicyModelRefsCarryTheDefaultNamespace(t *testing.T) {
+	s := newRepoServer(t)
+	ctx := authed(context.Background())
+	in := teamA()
+	in.ModelRefs[0].Namespace = ""
+	resp, err := s.CreateSubscription(ctx, &aigridv1.CreateSubscriptionRequest{Object: in, CreateAuthPolicy: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.mu.Lock()
+	s.authPolicies["coders"] = &aigridv1.AuthPolicy{Name: "coders", ModelRefs: policyRefs("granite-8b-instruct"), SubjectGroups: []string{"team-a"}}
+	s.mu.Unlock()
+	info, err := s.GetSubscription(ctx, &aigridv1.GetSubscriptionRequest{Name: "team-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	policies := append([]*aigridv1.AuthPolicy{resp.GetAuthPolicy()}, info.GetAuthPolicies()...)
+	if len(policies) < 2 {
+		t.Fatalf("policies %v", policies)
+	}
+	for _, p := range policies {
+		for _, r := range p.GetModelRefs() {
+			if r.GetNamespace() != DefaultModelNamespace {
+				t.Fatalf("policy %s ref %v has no default namespace", p.GetName(), r)
+			}
+		}
+	}
+}

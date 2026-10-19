@@ -5,17 +5,14 @@ import { useMemo, useState } from 'react';
 import {
   Alert,
   Button,
-  Content,
   EmptyState,
   EmptyStateActions,
   EmptyStateBody,
   EmptyStateFooter,
   Label,
+  PageSection,
   SearchInput,
   Spinner,
-  Stack,
-  StackItem,
-  Title,
   Toolbar,
   ToolbarContent,
   ToolbarItem,
@@ -28,6 +25,7 @@ import { ServiceError } from '../../api/ConsoleService';
 import type { OrganizationsService } from '../../api/organizations';
 import type { Organization } from '../../api/types';
 import { DeleteModal } from '../../components/DeleteModal';
+import { PageHeader } from '../../components/PageHeader';
 import { LoadError } from '../../components/LoadError';
 import { PaginatedTable } from '../../components/PaginatedTable';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
@@ -154,7 +152,7 @@ export const OrganizationListPage: React.FC<Props> = ({ service }) => {
         </Toolbar>
         <PaginatedTable rows={rows}>
           {(pageRows) => (
-            <Table aria-label="Organizations" variant="compact" data-testid="tenants-table">
+            <Table aria-label="Organizations" className="portal-resource-table" data-testid="tenants-table">
               <Thead>
                 <Tr>
                   {columns.map((c, i) => (
@@ -228,12 +226,9 @@ export const OrganizationListPage: React.FC<Props> = ({ service }) => {
   };
 
   return (
-    <Stack hasGutter>
-      <StackItem>
-        <Title headingLevel="h2">Organizations</Title>
-        <Content component="p">Manage organizations and their identity providers.</Content>
-      </StackItem>
-      <StackItem>{body()}</StackItem>
+    <>
+      <PageHeader title="Organizations" description="Manage organizations and their identity providers." />
+      <PageSection>{body()}</PageSection>
       {selected && (
         <DeleteModal
           title="Delete organization?"
@@ -252,6 +247,6 @@ export const OrganizationListPage: React.FC<Props> = ({ service }) => {
           <p>Delete this organization and its saved identity provider configuration?</p>
         </DeleteModal>
       )}
-    </Stack>
+    </>
   );
 };

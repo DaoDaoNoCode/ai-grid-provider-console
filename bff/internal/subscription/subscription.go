@@ -68,7 +68,7 @@ type ModelRef struct {
 }
 
 // TokenMetadata is a subscription's metering metadata; OrganizationID is the
-// organization (tenant id) it belongs to.
+// organization (tenant id) it serves, set by the console's Organization field.
 type TokenMetadata struct {
 	OrganizationID string            `json:"organizationId,omitempty"`
 	CostCenter     string            `json:"costCenter,omitempty"`

@@ -229,7 +229,8 @@ func withDefaultNamespaces(sub *aigridv1.Subscription) *aigridv1.Subscription {
 	return out
 }
 
-// viewPolicy is an auth policy with its status at scenario time now, as
+// viewPolicy is an auth policy with its status at scenario time now, each model
+// reference with its namespace (the default when it names none), as
 // maas-controller's deriveAuthPolicyPhase leaves it: Pending, Ready Unknown,
 // until the first reconcile after it was created (reconcilePending); then
 // Failed when every model reference is missing, Degraded when some are, and
@@ -238,6 +239,11 @@ func withDefaultNamespaces(sub *aigridv1.Subscription) *aigridv1.Subscription {
 // fixture policy existed before the fake started, so it is past Pending.
 func (s *Server) viewPolicy(p *aigridv1.AuthPolicy, now time.Time) *aigridv1.AuthPolicy {
 	out := proto.Clone(p).(*aigridv1.AuthPolicy)
+	for _, r := range out.GetModelRefs() {
+		if r.GetNamespace() == "" {
+			r.Namespace = DefaultModelNamespace
+		}
+	}
 	var created time.Time
 	if wall, ok := s.policyCreated[p.GetName()]; ok {
 		created = s.scenarioTime(wall)

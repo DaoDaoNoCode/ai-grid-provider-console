@@ -44,7 +44,7 @@ export const App: React.FC<Props> = ({ service }) => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const header = (
-    <Masthead display={{ default: 'inline' }}>
+    <Masthead className="portal-masthead" display={{ default: 'inline' }}>
       <MastheadMain>
         <MastheadToggle>
           <PageToggleButton
@@ -57,7 +57,7 @@ export const App: React.FC<Props> = ({ service }) => {
         </MastheadToggle>
         <MastheadBrand>
           <MastheadLogo component="span">
-            <Title headingLevel="h1" size="lg" style={{ whiteSpace: 'nowrap' }}>
+            <Title headingLevel="h2" size="lg">
               Cloud Provider Admin Console
             </Title>
           </MastheadLogo>

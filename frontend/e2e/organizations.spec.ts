@@ -56,3 +56,12 @@ test('creates, views, edits and deletes an organization', async ({ page }) => {
   await confirm.click();
   await expect(page.getByRole('link', { name: unique, exact: true })).toHaveCount(0);
 });
+
+// PatternFly's utility classes (pf-v6-u-*) only work when main.tsx loads patternfly-addons.css.
+test('applies PatternFly utility classes', async ({ page }) => {
+  await page.goto('/organizations');
+  await page.getByRole('link', { name: 'acme-robotics', exact: true }).click();
+  const details = page.getByTestId('tenant-configuration-details').locator('.pf-v6-u-my-md').first();
+  await expect(details).toBeVisible();
+  await expect(details).toHaveCSS('margin-top', '16px');
+});

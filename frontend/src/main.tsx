@@ -1,4 +1,6 @@
 import '@patternfly/react-core/dist/styles/base.css';
+import '@patternfly/patternfly/patternfly-addons.css';
+import './style.css';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';

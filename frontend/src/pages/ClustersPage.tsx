@@ -2,15 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Button,
-  Content,
   EmptyState,
   EmptyStateBody,
   Label,
+  PageSection,
   SearchInput,
   Spinner,
-  Stack,
-  StackItem,
-  Title,
   Toolbar,
   ToolbarContent,
   ToolbarItem,
@@ -24,6 +21,7 @@ import type { UserService } from '../api/ConsoleService';
 import { ServiceError } from '../api/ConsoleService';
 import type { GridCluster } from '../api/types';
 import { LoadError } from '../components/LoadError';
+import { PageHeader } from '../components/PageHeader';
 import { PaginatedTable } from '../components/PaginatedTable';
 import { useServiceData } from '../hooks/useServiceData';
 
@@ -185,7 +183,7 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
         </Toolbar>
         <PaginatedTable rows={rows}>
           {(pageRows) => (
-            <Table aria-label="AI Grid clusters" variant="compact" data-testid="clusters-table">
+            <Table aria-label="AI Grid clusters" className="portal-resource-table" data-testid="clusters-table">
               <Thead>
                 <Tr>
                   {columns.map((c, i) => (
@@ -263,12 +261,9 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
   };
 
   return (
-    <Stack hasGutter>
-      <StackItem>
-        <Title headingLevel="h2">Clusters</Title>
-        <Content component="p">Manage AI Grid membership and provisioning readiness.</Content>
-      </StackItem>
-      <StackItem>{body()}</StackItem>
-    </Stack>
+    <>
+      <PageHeader title="Clusters" description="Manage AI Grid membership and provisioning readiness." />
+      <PageSection>{body()}</PageSection>
+    </>
   );
 };

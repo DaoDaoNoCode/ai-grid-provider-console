@@ -124,6 +124,13 @@
   position: absolute;
   inset: 0;
 }
+/* The bundled land outline drawn when no tile server is configured. */
+.fleet-map-land {
+  fill: var(--pf-t--global--background--color--primary--default);
+  fill-opacity: 1;
+  stroke: var(--pf-t--global--border--color--default);
+  stroke-width: 1;
+}
 .vision-fleet-map__legend {
   position: absolute;
   bottom: 12px;

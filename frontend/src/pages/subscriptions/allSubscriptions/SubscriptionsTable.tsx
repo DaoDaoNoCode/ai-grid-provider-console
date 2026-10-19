@@ -42,7 +42,12 @@ export const SubscriptionsTable: React.FC<Props> = ({
       {toolbarContent}
       <PaginatedTable rows={sorted}>
         {(pageRows) => (
-          <Table aria-label="Subscriptions" isExpandable data-testid="subscriptions-table">
+          <Table
+            aria-label="Subscriptions"
+            className="portal-resource-table"
+            isExpandable
+            data-testid="subscriptions-table"
+          >
             <Thead>
               <Tr>
                 {columns.map((col, index) => (
