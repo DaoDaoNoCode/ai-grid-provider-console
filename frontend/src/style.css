@@ -78,7 +78,7 @@
 .portal-organization-wizard .pf-v6-c-wizard__inner-wrap {
   min-height: 24rem;
 }
-/* Keep all five navigation steps visible even when the step content is short. */
+/* Keep every navigation step visible even when the step content is short. */
 .portal-model-wizard .pf-v6-c-wizard__inner-wrap {
   min-height: 24rem;
 }
@@ -94,4 +94,18 @@
    toolbar item width variable; a plain width loses to the toolbar's rule). */
 .console-toolbar-search {
   --pf-v6-c-toolbar__item--Width: 22rem;
+}
+
+/* A table cell's first item and its "+N more" label. */
+.console-overflow-list {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--pf-t--global--spacer--sm);
+}
+
+/* A controller's raw reason and message, under a status's "Details". */
+.console-raw-status {
+  font-size: var(--pf-t--global--font--size--sm);
+  overflow-wrap: anywhere;
 }

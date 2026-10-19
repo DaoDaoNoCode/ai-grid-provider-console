@@ -3,17 +3,15 @@
 // steps/ModelSourceStep.tsx, steps/ModelDeploymentStep.tsx and steps/ReviewStep.tsx.
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
 // Standalone fields replace cluster catalogs and dynamic deployment plugins.
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Alert,
   Breadcrumb,
   BreadcrumbItem,
   Button,
-  DescriptionList,
-  DescriptionListDescription,
-  DescriptionListGroup,
-  DescriptionListTerm,
+  ExpandableSection,
+  Flex,
   Form,
   FormGroup,
   FormHelperText,
@@ -22,75 +20,39 @@ import {
   PageSection,
   TextInput,
   Wizard,
-  WizardFooter,
   WizardStep,
   useWizardContext,
 } from '@patternfly/react-core';
 import type { UserService } from '../../api/ConsoleService';
 import { ServiceError } from '../../api/ConsoleService';
+import type { ClustersService } from '../../api/clusters';
 import type { ModelsService } from '../../api/models';
 import type { CreateModelRequest } from '../../api/types';
+import { ConsoleWizardFooter } from '../../components/ConsoleWizardFooter';
+import { CountInput } from '../../components/CountInput';
+import { DetailsList } from '../../components/DetailsList';
+import { DetailsSection } from '../../components/DetailsSection';
 import { K8sNameDescriptionField } from '../../components/K8sNameDescriptionField/K8sNameDescriptionField';
 import { useK8sNameDescriptionFieldData } from '../../components/K8sNameDescriptionField/useK8sNameDescriptionFieldData';
 import { MultiSelection } from '../../components/MultiSelection';
 import { PageHeader } from '../../components/PageHeader';
+import { useConfirmDiscard } from '../../hooks/useConfirmDiscard';
 import { useServiceData } from '../../hooks/useServiceData';
 import { createModelSchema, fieldMessage } from '../../validation';
 import { RuntimeArgsField } from './fields/RuntimeArgsField';
 import { filterRuntimeArgsForContainer, type RuntimeArgsFieldData } from './fields/runtimeArgs';
+import { locationLabel, siteNamesOf } from './modelUtils';
 
-type Props = { service: ModelsService & UserService };
+type Props = { service: ModelsService & UserService & Pick<ClustersService, 'listClusters'> };
 
-type FooterProps = {
-  sourceValid: boolean;
-  deploymentValid: boolean;
-  locationsValid: boolean;
-  saving: boolean;
-  error?: string;
-  onSave: () => Promise<void>;
-  onCancel: () => void;
-};
+const steps = {
+  source: 'source-model-step',
+  deployment: 'model-deployment-step',
+  locations: 'locations-step',
+  review: 'summary-step',
+} as const;
 
-const DeploymentFooter: React.FC<FooterProps> = ({
-  sourceValid,
-  deploymentValid,
-  locationsValid,
-  saving,
-  error,
-  onSave,
-  onCancel,
-}) => {
-  const { activeStep, goToNextStep, goToPrevStep } = useWizardContext();
-  const final = activeStep.id === 'summary-step';
-  const valid =
-    activeStep.id === 'source-model-step'
-      ? sourceValid
-      : sourceValid &&
-        deploymentValid &&
-        (!['locations-step', 'summary-step'].includes(String(activeStep.id)) || locationsValid);
-  return (
-    <>
-      <div className="pf-v6-u-px-lg">
-        {error && (
-          <Alert isInline variant="danger" title="Unable to save deployment">
-            {error}
-          </Alert>
-        )}
-      </div>
-      <WizardFooter
-        activeStep={activeStep}
-        onNext={() => (final ? onSave() : goToNextStep())}
-        onBack={() => goToPrevStep()}
-        onClose={onCancel}
-        nextButtonText={final ? 'Save deployment' : 'Next'}
-        isNextDisabled={saving || !valid}
-        isBackDisabled={saving}
-        cancelButtonProps={{ isDisabled: saving }}
-        nextButtonProps={{ isLoading: saving }}
-      />
-    </>
-  );
-};
+const defaults = { replicas: '1', cpu: '2', memory: '4Gi', gpuCount: '0' };
 
 /** A field's help line, replaced by the field's error while it has one. */
 const Help: React.FC<{ children: React.ReactNode; error?: string; id?: string }> = ({ children, error, id }) => (
@@ -104,7 +66,26 @@ const Help: React.FC<{ children: React.ReactNode; error?: string; id?: string }>
 const notAvailable = (err: unknown, what: string) =>
   err instanceof ServiceError && err.isNotImplemented ? `${what} not available on this backend yet.` : undefined;
 
-/** The five-step deploy wizard at /models/deploy. */
+/** "org/model" names a deployment "model": the last path segment, as a starting point. */
+const deploymentNameFor = (modelName: string) => modelName.trim().split('/').filter(Boolean).pop() ?? '';
+
+/** The Review step; each section's Edit link goes back to its step. */
+const ReviewStep: React.FC<{
+  sections: { title: string; step: string; items: { term: string; value?: string }[] }[];
+}> = ({ sections }) => {
+  const { goToStepById } = useWizardContext();
+  return (
+    <Flex direction={{ default: 'column' }} spaceItems={{ default: 'spaceItemsXl' }} data-testid="model-review">
+      {sections.map((section) => (
+        <DetailsSection key={section.title} title={section.title} onEdit={() => goToStepById(section.step)}>
+          <DetailsList items={section.items} hideEmpty aria-label={section.title} />
+        </DetailsSection>
+      ))}
+    </Flex>
+  );
+};
+
+/** The four-step deploy wizard at /models/deploy: source, deployment, locations, review. */
 export const ModelWizard: React.FC<Props> = ({ service }) => {
   const navigate = useNavigate();
   const [availableLocations, locationsLoaded, locationsError, reloadLocations] = useServiceData<string[]>(
@@ -112,6 +93,12 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
     [],
     0,
   );
+  const [clusters] = useServiceData(() => service.listClusters(), [], 0);
+  const siteNames = useMemo(() => siteNamesOf(clusters), [clusters]);
+  // AI Grid members whose location can't be chosen yet: not Ready, not provisioned, or unlabeled.
+  const unavailableMembers = clusters.filter(
+    (c) => c.aiGridEnabled && !(c.location && availableLocations.includes(c.location)),
+  ).length;
   const [locations, setLocations] = useState<string[]>([]);
   // Like the text fields, Locations shows its error only once the user has changed it.
   const [locationsTouched, setLocationsTouched] = useState(false);
@@ -119,10 +106,10 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
   const [modelUri, setModelUri] = useState('');
   const [modelName, setModelName] = useState('');
   const [runtimeImage, setRuntimeImage] = useState('');
-  const [replicas, setReplicas] = useState('1');
-  const [cpu, setCpu] = useState('2');
-  const [memory, setMemory] = useState('4Gi');
-  const [gpuCount, setGpuCount] = useState('0');
+  const [replicas, setReplicas] = useState(defaults.replicas);
+  const [cpu, setCpu] = useState(defaults.cpu);
+  const [memory, setMemory] = useState(defaults.memory);
+  const [gpuCount, setGpuCount] = useState(defaults.gpuCount);
   const [runtimeArgs, setRuntimeArgs] = useState<RuntimeArgsFieldData>({ enabled: false, args: [] });
   // A field shows its error only once the user has left it, as Locations does.
   const [touched, setTouched] = useState<ReadonlySet<string>>(new Set());
@@ -144,6 +131,17 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
     runtimeArgs: filterRuntimeArgsForContainer(runtimeArgs.args),
     locations,
   };
+  const isDirty =
+    [modelUri, modelName, runtimeImage, nameDescData.name, nameDescData.description].some((v) => v !== '') ||
+    replicas !== defaults.replicas ||
+    cpu !== defaults.cpu ||
+    memory !== defaults.memory ||
+    gpuCount !== defaults.gpuCount ||
+    runtimeArgs.enabled ||
+    locations.length > 0;
+  const leave = () => navigate('/models');
+  const [requestLeave, discardModal] = useConfirmDiscard(isDirty && !saving, leave);
+
   // Every field this checks is required, so a field the user left empty says so.
   const shownError = (field: keyof typeof createModelSchema.shape, value: string, parse?: (text: string) => unknown) =>
     !touched.has(field)
@@ -168,36 +166,26 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
     !locationsError &&
     locations.length > 0 &&
     locations.every((location) => availableLocations.includes(location));
+  const isStepValid = (step: string) =>
+    step === steps.source
+      ? sourceValid
+      : sourceValid && deploymentValid && (step === steps.deployment || locationsValid);
 
-  const cancel = () => navigate('/models');
   const save = async () => {
     if (saving || !sourceValid || !deploymentValid || !locationsValid) return;
     setSaving(true);
     setError(undefined);
     try {
       await service.createModel(input);
-      navigate('/models', { state: { notice: 'Model deployment saved' } });
+      navigate('/models', { state: { notice: 'Model deployed' } });
     } catch (err) {
       setError(
-        notAvailable(err, 'Saving model deployments is') ??
-          (err instanceof Error ? err.message : 'The deployment could not be saved.'),
+        notAvailable(err, 'Deploying models is') ??
+          (err instanceof Error ? err.message : 'The model could not be deployed.'),
       );
       setSaving(false);
     }
   };
-
-  const review: [string, string][] = [
-    ['Model deployment name', nameDescData.name],
-    ['Model', modelName],
-    ['Model URI', modelUri],
-    ['Runtime image', runtimeImage],
-    ['Replica count', replicas],
-    ['CPU', cpu],
-    ['Memory', memory],
-    ['GPUs', gpuCount],
-    ['Additional runtime arguments', input.runtimeArgs.join(' ') || 'None'],
-    ['Locations', locations.join(', ')],
-  ];
 
   const locationsStep = () => {
     if (locationsError) {
@@ -211,7 +199,7 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
       );
     }
     if (!locationsLoaded) {
-      return <p>Loading locations…</p>;
+      return <p>Loading locations...</p>;
     }
     if (availableLocations.length === 0) {
       return (
@@ -231,7 +219,7 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
           noSelectedOptionsMessage="Select at least one location."
           value={availableLocations.map((location) => ({
             id: location,
-            name: location,
+            name: locationLabel(location, siteNames),
             selected: locations.includes(location),
           }))}
           setValue={(options) => {
@@ -240,16 +228,50 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
           }}
           isDisabled={saving}
         />
-        <Help>Select locations with Ready, provisioned AI Grid members.</Help>
+        <Help>
+          The model runs on the AI Grid clusters at each location you choose.
+          {unavailableMembers > 0 &&
+            ` ${unavailableMembers} AI Grid ${unavailableMembers === 1 ? 'cluster isn’t' : 'clusters aren’t'} listed because ${unavailableMembers === 1 ? 'it isn’t' : 'they aren’t'} Ready and provisioned with a location.`}
+        </Help>
       </FormGroup>
     );
   };
+
+  const review = [
+    {
+      title: 'Source',
+      step: steps.source,
+      items: [
+        { term: 'Model URI', value: modelUri },
+        { term: 'Model name', value: modelName },
+      ],
+    },
+    {
+      title: 'Deployment',
+      step: steps.deployment,
+      items: [
+        { term: 'Deployment name', value: nameDescData.name },
+        { term: 'Description', value: nameDescData.description },
+        { term: 'Runtime image', value: runtimeImage },
+        { term: 'Replicas', value: replicas },
+        { term: 'CPU', value: cpu },
+        { term: 'Memory', value: memory },
+        { term: 'GPUs', value: gpuCount },
+        { term: 'Additional runtime arguments', value: input.runtimeArgs.join(' ') },
+      ],
+    },
+    {
+      title: 'Locations',
+      step: steps.locations,
+      items: [{ term: 'Locations', value: locations.map((l) => locationLabel(l, siteNames)).join(', ') }],
+    },
+  ];
 
   return (
     <>
       <PageHeader
         title="Deploy model"
-        description="Configure a model deployment."
+        description="Deploy a model to AI Grid locations."
         breadcrumb={
           <Breadcrumb>
             <BreadcrumbItem>
@@ -263,20 +285,27 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
         <Wizard
           className="portal-model-wizard"
           isProgressive={false}
-          onClose={cancel}
+          onClose={requestLeave}
+          onStepChange={(_event, _current, previous) => {
+            // Start the deployment's name from the model's, once.
+            if (previous.id === steps.source && !nameDescData.name) {
+              onNameDescChange('name', deploymentNameFor(modelName));
+            }
+          }}
           footer={
-            <DeploymentFooter
-              sourceValid={sourceValid}
-              deploymentValid={deploymentValid}
-              locationsValid={locationsValid}
+            <ConsoleWizardFooter
+              submitStepId={steps.review}
+              submitLabel="Deploy"
+              errorTitle="Unable to deploy model"
+              isStepValid={isStepValid}
               saving={saving}
               error={error}
-              onSave={save}
-              onCancel={cancel}
+              onSubmit={save}
+              onCancel={requestLeave}
             />
           }
         >
-          <WizardStep name="Model details" id="source-model-step">
+          <WizardStep name="Source" id={steps.source}>
             <Form maxWidth="750px">
               <FormGroup label="Model URI" fieldId="model-uri" isRequired>
                 <TextInput
@@ -309,13 +338,13 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
               </FormGroup>
             </Form>
           </WizardStep>
-          <WizardStep name="Model deployment" id="model-deployment-step" isDisabled={!sourceValid || saving}>
+          <WizardStep name="Deployment" id={steps.deployment} isDisabled={!sourceValid || saving}>
             <Form maxWidth="750px">
               <K8sNameDescriptionField
                 data={nameDescData}
                 onDataChange={onNameDescChange}
                 dataTestId="model-name-desc"
-                nameLabel="Model deployment name"
+                nameLabel="Deployment name"
                 nameHelperText="Choose a resource name of at most 63 characters."
               />
               <FormGroup label="Runtime image" fieldId="runtime-image" isRequired>
@@ -332,22 +361,18 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
                   Container image for the serving runtime.
                 </Help>
               </FormGroup>
-              <FormGroup label="Replica count" fieldId="deployment-replicas" isRequired>
-                <TextInput
+              <FormGroup label="Replicas" fieldId="deployment-replicas" isRequired>
+                <CountInput
                   id="deployment-replicas"
-                  aria-describedby="deployment-replicas-help"
-                  type="number"
+                  label="Replicas"
                   min={1}
                   max={99}
                   value={replicas}
-                  onChange={(_event, value) => setReplicas(value)}
+                  onChange={setReplicas}
                   onBlur={() => touch('replicas')}
                   validated={replicasError ? 'error' : 'default'}
-                  isRequired
                 />
-                <Help id="deployment-replicas-help" error={replicasError}>
-                  Between 1 and 99.
-                </Help>
+                <Help error={replicasError}>Between 1 and 99.</Help>
               </FormGroup>
               <FormGroup label="CPU" fieldId="deployment-cpu" isRequired>
                 <TextInput
@@ -377,53 +402,37 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
                   For example 4Gi or 512Mi.
                 </Help>
               </FormGroup>
-              <FormGroup label="GPU count" fieldId="deployment-gpus" isRequired>
-                <TextInput
+              <FormGroup label="GPUs" fieldId="deployment-gpus" isRequired>
+                <CountInput
                   id="deployment-gpus"
-                  aria-describedby="deployment-gpus-help"
-                  type="number"
+                  label="GPUs"
                   min={0}
                   max={64}
                   value={gpuCount}
-                  onChange={(_event, value) => setGpuCount(value)}
+                  onChange={setGpuCount}
                   onBlur={() => touch('gpuCount')}
                   validated={gpuCountError ? 'error' : 'default'}
-                  isRequired
                 />
-                <Help id="deployment-gpus-help" error={gpuCountError}>
-                  Between 0 and 64.
-                </Help>
+                <Help error={gpuCountError}>Between 0 and 64.</Help>
               </FormGroup>
+              <ExpandableSection toggleText="Advanced settings" isIndented>
+                <RuntimeArgsField data={runtimeArgs} onChange={setRuntimeArgs} />
+              </ExpandableSection>
             </Form>
           </WizardStep>
-          <WizardStep
-            name="Advanced settings"
-            id="advanced-options-step"
-            isDisabled={!sourceValid || !deploymentValid || saving}
-          >
-            <Form maxWidth="750px">
-              <RuntimeArgsField data={runtimeArgs} onChange={setRuntimeArgs} />
-            </Form>
-          </WizardStep>
-          <WizardStep name="Locations" id="locations-step" isDisabled={!sourceValid || !deploymentValid || saving}>
+          <WizardStep name="Locations" id={steps.locations} isDisabled={!sourceValid || !deploymentValid || saving}>
             <Form maxWidth="750px">{locationsStep()}</Form>
           </WizardStep>
           <WizardStep
             name="Review"
-            id="summary-step"
+            id={steps.review}
             isDisabled={!sourceValid || !deploymentValid || !locationsValid || saving}
           >
-            <DescriptionList>
-              {review.map(([term, value]) => (
-                <DescriptionListGroup key={term}>
-                  <DescriptionListTerm>{term}</DescriptionListTerm>
-                  <DescriptionListDescription>{value}</DescriptionListDescription>
-                </DescriptionListGroup>
-              ))}
-            </DescriptionList>
+            <ReviewStep sections={review} />
           </WizardStep>
         </Wizard>
       </PageSection>
+      {discardModal}
     </>
   );
 };

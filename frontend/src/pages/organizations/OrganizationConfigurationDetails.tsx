@@ -1,9 +1,10 @@
 // Ported from krisv/ai-grid-cloud-provider-poc src/app/pages/tenants/TenantConfigurationDetails.tsx at 62319b8.
 // Adapted from OSAC IdentityProvider/CreateWizard/steps/IdpReviewStep.tsx.
-import { Button, ExpandableSection, Flex, Label, Stack, StackItem, Title } from '@patternfly/react-core';
+import { ExpandableSection, Flex, Label, Stack, StackItem } from '@patternfly/react-core';
 import type { Organization, OrganizationInput } from '../../api/types';
 import type { DetailsItem } from '../../components/DetailsList';
 import { DetailsList } from '../../components/DetailsList';
+import { DetailsSection } from '../../components/DetailsSection';
 import { formatDateTime } from '../../utilities/format';
 
 export type OrganizationSection = 'details' | 'identityProvider';
@@ -20,19 +21,6 @@ type Props = {
 };
 
 const isSaved = (organization: OrganizationInput | Organization): organization is Organization => 'id' in organization;
-
-const SectionTitle: React.FC<{ title: string; onEdit?: () => void }> = ({ title, onEdit }) => (
-  <Flex alignItems={{ default: 'alignItemsCenter' }} spaceItems={{ default: 'spaceItemsMd' }}>
-    <Title headingLevel="h2" size="lg">
-      {title}
-    </Title>
-    {onEdit && (
-      <Button variant="link" isInline onClick={onEdit} aria-label={`Edit ${title.toLowerCase()}`}>
-        Edit
-      </Button>
-    )}
-  </Flex>
-);
 
 const domainsValue = (organization: OrganizationInput | Organization) => {
   if (!organization.domains.length) {
@@ -112,15 +100,10 @@ export const OrganizationConfigurationDetails: React.FC<Props> = ({ organization
       spaceItems={{ default: 'spaceItemsXl' }}
       data-testid="tenant-configuration-details"
     >
-      <Stack hasGutter>
-        <SectionTitle title="Organization details" onEdit={review ? () => onEditSection?.('details') : undefined} />
+      <DetailsSection title="Organization details" onEdit={review ? () => onEditSection?.('details') : undefined}>
         <DetailsList items={detailItems} hideEmpty={review} aria-label="Organization details" />
-      </Stack>
-      <Stack hasGutter>
-        <SectionTitle
-          title="Identity provider"
-          onEdit={review ? () => onEditSection?.('identityProvider') : undefined}
-        />
+      </DetailsSection>
+      <DetailsSection title="Identity provider" onEdit={review ? () => onEditSection?.('identityProvider') : undefined}>
         {idp ? (
           <DetailsList
             items={review ? [...connectionItems, ...endpointItems] : connectionItems}
@@ -135,7 +118,7 @@ export const OrganizationConfigurationDetails: React.FC<Props> = ({ organization
             <DetailsList items={endpointItems} aria-label="OIDC endpoints" />
           </ExpandableSection>
         )}
-      </Stack>
+      </DetailsSection>
     </Flex>
   );
 };

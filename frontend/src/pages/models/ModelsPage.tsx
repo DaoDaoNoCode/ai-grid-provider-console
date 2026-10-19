@@ -3,7 +3,7 @@
 // and components/global/GlobalDeploymentsView.tsx.
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Alert,
   Button,
@@ -11,113 +11,59 @@ import {
   EmptyStateActions,
   EmptyStateBody,
   EmptyStateFooter,
-  Label,
   PageSection,
-  Popover,
   Spinner,
   ToolbarItem,
 } from '@patternfly/react-core';
-import { ExpandableRowContent, Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
+import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { ThProps } from '@patternfly/react-table';
 import type { UserService } from '../../api/ConsoleService';
 import { ServiceError } from '../../api/ConsoleService';
-import type { ModelsService } from '../../api/models';
+import type { ClustersService } from '../../api/clusters';
 import type { ManagedModel } from '../../api/types';
-import { CompoundExpandCountCell } from '../../components/CompoundExpandCountCell';
-import { DeleteModal } from '../../components/DeleteModal';
 import { LoadError } from '../../components/LoadError';
+import { OverflowList } from '../../components/OverflowList';
 import { PageHeader } from '../../components/PageHeader';
 import { PaginatedTable } from '../../components/PaginatedTable';
-import { ToolbarSearch } from '../../components/ToolbarSearch';
+import { RelativeTime } from '../../components/RelativeTime';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
+import { ToolbarSearch } from '../../components/ToolbarSearch';
 import { useServiceData } from '../../hooks/useServiceData';
-import { getPhaseProps } from '../../utilities/phaseLabelUtils';
-import { ExpandedLocationsPanel } from './ExpandedLocationsPanel';
 import { EMPTY_VALUE } from '../../utilities/format';
+import { locationLabel, modelPath, siteNamesOf } from './modelUtils';
+import { ModelStatusLabel } from './ModelStatus';
+import type { ModelDeleteService } from './useDeleteModel';
+import { useDeleteModel } from './useDeleteModel';
 
-type Props = { service: ModelsService & UserService };
+type Props = { service: ModelDeleteService & UserService & Pick<ClustersService, 'listClusters'> };
 
 type Column = { label: string; sort: (a: ManagedModel, b: ManagedModel) => number };
 
 const columns: Column[] = [
-  {
-    label: 'Model deployment name',
-    sort: (a, b) => (a.displayName ?? a.name).localeCompare(b.displayName ?? b.name),
-  },
+  { label: 'Name', sort: (a, b) => (a.displayName ?? a.name).localeCompare(b.displayName ?? b.name) },
   { label: 'Model', sort: (a, b) => (a.modelName ?? a.modelRef.name).localeCompare(b.modelName ?? b.modelRef.name) },
-  { label: 'Replica count', sort: (a, b) => (a.replicas ?? 0) - (b.replicas ?? 0) },
+  { label: 'Replicas', sort: (a, b) => (a.replicas ?? 0) - (b.replicas ?? 0) },
   { label: 'Locations', sort: (a, b) => a.locations.length - b.locations.length },
-  { label: 'Last saved', sort: (a, b) => (a.creationTimestamp ?? '').localeCompare(b.creationTimestamp ?? '') },
+  { label: 'Created', sort: (a, b) => (a.creationTimestamp ?? '').localeCompare(b.creationTimestamp ?? '') },
   { label: 'Status', sort: (a, b) => (a.phase ?? '').localeCompare(b.phase ?? '') },
 ];
 
-const locationsColumn = 3;
-
 const keyOf = (model: ManagedModel) => `${model.namespace}/${model.name}`;
 
-/**
- * PR 12's phase (Pending, Ready or Failed) in place of the PoC's "Saved to Git"; its reason and
- * message open in a popover.
- */
-const PhaseStatus: React.FC<{ model: ManagedModel }> = ({ model }) => {
-  const [open, setOpen] = useState(false);
-  const phase = model.phase ?? 'Pending';
-  const { icon, status, color } = getPhaseProps(phase);
-  const explained = !!(model.reason || model.statusMessage);
-  const label = (
-    <Label
-      isCompact
-      icon={icon}
-      status={status}
-      color={color}
-      onClick={explained ? () => setOpen((previous) => !previous) : undefined}
-    >
-      {phase}
-    </Label>
-  );
-  return (
-    <span data-testid="model-phase">
-      {explained ? (
-        <Popover
-          isVisible={open}
-          shouldClose={() => setOpen(false)}
-          headerContent={model.reason ?? phase}
-          bodyContent={model.statusMessage ?? model.reason}
-        >
-          {label}
-        </Popover>
-      ) : (
-        label
-      )}
-    </span>
-  );
-};
-
-const deleteErrorOf = (err: unknown) =>
-  err instanceof ServiceError && err.isNotImplemented
-    ? new Error('Deleting models is not available on this backend yet.')
-    : err instanceof Error
-      ? err
-      : new Error('The deployment could not be deleted.');
-
 export const ModelsPage: React.FC<Props> = ({ service }) => {
+  const navigate = useNavigate();
   const [deployments, loaded, error, refresh] = useServiceData<ManagedModel[]>(() => service.listModels(), []);
+  const [clusters] = useServiceData(() => service.listClusters(), [], 0);
   const [user] = useServiceData(() => service.getUser(), undefined, 0);
+  const siteNames = useMemo(() => siteNamesOf(clusters), [clusters]);
   const canWrite = !!user?.isProviderAdmin;
   const [filter, setFilter] = useState('');
   const [sortBy, setSortBy] = useState<{ index: number; direction: 'asc' | 'desc' }>({ index: 0, direction: 'asc' });
-  const [selected, setSelected] = useState<ManagedModel>();
-  const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<Error>();
-  const [expandedLocations, setExpandedLocations] = useState<Set<string>>(() => new Set());
-
-  const toggleLocations = (key: string) =>
-    setExpandedLocations((previous) => {
-      const next = new Set(previous);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+  const [confirmDelete, deleteModal] = useDeleteModel(service, {
+    models: deployments,
+    refresh: () => void refresh(),
+    onDeleted: () => void refresh(),
+  });
 
   const rows = useMemo(() => {
     const term = filter.toLowerCase();
@@ -128,32 +74,6 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
       )
       .sort((a, b) => (sortBy.direction === 'asc' ? compare(a, b) : compare(b, a)));
   }, [deployments, filter, sortBy]);
-
-  const closeDelete = () => {
-    if (!deleting) {
-      setSelected(undefined);
-      setDeleteError(undefined);
-    }
-  };
-
-  const remove = async () => {
-    if (!selected || deleting) return;
-    setDeleting(true);
-    setDeleteError(undefined);
-    // The first attempt sends the version the user confirmed. After a failed delete the list
-    // reloads, so a retry sends the version the backend has now.
-    const current = deleteError ? (deployments.find((d) => keyOf(d) === keyOf(selected)) ?? selected) : selected;
-    try {
-      await service.deleteModel(current.namespace, current.name, current.resourceVersion);
-      setSelected(undefined);
-      void refresh();
-    } catch (err) {
-      setDeleteError(deleteErrorOf(err));
-      void refresh();
-    } finally {
-      setDeleting(false);
-    }
-  };
 
   const deployButton = canWrite ? (
     <Button component={(props) => <Link {...props} to="/models/deploy" />}>Deploy model</Button>
@@ -243,68 +163,52 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
                   </Tr>
                 </Tbody>
               ) : (
-                pageRows.map((deployment, rowIndex) => {
-                  const key = keyOf(deployment);
-                  const isExpanded = expandedLocations.has(key);
-                  return (
-                    <Tbody key={key} isExpanded={isExpanded}>
-                      <Tr isControlRow isContentExpanded={isExpanded}>
-                        <Td dataLabel="Model deployment name">
-                          <strong>{deployment.displayName ?? deployment.name}</strong>
-                          <p>{deployment.description}</p>
+                <Tbody>
+                  {pageRows.map((deployment) => {
+                    const title = deployment.displayName ?? deployment.name;
+                    return (
+                      <Tr key={keyOf(deployment)}>
+                        <Td dataLabel="Name">
+                          <Link to={modelPath(deployment)}>{title}</Link>
                         </Td>
-                        <Td dataLabel="Model">{deployment.modelName ?? deployment.modelRef.name}</Td>
-                        <Td dataLabel="Replica count">{deployment.replicas ?? EMPTY_VALUE}</Td>
-                        <Td
-                          dataLabel="Locations"
-                          data-testid={`model-locations-expand-${deployment.name}`}
-                          compoundExpand={{
-                            isExpanded,
-                            onToggle: () => toggleLocations(key),
-                            expandId: `expand-${deployment.name}-locations`,
-                            rowIndex,
-                            columnIndex: locationsColumn,
-                          }}
-                        >
-                          <CompoundExpandCountCell count={deployment.locations.length} />
+                        <Td dataLabel="Model" modifier="breakWord">
+                          {deployment.modelName ?? deployment.modelRef.name}
                         </Td>
-                        <Td dataLabel="Last saved">
-                          {deployment.creationTimestamp
-                            ? new Date(deployment.creationTimestamp).toLocaleString()
-                            : EMPTY_VALUE}
+                        <Td dataLabel="Replicas">{deployment.replicas ?? EMPTY_VALUE}</Td>
+                        <Td dataLabel="Locations" data-testid={`model-locations-${deployment.name}`}>
+                          <OverflowList
+                            noun="Locations"
+                            items={deployment.locations.map((location) => locationLabel(location, siteNames))}
+                          />
+                        </Td>
+                        <Td dataLabel="Created" modifier="nowrap">
+                          <RelativeTime time={deployment.creationTimestamp} />
                         </Td>
                         <Td dataLabel="Status">
-                          <PhaseStatus model={deployment} />
+                          <ModelStatusLabel model={deployment} />
                         </Td>
                         {canWrite && (
                           <Td isActionCell>
                             <SimpleMenuActions
                               testId={`model-actions-${deployment.name}`}
-                              ariaLabel={`Actions for ${deployment.displayName ?? deployment.name}`}
+                              ariaLabel={`Actions for ${title}`}
                               dropdownItems={[
+                                { key: 'view', label: 'View details', onClick: () => navigate(modelPath(deployment)) },
+                                { isSpacer: true },
                                 {
                                   key: 'delete',
                                   label: 'Delete',
-                                  onClick: () => {
-                                    setSelected(deployment);
-                                    setDeleteError(undefined);
-                                  },
+                                  isDanger: true,
+                                  onClick: () => confirmDelete(deployment),
                                 },
                               ]}
                             />
                           </Td>
                         )}
                       </Tr>
-                      <Tr isExpanded={isExpanded}>
-                        <Td colSpan={columns.length + 1}>
-                          <ExpandableRowContent>
-                            <ExpandedLocationsPanel locations={deployment.locations} />
-                          </ExpandableRowContent>
-                        </Td>
-                      </Tr>
-                    </Tbody>
-                  );
-                })
+                    );
+                  })}
+                </Tbody>
               )}
             </Table>
           )}
@@ -317,22 +221,7 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
     <>
       <PageHeader title="Models" description="Add and remove model deployments." />
       <PageSection>{body()}</PageSection>
-      {selected && (
-        <DeleteModal
-          title="Delete model deployment?"
-          deleteName={selected.displayName ?? selected.name}
-          onClose={closeDelete}
-          onDelete={() => void remove()}
-          deleting={deleting}
-          error={deleteError}
-          testId="delete-deployment-modal"
-        >
-          <p>
-            Delete this model, its saved deployment, and its location placement resources? Remove references from
-            subscriptions and authorization policies first.
-          </p>
-        </DeleteModal>
-      )}
+      {deleteModal}
     </>
   );
 };

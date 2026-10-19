@@ -58,9 +58,17 @@ test('creates, views, edits and deletes an organization', async ({ page }) => {
 });
 
 // PatternFly's utility classes (pf-v6-u-*) only work when main.tsx loads patternfly-addons.css.
+// A probe element keeps the check independent of which page happens to use one.
 test('applies PatternFly utility classes', async ({ page }) => {
-  await page.goto('/models');
-  const cell = page.getByTestId('model-deployments-table').locator('.pf-v6-u-py-md').first();
-  await expect(cell).toBeVisible();
-  await expect(cell).toHaveCSS('padding-top', '16px');
+  await page.goto('/organizations');
+  await expect(page.getByRole('heading', { name: 'Organizations' })).toBeVisible();
+  const marginTop = await page.evaluate(() => {
+    const probe = document.createElement('div');
+    probe.className = 'pf-v6-u-my-md';
+    document.body.append(probe);
+    const value = getComputedStyle(probe).marginTop;
+    probe.remove();
+    return value;
+  });
+  expect(marginTop).toBe('16px');
 });
