@@ -86,8 +86,9 @@ describe('routes', () => {
 
   it('shows the not-found page with a way back', async () => {
     at('/nowhere');
-    expect(await screen.findByText('Page not found')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Go to clusters' })).toHaveAttribute('href', '/clusters');
+    expect(await screen.findByRole('heading', { level: 1, name: 'Page not found' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Go to Clusters' })).toHaveAttribute('href', '/clusters');
+    expect(document.title).toBe('Page not found · Cloud Provider Admin Console');
   });
 
   it('orders the navigation like the PoC, with organization wording', async () => {

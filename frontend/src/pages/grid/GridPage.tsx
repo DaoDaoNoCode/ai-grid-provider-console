@@ -17,6 +17,7 @@ import { GridFleetView } from './GridFleetView';
 import { ObservabilityPanel } from './ObservabilityPanel';
 import { tileLayerConfig } from './tiles';
 import { EMPTY_VALUE } from '../../utilities/format';
+import { useDocumentTitle } from '../../hooks/useDocumentTitle';
 
 type Props = {
   service: GridService &
@@ -37,6 +38,7 @@ const organizationsErrorOf = (err: Error) =>
 const ranges: GridRange[] = ['1h', '6h', '24h'];
 
 export const GridPage: React.FC<Props> = ({ service, monitoring = false }) => {
+  useDocumentTitle(monitoring ? 'Monitoring' : 'AI Grid');
   // On /monitoring the metrics answer below carries the clusters too, so only the map asks for them alone.
   const [inventory, inventoryLoaded, inventoryError, refreshOverview] = useServiceData<GridOverview | undefined>(
     () => (monitoring ? Promise.resolve(undefined) : service.getGridOverview('1h', { includeMetrics: false })),
