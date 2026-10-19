@@ -32,6 +32,7 @@ export const GridFleetMap: React.FC<Props> = ({ clusters, selected, onSelect, ti
     select.current = onSelect;
   });
   const [tileError, setTileError] = useState(tiles === null);
+  const [outlineError, setOutlineError] = useState(false);
 
   useEffect(() => {
     if (!container.current) {
@@ -76,7 +77,8 @@ export const GridFleetMap: React.FC<Props> = ({ clusters, selected, onSelect, ti
     };
   }, [tilesUnavailable, tileUrl, tileAttribution]);
 
-  // With no tile server configured, draw the bundled Natural Earth land outline under the pins.
+  // With no tile server configured, draw the bundled Natural Earth land outline under the pins; if it
+  // can't load, the map says it has no basemap.
   useEffect(() => {
     if (tileUrl !== '') {
       return;
@@ -84,17 +86,19 @@ export const GridFleetMap: React.FC<Props> = ({ clusters, selected, onSelect, ti
     let land: L.GeoJSON | undefined;
     let cancelled = false;
     // A JSON import types each "type" field as string, not as a GeoJSON literal, so the data is cast.
-    void import('./ne_110m_land.json').then(({ default: data }) => {
-      if (cancelled || !map.current) {
-        return;
-      }
-      land = L.geoJSON(data as unknown as GeoJSON.FeatureCollection, {
-        interactive: false,
-        style: { className: 'fleet-map-land' },
+    void import('./ne_110m_land.json')
+      .then(({ default: data }) => {
+        if (cancelled || !map.current) {
+          return;
+        }
+        land = L.geoJSON(data as unknown as GeoJSON.FeatureCollection, {
+          interactive: false,
+          style: { className: 'fleet-map-land' },
+        })
+          .addTo(map.current)
+          .bringToBack();
       })
-        .addTo(map.current)
-        .bringToBack();
-    });
+      .catch(() => setOutlineError(true));
     return () => {
       cancelled = true;
       land?.remove();
@@ -157,9 +161,10 @@ export const GridFleetMap: React.FC<Props> = ({ clusters, selected, onSelect, ti
   return (
     <div className="vision-fleet-map">
       <div ref={container} className="vision-fleet-map__leaflet" role="region" aria-label="AI Grid map of clusters" />
-      {tileError && (
+      {(tileError || (outlineError && tileUrl === '')) && (
         <p className="fleet-map-notice">
-          Basemap tiles unavailable. Cluster pins and the cluster list remain available.
+          {tileError ? 'Basemap tiles unavailable' : 'No basemap configured'}. Cluster pins and the cluster list remain
+          available.
         </p>
       )}
       {!clusters.some(isMapped) && (

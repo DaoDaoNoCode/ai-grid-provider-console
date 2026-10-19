@@ -54,6 +54,34 @@ it('draws no land outline when tiles are configured', async () => {
   expect(geoJSON).not.toHaveBeenCalled();
 });
 
+it('draws no land outline when tiles are configured while it loads', async () => {
+  const geoJSON = vi.spyOn(L, 'geoJSON');
+  const consoleError = vi.spyOn(console, 'error');
+  const { rerender } = render(
+    <GridFleetMap clusters={members} selected={null} onSelect={() => {}} tiles={{ url: '', attribution: '' }} />,
+  );
+  rerender(<GridFleetMap clusters={members} selected={null} onSelect={() => {}} tiles={tiles} />);
+  await act(() => import('../pages/grid/ne_110m_land.json'));
+  expect(geoJSON).not.toHaveBeenCalled();
+  expect(consoleError).not.toHaveBeenCalled();
+});
+
+it('says there is no basemap when the land outline fails to load', async () => {
+  vi.resetModules();
+  vi.doMock('../pages/grid/ne_110m_land.json', () => {
+    throw new Error('chunk failed to load');
+  });
+  try {
+    const { GridFleetMap: Map } = await import('../pages/grid/GridFleetMap');
+    render(<Map clusters={members} selected={null} onSelect={() => {}} tiles={{ url: '', attribution: '' }} />);
+    expect(
+      await screen.findByText('No basemap configured. Cluster pins and the cluster list remain available.'),
+    ).toBeInTheDocument();
+  } finally {
+    vi.doUnmock('../pages/grid/ne_110m_land.json');
+  }
+});
+
 it('explains a map without coordinates', () => {
   const unmapped = members.map(({ latitude: _lat, longitude: _lng, ...c }) => c);
   render(<GridFleetMap clusters={unmapped} selected={null} onSelect={() => {}} tiles={tiles} />);

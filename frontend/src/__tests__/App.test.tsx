@@ -30,6 +30,16 @@ describe('App', () => {
     expect(screen.getByRole('heading', { level: 2, name: 'Cloud Provider Admin Console' })).toBeVisible();
   });
 
+  it('has one h1 on the AI Grid map, which has no visible page heading', async () => {
+    render(
+      <MemoryRouter initialEntries={['/ai-grid']}>
+        <App service={new MockConsoleService()} />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Grid' })).toBeInTheDocument();
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+  });
+
   it('does not call a viewer a provider admin', async () => {
     const service = new MockConsoleService({ username: 'viewer', groups: [], isProviderAdmin: false });
     render(

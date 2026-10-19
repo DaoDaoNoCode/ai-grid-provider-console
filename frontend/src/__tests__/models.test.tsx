@@ -306,6 +306,7 @@ it("shows the Model URI rule's message once the user leaves an invalid URI", asy
   await user.tab();
   expect(screen.getByText('Enter a model URI using hf, oci, s3 or pvc.')).toBeVisible();
   expect(uri).toHaveAttribute('aria-invalid', 'true');
+  expect(uri).toHaveAccessibleDescription(/^Enter a model URI using hf, oci, s3 or pvc\./);
   expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
   await user.clear(uri);
   await user.type(uri, 'hf://org/widget');

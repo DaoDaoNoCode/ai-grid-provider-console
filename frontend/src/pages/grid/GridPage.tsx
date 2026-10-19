@@ -119,6 +119,12 @@ export const GridPage: React.FC<Props> = ({ service, monitoring = false }) => {
         </PageSection>
       )}
       <PageSection>
+        {/* The map has no visible heading, as in the PoC; its h1 is for screen readers. */}
+        {!monitoring && (
+          <Title headingLevel="h1" className="pf-v6-screen-reader">
+            AI Grid
+          </Title>
+        )}
         <div className="grid-toolbar">
           {!monitoring && <Label color="grey">AI Grid</Label>}
           <Button variant="secondary" onClick={() => void refresh()} isDisabled={loading}>

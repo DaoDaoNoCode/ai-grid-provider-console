@@ -40,7 +40,8 @@
   white-space: nowrap;
 }
 @media (max-width: 575px) {
-  .portal-masthead .pf-v6-c-title {
+  /* .pf-m-lg matches the Title's size modifier, which would otherwise keep its larger font. */
+  .portal-masthead .pf-v6-c-title.pf-m-lg {
     font-size: 1rem;
     white-space: normal;
   }
@@ -52,6 +53,7 @@
   }
   .portal-masthead .pf-v6-c-masthead__content {
     margin-inline-start: auto;
+    padding-inline-start: var(--pf-t--global--spacer--sm);
     flex: 0 0 auto;
   }
 }

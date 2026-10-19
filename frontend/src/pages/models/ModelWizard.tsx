@@ -93,9 +93,9 @@ const DeploymentFooter: React.FC<FooterProps> = ({
 };
 
 /** A field's help line, replaced by the field's error while it has one. */
-const Help: React.FC<{ children: React.ReactNode; error?: string }> = ({ children, error }) => (
+const Help: React.FC<{ children: React.ReactNode; error?: string; id?: string }> = ({ children, error, id }) => (
   <FormHelperText>
-    <HelperText>
+    <HelperText id={id}>
       <HelperTextItem variant={error ? 'error' : 'default'}>{error ?? children}</HelperTextItem>
     </HelperText>
   </FormHelperText>
@@ -281,13 +281,14 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
               <FormGroup label="Model URI" fieldId="model-uri" isRequired>
                 <TextInput
                   id="model-uri"
+                  aria-describedby="model-uri-help"
                   value={modelUri}
                   onChange={(_event, value) => setModelUri(value)}
                   onBlur={() => touch('modelUri')}
                   validated={modelUriError ? 'error' : 'default'}
                   isRequired
                 />
-                <Help error={modelUriError}>
+                <Help id="model-uri-help" error={modelUriError}>
                   Enter the model location, for example hf://org/model, oci://registry/model:tag, s3://bucket/path or
                   pvc://claim/path.
                 </Help>
@@ -295,13 +296,14 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
               <FormGroup label="Model name" fieldId="model-alias" isRequired>
                 <TextInput
                   id="model-alias"
+                  aria-describedby="model-alias-help"
                   value={modelName}
                   onChange={(_event, value) => setModelName(value)}
                   onBlur={() => touch('modelName')}
                   validated={modelNameError ? 'error' : 'default'}
                   isRequired
                 />
-                <Help error={modelNameError}>
+                <Help id="model-alias-help" error={modelNameError}>
                   The model name exposed by the inference service, for example org/model.
                 </Help>
               </FormGroup>
@@ -319,17 +321,21 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
               <FormGroup label="Runtime image" fieldId="runtime-image" isRequired>
                 <TextInput
                   id="runtime-image"
+                  aria-describedby="runtime-image-help"
                   value={runtimeImage}
                   onChange={(_event, value) => setRuntimeImage(value)}
                   onBlur={() => touch('runtimeImage')}
                   validated={runtimeImageError ? 'error' : 'default'}
                   isRequired
                 />
-                <Help error={runtimeImageError}>Container image for the serving runtime.</Help>
+                <Help id="runtime-image-help" error={runtimeImageError}>
+                  Container image for the serving runtime.
+                </Help>
               </FormGroup>
               <FormGroup label="Replica count" fieldId="deployment-replicas" isRequired>
                 <TextInput
                   id="deployment-replicas"
+                  aria-describedby="deployment-replicas-help"
                   type="number"
                   min={1}
                   max={99}
@@ -339,33 +345,42 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
                   validated={replicasError ? 'error' : 'default'}
                   isRequired
                 />
-                <Help error={replicasError}>Between 1 and 99.</Help>
+                <Help id="deployment-replicas-help" error={replicasError}>
+                  Between 1 and 99.
+                </Help>
               </FormGroup>
               <FormGroup label="CPU" fieldId="deployment-cpu" isRequired>
                 <TextInput
                   id="deployment-cpu"
+                  aria-describedby="deployment-cpu-help"
                   value={cpu}
                   onChange={(_event, value) => setCpu(value)}
                   onBlur={() => touch('cpu')}
                   validated={cpuError ? 'error' : 'default'}
                   isRequired
                 />
-                <Help error={cpuError}>Positive cores or millicores, for example 2 or 500m.</Help>
+                <Help id="deployment-cpu-help" error={cpuError}>
+                  Positive cores or millicores, for example 2 or 500m.
+                </Help>
               </FormGroup>
               <FormGroup label="Memory" fieldId="deployment-memory" isRequired>
                 <TextInput
                   id="deployment-memory"
+                  aria-describedby="deployment-memory-help"
                   value={memory}
                   onChange={(_event, value) => setMemory(value)}
                   onBlur={() => touch('memory')}
                   validated={memoryError ? 'error' : 'default'}
                   isRequired
                 />
-                <Help error={memoryError}>For example 4Gi or 512Mi.</Help>
+                <Help id="deployment-memory-help" error={memoryError}>
+                  For example 4Gi or 512Mi.
+                </Help>
               </FormGroup>
               <FormGroup label="GPU count" fieldId="deployment-gpus" isRequired>
                 <TextInput
                   id="deployment-gpus"
+                  aria-describedby="deployment-gpus-help"
                   type="number"
                   min={0}
                   max={64}
@@ -375,7 +390,9 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
                   validated={gpuCountError ? 'error' : 'default'}
                   isRequired
                 />
-                <Help error={gpuCountError}>Between 0 and 64.</Help>
+                <Help id="deployment-gpus-help" error={gpuCountError}>
+                  Between 0 and 64.
+                </Help>
               </FormGroup>
             </Form>
           </WizardStep>
