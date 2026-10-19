@@ -20,6 +20,7 @@ import { StatusLabel } from '../../components/StatusLabel';
 import { modelKey } from '../../utilities/authpolicies';
 import { modelMetrics, tenantUsage, total } from '../../services/demoObservability';
 import './observability.css';
+import { EMPTY_VALUE } from '../../utilities/format';
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   const [expanded, setExpanded] = useState(true);
@@ -198,7 +199,7 @@ export function ObservabilityPanel({
       ? Math.max(0, 100 * (1 - errorTotal / requestTotal))
       : undefined;
   const metricText = (v: number | undefined, fractionDigits = 1) =>
-    v === undefined ? '—' : v.toLocaleString(undefined, { maximumFractionDigits: fractionDigits });
+    v === undefined ? EMPTY_VALUE : v.toLocaleString(undefined, { maximumFractionDigits: fractionDigits });
   const charts = (keys: string[], columns = 2) => (
     <div className={`observability-chart-grid observability-chart-grid--${columns}col`}>
       {keys.map((key) => {
@@ -424,7 +425,7 @@ export function ObservabilityPanel({
                           <tr key={c.name}>
                             <td>{c.name}</td>
                             <td>{c.siteName ?? c.site ?? 'Not assigned'}</td>
-                            <td>{c.location ?? '—'}</td>
+                            <td>{c.location ?? EMPTY_VALUE}</td>
                             <td>
                               <StatusLabel isCompact status={c.status} />
                             </td>
@@ -489,7 +490,7 @@ export function ObservabilityPanel({
                                 ),
                               ].join(', ') || 'Not assigned'}
                             </td>
-                            <td>{m.replicas ?? '—'}</td>
+                            <td>{m.replicas ?? EMPTY_VALUE}</td>
                             <td>
                               <StatusLabel isCompact status={m.phase ?? 'Pending'} />
                             </td>

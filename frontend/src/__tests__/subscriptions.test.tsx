@@ -266,10 +266,10 @@ it('says creating is not available on a backend without subscriptions', async ()
   expect(screen.getByText('Failed to create subscription')).toBeVisible();
 }, 20000);
 
-it('paginates the list like the PoC', async () => {
+it('shows one pagination, in the toolbar, for a single page', async () => {
   renderAt('/subscriptions', new MockConsoleService());
   expect(await screen.findByTestId('subscriptions-table')).toBeVisible();
-  expect(screen.getAllByRole('navigation', { name: /pagination/i })).toHaveLength(2);
+  expect(screen.getAllByRole('navigation', { name: /pagination/i })).toHaveLength(1);
 });
 
 describe('a failed background poll', () => {

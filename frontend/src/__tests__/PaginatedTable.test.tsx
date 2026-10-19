@@ -63,3 +63,15 @@ it('clamps the page when filtering leaves fewer pages', async () => {
   await user.type(screen.getByRole('textbox', { name: 'Filter' }), '2');
   expect(shown()).toEqual(['item-12']);
 });
+
+it('shows one pagination, in the toolbar, when the rows fit on one page', () => {
+  render(
+    <PaginatedTable rows={items.slice(0, 4)} toolbar={<button type="button">Create item</button>}>
+      {(pageRows) => <p>{pageRows.length} rows</p>}
+    </PaginatedTable>,
+  );
+  const toolbar = screen.getByRole('button', { name: 'Create item' }).closest('.pf-v6-c-toolbar');
+  expect(toolbar).not.toBeNull();
+  expect(screen.getAllByRole('navigation', { name: /pagination/i })).toHaveLength(1);
+  expect(within(toolbar as HTMLElement).getByRole('navigation', { name: /pagination/i })).toBeInTheDocument();
+});

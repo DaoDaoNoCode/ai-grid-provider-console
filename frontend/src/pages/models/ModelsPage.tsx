@@ -14,10 +14,7 @@ import {
   Label,
   PageSection,
   Popover,
-  SearchInput,
   Spinner,
-  Toolbar,
-  ToolbarContent,
   ToolbarItem,
 } from '@patternfly/react-core';
 import { ExpandableRowContent, Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
@@ -31,10 +28,12 @@ import { DeleteModal } from '../../components/DeleteModal';
 import { LoadError } from '../../components/LoadError';
 import { PageHeader } from '../../components/PageHeader';
 import { PaginatedTable } from '../../components/PaginatedTable';
+import { ToolbarSearch } from '../../components/ToolbarSearch';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
 import { useServiceData } from '../../hooks/useServiceData';
 import { getPhaseProps } from '../../utilities/phaseLabelUtils';
 import { ExpandedLocationsPanel } from './ExpandedLocationsPanel';
+import { EMPTY_VALUE } from '../../utilities/format';
 
 type Props = { service: ModelsService & UserService };
 
@@ -202,21 +201,20 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
     return (
       <>
         {errorAlert}
-        <Toolbar>
-          <ToolbarContent>
-            <ToolbarItem>
-              <SearchInput
-                aria-label="Filter models"
+        <PaginatedTable
+          rows={rows}
+          toolbar={
+            <>
+              <ToolbarSearch
+                label="Filter models"
                 placeholder="Filter by name or location"
                 value={filter}
-                onChange={(_event, value) => setFilter(value)}
-                onClear={() => setFilter('')}
+                onChange={setFilter}
               />
-            </ToolbarItem>
-            {deployButton && <ToolbarItem>{deployButton}</ToolbarItem>}
-          </ToolbarContent>
-        </Toolbar>
-        <PaginatedTable rows={rows}>
+              {deployButton && <ToolbarItem>{deployButton}</ToolbarItem>}
+            </>
+          }
+        >
           {(pageRows) => (
             <Table
               aria-label="Model deployments"
@@ -256,7 +254,7 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
                           <p>{deployment.description}</p>
                         </Td>
                         <Td dataLabel="Model">{deployment.modelName ?? deployment.modelRef.name}</Td>
-                        <Td dataLabel="Replica count">{deployment.replicas ?? '—'}</Td>
+                        <Td dataLabel="Replica count">{deployment.replicas ?? EMPTY_VALUE}</Td>
                         <Td
                           dataLabel="Locations"
                           data-testid={`model-locations-expand-${deployment.name}`}
@@ -271,7 +269,9 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
                           <CompoundExpandCountCell count={deployment.locations.length} />
                         </Td>
                         <Td dataLabel="Last saved">
-                          {deployment.creationTimestamp ? new Date(deployment.creationTimestamp).toLocaleString() : '—'}
+                          {deployment.creationTimestamp
+                            ? new Date(deployment.creationTimestamp).toLocaleString()
+                            : EMPTY_VALUE}
                         </Td>
                         <Td dataLabel="Status">
                           <PhaseStatus model={deployment} />

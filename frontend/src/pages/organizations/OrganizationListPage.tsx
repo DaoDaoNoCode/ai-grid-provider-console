@@ -10,10 +10,7 @@ import {
   EmptyStateBody,
   EmptyStateFooter,
   PageSection,
-  SearchInput,
   Spinner,
-  Toolbar,
-  ToolbarContent,
   ToolbarItem,
 } from '@patternfly/react-core';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
@@ -29,8 +26,10 @@ import { LoadError } from '../../components/LoadError';
 import { PaginatedTable } from '../../components/PaginatedTable';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
 import { StatusLabel } from '../../components/StatusLabel';
+import { ToolbarSearch } from '../../components/ToolbarSearch';
 import { useServiceData } from '../../hooks/useServiceData';
 import { ORGANIZATION_CHANGED } from './serverErrors';
+import { EMPTY_VALUE } from '../../utilities/format';
 
 type Props = { service: OrganizationsService & UserService };
 
@@ -48,7 +47,7 @@ const columns: Column[] = [
 ];
 
 /** The backend may not report a creation time yet. */
-const registered = (timestamp: string) => (timestamp ? new Date(timestamp).toLocaleString() : '—');
+const registered = (timestamp: string) => (timestamp ? new Date(timestamp).toLocaleString() : EMPTY_VALUE);
 
 export const OrganizationListPage: React.FC<Props> = ({ service }) => {
   const navigate = useNavigate();
@@ -133,21 +132,20 @@ export const OrganizationListPage: React.FC<Props> = ({ service }) => {
     }
     return (
       <>
-        <Toolbar>
-          <ToolbarContent>
-            <ToolbarItem>
-              <SearchInput
-                aria-label="Search organizations"
+        <PaginatedTable
+          rows={rows}
+          toolbar={
+            <>
+              <ToolbarSearch
+                label="Search organizations"
                 placeholder="Search organizations by name"
                 value={search}
-                onChange={(_event, value) => setSearch(value)}
-                onClear={() => setSearch('')}
+                onChange={setSearch}
               />
-            </ToolbarItem>
-            {createButton && <ToolbarItem>{createButton}</ToolbarItem>}
-          </ToolbarContent>
-        </Toolbar>
-        <PaginatedTable rows={rows}>
+              {createButton && <ToolbarItem>{createButton}</ToolbarItem>}
+            </>
+          }
+        >
           {(pageRows) => (
             <Table aria-label="Organizations" className="portal-resource-table" data-testid="tenants-table">
               <Thead>
@@ -175,7 +173,7 @@ export const OrganizationListPage: React.FC<Props> = ({ service }) => {
                         <StatusLabel isCompact status={o.status} />
                       </Td>
                       <Td dataLabel="Primary domain" modifier="nowrap">
-                        {o.domains[0] ?? '—'}
+                        {o.domains[0] ?? EMPTY_VALUE}
                       </Td>
                       <Td dataLabel="Identity provider" modifier="breakWord">
                         {o.identityProvider ? (
@@ -184,7 +182,7 @@ export const OrganizationListPage: React.FC<Props> = ({ service }) => {
                             <p>{o.identityProvider.config.issuer}</p>
                           </>
                         ) : (
-                          '—'
+                          EMPTY_VALUE
                         )}
                       </Td>
                       <Td dataLabel="Registered">{registered(o.creationTimestamp)}</Td>

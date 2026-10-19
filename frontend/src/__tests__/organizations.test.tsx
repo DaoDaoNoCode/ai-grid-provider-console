@@ -281,10 +281,10 @@ it('shows the not-available state when the backend cannot delete organizations y
   expect(within(modal).queryByText('the AI Grid backend does not support this operation yet')).not.toBeInTheDocument();
 });
 
-it('paginates the list like the PoC', async () => {
+it('shows one pagination, in the toolbar, for a single page', async () => {
   renderAt('/organizations', new MockConsoleService());
   expect(await screen.findByTestId('tenants-table')).toBeVisible();
-  expect(screen.getAllByRole('navigation', { name: /pagination/i })).toHaveLength(2);
+  expect(screen.getAllByRole('navigation', { name: /pagination/i })).toHaveLength(1);
 });
 
 // PR 12's tenant JSON, as GET /api/v1/tenants/{id} sends it (mock/examples/get-tenant.json), trimmed.

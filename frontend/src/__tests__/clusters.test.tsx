@@ -155,10 +155,10 @@ it('shows the not-available state on a backend without the RPC', async () => {
   expect(screen.getByText('Adding clusters to AI Grid is not available on this backend yet.')).toBeInTheDocument();
 });
 
-it('paginates the list like the PoC', async () => {
+it('shows one pagination, in the toolbar, for a single page', async () => {
   renderAt('/clusters', new MockConsoleService());
   expect(await screen.findByTestId('clusters-table')).toBeVisible();
-  expect(screen.getAllByRole('navigation', { name: /pagination/i })).toHaveLength(2);
+  expect(screen.getAllByRole('navigation', { name: /pagination/i })).toHaveLength(1);
 });
 
 // PR 12's cluster JSON through HttpConsoleService, as GET /api/v1/clusters sends it.

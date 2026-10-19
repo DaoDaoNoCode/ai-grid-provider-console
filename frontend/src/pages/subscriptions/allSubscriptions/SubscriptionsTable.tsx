@@ -39,8 +39,7 @@ export const SubscriptionsTable: React.FC<Props> = ({
 
   return (
     <>
-      {toolbarContent}
-      <PaginatedTable rows={sorted}>
+      <PaginatedTable rows={sorted} toolbar={toolbarContent}>
         {(pageRows) => (
           <Table
             aria-label="Subscriptions"

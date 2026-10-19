@@ -18,6 +18,7 @@ import { useSubscriptionAffectedModels } from '../../../hooks/useGovernanceAffec
 import { getSubscriptionEditUrl, getSubscriptionViewUrl } from '../../../utilities/maasGovernanceNavigation';
 import type { SubscriptionColumn } from './columns';
 import { GROUPS_COLUMN, MODELS_COLUMN } from './columns';
+import { EMPTY_VALUE } from '../../../utilities/format';
 
 type Props = {
   subscription: MaaSSubscription;
@@ -81,7 +82,7 @@ export const SubscriptionTableRow: React.FC<Props> = ({
           />
         </Td>
         <Td dataLabel={columns[1].label} data-testid="subscription-organization">
-          {organization || '-'}
+          {organization || EMPTY_VALUE}
         </Td>
         <Td dataLabel={columns[2].label}>
           <PhaseLabel
@@ -124,7 +125,7 @@ export const SubscriptionTableRow: React.FC<Props> = ({
         </Td>
         <Td dataLabel={columns[5].label}>
           <Content component={ContentVariants.p} className="pf-v6-u-font-weight-bold pf-v6-u-text-align-center">
-            {subscription.priority ?? '-'}
+            {subscription.priority ?? EMPTY_VALUE}
           </Content>
         </Td>
         <Td isActionCell>

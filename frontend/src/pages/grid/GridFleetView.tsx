@@ -24,6 +24,7 @@ import { modelKey } from '../../utilities/authpolicies';
 import { GridFleetMap } from './GridFleetMap';
 import type { TileLayerConfig } from './tiles';
 import './grid-fleet.css';
+import { EMPTY_VALUE } from '../../utilities/format';
 
 /** A cluster by its name, or a model by its modelKey. */
 type Selection = { kind: 'cluster' | 'model'; name: string };
@@ -297,7 +298,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
                 <p>{c.siteName ?? c.site ?? 'Site unassigned'}</p>
                 <Fields
                   items={[
-                    ['Location', c.location ?? '—'],
+                    ['Location', c.location ?? EMPTY_VALUE],
                     ['Provisioning', c.provisioningStatus],
                   ]}
                 />

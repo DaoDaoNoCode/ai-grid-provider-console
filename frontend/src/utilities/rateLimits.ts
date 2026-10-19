@@ -4,6 +4,7 @@
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
 import { z } from 'zod';
 import type { ModelSubscriptionRef, TokenRateLimit } from '../api/types';
+import { EMPTY_VALUE } from './format';
 
 /** A token limit as the form edits it: count tokens per time unit(s). */
 export type RateLimit = { count: number; time: number; unit: 'hour' | 'minute' | 'second' };
@@ -111,7 +112,7 @@ export const toTokenRateLimit = (rl: RateLimit): TokenRateLimit => ({
 
 export const formatTokenLimits = (limits: ModelSubscriptionRef['tokenRateLimits']): string => {
   if (limits.length === 0) {
-    return '—';
+    return EMPTY_VALUE;
   }
   return limits.map((l) => formatTokenRateLimitLine(l.limit, l.window)).join(' | ');
 };

@@ -1,16 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Alert,
-  Button,
-  EmptyState,
-  EmptyStateBody,
-  PageSection,
-  SearchInput,
-  Spinner,
-  Toolbar,
-  ToolbarContent,
-  ToolbarItem,
-} from '@patternfly/react-core';
+import { Alert, Button, EmptyState, EmptyStateBody, PageSection, Spinner, ToolbarItem } from '@patternfly/react-core';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { ThProps } from '@patternfly/react-table';
 import { useNavigate } from 'react-router-dom';
@@ -21,8 +10,11 @@ import type { GridCluster } from '../api/types';
 import { LoadError } from '../components/LoadError';
 import { PageHeader } from '../components/PageHeader';
 import { PaginatedTable } from '../components/PaginatedTable';
+import { RefreshButton } from '../components/RefreshButton';
 import { StatusLabel } from '../components/StatusLabel';
+import { ToolbarSearch } from '../components/ToolbarSearch';
 import { useServiceData } from '../hooks/useServiceData';
+import { EMPTY_VALUE } from '../utilities/format';
 
 // Ported from krisv/ai-grid-cloud-provider-poc src/app/pages/clusters/ClustersPage.tsx at 62319b8.
 // The PoC's columns, labels, and enroll flow, plus the console's Site, Region, Hub, and
@@ -154,25 +146,22 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
     }
     return (
       <>
-        <Toolbar>
-          <ToolbarContent>
-            <ToolbarItem>
-              <SearchInput
-                aria-label="Search clusters"
+        <PaginatedTable
+          rows={rows}
+          toolbar={
+            <>
+              <ToolbarSearch
+                label="Search clusters"
                 placeholder="Search clusters by name"
                 value={search}
-                onChange={(_event, value) => setSearch(value)}
-                onClear={() => setSearch('')}
+                onChange={setSearch}
               />
-            </ToolbarItem>
-            <ToolbarItem>
-              <Button variant="secondary" onClick={reload}>
-                Refresh
-              </Button>
-            </ToolbarItem>
-          </ToolbarContent>
-        </Toolbar>
-        <PaginatedTable rows={rows}>
+              <ToolbarItem>
+                <RefreshButton onRefresh={reload} />
+              </ToolbarItem>
+            </>
+          }
+        >
           {(pageRows) => (
             <Table aria-label="AI Grid clusters" className="portal-resource-table" data-testid="clusters-table">
               <Thead>
@@ -194,7 +183,7 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
                   pageRows.map((c) => (
                     <Tr key={c.name}>
                       <Td dataLabel="Cluster">{c.name}</Td>
-                      <Td dataLabel="Location">{c.location ?? '—'}</Td>
+                      <Td dataLabel="Location">{c.location ?? EMPTY_VALUE}</Td>
                       <Td dataLabel="Status">
                         <StatusLabel isCompact status={c.status} reason={c.statusMessage} />
                         {c.state && <div className="pf-v6-u-font-size-sm pf-v6-u-mt-xs">{c.state}</div>}
@@ -204,15 +193,15 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
                         <StatusLabel isCompact status={c.provisioningStatus} />
                       </Td>
                       <Td dataLabel="Site" visibility={wideOnly}>
-                        {c.site ?? '—'}
+                        {c.site ?? EMPTY_VALUE}
                       </Td>
                       <Td dataLabel="Region" visibility={wideOnly}>
-                        {c.region ?? '—'}
+                        {c.region ?? EMPTY_VALUE}
                       </Td>
                       <Td dataLabel="Hub" visibility={wideOnly}>
                         {c.hubAcceptsClient ? 'Accepted' : 'Pending'}
                       </Td>
-                      <Td dataLabel="OpenShift">{c.openshiftVersion ?? '—'}</Td>
+                      <Td dataLabel="OpenShift">{c.openshiftVersion ?? EMPTY_VALUE}</Td>
                       <Td dataLabel="Action">
                         {c.aiGridEnabled ? (
                           <span>AI Grid Member</span>

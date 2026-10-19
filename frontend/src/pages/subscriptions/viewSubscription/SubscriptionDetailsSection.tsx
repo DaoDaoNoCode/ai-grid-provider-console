@@ -16,6 +16,7 @@ import {
 import type { MaaSSubscription, ModelRegistration } from '../../../api/types';
 import { PhaseLabel } from '../../../components/Phase/PhaseLabel';
 import { getSubscriptionAffectedModels } from '../../../hooks/useGovernanceAffectedModels';
+import { EMPTY_VALUE } from '../../../utilities/format';
 
 type Props = {
   subscription: MaaSSubscription;
@@ -57,7 +58,7 @@ export const SubscriptionDetailsSection: React.FC<Props> = ({ subscription, mode
         </DescriptionListGroup>
         <DescriptionListGroup>
           <DescriptionListTerm>Description</DescriptionListTerm>
-          <DescriptionListDescription>{subscription.description ?? '—'}</DescriptionListDescription>
+          <DescriptionListDescription>{subscription.description ?? EMPTY_VALUE}</DescriptionListDescription>
         </DescriptionListGroup>
         <DescriptionListGroup>
           <DescriptionListTerm>Resource name</DescriptionListTerm>
@@ -66,7 +67,7 @@ export const SubscriptionDetailsSection: React.FC<Props> = ({ subscription, mode
         <DescriptionListGroup>
           <DescriptionListTerm>Organization</DescriptionListTerm>
           <DescriptionListDescription data-testid="subscription-organization">
-            {organization || '—'}
+            {organization || EMPTY_VALUE}
           </DescriptionListDescription>
         </DescriptionListGroup>
         <DescriptionListGroup>
@@ -80,7 +81,7 @@ export const SubscriptionDetailsSection: React.FC<Props> = ({ subscription, mode
                 is12Hour
               />
             ) : (
-              '—'
+              EMPTY_VALUE
             )}
           </DescriptionListDescription>
         </DescriptionListGroup>

@@ -82,3 +82,11 @@
 .pf-v6-c-page__main > .pf-v6-c-tabs {
   flex-shrink: 0;
 }
+
+/* Console conventions shared by every page (see components/ and utilities/). */
+
+/* One search width on every list page, wide enough for its placeholder. */
+.console-toolbar-search {
+  width: 22rem;
+  max-width: 100%;
+}

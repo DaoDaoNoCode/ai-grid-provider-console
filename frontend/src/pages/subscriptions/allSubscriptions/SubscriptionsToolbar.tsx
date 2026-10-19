@@ -4,7 +4,8 @@
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
 // The PoC's FilterToolbar (one keyword filter and "Clear all filters") is inlined.
 import { Link } from 'react-router-dom';
-import { Button, SearchInput, Toolbar, ToolbarContent, ToolbarGroup, ToolbarItem } from '@patternfly/react-core';
+import { Button, ToolbarItem } from '@patternfly/react-core';
+import { ToolbarSearch } from '../../../components/ToolbarSearch';
 import { getSubscriptionCreateUrl } from '../../../utilities/maasGovernanceNavigation';
 import type { SubscriptionsFilterDataType } from './const';
 import { SubscriptionsFilterOptions } from './const';
@@ -16,43 +17,36 @@ type Props = {
   canWrite: boolean;
 };
 
+/** The subscriptions list's toolbar items: the keyword filter, Create subscription and Clear all filters. */
 export const SubscriptionsToolbar: React.FC<Props> = ({ filterData, onFilterUpdate, canWrite }) => {
   const keyword = filterData[SubscriptionsFilterOptions.keyword] ?? '';
   return (
-    <Toolbar data-testid="subscriptions-table-toolbar">
-      <ToolbarContent>
+    <>
+      <ToolbarSearch
+        label="Filter by name, resource name, or description"
+        placeholder="Filter by name, resource name, or description"
+        value={keyword}
+        onChange={(value) => onFilterUpdate(SubscriptionsFilterOptions.keyword, value)}
+        data-testid="subscriptions-filter-input"
+      />
+      {canWrite && (
         <ToolbarItem>
-          <SearchInput
-            style={{ minWidth: '350px' }}
-            aria-label="Filter by name, resource name, or description"
-            placeholder="Filter by name, resource name, or description"
-            value={keyword}
-            onChange={(_event, value) => onFilterUpdate(SubscriptionsFilterOptions.keyword, value)}
-            onClear={() => onFilterUpdate(SubscriptionsFilterOptions.keyword, '')}
-            data-testid="subscriptions-filter-input"
-          />
+          <Button
+            variant="primary"
+            component={(props) => <Link {...props} to={getSubscriptionCreateUrl()} />}
+            data-testid="create-subscription-button"
+          >
+            Create subscription
+          </Button>
         </ToolbarItem>
-        {canWrite && (
-          <ToolbarGroup>
-            <ToolbarItem>
-              <Button
-                variant="primary"
-                component={(props) => <Link {...props} to={getSubscriptionCreateUrl()} />}
-                data-testid="create-subscription-button"
-              >
-                Create subscription
-              </Button>
-            </ToolbarItem>
-          </ToolbarGroup>
-        )}
-        {keyword && (
-          <ToolbarItem>
-            <Button variant="link" onClick={() => onFilterUpdate(SubscriptionsFilterOptions.keyword, '')}>
-              Clear all filters
-            </Button>
-          </ToolbarItem>
-        )}
-      </ToolbarContent>
-    </Toolbar>
+      )}
+      {keyword && (
+        <ToolbarItem>
+          <Button variant="link" onClick={() => onFilterUpdate(SubscriptionsFilterOptions.keyword, '')}>
+            Clear all filters
+          </Button>
+        </ToolbarItem>
+      )}
+    </>
   );
 };

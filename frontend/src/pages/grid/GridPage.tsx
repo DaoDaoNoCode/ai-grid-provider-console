@@ -16,6 +16,7 @@ import { useServiceData } from '../../hooks/useServiceData';
 import { GridFleetView } from './GridFleetView';
 import { ObservabilityPanel } from './ObservabilityPanel';
 import { tileLayerConfig } from './tiles';
+import { EMPTY_VALUE } from '../../utilities/format';
 
 type Props = {
   service: GridService &
@@ -151,7 +152,7 @@ export const GridPage: React.FC<Props> = ({ service, monitoring = false }) => {
             )}
             <p className="grid-source">
               {data.inventorySource && <>Inventory: {data.inventorySource.toUpperCase()} · </>}
-              Retrieved {data.updatedAt ? new Date(data.updatedAt).toLocaleString() : '—'}
+              Retrieved {data.updatedAt ? new Date(data.updatedAt).toLocaleString() : EMPTY_VALUE}
               {monitoring && <> · Metrics: {data.demo ? 'Demo' : metricsLabel}</>}
             </p>
             {!monitoring && (

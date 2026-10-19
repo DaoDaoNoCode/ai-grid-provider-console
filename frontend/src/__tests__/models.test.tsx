@@ -214,10 +214,10 @@ it('shows the not-available state when the backend has no models yet', async () 
   expect(screen.queryByTestId('model-deployments-table')).not.toBeInTheDocument();
 });
 
-it('paginates the list like the PoC', async () => {
+it('shows one pagination, in the toolbar, for a single page', async () => {
   renderAt('/models', new MockConsoleService());
   expect(await screen.findByTestId('model-deployments-table')).toBeVisible();
-  expect(screen.getAllByRole('navigation', { name: /pagination/i })).toHaveLength(2);
+  expect(screen.getAllByRole('navigation', { name: /pagination/i })).toHaveLength(1);
 });
 
 const jsonResponse = (status: number, body: unknown) =>
