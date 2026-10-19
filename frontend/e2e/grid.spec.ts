@@ -43,5 +43,5 @@ test('monitoring switches to 24h and opens each tab', async ({ page }) => {
   await expect(page.getByLabel('Select model deployment')).toBeVisible();
   await page.getByRole('tab', { name: 'Usage' }).click();
   await expect(page.getByRole('tab', { name: 'Usage' })).toHaveAttribute('aria-selected', 'true');
-  await expect(page.getByRole('table', { name: 'Organization usage' })).toBeVisible();
+  await expect(page.getByRole('grid', { name: 'Organization usage' })).toBeVisible();
 });

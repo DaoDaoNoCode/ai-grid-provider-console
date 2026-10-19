@@ -25,8 +25,9 @@ it('labels metric simulation independently of real backend inventory in Monitori
   });
   renderAt('/monitoring', service);
   expect(await screen.findByText('Simulated monitoring metrics')).toBeVisible();
-  expect(screen.getByRole('heading', { name: 'GPU utilization' })).toBeVisible();
-  expect(screen.getByRole('heading', { name: 'Gateway request rate' })).toBeVisible();
+  // Each chart's title carries its unit.
+  expect(screen.getByRole('heading', { name: 'GPU utilization (%)' })).toBeVisible();
+  expect(screen.getByRole('heading', { name: 'Gateway request rate (req/s)' })).toBeVisible();
 });
 
 it('updates monitoring chart windows through time controls', async () => {
@@ -45,30 +46,33 @@ it('updates monitoring chart windows through time controls', async () => {
   expect(query).toHaveBeenCalledWith('24h');
 });
 
-it('provides reference-style tabs, expandable chart sections, and a working model selector', async () => {
+it('provides Clusters, Models and Usage tabs, plain section headings, and a working model selector', async () => {
   const service = withOrganizations();
   const models = await service.listModels();
   const user = userEvent.setup();
   renderAt('/monitoring', service);
   await screen.findByRole('img', { name: 'GPU utilization over time' });
   expect(screen.getByRole('heading', { name: 'Monitoring', level: 1 })).toBeVisible();
-  await user.click(screen.getByRole('button', { name: 'Cluster resource overview' }));
-  expect(screen.queryByRole('img', { name: 'GPU utilization over time' })).not.toBeInTheDocument();
+  expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Clusters', 'Models', 'Usage']);
+  expect(screen.getByRole('heading', { name: 'Cluster resources' })).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Cluster resources' })).not.toBeInTheDocument();
   await user.click(screen.getByRole('tab', { name: 'Usage' }));
   expect(await screen.findByRole('img', { name: 'Token consumption by organization' })).toBeVisible();
-  const usage = screen.getByRole('table', { name: 'Organization usage' });
-  expect(within(usage).getByText('acme-robotics', { selector: 'td' })).toBeVisible();
-  expect(within(usage).getByText('globex-research', { selector: 'td' })).toBeVisible();
+  const usage = screen.getByRole('grid', { name: 'Organization usage' });
+  expect(within(usage).getByRole('link', { name: 'acme-robotics' })).toBeVisible();
+  expect(within(usage).getByRole('link', { name: 'globex-research' })).toBeVisible();
   expect(screen.queryByText('NorthSummit Bank')).not.toBeInTheDocument();
   expect(
     screen.getByRole('img', { name: 'Token consumption by organization' }).querySelectorAll('[data-kind="cached"]'),
   ).toHaveLength(2);
   expect(screen.queryByText('Quota utilization')).not.toBeInTheDocument();
   expect(screen.queryByRole('columnheader', { name: 'Quota used' })).not.toBeInTheDocument();
+  // No raw organization IDs; the names link to the organizations.
+  expect(screen.queryByRole('columnheader', { name: 'Organization ID' })).not.toBeInTheDocument();
   await user.click(screen.getByRole('tab', { name: 'Models' }));
   const selector = screen.getByRole('combobox', { name: 'Select model deployment' });
   await user.selectOptions(selector, models[0].displayName ?? models[0].name);
-  expect(within(screen.getByRole('table', { name: 'Model deployments' })).getAllByRole('row')).toHaveLength(2);
+  expect(within(screen.getByRole('grid', { name: 'Model deployments' })).getAllByRole('row')).toHaveLength(2);
   expect(screen.getByRole('img', { name: 'Request queue length over time' })).toBeVisible();
   expect(screen.getByRole('img', { name: 'P90 Time to first token (TTFT) over time' })).toBeVisible();
   expect(screen.queryByRole('tab', { name: 'Gateway' })).not.toBeInTheDocument();
@@ -79,7 +83,7 @@ it('shows all sites without a selector and recalculates overview totals for the 
   const user = userEvent.setup();
   renderAt('/monitoring', service);
   await screen.findByRole('img', { name: 'Gateway request rate over time' });
-  const overview = () => screen.getByText('Requests in window').closest('.observability-stat-card')!.textContent;
+  const overview = () => screen.getByText('Requests').closest('.observability-stat-card')!.textContent;
   const first = overview();
   await user.click(screen.getByRole('button', { name: 'Last 24h' }));
   await waitFor(() => expect(overview()).not.toBe(first));
@@ -101,8 +105,8 @@ it('shows the request count in the window as a whole number', async () => {
   });
   renderAt('/monitoring', service);
   await screen.findByRole('img', { name: 'Gateway request rate over time' });
-  const card = screen.getByText('Requests in window').closest('.observability-stat-card')!;
-  expect(card.textContent).toBe('Requests in window3');
+  const card = screen.getByText('Requests').closest('.observability-stat-card')!;
+  expect(card.textContent).toBe('Requests3');
 });
 
 it('changes simulated model charts with model selection and organization usage with the time window', async () => {
@@ -122,13 +126,13 @@ it('changes simulated model charts with model selection and organization usage w
   expect(queue()).not.toBe(all);
   await user.click(screen.getByRole('tab', { name: 'Usage' }));
   const chart = () => screen.getByRole('img', { name: 'Token consumption by organization' });
-  const before = screen.getByRole('table', { name: 'Organization usage' }).textContent;
-  const beforeHeight = chart().querySelector('[data-kind="input"]')!.getAttribute('height');
+  const before = screen.getByRole('grid', { name: 'Organization usage' }).textContent;
+  const beforeWidth = chart().querySelector('[data-kind="input"]')!.getAttribute('width');
   await user.click(screen.getByRole('button', { name: 'Last 6h' }));
-  await waitFor(() => expect(screen.getByRole('table', { name: 'Organization usage' }).textContent).not.toBe(before));
+  await waitFor(() => expect(screen.getByRole('grid', { name: 'Organization usage' }).textContent).not.toBe(before));
   expect(chart()).toBeVisible();
-  expect(chart().querySelector('[data-kind="input"]')!.getAttribute('height')).not.toBe(beforeHeight);
-  expect(screen.getByText(/Total consumption:.*Last 6h/)).toBeVisible();
+  expect(chart().querySelector('[data-kind="input"]')!.getAttribute('width')).not.toBe(beforeWidth);
+  expect(screen.getByText(/tokens in the last 6h$/)).toBeVisible();
 });
 
 it('asks for the overview once per load: the metrics answer carries the clusters', async () => {
@@ -176,24 +180,27 @@ it('loads organization usage when opened from the map', async () => {
   await user.click(await screen.findByRole('link', { name: 'View monitoring' }));
   await screen.findByRole('img', { name: 'Gateway request rate over time' });
   await user.click(screen.getByRole('tab', { name: 'Usage' }));
-  const usage = await screen.findByRole('table', { name: 'Organization usage' });
-  expect(within(usage).getByText('acme-robotics', { selector: 'td' })).toBeVisible();
+  const usage = await screen.findByRole('grid', { name: 'Organization usage' });
+  expect(within(usage).getByRole('link', { name: 'acme-robotics' })).toBeVisible();
 });
 
 it("lists PR 12's models with their target sites", async () => {
   const user = userEvent.setup();
   renderAt('/monitoring', serviceOnPr12Json());
   await user.click(await screen.findByRole('tab', { name: 'Models' }));
-  const table = screen.getByRole('table', { name: 'Model deployments' });
+  const table = screen.getByRole('grid', { name: 'Model deployments' });
   const granite = within(table).getByText('Granite 8B Instruct').closest('tr')!;
   expect(granite).toHaveTextContent('Paris DC1');
 });
 
-it("says the model sites come from the clusters each model's placement selected", async () => {
+it('explains the target sites in a help popover', async () => {
   const user = userEvent.setup();
   renderAt('/monitoring', withOrganizations());
   await user.click(await screen.findByRole('tab', { name: 'Models' }));
-  expect(await screen.findByText(/^Sites come from the clusters each model's placement selected\./)).toBeVisible();
+  await user.click(screen.getByRole('button', { name: 'More about model deployments' }));
+  expect(
+    await screen.findByText(/^Target sites are the sites of the clusters each model's placement chose/),
+  ).toBeVisible();
 });
 
 it('filters by one of two models of the same name in different namespaces', async () => {
@@ -207,7 +214,7 @@ it('filters by one of two models of the same name in different namespaces', asyn
   renderAt('/monitoring', service);
   await user.click(await screen.findByRole('tab', { name: 'Models' }));
   await user.selectOptions(screen.getByRole('combobox', { name: 'Select model deployment' }), 'Team granite');
-  const table = screen.getByRole('table', { name: 'Model deployments' });
+  const table = screen.getByRole('grid', { name: 'Model deployments' });
   expect(table).toHaveTextContent('Team granite');
   expect(table).not.toHaveTextContent('Shared granite');
 });
@@ -223,5 +230,5 @@ it('does not name Thanos when the backend reports no metrics source', async () =
 
 it('names the clusters table', async () => {
   renderAt('/monitoring', withOrganizations());
-  expect(await screen.findByRole('table', { name: 'Clusters' })).toBeVisible();
+  expect(await screen.findByRole('grid', { name: 'Clusters' })).toBeVisible();
 });
