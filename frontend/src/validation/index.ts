@@ -182,10 +182,19 @@ export const updateSubscriptionSchema = z
     guardrails: guardrails.optional(),
   })
   .passthrough();
-/** The body of POST /api/v1/subscriptions: the PoC's createSchema. */
+/**
+ * The body of POST /api/v1/subscriptions: the PoC's createSchema, plus the console's
+ * organization, which a new subscription needs (tokenMetadata.organizationId).
+ */
 export const createSubscriptionSchema = updateSubscriptionSchema.extend({
   name: resourceName,
   createAuthPolicy: z.boolean(),
+  tokenMetadata: z.preprocess(
+    (value) => (value === undefined ? {} : value),
+    metadata.extend({
+      organizationId: z.string({ required_error: 'Select an organization' }).min(1, 'Select an organization'),
+    }),
+  ),
 });
 
 // Ported from krisv/ai-grid-cloud-provider-poc shared/model-validation.mjs at 62319b8.

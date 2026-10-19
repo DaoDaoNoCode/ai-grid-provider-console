@@ -130,8 +130,9 @@ message TokenRateLimit {
 
 // Metering metadata of a subscription.
 message TokenMetadata {
-  // Pass-through metering metadata, as MaaS carries it: the console doesn't set
-  // it, and a subscription's groups carry its organization as a name prefix.
+  // The organization (tenant id) the subscription serves, set by the console's
+  // Organization field. A follow-up moves it to MaaS's immutable
+  // spec.organization.id.
   string organization_id = 1;
   string cost_center = 2;
   map<string, string> labels = 3;

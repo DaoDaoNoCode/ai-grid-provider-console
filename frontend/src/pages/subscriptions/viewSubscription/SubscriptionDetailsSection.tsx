@@ -2,7 +2,7 @@
 // Adapted from opendatahub-io/odh-dashboard
 // packages/maas/frontend/src/app/pages/subscriptions/viewSubscription/SubscriptionDetailsSection.tsx
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
-// The affected models come from the MaaS status (P12).
+// The console adds the Organization; the affected models come from the MaaS status (P12).
 import {
   DescriptionList,
   DescriptionListDescription,
@@ -21,9 +21,11 @@ type Props = {
   subscription: MaaSSubscription;
   /** The referenced models' MaaSModelRef statuses. */
   modelRegistrations: ModelRegistration[];
+  /** The organization's name, or its id when the organization is unknown. */
+  organization: string;
 };
 
-export const SubscriptionDetailsSection: React.FC<Props> = ({ subscription, modelRegistrations }) => (
+export const SubscriptionDetailsSection: React.FC<Props> = ({ subscription, modelRegistrations, organization }) => (
   <Stack hasGutter data-testid="subscription-details-section">
     <StackItem>
       <Title headingLevel="h2" size="xl">
@@ -60,6 +62,12 @@ export const SubscriptionDetailsSection: React.FC<Props> = ({ subscription, mode
         <DescriptionListGroup>
           <DescriptionListTerm>Resource name</DescriptionListTerm>
           <DescriptionListDescription>{subscription.name}</DescriptionListDescription>
+        </DescriptionListGroup>
+        <DescriptionListGroup>
+          <DescriptionListTerm>Organization</DescriptionListTerm>
+          <DescriptionListDescription data-testid="subscription-organization">
+            {organization || '—'}
+          </DescriptionListDescription>
         </DescriptionListGroup>
         <DescriptionListGroup>
           <DescriptionListTerm>Created</DescriptionListTerm>

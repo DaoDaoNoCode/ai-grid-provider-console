@@ -654,8 +654,9 @@ func (x *TokenRateLimit) GetWindow() string {
 // Metering metadata of a subscription.
 type TokenMetadata struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Pass-through metering metadata, as MaaS carries it: the console doesn't set
-	// it, and a subscription's groups carry its organization as a name prefix.
+	// The organization (tenant id) the subscription serves, set by the console's
+	// Organization field. A follow-up moves it to MaaS's immutable
+	// spec.organization.id.
 	OrganizationId string            `protobuf:"bytes,1,opt,name=organization_id,json=organizationId,proto3" json:"organization_id,omitempty"`
 	CostCenter     string            `protobuf:"bytes,2,opt,name=cost_center,json=costCenter,proto3" json:"cost_center,omitempty"`
 	Labels         map[string]string `protobuf:"bytes,3,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`

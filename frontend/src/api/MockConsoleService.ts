@@ -514,7 +514,7 @@ export const seedSubscriptions = (): MaaSSubscription[] => [
     displayName: 'Engineering',
     description: 'Production models for the engineering team.',
     priority: 100,
-    owner: { groups: [{ name: 'acme-robotics/engineering' }] },
+    owner: { groups: [{ name: 'engineering' }] },
     modelRefs: [
       {
         name: 'granite-3-8b',
@@ -545,7 +545,7 @@ export const seedSubscriptions = (): MaaSSubscription[] => [
     displayName: 'Data science',
     description: 'Shared model access for data scientists.',
     priority: 10,
-    owner: { groups: [{ name: 'globex-research/data-scientists' }, { name: 'globex-research/platform-admins' }] },
+    owner: { groups: [{ name: 'data-scientists' }, { name: 'platform-admins' }] },
     modelRefs: [
       {
         name: 'granite-3-8b',
@@ -586,7 +586,7 @@ export const seedSubscriptions = (): MaaSSubscription[] => [
     displayName: 'Research',
     description: 'Experimental endpoint access.',
     priority: 0,
-    owner: { groups: [{ name: 'initech-labs/research' }] },
+    owner: { groups: [{ name: 'research' }] },
     modelRefs: [
       {
         name: 'retired-llm',

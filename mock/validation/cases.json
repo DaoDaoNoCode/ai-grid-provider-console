@@ -1885,7 +1885,7 @@
     },
     {
       "schema": "createSubscription",
-      "name": "no tokenMetadata on create",
+      "name": "no organization on create",
       "input": {
         "name": "team-a",
         "displayName": "Team A",
@@ -1911,7 +1911,44 @@
         ],
         "createAuthPolicy": true
       },
-      "fieldErrors": {}
+      "fieldErrors": {
+        "tokenMetadata.organizationId": "Select an organization"
+      }
+    },
+    {
+      "schema": "createSubscription",
+      "name": "an empty organization on create",
+      "input": {
+        "name": "team-a",
+        "displayName": "Team A",
+        "description": "Models for team A.",
+        "priority": 10,
+        "owner": {
+          "groups": [
+            {
+              "name": "engineering"
+            }
+          ]
+        },
+        "modelRefs": [
+          {
+            "name": "granite-3-8b",
+            "tokenRateLimits": [
+              {
+                "limit": 1000,
+                "window": "1h"
+              }
+            ]
+          }
+        ],
+        "tokenMetadata": {
+          "organizationId": ""
+        },
+        "createAuthPolicy": true
+      },
+      "fieldErrors": {
+        "tokenMetadata.organizationId": "Select an organization"
+      }
     },
     {
       "schema": "createSubscription",

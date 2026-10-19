@@ -211,7 +211,10 @@ func TestSubscriptionCreateMakesManagedPolicy(t *testing.T) {
 	bad.TokenMetadata = nil
 	bad.ModelRefs[0].TokenRateLimits = nil
 	_, err = s.CreateSubscription(ctx, &aigridv1.CreateSubscriptionRequest{Object: bad, CreateAuthPolicy: true})
-	want := map[string]string{"modelRefs.0": "tokenRateLimits is required unless unlimited is true"}
+	want := map[string]string{
+		"tokenMetadata.organizationId": "Select an organization",
+		"modelRefs.0":                  "tokenRateLimits is required unless unlimited is true",
+	}
 	if status.Code(err) != codes.InvalidArgument || !maps.Equal(fieldViolations(err), want) {
 		t.Fatalf("invalid: %v %v", err, fieldViolations(err))
 	}
@@ -322,7 +325,7 @@ func TestSubscriptionUpdatePreservesUnknownFields(t *testing.T) {
 	s.mu.RLock()
 	subjects := s.authPolicies["engineering-policy"].GetSubjectGroups()
 	s.mu.RUnlock()
-	if !slices.Equal(subjects, []string{"acme-robotics/engineering"}) {
+	if !slices.Equal(subjects, []string{"engineering"}) {
 		t.Fatalf("policy subjects changed: %v", subjects)
 	}
 

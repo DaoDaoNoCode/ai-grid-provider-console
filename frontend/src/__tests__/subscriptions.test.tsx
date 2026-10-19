@@ -3,6 +3,7 @@
 // the fake backend's rules (bff/internal/fakebackend/subscriptions.go).
 // Rulings and scope:
 // - "preserves user input on update conflict" is renamed "keeps input on conflict" (B8, D7).
+// - The create case also picks an organization, which the console requires.
 // - The PoC's failNext becomes a one-shot replacement of the service method.
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -58,6 +59,7 @@ describe('administrator subscription flows', () => {
     await screen.findByTestId('subscription-name-desc-name');
     expect(screen.queryByTestId('subscription-create-auth-policy')).not.toBeInTheDocument();
     expect(screen.getByTestId('create-subscription-button')).toBeDisabled();
+    await user.selectOptions(await screen.findByRole('combobox', { name: 'Organization' }), 'acme-robotics');
     await user.type(screen.getByTestId('subscription-name-desc-name'), 'Test team');
     await user.type(screen.getByRole('combobox', { name: 'Enter groups' }), 'engineering');
     const option = await screen.findByRole('option', { name: 'Add group "engineering"' });
@@ -194,17 +196,29 @@ describe('administrator subscription flows', () => {
   });
 });
 
-it('creates a subscription without metering metadata or an organization column', async () => {
+it('requires an organization and shows it in the table', async () => {
   const service = new MockConsoleService();
-  const create = vi.spyOn(service, 'createSubscription');
+  service.subscriptions[1].tokenMetadata = { organizationId: 'retired-org' };
   const user = userEvent.setup();
   renderAt('/subscriptions/create', service);
   await fillNewSubscription(user);
-  expect(screen.queryByRole('combobox', { name: 'Organization' })).not.toBeInTheDocument();
-  await user.click(screen.getByTestId('create-subscription-button'));
+  const create = screen.getByTestId('create-subscription-button');
+  expect(create).toBeDisabled();
+  const organization = screen.getByRole('combobox', { name: 'Organization' });
+  expect(within(organization).getByRole('option', { name: 'globex-research' })).toBeInTheDocument();
+  await user.selectOptions(organization, 'globex-research');
+  expect(create).toBeEnabled();
+  await user.click(create);
+
   const table = await screen.findByTestId('subscriptions-table');
-  expect(within(table).queryByRole('columnheader', { name: /Organization/ })).not.toBeInTheDocument();
-  expect(create.mock.calls[0][0]).not.toHaveProperty('tokenMetadata');
+  const rowOf = async (name: string) => (await within(table).findByRole('link', { name })).closest('tr')!;
+  expect(within(table).getByRole('columnheader', { name: /Organization/ })).toBeVisible();
+  expect(await rowOf('Test team')).toHaveTextContent('globex-research');
+  expect(await rowOf('Engineering')).toHaveTextContent('acme-robotics');
+  // An organization the backend doesn't list shows its raw id.
+  expect(await rowOf('Data science')).toHaveTextContent('retired-org');
+  const saved = (await service.getSubscriptionInfo('test-team')).subscription;
+  expect(saved.tokenMetadata?.organizationId).toBe('8d2e7b31-0c4f-4a9d-b5e6-7f8a9b0c1d2e');
 }, 20000);
 
 it('hides write actions from a viewer', async () => {
@@ -246,6 +260,7 @@ it('says creating is not available on a backend without subscriptions', async ()
   const user = userEvent.setup();
   renderAt('/subscriptions/create', service);
   await fillNewSubscription(user);
+  await user.selectOptions(screen.getByRole('combobox', { name: 'Organization' }), 'acme-robotics');
   await user.click(screen.getByTestId('create-subscription-button'));
   expect(await screen.findByText('Creating subscriptions is not available on this backend yet.')).toBeVisible();
   expect(screen.getByText('Failed to create subscription')).toBeVisible();
@@ -397,7 +412,8 @@ describe("model references on PR 12's models", () => {
     const create = vi.spyOn(service, 'createSubscription');
     const user = userEvent.setup();
     renderAt('/subscriptions/create', service);
-    await user.type(await screen.findByTestId('subscription-name-desc-name'), 'Test team');
+    await user.selectOptions(await screen.findByRole('combobox', { name: 'Organization' }), 'acme-robotics');
+    await user.type(screen.getByTestId('subscription-name-desc-name'), 'Test team');
     await user.type(screen.getByRole('combobox', { name: 'Enter groups' }), 'engineering');
     const option = await screen.findByRole('option', { name: 'Add group "engineering"' });
     await user.click(option.querySelector('button') ?? option);

@@ -8,7 +8,7 @@
       "priority": 100,
       "owner": {
         "groups": [
-          "acme-robotics/engineering"
+          "engineering"
         ]
       },
       "modelRefs": [
@@ -47,8 +47,8 @@
       "priority": 10,
       "owner": {
         "groups": [
-          "globex-research/data-scientists",
-          "globex-research/platform-admins"
+          "data-scientists",
+          "platform-admins"
         ]
       },
       "modelRefs": [
@@ -86,7 +86,7 @@
       "priority": 0,
       "owner": {
         "groups": [
-          "initech-labs/research"
+          "research"
         ]
       },
       "modelRefs": [
@@ -111,7 +111,7 @@
       "priority": 1,
       "owner": {
         "groups": [
-          "umbrella-biotech/onboarding"
+          "onboarding"
         ]
       },
       "modelRefs": [
@@ -140,7 +140,7 @@
         }
       ],
       "subjectGroups": [
-        "acme-robotics/engineering"
+        "engineering"
       ]
     },
     {
@@ -155,8 +155,8 @@
         }
       ],
       "subjectGroups": [
-        "globex-research/data-scientists",
-        "globex-research/platform-admins"
+        "data-scientists",
+        "platform-admins"
       ]
     },
     {
@@ -168,7 +168,7 @@
         }
       ],
       "subjectGroups": [
-        "initech-labs/research"
+        "research"
       ]
     }
   ]

@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 
@@ -117,8 +116,10 @@ func TestPoCPresetMatchesThePoC(t *testing.T) {
 		t.Fatal(err)
 	}
 	var tenantNames []string
+	tenantIDs := map[string]bool{}
 	for _, tn := range tenants.GetTenants() {
 		tenantNames = append(tenantNames, tn.GetName())
+		tenantIDs[tn.GetId()] = true
 		if tn.GetIdentityProvider() == nil || tn.GetResourceVersion() == "" || tn.GetCreateTime() == nil {
 			t.Errorf("%s: identity provider %v, version %q, created %v; want all three", tn.GetName(), tn.GetIdentityProvider(), tn.GetResourceVersion(), tn.GetCreateTime())
 		}
@@ -135,11 +136,9 @@ func TestPoCPresetMatchesThePoC(t *testing.T) {
 	var subNames []string
 	for _, sub := range subs.GetSubscriptions() {
 		subNames = append(subNames, sub.GetName())
-		// Each group name carries its organization as a prefix, as in acme-robotics/engineering.
-		for _, g := range sub.GetOwner().GetGroups() {
-			if org, _, _ := strings.Cut(g, "/"); !slices.Contains(tenantNames, org) {
-				t.Errorf("%s: group %q has no preset organization prefix", sub.GetName(), g)
-			}
+		// The form requires an organization, so every preset subscription has one.
+		if !tenantIDs[sub.GetTokenMetadata().GetOrganizationId()] {
+			t.Errorf("%s: organization %q is not a preset organization", sub.GetName(), sub.GetTokenMetadata().GetOrganizationId())
 		}
 		if sub.GetPhase() != phaseActive {
 			t.Errorf("%s: phase %s, want Active", sub.GetName(), sub.GetPhase())

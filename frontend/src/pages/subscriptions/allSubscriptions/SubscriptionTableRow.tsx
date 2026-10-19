@@ -2,7 +2,7 @@
 // Adapted from opendatahub-io/odh-dashboard
 // packages/maas/frontend/src/app/pages/subscriptions/allSubscriptions/SubscriptionTableRow.tsx
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
-// A viewer gets only View details.
+// The console adds the Organization cell, and a viewer gets only View details.
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Content, ContentVariants, Tooltip } from '@patternfly/react-core';
@@ -22,6 +22,7 @@ import { GROUPS_COLUMN, MODELS_COLUMN } from './columns';
 type Props = {
   subscription: MaaSSubscription;
   columns: SubscriptionColumn[];
+  organization: string;
   rowIndex: number;
   canWrite: boolean;
   setDeleteSubscription: (subscription: MaaSSubscription) => void;
@@ -32,6 +33,7 @@ type ExpandedPanel = 'groups' | 'models' | null;
 export const SubscriptionTableRow: React.FC<Props> = ({
   subscription,
   columns,
+  organization,
   rowIndex,
   canWrite,
   setDeleteSubscription,
@@ -78,7 +80,10 @@ export const SubscriptionTableRow: React.FC<Props> = ({
             truncateDescriptionLines={2}
           />
         </Td>
-        <Td dataLabel={columns[1].label}>
+        <Td dataLabel={columns[1].label} data-testid="subscription-organization">
+          {organization || '-'}
+        </Td>
+        <Td dataLabel={columns[2].label}>
           <PhaseLabel
             phase={subscription.phase}
             statusMessage={subscription.statusMessage}
@@ -117,7 +122,7 @@ export const SubscriptionTableRow: React.FC<Props> = ({
         >
           <CompoundExpandCountCell count={subscription.modelRefs.length} />
         </Td>
-        <Td dataLabel={columns[4].label}>
+        <Td dataLabel={columns[5].label}>
           <Content component={ContentVariants.p} className="pf-v6-u-font-weight-bold pf-v6-u-text-align-center">
             {subscription.priority ?? '-'}
           </Content>
