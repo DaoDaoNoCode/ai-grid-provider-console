@@ -144,6 +144,11 @@ export type Organization = Omit<OrganizationInput, 'identityProvider'> & {
   resourceVersion: string;
   /** When the backend created it; empty when it doesn't know. */
   creationTimestamp: string;
+  description?: string;
+  /** Keycloak's organization attributes, for example a billing account. */
+  attributes?: Record<string, string>;
+  /** Each domain's verification state, when the backend reports it. */
+  domainDetails?: { name: string; verified: boolean }[];
 };
 
 /**

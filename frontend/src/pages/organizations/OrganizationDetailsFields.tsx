@@ -1,0 +1,121 @@
+import { useState } from 'react';
+import {
+  Button,
+  FormGroup,
+  FormHelperText,
+  FormSection,
+  HelperText,
+  HelperTextItem,
+  InputGroup,
+  InputGroupItem,
+  TextInput,
+} from '@patternfly/react-core';
+import { MinusCircleIcon, PlusCircleIcon } from '@patternfly/react-icons';
+
+type Value = { name: string; domains: string[] };
+
+type Props = {
+  value: Value;
+  onChange: (value: Value) => void;
+  /** Client-side errors by path ("name", "domains.0"); shown once the field was left. */
+  errors: Record<string, string>;
+  /** The server's errors by the same paths; shown whether or not the field was touched. */
+  serverErrors?: Record<string, string>;
+  /** The name is fixed once the organization exists. */
+  isNameEditable: boolean;
+  isDisabled?: boolean;
+};
+
+/** A field's error, or its help when it has none (PatternFly: the error replaces the help). */
+const Help: React.FC<{ error?: string; children?: React.ReactNode }> = ({ error, children }) =>
+  error || children ? (
+    <FormHelperText>
+      <HelperText>
+        <HelperTextItem variant={error ? 'error' : 'default'}>{error ?? children}</HelperTextItem>
+      </HelperText>
+    </FormHelperText>
+  ) : null;
+
+/** An organization's name and domains, with each error under its own field. */
+export const OrganizationDetailsFields: React.FC<Props> = ({
+  value,
+  onChange,
+  errors,
+  serverErrors = {},
+  isNameEditable,
+  isDisabled,
+}) => {
+  const [touched, setTouched] = useState<Set<string>>(() => new Set());
+  const touch = (path: string) => setTouched((previous) => new Set([...previous, path]));
+  const error = (path: string) => serverErrors[path] ?? (touched.has(path) ? errors[path] : undefined);
+  const setDomain = (index: number, text: string) =>
+    onChange({ ...value, domains: value.domains.map((old, i) => (i === index ? text : old)) });
+  const removeDomain = (index: number) => onChange({ ...value, domains: value.domains.filter((_, i) => i !== index) });
+  // A rule over all domains (they must be unique) shows once any domain was left.
+  const listError =
+    serverErrors.domains ?? ([...touched].some((path) => path.startsWith('domains.')) ? errors.domains : undefined);
+
+  return (
+    <>
+      <FormGroup label="Name" fieldId="tenant-name" isRequired={isNameEditable}>
+        {isNameEditable ? (
+          <>
+            <TextInput
+              id="tenant-name"
+              value={value.name}
+              isDisabled={isDisabled}
+              isRequired
+              onBlur={() => touch('name')}
+              validated={error('name') ? 'error' : 'default'}
+              onChange={(_event, name) => onChange({ ...value, name })}
+            />
+            <Help error={error('name')}>Use lowercase letters, numbers, and hyphens.</Help>
+          </>
+        ) : (
+          <TextInput id="tenant-name" value={value.name} readOnlyVariant="default" />
+        )}
+      </FormGroup>
+      <FormSection title="Domains" titleElement="h3">
+        {value.domains.map((domain, index) => (
+          <FormGroup key={index} label={`Domain ${index + 1}`} fieldId={`tenant-domain-${index}`} isRequired>
+            <InputGroup>
+              <InputGroupItem isFill>
+                <TextInput
+                  id={`tenant-domain-${index}`}
+                  value={domain}
+                  isDisabled={isDisabled}
+                  isRequired
+                  onBlur={() => touch(`domains.${index}`)}
+                  validated={error(`domains.${index}`) ? 'error' : 'default'}
+                  onChange={(_event, text) => setDomain(index, text)}
+                />
+              </InputGroupItem>
+              <InputGroupItem isPlain>
+                <Button
+                  variant="plain"
+                  icon={<MinusCircleIcon />}
+                  aria-label={`Remove domain ${index + 1}`}
+                  isDisabled={isDisabled}
+                  onClick={() => removeDomain(index)}
+                />
+              </InputGroupItem>
+            </InputGroup>
+            <Help error={error(`domains.${index}`)} />
+          </FormGroup>
+        ))}
+        <Help error={listError} />
+        <div>
+          <Button
+            variant="link"
+            isInline
+            icon={<PlusCircleIcon />}
+            isDisabled={isDisabled}
+            onClick={() => onChange({ ...value, domains: [...value.domains, ''] })}
+          >
+            Add domain
+          </Button>
+        </div>
+      </FormSection>
+    </>
+  );
+};

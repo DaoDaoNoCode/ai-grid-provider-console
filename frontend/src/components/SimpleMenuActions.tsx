@@ -3,12 +3,29 @@ import { useState } from 'react';
 import { Divider, Dropdown, DropdownItem, DropdownList, MenuToggle } from '@patternfly/react-core';
 import { EllipsisVIcon } from '@patternfly/react-icons';
 
-type Item = { key?: string; label?: string; isSpacer?: boolean; isDisabled?: boolean; onClick?: () => void };
+type Item = {
+  key?: string;
+  label?: string;
+  isSpacer?: boolean;
+  isDisabled?: boolean;
+  /** A destructive action (Delete): danger styled. Put it last, after a spacer. */
+  isDanger?: boolean;
+  onClick?: () => void;
+};
 
-type Props = { testId?: string; ariaLabel: string; dropdownItems: Item[] };
+type Props = {
+  testId?: string;
+  ariaLabel: string;
+  dropdownItems: Item[];
+  /** A labeled toggle ("Actions") for a page's header; without it, a kebab for a table row. */
+  toggleLabel?: string;
+};
 
-/** A kebab menu of row actions. */
-export const SimpleMenuActions: React.FC<Props> = ({ testId, ariaLabel, dropdownItems }) => {
+/**
+ * An actions menu: a kebab for a table row, or a labeled toggle for a page header (PatternFly:
+ * name the menu after its actions, or "Actions"). Destructive items are danger styled.
+ */
+export const SimpleMenuActions: React.FC<Props> = ({ testId, ariaLabel, dropdownItems, toggleLabel }) => {
   const [open, setOpen] = useState(false);
   return (
     <Dropdown
@@ -20,11 +37,11 @@ export const SimpleMenuActions: React.FC<Props> = ({ testId, ariaLabel, dropdown
           ref={ref}
           aria-label={ariaLabel}
           data-testid={testId}
-          variant="plain"
+          variant={toggleLabel ? 'secondary' : 'plain'}
           isExpanded={open}
           onClick={() => setOpen(!open)}
         >
-          <EllipsisVIcon />
+          {toggleLabel ?? <EllipsisVIcon />}
         </MenuToggle>
       )}
     >
@@ -36,6 +53,7 @@ export const SimpleMenuActions: React.FC<Props> = ({ testId, ariaLabel, dropdown
             <DropdownItem
               key={item.key}
               isDisabled={item.isDisabled}
+              isDanger={item.isDanger}
               onClick={() => {
                 setOpen(false);
                 item.onClick?.();

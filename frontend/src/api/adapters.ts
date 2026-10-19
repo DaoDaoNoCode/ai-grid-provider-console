@@ -112,6 +112,15 @@ export const toOrganization = (json: ApiTenant): Organization => {
     resourceVersion: json.resourceVersion ?? '',
     creationTimestamp: json.createTime ?? '',
   };
+  if (json.description) {
+    out.description = json.description;
+  }
+  if (json.attributes && Object.keys(json.attributes).length) {
+    out.attributes = json.attributes;
+  }
+  if (json.domainDetails?.length) {
+    out.domainDetails = json.domainDetails.map(({ name, verified }) => ({ name, verified }));
+  }
   if (json.identityProvider) {
     out.identityProvider = toIdentityProvider(json.identityProvider);
   }

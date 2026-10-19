@@ -67,6 +67,11 @@
   align-items: center;
   margin-block: var(--pf-t--global--spacer--md);
 }
+.portal-page-heading__title {
+  display: flex;
+  align-items: center;
+  gap: var(--pf-t--global--spacer--md);
+}
 .portal-resource-table > tbody > tr > td {
   vertical-align: middle;
 }
@@ -85,8 +90,8 @@
 
 /* Console conventions shared by every page (see components/ and utilities/). */
 
-/* One search width on every list page, wide enough for its placeholder. */
+/* One search width on every list page, wide enough for its placeholder (PatternFly's own
+   toolbar item width variable; a plain width loses to the toolbar's rule). */
 .console-toolbar-search {
-  width: 22rem;
-  max-width: 100%;
+  --pf-v6-c-toolbar__item--Width: 22rem;
 }

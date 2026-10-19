@@ -36,32 +36,31 @@ test('creates, views, edits and deletes an organization', async ({ page }) => {
   await expect(page.getByRole('heading', { name: unique })).toBeVisible();
   await expect(page.getByText(domain).first()).toBeVisible();
 
-  // Edit a domain; the deep link and reload land on the same page.
-  await page.getByRole('link', { name: 'Edit organization' }).click();
+  // Edit a domain on the one-page form; the deep link and reload land on the same page.
+  await page.getByRole('button', { name: `Actions for ${unique}` }).click();
+  await page.getByRole('menuitem', { name: 'Edit' }).click();
   await expect(page).toHaveURL(/\/organizations\/[^/]+\/edit$/);
   await page.reload();
   await page.getByRole('textbox', { name: /^Domain 1/ }).fill(editedDomain);
-  await page.getByRole('button', { name: 'Next' }).click();
-  await page.getByRole('button', { name: 'Next' }).click();
   await page.getByRole('button', { name: 'Save changes' }).click();
   await expect(page.getByText('Organization configuration saved')).toBeVisible();
-  await expect(page.getByRole('row').filter({ hasText: unique })).toContainText(editedDomain);
+  await expect(page.getByTestId('tenant-configuration-details')).toContainText(editedDomain);
 
-  // Delete with the typed confirmation
+  // Delete from the organization's page, with the typed confirmation
   await page.getByRole('button', { name: `Actions for ${unique}` }).click();
   await page.getByRole('menuitem', { name: 'Delete' }).click();
   const confirm = page.getByRole('button', { name: 'Delete', exact: true });
   await expect(confirm).toBeDisabled();
   await page.getByLabel('Delete modal input').fill(unique);
   await confirm.click();
+  await expect(page.getByText('Organization deleted')).toBeVisible();
   await expect(page.getByRole('link', { name: unique, exact: true })).toHaveCount(0);
 });
 
 // PatternFly's utility classes (pf-v6-u-*) only work when main.tsx loads patternfly-addons.css.
 test('applies PatternFly utility classes', async ({ page }) => {
-  await page.goto('/organizations');
-  await page.getByRole('link', { name: 'acme-robotics', exact: true }).click();
-  const details = page.getByTestId('tenant-configuration-details').locator('.pf-v6-u-my-md').first();
-  await expect(details).toBeVisible();
-  await expect(details).toHaveCSS('margin-top', '16px');
+  await page.goto('/models');
+  const cell = page.getByTestId('model-deployments-table').locator('.pf-v6-u-py-md').first();
+  await expect(cell).toBeVisible();
+  await expect(cell).toHaveCSS('padding-top', '16px');
 });

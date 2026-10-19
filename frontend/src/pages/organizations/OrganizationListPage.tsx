@@ -20,7 +20,6 @@ import type { UserService } from '../../api/ConsoleService';
 import { ServiceError } from '../../api/ConsoleService';
 import type { OrganizationsService } from '../../api/organizations';
 import type { Organization } from '../../api/types';
-import { DeleteModal } from '../../components/DeleteModal';
 import { PageHeader } from '../../components/PageHeader';
 import { LoadError } from '../../components/LoadError';
 import { PaginatedTable } from '../../components/PaginatedTable';
@@ -28,8 +27,8 @@ import { SimpleMenuActions } from '../../components/SimpleMenuActions';
 import { StatusLabel } from '../../components/StatusLabel';
 import { ToolbarSearch } from '../../components/ToolbarSearch';
 import { useServiceData } from '../../hooks/useServiceData';
-import { ORGANIZATION_CHANGED } from './serverErrors';
 import { EMPTY_VALUE } from '../../utilities/format';
+import { useDeleteOrganization } from './useDeleteOrganization';
 
 type Props = { service: OrganizationsService & UserService };
 
@@ -43,11 +42,7 @@ const columns: Column[] = [
     label: 'Identity provider',
     sort: (a, b) => (a.identityProvider?.title ?? '').localeCompare(b.identityProvider?.title ?? ''),
   },
-  { label: 'Registered', sort: (a, b) => a.creationTimestamp.localeCompare(b.creationTimestamp) },
 ];
-
-/** The backend may not report a creation time yet. */
-const registered = (timestamp: string) => (timestamp ? new Date(timestamp).toLocaleString() : EMPTY_VALUE);
 
 export const OrganizationListPage: React.FC<Props> = ({ service }) => {
   const navigate = useNavigate();
@@ -56,9 +51,7 @@ export const OrganizationListPage: React.FC<Props> = ({ service }) => {
   const canWrite = !!user?.isProviderAdmin;
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<{ index: number; direction: 'asc' | 'desc' }>({ index: 0, direction: 'asc' });
-  const [selected, setSelected] = useState<Organization>();
-  const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<Error>();
+  const [confirmDelete, deleteModal] = useDeleteOrganization(service, () => void refresh());
 
   const rows = useMemo(() => {
     const term = search.toLowerCase();
@@ -71,29 +64,6 @@ export const OrganizationListPage: React.FC<Props> = ({ service }) => {
   const createButton = canWrite ? (
     <Button component={(props) => <Link {...props} to="/organizations/create" />}>Create organization</Button>
   ) : null;
-
-  const remove = async () => {
-    if (!selected || deleting) return;
-    setDeleting(true);
-    setDeleteError(undefined);
-    try {
-      await service.deleteOrganization(selected.id, selected.resourceVersion);
-      setSelected(undefined);
-      void refresh();
-    } catch (err) {
-      setDeleteError(
-        err instanceof ServiceError && err.isNotImplemented
-          ? new Error('Deleting organizations is not available on this backend yet.')
-          : err instanceof ServiceError && err.status === 409
-            ? new Error(ORGANIZATION_CHANGED)
-            : err instanceof Error
-              ? err
-              : new Error('The organization could not be deleted.'),
-      );
-    } finally {
-      setDeleting(false);
-    }
-  };
 
   const sortParams = (index: number): ThProps['sort'] => ({
     sortBy,
@@ -176,16 +146,8 @@ export const OrganizationListPage: React.FC<Props> = ({ service }) => {
                         {o.domains[0] ?? EMPTY_VALUE}
                       </Td>
                       <Td dataLabel="Identity provider" modifier="breakWord">
-                        {o.identityProvider ? (
-                          <>
-                            {o.identityProvider.title || 'OIDC'}
-                            <p>{o.identityProvider.config.issuer}</p>
-                          </>
-                        ) : (
-                          EMPTY_VALUE
-                        )}
+                        {o.identityProvider ? o.identityProvider.title || 'OIDC' : EMPTY_VALUE}
                       </Td>
-                      <Td dataLabel="Registered">{registered(o.creationTimestamp)}</Td>
                       {canWrite && (
                         <Td isActionCell>
                           <SimpleMenuActions
@@ -197,14 +159,8 @@ export const OrganizationListPage: React.FC<Props> = ({ service }) => {
                                 label: 'Edit',
                                 onClick: () => navigate(`/organizations/${encodeURIComponent(o.id)}/edit`),
                               },
-                              {
-                                key: 'delete',
-                                label: 'Delete',
-                                onClick: () => {
-                                  setSelected(o);
-                                  setDeleteError(undefined);
-                                },
-                              },
+                              { isSpacer: true },
+                              { key: 'delete', label: 'Delete', isDanger: true, onClick: () => confirmDelete(o) },
                             ]}
                           />
                         </Td>
@@ -224,24 +180,7 @@ export const OrganizationListPage: React.FC<Props> = ({ service }) => {
     <>
       <PageHeader title="Organizations" description="Manage organizations and their identity providers." />
       <PageSection>{body()}</PageSection>
-      {selected && (
-        <DeleteModal
-          title="Delete organization?"
-          deleteName={selected.name}
-          deleting={deleting}
-          error={deleteError}
-          onClose={() => {
-            if (!deleting) {
-              setSelected(undefined);
-              setDeleteError(undefined);
-            }
-          }}
-          onDelete={() => void remove()}
-          testId="delete-tenant-modal"
-        >
-          <p>Delete this organization and its saved identity provider configuration?</p>
-        </DeleteModal>
-      )}
+      {deleteModal}
     </>
   );
 };

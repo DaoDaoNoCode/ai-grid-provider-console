@@ -171,11 +171,23 @@ describe('toOrganization', () => {
       id: '3f1c9a72-5b6e-4d2a-8c01-2d3e4f5a6b7c',
       name: 'acme-robotics',
       domains: ['acme-robotics.example.com', 'acme.example.org'],
+      description: 'Acme Robotics, EU region',
       status: 'Enabled',
       resourceVersion: '3',
       creationTimestamp: '2026-09-01T09:00:00Z',
       identityProvider: apiTenant().identityProvider,
     });
+  });
+
+  it('keeps attributes and which domains are verified, when the tenant has them', () => {
+    const organization = toOrganization(
+      apiTenant({
+        attributes: { 'billing-account': 'ACME-0042' },
+        domainDetails: [{ name: 'acme-robotics.example.com', verified: true, autoRedirect: true }],
+      }),
+    );
+    expect(organization.attributes).toEqual({ 'billing-account': 'ACME-0042' });
+    expect(organization.domainDetails).toEqual([{ name: 'acme-robotics.example.com', verified: true }]);
   });
 
   it('shows Disabled for a disabled tenant', () => {

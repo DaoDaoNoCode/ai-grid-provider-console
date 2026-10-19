@@ -3,9 +3,9 @@
 import { useState } from 'react';
 import {
   Checkbox,
-  Form,
   FormGroup,
   FormHelperText,
+  FormSection,
   HelperText,
   HelperTextItem,
   TextArea,
@@ -16,16 +16,22 @@ import { fieldErrorsOf, identityProviderSchema } from '../../validation';
 
 type TextKey = Exclude<keyof OidcConfig, 'clientSecretSecret' | 'validateSignature'>;
 
-const configFields: { key: TextKey; label: string; required?: boolean }[] = [
+type Field = { key: TextKey; label: string; required?: boolean; help?: string };
+
+const connectionFields: Field[] = [
   { key: 'clientId', label: 'Client ID', required: true },
-  { key: 'issuer', label: 'Issuer', required: true },
+  { key: 'issuer', label: 'Issuer', required: true, help: 'For example https://sso.example.com/realms/acme.' },
+];
+
+const endpointFields: Field[] = [
   { key: 'authorizationUrl', label: 'Authorization URL', required: true },
   { key: 'tokenUrl', label: 'Token URL', required: true },
-  { key: 'defaultScopes', label: 'Default scopes' },
   { key: 'userInfoUrl', label: 'User info URL' },
   { key: 'jwksUrl', label: 'JWKS URL' },
   { key: 'logoutUrl', label: 'Logout URL' },
 ];
+
+const SECRET_PATH = 'config.clientSecretSecret.name';
 
 type Props = {
   value: IdentityProvider;
@@ -34,14 +40,20 @@ type Props = {
   serverErrors?: Record<string, string>;
 };
 
-const ErrorText: React.FC<{ message: string }> = ({ message }) => (
-  <FormHelperText>
-    <HelperText>
-      <HelperTextItem variant="error">{message}</HelperTextItem>
-    </HelperText>
-  </FormHelperText>
-);
+/** A field's error, or its help when it has none (PatternFly: the error replaces the help). */
+const Help: React.FC<{ error?: string; children?: React.ReactNode }> = ({ error, children }) =>
+  error || children ? (
+    <FormHelperText>
+      <HelperText>
+        <HelperTextItem variant={error ? 'error' : 'default'}>{error ?? children}</HelperTextItem>
+      </HelperText>
+    </FormHelperText>
+  ) : null;
 
+/**
+ * An organization's OIDC identity provider: who it is, how the console connects (client and
+ * issuer), and the provider's endpoints. Renders form fields only; the caller supplies the Form.
+ */
 export const IdentityProviderFields: React.FC<Props> = ({ value, onChange, serverErrors = {} }) => {
   const [touched, setTouched] = useState<Set<string>>(() => new Set());
   const errors = fieldErrorsOf(identityProviderSchema, value);
@@ -49,12 +61,29 @@ export const IdentityProviderFields: React.FC<Props> = ({ value, onChange, serve
     serverErrors[path] ?? (touched.has(path) ? errors[path] : undefined);
   const touch = (path: string) => setTouched((previous) => new Set([...previous, path]));
   const setConfig = (config: Partial<OidcConfig>) => onChange({ ...value, config: { ...value.config, ...config } });
-  const secretPath = 'config.clientSecretSecret.name';
+
+  const textField = (field: Field) => {
+    const path = `config.${field.key}`;
+    return (
+      <FormGroup key={field.key} label={field.label} fieldId={`idp-${field.key}`} isRequired={field.required}>
+        <TextInput
+          id={`idp-${field.key}`}
+          value={value.config[field.key]}
+          isRequired={field.required}
+          validated={error(path) ? 'error' : 'default'}
+          onBlur={() => touch(path)}
+          onChange={(_event, text) => setConfig({ [field.key]: text })}
+        />
+        <Help error={error(path)}>{field.help}</Help>
+      </FormGroup>
+    );
+  };
 
   return (
-    <Form maxWidth="750px">
+    <>
       <FormGroup label="Title" fieldId="idp-title">
         <TextInput id="idp-title" value={value.title} onChange={(_event, title) => onChange({ ...value, title })} />
+        <Help>The name members see on the sign-in page.</Help>
       </FormGroup>
       <FormGroup label="Description" fieldId="idp-description">
         <TextArea
@@ -63,51 +92,47 @@ export const IdentityProviderFields: React.FC<Props> = ({ value, onChange, serve
           onChange={(_event, description) => onChange({ ...value, description })}
         />
       </FormGroup>
-      <FormGroup label="Client secret reference" fieldId="idp-secret-reference" isRequired>
-        <TextInput
-          id="idp-secret-reference"
-          value={value.config.clientSecretSecret.name}
-          isRequired
-          validated={error(secretPath) ? 'error' : 'default'}
-          onBlur={() => touch(secretPath)}
-          onChange={(_event, name) => setConfig({ clientSecretSecret: { name } })}
+      <FormSection title="Connection" titleElement="h3">
+        {textField(connectionFields[0])}
+        <FormGroup label="Client secret reference" fieldId="idp-secret-reference" isRequired>
+          <TextInput
+            id="idp-secret-reference"
+            value={value.config.clientSecretSecret.name}
+            isRequired
+            validated={error(SECRET_PATH) ? 'error' : 'default'}
+            onBlur={() => touch(SECRET_PATH)}
+            onChange={(_event, name) => setConfig({ clientSecretSecret: { name } })}
+          />
+          <Help error={error(SECRET_PATH)}>The name of the Secret that holds the OIDC client secret.</Help>
+        </FormGroup>
+        {textField(connectionFields[1])}
+        <FormGroup label="Default scopes" fieldId="idp-defaultScopes">
+          <TextInput
+            id="idp-defaultScopes"
+            value={value.config.defaultScopes}
+            validated={error('config.defaultScopes') ? 'error' : 'default'}
+            onBlur={() => touch('config.defaultScopes')}
+            onChange={(_event, defaultScopes) => setConfig({ defaultScopes })}
+          />
+          <Help error={error('config.defaultScopes')}>Space-separated, for example openid profile email.</Help>
+        </FormGroup>
+        <Checkbox
+          id="idp-validate-signature"
+          label="Validate signature"
+          description="Check the provider's signature on tokens with its JWKS keys."
+          isChecked={value.config.validateSignature}
+          onChange={(_event, validateSignature) => setConfig({ validateSignature })}
         />
-        <FormHelperText>
-          <HelperText>
-            <HelperTextItem>Enter the name of the secret containing the OIDC client secret.</HelperTextItem>
-          </HelperText>
-        </FormHelperText>
-        {error(secretPath) && <ErrorText message={error(secretPath)!} />}
-      </FormGroup>
-      {configFields.map((field) => {
-        const path = `config.${field.key}`;
-        return (
-          <FormGroup key={field.key} label={field.label} fieldId={`idp-${field.key}`} isRequired={field.required}>
-            <TextInput
-              id={`idp-${field.key}`}
-              value={value.config[field.key]}
-              isRequired={field.required}
-              validated={error(path) ? 'error' : 'default'}
-              onBlur={() => touch(path)}
-              onChange={(_event, text) => setConfig({ [field.key]: text })}
-            />
-            {field.key === 'defaultScopes' && (
-              <FormHelperText>
-                <HelperText>
-                  <HelperTextItem>Space-separated scopes, for example openid profile email.</HelperTextItem>
-                </HelperText>
-              </FormHelperText>
-            )}
-            {error(path) && <ErrorText message={error(path)!} />}
-          </FormGroup>
-        );
-      })}
-      <Checkbox
-        id="idp-validate-signature"
-        label="Validate signature"
-        isChecked={value.config.validateSignature}
-        onChange={(_event, validateSignature) => setConfig({ validateSignature })}
-      />
-    </Form>
+      </FormSection>
+      <FormSection title="OIDC endpoints" titleElement="h3">
+        <HelperText>
+          <HelperTextItem>
+            The provider lists these in its OpenID configuration, at the issuer URL followed by
+            /.well-known/openid-configuration.
+          </HelperTextItem>
+        </HelperText>
+        {endpointFields.map(textField)}
+      </FormSection>
+    </>
   );
 };
