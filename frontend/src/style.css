@@ -75,3 +75,8 @@
 .portal-model-wizard .pf-v6-c-wizard__inner-wrap {
   min-height: 24rem;
 }
+/* Page sections don't shrink in the page's flex column, but a bare Tabs does: on a page that
+   scrolls, its overflow: hidden lets it collapse to nothing and hide its labels. */
+.pf-v6-c-page__main > .pf-v6-c-tabs {
+  flex-shrink: 0;
+}
