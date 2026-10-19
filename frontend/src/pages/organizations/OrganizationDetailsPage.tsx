@@ -6,15 +6,16 @@ import {
   Flex,
   FlexItem,
   Label,
+  PageSection,
   Spinner,
   Stack,
   StackItem,
-  Title,
 } from '@patternfly/react-core';
 import { Link, useParams } from 'react-router-dom';
 import type { UserService } from '../../api/ConsoleService';
 import type { OrganizationsService } from '../../api/organizations';
 import type { Organization } from '../../api/types';
+import { PageHeader } from '../../components/PageHeader';
 import { useServiceData } from '../../hooks/useServiceData';
 import { OrganizationConfigurationDetails } from './OrganizationConfigurationDetails';
 import { OrganizationLoadError } from './OrganizationLoadError';
@@ -31,19 +32,19 @@ export const OrganizationDetailsPage: React.FC<Props> = ({ service }) => {
   const [user] = useServiceData(() => service.getUser(), undefined, 0);
 
   return (
-    <Stack hasGutter>
-      <StackItem>
-        <Breadcrumb>
-          <BreadcrumbItem>
-            <Link to="/organizations">Organizations</Link>
-          </BreadcrumbItem>
-          <BreadcrumbItem isActive>{organization?.name ?? id}</BreadcrumbItem>
-        </Breadcrumb>
-      </StackItem>
-      <StackItem>
-        <Title headingLevel="h2">{organization?.name ?? 'Organization'}</Title>
-      </StackItem>
-      <StackItem>
+    <>
+      <PageHeader
+        title={organization?.name ?? 'Organization'}
+        breadcrumb={
+          <Breadcrumb>
+            <BreadcrumbItem>
+              <Link to="/organizations">Organizations</Link>
+            </BreadcrumbItem>
+            <BreadcrumbItem isActive>{organization?.name ?? id}</BreadcrumbItem>
+          </Breadcrumb>
+        }
+      />
+      <PageSection>
         {error ? (
           <OrganizationLoadError error={error} />
         ) : !loaded || !organization ? (
@@ -71,7 +72,7 @@ export const OrganizationDetailsPage: React.FC<Props> = ({ service }) => {
             </StackItem>
           </Stack>
         )}
-      </StackItem>
-    </Stack>
+      </PageSection>
+    </>
   );
 };

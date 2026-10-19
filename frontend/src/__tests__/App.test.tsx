@@ -19,6 +19,17 @@ describe('App', () => {
     expect(screen.getAllByText('Member')).toHaveLength(3);
   });
 
+  it('has one h1, the page heading, with the masthead title as an h2', async () => {
+    render(
+      <MemoryRouter>
+        <App service={new MockConsoleService()} />
+      </MemoryRouter>,
+    );
+    await screen.findByRole('row', { name: /^site1 / });
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(screen.getByRole('heading', { level: 2, name: 'Cloud Provider Admin Console' })).toBeVisible();
+  });
+
   it('does not call a viewer a provider admin', async () => {
     const service = new MockConsoleService({ username: 'viewer', groups: [], isProviderAdmin: false });
     render(

@@ -7,18 +7,15 @@ import { Link } from 'react-router-dom';
 import {
   Alert,
   Button,
-  Content,
   EmptyState,
   EmptyStateActions,
   EmptyStateBody,
   EmptyStateFooter,
   Label,
+  PageSection,
   Popover,
   SearchInput,
   Spinner,
-  Stack,
-  StackItem,
-  Title,
   Toolbar,
   ToolbarContent,
   ToolbarItem,
@@ -32,6 +29,7 @@ import type { ManagedModel } from '../../api/types';
 import { CompoundExpandCountCell } from '../../components/CompoundExpandCountCell';
 import { DeleteModal } from '../../components/DeleteModal';
 import { LoadError } from '../../components/LoadError';
+import { PageHeader } from '../../components/PageHeader';
 import { PaginatedTable } from '../../components/PaginatedTable';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
 import { useServiceData } from '../../hooks/useServiceData';
@@ -220,7 +218,11 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
         </Toolbar>
         <PaginatedTable rows={rows}>
           {(pageRows) => (
-            <Table aria-label="Model deployments" data-testid="model-deployments-table">
+            <Table
+              aria-label="Model deployments"
+              className="portal-resource-table"
+              data-testid="model-deployments-table"
+            >
               <Thead>
                 <Tr>
                   {columns.map((c, i) => (
@@ -312,12 +314,9 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
   };
 
   return (
-    <Stack hasGutter>
-      <StackItem>
-        <Title headingLevel="h2">Models</Title>
-        <Content component="p">Add and remove model deployments.</Content>
-      </StackItem>
-      <StackItem>{body()}</StackItem>
+    <>
+      <PageHeader title="Models" description="Add and remove model deployments." />
+      <PageSection>{body()}</PageSection>
       {selected && (
         <DeleteModal
           title="Delete model deployment?"
@@ -334,6 +333,6 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
           </p>
         </DeleteModal>
       )}
-    </Stack>
+    </>
   );
 };

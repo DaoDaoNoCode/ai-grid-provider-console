@@ -1,5 +1,4 @@
 import { Fragment } from 'react';
-import { PageSection } from '@patternfly/react-core';
 import { Navigate, Outlet, Route, Routes, useParams } from 'react-router-dom';
 import type { ConsoleService } from './api/ConsoleService';
 import { NotFoundPage } from './components/NotFoundPage';
@@ -30,66 +29,27 @@ export const AppRoutes: React.FC<Props> = ({ service }) => (
     {/* Keyed, so moving between the map and monitoring mounts a fresh page with its own loads. */}
     <Route path="/ai-grid" element={<GridPage key="ai-grid" service={service} />} />
     <Route path="/monitoring" element={<GridPage key="monitoring" service={service} monitoring />} />
-    <Route
-      path="/clusters"
-      element={
-        <PageSection>
-          <ClustersPage service={service} />
-        </PageSection>
-      }
-    />
-    <Route
-      path="/organizations"
-      element={
-        <PageSection>
-          <OrganizationListPage service={service} />
-        </PageSection>
-      }
-    />
-    <Route
-      path="/organizations/create"
-      element={
-        <PageSection>
-          <OrganizationWizardPage service={service} />
-        </PageSection>
-      }
-    />
+    <Route path="/clusters" element={<ClustersPage service={service} />} />
+    <Route path="/organizations" element={<OrganizationListPage service={service} />} />
+    <Route path="/organizations/create" element={<OrganizationWizardPage service={service} />} />
     <Route
       path="/organizations/:id"
       element={
-        <PageSection>
-          <ByParams>
-            <OrganizationDetailsPage service={service} />
-          </ByParams>
-        </PageSection>
+        <ByParams>
+          <OrganizationDetailsPage service={service} />
+        </ByParams>
       }
     />
     <Route
       path="/organizations/:id/edit"
       element={
-        <PageSection>
-          <ByParams>
-            <OrganizationWizardPage service={service} />
-          </ByParams>
-        </PageSection>
+        <ByParams>
+          <OrganizationWizardPage service={service} />
+        </ByParams>
       }
     />
-    <Route
-      path="/models"
-      element={
-        <PageSection>
-          <ModelsPage service={service} />
-        </PageSection>
-      }
-    />
-    <Route
-      path="/models/deploy"
-      element={
-        <PageSection>
-          <ModelWizard service={service} />
-        </PageSection>
-      }
-    />
+    <Route path="/models" element={<ModelsPage service={service} />} />
+    <Route path="/models/deploy" element={<ModelWizard service={service} />} />
     {/* The subscription pages share the PoC's governance context, and only they use it (A25). */}
     <Route
       element={

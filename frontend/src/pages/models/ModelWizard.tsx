@@ -10,7 +10,6 @@ import {
   Breadcrumb,
   BreadcrumbItem,
   Button,
-  Content,
   DescriptionList,
   DescriptionListDescription,
   DescriptionListGroup,
@@ -20,10 +19,8 @@ import {
   FormHelperText,
   HelperText,
   HelperTextItem,
-  Stack,
-  StackItem,
+  PageSection,
   TextInput,
-  Title,
   Wizard,
   WizardFooter,
   WizardStep,
@@ -36,6 +33,7 @@ import type { CreateModelRequest } from '../../api/types';
 import { K8sNameDescriptionField } from '../../components/K8sNameDescriptionField/K8sNameDescriptionField';
 import { useK8sNameDescriptionFieldData } from '../../components/K8sNameDescriptionField/useK8sNameDescriptionFieldData';
 import { MultiSelection } from '../../components/MultiSelection';
+import { PageHeader } from '../../components/PageHeader';
 import { useServiceData } from '../../hooks/useServiceData';
 import { createModelSchema } from '../../validation';
 import { RuntimeArgsField } from './fields/RuntimeArgsField';
@@ -225,20 +223,20 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
   };
 
   return (
-    <Stack hasGutter>
-      <StackItem>
-        <Breadcrumb>
-          <BreadcrumbItem>
-            <Link to="/models">Models</Link>
-          </BreadcrumbItem>
-          <BreadcrumbItem isActive>Deploy model</BreadcrumbItem>
-        </Breadcrumb>
-      </StackItem>
-      <StackItem>
-        <Title headingLevel="h2">Deploy model</Title>
-        <Content component="p">Configure a model deployment.</Content>
-      </StackItem>
-      <StackItem>
+    <>
+      <PageHeader
+        title="Deploy model"
+        description="Configure a model deployment."
+        breadcrumb={
+          <Breadcrumb>
+            <BreadcrumbItem>
+              <Link to="/models">Models</Link>
+            </BreadcrumbItem>
+            <BreadcrumbItem isActive>Deploy model</BreadcrumbItem>
+          </Breadcrumb>
+        }
+      />
+      <PageSection hasBodyWrapper={false}>
         <Wizard
           className="portal-model-wizard"
           isProgressive={false}
@@ -362,7 +360,7 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
             </DescriptionList>
           </WizardStep>
         </Wizard>
-      </StackItem>
-    </Stack>
+      </PageSection>
+    </>
   );
 };

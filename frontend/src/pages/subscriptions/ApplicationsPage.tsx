@@ -5,9 +5,10 @@
 // not-available state. A load error replaces the content only until the content first shows:
 // the governance data polls, and a failed poll must not unmount a form with the user's input.
 import { useState } from 'react';
-import { Alert, Button, Flex, FlexItem, PageSection, Spinner, Title } from '@patternfly/react-core';
+import { Alert, Button, PageSection, Spinner } from '@patternfly/react-core';
 import { ServiceError } from '../../api/ConsoleService';
 import { LoadError } from '../../components/LoadError';
+import { PageHeader } from '../../components/PageHeader';
 
 type Props = {
   title: string;
@@ -66,16 +67,7 @@ export const ApplicationsPage: React.FC<Props> = ({
   }
   return (
     <>
-      <PageSection>
-        {breadcrumb}
-        <Flex justifyContent={{ default: 'justifyContentSpaceBetween' }} alignItems={{ default: 'alignItemsCenter' }}>
-          <FlexItem>
-            <Title headingLevel="h2">{title}</Title>
-          </FlexItem>
-          {headerAction && <FlexItem>{headerAction}</FlexItem>}
-        </Flex>
-        {description}
-      </PageSection>
+      <PageHeader title={title} description={description} breadcrumb={breadcrumb} headerAction={headerAction} />
       {body}
     </>
   );
