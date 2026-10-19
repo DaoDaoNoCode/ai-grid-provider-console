@@ -63,6 +63,8 @@
 }
 .portal-page-heading {
   display: flex;
+  flex-wrap: wrap;
+  gap: var(--pf-t--global--spacer--sm) var(--pf-t--global--spacer--md);
   justify-content: space-between;
   align-items: center;
   margin-block: var(--pf-t--global--spacer--md);

@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 // The fixture AI Grid sites with coordinates (mock/fixtures-poc/managedclusters.json). The map
-// can show more pins once other specs enroll another cluster, so the spec checks these by name.
+// can show more pins once other specs enroll another cluster, so the spec counts at least these.
 const PINS = ['San Francisco', 'New York', 'Brussels'];
 
 test('shows the fixture pins on the bundled land outline, and a pin opens its details', async ({ page, baseURL }) => {
@@ -9,10 +9,11 @@ test('shows the fixture pins on the bundled land outline, and a pin opens its de
   page.on('request', (request) => requests.push(request.url()));
   await page.goto('/ai-grid');
   const map = page.getByLabel('AI Grid map of clusters');
-  // Leaflet briefly duplicates tooltips after load, so these locators take the first match.
-  for (const pin of PINS) {
-    await expect(map.getByText(pin, { exact: true }).first()).toBeVisible();
-  }
+  const pins = map.locator('path.fleet-pin');
+  await expect(pins.first()).toBeVisible();
+  expect(await pins.count()).toBeGreaterThanOrEqual(PINS.length);
+  // Labels show on hover, so they don't cover the other pins.
+  await expect(map.getByText(PINS[0], { exact: true })).toHaveCount(0);
   // The outline's paths share the overlay pane with the pins but aren't interactive.
   await expect(
     map.locator('.leaflet-overlay-pane path.fleet-map-land:not(.leaflet-interactive)').first(),
@@ -21,9 +22,11 @@ test('shows the fixture pins on the bundled land outline, and a pin opens its de
   const origin = new URL(baseURL!).origin;
   expect(requests.filter((url) => /^https?:/.test(url) && new URL(url).origin !== origin)).toEqual([]);
 
-  await map.locator('path.leaflet-interactive').first().click({ force: true });
-  await expect(page.getByText('Site and cluster')).toBeVisible();
-  await expect(page.getByText('Models at this location')).toBeVisible();
+  await pins.first().hover({ force: true });
+  await expect(map.locator('.leaflet-tooltip').first()).toBeVisible();
+  await pins.first().click({ force: true });
+  await expect(page.getByRole('heading', { name: 'Site and cluster' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Models at this location' })).toBeVisible();
   await expect(map.getByText(/ · .* · Ready/).first()).toBeVisible();
 });
 
@@ -33,8 +36,8 @@ test('monitoring switches to 24h and opens each tab', async ({ page }) => {
   await day.click();
   await expect(day).toHaveAttribute('aria-pressed', 'true');
 
-  await page.getByRole('tab', { name: 'Cluster' }).click();
-  await expect(page.getByRole('tab', { name: 'Cluster' })).toHaveAttribute('aria-selected', 'true');
+  await page.getByRole('tab', { name: /^Cluster/ }).click();
+  await expect(page.getByRole('tab', { name: /^Cluster/ })).toHaveAttribute('aria-selected', 'true');
   await page.getByRole('tab', { name: 'Models' }).click();
   await expect(page.getByRole('tab', { name: 'Models' })).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByLabel('Select model deployment')).toBeVisible();

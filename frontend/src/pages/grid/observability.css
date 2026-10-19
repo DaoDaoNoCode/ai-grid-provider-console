@@ -86,26 +86,6 @@
 .observability-timeframe-selector {
   flex-shrink: 0;
 }
-.observability-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 24px;
-  align-items: flex-start;
-  flex-wrap: wrap;
-}
-.observability-header h1 {
-  margin-bottom: 8px;
-}
-.observability-header p {
-  color: var(--pf-t--global--text--color--subtle);
-}
-.observability-time-controls {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  flex-wrap: wrap;
-  font-size: 13px;
-}
 .observability-chart {
   display: block;
   width: 100%;

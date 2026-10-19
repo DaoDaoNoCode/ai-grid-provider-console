@@ -51,7 +51,7 @@ it('provides reference-style tabs, expandable chart sections, and a working mode
   const user = userEvent.setup();
   renderAt('/monitoring', service);
   await screen.findByRole('img', { name: 'GPU utilization over time' });
-  expect(screen.getByRole('heading', { name: 'Observability dashboard' })).toBeVisible();
+  expect(screen.getByRole('heading', { name: 'Monitoring', level: 1 })).toBeVisible();
   await user.click(screen.getByRole('button', { name: 'Cluster resource overview' }));
   expect(screen.queryByRole('img', { name: 'GPU utilization over time' })).not.toBeInTheDocument();
   await user.click(screen.getByRole('tab', { name: 'Usage' }));
@@ -217,7 +217,7 @@ it('does not name Thanos when the backend reports no metrics source', async () =
   const value = await service.getGridOverview('1h');
   vi.spyOn(service, 'getGridOverview').mockResolvedValue({ ...value, demo: false, metricsSource: undefined });
   renderAt('/monitoring', service);
-  expect(await screen.findByText(/Metrics: Unknown/)).toBeVisible();
+  expect(await screen.findByRole('img', { name: 'Gateway request rate over time' })).toBeVisible();
   expect(screen.queryByText(/Thanos/)).not.toBeInTheDocument();
 });
 
