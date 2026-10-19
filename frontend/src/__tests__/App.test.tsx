@@ -17,7 +17,7 @@ describe('App', () => {
     await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('dev-user (provider admin)'));
     expect(await screen.findByRole('row', { name: /^site1 / })).toBeInTheDocument();
     expect(screen.getByText('brussels')).toBeInTheDocument();
-    expect(screen.getAllByText('Member')).toHaveLength(3);
+    expect(screen.getAllByText('Provisioned')).toHaveLength(3);
   });
 
   it('has one h1, the page heading, with the masthead title as an h2', async () => {

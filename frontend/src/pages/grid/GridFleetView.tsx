@@ -17,7 +17,7 @@ import {
   ToggleGroupItem,
 } from '@patternfly/react-core';
 import { AngleLeftIcon, CubesIcon } from '@patternfly/react-icons';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import type { GridCluster, ManagedModel } from '../../api/types';
 import { StatusLabel } from '../../components/StatusLabel';
 import { modelKey } from '../../utilities/authpolicies';
@@ -57,10 +57,18 @@ const Fields: React.FC<{ items: Array<[string, string]> }> = ({ items }) => (
   </dl>
 );
 
+/** A link can open the drawer on a cluster (?cluster=<name>) or a model (?model=<namespace/name>). */
+const selectionFrom = (params: URLSearchParams): Selection | null => {
+  const cluster = params.get('cluster');
+  const model = params.get('model');
+  return cluster ? { kind: 'cluster', name: cluster } : model ? { kind: 'model', name: model } : null;
+};
+
 export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, tiles }) => {
-  const [selection, setSelection] = useState<Selection | null>(null);
+  const [params] = useSearchParams();
+  const [selection, setSelection] = useState<Selection | null>(() => selectionFrom(params));
   const [history, setHistory] = useState<Selection[]>([]);
-  const [mode, setMode] = useState<'cluster' | 'model'>('cluster');
+  const [mode, setMode] = useState<'cluster' | 'model'>(() => selectionFrom(params)?.kind ?? 'cluster');
   const [search, setSearch] = useState('');
   const [availability, setAvailability] = useState('all');
 

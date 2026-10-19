@@ -91,11 +91,16 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
         </DetailsSection>
         <DetailsSection title="Locations">
           {model.locations.length ? (
-            <List data-testid="model-locations">
-              {model.locations.map((location) => (
-                <ListItem key={location}>{locationLabel(location, siteNames)}</ListItem>
-              ))}
-            </List>
+            <>
+              <List data-testid="model-locations">
+                {model.locations.map((location) => (
+                  <ListItem key={location}>{locationLabel(location, siteNames)}</ListItem>
+                ))}
+              </List>
+              <Link to={`/ai-grid?model=${encodeURIComponent(`${model.namespace}/${model.name}`)}`}>
+                Show on the AI Grid map
+              </Link>
+            </>
           ) : (
             <p>The placement hasn’t chosen any locations yet.</p>
           )}

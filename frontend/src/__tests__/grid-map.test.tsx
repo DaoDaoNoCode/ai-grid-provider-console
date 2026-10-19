@@ -42,6 +42,16 @@ it('uses the reference map-and-drawer layout and opens cluster details from a pi
   expect(screen.queryByRole('combobox', { name: 'Filter by site' })).not.toBeInTheDocument();
 });
 
+it('opens the drawer on the cluster or model a link names', async () => {
+  const service = new MockConsoleService();
+  const view = renderAt('/ai-grid?cluster=site3', service);
+  expect(await screen.findByRole('heading', { name: 'site3' })).toBeVisible();
+  view.unmount();
+  const [model] = await service.listModels();
+  renderAt(`/ai-grid?model=${encodeURIComponent(`${model.namespace}/${model.name}`)}`, service);
+  expect(await screen.findByRole('heading', { name: model.displayName ?? model.name })).toBeVisible();
+});
+
 it('filters the drawer and map by availability while retaining inventory summaries', async () => {
   const service = new MockConsoleService();
   service.clusters[1] = { ...service.clusters[1], status: 'Offline' };

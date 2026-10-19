@@ -3,7 +3,7 @@ import { Navigate, Outlet, Route, Routes, useParams } from 'react-router-dom';
 import type { ConsoleService } from './api/ConsoleService';
 import { NotFoundPage } from './components/NotFoundPage';
 import { MaaSGovernanceProvider } from './context/MaaSGovernanceContext';
-import { ClustersPage } from './pages/ClustersPage';
+import { ClustersPage } from './pages/clusters/ClustersPage';
 import { GridPage } from './pages/grid/GridPage';
 import { ModelDetailsPage } from './pages/models/ModelDetailsPage';
 import { ModelWizard } from './pages/models/ModelWizard';

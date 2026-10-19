@@ -64,6 +64,16 @@ export class HttpConsoleService implements ConsoleService {
     return toGridCluster(updated);
   }
 
+  async removeClusterFromGrid(cluster: GridCluster): Promise<GridCluster> {
+    const labels = { ...cluster.labels };
+    delete labels['ai-grid/enabled'];
+    const updated = await this.request<ApiCluster>('PATCH', `/clusters/${encodeURIComponent(cluster.name)}`, {
+      body: { labels },
+      ifMatch: cluster.resourceVersion,
+    });
+    return toGridCluster(updated);
+  }
+
   async listOrganizations(): Promise<Organization[]> {
     return (await this.request<ApiTenant[]>('GET', '/tenants')).map(toOrganization);
   }

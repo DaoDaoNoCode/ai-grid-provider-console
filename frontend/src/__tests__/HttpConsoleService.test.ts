@@ -179,6 +179,31 @@ describe('HttpConsoleService', () => {
     );
   });
 
+  it('removes a cluster from AI Grid by PATCHing its labels without ai-grid/enabled', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(200, { data: { name: 'site1', aiGridEnabled: false, status: 'ready' } }));
+    const read = toGridCluster({
+      name: 'site1',
+      aiGridEnabled: true,
+      provisioned: true,
+      status: 'ready',
+      resourceVersion: '4',
+      labels: { location: 'paris', 'ai-grid/enabled': 'true', 'ai-grid/provisioned': 'true' },
+    });
+    await expect(new HttpConsoleService(fetchFn).removeClusterFromGrid(read)).resolves.toMatchObject({
+      aiGridEnabled: false,
+    });
+    expect(fetchFn).toHaveBeenCalledWith(
+      '/api/v1/clusters/site1',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: '{"labels":{"location":"paris","ai-grid/provisioned":"true"}}',
+        headers: expect.objectContaining({ 'If-Match': '"4"' }),
+      }),
+    );
+  });
+
   it('requests the full cluster list without paging parameters and maps PR 12 clusters', async () => {
     const fetchFn = vi.fn().mockResolvedValue(
       jsonResponse(200, {

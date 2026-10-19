@@ -12,18 +12,24 @@ test('adds an enrollable cluster to the AI Grid and keeps it after a reload', as
   const row = page.getByRole('row').filter({ has: page.getByRole('gridcell', { name: ENROLLABLE, exact: true }) });
   await expect(row).toBeVisible();
 
-  const add = page.getByRole('button', { name: `Add ${ENROLLABLE} to AI Grid` });
-  // The button appears once /user has answered; a member shows no button at all.
-  await expect(add.or(row.getByText('AI Grid Member'))).toBeVisible();
+  // The menu appears once /user has answered; a member offers only removal.
+  await page.getByRole('button', { name: `Actions for ${ENROLLABLE}` }).click();
+  const add = page.getByRole('menuitem', { name: 'Add to AI Grid' });
+  await expect(add.or(page.getByRole('menuitem', { name: 'Remove from AI Grid' }))).toBeVisible();
   if (await add.isVisible()) {
     await add.click();
+    await page.getByTestId('cluster-membership-modal').getByRole('button', { name: 'Add to AI Grid' }).click();
     await expect(page.getByText(`${ENROLLABLE} added to AI Grid`)).toBeVisible();
+  } else {
+    await page.keyboard.press('Escape');
   }
-  await expect(row.getByText('AI Grid Member')).toBeVisible();
-  await expect(row.getByRole('gridcell', { name: 'Member', exact: true })).toBeVisible();
+  // A member's name links to its AI Grid drawer.
+  await expect(row.getByRole('link', { name: ENROLLABLE, exact: true })).toBeVisible();
 
   await page.reload();
   const reloaded = page.getByRole('row').filter({ has: page.getByRole('gridcell', { name: ENROLLABLE, exact: true }) });
-  await expect(reloaded.getByText('AI Grid Member')).toBeVisible();
-  await expect(page.getByRole('button', { name: `Add ${ENROLLABLE} to AI Grid` })).toHaveCount(0);
+  await expect(reloaded.getByRole('link', { name: ENROLLABLE, exact: true })).toHaveAttribute(
+    'href',
+    `/ai-grid?cluster=${ENROLLABLE}`,
+  );
 });

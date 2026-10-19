@@ -8,6 +8,8 @@ type Item = {
   label?: string;
   isSpacer?: boolean;
   isDisabled?: boolean;
+  /** Why the item can't be used now: it stays focusable, disabled, with this in a tooltip. */
+  disabledReason?: string;
   /** A destructive action (Delete): danger styled. Put it last, after a spacer. */
   isDanger?: boolean;
   onClick?: () => void;
@@ -53,6 +55,8 @@ export const SimpleMenuActions: React.FC<Props> = ({ testId, ariaLabel, dropdown
             <DropdownItem
               key={item.key}
               isDisabled={item.isDisabled}
+              isAriaDisabled={!!item.disabledReason}
+              tooltipProps={item.disabledReason ? { content: item.disabledReason } : undefined}
               isDanger={item.isDanger}
               onClick={() => {
                 setOpen(false);

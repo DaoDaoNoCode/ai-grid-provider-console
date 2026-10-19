@@ -63,22 +63,33 @@ export class MockConsoleService implements ConsoleService {
   listClusters = async (): Promise<GridCluster[]> => [...this.clusters];
 
   /** Sets only the `ai-grid/enabled` label, as the BFF does. */
-  enrollCluster = async ({ name }: GridCluster): Promise<GridCluster> => {
+  enrollCluster = async ({ name }: GridCluster): Promise<GridCluster> => this.setMembership(name, true);
+
+  removeClusterFromGrid = async ({ name }: GridCluster): Promise<GridCluster> => this.setMembership(name, false);
+
+  /** Sets or drops the `ai-grid/enabled` label, as the BFF's PATCH does; provisioning follows toGridCluster. */
+  private setMembership(name: string, member: boolean): GridCluster {
     const index = this.clusters.findIndex((c) => c.name === name);
     if (index < 0) {
       throw new ServiceError(404, `object with identifier '${name}' not found`);
     }
     const current = this.clusters[index];
+    const labels = { ...current.labels };
+    if (member) {
+      labels['ai-grid/enabled'] = 'true';
+    } else {
+      delete labels['ai-grid/enabled'];
+    }
     const updated: GridCluster = {
       ...current,
-      aiGridEnabled: true,
-      provisioningStatus: current.provisioned ? 'Provisioned' : 'Provisioning',
-      labels: { ...current.labels, 'ai-grid/enabled': 'true' },
+      aiGridEnabled: member,
+      provisioningStatus: current.provisioned ? 'Provisioned' : member ? 'Provisioning' : 'Not provisioned',
+      labels,
       resourceVersion: String(Number(current.resourceVersion ?? '0') + 1),
     };
     this.clusters[index] = updated;
     return updated;
-  };
+  }
 
   /**
    * The fake backend's GetOverview (bff/internal/fakebackend/grid.go): the AI Grid members,
