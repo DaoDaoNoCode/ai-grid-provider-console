@@ -296,6 +296,68 @@ it('deletes by namespace and name with If-Match', async () => {
   expect(call?.[1]?.headers).toMatchObject({ 'If-Match': '"48760230"' });
 });
 
+it("shows the Model URI rule's message once the user leaves an invalid URI", async () => {
+  const user = userEvent.setup();
+  renderAt('/models/deploy', new MockConsoleService());
+  const uri = await screen.findByRole('textbox', { name: /Model URI/ });
+  await user.type(screen.getByRole('textbox', { name: /^Model name/ }), 'org/widget');
+  await user.type(uri, 'https:///123.com');
+  expect(screen.queryByText('Enter a model URI using hf, oci, s3 or pvc.')).not.toBeInTheDocument();
+  await user.tab();
+  expect(screen.getByText('Enter a model URI using hf, oci, s3 or pvc.')).toBeVisible();
+  expect(uri).toHaveAttribute('aria-invalid', 'true');
+  expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+  await user.clear(uri);
+  await user.type(uri, 'hf://org/widget');
+  expect(screen.queryByText('Enter a model URI using hf, oci, s3 or pvc.')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
+});
+
+it('says a required field is required once the user leaves it empty', async () => {
+  const user = userEvent.setup();
+  renderAt('/models/deploy', new MockConsoleService());
+  const uri = await screen.findByRole('textbox', { name: /Model URI/ });
+  const name = screen.getByRole('textbox', { name: /^Model name/ });
+  await user.type(name, 'org/widget');
+  await user.clear(name);
+  await user.tab();
+  expect(name).toHaveAttribute('aria-invalid', 'true');
+  expect(screen.getAllByText('Required.')).toHaveLength(1);
+  expect(uri).not.toHaveAttribute('aria-invalid', 'true');
+});
+
+it('says why the deployment step cannot continue when the CPU is invalid', async () => {
+  const user = userEvent.setup();
+  renderAt('/models/deploy', new MockConsoleService());
+  await user.type(await screen.findByRole('textbox', { name: /Model URI/ }), 'hf://org/widget');
+  await user.type(screen.getByRole('textbox', { name: /^Model name/ }), 'org/widget');
+  await user.click(screen.getByRole('button', { name: 'Next' }));
+  await user.type(await screen.findByTestId('model-name-desc-name'), 'Widget');
+  await user.type(screen.getByRole('textbox', { name: /Runtime image/ }), 'registry.example/runtime:test');
+  const cpu = screen.getByRole('textbox', { name: /^CPU/ });
+  await user.clear(cpu);
+  await user.type(cpu, '2 cores');
+  await user.tab();
+  expect(screen.getByText('Enter positive CPU cores or millicores, for example 2 or 500m.')).toBeVisible();
+  expect(cpu).toHaveAttribute('aria-invalid', 'true');
+  expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+});
+
+it('shows the Locations error only after the user clears a selection', async () => {
+  const user = userEvent.setup();
+  renderAt('/models/deploy', new MockConsoleService());
+  await fillModel(user);
+  await user.click(screen.getByRole('button', { name: 'Next' }));
+  const combobox = await screen.findByRole('combobox', { name: 'Locations' });
+  expect(screen.queryByText('Select at least one location.')).not.toBeInTheDocument();
+  await user.click(combobox);
+  await user.click(screen.getByRole('option', { name: 'site1' }));
+  await user.click(screen.getByRole('option', { name: 'site1' }));
+  await user.keyboard('{Escape}');
+  expect(screen.getByText('Select at least one location.')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+});
+
 it("takes only the fake backend's URI schemes and sends the URI trimmed", async () => {
   const service = new MockConsoleService();
   const create = vi.spyOn(service, 'createModel');

@@ -35,7 +35,7 @@ import { useK8sNameDescriptionFieldData } from '../../components/K8sNameDescript
 import { MultiSelection } from '../../components/MultiSelection';
 import { PageHeader } from '../../components/PageHeader';
 import { useServiceData } from '../../hooks/useServiceData';
-import { createModelSchema } from '../../validation';
+import { createModelSchema, fieldMessage } from '../../validation';
 import { RuntimeArgsField } from './fields/RuntimeArgsField';
 import { filterRuntimeArgsForContainer, type RuntimeArgsFieldData } from './fields/runtimeArgs';
 
@@ -92,10 +92,11 @@ const DeploymentFooter: React.FC<FooterProps> = ({
   );
 };
 
-const Help: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+/** A field's help line, replaced by the field's error while it has one. */
+const Help: React.FC<{ children: React.ReactNode; error?: string }> = ({ children, error }) => (
   <FormHelperText>
     <HelperText>
-      <HelperTextItem>{children}</HelperTextItem>
+      <HelperTextItem variant={error ? 'error' : 'default'}>{error ?? children}</HelperTextItem>
     </HelperText>
   </FormHelperText>
 );
@@ -112,6 +113,8 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
     0,
   );
   const [locations, setLocations] = useState<string[]>([]);
+  // Like the text fields, Locations shows its error only once the user has changed it.
+  const [locationsTouched, setLocationsTouched] = useState(false);
   const { data: nameDescData, onDataChange: onNameDescChange } = useK8sNameDescriptionFieldData({ maxLength: 63 });
   const [modelUri, setModelUri] = useState('');
   const [modelName, setModelName] = useState('');
@@ -121,6 +124,9 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
   const [memory, setMemory] = useState('4Gi');
   const [gpuCount, setGpuCount] = useState('0');
   const [runtimeArgs, setRuntimeArgs] = useState<RuntimeArgsFieldData>({ enabled: false, args: [] });
+  // A field shows its error only once the user has left it, as Locations does.
+  const [touched, setTouched] = useState<ReadonlySet<string>>(new Set());
+  const touch = (field: string) => setTouched((prev) => (prev.has(field) ? prev : new Set(prev).add(field)));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -138,6 +144,20 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
     runtimeArgs: filterRuntimeArgsForContainer(runtimeArgs.args),
     locations,
   };
+  // Every field this checks is required, so a field the user left empty says so.
+  const shownError = (field: keyof typeof createModelSchema.shape, value: string, parse?: (text: string) => unknown) =>
+    !touched.has(field)
+      ? undefined
+      : value.trim()
+        ? fieldMessage(createModelSchema.shape[field], value, parse)
+        : 'Required.';
+  const modelUriError = shownError('modelUri', modelUri);
+  const modelNameError = shownError('modelName', modelName);
+  const runtimeImageError = shownError('runtimeImage', runtimeImage);
+  const replicasError = shownError('replicas', replicas, Number);
+  const cpuError = shownError('cpu', cpu);
+  const memoryError = shownError('memory', memory);
+  const gpuCountError = shownError('gpuCount', gpuCount, Number);
   const sourceValid = createModelSchema
     .pick({ modelUri: true, modelName: true })
     .safeParse({ modelUri, modelName }).success;
@@ -207,14 +227,17 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
           inputId="model-locations"
           ariaLabel="Locations"
           placeholder="Select locations"
-          selectionRequired
+          selectionRequired={locationsTouched}
           noSelectedOptionsMessage="Select at least one location."
           value={availableLocations.map((location) => ({
             id: location,
             name: location,
             selected: locations.includes(location),
           }))}
-          setValue={(options) => setLocations(options.filter((option) => option.selected).map((o) => String(o.id)))}
+          setValue={(options) => {
+            setLocationsTouched(true);
+            setLocations(options.filter((option) => option.selected).map((o) => String(o.id)));
+          }}
           isDisabled={saving}
         />
         <Help>Select locations with Ready, provisioned AI Grid members.</Help>
@@ -260,9 +283,11 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
                   id="model-uri"
                   value={modelUri}
                   onChange={(_event, value) => setModelUri(value)}
+                  onBlur={() => touch('modelUri')}
+                  validated={modelUriError ? 'error' : 'default'}
                   isRequired
                 />
-                <Help>
+                <Help error={modelUriError}>
                   Enter the model location, for example hf://org/model, oci://registry/model:tag, s3://bucket/path or
                   pvc://claim/path.
                 </Help>
@@ -272,9 +297,13 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
                   id="model-alias"
                   value={modelName}
                   onChange={(_event, value) => setModelName(value)}
+                  onBlur={() => touch('modelName')}
+                  validated={modelNameError ? 'error' : 'default'}
                   isRequired
                 />
-                <Help>The model name exposed by the inference service, for example org/model.</Help>
+                <Help error={modelNameError}>
+                  The model name exposed by the inference service, for example org/model.
+                </Help>
               </FormGroup>
             </Form>
           </WizardStep>
@@ -292,9 +321,11 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
                   id="runtime-image"
                   value={runtimeImage}
                   onChange={(_event, value) => setRuntimeImage(value)}
+                  onBlur={() => touch('runtimeImage')}
+                  validated={runtimeImageError ? 'error' : 'default'}
                   isRequired
                 />
-                <Help>Container image for the serving runtime.</Help>
+                <Help error={runtimeImageError}>Container image for the serving runtime.</Help>
               </FormGroup>
               <FormGroup label="Replica count" fieldId="deployment-replicas" isRequired>
                 <TextInput
@@ -304,21 +335,33 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
                   max={99}
                   value={replicas}
                   onChange={(_event, value) => setReplicas(value)}
+                  onBlur={() => touch('replicas')}
+                  validated={replicasError ? 'error' : 'default'}
                   isRequired
                 />
+                <Help error={replicasError}>Between 1 and 99.</Help>
               </FormGroup>
               <FormGroup label="CPU" fieldId="deployment-cpu" isRequired>
-                <TextInput id="deployment-cpu" value={cpu} onChange={(_event, value) => setCpu(value)} isRequired />
-                <Help>Positive cores or millicores, for example 2 or 500m.</Help>
+                <TextInput
+                  id="deployment-cpu"
+                  value={cpu}
+                  onChange={(_event, value) => setCpu(value)}
+                  onBlur={() => touch('cpu')}
+                  validated={cpuError ? 'error' : 'default'}
+                  isRequired
+                />
+                <Help error={cpuError}>Positive cores or millicores, for example 2 or 500m.</Help>
               </FormGroup>
               <FormGroup label="Memory" fieldId="deployment-memory" isRequired>
                 <TextInput
                   id="deployment-memory"
                   value={memory}
                   onChange={(_event, value) => setMemory(value)}
+                  onBlur={() => touch('memory')}
+                  validated={memoryError ? 'error' : 'default'}
                   isRequired
                 />
-                <Help>For example 4Gi or 512Mi.</Help>
+                <Help error={memoryError}>For example 4Gi or 512Mi.</Help>
               </FormGroup>
               <FormGroup label="GPU count" fieldId="deployment-gpus" isRequired>
                 <TextInput
@@ -328,8 +371,11 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
                   max={64}
                   value={gpuCount}
                   onChange={(_event, value) => setGpuCount(value)}
+                  onBlur={() => touch('gpuCount')}
+                  validated={gpuCountError ? 'error' : 'default'}
                   isRequired
                 />
+                <Help error={gpuCountError}>Between 0 and 64.</Help>
               </FormGroup>
             </Form>
           </WizardStep>
