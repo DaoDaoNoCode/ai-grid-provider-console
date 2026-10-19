@@ -2,7 +2,7 @@
 // Adapted from opendatahub-io/odh-dashboard
 // packages/maas/frontend/src/app/pages/subscriptions/createSubscription/CreateSubscriptionForm.tsx
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
-// The console adds the Organization field: required on create, kept on edit. Telemetry is dropped.
+// Telemetry is dropped.
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -12,8 +12,6 @@ import {
   Form,
   FormGroup,
   FormHelperText,
-  FormSelect,
-  FormSelectOption,
   HelperText,
   HelperTextItem,
   NumberInput,
@@ -54,7 +52,6 @@ type Props = {
 
 const MAX_PRIORITY = 1000000;
 const MIN_PRIORITY = -1000000;
-const SELECT_ORGANIZATION = 'Select an organization';
 
 const subscriptionFormSchema = z.object({
   priority: z
@@ -87,7 +84,7 @@ const errorText = (message: string) => (
 
 export const CreateSubscriptionForm: React.FC<Props> = ({ service, modelRefs, subscriptionInfo, returnTo }) => {
   const navigate = useNavigate();
-  const { refresh, organizations, organizationsError } = useMaaSGovernanceContext();
+  const { refresh } = useMaaSGovernanceContext();
   const isEditing = !!subscriptionInfo;
   const subscription = subscriptionInfo?.subscription;
 
@@ -108,8 +105,6 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ service, modelRefs, su
   );
   const [groupsTouched, setGroupsTouched] = useState(false);
   const [modelsTouched, setModelsTouched] = useState(false);
-  const [organizationId, setOrganizationId] = useState(subscription?.tokenMetadata?.organizationId ?? '');
-  const [organizationTouched, setOrganizationTouched] = useState(false);
   const [priority, setPriority] = useState<number | undefined>(subscription?.priority ?? 0);
   // Every subscription created here gets a matching authorization policy, as in the PoC.
   const createAuthPolicy = true;
@@ -158,15 +153,9 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ service, modelRefs, su
     models,
   });
   const isPriorityValid = priority != null && !Number.isNaN(priority);
-  const organizationMissing = !isEditing && !organizationId;
 
   const canSubmit =
-    isNameValid &&
-    Object.keys(fieldErrors).length === 0 &&
-    allModelsHaveRateLimits &&
-    isPriorityValid &&
-    !organizationMissing &&
-    !isSubmitting;
+    isNameValid && Object.keys(fieldErrors).length === 0 && allModelsHaveRateLimits && isPriorityValid && !isSubmitting;
 
   // Each reference names its model's namespace (P6), so a model of the same name elsewhere isn't it.
   const modelRefsPayload = models.map((m) => {
@@ -179,19 +168,6 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ service, modelRefs, su
     const namespace = m.modelRefSummary.namespace ?? ref.namespace;
     return namespace ? { ...ref, namespace } : ref;
   });
-
-  // The organization select lists the organizations by name; an edited subscription keeps its
-  // organization even when the backend no longer lists it.
-  const organizationOptions = useMemo(() => {
-    const options = [...organizations]
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((o) => ({ value: o.id, label: o.name }));
-    const current = subscription?.tokenMetadata?.organizationId;
-    if (current && !options.some((o) => o.value === current)) {
-      options.push({ value: current, label: current });
-    }
-    return options;
-  }, [organizations, subscription]);
 
   const handleSubmit = async () => {
     if (priority == null || Number.isNaN(priority)) {
@@ -208,9 +184,7 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ service, modelRefs, su
           description: nameDescData.description.trim() || undefined,
           owner: { ...subscription.owner, groups: selectedGroupNames.map((g) => ({ name: g })) },
           modelRefs: modelRefsPayload,
-          tokenMetadata: organizationId
-            ? { ...subscription.tokenMetadata, organizationId }
-            : subscription.tokenMetadata,
+          tokenMetadata: subscription.tokenMetadata,
           inferencePriority: subscription.inferencePriority,
           guardrails: subscription.guardrails,
           priority,
@@ -224,7 +198,6 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ service, modelRefs, su
           owner: { groups: selectedGroupNames.map((g) => ({ name: g })) },
           modelRefs: modelRefsPayload,
           priority,
-          tokenMetadata: { organizationId },
           createAuthPolicy,
         };
         await service.createSubscription(request);
@@ -248,19 +221,6 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ service, modelRefs, su
   const showNoModelsWarning = !isEditing && modelRefs.length === 0 && models.length === 0;
   const canAddModels = modelRefs.length > 0;
 
-  let organizationHelper = (
-    <FormHelperText>
-      <HelperText>
-        <HelperTextItem>The organization whose users this subscription serves.</HelperTextItem>
-      </HelperText>
-    </FormHelperText>
-  );
-  if (organizationsError) {
-    organizationHelper = errorText(`Organizations could not be loaded: ${organizationsError.message}`);
-  } else if (organizationTouched && organizationMissing) {
-    organizationHelper = errorText(SELECT_ORGANIZATION);
-  }
-
   return (
     <PageSection hasBodyWrapper={false}>
       <Form maxWidth="750px">
@@ -269,27 +229,6 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ service, modelRefs, su
           onDataChange={onNameDescChange}
           dataTestId="subscription-name-desc"
         />
-
-        <FormGroup label="Organization" fieldId="subscription-organization" isRequired={!isEditing}>
-          <FormSelect
-            id="subscription-organization"
-            data-testid="subscription-organization"
-            value={organizationId}
-            validated={organizationTouched && organizationMissing ? 'error' : 'default'}
-            onChange={(_event, value) => {
-              setOrganizationTouched(true);
-              setOrganizationId(value);
-            }}
-          >
-            {(!isEditing || !subscription?.tokenMetadata?.organizationId) && (
-              <FormSelectOption value="" label={SELECT_ORGANIZATION} isPlaceholder />
-            )}
-            {organizationOptions.map((o) => (
-              <FormSelectOption key={o.value} value={o.value} label={o.label} />
-            ))}
-          </FormSelect>
-          {organizationHelper}
-        </FormGroup>
 
         <FormGroup label="Priority" fieldId="subscription-priority" isRequired>
           <FormHelperText>
@@ -328,7 +267,8 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ service, modelRefs, su
           <FormHelperText>
             <HelperText>
               <HelperTextItem>
-                Type each group name and choose Add group to grant access to models in this subscription.
+                Type each group name and choose Add group to grant access to models in this subscription. Prefix each
+                group name with its organization, for example acme-robotics/engineering.
               </HelperTextItem>
             </HelperText>
           </FormHelperText>

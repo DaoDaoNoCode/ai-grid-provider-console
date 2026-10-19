@@ -313,7 +313,7 @@ and 8.2), not from the PoC, whose `Saved` phase does not exist on the hub. What 
   names, and a reference without a namespace, count as the console's models namespace.
 
 Frontend: subscriptions table keyed on phase, create and edit with per-model quotas,
-tenant linkage through `tokenMetadata.organizationId`, a visible consistency check between a
+organizations as group-name prefixes (`acme-robotics/engineering`), a visible consistency check between a
 subscription's owners and the auth policies that cover its models.
 Backend ask: the `Catalog` and `Subscriptions` services in `research/models-maas.md`
 section 8.1, and a decision on the subscription and auth policy pairing.

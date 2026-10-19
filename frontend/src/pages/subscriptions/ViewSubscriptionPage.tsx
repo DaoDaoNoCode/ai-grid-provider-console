@@ -2,7 +2,7 @@
 // Adapted from opendatahub-io/odh-dashboard
 // packages/maas/frontend/src/app/pages/subscriptions/ViewSubscriptionPage.tsx
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
-// Telemetry is dropped; a viewer gets no actions; the console adds the Organization.
+// Telemetry is dropped; a viewer gets no actions.
 import { useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Breadcrumb, BreadcrumbItem, PageSection, Tab, Tabs, TabTitleText } from '@patternfly/react-core';
@@ -76,11 +76,9 @@ export const ViewSubscriptionPage: React.FC<Props> = ({ service }) => {
   const { subscriptionName = '' } = useParams<{ subscriptionName: string }>();
   const location = useLocation();
   const [subscriptionInfo, loaded, loadError, reload] = useGetSubscriptionInfo(service, subscriptionName);
-  const { canWrite, organizations } = useMaaSGovernanceContext();
+  const { canWrite } = useMaaSGovernanceContext();
   const displaySubscriptionName = subscriptionInfo?.subscription.displayName?.trim() || subscriptionName;
   const backUrl = getBackUrl(location.state, 'subscriptions');
-  const organizationId = subscriptionInfo?.subscription.tokenMetadata?.organizationId ?? '';
-  const organization = organizations.find((o) => o.id === organizationId)?.name ?? organizationId;
 
   return (
     <ApplicationsPage
@@ -118,7 +116,6 @@ export const ViewSubscriptionPage: React.FC<Props> = ({ service }) => {
               <SubscriptionDetailsSection
                 subscription={subscriptionInfo.subscription}
                 modelRegistrations={subscriptionInfo.modelRegistrations ?? []}
-                organization={organization}
               />
             </PageSection>
             <PageSection hasBodyWrapper={false} className="pf-v6-u-pb-xl">

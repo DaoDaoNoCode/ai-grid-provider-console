@@ -67,8 +67,8 @@ type ModelRef struct {
 	Guardrails      []Guardrail      `json:"guardrails,omitempty"`
 }
 
-// TokenMetadata is a subscription's metering metadata; OrganizationID is the
-// organization (tenant id) it belongs to.
+// TokenMetadata is MaaS's pass-through metering metadata. The console doesn't
+// set it: a subscription's groups carry their organization as a name prefix.
 type TokenMetadata struct {
 	OrganizationID string            `json:"organizationId,omitempty"`
 	CostCenter     string            `json:"costCenter,omitempty"`

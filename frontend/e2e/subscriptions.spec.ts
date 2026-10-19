@@ -1,18 +1,16 @@
 import { expect, test } from '@playwright/test';
 
-// Fixture organization and model (mock/fixtures-poc/tenants.json, models.json).
-const ORGANIZATION = 'acme-robotics';
+// A fixture model (mock/fixtures-poc/models.json); the group carries a fixture organization's prefix.
 const MODEL = 'granite-3-8b';
 
 const unique = `e2e-${Math.random().toString(36).slice(2, 8)}`;
-const group = `${unique}-team`;
+const group = `acme-robotics/${unique}-team`;
 
 test('creates, views, edits and deletes a subscription', async ({ page }) => {
   await page.goto('/subscriptions');
   await page.getByTestId('create-subscription-button').click();
 
   await page.getByTestId('subscription-name-desc-name').fill(unique);
-  await page.getByTestId('subscription-organization').selectOption({ label: ORGANIZATION });
   await page.getByTestId('subscription-groups').click();
   await page.getByRole('combobox', { name: 'Enter groups' }).fill(group);
   await page.getByRole('option', { name: `Add group "${group}"` }).click();
@@ -40,7 +38,7 @@ test('creates, views, edits and deletes a subscription', async ({ page }) => {
   // The view page opens directly and survives a reload.
   await page.goto(`/subscriptions/view/${unique}`);
   await expect(page.getByRole('heading', { name: unique })).toBeVisible();
-  await expect(page.getByText(ORGANIZATION).first()).toBeVisible();
+  await expect(page.getByText(group).first()).toBeVisible();
   await page.reload();
   await expect(page.getByRole('heading', { name: unique })).toBeVisible();
   await expect(page.getByTestId('subscription-models-table')).toContainText('5,000');

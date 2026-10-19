@@ -35,7 +35,6 @@ export const SubscriptionsTab: React.FC<Props> = ({ service }) => {
     subscriptions,
     subscriptionsLoaded: loaded,
     subscriptionsError: error,
-    organizations,
     refresh,
     canWrite,
   } = useMaaSGovernanceContext();
@@ -48,14 +47,6 @@ export const SubscriptionsTab: React.FC<Props> = ({ service }) => {
     [],
   );
   const onClearFilters = useCallback(() => setFilterData(initialSubscriptionsFilterData), []);
-
-  const organizationName = useCallback(
-    (s: MaaSSubscription) => {
-      const id = s.tokenMetadata?.organizationId ?? '';
-      return organizations.find((o) => o.id === id)?.name ?? id;
-    },
-    [organizations],
-  );
 
   const filteredSubscriptions = useMemo(() => {
     const keyword = filterData[SubscriptionsFilterOptions.keyword]?.toLowerCase();
@@ -134,7 +125,6 @@ export const SubscriptionsTab: React.FC<Props> = ({ service }) => {
       <PageSection isFilled>
         <SubscriptionsTable
           subscriptions={filteredSubscriptions}
-          organizationName={organizationName}
           onClearFilters={onClearFilters}
           toolbarContent={
             <SubscriptionsToolbar filterData={filterData} onFilterUpdate={onFilterUpdate} canWrite={canWrite} />

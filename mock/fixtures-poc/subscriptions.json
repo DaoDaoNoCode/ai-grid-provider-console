@@ -1,5 +1,5 @@
 {
-  "_comment": "ai_grid.v1.Subscription and AuthPolicy in protojson: the PoC's three subscriptions and their authorization policies (src/services/subscriptions/fixtures.ts at 62319b8, as the port carried them), with the PoC's model names, groups and token limits; engineering belongs to acme-robotics instead of the PoC's osac. Model references have no namespace, so they name models in the console's models namespace. No fixture stores a phase: every model exists and each subscription was created in the past, so all three read Active. All values are fictional.",
+  "_comment": "ai_grid.v1.Subscription and AuthPolicy in protojson: the PoC's three subscriptions and their authorization policies (src/services/subscriptions/fixtures.ts at 62319b8, as the port carried them), with the PoC's model names and token limits, and the PoC's groups prefixed with their organization (acme-robotics/engineering). Model references have no namespace, so they name models in the console's models namespace. No fixture stores a phase: every model exists and each subscription was created in the past, so all three read Active. All values are fictional.",
   "subscriptions": [
     {
       "name": "engineering",
@@ -8,7 +8,7 @@
       "priority": 100,
       "owner": {
         "groups": [
-          "engineering"
+          "acme-robotics/engineering"
         ]
       },
       "modelRefs": [
@@ -46,8 +46,8 @@
       "priority": 10,
       "owner": {
         "groups": [
-          "data-scientists",
-          "platform-admins"
+          "globex-research/data-scientists",
+          "globex-research/platform-admins"
         ]
       },
       "modelRefs": [
@@ -87,7 +87,7 @@
       "priority": 0,
       "owner": {
         "groups": [
-          "research"
+          "initech-labs/research"
         ]
       },
       "modelRefs": [
@@ -119,7 +119,7 @@
         }
       ],
       "subjectGroups": [
-        "engineering"
+        "acme-robotics/engineering"
       ]
     },
     {
@@ -134,8 +134,8 @@
         }
       ],
       "subjectGroups": [
-        "data-scientists",
-        "platform-admins"
+        "globex-research/data-scientists",
+        "globex-research/platform-admins"
       ]
     },
     {
@@ -147,7 +147,7 @@
         }
       ],
       "subjectGroups": [
-        "research"
+        "initech-labs/research"
       ]
     }
   ]

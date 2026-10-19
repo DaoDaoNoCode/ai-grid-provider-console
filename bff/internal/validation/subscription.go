@@ -8,18 +8,13 @@ import (
 
 // The subscription rules are the PoC's createSchema and updateSchema
 // (krisv/ai-grid-cloud-provider-poc shared/subscription-validation.mjs at
-// 62319b8), with zod's default messages where the PoC sets none, plus the
-// console's organization: a new subscription needs tokenMetadata.organizationId.
+// 62319b8), with zod's default messages where the PoC sets none.
 // The frontend runs the same rules as createSubscriptionSchema and
 // updateSubscriptionSchema.
 //
 // The PoC's objects are passthrough, so unknown keys are allowed. As in zod,
 // an object-level refinement runs only when nothing below it failed with a
 // missing value or a wrong type; the helpers return false in that case.
-
-// msgSelectOrganization is the console's message for a subscription without
-// an organization.
-const msgSelectOrganization = "Select an organization"
 
 var dnsName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`)
 
@@ -70,11 +65,8 @@ func checkSubscription(raw json.RawMessage, create bool) map[string]string {
 	c.number("priority", o.get("priority"), -1_000_000, 1_000_000)
 	c.owner("owner", o.get("owner"))
 	c.modelRefs("modelRefs", o.get("modelRefs"))
-	switch f := o.get("tokenMetadata"); {
-	case create && !f.present:
-		c.add("tokenMetadata.organizationId", msgSelectOrganization)
-	case f.present:
-		c.metadata("tokenMetadata", f, create)
+	if f := o.get("tokenMetadata"); f.present {
+		c.metadata("tokenMetadata", f)
 	}
 	if f := o.get("inferencePriority"); f.present {
 		c.number("inferencePriority", f, math.MinInt32, math.MaxInt32)
@@ -329,22 +321,14 @@ func (c *checker) guardrails(path string, f field) bool {
 	return valid
 }
 
-// metadata is {organizationId?, costCenter?, labels?: record of strings}; on
-// create the organization is required.
-func (c *checker) metadata(path string, f field, create bool) {
+// metadata is MaaS's pass-through metering field:
+// {organizationId?, costCenter?, labels?: record of strings}.
+func (c *checker) metadata(path string, f field) {
 	o, ok := c.passthrough(path, f)
 	if !ok {
 		return
 	}
-	org := o.get("organizationId")
-	switch {
-	case create && !org.present:
-		c.add(join(path, "organizationId"), msgSelectOrganization)
-	case create:
-		c.str(join(path, "organizationId"), org, str{min: 1, minMsg: msgSelectOrganization, keepSpace: true})
-	default:
-		c.optionalString(join(path, "organizationId"), org)
-	}
+	c.optionalString(join(path, "organizationId"), o.get("organizationId"))
 	c.optionalString(join(path, "costCenter"), o.get("costCenter"))
 	if l := o.get("labels"); l.present {
 		labels, ok := l.value.(*object)

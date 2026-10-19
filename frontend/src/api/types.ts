@@ -263,7 +263,7 @@ export type ManagedModel = {
 
 // The PoC's subscription types (src/app/types/subscriptions.ts at 62319b8), adapted from
 // odh-dashboard packages/maas/frontend/src/app/types/subscriptions.ts, with resourceVersion
-// for the PoC's revision and the console's organization in tokenMetadata.organizationId.
+// for the PoC's revision. tokenMetadata is MaaS's pass-through metering field.
 export type GroupReference = { name: string };
 export type OwnerSpec = { users?: string[]; groups: GroupReference[] };
 export type GuardrailAttachment = { ref: { name: string }; checks?: string[] };
@@ -379,8 +379,7 @@ export type CreateSubscriptionRequest = {
   owner: OwnerSpec;
   modelRefs: ModelSubscriptionRef[];
   priority: number;
-  /** organizationId is required. */
-  tokenMetadata: TokenMetadata;
+  tokenMetadata?: TokenMetadata;
   createAuthPolicy: boolean;
 };
 
