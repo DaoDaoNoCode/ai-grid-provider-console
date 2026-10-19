@@ -171,7 +171,7 @@ describe('toOrganization', () => {
       id: '3f1c9a72-5b6e-4d2a-8c01-2d3e4f5a6b7c',
       name: 'acme-robotics',
       domains: ['acme-robotics.example.com', 'acme.example.org'],
-      status: 'Saved',
+      status: 'Enabled',
       resourceVersion: '3',
       creationTimestamp: '2026-09-01T09:00:00Z',
       identityProvider: apiTenant().identityProvider,

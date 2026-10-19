@@ -89,7 +89,7 @@ it('onboards organization details then IdP, saves only after review, supports de
   expect(screen.queryByText(/break.glass/i)).not.toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'Create organization' }));
   const table = await screen.findByTestId('tenants-table');
-  expect(table).toHaveTextContent('Saved');
+  expect(table).toHaveTextContent('Enabled');
   expect(table).toHaveTextContent('tenant1.example.com');
   expect(await screen.findByText('Organization and identity provider saved')).toBeVisible();
   expect(service.organizations[0].identityProvider?.config.clientSecretSecret.name).toBe('tenant1-secret');
@@ -359,7 +359,7 @@ it('shows the registered date, a dash without one, and Disabled for a disabled o
   renderAt('/organizations', serviceOnTenantJson(fetchFn as unknown as typeof fetch));
   const acme = await screen.findByRole('row', { name: /^acme-robotics / });
   expect(acme).toHaveTextContent(new Date('2026-09-01T09:00:00Z').toLocaleString());
-  expect(within(acme).getByText('Saved')).toBeInTheDocument();
+  expect(within(acme).getByText('Enabled')).toBeInTheDocument();
   expect(acme).toHaveTextContent('Acme SSO');
   const umbrella = screen.getByRole('row', { name: /^umbrella-biotech / });
   expect(within(umbrella).getByText('Disabled')).toBeInTheDocument();

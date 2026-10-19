@@ -5,7 +5,6 @@ import {
   Button,
   Flex,
   FlexItem,
-  Label,
   PageSection,
   Spinner,
   Stack,
@@ -16,6 +15,7 @@ import type { UserService } from '../../api/ConsoleService';
 import type { OrganizationsService } from '../../api/organizations';
 import type { Organization } from '../../api/types';
 import { PageHeader } from '../../components/PageHeader';
+import { StatusLabel } from '../../components/StatusLabel';
 import { useServiceData } from '../../hooks/useServiceData';
 import { OrganizationConfigurationDetails } from './OrganizationConfigurationDetails';
 import { OrganizationLoadError } from './OrganizationLoadError';
@@ -54,7 +54,7 @@ export const OrganizationDetailsPage: React.FC<Props> = ({ service }) => {
             <StackItem>
               <Flex alignItems={{ default: 'alignItemsCenter' }}>
                 <FlexItem>
-                  <Label color={organization.status === 'Saved' ? 'blue' : 'grey'}>{organization.status}</Label>
+                  <StatusLabel status={organization.status} />
                 </FlexItem>
                 {user?.isProviderAdmin && (
                   <FlexItem>

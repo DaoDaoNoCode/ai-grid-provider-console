@@ -5,7 +5,8 @@
 import { Flex, FlexItem, Label, Stack, StackItem, Title } from '@patternfly/react-core';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { AffectedModel } from '../../utilities/phaseLabelUtils';
-import { getPhaseProps, normalizePhase } from '../../utilities/phaseLabelUtils';
+import { normalizePhase } from '../../utilities/phaseLabelUtils';
+import { StatusLabel } from '../StatusLabel';
 
 type Props = { models: AffectedModel[] };
 
@@ -14,16 +15,6 @@ const columns = [
   { title: 'Status', key: 'phase' },
   { title: 'Description', key: 'statusMessage' },
 ];
-
-const StatusLabel: React.FC<{ phase: string }> = ({ phase }) => {
-  const normalized = normalizePhase(phase);
-  const labelProps = getPhaseProps(normalized);
-  return (
-    <Label status={labelProps.status} color={labelProps.color} icon={labelProps.icon}>
-      {normalized}
-    </Label>
-  );
-};
 
 /** The models that keep a degraded subscription from being Ready. */
 export const AffectedModelsTable: React.FC<Props> = ({ models }) => (
@@ -57,7 +48,7 @@ export const AffectedModelsTable: React.FC<Props> = ({ models }) => (
               </Td>
               <Td dataLabel="Status">
                 <span data-testid={`affected-model-status-${model.name}`}>
-                  <StatusLabel phase={model.phase ?? ''} />
+                  <StatusLabel isCompact status={normalizePhase(model.phase)} />
                 </span>
               </Td>
               <Td dataLabel="Description">

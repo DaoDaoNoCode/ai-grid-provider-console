@@ -19,6 +19,7 @@ import {
 import { AngleLeftIcon, CubesIcon } from '@patternfly/react-icons';
 import { Link } from 'react-router-dom';
 import type { GridCluster, ManagedModel } from '../../api/types';
+import { StatusLabel } from '../../components/StatusLabel';
 import { modelKey } from '../../utilities/authpolicies';
 import { GridFleetMap } from './GridFleetMap';
 import type { TileLayerConfig } from './tiles';
@@ -41,15 +42,8 @@ const displayName = (model: ManagedModel) => model.displayName ?? model.name;
 
 const siteOf = (cluster: GridCluster) => cluster.siteName ?? cluster.site ?? cluster.name;
 
-const statusColor = (cluster: GridCluster) =>
-  cluster.status === 'Ready' ? 'green' : cluster.status === 'Offline' ? 'red' : 'grey';
-
-const availabilityFilters = [
-  ['all', 'All'],
-  ['Ready', 'Available'],
-  ['Offline', 'Offline'],
-  ['Unknown', 'Unknown'],
-];
+/** The availability filter: All, then each cluster status by the word the labels use. */
+const availabilityFilters: GridCluster['status'][] = ['Ready', 'Offline', 'Unknown'];
 
 const Fields: React.FC<{ items: Array<[string, string]> }> = ({ items }) => (
   <dl className="fleet-details">
@@ -192,8 +186,8 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
   const clusterDetails = (cluster: GridCluster) => (
     <>
       <div className="fleet-detail-badges">
-        <Label color={statusColor(cluster)}>{cluster.status}</Label>
-        <Label color={cluster.provisioned ? 'green' : 'blue'}>{cluster.provisioningStatus}</Label>
+        <StatusLabel status={cluster.status} />
+        <StatusLabel status={cluster.provisioningStatus} />
       </div>
       <section className="fleet-detail-section">
         <Title headingLevel="h3" size="md">
@@ -232,7 +226,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
   const modelDetails = (model: ManagedModel) => (
     <>
       <div className="fleet-detail-badges">
-        <Label color="blue">{model.phase}</Label>
+        <StatusLabel status={model.phase ?? 'Pending'} />
       </div>
       <section className="fleet-detail-section">
         <Title headingLevel="h3" size="md">
@@ -276,10 +270,10 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
       </div>
       {mode === 'cluster' && (
         <ToggleGroup aria-label="Filter cluster availability" isCompact>
-          {availabilityFilters.map(([value, label]) => (
+          {['all', ...availabilityFilters].map((value) => (
             <ToggleGroupItem
               key={value}
-              text={label}
+              text={value === 'all' ? 'All' : value}
               buttonId={`availability-${value}`}
               isSelected={availability === value}
               onChange={() => setAvailability(value)}
@@ -299,9 +293,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
                 >
                   <CubesIcon /> {c.name}
                 </Button>
-                <Label isCompact color={statusColor(c)}>
-                  {c.status === 'Ready' ? 'Available' : c.status === 'Offline' ? 'Unavailable' : 'Unknown'}
-                </Label>
+                <StatusLabel isCompact status={c.status} />
                 <p>{c.siteName ?? c.site ?? 'Site unassigned'}</p>
                 <Fields
                   items={[
@@ -324,9 +316,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
                   {displayName(m)}
                 </Button>
                 <p>{m.modelName ?? m.modelRef.name}</p>
-                <Label isCompact color="blue">
-                  {m.phase}
-                </Label>
+                <StatusLabel isCompact status={m.phase ?? 'Pending'} />
                 <h3 className="fleet-card-section-title">Sites</h3>
                 {siteLinks(m)}
               </article>
@@ -358,7 +348,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
   );
 
   const summary: [label: string, value: string, sub: string][] = [
-    ['Clusters', `${clusters.filter((c) => c.status === 'Ready').length}/${clusters.length}`, 'Available / enrolled'],
+    ['Clusters', `${clusters.filter((c) => c.status === 'Ready').length}/${clusters.length}`, 'Ready / enrolled'],
     ['Sites', String(new Set(clusters.flatMap((c) => (c.site ? [c.site] : []))).size), 'ACM site labels'],
     ['Models', String(relevantModels.length), 'Registered / saved'],
   ];
@@ -386,7 +376,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
                         isCompact
                         onClick={() => open({ kind: 'cluster', name: c.name })}
                       >
-                        {c.name}: {c.status === 'Offline' ? 'Unavailable' : 'Availability unknown'}
+                        {c.name}: {c.status}
                       </Label>
                     ))}
                 </div>

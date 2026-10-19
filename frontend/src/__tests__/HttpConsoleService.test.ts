@@ -20,7 +20,7 @@ describe('HttpConsoleService', () => {
       .mockResolvedValue(jsonResponse(200, { data: [{ id: '1', name: 't', enabled: true, domains: [] }] }));
     const service = new HttpConsoleService(fetchFn);
     await expect(service.listOrganizations()).resolves.toEqual([
-      { id: '1', name: 't', domains: [], status: 'Saved', resourceVersion: '', creationTimestamp: '' },
+      { id: '1', name: 't', domains: [], status: 'Enabled', resourceVersion: '', creationTimestamp: '' },
     ]);
     expect(fetchFn).toHaveBeenCalledWith('/api/v1/tenants', expect.objectContaining({ method: 'GET' }));
   });

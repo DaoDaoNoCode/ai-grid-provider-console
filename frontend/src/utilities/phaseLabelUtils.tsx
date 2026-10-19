@@ -8,14 +8,8 @@
 // 3.5), and a Degraded subtext shows the Ready condition's message when there is one.
 import type { AlertProps, ContentProps, LabelProps } from '@patternfly/react-core';
 import { Stack, StackItem } from '@patternfly/react-core';
-import {
-  CheckCircleIcon,
-  ExclamationCircleIcon,
-  ExclamationTriangleIcon,
-  OutlinedQuestionCircleIcon,
-  PendingIcon,
-} from '@patternfly/react-icons';
 import { PhaseApiDetails } from '../components/Phase/PhaseApiDetails';
+import { statusLabelProps } from './status';
 
 /** A model that keeps a subscription from being Ready. */
 export type AffectedModel = { name: string; displayName?: string; phase?: string; statusMessage?: string };
@@ -36,25 +30,12 @@ export enum PhaseStatus {
   UNKNOWN = 'Unknown',
 }
 
+/** The label props for a phase, from the console's one status mapping (utilities/status). */
 export const getPhaseProps = (
   phase: string | undefined,
 ): { icon: React.ReactNode; status?: LabelProps['status']; color?: LabelProps['color'] } => {
-  switch (phase) {
-    case PhaseStatus.ACTIVE:
-    case PhaseStatus.READY:
-      return { icon: <CheckCircleIcon />, status: 'success' };
-    case PhaseStatus.FAILED:
-    case PhaseStatus.INVALID:
-      return { icon: <ExclamationCircleIcon />, status: 'danger' };
-    case PhaseStatus.UNAVAILABLE:
-      return { icon: <ExclamationCircleIcon />, status: 'warning' };
-    case PhaseStatus.PENDING:
-      return { icon: <PendingIcon />, color: 'purple' };
-    case PhaseStatus.DEGRADED:
-      return { icon: <ExclamationTriangleIcon />, status: 'warning' };
-    default:
-      return { icon: <OutlinedQuestionCircleIcon />, color: 'grey' };
-  }
+  const { icon, status, color } = statusLabelProps(phase);
+  return { icon, status, color };
 };
 
 /** The phase as the label shows it: an Active subscription reads Ready, as in odh-dashboard. */

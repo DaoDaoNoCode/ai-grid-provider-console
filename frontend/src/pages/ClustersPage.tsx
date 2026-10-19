@@ -4,14 +4,12 @@ import {
   Button,
   EmptyState,
   EmptyStateBody,
-  Label,
   PageSection,
   SearchInput,
   Spinner,
   Toolbar,
   ToolbarContent,
   ToolbarItem,
-  Tooltip,
 } from '@patternfly/react-core';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { ThProps } from '@patternfly/react-table';
@@ -23,6 +21,7 @@ import type { GridCluster } from '../api/types';
 import { LoadError } from '../components/LoadError';
 import { PageHeader } from '../components/PageHeader';
 import { PaginatedTable } from '../components/PaginatedTable';
+import { StatusLabel } from '../components/StatusLabel';
 import { useServiceData } from '../hooks/useServiceData';
 
 // Ported from krisv/ai-grid-cloud-provider-poc src/app/pages/clusters/ClustersPage.tsx at 62319b8.
@@ -49,14 +48,6 @@ const columns: Column[] = [
 ];
 
 const wideOnly: ThProps['visibility'] = ['hidden', 'visibleOn2Xl'];
-
-const statusColor = (status: GridCluster['status']) =>
-  status === 'Ready' ? 'green' : status === 'Offline' ? 'red' : 'grey';
-
-const StatusLabel: React.FC<{ cluster: GridCluster }> = ({ cluster }) => {
-  const label = <Label color={statusColor(cluster.status)}>{cluster.status}</Label>;
-  return cluster.statusMessage ? <Tooltip content={cluster.statusMessage}>{label}</Tooltip> : label;
-};
 
 const enrollErrorMessage = (err: unknown) => {
   if (err instanceof ServiceError && err.isNotImplemented) {
@@ -205,14 +196,12 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
                       <Td dataLabel="Cluster">{c.name}</Td>
                       <Td dataLabel="Location">{c.location ?? '—'}</Td>
                       <Td dataLabel="Status">
-                        <StatusLabel cluster={c} />
+                        <StatusLabel isCompact status={c.status} reason={c.statusMessage} />
                         {c.state && <div className="pf-v6-u-font-size-sm pf-v6-u-mt-xs">{c.state}</div>}
                       </Td>
                       <Td dataLabel="AI Grid">{c.aiGridEnabled ? 'Member' : 'Not enrolled'}</Td>
                       <Td dataLabel="Provisioning">
-                        <Label color={c.provisioned ? 'green' : c.aiGridEnabled ? 'blue' : 'grey'}>
-                          {c.provisioningStatus}
-                        </Label>
+                        <StatusLabel isCompact status={c.provisioningStatus} />
                       </Td>
                       <Td dataLabel="Site" visibility={wideOnly}>
                         {c.site ?? '—'}

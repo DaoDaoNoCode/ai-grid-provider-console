@@ -138,8 +138,8 @@ export type OrganizationInput = { name: string; domains: string[]; identityProvi
 export type Organization = Omit<OrganizationInput, 'identityProvider'> & {
   id: string;
   identityProvider?: IdentityProvider;
-  /** "Saved" for an enabled organization, as the PoC shows every saved one; "Disabled" otherwise. */
-  status: 'Saved' | 'Disabled';
+  /** Whether members can sign in (Keycloak's `enabled`). */
+  status: 'Enabled' | 'Disabled';
   /** Opaque; sent back as If-Match on update and delete. Empty when the backend sends none. */
   resourceVersion: string;
   /** When the backend created it; empty when it doesn't know. */

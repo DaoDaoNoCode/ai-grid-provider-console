@@ -173,8 +173,8 @@ export const GridFleetMap: React.FC<Props> = ({ clusters, selected, onSelect, ti
         </p>
       )}
       <div className="vision-fleet-map__legend">
-        <span className="fleet-legend-ready">Available</span>
-        <span className="fleet-legend-offline">Unavailable</span>
+        <span className="fleet-legend-ready">Ready</span>
+        <span className="fleet-legend-offline">Offline</span>
         <span className="fleet-legend-unknown">Unknown</span>
       </div>
     </div>

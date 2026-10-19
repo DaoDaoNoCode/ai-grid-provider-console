@@ -9,7 +9,6 @@ import {
   EmptyStateActions,
   EmptyStateBody,
   EmptyStateFooter,
-  Label,
   PageSection,
   SearchInput,
   Spinner,
@@ -29,6 +28,7 @@ import { PageHeader } from '../../components/PageHeader';
 import { LoadError } from '../../components/LoadError';
 import { PaginatedTable } from '../../components/PaginatedTable';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
+import { StatusLabel } from '../../components/StatusLabel';
 import { useServiceData } from '../../hooks/useServiceData';
 import { ORGANIZATION_CHANGED } from './serverErrors';
 
@@ -46,9 +46,6 @@ const columns: Column[] = [
   },
   { label: 'Registered', sort: (a, b) => a.creationTimestamp.localeCompare(b.creationTimestamp) },
 ];
-
-/** "Saved" is the PoC's blue; "Disabled", which the PoC can't show, is grey. */
-const statusColor = (o: Organization) => (o.status === 'Saved' ? 'blue' : 'grey');
 
 /** The backend may not report a creation time yet. */
 const registered = (timestamp: string) => (timestamp ? new Date(timestamp).toLocaleString() : '—');
@@ -175,7 +172,7 @@ export const OrganizationListPage: React.FC<Props> = ({ service }) => {
                         <Link to={`/organizations/${encodeURIComponent(o.id)}`}>{o.name}</Link>
                       </Td>
                       <Td dataLabel="Status">
-                        <Label color={statusColor(o)}>{o.status}</Label>
+                        <StatusLabel isCompact status={o.status} />
                       </Td>
                       <Td dataLabel="Primary domain" modifier="nowrap">
                         {o.domains[0] ?? '—'}

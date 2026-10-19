@@ -10,13 +10,13 @@ import {
   ExpandableSection,
   FormSelect,
   FormSelectOption,
-  Label,
   Tab,
   Tabs,
   TabTitleText,
   Title,
 } from '@patternfly/react-core';
 import type { GridCluster, GridMetric, GridRange, ManagedModel, Organization } from '../../api/types';
+import { StatusLabel } from '../../components/StatusLabel';
 import { modelKey } from '../../utilities/authpolicies';
 import { modelMetrics, tenantUsage, total } from '../../services/demoObservability';
 import './observability.css';
@@ -392,7 +392,7 @@ export function ObservabilityPanel({
               </p>
               <div className="observability-stat-row">
                 <Stat
-                  label="Available clusters"
+                  label="Ready clusters"
                   value={`${clusters.filter((c) => c.status === 'Ready').length}/${clusters.length}`}
                 />
                 <Stat label="Requests in window" value={metricText(requestTotal, 0)} />
@@ -414,7 +414,7 @@ export function ObservabilityPanel({
                     <table className="grid-table" aria-label="Clusters">
                       <thead>
                         <tr>
-                          {['Cluster', 'Site', 'Location', 'Availability', 'Provisioning'].map((h) => (
+                          {['Cluster', 'Site', 'Location', 'Status', 'Provisioning'].map((h) => (
                             <th key={h}>{h}</th>
                           ))}
                         </tr>
@@ -426,11 +426,11 @@ export function ObservabilityPanel({
                             <td>{c.siteName ?? c.site ?? 'Not assigned'}</td>
                             <td>{c.location ?? '—'}</td>
                             <td>
-                              <Label color={c.status === 'Ready' ? 'green' : c.status === 'Offline' ? 'red' : 'grey'}>
-                                {c.status}
-                              </Label>
+                              <StatusLabel isCompact status={c.status} />
                             </td>
-                            <td>{c.provisioningStatus}</td>
+                            <td>
+                              <StatusLabel isCompact status={c.provisioningStatus} />
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -470,7 +470,7 @@ export function ObservabilityPanel({
                     <table className="grid-table" aria-label="Model deployments">
                       <thead>
                         <tr>
-                          {['Model deployment', 'Model', 'Target sites', 'Replicas', 'Configuration'].map((h) => (
+                          {['Model deployment', 'Model', 'Target sites', 'Replicas', 'Status'].map((h) => (
                             <th key={h}>{h}</th>
                           ))}
                         </tr>
@@ -490,7 +490,9 @@ export function ObservabilityPanel({
                               ].join(', ') || 'Not assigned'}
                             </td>
                             <td>{m.replicas ?? '—'}</td>
-                            <td>{m.phase}</td>
+                            <td>
+                              <StatusLabel isCompact status={m.phase ?? 'Pending'} />
+                            </td>
                           </tr>
                         ))}
                       </tbody>

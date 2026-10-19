@@ -120,7 +120,7 @@ export class MockConsoleService implements ConsoleService {
     const created: Organization = {
       ...structuredClone(input),
       id: crypto.randomUUID(),
-      status: 'Saved',
+      status: 'Enabled',
       resourceVersion: '1',
       creationTimestamp: now,
     };
@@ -475,7 +475,7 @@ export const seedOrganizations = (): Organization[] =>
           validateSignature: true,
         },
       },
-      status: 'Saved',
+      status: 'Enabled',
       resourceVersion: '1',
       creationTimestamp: created,
     };
