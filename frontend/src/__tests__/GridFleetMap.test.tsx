@@ -15,8 +15,7 @@ const pinsDrawn = (marker: { mock: { calls: unknown[] } }) => marker.mock.calls.
 
 it('keeps pins when tiles fail', () => {
   const tileLayer = vi.spyOn(L, 'tileLayer');
-  const marker = vi.spyOn(L, 'circleMarker');
-  render(<GridFleetMap clusters={members} selected={null} onSelect={() => {}} tiles={tiles} />);
+  const { container } = render(<GridFleetMap clusters={members} selected={null} onSelect={() => {}} tiles={tiles} />);
   expect(tileLayer).toHaveBeenCalledWith(tiles.url, expect.objectContaining({ attribution: tiles.attribution }));
   expect(screen.queryByText(/Basemap tiles unavailable/)).not.toBeInTheDocument();
 
@@ -27,7 +26,8 @@ it('keeps pins when tiles fail', () => {
   expect(
     screen.getByText('Basemap tiles unavailable. Cluster pins and the cluster list remain available.'),
   ).toBeInTheDocument();
-  expect(pinsDrawn(marker)).toBe(3);
+  // Counted on the page after the error, so a pin the error removed fails the test.
+  expect(container.querySelectorAll('path.fleet-pin')).toHaveLength(3);
   expect(
     screen.queryByText('No mapped clusters. Add site coordinates to ManagedCluster annotations.'),
   ).not.toBeInTheDocument();

@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 // The fixture AI Grid sites with coordinates (mock/fixtures-poc/managedclusters.json). The map
-// can show more pins once other specs enroll another cluster, so the spec counts at least these.
+// can show more pins once other specs enroll another cluster, so the spec looks for these among them.
 const PINS = ['San Francisco', 'New York', 'Brussels'];
 
 test('shows the fixture pins on the bundled land outline, and a pin opens its details', async ({ page, baseURL }) => {
@@ -11,9 +11,17 @@ test('shows the fixture pins on the bundled land outline, and a pin opens its de
   const map = page.getByLabel('AI Grid map of clusters');
   const pins = map.locator('path.fleet-pin');
   await expect(pins.first()).toBeVisible();
-  expect(await pins.count()).toBeGreaterThanOrEqual(PINS.length);
   // Labels show on hover, so they don't cover the other pins.
   await expect(map.getByText(PINS[0], { exact: true })).toHaveCount(0);
+  // Each fixture site has its own pin: hovering every pin names each site.
+  const named: string[] = [];
+  for (const pin of await pins.all()) {
+    await pin.hover({ force: true });
+    named.push((await map.locator('.leaflet-tooltip').last().textContent()) ?? '');
+  }
+  for (const site of PINS) {
+    expect(named.some((label) => label.startsWith(`${site} · `))).toBe(true);
+  }
   // The outline's paths share the overlay pane with the pins but aren't interactive.
   await expect(
     map.locator('.leaflet-overlay-pane path.fleet-map-land:not(.leaflet-interactive)').first(),

@@ -289,3 +289,12 @@ it('keeps the URL in step with the drawer, and clears it when the drawer closes'
   await user.click(screen.getByRole('button', { name: 'Clusters' }));
   expect(search).toBe('');
 });
+
+it('closes the drawer when the AI Grid nav link drops the cluster from the URL', async () => {
+  const user = userEvent.setup();
+  renderAt('/ai-grid?cluster=site2', new MockConsoleService());
+  expect(await screen.findByRole('heading', { name: 'site2' })).toBeVisible();
+  await user.click(screen.getByRole('link', { name: 'AI Grid' }));
+  expect(screen.queryByRole('heading', { name: 'site2' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'View site2 details' })).toBeVisible();
+});

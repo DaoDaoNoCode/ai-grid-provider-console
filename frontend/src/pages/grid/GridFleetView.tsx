@@ -89,9 +89,20 @@ const FleetCard: React.FC<{
         selectableActionId: `fleet-card-action-${id}`,
         selectableActionAriaLabel: actionLabel,
       }}
-      actions={{ actions: <StatusLabel isCompact status={status} />, hasNoOffset: true }}
     >
-      <CardTitle>{title}</CardTitle>
+      {/* In the title, not in actions: PatternFly's clickable-only cards may not carry actions. */}
+      <CardTitle>
+        <Flex
+          className="fleet-card__title"
+          justifyContent={{ default: 'justifyContentSpaceBetween' }}
+          alignItems={{ default: 'alignItemsFlexStart' }}
+          flexWrap={{ default: 'nowrap' }}
+          spaceItems={{ default: 'spaceItemsSm' }}
+        >
+          <span>{title}</span>
+          <StatusLabel isCompact status={status} />
+        </Flex>
+      </CardTitle>
     </CardHeader>
     <CardBody className="fleet-card__body">{children}</CardBody>
   </Card>
@@ -99,11 +110,10 @@ const FleetCard: React.FC<{
 
 export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, tiles }) => {
   const [params, setParams] = useSearchParams();
-  const [selection, setSelectionState] = useState<Selection | null>(() => selectionFrom(params));
-  // The URL names what the drawer shows, so a link or a reload opens the same thing, and closing
-  // it clears the URL instead of reopening it on the next reload.
+  // The URL is the drawer's state: a link or a reload opens the same thing, closing it clears the
+  // URL, and navigating to plain /ai-grid (the nav link) closes it.
+  const selection = selectionFrom(params);
   const setSelection = (next: Selection | null) => {
-    setSelectionState(next);
     setParams(
       (previous) => {
         const updated = new URLSearchParams(previous);
@@ -145,9 +155,9 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
   };
 
   const open = (next: Selection) => {
-    if (selection) {
-      setHistory((previous) => [...previous, selection]);
-    }
+    // Opened from the list, the drawer starts a new trail; history left from a drawer the URL
+    // closed doesn't apply.
+    setHistory((previous) => (selection ? [...previous, selection] : []));
     setSelection(next);
   };
   const reset = () => {

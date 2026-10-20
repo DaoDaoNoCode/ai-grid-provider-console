@@ -153,6 +153,9 @@
 .fleet-card .pf-v6-c-card__title-text {
   overflow-wrap: anywhere;
 }
+.fleet-card__title > :first-child {
+  min-width: 0;
+}
 .fleet-muted {
   color: var(--pf-t--global--text--color--subtle);
   font-size: var(--pf-t--global--font--size--sm);
