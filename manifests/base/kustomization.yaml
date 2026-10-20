@@ -17,13 +17,13 @@ resources:
 
 images:
   - name: ai-grid-provider-console
-    newName: quay.io/cfchase/ai-grid-provider-console
+    newName: ghcr.io/ai-grid-cloud/ai-grid-provider-console
     newTag: latest
   - name: kube-auth-proxy
     newName: quay.io/opendatahub/odh-kube-auth-proxy
     newTag: latest
-  # Built from https://github.com/yuvalturg/ai-grid-backend (Containerfile);
-  # no published image yet, so hack/deploy.sh takes BACKEND_IMAGE.
+  # Published by https://github.com/ai-grid-cloud/ai-grid-provider-backend's CI;
+  # hack/deploy.sh takes BACKEND_IMAGE to pin a tag.
   - name: ai-grid-backend
-    newName: quay.io/ai-grid-cloud/ai-grid-backend
+    newName: ghcr.io/ai-grid-cloud/ai-grid-provider-backend
     newTag: latest

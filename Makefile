@@ -1,6 +1,6 @@
 # Root developer targets. See docs/dev-setup.md.
-IMAGE ?= quay.io/cfchase/ai-grid-provider-console
-BACKEND_IMAGE ?= quay.io/ai-grid-cloud/ai-grid-backend:latest
+IMAGE ?= ghcr.io/ai-grid-cloud/ai-grid-provider-console
+BACKEND_IMAGE ?= ghcr.io/ai-grid-cloud/ai-grid-provider-backend:latest
 TAG ?= dev
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 CONTAINER_ENGINE ?= $(shell command -v podman 2>/dev/null || command -v docker)
