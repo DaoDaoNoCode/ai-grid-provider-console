@@ -124,3 +124,20 @@ it('calls onBlur when focus leaves the field, not when an option is clicked', as
   await user.tab();
   expect(onBlur).toHaveBeenCalledTimes(1);
 });
+
+it('calls onBlur when focus leaves after opening the menu with the toggle button', async () => {
+  const onBlur = vi.fn();
+  const user = userEvent.setup();
+  render(
+    <>
+      <Harness onBlur={onBlur} />
+      <button type="button">Next field</button>
+    </>,
+  );
+  // The toggle hands focus back to the input, so leaving from there still counts as leaving the field.
+  await user.click(screen.getByRole('button', { name: 'Menu toggle' }));
+  expect(screen.getByRole('combobox', { name: 'Organization' })).toHaveFocus();
+  expect(onBlur).not.toHaveBeenCalled();
+  await user.click(screen.getByRole('button', { name: 'Next field' }));
+  expect(onBlur).toHaveBeenCalledTimes(1);
+});

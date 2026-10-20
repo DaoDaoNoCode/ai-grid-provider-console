@@ -125,7 +125,11 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
       { replace: true },
     );
   };
-  const [history, setHistory] = useState<Selection[]>([]);
+  // The Back trail belongs to the selection it was built for. When the URL moves the drawer some
+  // other way (browser back, a link, the nav), the trail no longer applies and reads as empty.
+  const [trail, setTrail] = useState<{ at: string | null; items: Selection[] }>({ at: null, items: [] });
+  const keyOf = (s: Selection | null) => (s ? `${s.kind}:${s.name}` : null);
+  const history = trail.at === keyOf(selection) ? trail.items : [];
   const [mode, setMode] = useState<'cluster' | 'model'>(() => selectionFrom(params)?.kind ?? 'cluster');
   const [search, setSearch] = useState('');
   const [availability, setAvailability] = useState('all');
@@ -155,18 +159,17 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
   };
 
   const open = (next: Selection) => {
-    // Opened from the list, the drawer starts a new trail; history left from a drawer the URL
-    // closed doesn't apply.
-    setHistory((previous) => (selection ? [...previous, selection] : []));
+    setTrail({ at: keyOf(next), items: selection ? [...history, selection] : [] });
     setSelection(next);
   };
   const reset = () => {
     setSelection(null);
-    setHistory([]);
+    setTrail({ at: null, items: [] });
   };
   const back = () => {
-    setSelection(history.at(-1) ?? null);
-    setHistory((previous) => previous.slice(0, -1));
+    const previous = history.at(-1) ?? null;
+    setTrail({ at: keyOf(previous), items: history.slice(0, -1) });
+    setSelection(previous);
   };
 
   const mapClusters = selectedModel

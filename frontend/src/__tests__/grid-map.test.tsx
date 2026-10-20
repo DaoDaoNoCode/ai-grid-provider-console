@@ -2,8 +2,9 @@
 // The PoC's demo clusters become the console's fixture clusters: demo-new-york is site2 and
 // demo-brussels is site3, whose placement location is its name. The monitoring cases belong to
 // Task 11. The real-Leaflet cases are in GridFleetMap.test.tsx, because this file mocks the map (A31).
-import { render, screen, within } from '@testing-library/react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { act, render, screen, within } from '@testing-library/react';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
+import type { NavigateFunction } from 'react-router-dom';
 import { App } from '../App';
 import userEvent from '@testing-library/user-event';
 import { ServiceError } from '../api/ConsoleService';
@@ -297,4 +298,29 @@ it('closes the drawer when the AI Grid nav link drops the cluster from the URL',
   await user.click(screen.getByRole('link', { name: 'AI Grid' }));
   expect(screen.queryByRole('heading', { name: 'site2' })).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'View site2 details' })).toBeVisible();
+});
+
+it("drops the Back trail when a link moves the drawer to something the trail wasn't built for", async () => {
+  const service = new MockConsoleService();
+  const [model] = service.models;
+  service.models = [{ ...model, locations: ['site3'] }];
+  let navigate: NavigateFunction = () => undefined;
+  const Probe = () => {
+    navigate = useNavigate();
+    return null;
+  };
+  const user = userEvent.setup();
+  render(
+    <MemoryRouter initialEntries={['/ai-grid?cluster=site3']}>
+      <Probe />
+      <App service={service} />
+    </MemoryRouter>,
+  );
+  await user.click(await screen.findByRole('button', { name: model.displayName ?? model.name }));
+  expect(screen.getByRole('button', { name: 'Back' })).toBeVisible();
+  // A link elsewhere opens site2: Back would have led to site3, which isn't where the user came from.
+  act(() => navigate('/ai-grid?cluster=site2'));
+  expect(await screen.findByRole('heading', { name: 'site2' })).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Back' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Clusters' })).toBeVisible();
 });
