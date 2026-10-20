@@ -1,7 +1,7 @@
 // Ported from krisv/ai-grid-cloud-provider-poc src/app/__tests__/grid.test.tsx at 62319b8 (the monitoring cases).
 // The PoC's tenants become the fixture organizations acme-robotics and globex-research, and its demo
 // clusters demo-san-francisco and demo-new-york become the fixture clusters site1 and site2.
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MockConsoleService, seedOrganizations } from '../api/MockConsoleService';
 import { serviceOnPr12Json } from './pr12Json';
@@ -165,11 +165,11 @@ it('never shows a late answer for an earlier range as the current one', async ()
     return Number(c.getAttribute('data-end')) - Number(c.getAttribute('data-start'));
   };
   await waitFor(() => expect(span()).toBe(86400));
-  releaseHour();
-  // The late answer makes the page ask again for 24h instead of showing the 1h window.
-  await waitFor(() => expect(service.getGridOverview).toHaveBeenCalledTimes(4));
+  await act(async () => releaseHour());
+  // The late answer is dropped: the 24h window stays, and the page has no reason to ask again.
+  expect(span()).toBe(86400);
+  expect(service.getGridOverview).toHaveBeenCalledTimes(3);
   expect(service.getGridOverview).toHaveBeenLastCalledWith('24h');
-  await waitFor(() => expect(span()).toBe(86400));
 });
 
 it('loads organization usage when opened from the map', async () => {

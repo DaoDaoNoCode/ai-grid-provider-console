@@ -231,6 +231,49 @@ it('keeps a chosen location the reload no longer offers, and says to remove it',
   expect(within(screen.getByTestId('model-review')).getByText(site1)).toBeVisible();
 });
 
+it('keeps Next disabled until the Locations reload answers', async () => {
+  const service = new MockConsoleService();
+  const list = service.listLocations.bind(service);
+  let release!: () => void;
+  const held = new Promise<void>((r) => {
+    release = r;
+  });
+  let calls = 0;
+  // The reload on entering the step waits for the test.
+  service.listLocations = async () => {
+    if (calls++ === 1) await held;
+    return list();
+  };
+  const user = userEvent.setup();
+  renderAt('/models/deploy', service);
+  await fillModel(user);
+  await user.click(await screen.findByRole('combobox', { name: 'Locations' }));
+  await user.click(screen.getByRole('option', { name: site1 }));
+  await user.keyboard('{Escape}');
+  expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+  await act(async () => release());
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
+});
+
+it('keeps chosen locations visible when the reload offers none', async () => {
+  const service = new MockConsoleService();
+  const list = service.listLocations.bind(service);
+  let calls = 0;
+  service.listLocations = async () => (calls++ < 2 ? list() : []);
+  const user = userEvent.setup();
+  renderAt('/models/deploy', service);
+  await fillModel(user);
+  await user.click(await screen.findByRole('combobox', { name: 'Locations' }));
+  await user.click(screen.getByRole('option', { name: site1 }));
+  await user.keyboard('{Escape}');
+  await user.click(screen.getByRole('button', { name: 'Next' }));
+  await user.click(screen.getByRole('button', { name: 'Back' }));
+  expect(await screen.findByText(`${site1} is no longer available. Remove it to continue.`)).toBeVisible();
+  expect(screen.getByRole('combobox', { name: 'Locations' })).toHaveAttribute('aria-invalid', 'true');
+  await user.click(screen.getByRole('button', { name: `Remove ${site1}` }));
+  expect(await screen.findByText('No locations available')).toBeVisible();
+});
+
 it('keeps input when saving fails', async () => {
   const service = new MockConsoleService();
   await service.createModel(input);

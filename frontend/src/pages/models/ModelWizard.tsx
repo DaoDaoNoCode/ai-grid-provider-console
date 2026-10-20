@@ -3,7 +3,7 @@
 // steps/ModelSourceStep.tsx, steps/ModelDeploymentStep.tsx and steps/ReviewStep.tsx.
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
 // Standalone fields replace cluster catalogs and dynamic deployment plugins.
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Alert,
@@ -106,6 +106,9 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
     (c) => c.aiGridEnabled && !(c.location && availableLocations.includes(c.location)),
   ).length;
   const [locations, setLocations] = useState<string[]>([]);
+  // True from entering the Locations step until its locations reload answers; Next waits for it.
+  const [reloadingLocations, setReloadingLocations] = useState(false);
+  const reloadRef = useRef(0);
   // Chosen locations that a reload no longer offers. They stay as chips, so the user sees why Next is disabled.
   const goneLocations = locationsLoaded ? locations.filter((location) => !availableLocations.includes(location)) : [];
   // Like the text fields, Locations shows its error only once the user has changed it.
@@ -169,7 +172,8 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
     .safeParse({ modelUri, modelName }).success;
   const deploymentValid =
     replicas !== '' && gpuCount !== '' && createModelSchema.omit({ locations: true }).strip().safeParse(input).success;
-  const locationsValid = locationsLoaded && !locationsError && locations.length > 0 && goneLocations.length === 0;
+  const locationsValid =
+    locationsLoaded && !reloadingLocations && !locationsError && locations.length > 0 && goneLocations.length === 0;
   const isStepValid = (step: string) =>
     step === steps.source
       ? sourceValid
@@ -205,7 +209,8 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
     if (!locationsLoaded) {
       return <p>Loading locations...</p>;
     }
-    if (availableLocations.length === 0) {
+    // With chosen locations to show, the field stays, so the user can see and remove them.
+    if (availableLocations.length === 0 && goneLocations.length === 0) {
       return (
         <Alert isInline variant="warning" title="No locations available">
           Locations become available when an AI Grid member is provisioned and Ready.
@@ -221,6 +226,7 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
           placeholder="Select locations"
           selectionRequired={locationsTouched}
           noSelectedOptionsMessage="Select at least one location."
+          errorMessage={goneLocationsError(goneLocations.map((location) => locationLabel(location, siteNames)))}
           value={[
             ...availableLocations.map((location) => ({
               id: location,
@@ -240,7 +246,7 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
           }}
           isDisabled={saving}
         />
-        <Help error={goneLocationsError(goneLocations.map((location) => locationLabel(location, siteNames)))}>
+        <Help>
           The model runs on the AI Grid clusters at each location you choose.
           {unavailableMembers > 0 &&
             ` ${unavailableMembers} AI Grid ${unavailableMembers === 1 ? 'cluster isn’t' : 'clusters aren’t'} listed because ${unavailableMembers === 1 ? 'it isn’t' : 'they aren’t'} Ready and provisioned with a location.`}
@@ -305,7 +311,12 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
             }
             // A cluster can change state while the earlier steps are filled in, so offer what is available now.
             if (current.id === steps.locations) {
-              void reloadLocations();
+              const reload = ++reloadRef.current;
+              setReloadingLocations(true);
+              void reloadLocations().then(() => {
+                if (reload === reloadRef.current) setReloadingLocations(false);
+              });
+              // The clusters only name the sites and count the unlisted members, so Next doesn't wait for them.
               void reloadClusters();
             }
           }}
