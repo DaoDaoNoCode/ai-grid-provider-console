@@ -3,6 +3,7 @@
 // clusters demo-san-francisco and demo-new-york become the fixture clusters site1 and site2.
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { ServiceError } from '../api/ConsoleService';
 import { MockConsoleService, seedOrganizations } from '../api/MockConsoleService';
 import { serviceOnPr12Json } from './pr12Json';
 import { renderAt } from './render';
@@ -230,4 +231,22 @@ it('does not name Thanos when the backend reports no metrics source', async () =
 it('names the clusters table', async () => {
   renderAt('/monitoring', withOrganizations());
   expect(await screen.findByRole('grid', { name: 'Clusters' })).toBeVisible();
+});
+
+it('shows cluster availability from the Clusters list, without empty charts, when the backend has no overview', async () => {
+  const service = withOrganizations();
+  vi.spyOn(service, 'getGridOverview').mockRejectedValue(
+    new ServiceError(501, 'the AI Grid backend does not support this operation yet'),
+  );
+  renderAt('/monitoring', service);
+  expect(await screen.findByText('Showing clusters from the Clusters list')).toBeVisible();
+  const members = (await service.listClusters()).filter((c) => c.aiGridEnabled);
+  const table = await screen.findByRole('grid', { name: 'Clusters' });
+  for (const member of members) {
+    expect(within(table).getByRole('link', { name: member.name })).toBeVisible();
+  }
+  // No metrics are served, so the chart sections and the error alert stay out.
+  expect(screen.queryByRole('heading', { name: 'Cluster resources' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Gateway performance' })).not.toBeInTheDocument();
+  expect(screen.queryByText('Monitoring unavailable')).not.toBeInTheDocument();
 });
