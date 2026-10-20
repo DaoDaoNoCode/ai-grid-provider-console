@@ -27,7 +27,8 @@ import type { UserService } from '../../api/ConsoleService';
 import { ServiceError } from '../../api/ConsoleService';
 import type { ClustersService } from '../../api/clusters';
 import type { ModelsService } from '../../api/models';
-import type { CreateModelRequest } from '../../api/types';
+import { consolePlacement, consolePlacementLocations, runtimeArgsOf, withRuntimeArgs } from '../../api/adapters';
+import type { CreateModelRequest, ManagedModel, ModelUpdate } from '../../api/types';
 import { ConsoleWizardFooter } from '../../components/ConsoleWizardFooter';
 import { CountInput } from '../../components/CountInput';
 import { DetailsList } from '../../components/DetailsList';
@@ -36,14 +37,19 @@ import { K8sNameDescriptionField } from '../../components/K8sNameDescriptionFiel
 import { useK8sNameDescriptionFieldData } from '../../components/K8sNameDescriptionField/useK8sNameDescriptionFieldData';
 import { MultiSelection } from '../../components/MultiSelection';
 import { PageHeader } from '../../components/PageHeader';
+import { ReadOnlyField } from '../../components/ReadOnlyField';
 import { useConfirmDiscard } from '../../hooks/useConfirmDiscard';
 import { useServiceData } from '../../hooks/useServiceData';
 import { createModelSchema, fieldMessage } from '../../validation';
 import { RuntimeArgsField } from './fields/RuntimeArgsField';
 import { filterRuntimeArgsForContainer, type RuntimeArgsFieldData } from './fields/runtimeArgs';
-import { locationLabel, siteNamesOf } from './modelUtils';
+import { locationLabel, modelPath, siteNamesOf } from './modelUtils';
 
-type Props = { service: ModelsService & UserService & Pick<ClustersService, 'listClusters'> };
+type Props = {
+  service: ModelsService & UserService & Pick<ClustersService, 'listClusters'>;
+  /** The model to edit; without it the wizard deploys a new one. */
+  model?: ManagedModel;
+};
 
 const steps = {
   source: 'source-model-step',
@@ -53,6 +59,61 @@ const steps = {
 } as const;
 
 const defaults = { replicas: '1', cpu: '2', memory: '4Gi', gpuCount: '0' };
+
+const DISPLAY_NAME = 'openshift.io/display-name';
+const DESCRIPTION = 'openshift.io/description';
+
+/** Why a field is read-only when editing: UpdateModel changes only the replicas, image, env, placement and metadata. */
+const fixedReason = {
+  source: 'The model a deployment serves is fixed. Deploy a new model to serve another one.',
+  resources: 'Resources are set when the model is deployed. Deploy it again to change them.',
+};
+
+/** The wizard's starting values: the defaults when deploying, the model's own when editing. */
+const initialValues = (model?: ManagedModel) => ({
+  modelUri: model?.modelUri ?? '',
+  modelName: model?.modelName ?? '',
+  runtimeImage: model?.runtimeImage ?? '',
+  replicas: model?.replicas !== undefined ? String(model.replicas) : defaults.replicas,
+  cpu: model ? (model.cpu ?? '') : defaults.cpu,
+  memory: model ? (model.memory ?? '') : defaults.memory,
+  gpuCount: model ? String(model.gpuCount ?? 0) : defaults.gpuCount,
+  runtimeArgs: runtimeArgsOf(model?.env),
+  // Only a placement the console wrote can be edited as locations (consolePlacementLocations).
+  locations: (model ? consolePlacementLocations(model.placementSpec) : undefined) ?? [],
+});
+
+const sameList = (a: string[], b: string[]) => a.length === b.length && a.every((value, i) => value === b[i]);
+const sameSet = (a: string[], b: string[]) => sameList([...a].sort(), [...b].sort());
+
+/**
+ * What an edit changes: only fields UpdateModel takes, and only those that differ from the model.
+ * `env` and `annotations` are whole maps on the wire, so they go back as loaded with the change
+ * applied, keeping variables and annotations the console doesn't edit.
+ */
+const modelUpdateOf = (model: ManagedModel, input: CreateModelRequest): ModelUpdate => {
+  const update: ModelUpdate = {};
+  // A model stored without a count shows the default; only a count the user changed is sent.
+  if (!model.autoscaled && input.replicas !== (model.replicas ?? Number(defaults.replicas))) {
+    update.replicas = input.replicas;
+  }
+  if (input.runtimeImage.trim() !== (model.runtimeImage ?? '')) update.runtimeImage = input.runtimeImage.trim();
+  if (!sameList(input.runtimeArgs, runtimeArgsOf(model.env))) {
+    update.env = withRuntimeArgs(model.env, input.runtimeArgs);
+  }
+  const displayName = input.displayName.trim();
+  if (displayName !== (model.displayName ?? model.name) || input.description !== (model.description ?? '')) {
+    const annotations = { ...model.annotations };
+    if (displayName) annotations[DISPLAY_NAME] = displayName;
+    else delete annotations[DISPLAY_NAME];
+    if (input.description) annotations[DESCRIPTION] = input.description;
+    else delete annotations[DESCRIPTION];
+    update.annotations = annotations;
+  }
+  const current = consolePlacementLocations(model.placementSpec);
+  if (current && !sameSet(input.locations, current)) update.placement = consolePlacement(input.locations);
+  return update;
+};
 
 /** A field's help line, replaced by the field's error while it has one. */
 const Help: React.FC<{ children: React.ReactNode; error?: string; id?: string }> = ({ children, error, id }) => (
@@ -91,9 +152,19 @@ const ReviewStep: React.FC<{
   );
 };
 
-/** The four-step deploy wizard at /models/deploy: source, deployment, locations, review. */
-export const ModelWizard: React.FC<Props> = ({ service }) => {
+/**
+ * The four-step deploy wizard at /models/deploy: source, deployment, locations, review. With
+ * `model` it edits that deployment at /models/:namespace/:name/edit through the same steps: every
+ * step can be opened from the start, the fields UpdateModel can't change are read-only, and Save
+ * changes sends only what changed.
+ */
+export const ModelWizard: React.FC<Props> = ({ service, model }) => {
   const navigate = useNavigate();
+  const editing = !!model;
+  const [start] = useState(() => initialValues(model));
+  // Editing a placement written outside the console as locations would change what else it selects.
+  const locationsEditable = !model || consolePlacementLocations(model.placementSpec) !== undefined;
+  const replicasEditable = !model?.autoscaled;
   const [availableLocations, locationsLoaded, locationsError, reloadLocations] = useServiceData<string[]>(
     () => service.listLocations(),
     [],
@@ -105,7 +176,7 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
   const unavailableMembers = clusters.filter(
     (c) => c.aiGridEnabled && !(c.location && availableLocations.includes(c.location)),
   ).length;
-  const [locations, setLocations] = useState<string[]>([]);
+  const [locations, setLocations] = useState<string[]>(start.locations);
   // True from entering the Locations step until its locations reload answers; Next waits for it.
   const [reloadingLocations, setReloadingLocations] = useState(false);
   const reloadRef = useRef(0);
@@ -113,15 +184,24 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
   const goneLocations = locationsLoaded ? locations.filter((location) => !availableLocations.includes(location)) : [];
   // Like the text fields, Locations shows its error only once the user has changed it.
   const [locationsTouched, setLocationsTouched] = useState(false);
-  const { data: nameDescData, onDataChange: onNameDescChange } = useK8sNameDescriptionFieldData({ maxLength: 63 });
-  const [modelUri, setModelUri] = useState('');
-  const [modelName, setModelName] = useState('');
-  const [runtimeImage, setRuntimeImage] = useState('');
-  const [replicas, setReplicas] = useState(defaults.replicas);
-  const [cpu, setCpu] = useState(defaults.cpu);
-  const [memory, setMemory] = useState(defaults.memory);
-  const [gpuCount, setGpuCount] = useState(defaults.gpuCount);
-  const [runtimeArgs, setRuntimeArgs] = useState<RuntimeArgsFieldData>({ enabled: false, args: [] });
+  const { data: nameDescData, onDataChange: onNameDescChange } = useK8sNameDescriptionFieldData({
+    maxLength: 63,
+    // A k8sName makes the resource name read-only, as a deployed one is.
+    initialData: model
+      ? { name: model.displayName ?? model.name, description: model.description ?? '', k8sName: model.name }
+      : undefined,
+  });
+  const [modelUri, setModelUri] = useState(start.modelUri);
+  const [modelName, setModelName] = useState(start.modelName);
+  const [runtimeImage, setRuntimeImage] = useState(start.runtimeImage);
+  const [replicas, setReplicas] = useState(start.replicas);
+  const [cpu, setCpu] = useState(start.cpu);
+  const [memory, setMemory] = useState(start.memory);
+  const [gpuCount, setGpuCount] = useState(start.gpuCount);
+  const [runtimeArgs, setRuntimeArgs] = useState<RuntimeArgsFieldData>({
+    enabled: start.runtimeArgs.length > 0,
+    args: start.runtimeArgs,
+  });
   // A field shows its error only once the user has left it, as Locations does.
   const [touched, setTouched] = useState<ReadonlySet<string>>(new Set());
   const touch = (field: string) => setTouched((prev) => (prev.has(field) ? prev : new Set(prev).add(field)));
@@ -142,15 +222,20 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
     runtimeArgs: filterRuntimeArgsForContainer(runtimeArgs.args),
     locations,
   };
-  const isDirty =
-    [modelUri, modelName, runtimeImage, nameDescData.name, nameDescData.description].some((v) => v !== '') ||
-    replicas !== defaults.replicas ||
-    cpu !== defaults.cpu ||
-    memory !== defaults.memory ||
-    gpuCount !== defaults.gpuCount ||
-    runtimeArgs.enabled ||
-    locations.length > 0;
-  const leave = () => navigate('/models');
+  const update = model
+    ? modelUpdateOf(model, { ...input, locations: locationsEditable ? locations : start.locations })
+    : {};
+  const isDirty = model
+    ? Object.keys(update).length > 0
+    : [modelUri, modelName, runtimeImage, nameDescData.name, nameDescData.description].some((v) => v !== '') ||
+      replicas !== defaults.replicas ||
+      cpu !== defaults.cpu ||
+      memory !== defaults.memory ||
+      gpuCount !== defaults.gpuCount ||
+      runtimeArgs.enabled ||
+      locations.length > 0;
+  const detailsPath = model ? modelPath(model) : '';
+  const leave = () => navigate(model ? detailsPath : '/models');
   const [requestLeave, discardModal] = useConfirmDiscard(isDirty && !saving, leave);
 
   // Every field this checks is required, so a field the user left empty says so.
@@ -167,35 +252,88 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
   const cpuError = shownError('cpu', cpu);
   const memoryError = shownError('memory', memory);
   const gpuCountError = shownError('gpuCount', gpuCount, Number);
-  const sourceValid = createModelSchema
-    .pick({ modelUri: true, modelName: true })
-    .safeParse({ modelUri, modelName }).success;
-  const deploymentValid =
-    replicas !== '' && gpuCount !== '' && createModelSchema.omit({ locations: true }).strip().safeParse(input).success;
+  // A deployed model's source, name and resources are fixed, so only what an edit can change is checked.
+  const sourceValid =
+    editing || createModelSchema.pick({ modelUri: true, modelName: true }).safeParse({ modelUri, modelName }).success;
+  const deploymentValid = editing
+    ? createModelSchema
+        .pick({ displayName: true, description: true })
+        .safeParse({ displayName: input.displayName, description: input.description }).success &&
+      // A model deployed without an image keeps none until one is entered.
+      (runtimeImage === start.runtimeImage ||
+        createModelSchema.shape.runtimeImage.safeParse(input.runtimeImage).success) &&
+      // The deploy wizard's limits apply to a count the user sets, not to one the model already has.
+      (!replicasEditable ||
+        replicas === start.replicas ||
+        (replicas !== '' && createModelSchema.shape.replicas.safeParse(input.replicas).success))
+    : replicas !== '' &&
+      gpuCount !== '' &&
+      createModelSchema.omit({ locations: true }).strip().safeParse(input).success;
+  // An edit that keeps the locations doesn't depend on which locations are offered right now.
+  const locationsChanged = !editing || !sameSet(locations, start.locations);
   const locationsValid =
-    locationsLoaded && !reloadingLocations && !locationsError && locations.length > 0 && goneLocations.length === 0;
+    !locationsEditable ||
+    (!locationsChanged && locations.length > 0) ||
+    (locationsLoaded && !reloadingLocations && !locationsError && locations.length > 0 && goneLocations.length === 0);
   const isStepValid = (step: string) =>
     step === steps.source
       ? sourceValid
-      : sourceValid && deploymentValid && (step === steps.deployment || locationsValid);
+      : sourceValid &&
+        deploymentValid &&
+        (step === steps.deployment || locationsValid) &&
+        // Saving an edit that changes nothing would only bump the version.
+        (step !== steps.review || !editing || isDirty);
 
   const save = async () => {
-    if (saving || !sourceValid || !deploymentValid || !locationsValid) return;
+    if (saving || !sourceValid || !deploymentValid || !locationsValid || (editing && !isDirty)) return;
     setSaving(true);
     setError(undefined);
     try {
-      await service.createModel(input);
-      navigate('/models', { state: { notice: 'Model deployed' } });
+      if (model) {
+        await service.updateModel(model.namespace, model.name, update, model.resourceVersion);
+        navigate(detailsPath, { state: { notice: 'Model deployment updated' } });
+      } else {
+        await service.createModel(input);
+        navigate('/models', { state: { notice: 'Model deployed' } });
+      }
     } catch (err) {
       setError(
-        notAvailable(err, 'Deploying models is') ??
-          (err instanceof Error ? err.message : 'The model could not be deployed.'),
+        notAvailable(err, editing ? 'Editing models is' : 'Deploying models is') ??
+          (editing && err instanceof ServiceError && err.status === 409
+            ? 'This model deployment changed since you opened it. Reload the page to edit the current version.'
+            : err instanceof Error
+              ? err.message
+              : editing
+                ? 'The model deployment could not be updated.'
+                : 'The model could not be deployed.'),
       );
       setSaving(false);
     }
   };
 
+  // A placement written outside the console, or a model served on the hub, as the review and the step show it.
+  const placedAt = () => {
+    if (!model?.placementSpec) return 'The hub only';
+    return model.locations.length > 0
+      ? model.locations.map((l) => locationLabel(l, siteNames)).join(', ')
+      : 'No locations chosen yet';
+  };
+
   const locationsStep = () => {
+    if (!locationsEditable) {
+      return (
+        <ReadOnlyField
+          label="Locations"
+          fieldId="model-locations"
+          value={placedAt()}
+          reason={
+            model?.placementSpec
+              ? 'This placement selects clusters by more than location, so it can’t be edited as locations here.'
+              : 'This model is served on the hub, not placed on AI Grid locations.'
+          }
+        />
+      );
+    }
     if (locationsError) {
       return (
         <Alert isInline variant="danger" title="Error loading locations">
@@ -226,7 +364,11 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
           placeholder="Select locations"
           selectionRequired={locationsTouched}
           noSelectedOptionsMessage="Select at least one location."
-          errorMessage={goneLocationsError(goneLocations.map((location) => locationLabel(location, siteNames)))}
+          errorMessage={
+            locationsChanged
+              ? goneLocationsError(goneLocations.map((location) => locationLabel(location, siteNames)))
+              : undefined
+          }
           value={[
             ...availableLocations.map((location) => ({
               id: location,
@@ -271,7 +413,7 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
         { term: 'Deployment name', value: nameDescData.name },
         { term: 'Description', value: nameDescData.description },
         { term: 'Runtime image', value: runtimeImage },
-        { term: 'Replicas', value: replicas },
+        { term: 'Replicas', value: replicasEditable ? replicas : 'Autoscaled' },
         { term: 'CPU', value: cpu },
         { term: 'Memory', value: memory },
         { term: 'GPUs', value: gpuCount },
@@ -281,21 +423,33 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
     {
       title: 'Locations',
       step: steps.locations,
-      items: [{ term: 'Locations', value: locations.map((l) => locationLabel(l, siteNames)).join(', ') }],
+      items: [
+        {
+          term: 'Locations',
+          value: locationsEditable ? locations.map((l) => locationLabel(l, siteNames)).join(', ') : placedAt(),
+        },
+      ],
     },
   ];
 
   return (
     <>
       <PageHeader
-        title="Deploy model"
-        description="Deploy a model to AI Grid locations."
+        title={model ? `Edit ${model.displayName ?? model.name}` : 'Deploy model'}
+        description={
+          model ? 'Change the model deployment’s settings and locations.' : 'Deploy a model to AI Grid locations.'
+        }
         breadcrumb={
           <Breadcrumb>
             <BreadcrumbItem>
               <Link to="/models">Models</Link>
             </BreadcrumbItem>
-            <BreadcrumbItem isActive>Deploy model</BreadcrumbItem>
+            {model && (
+              <BreadcrumbItem>
+                <Link to={detailsPath}>{model.displayName ?? model.name}</Link>
+              </BreadcrumbItem>
+            )}
+            <BreadcrumbItem isActive>{model ? 'Edit' : 'Deploy model'}</BreadcrumbItem>
           </Breadcrumb>
         }
       />
@@ -305,12 +459,12 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
           isProgressive={false}
           onClose={requestLeave}
           onStepChange={(_event, current, previous) => {
-            // Start the deployment's name from the model's, once.
-            if (previous.id === steps.source && !nameDescData.name) {
+            // Start a new deployment's name from the model's, once.
+            if (!editing && previous.id === steps.source && !nameDescData.name) {
               onNameDescChange('name', deploymentNameFor(modelName));
             }
             // A cluster can change state while the earlier steps are filled in, so offer what is available now.
-            if (current.id === steps.locations) {
+            if (current.id === steps.locations && locationsEditable) {
               const reload = ++reloadRef.current;
               setReloadingLocations(true);
               void reloadLocations().then(() => {
@@ -323,8 +477,8 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
           footer={
             <ConsoleWizardFooter
               submitStepId={steps.review}
-              submitLabel="Deploy"
-              errorTitle="Unable to deploy model"
+              submitLabel={editing ? 'Save changes' : 'Deploy'}
+              errorTitle={editing ? 'Unable to update model deployment' : 'Unable to deploy model'}
               isStepValid={isStepValid}
               saving={saving}
               error={error}
@@ -335,35 +489,49 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
         >
           <WizardStep name="Source" id={steps.source}>
             <Form maxWidth="750px">
-              <FormGroup label="Model URI" fieldId="model-uri" isRequired>
-                <TextInput
-                  id="model-uri"
-                  aria-describedby="model-uri-help"
-                  value={modelUri}
-                  onChange={(_event, value) => setModelUri(value)}
-                  onBlur={() => touch('modelUri')}
-                  validated={modelUriError ? 'error' : 'default'}
-                  isRequired
-                />
-                <Help id="model-uri-help" error={modelUriError}>
-                  Enter the model location, for example hf://org/model, oci://registry/model:tag, s3://bucket/path or
-                  pvc://claim/path.
-                </Help>
-              </FormGroup>
-              <FormGroup label="Model name" fieldId="model-alias" isRequired>
-                <TextInput
-                  id="model-alias"
-                  aria-describedby="model-alias-help"
-                  value={modelName}
-                  onChange={(_event, value) => setModelName(value)}
-                  onBlur={() => touch('modelName')}
-                  validated={modelNameError ? 'error' : 'default'}
-                  isRequired
-                />
-                <Help id="model-alias-help" error={modelNameError}>
-                  The model name exposed by the inference service, for example org/model.
-                </Help>
-              </FormGroup>
+              {editing ? (
+                <>
+                  <ReadOnlyField label="Model URI" fieldId="model-uri" value={modelUri} reason={fixedReason.source} />
+                  <ReadOnlyField
+                    label="Model name"
+                    fieldId="model-alias"
+                    value={modelName}
+                    reason={fixedReason.source}
+                  />
+                </>
+              ) : (
+                <>
+                  <FormGroup label="Model URI" fieldId="model-uri" isRequired>
+                    <TextInput
+                      id="model-uri"
+                      aria-describedby="model-uri-help"
+                      value={modelUri}
+                      onChange={(_event, value) => setModelUri(value)}
+                      onBlur={() => touch('modelUri')}
+                      validated={modelUriError ? 'error' : 'default'}
+                      isRequired
+                    />
+                    <Help id="model-uri-help" error={modelUriError}>
+                      Enter the model location, for example hf://org/model, oci://registry/model:tag, s3://bucket/path
+                      or pvc://claim/path.
+                    </Help>
+                  </FormGroup>
+                  <FormGroup label="Model name" fieldId="model-alias" isRequired>
+                    <TextInput
+                      id="model-alias"
+                      aria-describedby="model-alias-help"
+                      value={modelName}
+                      onChange={(_event, value) => setModelName(value)}
+                      onBlur={() => touch('modelName')}
+                      validated={modelNameError ? 'error' : 'default'}
+                      isRequired
+                    />
+                    <Help id="model-alias-help" error={modelNameError}>
+                      The model name exposed by the inference service, for example org/model.
+                    </Help>
+                  </FormGroup>
+                </>
+              )}
             </Form>
           </WizardStep>
           <WizardStep name="Deployment" id={steps.deployment} isDisabled={!sourceValid || saving}>
@@ -373,7 +541,7 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
                 onDataChange={onNameDescChange}
                 dataTestId="model-name-desc"
                 nameLabel="Deployment name"
-                nameHelperText="Choose a resource name of at most 63 characters."
+                nameHelperText={editing ? undefined : 'Choose a resource name of at most 63 characters.'}
               />
               <FormGroup label="Runtime image" fieldId="runtime-image" isRequired>
                 <TextInput
@@ -389,66 +557,95 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
                   Container image for the serving runtime.
                 </Help>
               </FormGroup>
-              <FormGroup label="Replicas" fieldId="deployment-replicas" isRequired>
-                <CountInput
-                  id="deployment-replicas"
+              {replicasEditable ? (
+                <FormGroup label="Replicas" fieldId="deployment-replicas" isRequired>
+                  <CountInput
+                    id="deployment-replicas"
+                    label="Replicas"
+                    min={1}
+                    max={99}
+                    value={replicas}
+                    onChange={setReplicas}
+                    onBlur={() => touch('replicas')}
+                    describedBy="deployment-replicas-help"
+                    validated={replicasError ? 'error' : 'default'}
+                  />
+                  <Help id="deployment-replicas-help" error={replicasError}>
+                    Between 1 and 99.
+                  </Help>
+                </FormGroup>
+              ) : (
+                <ReadOnlyField
                   label="Replicas"
-                  min={1}
-                  max={99}
-                  value={replicas}
-                  onChange={setReplicas}
-                  onBlur={() => touch('replicas')}
-                  describedBy="deployment-replicas-help"
-                  validated={replicasError ? 'error' : 'default'}
+                  fieldId="deployment-replicas"
+                  value="Autoscaled"
+                  reason="KEDA scales this model, so it has no fixed replica count."
                 />
-                <Help id="deployment-replicas-help" error={replicasError}>
-                  Between 1 and 99.
-                </Help>
-              </FormGroup>
-              <FormGroup label="CPU" fieldId="deployment-cpu" isRequired>
-                <TextInput
-                  id="deployment-cpu"
-                  aria-describedby="deployment-cpu-help"
-                  value={cpu}
-                  onChange={(_event, value) => setCpu(value)}
-                  onBlur={() => touch('cpu')}
-                  validated={cpuError ? 'error' : 'default'}
-                  isRequired
-                />
-                <Help id="deployment-cpu-help" error={cpuError}>
-                  Positive cores or millicores, for example 2 or 500m.
-                </Help>
-              </FormGroup>
-              <FormGroup label="Memory" fieldId="deployment-memory" isRequired>
-                <TextInput
-                  id="deployment-memory"
-                  aria-describedby="deployment-memory-help"
-                  value={memory}
-                  onChange={(_event, value) => setMemory(value)}
-                  onBlur={() => touch('memory')}
-                  validated={memoryError ? 'error' : 'default'}
-                  isRequired
-                />
-                <Help id="deployment-memory-help" error={memoryError}>
-                  For example 4Gi or 512Mi.
-                </Help>
-              </FormGroup>
-              <FormGroup label="GPUs" fieldId="deployment-gpus" isRequired>
-                <CountInput
-                  id="deployment-gpus"
-                  label="GPUs"
-                  min={0}
-                  max={64}
-                  value={gpuCount}
-                  onChange={setGpuCount}
-                  onBlur={() => touch('gpuCount')}
-                  describedBy="deployment-gpus-help"
-                  validated={gpuCountError ? 'error' : 'default'}
-                />
-                <Help id="deployment-gpus-help" error={gpuCountError}>
-                  Between 0 and 64.
-                </Help>
-              </FormGroup>
+              )}
+              {editing ? (
+                <>
+                  <ReadOnlyField label="CPU" fieldId="deployment-cpu" value={cpu} reason={fixedReason.resources} />
+                  <ReadOnlyField
+                    label="Memory"
+                    fieldId="deployment-memory"
+                    value={memory}
+                    reason={fixedReason.resources}
+                  />
+                  <ReadOnlyField
+                    label="GPUs"
+                    fieldId="deployment-gpus"
+                    value={gpuCount}
+                    reason={fixedReason.resources}
+                  />
+                </>
+              ) : (
+                <>
+                  <FormGroup label="CPU" fieldId="deployment-cpu" isRequired>
+                    <TextInput
+                      id="deployment-cpu"
+                      aria-describedby="deployment-cpu-help"
+                      value={cpu}
+                      onChange={(_event, value) => setCpu(value)}
+                      onBlur={() => touch('cpu')}
+                      validated={cpuError ? 'error' : 'default'}
+                      isRequired
+                    />
+                    <Help id="deployment-cpu-help" error={cpuError}>
+                      Positive cores or millicores, for example 2 or 500m.
+                    </Help>
+                  </FormGroup>
+                  <FormGroup label="Memory" fieldId="deployment-memory" isRequired>
+                    <TextInput
+                      id="deployment-memory"
+                      aria-describedby="deployment-memory-help"
+                      value={memory}
+                      onChange={(_event, value) => setMemory(value)}
+                      onBlur={() => touch('memory')}
+                      validated={memoryError ? 'error' : 'default'}
+                      isRequired
+                    />
+                    <Help id="deployment-memory-help" error={memoryError}>
+                      For example 4Gi or 512Mi.
+                    </Help>
+                  </FormGroup>
+                  <FormGroup label="GPUs" fieldId="deployment-gpus" isRequired>
+                    <CountInput
+                      id="deployment-gpus"
+                      label="GPUs"
+                      min={0}
+                      max={64}
+                      value={gpuCount}
+                      onChange={setGpuCount}
+                      onBlur={() => touch('gpuCount')}
+                      describedBy="deployment-gpus-help"
+                      validated={gpuCountError ? 'error' : 'default'}
+                    />
+                    <Help id="deployment-gpus-help" error={gpuCountError}>
+                      Between 0 and 64.
+                    </Help>
+                  </FormGroup>
+                </>
+              )}
               <ExpandableSection toggleText="Advanced settings" isIndented>
                 <RuntimeArgsField data={runtimeArgs} onChange={setRuntimeArgs} />
               </ExpandableSection>

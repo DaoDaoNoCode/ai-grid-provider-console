@@ -97,6 +97,22 @@ describe('HttpConsoleService', () => {
       namespace: 'team-models',
       placement: { matchExpressions: [{ key: 'location', operator: 'In', values: ['paris'] }] },
     });
+    fetchFn.mockImplementation(async () =>
+      jsonResponse(200, {
+        data: { name: 'a b', namespace: 'team-models', modelUri: 'hf://x', modelName: 'x', replicas: 2 },
+      }),
+    );
+    await expect(service.updateModel('team-models', 'a b', { replicas: 2 }, '3')).resolves.toMatchObject({
+      replicas: 2,
+    });
+    expect(fetchFn).toHaveBeenLastCalledWith(
+      '/api/v1/models/team-models/a%20b',
+      expect.objectContaining({
+        method: 'PATCH',
+        headers: expect.objectContaining({ 'If-Match': '"3"' }),
+        body: JSON.stringify({ replicas: 2 }),
+      }),
+    );
     fetchFn.mockImplementation(async () => new Response(null, { status: 204 }));
     await expect(service.deleteModel('team-models', 'a b', '3')).resolves.toBeUndefined();
     expect(fetchFn).toHaveBeenLastCalledWith(

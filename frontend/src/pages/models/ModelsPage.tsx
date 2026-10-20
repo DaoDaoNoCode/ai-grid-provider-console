@@ -194,6 +194,11 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
                               ariaLabel={`Actions for ${title}`}
                               dropdownItems={[
                                 { key: 'view', label: 'View details', onClick: () => navigate(modelPath(deployment)) },
+                                {
+                                  key: 'edit',
+                                  label: 'Edit',
+                                  onClick: () => navigate(`${modelPath(deployment)}/edit`),
+                                },
                                 { isSpacer: true },
                                 {
                                   key: 'delete',

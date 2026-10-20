@@ -21,6 +21,7 @@ import type {
   GridRange,
   MaaSSubscription,
   ManagedModel,
+  ModelUpdate,
   Organization,
   OrganizationInput,
   SubscriptionInfoResponse,
@@ -117,6 +118,20 @@ export class HttpConsoleService implements ConsoleService {
     const { modelsNamespace } = await this.getConfig();
     return toManagedModel(
       await this.request<ApiModel>('POST', '/models', { body: toModelCreate(input, modelsNamespace) }),
+    );
+  }
+
+  async updateModel(
+    namespace: string,
+    name: string,
+    update: ModelUpdate,
+    resourceVersion: string,
+  ): Promise<ManagedModel> {
+    return toManagedModel(
+      await this.request<ApiModel>('PATCH', `/models/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`, {
+        body: update,
+        ifMatch: resourceVersion,
+      }),
     );
   }
 

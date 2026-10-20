@@ -5,7 +5,7 @@ const LOCATION = 'site1';
 
 const unique = `e2e-${Math.random().toString(36).slice(2, 8)}`;
 
-test('deploys a model to a location, opens its page and deletes it', async ({ page }) => {
+test('deploys a model to a location, edits it in the same wizard, and deletes it', async ({ page }) => {
   await page.goto('/models');
   await page.getByRole('link', { name: 'Deploy model' }).click();
 
@@ -34,10 +34,26 @@ test('deploys a model to a location, opens its page and deletes it', async ({ pa
   await expect(row).toBeVisible();
   await expect(row.getByTestId(`model-locations-${unique}`)).toContainText(LOCATION);
 
-  // The model's page, then delete from its Actions menu.
+  // The model's page.
   await row.getByRole('link', { name: unique, exact: true }).click();
   await expect(page.getByRole('heading', { name: unique })).toBeVisible();
   await expect(page.getByTestId('model-locations')).toContainText(LOCATION);
+
+  // Edit in the deploy wizard: the source is read-only, every step opens directly, and Save
+  // sends the change through the BFF's PATCH with the version the page loaded.
+  await page.getByRole('button', { name: `Actions for ${unique}` }).click();
+  await page.getByRole('menuitem', { name: 'Edit' }).click();
+  await expect(page.getByRole('heading', { name: `Edit ${unique}` })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Model URI' })).toHaveAttribute('readonly', '');
+  await page.getByRole('button', { name: 'Deployment', exact: true }).click();
+  await page.getByRole('spinbutton', { name: 'Replicas' }).fill('2');
+  await page.getByRole('button', { name: 'Review', exact: true }).click();
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.getByText('Model deployment updated')).toBeVisible();
+  await expect(page.getByRole('heading', { name: unique })).toBeVisible();
+  await expect(page.getByLabel('Deployment', { exact: true })).toContainText(/Replicas\s*2/);
+
+  // Delete from its Actions menu.
   await page.getByRole('button', { name: `Actions for ${unique}` }).click();
   await page.getByRole('menuitem', { name: 'Delete' }).click();
   await page.getByLabel('Delete modal input').fill(unique);

@@ -1,5 +1,15 @@
 import getModels from '../../../mock/examples/get-models.json';
-import { toGridCluster, toManagedModel, toModelCreate, toOrganization, toSubscription } from './adapters';
+import {
+  consolePlacement,
+  consolePlacementLocations,
+  runtimeArgsOf,
+  toGridCluster,
+  toManagedModel,
+  toModelCreate,
+  toOrganization,
+  toSubscription,
+  withRuntimeArgs,
+} from './adapters';
 import type { ApiCluster, ApiModel, ApiTenant, CreateModelRequest, MaaSSubscription } from './types';
 
 // The cluster JSON of GET /api/v1/clusters (mock/examples/get-clusters.json), trimmed.
@@ -325,5 +335,81 @@ describe('toManagedModel', () => {
       resourceVersion: '48760230',
     });
     expect(byName('granite-8b-instruct').creationTimestamp).toBeTruthy();
+  });
+
+  it('keeps what an edit needs: requests, env, annotations and the placement spec', () => {
+    const model = toManagedModel({
+      name: 'chat',
+      namespace: 'ns',
+      modelUri: 'hf://x',
+      modelName: 'x',
+      requests: { cpu: '8', memory: '32Gi', 'nvidia.com/gpu': '1' },
+      env: [{ name: 'A', value: '1' }],
+      annotations: { 'openshift.io/display-name': 'Chat', team: 'x' },
+      placement: { ...consolePlacement(['paris']), locations: ['paris'] },
+    });
+    expect(model).toMatchObject({ cpu: '8', memory: '32Gi', gpuCount: 1, autoscaled: false });
+    expect(model.env).toEqual([{ name: 'A', value: '1' }]);
+    expect(model.annotations).toEqual({ 'openshift.io/display-name': 'Chat', team: 'x' });
+    // The spec without the decision's locations.
+    expect(model.placementSpec).toEqual(consolePlacement(['paris']));
+    expect(
+      toManagedModel({ name: 'k', namespace: 'ns', modelUri: 'hf://x', modelName: 'x', scaling: {} }).autoscaled,
+    ).toBe(true);
+  });
+});
+
+describe('consolePlacementLocations', () => {
+  it('reads the locations of a placement the console wrote', () => {
+    expect(consolePlacementLocations(consolePlacement(['paris', 'madrid']))).toEqual(['paris', 'madrid']);
+  });
+
+  it.each([
+    ['a hub-only model', undefined],
+    ['cluster sets', { ...consolePlacement(['paris']), clusterSets: ['global'] }],
+    ['other labels', { ...consolePlacement(['paris']), matchLabels: { 'ai-grid/enabled': 'true' } }],
+    [
+      'another expression',
+      { ...consolePlacement(['paris']), matchExpressions: [{ key: 'location', operator: 'NotIn', values: ['x'] }] },
+    ],
+    [
+      'a second expression',
+      {
+        matchLabels: consolePlacement([]).matchLabels,
+        matchExpressions: [
+          ...consolePlacement(['paris']).matchExpressions,
+          { key: 'zone', operator: 'In', values: ['a'] },
+        ],
+      },
+    ],
+    ['a cluster count', { ...consolePlacement(['paris']), numberOfClusters: 1 }],
+  ])('is undefined for any other shape: %s', (_, spec) => {
+    expect(consolePlacementLocations(spec)).toBeUndefined();
+  });
+});
+
+describe('runtime arguments in env', () => {
+  it('reads and replaces VLLM_ADDITIONAL_ARGS, keeping every other variable', () => {
+    const env = [
+      { name: 'VLLM_CPU_KVCACHE_SPACE', value: '8' },
+      { name: 'VLLM_ADDITIONAL_ARGS', value: '--max-model-len 4096 --enforce-eager -tp=2' },
+    ];
+    // One line per flag, its value kept with it.
+    expect(runtimeArgsOf(env)).toEqual(['--max-model-len 4096', '--enforce-eager', '-tp=2']);
+    expect(withRuntimeArgs(env, ['--enforce-eager'])).toEqual([
+      { name: 'VLLM_CPU_KVCACHE_SPACE', value: '8' },
+      { name: 'VLLM_ADDITIONAL_ARGS', value: '--enforce-eager' },
+    ]);
+    // No arguments drop the variable, not the others.
+    expect(withRuntimeArgs(env, [])).toEqual([{ name: 'VLLM_CPU_KVCACHE_SPACE', value: '8' }]);
+    expect(runtimeArgsOf(undefined)).toEqual([]);
+  });
+
+  it('keeps quoted values whole, flag-like text and spacing included, so an edit round-trips them', () => {
+    const value = `--served-model-name "alpha  --beta" --chat-template '{{ x }} --y' --enforce-eager`;
+    const args = runtimeArgsOf([{ name: 'VLLM_ADDITIONAL_ARGS', value }]);
+    expect(args).toEqual([`--served-model-name "alpha  --beta"`, `--chat-template '{{ x }} --y'`, '--enforce-eager']);
+    // Joined again the way the wizard joins its lines, the value is unchanged.
+    expect(withRuntimeArgs([], args)).toEqual([{ name: 'VLLM_ADDITIONAL_ARGS', value }]);
   });
 });

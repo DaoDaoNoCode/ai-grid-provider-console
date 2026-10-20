@@ -14,6 +14,7 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event';
 import getModels from '../../../mock/examples/get-models.json';
 import { ServiceError } from '../api/ConsoleService';
+import { consolePlacement } from '../api/adapters';
 import { HttpConsoleService } from '../api/HttpConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
 import type { CreateModelRequest } from '../api/types';
@@ -332,6 +333,7 @@ const serviceOnModelJson = (fetchFn: ReturnType<typeof vi.fn>) => {
   service.listLocations = () => http.listLocations();
   service.createModel = (value) => http.createModel(value);
   service.deleteModel = (namespace, name, version) => http.deleteModel(namespace, name, version);
+  service.updateModel = (namespace, name, update, version) => http.updateModel(namespace, name, update, version);
   return service;
 };
 
@@ -705,4 +707,221 @@ it("names only the subscriptions that use this model, reading no namespace as th
   await user.click(await screen.findByTestId('model-actions'));
   await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
   expect(await screen.findByTestId('model-references')).toHaveTextContent('widget-users');
+});
+
+describe('editing a model deployment', () => {
+  /** Opens a step from the wizard's navigation: every step is open from the start when editing. */
+  const openStep = async (user: User, name: 'Source' | 'Deployment' | 'Locations' | 'Review') =>
+    user.click(within(await screen.findByRole('navigation', { name: 'Wizard steps' })).getByRole('button', { name }));
+
+  it('reuses the deploy wizard: fixed fields read-only, every step open, and only the changes sent', async () => {
+    const service = new MockConsoleService();
+    const update = vi.spyOn(service, 'updateModel');
+    const user = userEvent.setup();
+    renderAt('/models/ai-grid-models/granite-3-8b', service);
+    await user.click(await screen.findByRole('button', { name: 'Actions for Granite 3.3 8B Instruct' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Edit' }));
+
+    expect(await screen.findByRole('heading', { name: 'Edit Granite 3.3 8B Instruct' })).toBeVisible();
+    // Source: the model a deployment serves can't change.
+    expect(screen.getByRole('textbox', { name: 'Model URI' })).toHaveAttribute('readonly');
+    expect(screen.getByRole('textbox', { name: 'Model name' })).toHaveAttribute('readonly');
+    // Nothing changed yet, so Review can't save.
+    await openStep(user, 'Review');
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
+
+    await openStep(user, 'Deployment');
+    // The resource name and resources are fixed once deployed.
+    expect(screen.queryByTestId('model-name-desc-name')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'CPU' })).toHaveAttribute('readonly');
+    expect(screen.getByRole('textbox', { name: 'Memory' })).toHaveAttribute('readonly');
+    expect(screen.getByRole('textbox', { name: 'GPUs' })).toHaveAttribute('readonly');
+    const replicas = screen.getByRole('spinbutton', { name: 'Replicas' });
+    await user.clear(replicas);
+    await user.type(replicas, '3');
+
+    await openStep(user, 'Locations');
+    await user.click(await screen.findByRole('combobox', { name: 'Locations' }));
+    await user.click(screen.getByRole('option', { name: site2 }));
+    await user.keyboard('{Escape}');
+
+    await openStep(user, 'Review');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect(await screen.findByText('Model deployment updated')).toBeVisible();
+    expect(update).toHaveBeenCalledWith(
+      'ai-grid-models',
+      'granite-3-8b',
+      { replicas: 3, placement: consolePlacement(['site1', 'site2']) },
+      '1',
+    );
+    // Back on the model's page, with the new values.
+    expect(await screen.findByRole('heading', { name: 'Granite 3.3 8B Instruct' })).toBeVisible();
+    expect(within(screen.getByTestId('model-locations')).getByText(site2)).toBeVisible();
+  });
+
+  it('sends the display name, description and runtime arguments in their whole maps', async () => {
+    const service = new MockConsoleService();
+    service.models[0].annotations = { ...service.models[0].annotations, team: 'research' };
+    service.models[0].env = [{ name: 'VLLM_CPU_KVCACHE_SPACE', value: '8' }];
+    const update = vi.spyOn(service, 'updateModel');
+    const user = userEvent.setup();
+    renderAt(`/models/ai-grid-models/${service.models[0].name}/edit`, service);
+    await openStep(user, 'Deployment');
+    const description = await screen.findByRole('textbox', { name: 'Description' });
+    await user.clear(description);
+    await user.type(description, 'Updated description');
+    await user.click(screen.getByRole('button', { name: 'Advanced settings' }));
+    await user.type(screen.getByRole('textbox', { name: 'Additional runtime arguments' }), '--enforce-eager');
+    await openStep(user, 'Review');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(update).toHaveBeenCalled());
+    const [, , sent] = update.mock.calls[0];
+    // Other annotations and env vars go back as loaded.
+    expect(sent.annotations).toEqual({
+      'openshift.io/display-name': 'Granite 3.3 8B Instruct',
+      'openshift.io/description': 'Updated description',
+      team: 'research',
+    });
+    expect(sent.env).toEqual([
+      { name: 'VLLM_CPU_KVCACHE_SPACE', value: '8' },
+      { name: 'VLLM_ADDITIONAL_ARGS', value: '--enforce-eager' },
+    ]);
+    expect(Object.keys(sent).sort()).toEqual(['annotations', 'env']);
+  });
+
+  it('shows a placement written outside the console read-only and leaves it alone', async () => {
+    const service = new MockConsoleService();
+    service.models[0].placementSpec = { clusterSets: ['global'], matchLabels: { 'ai-grid/enabled': 'true' } };
+    const update = vi.spyOn(service, 'updateModel');
+    const user = userEvent.setup();
+    renderAt(`/models/ai-grid-models/${service.models[0].name}/edit`, service);
+    await openStep(user, 'Locations');
+    expect(await screen.findByRole('textbox', { name: 'Locations' })).toHaveAttribute('readonly');
+    expect(screen.getByText(/selects clusters by more than location/)).toBeVisible();
+    await openStep(user, 'Deployment');
+    const replicas = screen.getByRole('spinbutton', { name: 'Replicas' });
+    await user.clear(replicas);
+    await user.type(replicas, '2');
+    await openStep(user, 'Review');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(update).toHaveBeenCalled());
+    expect(update.mock.calls[0][2]).toEqual({ replicas: 2 });
+  });
+
+  it('says the deployment changed when the version it opened is stale', async () => {
+    const service = new MockConsoleService();
+    const user = userEvent.setup();
+    renderAt(`/models/ai-grid-models/${service.models[0].name}/edit`, service);
+    await openStep(user, 'Deployment');
+    const replicas = await screen.findByRole('spinbutton', { name: 'Replicas' });
+    await user.clear(replicas);
+    await user.type(replicas, '4');
+    // Another tab saves first.
+    service.models[0].resourceVersion = '9';
+    await openStep(user, 'Review');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect(
+      await screen.findByText(
+        'This model deployment changed since you opened it. Reload the page to edit the current version.',
+      ),
+    ).toBeVisible();
+  });
+
+  it('saves an unrelated change while a kept location is not offered, or the locations fail to load', async () => {
+    const service = new MockConsoleService();
+    const update = vi.spyOn(service, 'updateModel');
+    // site1, where the model runs, is no longer offered, and the next load fails.
+    let calls = 0;
+    service.listLocations = async () => {
+      if (calls++ === 0) return ['site2'];
+      throw new ServiceError(503, 'Location catalog unavailable.');
+    };
+    const user = userEvent.setup();
+    renderAt('/models/ai-grid-models/granite-3-8b/edit', service);
+    await openStep(user, 'Locations');
+    await openStep(user, 'Deployment');
+    const description = await screen.findByRole('textbox', { name: 'Description' });
+    await user.clear(description);
+    await user.type(description, 'Still on site1');
+    await openStep(user, 'Review');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(update).toHaveBeenCalled());
+    expect(update.mock.calls[0][2]).not.toHaveProperty('placement');
+  });
+
+  it.each([
+    ['no stored count', undefined],
+    ['a count outside the deploy wizard’s limits', 0],
+  ])('leaves the replicas alone when the model has %s', async (_, replicas) => {
+    const service = new MockConsoleService();
+    service.models[0].replicas = replicas;
+    const update = vi.spyOn(service, 'updateModel');
+    const user = userEvent.setup();
+    renderAt(`/models/ai-grid-models/${service.models[0].name}/edit`, service);
+    await openStep(user, 'Deployment');
+    const description = await screen.findByRole('textbox', { name: 'Description' });
+    await user.type(description, ' (edited)');
+    await openStep(user, 'Review');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(update).toHaveBeenCalled());
+    expect(update.mock.calls[0][2]).not.toHaveProperty('replicas');
+  });
+
+  it('shows an autoscaled model’s replicas as Autoscaled, on its step and in Review', async () => {
+    const service = new MockConsoleService();
+    service.models[0].autoscaled = true;
+    service.models[0].replicas = undefined;
+    const user = userEvent.setup();
+    renderAt(`/models/ai-grid-models/${service.models[0].name}/edit`, service);
+    await openStep(user, 'Deployment');
+    expect(await screen.findByRole('textbox', { name: 'Replicas' })).toHaveValue('Autoscaled');
+    await openStep(user, 'Review');
+    expect(within(screen.getByTestId('model-review')).getByText('Autoscaled')).toBeVisible();
+  });
+
+  it('sends the edit through the BFF, keeping other annotations and env, and keeps input on a 422', async () => {
+    const fetchFn = modelJsonFetch();
+    const json = getModels.body.data.find((m) => m.name === 'tiny-llm')!;
+    fetchFn.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'PATCH') {
+        return jsonResponse(422, { error: { code: '422', message: 'spec.main.image: Invalid value' } });
+      }
+      if (url.endsWith('/locations')) return jsonResponse(200, { data: ['paris'] });
+      return jsonResponse(200, { data: getModels.body.data });
+    });
+    const user = userEvent.setup();
+    renderAt('/models/ai-grid-models/tiny-llm/edit', serviceOnModelJson(fetchFn));
+    await openStep(user, 'Deployment');
+    await user.clear(await screen.findByRole('textbox', { name: 'Description' }));
+    await user.click(screen.getByRole('button', { name: 'Advanced settings' }));
+    await user.type(screen.getByRole('textbox', { name: 'Additional runtime arguments' }), '--enforce-eager');
+    await openStep(user, 'Review');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect(await screen.findByText('spec.main.image: Invalid value')).toBeVisible();
+    const patch = fetchFn.mock.calls.find(([, init]) => init?.method === 'PATCH');
+    expect(patch?.[0]).toBe('/api/v1/models/ai-grid-models/tiny-llm');
+    expect(patch?.[1]?.headers).toMatchObject({ 'If-Match': `"${json.resourceVersion}"` });
+    expect(JSON.parse(String(patch?.[1]?.body))).toEqual({
+      // The description is cleared; the display name and the other variable stay as loaded.
+      annotations: { 'openshift.io/display-name': 'Tiny LLM (CPU)' },
+      env: [
+        { name: 'VLLM_CPU_KVCACHE_SPACE', value: '8' },
+        { name: 'VLLM_ADDITIONAL_ARGS', value: '--enforce-eager' },
+      ],
+    });
+    // The input is still there to fix and save again.
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled();
+    await openStep(user, 'Deployment');
+    expect(screen.getByRole('textbox', { name: 'Description' })).toHaveValue('');
+  });
+
+  it('offers Edit from the list, next to the details and Delete', async () => {
+    const service = new MockConsoleService();
+    const user = userEvent.setup();
+    renderAt('/models', service);
+    await user.click(await screen.findByRole('button', { name: 'Actions for Granite 3.3 8B Instruct' }));
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['View details', 'Edit', 'Delete']);
+    await user.click(screen.getByRole('menuitem', { name: 'Edit' }));
+    expect(await screen.findByRole('heading', { name: 'Edit Granite 3.3 8B Instruct' })).toBeVisible();
+  });
 });

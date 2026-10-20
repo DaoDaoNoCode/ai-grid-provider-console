@@ -211,12 +211,41 @@ export type ApiModelCreate = {
   cpu: string;
   memory: string;
   gpuCount: number;
-  env?: { name: string; value: string }[];
-  placement: {
-    matchLabels: Record<string, string>;
-    matchExpressions: { key: string; operator: 'In'; values: string[] }[];
-  };
+  env?: EnvVar[];
+  placement: ConsolePlacement;
   rollout: { strategy: 'All' };
+};
+
+/** A container environment variable, as the BFF's `env` lists them. */
+export type EnvVar = { name: string; value: string };
+
+/** The placement the console writes: enrolled, provisioned clusters at the chosen locations. */
+export type ConsolePlacement = {
+  matchLabels: Record<string, string>;
+  matchExpressions: { key: string; operator: 'In'; values: string[] }[];
+};
+
+/** The Placement spec a model was deployed with, as the BFF returns it; the console writes only some shapes. */
+export type ModelPlacementSpec = {
+  clusterSets?: string[];
+  matchLabels?: Record<string, string>;
+  matchExpressions?: { key: string; operator: string; values?: string[] }[];
+  claimExpressions?: { key: string; operator: string; values?: string[] }[];
+  tolerations?: unknown[];
+  numberOfClusters?: number;
+};
+
+/**
+ * A change to a deployed model: the fields PATCH /api/v1/models/{namespace}/{name} takes. Each
+ * present field replaces the stored one as a whole (`env`, `annotations`), so callers send what
+ * they loaded with their change applied.
+ */
+export type ModelUpdate = {
+  replicas?: number;
+  runtimeImage?: string;
+  env?: EnvVar[];
+  placement?: ConsolePlacement;
+  annotations?: Record<string, string>;
 };
 
 /**
@@ -232,12 +261,18 @@ export type ApiModel = {
   modelName: string;
   runtimeImage?: string;
   replicas?: number;
+  /** KEDA scaling; when set, `replicas` is absent and the model autoscales. */
+  scaling?: unknown;
+  /** The main container's requests, quantity strings: cpu, memory, nvidia.com/gpu. */
+  requests?: Record<string, string>;
+  env?: EnvVar[];
+  annotations?: Record<string, string>;
   /** pending, ready or failed; absent before the backend reports one. */
   phase?: string;
   reason?: string;
   message?: string;
   /** Absent for a model served on the hub only. `locations` is proposal P8. */
-  placement?: { locations?: string[] };
+  placement?: ModelPlacementSpec & { locations?: string[] };
   resourceVersion?: string;
   creationTimestamp?: string;
 };
@@ -264,6 +299,17 @@ export type ManagedModel = {
   modelName?: string;
   runtimeImage?: string;
   replicas?: number;
+  /** Whether KEDA scales the model, so it has no fixed replica count. */
+  autoscaled?: boolean;
+  /** The main container's CPU and memory requests and GPU count, as deployed. */
+  cpu?: string;
+  memory?: string;
+  gpuCount?: number;
+  env?: EnvVar[];
+  /** The annotations as stored; an edit sends them back whole with its changes. */
+  annotations?: Record<string, string>;
+  /** The Placement spec as deployed; absent for a model served on the hub only. */
+  placementSpec?: ModelPlacementSpec;
 };
 
 // The PoC's subscription types (src/app/types/subscriptions.ts at 62319b8), adapted from

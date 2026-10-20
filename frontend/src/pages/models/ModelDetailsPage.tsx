@@ -21,7 +21,7 @@ import { PageHeader } from '../../components/PageHeader';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
 import { useServiceData } from '../../hooks/useServiceData';
 import { formatDateTime } from '../../utilities/format';
-import { locationLabel, siteNamesOf } from './modelUtils';
+import { locationLabel, modelPath, siteNamesOf } from './modelUtils';
 import { ModelStatusDetails, ModelStatusLabel } from './ModelStatus';
 import { hasModelStatusDetails, modelPhase, modelStatusTitle } from './modelStatusInfo';
 import type { ModelDeleteService } from './useDeleteModel';
@@ -121,7 +121,15 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
               toggleLabel="Actions"
               ariaLabel={`Actions for ${title}`}
               testId="model-actions"
-              dropdownItems={[{ key: 'delete', label: 'Delete', isDanger: true, onClick: () => confirmDelete(model) }]}
+              dropdownItems={[
+                {
+                  key: 'edit',
+                  label: 'Edit',
+                  onClick: () => navigate(`${modelPath(model)}/edit`),
+                },
+                { isSpacer: true },
+                { key: 'delete', label: 'Delete', isDanger: true, onClick: () => confirmDelete(model) },
+              ]}
             />
           )
         }
