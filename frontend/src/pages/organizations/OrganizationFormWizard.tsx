@@ -46,7 +46,6 @@ export const OrganizationFormWizard: React.FC<Props> = ({ service, organization 
   return (
     <>
       <Wizard
-        className="portal-organization-wizard"
         navAriaLabel="Organization onboarding steps"
         onClose={requestLeave}
         footer={

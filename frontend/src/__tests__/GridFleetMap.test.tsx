@@ -39,7 +39,10 @@ it('labels only the selected pin, which keeps its status colour; the others labe
   expect(screen.getByText('Brussels · site3 · Ready')).toBeInTheDocument();
   expect(screen.queryByText('San Francisco')).not.toBeInTheDocument();
   const selected = marker.mock.calls.find(([, options]) => options?.radius === 11);
-  expect(selected?.[1]).toMatchObject({ color: '#3d7317', weight: 4 });
+  expect(selected?.[1]).toMatchObject({
+    color: 'var(--pf-t--global--icon--color--status--success--default)',
+    weight: 4,
+  });
 });
 
 it('fits the pins without zooming in past the region around them', () => {

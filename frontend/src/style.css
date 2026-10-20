@@ -1,4 +1,6 @@
-/* Ported from krisv/ai-grid-cloud-provider-poc src/style.css at 62319b8: the rules whose classes the console uses. */
+/* The console's global rules. Layout comes from PatternFly's components and layouts (Stack, Flex,
+   Grid, Card, Toolbar); what is left here sets PatternFly's own variables where a component has no
+   prop for it, plus two table and toolbar conventions. */
 /* The masthead's logo is the console's name, not an image. From PatternFly's md breakpoint up, its
    own masthead variables let the name sit on one line: the logo slot fits the text instead of an
    image's width, and the brand column stops taking the sidebar's width (a subgrid). A phone keeps
@@ -14,61 +16,24 @@
 .pf-v6-c-page .pf-v6-c-banner {
   white-space: normal;
 }
-.portal-page-heading {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--pf-t--global--spacer--sm) var(--pf-t--global--spacer--md);
-  justify-content: space-between;
-  align-items: center;
-  margin-block: var(--pf-t--global--spacer--md);
-}
-.portal-page-heading__title {
-  display: flex;
-  align-items: center;
-  gap: var(--pf-t--global--spacer--md);
-}
-.portal-resource-table > tbody > tr > td {
-  vertical-align: middle;
-}
-.portal-organization-wizard .pf-v6-c-wizard__inner-wrap {
-  min-height: 24rem;
-}
-/* Keep every navigation step visible even when the step content is short. */
-.portal-model-wizard .pf-v6-c-wizard__inner-wrap {
-  min-height: 24rem;
+
+/* A wizard on a page keeps its steps, fields and footer in view in a short window, and the page
+   scrolls instead: PatternFly's own minimum height for the wizard's body (15.625rem by default).
+   Scoped to the page so it outranks PatternFly's stylesheet, which loads after this one. */
+.pf-v6-c-page .pf-v6-c-wizard {
+  --pf-v6-c-wizard__outer-wrap--MinHeight: 24rem;
 }
 
 /* Console conventions shared by every page (see components/ and utilities/). */
 
-/* One search width on every list page, wide enough for its placeholder (PatternFly's own
-   toolbar item width variable; a plain width loses to the toolbar's rule). */
-.console-toolbar-search {
+/* A toolbar's search box or select, the same width everywhere and wide enough for its placeholder
+   (PatternFly's own toolbar item width variable; this PatternFly has no width prop on ToolbarItem). */
+.console-toolbar-field {
   --pf-v6-c-toolbar__item--Width: 22rem;
-}
-
-/* A table cell's first item and its "+N more" label. */
-.console-overflow-list {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--pf-t--global--spacer--sm);
-}
-
-/* A controller's raw reason and message, under a status's "Details". */
-.console-raw-status {
-  font-size: var(--pf-t--global--font--size--sm);
-  overflow-wrap: anywhere;
 }
 
 /* A number in a table: right-aligned, with digits of one width so columns line up. */
 .console-number {
   text-align: end;
   font-variant-numeric: tabular-nums;
-}
-
-/* A control with its label above it, in a row of such controls (e.g. a token limit). */
-.console-labeled-control > label {
-  font-weight: var(--pf-t--global--font--weight--body--bold);
-  font-size: var(--pf-t--global--font--size--sm);
-  margin-block-end: var(--pf-t--global--spacer--xs);
 }

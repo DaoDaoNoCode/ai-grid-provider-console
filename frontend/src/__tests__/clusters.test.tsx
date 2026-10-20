@@ -313,3 +313,15 @@ it('wraps the headers and keeps Site, Region and Hub for wide screens only', asy
   }
   expect(within(table).getByRole('columnheader', { name: 'OpenShift' })).not.toHaveClass('pf-m-hidden');
 });
+
+it('says when the search matches no cluster, and clears it from the table', async () => {
+  const user = userEvent.setup();
+  renderAt('/clusters', new MockConsoleService());
+  await screen.findByRole('row', { name: /^site1 / });
+  await user.type(screen.getByRole('textbox', { name: 'Search clusters' }), 'no-such-cluster');
+  expect(screen.getByRole('heading', { name: 'No results found' })).toBeVisible();
+  expect(screen.getByText('Change the search to see more clusters.')).toBeVisible();
+  await user.click(screen.getByRole('button', { name: 'Clear all filters' }));
+  expect(await screen.findByRole('row', { name: /^site1 / })).toBeVisible();
+  expect(screen.getByRole('textbox', { name: 'Search clusters' })).toHaveValue('');
+});

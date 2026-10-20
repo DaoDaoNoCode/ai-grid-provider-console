@@ -7,9 +7,9 @@ import { useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Alert,
+  AlertActionLink,
   Breadcrumb,
   BreadcrumbItem,
-  Button,
   ExpandableSection,
   Flex,
   Form,
@@ -336,11 +336,13 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
     }
     if (locationsError) {
       return (
-        <Alert isInline variant="danger" title="Error loading locations">
+        <Alert
+          isInline
+          variant="danger"
+          title="Error loading locations"
+          actionLinks={<AlertActionLink onClick={() => void reloadLocations()}>Retry</AlertActionLink>}
+        >
           {notAvailable(locationsError, 'Locations are') ?? locationsError.message}
-          <Button variant="link" onClick={() => void reloadLocations()}>
-            Retry
-          </Button>
         </Alert>
       );
     }
@@ -455,7 +457,6 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
       />
       <PageSection hasBodyWrapper={false} isFilled>
         <Wizard
-          className="portal-model-wizard"
           isProgressive={false}
           onClose={requestLeave}
           onStepChange={(_event, current, previous) => {

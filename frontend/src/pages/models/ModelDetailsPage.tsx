@@ -9,6 +9,7 @@ import {
   ListItem,
   PageSection,
   Spinner,
+  Stack,
 } from '@patternfly/react-core';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { UserService } from '../../api/ConsoleService';
@@ -91,7 +92,7 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
         </DetailsSection>
         <DetailsSection title="Locations">
           {model.locations.length ? (
-            <>
+            <Stack hasGutter>
               <List data-testid="model-locations">
                 {model.locations.map((location) => (
                   <ListItem key={location}>{locationLabel(location, siteNames)}</ListItem>
@@ -100,7 +101,7 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
               <Link to={`/ai-grid?model=${encodeURIComponent(`${model.namespace}/${model.name}`)}`}>
                 Show on the AI Grid map
               </Link>
-            </>
+            </Stack>
           ) : (
             <p>The placement hasn’t chosen any locations yet.</p>
           )}

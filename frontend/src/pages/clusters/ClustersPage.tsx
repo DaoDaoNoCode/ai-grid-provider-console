@@ -1,9 +1,12 @@
 import { useMemo, useState } from 'react';
 import {
   Alert,
+  AlertActionLink,
   Button,
   EmptyState,
+  EmptyStateActions,
   EmptyStateBody,
+  EmptyStateFooter,
   Icon,
   PageSection,
   Spinner,
@@ -25,6 +28,7 @@ import { RefreshButton } from '../../components/RefreshButton';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
 import { StatusLabel } from '../../components/StatusLabel';
 import { ToolbarSearch } from '../../components/ToolbarSearch';
+import { TableEmptyRow } from '../../components/TableEmptyRow';
 import { useServiceData } from '../../hooks/useServiceData';
 import { EMPTY_VALUE } from '../../utilities/format';
 import type { MembershipChange } from './MembershipModal';
@@ -119,11 +123,13 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
         return <LoadError subject="Clusters" error={error} />;
       }
       return (
-        <Alert isInline variant="danger" title="Error loading clusters">
+        <Alert
+          isInline
+          variant="danger"
+          title="Error loading clusters"
+          actionLinks={<AlertActionLink onClick={reload}>Retry</AlertActionLink>}
+        >
           {error.message}
-          <Button variant="link" onClick={reload}>
-            Retry
-          </Button>
         </Alert>
       );
     }
@@ -134,9 +140,13 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
       return (
         <EmptyState titleText="No managed clusters" headingLevel="h3">
           <EmptyStateBody>No ManagedClusters are available.</EmptyStateBody>
-          <Button variant="link" onClick={reload}>
-            Refresh
-          </Button>
+          <EmptyStateFooter>
+            <EmptyStateActions>
+              <Button variant="link" onClick={reload}>
+                Refresh
+              </Button>
+            </EmptyStateActions>
+          </EmptyStateFooter>
         </EmptyState>
       );
     }
@@ -159,7 +169,7 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
           }
         >
           {(pageRows) => (
-            <Table aria-label="AI Grid clusters" className="portal-resource-table" data-testid="clusters-table">
+            <Table aria-label="AI Grid clusters" data-testid="clusters-table">
               <Thead>
                 <Tr>
                   {columns.map((c, i) => (
@@ -172,9 +182,11 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
               </Thead>
               <Tbody>
                 {rows.length === 0 ? (
-                  <Tr>
-                    <Td colSpan={columns.length + 1}>No clusters match your search.</Td>
-                  </Tr>
+                  <TableEmptyRow
+                    colSpan={columns.length + 1}
+                    body="Change the search to see more clusters."
+                    onClear={() => setSearch('')}
+                  />
                 ) : (
                   pageRows.map((c) => (
                     <Tr key={c.name}>

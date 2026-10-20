@@ -1,6 +1,7 @@
 // Adapted from ai-grid-prototype's VisionFleetMap: same Leaflet pin styling.
 // Ported from krisv/ai-grid-cloud-provider-poc src/app/pages/grid/GridFleetMap.tsx at 62319b8.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Flex } from '@patternfly/react-core';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { GridCluster } from '../../api/types';
@@ -21,9 +22,15 @@ const initialZoom = 3;
 /** Fitting one or two sites stops here, so the map keeps the countries around them. */
 const maxFitZoom = 4;
 
+/** Each status's colour: PatternFly's status icon colours, so pins match the status labels. */
+const statusColor: Record<GridCluster['status'], string> = {
+  Ready: 'var(--pf-t--global--icon--color--status--success--default)',
+  Offline: 'var(--pf-t--global--icon--color--status--danger--default)',
+  Unknown: 'var(--pf-t--global--icon--color--subtle)',
+};
+
 /** A pin keeps its status colour when selected (the legend's colours); selection shows as a larger ring. */
-const pinColor = (cluster: GridCluster) =>
-  cluster.status === 'Ready' ? '#3d7317' : cluster.status === 'Offline' ? '#ee0000' : '#6a6e73';
+const pinColor = (cluster: GridCluster) => statusColor[cluster.status];
 
 const isMapped = (c: GridCluster) => c.latitude !== undefined && c.longitude !== undefined;
 
@@ -167,26 +174,49 @@ export const GridFleetMap: React.FC<Props> = ({ clusters, selected, onSelect, ti
   }, [clusters, selected, isFiltered]);
 
   return (
-    <div className="vision-fleet-map">
-      <div ref={container} className="vision-fleet-map__leaflet" role="region" aria-label="AI Grid map of clusters" />
+    <div className="fleet-map">
+      <div ref={container} className="fleet-map__leaflet" role="region" aria-label="AI Grid map of clusters" />
       {(tileError || (outlineError && tileUrl === '')) && (
-        <p className="fleet-map-notice">
+        <p className="fleet-map__overlay fleet-map__overlay--notice">
           {tileError ? 'Basemap tiles unavailable' : 'No basemap configured'}. Cluster pins and the cluster list remain
           available.
         </p>
       )}
       {!clusters.some(isMapped) && (
-        <p className="vision-fleet-map__empty">
+        <p className="fleet-map__overlay fleet-map__overlay--empty">
           {isFiltered
             ? 'No clusters match the search or filter.'
             : 'No mapped clusters. Add site coordinates to ManagedCluster annotations.'}
         </p>
       )}
-      <div className="vision-fleet-map__legend">
-        <span className="fleet-legend-ready">Ready</span>
-        <span className="fleet-legend-offline">Offline</span>
-        <span className="fleet-legend-unknown">Unknown</span>
-      </div>
+      <Flex
+        component="ul"
+        aria-label="Pin colours"
+        className="fleet-map__overlay fleet-map__overlay--legend"
+        spaceItems={{ default: 'spaceItemsMd' }}
+      >
+        {(Object.keys(statusColor) as GridCluster['status'][]).map((status) => (
+          <Flex
+            component="li"
+            key={status}
+            alignItems={{ default: 'alignItemsCenter' }}
+            spaceItems={{ default: 'spaceItemsXs' }}
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+              <circle
+                cx="6"
+                cy="6"
+                r="4.5"
+                stroke={statusColor[status]}
+                strokeWidth="2"
+                fill={statusColor[status]}
+                fillOpacity="0.35"
+              />
+            </svg>
+            <span>{status}</span>
+          </Flex>
+        ))}
+      </Flex>
     </div>
   );
 };

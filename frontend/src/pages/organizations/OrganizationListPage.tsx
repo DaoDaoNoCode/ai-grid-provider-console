@@ -4,6 +4,7 @@
 import { useMemo, useState } from 'react';
 import {
   Alert,
+  AlertActionLink,
   Button,
   EmptyState,
   EmptyStateActions,
@@ -26,6 +27,7 @@ import { PaginatedTable } from '../../components/PaginatedTable';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
 import { StatusLabel } from '../../components/StatusLabel';
 import { ToolbarSearch } from '../../components/ToolbarSearch';
+import { TableEmptyRow } from '../../components/TableEmptyRow';
 import { useServiceData } from '../../hooks/useServiceData';
 import { EMPTY_VALUE } from '../../utilities/format';
 import { useDeleteOrganization } from './useDeleteOrganization';
@@ -77,11 +79,13 @@ export const OrganizationListPage: React.FC<Props> = ({ service }) => {
         return <LoadError subject="Organizations" error={error} />;
       }
       return (
-        <Alert isInline variant="danger" title="Error loading organizations">
+        <Alert
+          isInline
+          variant="danger"
+          title="Error loading organizations"
+          actionLinks={<AlertActionLink onClick={() => void refresh()}>Retry</AlertActionLink>}
+        >
           {error.message}
-          <Button variant="link" onClick={() => void refresh()}>
-            Retry
-          </Button>
         </Alert>
       );
     }
@@ -117,7 +121,7 @@ export const OrganizationListPage: React.FC<Props> = ({ service }) => {
           }
         >
           {(pageRows) => (
-            <Table aria-label="Organizations" className="portal-resource-table" data-testid="tenants-table">
+            <Table aria-label="Organizations" data-testid="tenants-table">
               <Thead>
                 <Tr>
                   {columns.map((c, i) => (
@@ -130,9 +134,11 @@ export const OrganizationListPage: React.FC<Props> = ({ service }) => {
               </Thead>
               <Tbody>
                 {rows.length === 0 ? (
-                  <Tr>
-                    <Td colSpan={columns.length + 1}>No organizations match your search.</Td>
-                  </Tr>
+                  <TableEmptyRow
+                    colSpan={columns.length + 1}
+                    body="Change the search to see more organizations."
+                    onClear={() => setSearch('')}
+                  />
                 ) : (
                   pageRows.map((o) => (
                     <Tr key={o.id}>

@@ -84,7 +84,7 @@ it('shows all sites without a selector and recalculates overview totals for the 
   const user = userEvent.setup();
   renderAt('/monitoring', service);
   await screen.findByRole('img', { name: 'Gateway request rate over time' });
-  const overview = () => screen.getByText('Requests').closest('.observability-stat-card')!.textContent;
+  const overview = () => screen.getByText('Requests').closest('.pf-v6-c-card')!.textContent;
   const first = overview();
   await user.click(screen.getByRole('button', { name: 'Last 24h' }));
   await waitFor(() => expect(overview()).not.toBe(first));
@@ -106,7 +106,7 @@ it('shows the request count in the window as a whole number', async () => {
   });
   renderAt('/monitoring', service);
   await screen.findByRole('img', { name: 'Gateway request rate over time' });
-  const card = screen.getByText('Requests').closest('.observability-stat-card')!;
+  const card = screen.getByText('Requests').closest('.pf-v6-c-card')!;
   expect(card.textContent).toBe('Requests3');
 });
 

@@ -1,61 +1,26 @@
-/* Ported from krisv/ai-grid-cloud-provider-poc src/app/pages/grid/grid-fleet.css at 62319b8. */
-/* Summary styling adapted from the provided ai-grid-prototype reference. */
+/* The AI Grid map. Layout comes from PatternFly (Stack, Gallery, Card, Drawer, Flex); these rules
+   only size the Leaflet map and place what sits on top of it, with PatternFly's tokens. */
 
-/* The fleet summary, above the map. */
-.vision-summary-strip {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--pf-t--global--spacer--sm);
-  margin-block-end: var(--pf-t--global--spacer--md);
-}
-.vision-summary-tile {
-  min-width: 0;
-  padding: var(--pf-t--global--spacer--sm) var(--pf-t--global--spacer--md);
-  border: var(--pf-t--global--border--width--regular) solid var(--pf-t--global--border--color--default);
-  border-radius: var(--pf-t--global--border--radius--small);
-  background: var(--pf-t--global--background--color--primary--default);
-}
-.vision-summary-tile__label {
-  font-size: var(--pf-t--global--font--size--sm);
-  color: var(--pf-t--global--text--color--subtle);
-}
-.vision-summary-tile__value {
-  display: flex;
-  align-items: baseline;
-  gap: var(--pf-t--global--spacer--sm);
-  font-size: var(--pf-t--global--font--size--heading--md);
-  font-weight: var(--pf-t--global--font--weight--heading--default);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.vision-summary-tile__sub {
-  font-size: var(--pf-t--global--font--size--sm);
-  font-weight: var(--pf-t--global--font--weight--body--default);
-  color: var(--pf-t--global--text--color--subtle);
+/* The card's rounded corners clip the map. */
+.fleet-region {
+  overflow: hidden;
 }
 
-/* The map and its drawer. */
-.ai-grid-future-vision {
-  min-width: 0;
-}
-.ai-grid-future-vision__fleet {
-  border: 1px solid var(--pf-t--global--border--color--default);
-  background: var(--pf-t--global--background--color--primary--default);
-}
-.ai-grid-future-vision__fleet .pf-v6-c-drawer__body {
-  min-width: 0;
-}
+/* Leaflet needs a sized container; the drawer beside it scrolls within the same height. */
 .fleet-map-area {
   position: relative;
   height: clamp(380px, 60vh, 720px);
 }
-.vision-fleet-map {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  background: #eee;
+.fleet-drawer {
+  max-height: clamp(380px, 60vh, 720px);
+  min-width: 19rem;
 }
-.vision-fleet-map__leaflet {
+.fleet-map {
+  position: relative;
+  height: 100%;
+  background: var(--pf-t--global--background--color--secondary--default);
+}
+.fleet-map__leaflet {
   position: absolute;
   inset: 0;
 }
@@ -66,126 +31,46 @@
   stroke: var(--pf-t--global--border--color--default);
   stroke-width: 1;
 }
-.vision-fleet-map__legend {
+
+/* Boxes on top of the map: the legend, and a message when there is nothing to show. Above
+   Leaflet's panes (z-index 400), below its controls (1000). */
+.fleet-map__overlay {
   position: absolute;
-  bottom: 12px;
-  left: 12px;
-  display: flex;
-  gap: 16px;
-  padding: 6px 12px;
-  background: white;
-  border-radius: 4px;
-  font-size: 12px;
   z-index: 500;
+  margin: 0;
+  padding: var(--pf-t--global--spacer--sm) var(--pf-t--global--spacer--md);
+  background: var(--pf-t--global--background--color--primary--default);
+  border-radius: var(--pf-t--global--border--radius--small);
+  font-size: var(--pf-t--global--font--size--sm);
 }
-.vision-fleet-map__legend span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.fleet-map__overlay--legend {
+  inset-block-end: var(--pf-t--global--spacer--md);
+  inset-inline-start: var(--pf-t--global--spacer--md);
 }
-.vision-fleet-map__legend span::before {
-  content: '';
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  border: 2px solid var(--pin);
-  background: color-mix(in srgb, var(--pin) 35%, transparent);
-}
-.fleet-legend-ready {
-  --pin: #3d7317;
-}
-.fleet-legend-offline {
-  --pin: #ee0000;
-}
-.fleet-legend-unknown {
-  --pin: #6a6e73;
-}
-.vision-fleet-map__empty,
-.fleet-map-notice {
-  position: absolute;
-  top: 45%;
-  left: 15%;
-  right: 15%;
-  padding: 12px;
-  background: white;
-  z-index: 500;
+.fleet-map__overlay--empty,
+.fleet-map__overlay--notice {
+  inset-inline: 15%;
   text-align: center;
 }
-.fleet-map-notice {
-  top: auto;
-  bottom: 42px;
-  font-size: 12px;
+.fleet-map__overlay--empty {
+  inset-block-start: 45%;
 }
-
-/* The drawer: the list of cards, or one cluster's or model's details. */
-.fleet-drawer {
-  max-height: clamp(380px, 60vh, 720px);
-  min-width: 310px;
-  overflow: auto;
-}
-.fleet-panel-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  flex-wrap: wrap;
-}
-.fleet-panel-toolbar .pf-v6-c-search-input {
-  flex: 1 1 130px;
-  min-width: 0;
-}
-.fleet-detail-header {
-  width: 100%;
-}
-.fleet-detail-header h2 {
-  overflow-wrap: anywhere;
-}
-.fleet-card-list {
-  display: grid;
-  gap: var(--pf-t--global--spacer--sm);
-}
-.fleet-card__body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--pf-t--global--spacer--xs);
-  font-size: var(--pf-t--global--font--size--sm);
-}
-.fleet-card .pf-v6-c-card__title-text {
-  overflow-wrap: anywhere;
-}
-.fleet-card__title > :first-child {
-  min-width: 0;
-}
-.fleet-muted {
-  color: var(--pf-t--global--text--color--subtle);
-  font-size: var(--pf-t--global--font--size--sm);
-}
-.fleet-related-links {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-}
-.fleet-related-links button {
-  text-align: left;
-  overflow-wrap: anywhere;
+.fleet-map__overlay--notice {
+  inset-block-end: var(--pf-t--global--spacer--3xl);
 }
 
 /* On a phone the drawer stacks under a shorter map, instead of covering it. */
 @media (max-width: 700px) {
-  .ai-grid-future-vision__fleet .pf-v6-c-drawer__main {
+  .fleet-region .pf-v6-c-drawer__main {
     display: flex;
     flex-direction: column;
   }
-  .ai-grid-future-vision__fleet .pf-v6-c-drawer__content {
+  .fleet-region .pf-v6-c-drawer__content {
     display: block;
     flex: 0 0 auto;
   }
   /* Beats PatternFly's overlay rule (.pf-v6-c-drawer.pf-m-expanded > __main > __panel). */
-  .ai-grid-future-vision__fleet
-    .pf-v6-c-drawer.pf-m-expanded
-    > .pf-v6-c-drawer__main
-    > .pf-v6-c-drawer__panel.fleet-drawer {
+  .fleet-region .pf-v6-c-drawer.pf-m-expanded > .pf-v6-c-drawer__main > .pf-v6-c-drawer__panel.fleet-drawer {
     position: static;
     flex-basis: auto;
     width: 100%;
@@ -200,11 +85,4 @@
     min-width: 0;
     max-height: none;
   }
-}
-
-/* "Updated 2 minutes ago" in the page toolbar. */
-.grid-updated {
-  color: var(--pf-t--global--text--color--subtle);
-  font-size: var(--pf-t--global--font--size--sm);
-  white-space: nowrap;
 }

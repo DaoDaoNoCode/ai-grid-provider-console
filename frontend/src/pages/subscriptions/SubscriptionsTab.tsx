@@ -10,7 +10,9 @@ import {
   Bullseye,
   Button,
   EmptyState,
+  EmptyStateActions,
   EmptyStateBody,
+  EmptyStateFooter,
   EmptyStateVariant,
   PageSection,
   Spinner,
@@ -97,14 +99,14 @@ export const SubscriptionsTab: React.FC<Props> = ({ service }) => {
           variant={EmptyStateVariant.lg}
           data-testid="error-empty-state"
         >
-          <EmptyStateBody data-testid="error-empty-state-body">
-            {error.message}
-            <div>
+          <EmptyStateBody data-testid="error-empty-state-body">{error.message}</EmptyStateBody>
+          <EmptyStateFooter>
+            <EmptyStateActions>
               <Button variant="link" onClick={refresh}>
                 Retry
               </Button>
-            </div>
-          </EmptyStateBody>
+            </EmptyStateActions>
+          </EmptyStateFooter>
         </EmptyState>
       </PageSection>
     );
