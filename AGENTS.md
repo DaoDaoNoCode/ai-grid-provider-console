@@ -90,3 +90,6 @@ when the RPCs allow it.
   backend that ignored `filter`, `offset` and `limit` (the shipped one), so the BFF answers 501
   when the caller sent any of them; without them `listMeta` falls back to a total it can prove.
   This is compatibility with the shipped backend, not filtering.
+- `requireProviderAdmin` (`bff/internal/api/middleware.go`), the BFF's one authorization
+  decision: every `/api/v1` call except `GET /user` and `GET /config` needs the caller's
+  `isProviderAdmin` review to pass (403 otherwise), until the backend authorizes the caller.

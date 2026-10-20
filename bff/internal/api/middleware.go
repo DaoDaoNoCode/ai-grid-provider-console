@@ -3,11 +3,13 @@ package api
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"runtime/debug"
 	"time"
 
+	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/hub"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/identity"
 )
 
@@ -21,6 +23,34 @@ func (a *App) requireIdentity(next http.Handler) http.Handler {
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(identity.WithIdentity(r.Context(), id)))
+	})
+}
+
+// requireProviderAdmin lets a call through only when the hub says the caller
+// may patch ManagedClusters (hub.ProviderAdminCheck, asked with the caller's
+// own token), reads as well as writes. The backend acts with its own
+// ServiceAccount and authorizes nothing yet, and kube-auth-proxy admits any
+// OpenShift login, so without this any signed-in user could read every
+// cluster and tenant and write through the backend's rights. GET /user and
+// GET /config stay open: the UI needs them to say who the caller is.
+func (a *App) requireProviderAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && (r.URL.Path == APIPrefix+"/user" || r.URL.Path == APIPrefix+"/config") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		id, _ := identity.FromContext(r.Context())
+		allowed, err := a.hub.CanI(r.Context(), id.Token(), hub.ProviderAdminCheck)
+		switch {
+		case errors.Is(err, hub.ErrUnauthorized):
+			a.respondError(w, r, Errorf(http.StatusUnauthorized, "the hub rejected the credentials; log in again"))
+		case err != nil:
+			a.respondError(w, r, fmt.Errorf("%w: provider-admin check for %s: %w", errHub, id.Username, err))
+		case !allowed:
+			a.respondError(w, r, Errorf(http.StatusForbidden, "the console is for provider admins: the hub says you may not patch ManagedClusters"))
+		default:
+			next.ServeHTTP(w, r)
+		}
 	})
 }
 

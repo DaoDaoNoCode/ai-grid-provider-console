@@ -52,7 +52,7 @@ func (a *App) Handler() http.Handler {
 	root := http.NewServeMux()
 	root.HandleFunc("GET /healthcheck", a.healthcheck)
 	root.HandleFunc("GET /readyz", a.readyz)
-	root.Handle(APIPrefix+"/", a.requireIdentity(api))
+	root.Handle(APIPrefix+"/", a.requireIdentity(a.requireProviderAdmin(api)))
 	if a.cfg.StaticAssetsDir != "" {
 		root.Handle("/", newSPAHandler(a.cfg.StaticAssetsDir))
 	}

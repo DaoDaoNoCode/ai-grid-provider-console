@@ -17,7 +17,8 @@ type User struct {
 	// IsProviderAdmin tells the UI whether to offer provider-admin actions. It
 	// comes from the hub's own answer to "may this user patch ManagedClusters?",
 	// asked with the caller's token, so it reflects the user's RBAC and nothing
-	// the console decides. The backend still authorizes every call.
+	// the console decides. The same check gates every other API call
+	// (requireProviderAdmin), because the backend authorizes nothing yet.
 	IsProviderAdmin bool `json:"isProviderAdmin"`
 }
 
