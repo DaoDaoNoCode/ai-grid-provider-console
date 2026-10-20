@@ -1,60 +1,13 @@
 /* Ported from krisv/ai-grid-cloud-provider-poc src/style.css at 62319b8: the rules whose classes the console uses. */
-.pf-v6-c-masthead.portal-masthead {
-  display: flex;
-  align-items: center;
-  flex-wrap: nowrap;
-  min-height: 4rem;
-  border-bottom: 1px solid var(--pf-t--global--border--color--default);
-}
-.portal-masthead .pf-v6-c-masthead__main {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  flex-wrap: nowrap;
-  gap: var(--pf-t--global--spacer--md);
-  flex: 1;
-  min-width: 0;
-  margin-inline-end: 0;
-}
-.portal-masthead .pf-v6-c-masthead__content {
-  flex: 0 0 auto;
-  margin-inline-start: auto;
-}
-.portal-masthead .pf-v6-c-masthead__brand {
-  min-width: 0;
-  align-self: center;
-  align-items: center;
-  padding-block: 0;
-  border: 0;
-}
-/* The default logo width is sized for an image, rather than the console title. */
-.portal-masthead .pf-v6-c-masthead__logo {
-  display: flex;
-  align-items: center;
-  width: auto;
-  max-height: none;
-}
-.portal-masthead .pf-v6-c-title {
-  margin: 0;
-  font-weight: 600;
-  white-space: nowrap;
-}
-@media (max-width: 575px) {
-  /* .pf-m-lg matches the Title's size modifier, which would otherwise keep its larger font. */
-  .portal-masthead .pf-v6-c-title.pf-m-lg {
-    font-size: 1rem;
-    white-space: normal;
-  }
-  .portal-masthead .pf-v6-c-masthead__brand {
-    flex: 0 1 auto;
-  }
-  .portal-masthead .pf-v6-c-masthead__logo {
-    min-width: 0;
-  }
-  .portal-masthead .pf-v6-c-masthead__content {
-    margin-inline-start: auto;
-    padding-inline-start: var(--pf-t--global--spacer--sm);
-    flex: 0 0 auto;
+/* The masthead's logo is the console's name, not an image. From PatternFly's md breakpoint up, its
+   own masthead variables let the name sit on one line: the logo slot fits the text instead of an
+   image's width, and the brand column stops taking the sidebar's width (a subgrid). A phone keeps
+   PatternFly's defaults, which wrap the name beside the user menu. The modifier outranks
+   PatternFly's stylesheet, which loads after this one. */
+@media (min-width: 48rem) {
+  .pf-v6-c-masthead.pf-m-display-inline {
+    --pf-v6-c-masthead__logo--Width: auto;
+    --pf-v6-c-masthead--m-display-inline--breakpoint--xl--GridTemplateColumns: max-content 1fr;
   }
 }
 /* The fake-backend banner wraps instead of running off a narrow screen. */

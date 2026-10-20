@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Dropdown, DropdownItem, DropdownList, MenuToggle } from '@patternfly/react-core';
+import { UserIcon } from '@patternfly/react-icons';
 import type { User } from '../api/types';
 
 /** Where kube-auth-proxy (oauth2-proxy) ends the session and starts a new login. */
@@ -19,15 +20,9 @@ type Props = {
 /** The masthead's user menu (PatternFly masthead pattern): who is signed in, About, and Log out. */
 export const UserMenu: React.FC<Props> = ({ user, loaded, error, canSignOut, onAbout }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const name = error ? 'Not signed in' : !loaded ? 'Signing in...' : user?.username;
-  const label = (
-    <span data-testid="masthead-user">
-      {name}
-      {user?.isProviderAdmin ? ' (provider admin)' : ''}
-    </span>
-  );
+  const name = `${error ? 'Not signed in' : !loaded ? 'Signing in...' : user?.username}${user?.isProviderAdmin ? ' (provider admin)' : ''}`;
   if (!user) {
-    return label;
+    return <span data-testid="masthead-user">{name}</span>;
   }
   return (
     <Dropdown
@@ -35,8 +30,18 @@ export const UserMenu: React.FC<Props> = ({ user, loaded, error, canSignOut, onA
       onOpenChange={setIsOpen}
       popperProps={{ position: 'right' }}
       toggle={(toggleRef) => (
-        <MenuToggle ref={toggleRef} variant="plainText" isExpanded={isOpen} onClick={() => setIsOpen((open) => !open)}>
-          {label}
+        <MenuToggle
+          ref={toggleRef}
+          variant="plainText"
+          icon={<UserIcon />}
+          aria-label={`User menu: ${name}`}
+          isExpanded={isOpen}
+          onClick={() => setIsOpen((open) => !open)}
+        >
+          {/* A phone shows the icon only, so the console's name keeps the room it needs. */}
+          <span data-testid="masthead-user" className="pf-v6-u-display-none pf-v6-u-display-inline-on-md">
+            {name}
+          </span>
         </MenuToggle>
       )}
     >
