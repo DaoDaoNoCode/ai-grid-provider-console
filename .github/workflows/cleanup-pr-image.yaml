@@ -1,0 +1,47 @@
+name: cleanup-pr-image
+
+# Delete a pull request's pr-<number> image when it closes. Only a version whose one tag is
+# pr-<number> is deleted, so sha-*, latest and version tags are never touched.
+#
+# pull_request_target, because a fork's pull_request token can't delete package versions. It is
+# safe here because this workflow never checks out or runs PR code.
+
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions: {}
+
+jobs:
+  delete:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    env:
+      # Keep in step with publish-image.yaml.
+      IMAGES: ai-grid-provider-console
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      OWNER: ${{ github.repository_owner }}
+      PR_NUMBER: ${{ github.event.number }}
+    steps:
+      - name: Delete pr-${{ github.event.number }}
+        run: |
+          for image in $IMAGES; do
+            versions=$(gh api "orgs/${OWNER}/packages/container/${image}/versions" --paginate)
+            # Delete a version only when pr-<number> is its one tag. A PR can push an image identical
+            # to a published one, which puts pr-<number> on that version; deleting it would delete
+            # sha-* or latest too. Such a version is reported and kept.
+            echo "$versions" | jq -r --arg tag "pr-${PR_NUMBER}" '.[]
+              | select((.metadata.container.tags | index($tag)) and (.metadata.container.tags | length > 1))
+              | "::warning::keeping \(.name): \($tag) shares it with \(.metadata.container.tags | join(","))"'
+            ids=$(echo "$versions" | jq -r --arg tag "pr-${PR_NUMBER}" \
+              '.[] | select(.metadata.container.tags == [$tag]) | .id')
+            if [ -z "$ids" ]; then
+              echo "No version of ${image} tagged only pr-${PR_NUMBER} to delete."
+              continue
+            fi
+            for id in $ids; do
+              echo "Deleting ${image} version ${id} (pr-${PR_NUMBER})"
+              gh api --method DELETE "orgs/${OWNER}/packages/container/${image}/versions/${id}"
+            done
+          done

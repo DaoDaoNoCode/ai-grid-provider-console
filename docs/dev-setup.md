@@ -132,7 +132,8 @@ BFF's `/readyz` through the proxy, which passes that one path without login; it 
 backend, so it is the readiness signal for all three containers.
 
 CI publishes the console to `ghcr.io/ai-grid-cloud/ai-grid-provider-console`: every merge to
-`main` as `sha-<full commit>` and `latest`, and each `v*` tag by version. Deploy a published image with `IMAGE=ghcr.io/ai-grid-cloud/ai-grid-provider-console
+`main` as `sha-<full commit>` and `latest`, each `v*` tag by version, and each open pull request
+as `pr-<number>` (deleted when it closes). Deploy a published image with `IMAGE=ghcr.io/ai-grid-cloud/ai-grid-provider-console
 TAG=sha-<full commit>`, or build your own:
 
 ```sh
