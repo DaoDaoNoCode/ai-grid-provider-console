@@ -6,13 +6,12 @@ import type { OrganizationsService } from '../../api/organizations';
 import type { Organization } from '../../api/types';
 import { PageHeader } from '../../components/PageHeader';
 import { useServiceData } from '../../hooks/useServiceData';
-import { OrganizationEditForm } from './OrganizationEditForm';
 import { OrganizationFormWizard } from './OrganizationFormWizard';
 import { OrganizationLoadError } from './OrganizationLoadError';
 
 type Props = { service: OrganizationsService & UserService };
 
-/** Create at /organizations/create (a wizard), edit at /organizations/:id/edit (one form). */
+/** Create at /organizations/create, edit at /organizations/:id/edit: the same wizard. */
 export const OrganizationWizardPage: React.FC<Props> = ({ service }) => {
   const { id } = useParams();
   const [organization, loaded, error] = useServiceData<Organization | undefined>(
@@ -51,10 +50,8 @@ export const OrganizationWizardPage: React.FC<Props> = ({ service }) => {
           <OrganizationLoadError error={error} />
         ) : !loaded || (id && !organization) ? (
           <Spinner aria-label="Loading organization" />
-        ) : organization ? (
-          <OrganizationEditForm key={organization.id} service={service} organization={organization} />
         ) : (
-          <OrganizationFormWizard service={service} />
+          <OrganizationFormWizard key={organization?.id} service={service} organization={organization} />
         )}
       </PageSection>
     </>

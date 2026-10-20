@@ -11,6 +11,7 @@ import {
   TextInput,
 } from '@patternfly/react-core';
 import { MinusCircleIcon, PlusCircleIcon } from '@patternfly/react-icons';
+import { ReadOnlyField } from '../../components/ReadOnlyField';
 
 type Value = { name: string; domains: string[] };
 
@@ -57,24 +58,27 @@ export const OrganizationDetailsFields: React.FC<Props> = ({
 
   return (
     <>
-      <FormGroup label="Name" fieldId="tenant-name" isRequired={isNameEditable}>
-        {isNameEditable ? (
-          <>
-            <TextInput
-              id="tenant-name"
-              value={value.name}
-              isDisabled={isDisabled}
-              isRequired
-              onBlur={() => touch('name')}
-              validated={error('name') ? 'error' : 'default'}
-              onChange={(_event, name) => onChange({ ...value, name })}
-            />
-            <Help error={error('name')}>Use lowercase letters, numbers, and hyphens.</Help>
-          </>
-        ) : (
-          <TextInput id="tenant-name" value={value.name} readOnlyVariant="default" />
-        )}
-      </FormGroup>
+      {isNameEditable ? (
+        <FormGroup label="Name" fieldId="tenant-name" isRequired>
+          <TextInput
+            id="tenant-name"
+            value={value.name}
+            isDisabled={isDisabled}
+            isRequired
+            onBlur={() => touch('name')}
+            validated={error('name') ? 'error' : 'default'}
+            onChange={(_event, name) => onChange({ ...value, name })}
+          />
+          <Help error={error('name')}>Use lowercase letters, numbers, and hyphens.</Help>
+        </FormGroup>
+      ) : (
+        <ReadOnlyField
+          label="Name"
+          fieldId="tenant-name"
+          value={value.name}
+          reason="The name can't be changed once the organization exists."
+        />
+      )}
       <FormSection title="Domains" titleElement="h3">
         {value.domains.map((domain, index) => (
           <FormGroup key={index} label={`Domain ${index + 1}`} fieldId={`tenant-domain-${index}`} isRequired>

@@ -37,6 +37,18 @@ const input: OrganizationInput = {
 };
 
 const emptyService = () => new MockConsoleService(undefined, undefined, []);
+
+type User = ReturnType<typeof userEvent.setup>;
+
+/** Opens an edit wizard step from its navigation: every step is open from the start when editing. */
+const openStep = async (user: User, name: 'Organization details' | 'Identity provider' | 'Review') =>
+  user.click(await screen.findByRole('button', { name }));
+
+/** Opens Review and saves the edit. */
+const saveEdit = async (user: User) => {
+  await openStep(user, 'Review');
+  await user.click(screen.getByRole('button', { name: 'Save changes' }));
+};
 const viewer = { username: 'viewer', groups: [], isProviderAdmin: false };
 
 const fillRequiredIdp = async (user: ReturnType<typeof userEvent.setup>, values: [string, string][]) => {
@@ -107,14 +119,18 @@ it('onboards organization details then IdP, saves only after review, supports de
   expect(screen.getByRole('heading', { name: 'tenant1' })).toBeVisible();
   await user.click(screen.getByTestId('organization-actions'));
   await user.click(screen.getByRole('menuitem', { name: 'Edit' }));
-  // Edit is one form; the name can't change, so it's read-only.
+  // Edit is the create wizard with every step open; the name can't change, so it's read-only.
   expect(await screen.findByRole('heading', { name: 'Edit tenant1' })).toBeVisible();
   expect(screen.getByRole('textbox', { name: 'Name' })).toHaveAttribute('readonly');
+  expect(screen.getByText("The name can't be changed once the organization exists.")).toBeVisible();
+  // Nothing changed yet, so Review can't save.
+  await openStep(user, 'Review');
   expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
+  await openStep(user, 'Identity provider');
   const title = screen.getByRole('textbox', { name: 'Title' });
   await user.clear(title);
   await user.type(title, 'Updated SSO');
-  await user.click(screen.getByRole('button', { name: 'Save changes' }));
+  await saveEdit(user);
   expect(await screen.findByText('Organization configuration saved')).toBeVisible();
   expect(await screen.findByTestId('tenant-configuration-details')).toHaveTextContent('Updated SSO');
   await user.click(screen.getByTestId('organization-actions'));
@@ -227,6 +243,7 @@ it('edit: Cancel leaves at once without changes, and returns to the organization
 
   await user.click(screen.getByTestId('organization-actions'));
   await user.click(screen.getByRole('menuitem', { name: 'Edit' }));
+  await openStep(user, 'Identity provider');
   const title = await screen.findByRole('textbox', { name: 'Title' });
   await user.clear(title);
   await user.type(title, 'Unsaved IdP');
@@ -241,17 +258,19 @@ it('keeps input on conflict', async () => {
   const existing = await service.createOrganization(input);
   const user = userEvent.setup();
   renderAt(`/organizations/${existing.id}/edit`, service);
+  await openStep(user, 'Identity provider');
   const title = await screen.findByRole('textbox', { name: 'Title' });
   await user.clear(title);
   await user.type(title, 'My unsaved title');
   // Another tab saves first, so the version this form read is stale.
   await service.updateOrganization(existing.id, input, existing.resourceVersion);
-  await user.click(screen.getByRole('button', { name: 'Save changes' }));
+  await saveEdit(user);
   // The PoC's message, not the backend's text.
   expect(await screen.findByText('This organization changed. Reload it before saving or deleting.')).toBeVisible();
   expect(screen.getByText('Unable to save organization')).toBeVisible();
-  expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('My unsaved title');
   expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled();
+  await openStep(user, 'Identity provider');
+  expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('My unsaved title');
   expect(service.organizations[0].identityProvider?.title).toBe('Tenant 1 SSO');
   expect(service.organizations[0].resourceVersion).toBe('2');
 });
@@ -358,7 +377,7 @@ it('edit sends PATCH with domains, identity provider, and If-Match', async () =>
   await waitFor(() => expect(domain).toHaveValue('acme-robotics.example.com'));
   await user.clear(domain);
   await user.type(domain, 'acme.example.net');
-  await user.click(screen.getByRole('button', { name: 'Save changes' }));
+  await saveEdit(user);
   expect(await screen.findByText('Organization configuration saved')).toBeVisible();
 
   const patch = fetchFn.mock.calls.find(([, init]) => init?.method === 'PATCH');
@@ -437,7 +456,7 @@ it.each(['', '/edit'])('loads the other organization when the id in /organizatio
   await shows(globex.name);
 });
 
-it('locks the identity provider fields while an edit saves', async () => {
+it('locks the edit wizard while it saves', async () => {
   const service = new MockConsoleService();
   const [organization] = service.organizations;
   let finish: () => void = () => undefined;
@@ -448,11 +467,13 @@ it('locks the identity provider fields while an edit saves', async () => {
     });
   const user = userEvent.setup();
   renderAt(`/organizations/${encodeURIComponent(organization.id)}/edit`, service);
-  const title = await screen.findByRole('textbox', { name: 'Title' });
-  await user.type(title, ' (new)');
-  await user.click(screen.getByRole('button', { name: 'Save changes' }));
-  expect(title).toBeDisabled();
-  expect(screen.getByRole('checkbox', { name: /Validate signature/ })).toBeDisabled();
+  await openStep(user, 'Identity provider');
+  await user.type(await screen.findByRole('textbox', { name: 'Title' }), ' (new)');
+  await saveEdit(user);
+  // The steps and the buttons stay put until the save answers.
+  expect(screen.getByRole('button', { name: 'Identity provider' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Back' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
   finish();
   expect(await screen.findByText('Organization configuration saved')).toBeVisible();
 });
