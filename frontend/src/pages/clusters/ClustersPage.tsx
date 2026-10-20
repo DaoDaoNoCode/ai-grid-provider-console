@@ -257,7 +257,7 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
   return (
     <>
       <PageHeader title="Clusters" description="Manage AI Grid membership and provisioning readiness." />
-      <PageSection>{body()}</PageSection>
+      <PageSection isFilled>{body()}</PageSection>
       {change && (
         <MembershipModal {...change} onConfirm={() => applyChange(change)} onClose={() => setChange(undefined)} />
       )}

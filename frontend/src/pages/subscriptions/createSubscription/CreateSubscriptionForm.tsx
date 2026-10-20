@@ -272,7 +272,7 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ service, modelRefs, su
   }
 
   return (
-    <PageSection hasBodyWrapper={false}>
+    <PageSection hasBodyWrapper={false} isFilled>
       <Form maxWidth="750px">
         <K8sNameDescriptionField
           data={nameDescData}

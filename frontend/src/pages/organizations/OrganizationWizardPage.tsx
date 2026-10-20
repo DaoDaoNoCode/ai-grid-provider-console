@@ -46,7 +46,7 @@ export const OrganizationWizardPage: React.FC<Props> = ({ service }) => {
           </Breadcrumb>
         }
       />
-      <PageSection hasBodyWrapper={false}>
+      <PageSection hasBodyWrapper={false} isFilled>
         {error ? (
           <OrganizationLoadError error={error} />
         ) : !loaded || (id && !organization) ? (

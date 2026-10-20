@@ -110,7 +110,7 @@ export const ViewSubscriptionPage: React.FC<Props> = ({ service }) => {
       onRetry={() => void reload()}
     >
       {loaded && subscriptionInfo && (
-        <PageSection>
+        <PageSection isFilled>
           <Flex direction={{ default: 'column' }} spaceItems={{ default: 'spaceItemsXl' }}>
             <SubscriptionDetailsSection
               subscription={subscriptionInfo.subscription}

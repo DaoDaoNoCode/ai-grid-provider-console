@@ -94,7 +94,7 @@ export const App: React.FC<Props> = ({ service }) => {
   );
 
   return (
-    <Page masthead={header} sidebar={sidebar} banner={<FakeBackendBanner service={service} />}>
+    <Page isContentFilled masthead={header} sidebar={sidebar} banner={<FakeBackendBanner service={service} />}>
       <NoticeToast />
       <AppRoutes service={service} />
     </Page>

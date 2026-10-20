@@ -179,7 +179,7 @@ export const OrganizationListPage: React.FC<Props> = ({ service }) => {
   return (
     <>
       <PageHeader title="Organizations" description="Manage organizations and their identity providers." />
-      <PageSection>{body()}</PageSection>
+      <PageSection isFilled>{body()}</PageSection>
       {deleteModal}
     </>
   );

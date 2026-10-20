@@ -220,7 +220,7 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
   return (
     <>
       <PageHeader title="Models" description="Add and remove model deployments." />
-      <PageSection>{body()}</PageSection>
+      <PageSection isFilled>{body()}</PageSection>
       {deleteModal}
     </>
   );

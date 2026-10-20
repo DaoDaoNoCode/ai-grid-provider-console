@@ -59,7 +59,7 @@ export const OrganizationDetailsPage: React.FC<Props> = ({ service }) => {
           </Breadcrumb>
         }
       />
-      <PageSection>
+      <PageSection isFilled>
         {error ? (
           <OrganizationLoadError error={error} />
         ) : !loaded || !organization ? (

@@ -134,7 +134,7 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
           </Breadcrumb>
         }
       />
-      <PageSection>{body()}</PageSection>
+      <PageSection isFilled>{body()}</PageSection>
       {deleteModal}
     </>
   );

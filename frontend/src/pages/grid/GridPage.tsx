@@ -128,7 +128,7 @@ export const GridPage: React.FC<Props> = ({ service, monitoring = false }) => {
         }
         headerAction={toolbar}
       />
-      <PageSection>
+      <PageSection isFilled>
         {error && <LoadError subject="AI Grid clusters" error={error} />}
         {!loaded && <Spinner aria-label="Loading AI Grid" />}
         {data && (

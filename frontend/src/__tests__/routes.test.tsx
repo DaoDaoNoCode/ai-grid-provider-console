@@ -126,4 +126,22 @@ describe('routes', () => {
     at({ pathname: '/clusters', state: { notice: 'Organization saved' } });
     expect(await screen.findByText('Organization saved')).toBeInTheDocument();
   });
+  it.each([
+    '/clusters',
+    '/organizations',
+    '/organizations/create',
+    '/models',
+    '/models/deploy',
+    '/subscriptions',
+    '/ai-grid',
+    '/monitoring',
+    '/nowhere',
+  ])('fills the page height with the content section: %s', async (path) => {
+    at(path);
+    await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('dev-user'));
+    // PatternFly's Page isContentFilled plus a PageSection isFilled: the white panel reaches the bottom.
+    expect(document.querySelector('.pf-v6-c-page__main-container.pf-m-fill')).not.toBeNull();
+    await waitFor(() => expect(document.querySelector('.pf-v6-c-page__main-section.pf-m-fill')).not.toBeNull());
+  });
+
 });

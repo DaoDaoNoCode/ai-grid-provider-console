@@ -41,19 +41,19 @@ export const ApplicationsPage: React.FC<Props> = ({
   let body: React.ReactNode = children;
   if (!contentShown && !loaded) {
     body = (
-      <PageSection>
+      <PageSection isFilled>
         <Spinner aria-label="Loading data" />
       </PageSection>
     );
   } else if (!contentShown && loadError instanceof ServiceError && loadError.isNotImplemented) {
     body = (
-      <PageSection>
+      <PageSection isFilled>
         <LoadError subject="Subscriptions" error={loadError} />
       </PageSection>
     );
   } else if (!contentShown && loadError) {
     body = (
-      <PageSection>
+      <PageSection isFilled>
         <Alert variant="danger" isInline title={errorMessage ?? 'Unable to load subscriptions'}>
           {loadError.message}
           <div>

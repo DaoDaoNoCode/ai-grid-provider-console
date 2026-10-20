@@ -299,7 +299,7 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
           </Breadcrumb>
         }
       />
-      <PageSection hasBodyWrapper={false}>
+      <PageSection hasBodyWrapper={false} isFilled>
         <Wizard
           className="portal-model-wizard"
           isProgressive={false}
