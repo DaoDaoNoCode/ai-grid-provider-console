@@ -9,7 +9,8 @@
 import type { AlertProps, ContentProps, LabelProps } from '@patternfly/react-core';
 import { Stack, StackItem } from '@patternfly/react-core';
 import { PhaseApiDetails } from '../components/Phase/PhaseApiDetails';
-import { statusLabelProps } from './status';
+import type { StatusTone } from './status';
+import { statusLabelProps, statusTone } from './status';
 
 /** A model that keeps a subscription from being Ready. */
 export type AffectedModel = { name: string; displayName?: string; phase?: string; statusMessage?: string };
@@ -96,21 +97,17 @@ const getAlertContent = (phase: string): { title: string; children: string } | u
   }
 };
 
-const getAlertVariant = (phase: string): AlertProps['variant'] => {
-  switch (phase) {
-    case PhaseStatus.ACTIVE:
-    case PhaseStatus.READY:
-      return 'success';
-    case PhaseStatus.FAILED:
-    case PhaseStatus.INVALID:
-      return 'danger';
-    case PhaseStatus.DEGRADED:
-    case PhaseStatus.UNAVAILABLE:
-      return 'warning';
-    default:
-      return 'info';
-  }
+// The alert and the subtext take their colour from the same tone table as the label
+// (utilities/status), so a phase reads the same colour everywhere.
+const ALERT_VARIANTS: Record<StatusTone, AlertProps['variant']> = {
+  success: 'success',
+  warning: 'warning',
+  danger: 'danger',
+  info: 'info',
+  neutral: 'info',
 };
+
+const getAlertVariant = (phase: string): AlertProps['variant'] => ALERT_VARIANTS[statusTone(phase)];
 
 export const getModalAlertProps = (
   phase: string,
@@ -159,16 +156,8 @@ export const getModalAlertProps = (
  * opens the status), so it shouldn't look like one.
  */
 export const getSubtextProps = (phase: string): ContentProps | undefined => {
-  switch (phase) {
-    case PhaseStatus.DEGRADED:
-    case PhaseStatus.UNAVAILABLE:
-      return { className: 'pf-v6-u-text-color-status-warning' };
-    case PhaseStatus.FAILED:
-    case PhaseStatus.INVALID:
-      return { className: 'pf-v6-u-text-color-status-danger' };
-    case PhaseStatus.PENDING:
-      return { className: 'pf-v6-u-text-color-status-info' };
-    default:
-      return undefined;
-  }
+  const tone = statusTone(phase);
+  return tone === 'warning' || tone === 'danger' || tone === 'info'
+    ? { className: `pf-v6-u-text-color-status-${tone}` }
+    : undefined;
 };

@@ -25,6 +25,9 @@ export const StatusLabel: React.FC<Props> = ({ status, reason, isCompact, onClic
       isCompact={isCompact}
       isClickable={!!onClick}
       onClick={onClick}
+      // A reason is only in the tooltip, so the label takes focus to show it from the keyboard
+      // (a clickable label's button already does), as RelativeTime does.
+      tabIndex={reason && !onClick ? 0 : undefined}
       data-testid={testId}
     >
       {status}
