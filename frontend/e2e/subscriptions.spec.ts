@@ -12,7 +12,8 @@ test('creates, views, edits and deletes a subscription', async ({ page }) => {
   await page.getByTestId('create-subscription-button').click();
 
   await page.getByTestId('subscription-name-desc-name').fill(unique);
-  await page.getByTestId('subscription-organization').selectOption({ label: ORGANIZATION });
+  await page.getByTestId('subscription-organization').click();
+  await page.getByRole('option', { name: ORGANIZATION }).click();
   await page.getByTestId('subscription-groups').click();
   await page.getByRole('combobox', { name: 'Enter groups' }).fill(group);
   await page.getByRole('option', { name: `Add group "${group}"` }).click();

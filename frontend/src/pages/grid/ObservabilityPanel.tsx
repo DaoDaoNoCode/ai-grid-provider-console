@@ -5,24 +5,13 @@
 // horizontal usage bars with a legend.
 import { useId, useState } from 'react';
 import type { ReactNode } from 'react';
-import {
-  Alert,
-  Card,
-  CardBody,
-  Flex,
-  FormSelect,
-  FormSelectOption,
-  Spinner,
-  Tab,
-  Tabs,
-  TabTitleText,
-  Title,
-} from '@patternfly/react-core';
+import { Alert, Card, CardBody, Flex, Spinner, Tab, Tabs, TabTitleText, Title } from '@patternfly/react-core';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import { Link } from 'react-router-dom';
 import type { GridCluster, GridMetric, GridRange, ManagedModel, Organization } from '../../api/types';
 import { HelpPopover } from '../../components/HelpPopover';
 import { StatusLabel } from '../../components/StatusLabel';
+import { TypeaheadSelect } from '../../components/TypeaheadSelect';
 import { modelKey } from '../../utilities/authpolicies';
 import { EMPTY_VALUE } from '../../utilities/format';
 import { modelMetrics, tenantUsage, total } from '../../services/demoObservability';
@@ -325,6 +314,10 @@ export function ObservabilityPanel({
   if (model !== 'all' && !relevantModels.some((m) => modelKey(m) === model)) {
     setModel('all');
   }
+  const modelOptions = [
+    { value: 'all', label: 'All models' },
+    ...relevantModels.map((m) => ({ value: modelKey(m), label: m.displayName ?? m.name })),
+  ];
   const visibleModels = relevantModels.filter((m) => model === 'all' || modelKey(m) === model);
   const modelSeries = modelMetrics(visibleModels, metrics, simulated);
   const usage = tenantUsage(metrics, organizations);
@@ -481,17 +474,15 @@ export function ObservabilityPanel({
               spaceItems={{ default: 'spaceItemsSm' }}
             >
               <label htmlFor="observability-model">Model deployment</label>
-              <FormSelect
-                id="observability-model"
-                aria-label="Select model deployment"
-                value={model}
-                onChange={(_, value) => setModel(value)}
-              >
-                <FormSelectOption value="all" label="All models" />
-                {relevantModels.map((m) => (
-                  <FormSelectOption key={modelKey(m)} value={modelKey(m)} label={m.displayName ?? m.name} />
-                ))}
-              </FormSelect>
+              <div className="observability-model-filter__select">
+                <TypeaheadSelect
+                  id="observability-model"
+                  aria-label="Select model deployment"
+                  value={model}
+                  options={modelOptions}
+                  onChange={setModel}
+                />
+              </div>
             </Flex>
             <Section
               title="Model deployments"

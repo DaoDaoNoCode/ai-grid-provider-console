@@ -70,8 +70,8 @@ it('provides Clusters, Models and Usage tabs, plain section headings, and a work
   // No raw organization IDs; the names link to the organizations.
   expect(screen.queryByRole('columnheader', { name: 'Organization ID' })).not.toBeInTheDocument();
   await user.click(screen.getByRole('tab', { name: 'Models' }));
-  const selector = screen.getByRole('combobox', { name: 'Select model deployment' });
-  await user.selectOptions(selector, models[0].displayName ?? models[0].name);
+  await user.click(screen.getByRole('combobox', { name: 'Select model deployment' }));
+  await user.click(screen.getByRole('option', { name: models[0].displayName ?? models[0].name }));
   expect(within(screen.getByRole('grid', { name: 'Model deployments' })).getAllByRole('row')).toHaveLength(2);
   expect(screen.getByRole('img', { name: 'Request queue length over time' })).toBeVisible();
   expect(screen.getByRole('img', { name: 'P90 Time to first token (TTFT) over time' })).toBeVisible();
@@ -119,10 +119,8 @@ it('changes simulated model charts with model selection and organization usage w
   const queue = () =>
     screen.getByRole('img', { name: 'Request queue length over time' }).querySelector('path')!.getAttribute('d');
   const all = queue();
-  await user.selectOptions(
-    screen.getByRole('combobox', { name: 'Select model deployment' }),
-    models[0].displayName ?? models[0].name,
-  );
+  await user.click(screen.getByRole('combobox', { name: 'Select model deployment' }));
+  await user.click(screen.getByRole('option', { name: models[0].displayName ?? models[0].name }));
   expect(queue()).not.toBe(all);
   await user.click(screen.getByRole('tab', { name: 'Usage' }));
   const chart = () => screen.getByRole('img', { name: 'Token consumption by organization' });
@@ -213,7 +211,8 @@ it('filters by one of two models of the same name in different namespaces', asyn
   const user = userEvent.setup();
   renderAt('/monitoring', service);
   await user.click(await screen.findByRole('tab', { name: 'Models' }));
-  await user.selectOptions(screen.getByRole('combobox', { name: 'Select model deployment' }), 'Team granite');
+  await user.click(screen.getByRole('combobox', { name: 'Select model deployment' }));
+  await user.click(screen.getByRole('option', { name: 'Team granite' }));
   const table = screen.getByRole('grid', { name: 'Model deployments' });
   expect(table).toHaveTextContent('Team granite');
   expect(table).not.toHaveTextContent('Shared granite');

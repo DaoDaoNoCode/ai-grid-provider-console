@@ -101,7 +101,7 @@
   font-weight: var(--pf-t--global--font--weight--body--default);
 }
 /* A normal-width select beside its label, not one spanning the page. */
-.observability-model-filter .pf-v6-c-form-control {
+.observability-model-filter__select {
   width: 20rem;
   max-width: 100%;
 }

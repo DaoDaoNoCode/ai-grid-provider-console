@@ -21,6 +21,12 @@ const viewer = { username: 'viewer', groups: [], isProviderAdmin: false };
 
 type User = ReturnType<typeof userEvent.setup>;
 
+/** Picks an organization in the create form's Organization select. */
+const pickOrganization = async (user: User, name: string) => {
+  await user.click(await screen.findByRole('combobox', { name: 'Organization' }));
+  await user.click(screen.getByRole('option', { name }));
+};
+
 /** Fills the create form for "Test team" with one group and granite-3-8b at the default limit. */
 const fillNewSubscription = async (user: User) => {
   const name = await screen.findByTestId('subscription-name-desc-name');
@@ -67,7 +73,7 @@ describe('administrator subscription flows', () => {
     await screen.findByTestId('subscription-name-desc-name');
     expect(screen.queryByTestId('subscription-create-auth-policy')).not.toBeInTheDocument();
     expect(screen.getByTestId('create-subscription-button')).toBeDisabled();
-    await user.selectOptions(await screen.findByRole('combobox', { name: 'Organization' }), 'acme-robotics');
+    await pickOrganization(user, 'acme-robotics');
     await user.type(screen.getByTestId('subscription-name-desc-name'), 'Test team');
     await user.type(screen.getByRole('combobox', { name: 'Enter groups' }), 'engineering');
     const option = await screen.findByRole('option', { name: 'Add group "engineering"' });
@@ -212,9 +218,8 @@ it('requires an organization and shows it in the table', async () => {
   await fillNewSubscription(user);
   const create = screen.getByTestId('create-subscription-button');
   expect(create).toBeDisabled();
-  const organization = screen.getByRole('combobox', { name: 'Organization' });
-  expect(within(organization).getByRole('option', { name: 'globex-research' })).toBeInTheDocument();
-  await user.selectOptions(organization, 'globex-research');
+  await pickOrganization(user, 'globex-research');
+  expect(screen.getByRole('combobox', { name: 'Organization' })).toHaveValue('globex-research');
   expect(create).toBeEnabled();
   await user.click(create);
 
@@ -268,7 +273,7 @@ it('says creating is not available on a backend without subscriptions', async ()
   const user = userEvent.setup();
   renderAt('/subscriptions/create', service);
   await fillNewSubscription(user);
-  await user.selectOptions(screen.getByRole('combobox', { name: 'Organization' }), 'acme-robotics');
+  await pickOrganization(user, 'acme-robotics');
   await user.click(screen.getByTestId('create-subscription-button'));
   expect(await screen.findByText('Creating subscriptions is not available on this backend yet.')).toBeVisible();
   expect(screen.getByText('Failed to create subscription')).toBeVisible();
@@ -420,7 +425,7 @@ describe("model references on PR 12's models", () => {
     const create = vi.spyOn(service, 'createSubscription');
     const user = userEvent.setup();
     renderAt('/subscriptions/create', service);
-    await user.selectOptions(await screen.findByRole('combobox', { name: 'Organization' }), 'acme-robotics');
+    await pickOrganization(user, 'acme-robotics');
     await user.type(screen.getByTestId('subscription-name-desc-name'), 'Test team');
     await user.type(screen.getByRole('combobox', { name: 'Enter groups' }), 'engineering');
     const option = await screen.findByRole('option', { name: 'Add group "engineering"' });

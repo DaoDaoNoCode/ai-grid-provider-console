@@ -12,8 +12,6 @@ import {
   Form,
   FormGroup,
   FormHelperText,
-  FormSelect,
-  FormSelectOption,
   HelperText,
   HelperTextItem,
   NumberInput,
@@ -38,6 +36,7 @@ import { MaasModelsSection } from '../../../components/MaasModelsSection';
 import type { SelectionOptions } from '../../../components/MultiSelection';
 import { MultiSelection } from '../../../components/MultiSelection';
 import { SystemAuthenticatedWarning } from '../../../components/SystemAuthenticatedWarning';
+import { TypeaheadSelect } from '../../../components/TypeaheadSelect';
 import { useMaaSGovernanceContext } from '../../../context/useMaaSGovernanceContext';
 import type { SubscriptionModelEntry } from '../../../hooks/useSubscriptionModels';
 import { useSubscriptionModels } from '../../../hooks/useSubscriptionModels';
@@ -288,21 +287,19 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ service, modelRefs, su
               value={organizationOptions.find((o) => o.value === organizationId)?.label ?? organizationId}
             />
           ) : (
-            <FormSelect
+            <TypeaheadSelect
               id="subscription-organization"
               data-testid="subscription-organization"
+              aria-label="Organization"
               value={organizationId}
-              validated={organizationTouched && organizationMissing ? 'error' : 'default'}
-              onChange={(_event, value) => {
+              options={organizationOptions}
+              placeholder={SELECT_ORGANIZATION}
+              status={organizationTouched && organizationMissing ? 'danger' : undefined}
+              onChange={(value) => {
                 setOrganizationTouched(true);
                 setOrganizationId(value);
               }}
-            >
-              <FormSelectOption value="" label={SELECT_ORGANIZATION} isPlaceholder />
-              {organizationOptions.map((o) => (
-                <FormSelectOption key={o.value} value={o.value} label={o.label} />
-              ))}
-            </FormSelect>
+            />
           )}
           {organizationHelper}
         </FormGroup>
