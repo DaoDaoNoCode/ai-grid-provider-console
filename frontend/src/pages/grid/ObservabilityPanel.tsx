@@ -240,7 +240,7 @@ function UsageChart({ usage }: { usage: ReturnType<typeof tenantUsage> }) {
               </text>
               <title>
                 {t.name}: {t.input.toLocaleString()} uncached input, {t.output.toLocaleString()} output,{' '}
-                {t.cached.toLocaleString()} cached tokens
+                {t.cached.toLocaleString()} cached input
               </title>
             </g>
           );
@@ -364,7 +364,7 @@ export function ObservabilityPanel({
                 <Th>Organization</Th>
                 <Th className="console-number">Uncached input tokens</Th>
                 <Th className="console-number">Output tokens</Th>
-                <Th className="console-number">Cached tokens</Th>
+                <Th className="console-number">Cached input tokens</Th>
               </Tr>
             </Thead>
             <Tbody>
@@ -379,7 +379,7 @@ export function ObservabilityPanel({
                   <Td dataLabel="Output tokens" className="console-number">
                     {t.output.toLocaleString()}
                   </Td>
-                  <Td dataLabel="Cached tokens" className="console-number">
+                  <Td dataLabel="Cached input tokens" className="console-number">
                     {t.cached.toLocaleString()}
                   </Td>
                 </Tr>

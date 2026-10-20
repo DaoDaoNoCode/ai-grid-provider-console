@@ -48,6 +48,7 @@ export const OrganizationEditForm: React.FC<Props> = ({ service, organization })
             value={values.identityProvider}
             serverErrors={form.idpServerErrors}
             onChange={(identityProvider) => setValues({ ...values, identityProvider })}
+            isDisabled={saving}
           />
         </FormSection>
         {form.error && (

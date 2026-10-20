@@ -69,7 +69,7 @@ export const App: React.FC<Props> = ({ service }) => {
         <Toolbar isFullHeight isStatic>
           <ToolbarContent>
             <ToolbarItem align={{ default: 'alignEnd' }}>
-              <UserMenu user={user} loaded={userLoaded} error={userError} canSignOut={config?.fakeBackend === false} />
+              <UserMenu user={user} loaded={userLoaded} error={userError} canSignOut={config?.fakeBackend !== true} />
             </ToolbarItem>
           </ToolbarContent>
         </Toolbar>

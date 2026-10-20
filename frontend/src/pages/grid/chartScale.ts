@@ -16,8 +16,9 @@ export const niceCeiling = (max: number): number => {
   return step * AXIS_INTERVALS;
 };
 
-/** A tick's label: whole numbers grouped (1,000), short forms above ten thousand (12k, 1.5M). */
+/** A tick's label: whole numbers grouped (1,000), short forms above ten thousand (12k, 1.5M, 2.4B). */
 export const tickLabel = (value: number): string => {
+  if (value >= 1_000_000_000) return `${Number((value / 1_000_000_000).toFixed(1))}B`;
   if (value >= 1_000_000) return `${Number((value / 1_000_000).toFixed(1))}M`;
   if (value >= 10_000) return `${Number((value / 1000).toFixed(1))}k`;
   return value.toLocaleString(undefined, { maximumFractionDigits: 2 });

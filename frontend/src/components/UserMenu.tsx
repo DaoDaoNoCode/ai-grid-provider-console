@@ -9,7 +9,8 @@ type Props = {
   user?: User;
   loaded: boolean;
   error?: Error;
-  /** Offer Log out; off on the fake backend, where no login proxy runs. */
+  /** Offer Log out; off on the fake backend, where no login proxy runs. On while the config
+   * loads or if it fails, so a signed-in user can always leave. */
   canSignOut: boolean;
 };
 

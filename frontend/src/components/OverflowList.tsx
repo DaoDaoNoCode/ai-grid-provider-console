@@ -25,19 +25,15 @@ export const OverflowList: React.FC<Props> = ({ items, noun }) => {
           headerContent={`${noun} (${items.length})`}
           bodyContent={
             <List isPlain>
-              {items.map((item) => (
-                <ListItem key={item}>{item}</ListItem>
+              {items.map((item, index) => (
+                <ListItem key={`${index}-${item}`}>{item}</ListItem>
               ))}
             </List>
           }
         >
-          <Label
-            isCompact
-            variant="outline"
-            onClick={() => undefined}
-            aria-label={`All ${items.length} ${noun.toLowerCase()}`}
-          >
-            +{rest.length} more
+          {/* The name starts with what the label shows ("+1 more"), then says what of. */}
+          <Label isCompact variant="outline" onClick={() => undefined}>
+            +{rest.length} more<span className="pf-v6-screen-reader"> {noun.toLowerCase()}</span>
           </Label>
         </Popover>
       )}

@@ -1,0 +1,58 @@
+// Small shared pieces: status labels, short lists and chart ticks.
+import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
+import { App } from '../App';
+import { MockConsoleService } from '../api/MockConsoleService';
+import { OverflowList } from '../components/OverflowList';
+import { StatusLabel } from '../components/StatusLabel';
+import { tickLabel } from '../pages/grid/chartScale';
+import { getSubtextProps } from '../utilities/phaseLabelUtils';
+import { statusLabelProps } from '../utilities/status';
+
+it("opens a status's reason from the keyboard", async () => {
+  const user = userEvent.setup();
+  render(<StatusLabel status="Unknown" reason="The hub hasn't heard from the cluster." />);
+  await user.tab();
+  expect(await screen.findByRole('tooltip')).toHaveTextContent("The hub hasn't heard from the cluster.");
+});
+
+it('leaves a status without a reason out of the tab order', () => {
+  render(<StatusLabel status="Ready" />);
+  expect(screen.getByText('Ready').closest('[tabindex]')).toBeNull();
+});
+
+it('says what "+N more" holds, and keys same-named items apart', async () => {
+  const user = userEvent.setup();
+  render(<OverflowList items={['Paris DC1', 'Paris DC1']} noun="Locations" />);
+  const more = screen.getByRole('button', { name: '+1 more locations' });
+  await user.click(more);
+  expect(within(await screen.findByRole('dialog')).getAllByRole('listitem')).toHaveLength(2);
+});
+
+it('shows billions as B on chart ticks', () => {
+  expect(tickLabel(1_500_000_000)).toBe('1.5B');
+  expect(tickLabel(6_000_000_000)).toBe('6B');
+  expect(tickLabel(2_419_400_000)).toBe('2.4B');
+  expect(tickLabel(150_000_000)).toBe('150M');
+});
+
+it('gives a phase the same colour in its label and its subtext', () => {
+  expect(statusLabelProps('Unavailable').status).toBe('danger');
+  expect(getSubtextProps('Unavailable')).toEqual({ className: 'pf-v6-u-text-color-status-danger' });
+  expect(getSubtextProps('Degraded')).toEqual({ className: 'pf-v6-u-text-color-status-warning' });
+  expect(getSubtextProps('Ready')).toBeUndefined();
+});
+
+it('offers Log out while the console configuration is still loading', async () => {
+  const service = new MockConsoleService();
+  service.getConfig = () => new Promise(() => undefined);
+  const user = userEvent.setup();
+  render(
+    <MemoryRouter>
+      <App service={service} />
+    </MemoryRouter>,
+  );
+  await user.click(await screen.findByRole('button', { name: /dev-user/ }));
+  expect(screen.getByRole('menuitem', { name: 'Log out' })).toBeVisible();
+});

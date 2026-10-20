@@ -38,6 +38,8 @@ type Props = {
   onChange: (provider: IdentityProvider) => void;
   /** The server's messages, keyed by path under identityProvider; shown whether or not the field was touched. */
   serverErrors?: Record<string, string>;
+  /** While the form saves, so nothing changes under the request. */
+  isDisabled?: boolean;
 };
 
 /** A field's error, or its help when it has none (PatternFly: the error replaces the help). */
@@ -54,7 +56,7 @@ const Help: React.FC<{ error?: string; children?: React.ReactNode }> = ({ error,
  * An organization's OIDC identity provider: who it is, how the console connects (client and
  * issuer), and the provider's endpoints. Renders form fields only; the caller supplies the Form.
  */
-export const IdentityProviderFields: React.FC<Props> = ({ value, onChange, serverErrors = {} }) => {
+export const IdentityProviderFields: React.FC<Props> = ({ value, onChange, serverErrors = {}, isDisabled }) => {
   const [touched, setTouched] = useState<Set<string>>(() => new Set());
   const errors = fieldErrorsOf(identityProviderSchema, value);
   const error = (path: string): string | undefined =>
@@ -70,6 +72,7 @@ export const IdentityProviderFields: React.FC<Props> = ({ value, onChange, serve
           id={`idp-${field.key}`}
           value={value.config[field.key]}
           isRequired={field.required}
+          isDisabled={isDisabled}
           validated={error(path) ? 'error' : 'default'}
           onBlur={() => touch(path)}
           onChange={(_event, text) => setConfig({ [field.key]: text })}
@@ -82,13 +85,19 @@ export const IdentityProviderFields: React.FC<Props> = ({ value, onChange, serve
   return (
     <>
       <FormGroup label="Title" fieldId="idp-title">
-        <TextInput id="idp-title" value={value.title} onChange={(_event, title) => onChange({ ...value, title })} />
+        <TextInput
+          id="idp-title"
+          value={value.title}
+          isDisabled={isDisabled}
+          onChange={(_event, title) => onChange({ ...value, title })}
+        />
         <Help>The name members see on the sign-in page.</Help>
       </FormGroup>
       <FormGroup label="Description" fieldId="idp-description">
         <TextArea
           id="idp-description"
           value={value.description}
+          isDisabled={isDisabled}
           onChange={(_event, description) => onChange({ ...value, description })}
         />
       </FormGroup>
@@ -99,6 +108,7 @@ export const IdentityProviderFields: React.FC<Props> = ({ value, onChange, serve
             id="idp-secret-reference"
             value={value.config.clientSecretSecret.name}
             isRequired
+            isDisabled={isDisabled}
             validated={error(SECRET_PATH) ? 'error' : 'default'}
             onBlur={() => touch(SECRET_PATH)}
             onChange={(_event, name) => setConfig({ clientSecretSecret: { name } })}
@@ -110,6 +120,7 @@ export const IdentityProviderFields: React.FC<Props> = ({ value, onChange, serve
           <TextInput
             id="idp-defaultScopes"
             value={value.config.defaultScopes}
+            isDisabled={isDisabled}
             validated={error('config.defaultScopes') ? 'error' : 'default'}
             onBlur={() => touch('config.defaultScopes')}
             onChange={(_event, defaultScopes) => setConfig({ defaultScopes })}
@@ -121,6 +132,7 @@ export const IdentityProviderFields: React.FC<Props> = ({ value, onChange, serve
           label="Validate signature"
           description="Check the provider's signature on tokens with its JWKS keys."
           isChecked={value.config.validateSignature}
+          isDisabled={isDisabled}
           onChange={(_event, validateSignature) => setConfig({ validateSignature })}
         />
       </FormSection>

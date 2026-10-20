@@ -436,3 +436,23 @@ it.each(['', '/edit'])('loads the other organization when the id in /organizatio
   await act(async () => navigate(`/organizations/${globex.id}${suffix}`));
   await shows(globex.name);
 });
+
+it('locks the identity provider fields while an edit saves', async () => {
+  const service = new MockConsoleService();
+  const [organization] = service.organizations;
+  let finish: () => void = () => undefined;
+  const update = service.updateOrganization.bind(service);
+  service.updateOrganization = (...args) =>
+    new Promise((resolve, reject) => {
+      finish = () => void update(...args).then(resolve, reject);
+    });
+  const user = userEvent.setup();
+  renderAt(`/organizations/${encodeURIComponent(organization.id)}/edit`, service);
+  const title = await screen.findByRole('textbox', { name: 'Title' });
+  await user.type(title, ' (new)');
+  await user.click(screen.getByRole('button', { name: 'Save changes' }));
+  expect(title).toBeDisabled();
+  expect(screen.getByRole('checkbox', { name: /Validate signature/ })).toBeDisabled();
+  finish();
+  expect(await screen.findByText('Organization configuration saved')).toBeVisible();
+});
