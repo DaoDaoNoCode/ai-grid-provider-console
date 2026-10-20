@@ -23,6 +23,7 @@ import type { ConsoleService } from './api/ConsoleService';
 import { AppRoutes } from './AppRoutes';
 import { FakeBackendBanner } from './components/FakeBackendBanner';
 import { NoticeToast } from './components/NoticeToast';
+import { AboutConsoleModal } from './components/AboutConsoleModal';
 import { UserMenu } from './components/UserMenu';
 import { useServiceData } from './hooks/useServiceData';
 
@@ -44,6 +45,7 @@ export const App: React.FC<Props> = ({ service }) => {
   const [config] = useServiceData(() => service.getConfig(), undefined, 0);
   const { pathname } = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [aboutOpen, setAboutOpen] = useState(false);
 
   const header = (
     <Masthead className="portal-masthead" display={{ default: 'inline' }}>
@@ -69,7 +71,13 @@ export const App: React.FC<Props> = ({ service }) => {
         <Toolbar isFullHeight isStatic>
           <ToolbarContent>
             <ToolbarItem align={{ default: 'alignEnd' }}>
-              <UserMenu user={user} loaded={userLoaded} error={userError} canSignOut={config?.fakeBackend !== true} />
+              <UserMenu
+                user={user}
+                loaded={userLoaded}
+                error={userError}
+                canSignOut={config?.fakeBackend !== true}
+                onAbout={() => setAboutOpen(true)}
+              />
             </ToolbarItem>
           </ToolbarContent>
         </Toolbar>
@@ -97,6 +105,7 @@ export const App: React.FC<Props> = ({ service }) => {
     <Page isContentFilled masthead={header} sidebar={sidebar} banner={<FakeBackendBanner service={service} />}>
       <NoticeToast />
       <AppRoutes service={service} />
+      <AboutConsoleModal isOpen={aboutOpen} onClose={() => setAboutOpen(false)} config={config} user={user} />
     </Page>
   );
 };
