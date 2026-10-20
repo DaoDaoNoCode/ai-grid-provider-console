@@ -549,3 +549,12 @@ it('keeps a set organization read-only when editing', async () => {
   expect(organization).toHaveValue('acme-robotics');
   expect(screen.getByText('The organization can’t be changed once it is set.')).toBeVisible();
 });
+
+it('shows Not found for a referenced model the hub no longer has, even with a namespace', async () => {
+  const service = new MockConsoleService();
+  const seed = structuredClone(seedSubscriptions()[0]);
+  seed.modelRefs = [{ name: 'gone', namespace: 'ai-grid-models', tokenRateLimits: [{ limit: 5, window: '1m' }] }];
+  service.subscriptions = [seed];
+  renderAt(`/subscriptions/view/${seed.name}`, service);
+  expect(await screen.findByTestId('subscription-models-table')).toHaveTextContent('Not found');
+});

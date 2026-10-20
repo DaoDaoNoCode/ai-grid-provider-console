@@ -98,8 +98,23 @@ const FleetCard: React.FC<{
 );
 
 export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, tiles }) => {
-  const [params] = useSearchParams();
-  const [selection, setSelection] = useState<Selection | null>(() => selectionFrom(params));
+  const [params, setParams] = useSearchParams();
+  const [selection, setSelectionState] = useState<Selection | null>(() => selectionFrom(params));
+  // The URL names what the drawer shows, so a link or a reload opens the same thing, and closing
+  // it clears the URL instead of reopening it on the next reload.
+  const setSelection = (next: Selection | null) => {
+    setSelectionState(next);
+    setParams(
+      (previous) => {
+        const updated = new URLSearchParams(previous);
+        updated.delete('cluster');
+        updated.delete('model');
+        if (next) updated.set(next.kind, next.name);
+        return updated;
+      },
+      { replace: true },
+    );
+  };
   const [history, setHistory] = useState<Selection[]>([]);
   const [mode, setMode] = useState<'cluster' | 'model'>(() => selectionFrom(params)?.kind ?? 'cluster');
   const [search, setSearch] = useState('');

@@ -29,5 +29,6 @@ export const modelRefsToSummaries = (
         namespace: ref.namespace,
         displayName: ref.displayName,
         modelRef: { kind: DEFAULT_MODEL_KIND, name: ref.name },
+        notFound: true,
       },
   );

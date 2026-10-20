@@ -14,6 +14,9 @@ type Props = {
   isDisabled?: boolean;
 };
 
+/** Accepts only digits, so what the field shows is what the form validates and sends. */
+const WHOLE_NUMBER = /^\d*$/;
+
 /** A whole-number field with − and + buttons, kept short (PatternFly's number input). */
 export const CountInput: React.FC<Props> = ({
   id,
@@ -36,7 +39,7 @@ export const CountInput: React.FC<Props> = ({
       inputAriaLabel={label}
       minusBtnAriaLabel={`Decrease ${label.toLowerCase()}`}
       plusBtnAriaLabel={`Increase ${label.toLowerCase()}`}
-      value={Number.isNaN(current) ? '' : current}
+      value={value === '' ? '' : current}
       min={min}
       max={max}
       widthChars={4}
@@ -44,7 +47,13 @@ export const CountInput: React.FC<Props> = ({
       isDisabled={isDisabled}
       onMinus={() => step(-1)}
       onPlus={() => step(1)}
-      onChange={(event: React.FormEvent<HTMLInputElement>) => onChange(event.currentTarget.value)}
+      onChange={(event: React.FormEvent<HTMLInputElement>) => {
+        // Anything but digits (1e1, 1.5, -2) is refused rather than shown as one number and sent as another.
+        const text = event.currentTarget.value.trim();
+        if (WHOLE_NUMBER.test(text)) {
+          onChange(text === '' ? '' : String(Number(text)));
+        }
+      }}
       onBlur={onBlur}
     />
   );

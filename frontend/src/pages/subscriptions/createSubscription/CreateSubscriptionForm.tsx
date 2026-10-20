@@ -73,6 +73,7 @@ const buildInitialModels = (info: SubscriptionInfoResponse): SubscriptionModelEn
       name: ref.name,
       namespace: ref.namespace,
       modelRef: { kind: '', name: '' },
+      notFound: true,
     },
     tokenRateLimits: ref.tokenRateLimits,
     unlimited: ref.unlimited,

@@ -116,11 +116,10 @@ export const MaasModelsSection: React.FC<Props> = ({
                 />
               </Td>
               <Td dataLabel="Status">
-                {/* A summary without a namespace is a reference to a model the hub doesn't have. */}
-                {modelRef.namespace ? (
-                  <StatusLabel isCompact status={normalizePhase(modelRef.phase)} reason={modelRef.statusMessage} />
-                ) : (
+                {modelRef.notFound ? (
                   <StatusLabel isCompact status="Not found" reason={MODEL_NOT_FOUND_STATUS_MESSAGE} />
+                ) : (
+                  <StatusLabel isCompact status={normalizePhase(modelRef.phase)} reason={modelRef.statusMessage} />
                 )}
               </Td>
               <Td dataLabel="Token limits">{tokenLimits}</Td>

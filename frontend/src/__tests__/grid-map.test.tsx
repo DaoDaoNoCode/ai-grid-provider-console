@@ -2,7 +2,9 @@
 // The PoC's demo clusters become the console's fixture clusters: demo-new-york is site2 and
 // demo-brussels is site3, whose placement location is its name. The monitoring cases belong to
 // Task 11. The real-Leaflet cases are in GridFleetMap.test.tsx, because this file mocks the map (A31).
-import { screen, within } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
+import { MemoryRouter, useLocation } from 'react-router-dom';
+import { App } from '../App';
 import userEvent from '@testing-library/user-event';
 import { ServiceError } from '../api/ConsoleService';
 import { HttpConsoleService } from '../api/HttpConsoleService';
@@ -267,4 +269,23 @@ it('exposes the map area and the fleet summary as named regions', async () => {
   renderAt('/ai-grid', new MockConsoleService());
   expect(await screen.findByRole('region', { name: 'AI Grid map and drawer' })).toBeVisible();
   expect(screen.getByRole('region', { name: 'Fleet summary' })).toBeVisible();
+});
+
+it('keeps the URL in step with the drawer, and clears it when the drawer closes', async () => {
+  let search = '';
+  const Probe = () => {
+    search = useLocation().search;
+    return null;
+  };
+  const user = userEvent.setup();
+  render(
+    <MemoryRouter initialEntries={['/ai-grid']}>
+      <Probe />
+      <App service={new MockConsoleService()} />
+    </MemoryRouter>,
+  );
+  await user.click(await screen.findByRole('button', { name: 'Map pin site3' }));
+  expect(search).toBe('?cluster=site3');
+  await user.click(screen.getByRole('button', { name: 'Clusters' }));
+  expect(search).toBe('');
 });

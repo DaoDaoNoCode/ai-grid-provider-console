@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Stack } from '@patternfly/react-core';
+import type { ConsoleService } from '../../api/ConsoleService';
 import { ServiceError } from '../../api/ConsoleService';
 import type { ModelsService } from '../../api/models';
 import type { SubscriptionsService } from '../../api/subscriptions';
@@ -7,7 +8,9 @@ import type { ManagedModel } from '../../api/types';
 import { DeleteModal } from '../../components/DeleteModal';
 import { ReferencingSubscriptions } from './ModelReferences';
 
-export type ModelDeleteService = ModelsService & Pick<SubscriptionsService, 'listSubscriptions'>;
+export type ModelDeleteService = ModelsService &
+  Pick<SubscriptionsService, 'listSubscriptions'> &
+  Pick<ConsoleService, 'getConfig'>;
 
 const keyOf = (model: ManagedModel) => `${model.namespace}/${model.name}`;
 

@@ -338,6 +338,8 @@ export type MaaSSubscription = {
 
 /** A MaaS model registration; a ManagedModel is one. */
 export type MaaSModelRefSummary = {
+  /** Console-side: set for a reference to a model the hub doesn't have (modelRefsToSummaries). */
+  notFound?: boolean;
   resourceVersion?: string;
   creationTimestamp?: string;
   name: string;

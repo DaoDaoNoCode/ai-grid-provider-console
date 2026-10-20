@@ -10,7 +10,7 @@
 //   assertions (A5, D3); a referenced model is the blocked-delete case.
 // - "explains a 200 response from an outdated backend" tests a PoC-only legacy payload and is
 //   not ported.
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import getModels from '../../../mock/examples/get-models.json';
 import { ServiceError } from '../api/ConsoleService';
@@ -545,4 +545,60 @@ it('deletes a model from its page and returns to the list', async () => {
 it('says when a model page has no model', async () => {
   renderAt('/models/ai-grid-models/nope', new MockConsoleService());
   expect(await screen.findByText('Model deployment not found')).toBeVisible();
+});
+
+it('takes only whole numbers in the number fields, so the shown and sent counts agree', async () => {
+  const service = new MockConsoleService();
+  const create = vi.spyOn(service, 'createModel');
+  const user = userEvent.setup();
+  renderAt('/models/deploy', service);
+  await user.type(await screen.findByRole('textbox', { name: /Model URI/ }), 'hf://org/widget');
+  await user.type(screen.getByRole('textbox', { name: /^Model name/ }), 'org/widget');
+  await user.click(screen.getByRole('button', { name: 'Next' }));
+  await user.type(screen.getByRole('textbox', { name: /Runtime image/ }), 'registry.example/runtime:test');
+  const replicas = screen.getByRole('spinbutton', { name: 'Replicas' });
+  // 1e1 and 1.5 would show as 1 but parse as 10 and 1.5: they're refused.
+  fireEvent.change(replicas, { target: { value: '1e1' } });
+  expect(replicas).toHaveValue(1);
+  fireEvent.change(replicas, { target: { value: '1.5' } });
+  expect(replicas).toHaveValue(1);
+  fireEvent.change(replicas, { target: { value: '3' } });
+  expect(replicas).toHaveValue(3);
+  await user.click(screen.getByRole('button', { name: 'Next' }));
+  await user.click(await screen.findByRole('combobox', { name: 'Locations' }));
+  await user.click(screen.getByRole('option', { name: site1 }));
+  await user.keyboard('{Escape}');
+  await user.click(screen.getByRole('button', { name: 'Next' }));
+  expect(screen.getByTestId('model-review')).toHaveTextContent('Replicas3');
+  await user.click(screen.getByRole('button', { name: 'Deploy' }));
+  await waitFor(() => expect(create).toHaveBeenCalled());
+  expect(create.mock.calls[0][0].replicas).toBe(3);
+});
+
+it("names only the subscriptions that use this model, reading no namespace as the console's", async () => {
+  const service = new MockConsoleService();
+  await service.createModel(input);
+  const widget = service.models.find((m) => m.name === 'widget')!;
+  service.models.push({ ...widget, namespace: 'team-models', resourceVersion: '1' });
+  await service.createSubscription({
+    name: 'widget-users',
+    owner: { groups: [{ name: 'widget-users' }] },
+    modelRefs: [{ name: 'widget', tokenRateLimits: [{ limit: 1000, window: '1h' }] }],
+    priority: 0,
+    tokenMetadata: { organizationId: '3f1c9a72-5b6e-4d2a-8c01-2d3e4f5a6b7c' },
+    createAuthPolicy: true,
+  });
+  const user = userEvent.setup();
+  const team = renderAt('/models/team-models/widget', service);
+  await user.click(await screen.findByTestId('model-actions'));
+  await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
+  expect(await screen.findByTestId('delete-deployment-modal')).toBeVisible();
+  // Let the subscriptions and config load before checking nothing is named.
+  await act(async () => {});
+  expect(screen.queryByTestId('model-references')).not.toBeInTheDocument();
+  team.unmount();
+  renderAt('/models/ai-grid-models/widget', service);
+  await user.click(await screen.findByTestId('model-actions'));
+  await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
+  expect(await screen.findByTestId('model-references')).toHaveTextContent('widget-users');
 });
