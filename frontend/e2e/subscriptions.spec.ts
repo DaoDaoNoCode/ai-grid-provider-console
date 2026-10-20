@@ -16,7 +16,8 @@ test('creates, views, edits and deletes a subscription', async ({ page }) => {
   await page.getByTestId('subscription-organization').focus();
   await page.keyboard.press('Tab');
   await expect(page.getByTestId('subscription-organization')).toHaveAttribute('aria-invalid', 'true');
-  await expect(page.getByText('Select an organization', { exact: true })).toBeVisible();
+  // The helper text, which PatternFly follows with ": error status;" for screen readers.
+  await expect(page.getByText(/^Select an organization/)).toBeVisible();
   await page.getByTestId('subscription-organization').click();
   await page.getByRole('option', { name: ORGANIZATION }).click();
   await page.getByTestId('subscription-groups').click();

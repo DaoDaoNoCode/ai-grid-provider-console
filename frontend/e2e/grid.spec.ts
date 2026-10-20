@@ -17,11 +17,10 @@ test('shows the fixture pins on the bundled land outline, and a pin opens its de
   const named: string[] = [];
   for (const pin of await pins.all()) {
     await pin.hover({ force: true });
-    named.push((await map.locator('.leaflet-tooltip').last().textContent()) ?? '');
+    // A hovered pin's label is its site name.
+    named.push(((await map.locator('.leaflet-tooltip').last().textContent()) ?? '').trim());
   }
-  for (const site of PINS) {
-    expect(named.some((label) => label.startsWith(`${site} · `))).toBe(true);
-  }
+  expect(named).toEqual(expect.arrayContaining(PINS));
   // The outline's paths share the overlay pane with the pins but aren't interactive.
   await expect(
     map.locator('.leaflet-overlay-pane path.fleet-map-land:not(.leaflet-interactive)').first(),
