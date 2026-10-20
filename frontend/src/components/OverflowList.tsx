@@ -24,7 +24,7 @@ export const OverflowList: React.FC<Props> = ({ items, noun }) => {
       alignItems={{ default: 'alignItemsCenter' }}
       spaceItems={{ default: 'spaceItemsSm' }}
     >
-      {first}
+      <span>{first}</span>
       {rest.length > 0 && (
         <Popover
           headerContent={`${noun} (${items.length})`}

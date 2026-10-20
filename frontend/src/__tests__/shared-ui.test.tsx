@@ -30,6 +30,15 @@ it('says what "+N more" holds, and keys same-named items apart', async () => {
   expect(within(await screen.findByRole('dialog')).getAllByRole('listitem')).toHaveLength(2);
 });
 
+it('spaces the first item from its "+N more" label', () => {
+  const { container } = render(<OverflowList items={['Paris DC1', 'Madrid DC1']} noun="Locations" />);
+  const row = container.firstElementChild!;
+  expect(row).toHaveClass('pf-v6-l-flex', 'pf-m-space-items-sm');
+  // Flex spacing applies to elements, so the first item is one rather than a bare text node.
+  expect(row.firstChild?.nodeType).toBe(Node.ELEMENT_NODE);
+  expect(row.firstChild).toHaveTextContent('Paris DC1');
+});
+
 it('shows billions as B on chart ticks', () => {
   expect(tickLabel(1_500_000_000)).toBe('1.5B');
   expect(tickLabel(6_000_000_000)).toBe('6B');

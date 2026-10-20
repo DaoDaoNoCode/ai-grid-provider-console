@@ -20,3 +20,25 @@ test('the masthead and the fake-backend banner fit a phone-width screen', async 
   expect(title!.x + title!.width + 8).toBeLessThanOrEqual(user!.x);
   expect(bar!.x + bar!.width).toBeLessThanOrEqual(390);
 });
+
+test.describe('on a laptop', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('the masthead shows the console name on one line, level with the signed-in user', async ({ page }) => {
+    await page.goto('/clusters');
+    const heading = page.getByRole('heading', { name: 'Cloud Provider Admin Console' });
+    const name = page.getByTestId('masthead-user');
+    await expect(name).toBeVisible();
+    await expect(name).toContainText('provider admin');
+
+    const title = await heading.boundingBox();
+    const user = await name.boundingBox();
+    expect(title && user).toBeTruthy();
+    const lineHeight = await heading.evaluate((h) => parseFloat(getComputedStyle(h).lineHeight));
+    // One line: the name no longer wraps to the sidebar's width.
+    expect(title!.height).toBeLessThan(lineHeight * 1.5);
+    expect(title!.x + title!.width + 8).toBeLessThanOrEqual(user!.x);
+    // Centred on the same line as the menu.
+    expect(Math.abs(title!.y + title!.height / 2 - (user!.y + user!.height / 2))).toBeLessThanOrEqual(2);
+  });
+});
