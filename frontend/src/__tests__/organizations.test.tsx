@@ -84,12 +84,19 @@ it('onboards organization details then IdP, saves only after review, supports de
     ['Token URL', 'https://sso.example.com/token'],
   ]);
   await user.click(screen.getByRole('button', { name: 'Next' }));
-  expect(screen.getByTestId('tenant-configuration-details')).toHaveTextContent('tenant1.example.com');
-  expect(screen.getByTestId('tenant-configuration-details')).toHaveTextContent('Tenant 1 SSO');
+  const review = screen.getByTestId('tenant-configuration-details');
+  expect(review).toHaveTextContent('tenant1.example.com');
+  expect(review).toHaveTextContent('Tenant 1 SSO');
+  // Empty optional fields are left out of the review.
+  expect(review).not.toHaveTextContent('User info URL');
   expect(screen.queryByText(/break.glass/i)).not.toBeInTheDocument();
+  // Each section's Edit link goes back to its step.
+  await user.click(screen.getByRole('button', { name: 'Edit identity provider' }));
+  expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('Tenant 1 SSO');
+  await user.click(screen.getByRole('button', { name: 'Next' }));
   await user.click(screen.getByRole('button', { name: 'Create organization' }));
   const table = await screen.findByTestId('tenants-table');
-  expect(table).toHaveTextContent('Saved');
+  expect(table).toHaveTextContent('Enabled');
   expect(table).toHaveTextContent('tenant1.example.com');
   expect(await screen.findByText('Organization and identity provider saved')).toBeVisible();
   expect(service.organizations[0].identityProvider?.config.clientSecretSecret.name).toBe('tenant1-secret');
@@ -97,24 +104,28 @@ it('onboards organization details then IdP, saves only after review, supports de
   expect(await screen.findByTestId('tenant-configuration-details')).toHaveTextContent(
     'https://sso.example.com/tenant1',
   );
-  await user.click(screen.getByRole('link', { name: 'Edit organization' }));
-  expect(await screen.findByRole('textbox', { name: 'Name' })).toBeDisabled();
-  await user.click(screen.getByRole('button', { name: 'Next' }));
+  expect(screen.getByRole('heading', { name: 'tenant1' })).toBeVisible();
+  await user.click(screen.getByTestId('organization-actions'));
+  await user.click(screen.getByRole('menuitem', { name: 'Edit' }));
+  // Edit is one form; the name can't change, so it's read-only.
+  expect(await screen.findByRole('heading', { name: 'Edit tenant1' })).toBeVisible();
+  expect(screen.getByRole('textbox', { name: 'Name' })).toHaveAttribute('readonly');
+  expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
   const title = screen.getByRole('textbox', { name: 'Title' });
   await user.clear(title);
   await user.type(title, 'Updated SSO');
-  await user.click(screen.getByRole('button', { name: 'Next' }));
   await user.click(screen.getByRole('button', { name: 'Save changes' }));
-  expect(await screen.findByTestId('tenants-table')).toHaveTextContent('Updated SSO');
   expect(await screen.findByText('Organization configuration saved')).toBeVisible();
-  await user.click(screen.getByTestId('tenant-actions-tenant1'));
+  expect(await screen.findByTestId('tenant-configuration-details')).toHaveTextContent('Updated SSO');
+  await user.click(screen.getByTestId('organization-actions'));
   await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
   const modal = await screen.findByTestId('delete-tenant-modal');
   expect(modal).toHaveTextContent('Delete organization?');
   expect(modal).toHaveTextContent('Delete this organization and its saved identity provider configuration?');
   await user.type(within(modal).getByTestId('delete-modal-input'), 'tenant1');
   await user.click(within(modal).getByRole('button', { name: 'Delete' }));
-  await waitFor(() => expect(screen.queryByTestId('tenants-table')).not.toBeInTheDocument());
+  expect(await screen.findByText('Organization deleted')).toBeVisible();
+  expect(screen.getByText('No organizations yet. Register one to get started.')).toBeVisible();
   expect(await service.listOrganizations()).toEqual([]);
 }, 15000);
 
@@ -131,6 +142,7 @@ it('keeps onboarding input on conflicts and allows cancel without saving', async
   expect(await screen.findByText('An organization with this name already exists.')).toBeVisible();
   expect(screen.getByTestId('tenant-configuration-details')).toHaveTextContent('tenant1');
   await user.click(screen.getByRole('button', { name: 'Cancel' }));
+  await user.click(within(await screen.findByTestId('discard-changes-modal')).getByRole('button', { name: 'Discard' }));
   expect(await screen.findByTestId('tenants-table')).toHaveTextContent('Tenant 1 SSO');
   expect(await service.listOrganizations()).toHaveLength(1);
 });
@@ -183,21 +195,44 @@ it('an organization named create opens its details by id', async () => {
   expect(screen.queryByRole('textbox', { name: 'Name' })).not.toBeInTheDocument();
 });
 
-it.each(['create', 'edit'])('Back returns from %s to the organization list without saving', async (mode) => {
+it('create: Back keeps input, and Cancel asks before discarding it', async () => {
   const service = emptyService();
   const existing = await service.createOrganization(input);
   const user = userEvent.setup();
-  renderAt(mode === 'create' ? '/organizations/create' : `/organizations/${existing.id}/edit`, service);
-  const name = await screen.findByRole('textbox', { name: 'Name' });
-  if (mode === 'create') await user.type(name, 'unsaved-tenant');
+  renderAt('/organizations/create', service);
+  await user.type(await screen.findByRole('textbox', { name: 'Name' }), 'unsaved-tenant');
+  expect(screen.getByRole('button', { name: 'Back' })).toBeDisabled();
   await user.click(screen.getByRole('button', { name: 'Next' }));
-  const title = screen.getByRole('textbox', { name: 'Title' });
+  await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Unsaved IdP');
+  await user.click(screen.getByRole('button', { name: 'Back' }));
+  expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('unsaved-tenant');
+  await user.click(screen.getByRole('button', { name: 'Cancel' }));
+  const discard = await screen.findByTestId('discard-changes-modal');
+  await user.click(within(discard).getByRole('button', { name: 'Keep editing' }));
+  expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('unsaved-tenant');
+  await user.click(screen.getByRole('button', { name: 'Cancel' }));
+  await user.click(within(await screen.findByTestId('discard-changes-modal')).getByRole('button', { name: 'Discard' }));
+  expect(await screen.findByTestId('tenants-table')).toHaveTextContent('Tenant 1 SSO');
+  expect(await service.listOrganizations()).toEqual([existing]);
+});
+
+it('edit: Cancel leaves at once without changes, and returns to the organization after discarding', async () => {
+  const service = emptyService();
+  const existing = await service.createOrganization(input);
+  const user = userEvent.setup();
+  renderAt(`/organizations/${existing.id}/edit`, service);
+  await user.click(await screen.findByRole('button', { name: 'Cancel' }));
+  expect(await screen.findByTestId('tenant-configuration-details')).toBeVisible();
+  expect(screen.queryByTestId('discard-changes-modal')).not.toBeInTheDocument();
+
+  await user.click(screen.getByTestId('organization-actions'));
+  await user.click(screen.getByRole('menuitem', { name: 'Edit' }));
+  const title = await screen.findByRole('textbox', { name: 'Title' });
   await user.clear(title);
   await user.type(title, 'Unsaved IdP');
-  await user.click(screen.getByRole('button', { name: 'Back' }));
-  expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue(mode === 'create' ? 'unsaved-tenant' : 'tenant1');
-  await user.click(screen.getByRole('button', { name: 'Back' }));
-  expect(await screen.findByTestId('tenants-table')).toHaveTextContent('Tenant 1 SSO');
+  await user.click(screen.getByRole('button', { name: 'Cancel' }));
+  await user.click(within(await screen.findByTestId('discard-changes-modal')).getByRole('button', { name: 'Discard' }));
+  expect(await screen.findByTestId('tenant-configuration-details')).toHaveTextContent('Tenant 1 SSO');
   expect(await service.listOrganizations()).toEqual([existing]);
 });
 
@@ -206,18 +241,16 @@ it('keeps input on conflict', async () => {
   const existing = await service.createOrganization(input);
   const user = userEvent.setup();
   renderAt(`/organizations/${existing.id}/edit`, service);
-  await user.click(await screen.findByRole('button', { name: 'Next' }));
-  const title = screen.getByRole('textbox', { name: 'Title' });
+  const title = await screen.findByRole('textbox', { name: 'Title' });
   await user.clear(title);
   await user.type(title, 'My unsaved title');
-  await user.click(screen.getByRole('button', { name: 'Next' }));
   // Another tab saves first, so the version this form read is stale.
   await service.updateOrganization(existing.id, input, existing.resourceVersion);
   await user.click(screen.getByRole('button', { name: 'Save changes' }));
   // The PoC's message, not the backend's text.
   expect(await screen.findByText('This organization changed. Reload it before saving or deleting.')).toBeVisible();
   expect(screen.getByText('Unable to save organization')).toBeVisible();
-  expect(screen.getByTestId('tenant-configuration-details')).toHaveTextContent('My unsaved title');
+  expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('My unsaved title');
   expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled();
   expect(service.organizations[0].identityProvider?.title).toBe('Tenant 1 SSO');
   expect(service.organizations[0].resourceVersion).toBe('2');
@@ -237,7 +270,7 @@ it('hides write actions from a viewer', async () => {
   renderAt(`/organizations/${service.organizations[0].id}`, service);
   await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('viewer'));
   expect(await screen.findByRole('heading', { name: 'acme-robotics' })).toBeInTheDocument();
-  expect(screen.queryByRole('link', { name: 'Edit organization' })).not.toBeInTheDocument();
+  expect(screen.queryByTestId('organization-actions')).not.toBeInTheDocument();
 });
 
 it('shows field errors from the server next to the field', async () => {
@@ -281,10 +314,10 @@ it('shows the not-available state when the backend cannot delete organizations y
   expect(within(modal).queryByText('the AI Grid backend does not support this operation yet')).not.toBeInTheDocument();
 });
 
-it('paginates the list like the PoC', async () => {
+it('shows one pagination, in the toolbar, for a single page', async () => {
   renderAt('/organizations', new MockConsoleService());
   expect(await screen.findByTestId('tenants-table')).toBeVisible();
-  expect(screen.getAllByRole('navigation', { name: /pagination/i })).toHaveLength(2);
+  expect(screen.getAllByRole('navigation', { name: /pagination/i })).toHaveLength(1);
 });
 
 // PR 12's tenant JSON, as GET /api/v1/tenants/{id} sends it (mock/examples/get-tenant.json), trimmed.
@@ -325,8 +358,6 @@ it('edit sends PATCH with domains, identity provider, and If-Match', async () =>
   await waitFor(() => expect(domain).toHaveValue('acme-robotics.example.com'));
   await user.clear(domain);
   await user.type(domain, 'acme.example.net');
-  await user.click(screen.getByRole('button', { name: 'Next' }));
-  await user.click(screen.getByRole('button', { name: 'Next' }));
   await user.click(screen.getByRole('button', { name: 'Save changes' }));
   expect(await screen.findByText('Organization configuration saved')).toBeVisible();
 
@@ -340,7 +371,7 @@ it('edit sends PATCH with domains, identity provider, and If-Match', async () =>
   });
 });
 
-it('shows the registered date, a dash without one, and Disabled for a disabled organization', async () => {
+it('lists the identity provider by title, a dash without one, and Disabled for a disabled organization', async () => {
   const fetchFn = vi.fn(async () =>
     jsonResponse(200, {
       data: [
@@ -358,12 +389,27 @@ it('shows the registered date, a dash without one, and Disabled for a disabled o
   );
   renderAt('/organizations', serviceOnTenantJson(fetchFn as unknown as typeof fetch));
   const acme = await screen.findByRole('row', { name: /^acme-robotics / });
-  expect(acme).toHaveTextContent(new Date('2026-09-01T09:00:00Z').toLocaleString());
-  expect(within(acme).getByText('Saved')).toBeInTheDocument();
+  expect(within(acme).getByText('Enabled')).toBeInTheDocument();
   expect(acme).toHaveTextContent('Acme SSO');
+  expect(acme).not.toHaveTextContent(tenantJson.identityProvider.config.issuer);
   const umbrella = screen.getByRole('row', { name: /^umbrella-biotech / });
   expect(within(umbrella).getByText('Disabled')).toBeInTheDocument();
-  expect(within(umbrella).getAllByText('—')).toHaveLength(2);
+  expect(within(umbrella).getAllByText('—')).toHaveLength(1);
+});
+
+it('the organization page shows its description, verified domains, attributes and created date, endpoints folded', async () => {
+  const fetchFn = vi.fn(async () => jsonResponse(200, { data: tenantJson }));
+  const user = userEvent.setup();
+  renderAt(`/organizations/${tenantJson.id}`, serviceOnTenantJson(fetchFn as unknown as typeof fetch));
+  const details = await screen.findByTestId('tenant-configuration-details');
+  expect(details).toHaveTextContent('Acme Robotics, EU region');
+  expect(details).toHaveTextContent('acme-robotics.example.com Verified');
+  expect(details).toHaveTextContent('billing-account: ACME-0042');
+  expect(details).toHaveTextContent('2026');
+  const tokenUrl = screen.getByText(tenantJson.identityProvider.config.tokenUrl);
+  expect(tokenUrl).not.toBeVisible();
+  await user.click(screen.getByRole('button', { name: 'OIDC endpoints' }));
+  expect(tokenUrl).toBeVisible();
 });
 
 it.each(['', '/edit'])('loads the other organization when the id in /organizations/:id%s changes', async (suffix) => {
@@ -389,4 +435,24 @@ it.each(['', '/edit'])('loads the other organization when the id in /organizatio
   await shows(acme.name);
   await act(async () => navigate(`/organizations/${globex.id}${suffix}`));
   await shows(globex.name);
+});
+
+it('locks the identity provider fields while an edit saves', async () => {
+  const service = new MockConsoleService();
+  const [organization] = service.organizations;
+  let finish: () => void = () => undefined;
+  const update = service.updateOrganization.bind(service);
+  service.updateOrganization = (...args) =>
+    new Promise((resolve, reject) => {
+      finish = () => void update(...args).then(resolve, reject);
+    });
+  const user = userEvent.setup();
+  renderAt(`/organizations/${encodeURIComponent(organization.id)}/edit`, service);
+  const title = await screen.findByRole('textbox', { name: 'Title' });
+  await user.type(title, ' (new)');
+  await user.click(screen.getByRole('button', { name: 'Save changes' }));
+  expect(title).toBeDisabled();
+  expect(screen.getByRole('checkbox', { name: /Validate signature/ })).toBeDisabled();
+  finish();
+  expect(await screen.findByText('Organization configuration saved')).toBeVisible();
 });

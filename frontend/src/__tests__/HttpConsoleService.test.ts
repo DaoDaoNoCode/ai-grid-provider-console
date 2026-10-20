@@ -20,7 +20,7 @@ describe('HttpConsoleService', () => {
       .mockResolvedValue(jsonResponse(200, { data: [{ id: '1', name: 't', enabled: true, domains: [] }] }));
     const service = new HttpConsoleService(fetchFn);
     await expect(service.listOrganizations()).resolves.toEqual([
-      { id: '1', name: 't', domains: [], status: 'Saved', resourceVersion: '', creationTimestamp: '' },
+      { id: '1', name: 't', domains: [], status: 'Enabled', resourceVersion: '', creationTimestamp: '' },
     ]);
     expect(fetchFn).toHaveBeenCalledWith('/api/v1/tenants', expect.objectContaining({ method: 'GET' }));
   });
@@ -175,6 +175,31 @@ describe('HttpConsoleService', () => {
         method: 'PATCH',
         body: '{"labels":{"location":"sydney","ai-grid/enabled":"true"}}',
         headers: expect.objectContaining({ 'Content-Type': 'application/json', 'If-Match': '"7"' }),
+      }),
+    );
+  });
+
+  it('removes a cluster from AI Grid by PATCHing its labels without ai-grid/enabled', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(200, { data: { name: 'site1', aiGridEnabled: false, status: 'ready' } }));
+    const read = toGridCluster({
+      name: 'site1',
+      aiGridEnabled: true,
+      provisioned: true,
+      status: 'ready',
+      resourceVersion: '4',
+      labels: { location: 'paris', 'ai-grid/enabled': 'true', 'ai-grid/provisioned': 'true' },
+    });
+    await expect(new HttpConsoleService(fetchFn).removeClusterFromGrid(read)).resolves.toMatchObject({
+      aiGridEnabled: false,
+    });
+    expect(fetchFn).toHaveBeenCalledWith(
+      '/api/v1/clusters/site1',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: '{"labels":{"location":"paris","ai-grid/provisioned":"true"}}',
+        headers: expect.objectContaining({ 'If-Match': '"4"' }),
       }),
     );
   });

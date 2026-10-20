@@ -2,27 +2,20 @@
 // Adapted from opendatahub-io/odh-dashboard
 // packages/maas/frontend/src/app/pages/subscriptions/viewSubscription/SubscriptionGroupsSection.tsx
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
-import { Bullseye, Content, Flex, FlexItem, Stack, StackItem, Title } from '@patternfly/react-core';
+import { Bullseye, Content } from '@patternfly/react-core';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { GroupReference } from '../../../api/types';
+import { DetailsSection } from '../../../components/DetailsSection';
 
 type Props = { groups: GroupReference[] };
 
 export const SubscriptionGroupsSection: React.FC<Props> = ({ groups }) => (
-  <Stack hasGutter data-testid="subscription-groups-section">
-    <StackItem>
-      <Flex direction={{ default: 'column' }} spaceItems={{ default: 'spaceItemsSm' }}>
-        <FlexItem>
-          <Title headingLevel="h2" size="xl">
-            Groups
-          </Title>
-        </FlexItem>
-        <FlexItem>
-          <Content component="p">User groups that can use models in this subscription.</Content>
-        </FlexItem>
-      </Flex>
-    </StackItem>
-    <StackItem>
+  <div data-testid="subscription-groups-section">
+    <DetailsSection
+      title="Groups"
+      count={groups.length}
+      help="Members of these groups can use the subscription's models."
+    >
       {groups.length === 0 ? (
         <Bullseye>
           <Content component="p">No groups assigned to this subscription.</Content>
@@ -43,6 +36,6 @@ export const SubscriptionGroupsSection: React.FC<Props> = ({ groups }) => (
           </Tbody>
         </Table>
       )}
-    </StackItem>
-  </Stack>
+    </DetailsSection>
+  </div>
 );

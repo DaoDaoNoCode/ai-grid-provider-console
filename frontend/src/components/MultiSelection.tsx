@@ -53,6 +53,8 @@ type MultiSelectionProps = {
   isDisabled?: boolean;
   selectionRequired?: boolean;
   noSelectedOptionsMessage?: string;
+  /** An error from the caller, shown and announced like the empty-selection error, which it replaces. */
+  errorMessage?: string;
   toggleTestId?: string;
   /** Test ID for the dropdown list */
   listTestId?: string;
@@ -136,6 +138,7 @@ export const MultiSelection: React.FC<MultiSelectionProps> = ({
   listTestId,
   selectionRequired,
   noSelectedOptionsMessage = 'One or more options must be selected',
+  errorMessage,
   isCreatable = false,
   isCreateOptionOnTop = false,
   createOptionMessage = defaultCreateOptionMessage,
@@ -463,7 +466,8 @@ export const MultiSelection: React.FC<MultiSelectionProps> = ({
     }
   };
 
-  const showSelectionError = selectionRequired && !hasSelections;
+  const selectionError = errorMessage ?? (selectionRequired && !hasSelections ? noSelectedOptionsMessage : undefined);
+  const showSelectionError = selectionError !== undefined;
 
   const renderSelectOption = (option: SelectionOptions, children?: React.ReactNode, showCheckbox = true) => {
     const optionVisibleIndex = visibleOptions.indexOf(option);
@@ -486,7 +490,7 @@ export const MultiSelection: React.FC<MultiSelectionProps> = ({
       id={toggleId}
       data-testid={toggleTestId}
       variant="typeahead"
-      status={selectionRequired && !hasSelections ? 'danger' : undefined}
+      status={showSelectionError ? 'danger' : undefined}
       onClick={onToggleClick}
       innerRef={toggleRef}
       isDisabled={isDisabled}
@@ -623,7 +627,7 @@ export const MultiSelection: React.FC<MultiSelectionProps> = ({
       {showSelectionError && (
         <HelperText isLiveRegion>
           <HelperTextItem variant="error" id={selectionErrorId} data-testid="group-selection-error-text">
-            {noSelectedOptionsMessage}
+            {selectionError}
           </HelperTextItem>
         </HelperText>
       )}

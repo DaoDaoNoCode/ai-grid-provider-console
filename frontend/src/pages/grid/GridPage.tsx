@@ -3,7 +3,7 @@
 // state becomes useServiceData, and a failed load is a LoadError, so a backend without the RPC shows
 // not-available.
 import { useEffect, useState } from 'react';
-import { Alert, Button, Label, PageSection, Title, ToggleGroup, ToggleGroupItem } from '@patternfly/react-core';
+import { Alert, Flex, PageSection, Spinner, ToggleGroup, ToggleGroupItem } from '@patternfly/react-core';
 import { Link } from 'react-router-dom';
 import type { ConsoleService } from '../../api/ConsoleService';
 import { ServiceError } from '../../api/ConsoleService';
@@ -12,6 +12,9 @@ import type { ModelsService } from '../../api/models';
 import type { OrganizationsService } from '../../api/organizations';
 import type { GridOverview, GridRange, ManagedModel, Organization } from '../../api/types';
 import { LoadError } from '../../components/LoadError';
+import { PageHeader } from '../../components/PageHeader';
+import { RefreshButton } from '../../components/RefreshButton';
+import { RelativeTime } from '../../components/RelativeTime';
 import { useServiceData } from '../../hooks/useServiceData';
 import { GridFleetView } from './GridFleetView';
 import { ObservabilityPanel } from './ObservabilityPanel';
@@ -71,7 +74,6 @@ export const GridPage: React.FC<Props> = ({ service, monitoring = false }) => {
     }
   }, [monitoring, range, metricsData, metricsLoaded, metricsCurrent, refreshMetrics]);
   const [refreshing, setRefreshing] = useState(false);
-  const loading = !loaded || refreshing;
 
   const refresh = async () => {
     setRefreshing(true);
@@ -88,52 +90,47 @@ export const GridPage: React.FC<Props> = ({ service, monitoring = false }) => {
   const modelsError = modelsLoadError && modelsErrorOf(modelsLoadError);
 
   const metricsSource = metricsData?.overview.metricsSource;
-  const metricsLabel = metricsSource === 'demo' ? 'Demo' : metricsSource === 'thanos' ? 'Thanos' : 'Unknown';
+
+  // One toolbar row: the time range (Monitoring), when the data was read, refresh, and the other view.
+  const toolbar = (
+    <Flex alignItems={{ default: 'alignItemsCenter' }} spaceItems={{ default: 'spaceItemsMd' }}>
+      {monitoring && (
+        <ToggleGroup aria-label="Time range" isCompact>
+          {ranges.map((r) => (
+            <ToggleGroupItem
+              key={r}
+              text={`Last ${r}`}
+              buttonId={`obs-range-${r}`}
+              isSelected={range === r}
+              onChange={() => setRange(r)}
+            />
+          ))}
+        </ToggleGroup>
+      )}
+      {data?.updatedAt && (
+        <span className="grid-updated">
+          Updated <RelativeTime time={data.updatedAt} />
+        </span>
+      )}
+      <RefreshButton onRefresh={() => void refresh()} isRefreshing={!loaded || refreshing} />
+      <Link to={monitoring ? '/ai-grid' : '/monitoring'}>{monitoring ? 'View AI Grid map' : 'View monitoring'}</Link>
+    </Flex>
+  );
 
   return (
     <>
-      {monitoring && (
-        <PageSection>
-          <div className="observability-header">
-            <div>
-              <Title headingLevel="h1" size="3xl">
-                Observability dashboard
-              </Title>
-              <p>Monitor cluster availability, gateway performance, and infrastructure resource usage.</p>
-            </div>
-            <div className="observability-time-controls">
-              <span>Time period:</span>
-              <ToggleGroup aria-label="Time range" isCompact>
-                {ranges.map((r) => (
-                  <ToggleGroupItem
-                    key={r}
-                    text={`Last ${r}`}
-                    buttonId={`obs-range-${r}`}
-                    isSelected={range === r}
-                    onChange={() => setRange(r)}
-                  />
-                ))}
-              </ToggleGroup>
-            </div>
-          </div>
-        </PageSection>
-      )}
+      <PageHeader
+        title={monitoring ? 'Monitoring' : 'AI Grid'}
+        description={
+          monitoring
+            ? 'Cluster availability, gateway performance and resource use across AI Grid.'
+            : 'Where the AI Grid clusters are, and which models they serve.'
+        }
+        headerAction={toolbar}
+      />
       <PageSection>
-        {/* The map has no visible heading, as in the PoC; its h1 is for screen readers. */}
-        {!monitoring && (
-          <Title headingLevel="h1" className="pf-v6-screen-reader">
-            AI Grid
-          </Title>
-        )}
-        <div className="grid-toolbar">
-          {!monitoring && <Label color="grey">AI Grid</Label>}
-          <Button variant="secondary" onClick={() => void refresh()} isDisabled={loading}>
-            Refresh
-          </Button>
-          <Link to={monitoring ? '/ai-grid' : '/monitoring'}>{monitoring ? 'View AI Grid' : 'View monitoring'}</Link>
-        </div>
         {error && <LoadError subject="AI Grid clusters" error={error} />}
-        {loading && <p role="status">Loading AI Grid…</p>}
+        {!loaded && <Spinner aria-label="Loading AI Grid" />}
         {data && (
           <>
             {data.demo && (
@@ -149,11 +146,6 @@ export const GridPage: React.FC<Props> = ({ service, monitoring = false }) => {
                 backend.
               </Alert>
             )}
-            <p className="grid-source">
-              {data.inventorySource && <>Inventory: {data.inventorySource.toUpperCase()} · </>}
-              Retrieved {data.updatedAt ? new Date(data.updatedAt).toLocaleString() : '—'}
-              {monitoring && <> · Metrics: {data.demo ? 'Demo' : metricsLabel}</>}
-            </p>
             {!monitoring && (
               <GridFleetView clusters={data.clusters} models={models} modelsError={modelsError} tiles={tiles} />
             )}

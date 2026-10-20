@@ -2,7 +2,8 @@
 // Adapted from opendatahub-io/odh-dashboard
 // packages/maas/frontend/src/app/pages/subscriptions/allSubscriptions/columns.ts
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
-// The console adds the Organization column, sorted by the name it shows.
+// The console adds the Organization column, sorted by the name it shows. Groups and models show
+// their first name and "+N more" instead of expanding a nested table (PatternFly's table guidelines).
 import type { ThProps } from '@patternfly/react-table';
 import type { MaaSSubscription } from '../../../api/types';
 import { normalizePhase } from '../../../utilities/phaseLabelUtils';
@@ -10,6 +11,8 @@ import { normalizePhase } from '../../../utilities/phaseLabelUtils';
 export type SubscriptionColumn = {
   label: string;
   width?: ThProps['width'];
+  /** A number column: right-aligned with tabular digits, as every number column is. */
+  isNumeric?: boolean;
   sortable: (a: MaaSSubscription, b: MaaSSubscription) => number;
 };
 
@@ -42,10 +45,7 @@ export const subscriptionsColumns = (organizationName: (s: MaaSSubscription) => 
   {
     label: 'Priority',
     width: 10,
+    isNumeric: true,
     sortable: (a, b) => (a.priority ?? 0) - (b.priority ?? 0),
   },
 ];
-
-/** Column indexes the row's compound-expand cells use. */
-export const GROUPS_COLUMN = 3;
-export const MODELS_COLUMN = 4;

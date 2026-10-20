@@ -58,7 +58,7 @@ export const PhaseLabel: React.FC<Props> = ({
       <Flex>
         <FlexItem>
           <Label
-            variant={isClickable ? 'filled' : 'outline'}
+            variant="filled"
             isCompact
             isClickable={isClickable}
             data-testid="phase-label"

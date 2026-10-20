@@ -12,17 +12,22 @@ type Props = {
   onSelect: (name: string) => void;
   /** The basemap; undefined while the console config loads, null when it could not be read. */
   tiles: TileLayerConfig | null | undefined;
+  /** The list's search or filter is what left the map empty, not missing coordinates. */
+  isFiltered?: boolean;
 };
 
 const initialView: L.LatLngExpression = [45, -40];
 const initialZoom = 3;
+/** Fitting one or two sites stops here, so the map keeps the countries around them. */
+const maxFitZoom = 4;
 
-const pinColor = (cluster: GridCluster, focused: boolean) =>
-  focused ? '#0066cc' : cluster.status === 'Ready' ? '#3d7317' : cluster.status === 'Offline' ? '#ee0000' : '#6a6e73';
+/** A pin keeps its status colour when selected (the legend's colours); selection shows as a larger ring. */
+const pinColor = (cluster: GridCluster) =>
+  cluster.status === 'Ready' ? '#3d7317' : cluster.status === 'Offline' ? '#ee0000' : '#6a6e73';
 
 const isMapped = (c: GridCluster) => c.latitude !== undefined && c.longitude !== undefined;
 
-export const GridFleetMap: React.FC<Props> = ({ clusters, selected, onSelect, tiles }) => {
+export const GridFleetMap: React.FC<Props> = ({ clusters, selected, onSelect, tiles, isFiltered }) => {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const layer = useRef<L.LayerGroup | null>(null);
@@ -126,22 +131,24 @@ export const GridFleetMap: React.FC<Props> = ({ clusters, selected, onSelect, ti
         cluster.longitude! + Math.cos(angle) * offset,
       ];
       const focused = selected === cluster.name;
-      const color = pinColor(cluster, focused);
+      const color = pinColor(cluster);
       const marker = L.circleMarker(latLng, {
-        radius: focused ? 10 : 7,
+        radius: focused ? 11 : 7,
         color,
-        weight: focused ? 3 : 2,
+        weight: focused ? 4 : 2,
         fillColor: color,
-        fillOpacity: 0.35,
+        fillOpacity: focused ? 0.6 : 0.35,
         opacity: 0.85,
+        className: focused ? 'fleet-pin fleet-pin--selected' : 'fleet-pin',
       });
       // A text node avoids interpreting cluster metadata as HTML.
       const tooltip = document.createElement('span');
       tooltip.textContent = focused
         ? `${cluster.siteName ?? cluster.site ?? 'Site unassigned'} · ${cluster.name} · ${cluster.status}`
         : (cluster.siteName ?? cluster.site ?? cluster.name);
+      // Only the selected pin keeps its label; the others show theirs on hover, so labels don't cover pins.
       marker
-        .bindTooltip(tooltip, { direction: 'top', opacity: 1, permanent: true })
+        .bindTooltip(tooltip, { direction: 'top', opacity: 1, permanent: focused })
         .on('click', () => select.current(cluster.name))
         .addTo(group);
       bounds.extend(latLng);
@@ -149,14 +156,15 @@ export const GridFleetMap: React.FC<Props> = ({ clusters, selected, onSelect, ti
     const signature = mapped.map((c) => `${c.name}:${c.latitude}:${c.longitude}`).join('|');
     if (signature !== lastBounds.current) {
       if (mapped.length) {
-        map.current.fitBounds(bounds.pad(0.35), { maxZoom: 6, animate: false });
-      } else {
+        map.current.fitBounds(bounds.pad(0.35), { maxZoom: maxFitZoom, animate: false });
+      } else if (!isFiltered) {
+        // A filter that matches nothing leaves the view where it was.
         map.current.setView(initialView, initialZoom);
       }
       lastBounds.current = signature;
     }
     map.current.invalidateSize();
-  }, [clusters, selected]);
+  }, [clusters, selected, isFiltered]);
 
   return (
     <div className="vision-fleet-map">
@@ -169,12 +177,14 @@ export const GridFleetMap: React.FC<Props> = ({ clusters, selected, onSelect, ti
       )}
       {!clusters.some(isMapped) && (
         <p className="vision-fleet-map__empty">
-          No mapped clusters. Add site coordinates to ManagedCluster annotations.
+          {isFiltered
+            ? 'No clusters match the search or filter.'
+            : 'No mapped clusters. Add site coordinates to ManagedCluster annotations.'}
         </p>
       )}
       <div className="vision-fleet-map__legend">
-        <span className="fleet-legend-ready">Available</span>
-        <span className="fleet-legend-offline">Unavailable</span>
+        <span className="fleet-legend-ready">Ready</span>
+        <span className="fleet-legend-offline">Offline</span>
         <span className="fleet-legend-unknown">Unknown</span>
       </div>
     </div>

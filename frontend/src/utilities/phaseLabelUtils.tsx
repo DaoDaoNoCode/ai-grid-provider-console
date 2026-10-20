@@ -8,14 +8,9 @@
 // 3.5), and a Degraded subtext shows the Ready condition's message when there is one.
 import type { AlertProps, ContentProps, LabelProps } from '@patternfly/react-core';
 import { Stack, StackItem } from '@patternfly/react-core';
-import {
-  CheckCircleIcon,
-  ExclamationCircleIcon,
-  ExclamationTriangleIcon,
-  OutlinedQuestionCircleIcon,
-  PendingIcon,
-} from '@patternfly/react-icons';
 import { PhaseApiDetails } from '../components/Phase/PhaseApiDetails';
+import type { StatusTone } from './status';
+import { statusLabelProps, statusTone } from './status';
 
 /** A model that keeps a subscription from being Ready. */
 export type AffectedModel = { name: string; displayName?: string; phase?: string; statusMessage?: string };
@@ -36,25 +31,12 @@ export enum PhaseStatus {
   UNKNOWN = 'Unknown',
 }
 
+/** The label props for a phase, from the console's one status mapping (utilities/status). */
 export const getPhaseProps = (
   phase: string | undefined,
 ): { icon: React.ReactNode; status?: LabelProps['status']; color?: LabelProps['color'] } => {
-  switch (phase) {
-    case PhaseStatus.ACTIVE:
-    case PhaseStatus.READY:
-      return { icon: <CheckCircleIcon />, status: 'success' };
-    case PhaseStatus.FAILED:
-    case PhaseStatus.INVALID:
-      return { icon: <ExclamationCircleIcon />, status: 'danger' };
-    case PhaseStatus.UNAVAILABLE:
-      return { icon: <ExclamationCircleIcon />, status: 'warning' };
-    case PhaseStatus.PENDING:
-      return { icon: <PendingIcon />, color: 'purple' };
-    case PhaseStatus.DEGRADED:
-      return { icon: <ExclamationTriangleIcon />, status: 'warning' };
-    default:
-      return { icon: <OutlinedQuestionCircleIcon />, color: 'grey' };
-  }
+  const { icon, status, color } = statusLabelProps(phase);
+  return { icon, status, color };
 };
 
 /** The phase as the label shows it: an Active subscription reads Ready, as in odh-dashboard. */
@@ -69,7 +51,8 @@ export const normalizePhase = (phase: string | undefined): string => {
   return normalized || PhaseStatus.UNKNOWN;
 };
 
-export const MODEL_NOT_FOUND_STATUS_MESSAGE = 'Model not found. The MaaSModelRef does not exist.';
+/** An affected model the subscription names but the hub doesn't have (no MaaSModelRef). */
+export const MODEL_NOT_FOUND_STATUS_MESSAGE = 'Model not found. It may have been deleted.';
 
 /** The subtext under a label; for Degraded, the Ready condition's message when there is one. */
 export const getStatusSubtext = (phase: string, statusMessage?: string): React.ReactNode | undefined => {
@@ -114,21 +97,17 @@ const getAlertContent = (phase: string): { title: string; children: string } | u
   }
 };
 
-const getAlertVariant = (phase: string): AlertProps['variant'] => {
-  switch (phase) {
-    case PhaseStatus.ACTIVE:
-    case PhaseStatus.READY:
-      return 'success';
-    case PhaseStatus.FAILED:
-    case PhaseStatus.INVALID:
-      return 'danger';
-    case PhaseStatus.DEGRADED:
-    case PhaseStatus.UNAVAILABLE:
-      return 'warning';
-    default:
-      return 'info';
-  }
+// The alert and the subtext take their colour from the same tone table as the label
+// (utilities/status), so a phase reads the same colour everywhere.
+const ALERT_VARIANTS: Record<StatusTone, AlertProps['variant']> = {
+  success: 'success',
+  warning: 'warning',
+  danger: 'danger',
+  info: 'info',
+  neutral: 'info',
 };
+
+const getAlertVariant = (phase: string): AlertProps['variant'] => ALERT_VARIANTS[statusTone(phase)];
 
 export const getModalAlertProps = (
   phase: string,
@@ -172,18 +151,13 @@ export const getModalAlertProps = (
   };
 };
 
+/**
+ * The subtext's colour. It isn't underlined: unlike odh-dashboard's, it isn't a link (the label
+ * opens the status), so it shouldn't look like one.
+ */
 export const getSubtextProps = (phase: string): ContentProps | undefined => {
-  const sharedStyle: React.CSSProperties = { textDecoration: 'underline dotted' };
-  switch (phase) {
-    case PhaseStatus.DEGRADED:
-    case PhaseStatus.UNAVAILABLE:
-      return { className: 'pf-v6-u-text-color-status-warning', style: sharedStyle };
-    case PhaseStatus.FAILED:
-    case PhaseStatus.INVALID:
-      return { className: 'pf-v6-u-text-color-status-danger', style: sharedStyle };
-    case PhaseStatus.PENDING:
-      return { className: 'pf-v6-u-text-color-status-info', style: sharedStyle };
-    default:
-      return undefined;
-  }
+  const tone = statusTone(phase);
+  return tone === 'warning' || tone === 'danger' || tone === 'info'
+    ? { className: `pf-v6-u-text-color-status-${tone}` }
+    : undefined;
 };

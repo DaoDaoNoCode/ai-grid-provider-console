@@ -12,7 +12,14 @@ test('creates, views, edits and deletes a subscription', async ({ page }) => {
   await page.getByTestId('create-subscription-button').click();
 
   await page.getByTestId('subscription-name-desc-name').fill(unique);
-  await page.getByTestId('subscription-organization').selectOption({ label: ORGANIZATION });
+  // Leaving the organization unset marks it invalid, so a disabled Create says why (from #28).
+  await page.getByTestId('subscription-organization').focus();
+  await page.keyboard.press('Tab');
+  await expect(page.getByTestId('subscription-organization')).toHaveAttribute('aria-invalid', 'true');
+  // The helper text, which PatternFly follows with ": error status;" for screen readers.
+  await expect(page.getByText(/^Select an organization/)).toBeVisible();
+  await page.getByTestId('subscription-organization').click();
+  await page.getByRole('option', { name: ORGANIZATION }).click();
   await page.getByTestId('subscription-groups').click();
   await page.getByRole('combobox', { name: 'Enter groups' }).fill(group);
   await page.getByRole('option', { name: `Add group "${group}"` }).click();
@@ -22,7 +29,7 @@ test('creates, views, edits and deletes a subscription', async ({ page }) => {
   await page.getByTestId(`toggle-model-${MODEL}`).click();
   await page.getByTestId('confirm-add-models').click();
   await page.getByTestId('add-token-limit-0').click();
-  await page.getByRole('spinbutton', { name: 'Token count' }).fill('5000');
+  await page.getByRole('spinbutton', { name: 'Tokens' }).fill('5000');
   await page.getByTestId('save-rate-limits').click();
   await page.getByTestId('create-subscription-button').click();
   await expect(page.getByText('Subscription created')).toBeVisible();
@@ -44,8 +51,7 @@ test('creates, views, edits and deletes a subscription', async ({ page }) => {
   await page.reload();
   await expect(page.getByRole('heading', { name: unique })).toBeVisible();
   await expect(page.getByTestId('subscription-models-table')).toContainText('5,000');
-  // The Details tab bar keeps its height on a page that scrolls (style.css).
-  expect((await page.locator('.pf-v6-c-tabs').boundingBox())?.height).toBeGreaterThan(20);
+  await expect(page.getByTestId('subscription-priority')).toHaveText('0');
 
   // Edit the priority.
   await page.getByTestId('subscription-actions-toggle').click();

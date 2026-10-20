@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { App } from '../App';
 import { MockConsoleService } from '../api/MockConsoleService';
@@ -16,7 +17,7 @@ describe('App', () => {
     await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('dev-user (provider admin)'));
     expect(await screen.findByRole('row', { name: /^site1 / })).toBeInTheDocument();
     expect(screen.getByText('brussels')).toBeInTheDocument();
-    expect(screen.getAllByText('Member')).toHaveLength(3);
+    expect(screen.getAllByText('Provisioned')).toHaveLength(3);
   });
 
   it('has one h1, the page heading, with the masthead title as an h2', async () => {
@@ -95,5 +96,31 @@ describe('App', () => {
 
     expect(await screen.findByText('Error loading organizations')).toBeInTheDocument();
     expect(screen.getByText('the AI Grid backend failed to process the request')).toBeInTheDocument();
+  });
+});
+
+describe('user menu', () => {
+  it('offers Log out through the login proxy when the backend is real', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <App service={new MockConsoleService()} />
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('button', { name: /dev-user/ }));
+    expect(screen.getByRole('menuitem', { name: 'Log out' })).toHaveAttribute('href', '/oauth2/sign_out');
+  });
+
+  it('shows only the user on the fake backend, where no login proxy runs', async () => {
+    const service = new MockConsoleService();
+    const config = await service.getConfig();
+    service.getConfig = async () => ({ ...config, fakeBackend: true });
+    render(
+      <MemoryRouter>
+        <App service={service} />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('dev-user'));
+    expect(screen.queryByRole('button', { name: /dev-user/ })).not.toBeInTheDocument();
   });
 });

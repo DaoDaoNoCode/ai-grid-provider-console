@@ -1,32 +1,36 @@
 // Layout and visual styling adapted from the cloned ProviderAdminObservabilityPage.
 // Ported from krisv/ai-grid-cloud-provider-poc src/app/pages/grid/ObservabilityPanel.tsx at 62319b8.
-// The PoC's tenants are the console's organizations; visible text says "organization".
+// The PoC's tenants are the console's organizations; visible text says "organization". The console
+// uses plain section headings, PatternFly tables with right-aligned numbers, round axis ticks, and
+// horizontal usage bars with a legend.
 import { useId, useState } from 'react';
 import type { ReactNode } from 'react';
-import {
-  Alert,
-  Card,
-  CardBody,
-  ExpandableSection,
-  FormSelect,
-  FormSelectOption,
-  Label,
-  Tab,
-  Tabs,
-  TabTitleText,
-  Title,
-} from '@patternfly/react-core';
+import { Alert, Card, CardBody, Flex, Spinner, Tab, Tabs, TabTitleText, Title } from '@patternfly/react-core';
+import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
+import { Link } from 'react-router-dom';
 import type { GridCluster, GridMetric, GridRange, ManagedModel, Organization } from '../../api/types';
+import { HelpPopover } from '../../components/HelpPopover';
+import { StatusLabel } from '../../components/StatusLabel';
+import { TypeaheadSelect } from '../../components/TypeaheadSelect';
 import { modelKey } from '../../utilities/authpolicies';
+import { EMPTY_VALUE } from '../../utilities/format';
 import { modelMetrics, tenantUsage, total } from '../../services/demoObservability';
+import { modelPath } from '../models/modelUtils';
+import { AXIS_INTERVALS, niceCeiling, tickLabel } from './chartScale';
 import './observability.css';
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  const [expanded, setExpanded] = useState(true);
+/** A titled part of a tab, with optional background in a help popover. */
+function Section({ title, help, children }: { title: string; help?: ReactNode; children: ReactNode }) {
   return (
-    <ExpandableSection toggleText={title} isExpanded={expanded} onToggle={(_, value) => setExpanded(value)}>
+    <section className="observability-section">
+      <Flex alignItems={{ default: 'alignItemsCenter' }} spaceItems={{ default: 'spaceItemsSm' }}>
+        <Title headingLevel="h2" size="lg">
+          {title}
+        </Title>
+        {help && <HelpPopover topic={title}>{help}</HelpPopover>}
+      </Flex>
       {children}
-    </ExpandableSection>
+    </section>
   );
 }
 
@@ -42,7 +46,9 @@ function Stat({ label, value, unit, warn = false }: { label: string; value: stri
   );
 }
 
-/** A hand-drawn SVG area chart of one series, with a hover readout. */
+const ticks = Array.from({ length: AXIS_INTERVALS + 1 }, (_, i) => i / AXIS_INTERVALS);
+
+/** A hand-drawn SVG area chart of one series, with a hover readout. Its title carries the unit. */
 export function MetricChart({ metric }: { metric: GridMetric }) {
   const [hover, setHover] = useState<number | null>(null);
   const id = useId().replaceAll(':', '');
@@ -51,7 +57,7 @@ export function MetricChart({ metric }: { metric: GridMetric }) {
   const first = points[0];
   const start = first?.timestamp ?? 0;
   const end = last?.timestamp ?? 1;
-  const ceiling = metric.unit === '%' ? 100 : Math.max(1, ...points.map((p) => p.value)) * 1.12;
+  const ceiling = metric.unit === '%' ? 100 : niceCeiling(Math.max(0, ...points.map((p) => p.value)));
   const x = (timestamp: number) => 48 + ((timestamp - start) / (end - start || 1)) * 506;
   const y = (value: number) => 156 - (value / ceiling) * 132;
   const path = points.map((p, i) => `${i ? 'L' : 'M'} ${x(p.timestamp)} ${y(p.value)}`).join(' ');
@@ -65,13 +71,13 @@ export function MetricChart({ metric }: { metric: GridMetric }) {
           : '#6b46c1';
   const point = hover === null ? undefined : points[hover];
   const format = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: ceiling < 5 ? 3 : 1 });
-  const ticks = [0, 0.25, 0.5, 0.75, 1];
   const readoutX = point ? Math.min(370, Math.max(48, x(point.timestamp) - 80)) : 0;
   return (
     <Card className="observability-metric-card">
       <CardBody>
         <Title headingLevel="h3" size="md" className="observability-metric-card__title">
           {metric.label}
+          {metric.unit && <span className="observability-metric-card__unit"> ({metric.unit})</span>}
         </Title>
         {metric.status === 'ok' && last ? (
           <>
@@ -101,8 +107,7 @@ export function MetricChart({ metric }: { metric: GridMetric }) {
                 <g key={f}>
                   <line x1="48" x2="554" y1={y(ceiling * f)} y2={y(ceiling * f)} stroke="currentColor" opacity="0.1" />
                   <text x="42" y={y(ceiling * f) + 4} textAnchor="end" fontSize="10" fill="currentColor">
-                    {format(ceiling * f)}
-                    {metric.unit === '%' ? '%' : ''}
+                    {tickLabel(ceiling * f)}
                   </text>
                 </g>
               ))}
@@ -157,6 +162,102 @@ export function MetricChart({ metric }: { metric: GridMetric }) {
   );
 }
 
+/** The kinds of tokens the usage chart stacks, in order, with their colours. */
+const tokenKinds = [
+  { key: 'input', label: 'Uncached input', color: '#0066cc' },
+  { key: 'output', label: 'Output', color: '#3e8635' },
+  { key: 'cached', label: 'Cached input', color: '#6b46c1' },
+] as const;
+
+const USAGE_ROW = 34;
+const USAGE_LABEL_WIDTH = 170;
+const USAGE_BAR_WIDTH = 400;
+
+/** Each organization's tokens as one horizontal stacked bar, names on the left so they never overlap. */
+function UsageChart({ usage }: { usage: ReturnType<typeof tenantUsage> }) {
+  const totals = usage.map((t) => t.input + t.output + t.cached);
+  const ceiling = niceCeiling(Math.max(0, ...totals));
+  const height = usage.length * USAGE_ROW + 30;
+  const bar = (n: number) => (n / ceiling) * USAGE_BAR_WIDTH;
+  return (
+    <>
+      <svg
+        viewBox={`0 0 ${USAGE_LABEL_WIDTH + USAGE_BAR_WIDTH + 60} ${height}`}
+        role="img"
+        aria-label="Token consumption by organization"
+        className="observability-usage-chart"
+        data-total={totals.reduce((n, t) => n + t, 0)}
+      >
+        {ticks.map((f) => (
+          <g key={f}>
+            <line
+              x1={USAGE_LABEL_WIDTH + f * USAGE_BAR_WIDTH}
+              x2={USAGE_LABEL_WIDTH + f * USAGE_BAR_WIDTH}
+              y1="0"
+              y2={height - 22}
+              stroke="currentColor"
+              opacity="0.1"
+            />
+            <text
+              x={USAGE_LABEL_WIDTH + f * USAGE_BAR_WIDTH}
+              y={height - 6}
+              textAnchor="middle"
+              fontSize="11"
+              fill="currentColor"
+            >
+              {tickLabel(ceiling * f)}
+            </text>
+          </g>
+        ))}
+        {usage.map((t, i) => {
+          const top = i * USAGE_ROW + 6;
+          let left = USAGE_LABEL_WIDTH;
+          return (
+            <g key={t.id}>
+              <text x={USAGE_LABEL_WIDTH - 10} y={top + 16} textAnchor="end" fontSize="12" fill="currentColor">
+                {t.name}
+              </text>
+              {tokenKinds.map((kind) => {
+                const width = bar(t[kind.key]);
+                const rect = (
+                  <rect
+                    key={kind.key}
+                    data-organization={t.id}
+                    data-kind={kind.key}
+                    x={left}
+                    y={top}
+                    width={width}
+                    height={USAGE_ROW - 12}
+                    fill={kind.color}
+                    opacity="0.75"
+                  />
+                );
+                left += width;
+                return rect;
+              })}
+              <text x={left + 6} y={top + 16} fontSize="11" fill="currentColor">
+                {tickLabel(totals[i])}
+              </text>
+              <title>
+                {t.name}: {t.input.toLocaleString()} uncached input, {t.output.toLocaleString()} output,{' '}
+                {t.cached.toLocaleString()} cached input
+              </title>
+            </g>
+          );
+        })}
+      </svg>
+      <ul className="observability-legend" aria-label="Token kinds">
+        {tokenKinds.map((kind) => (
+          <li key={kind.key}>
+            <span className="observability-legend__swatch" style={{ background: kind.color }} />
+            {kind.label}
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
 type Props = {
   clusters: GridCluster[];
   models: ManagedModel[];
@@ -170,7 +271,7 @@ type Props = {
   range: GridRange;
 };
 
-/** The Monitoring page's Cluster, Models, and Usage tabs. */
+/** The Monitoring page's Clusters, Models, and Usage tabs. */
 export function ObservabilityPanel({
   clusters,
   models,
@@ -198,9 +299,9 @@ export function ObservabilityPanel({
       ? Math.max(0, 100 * (1 - errorTotal / requestTotal))
       : undefined;
   const metricText = (v: number | undefined, fractionDigits = 1) =>
-    v === undefined ? '—' : v.toLocaleString(undefined, { maximumFractionDigits: fractionDigits });
-  const charts = (keys: string[], columns = 2) => (
-    <div className={`observability-chart-grid observability-chart-grid--${columns}col`}>
+    v === undefined ? EMPTY_VALUE : v.toLocaleString(undefined, { maximumFractionDigits: fractionDigits });
+  const charts = (keys: string[]) => (
+    <div className="observability-chart-grid observability-chart-grid--2col">
       {keys.map((key) => {
         const metric = metrics.find((m) => m.key === key);
         return metric ? <MetricChart key={key} metric={metric} /> : null;
@@ -213,14 +314,14 @@ export function ObservabilityPanel({
   if (model !== 'all' && !relevantModels.some((m) => modelKey(m) === model)) {
     setModel('all');
   }
+  const modelOptions = [
+    { value: 'all', label: 'All models' },
+    ...relevantModels.map((m) => ({ value: modelKey(m), label: m.displayName ?? m.name })),
+  ];
   const visibleModels = relevantModels.filter((m) => model === 'all' || modelKey(m) === model);
   const modelSeries = modelMetrics(visibleModels, metrics, simulated);
   const usage = tenantUsage(metrics, organizations);
   const usageTotal = usage.reduce((n, t) => n + t.input + t.output + t.cached, 0);
-  // Auto-scale totals; variable organization shares and token mixes change relative bar shapes.
-  const usageMaximum = Math.max(1, ...usage.map((t) => t.input + t.output + t.cached)) * 1.1;
-  const tokenLabel = (n: number) =>
-    n >= 1000000 ? `${(n / 1000000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n.toFixed(0);
 
   const usageTab = () => {
     if (organizationsError) {
@@ -246,126 +347,46 @@ export function ObservabilityPanel({
     }
     return (
       <>
-        <p className="observability-chart-caption">
-          Simulated token consumption for configured organizations over the selected {range} window.
-        </p>
-        <div className="observability-chart-grid observability-chart-grid--2col">
+        <Section title="Token consumption by organization">
           <Card className="observability-metric-card">
             <CardBody>
-              <Title headingLevel="h3" size="md" className="observability-metric-card__title">
-                Token consumption by organization
-              </Title>
               <p className="observability-consumption-total">
-                Total consumption: {usageTotal.toLocaleString()} tokens · Last {range}
+                {usageTotal.toLocaleString()} tokens in the last {range}
               </p>
-              <svg
-                viewBox="0 0 560 240"
-                role="img"
-                aria-label="Token consumption by organization"
-                className="observability-chart"
-                data-total={usageTotal}
-              >
-                {[0, 0.25, 0.5, 0.75, 1].map((f) => (
-                  <g key={f}>
-                    <line x1="62" x2="550" y1={180 - f * 150} y2={180 - f * 150} stroke="currentColor" opacity="0.1" />
-                    <text x="56" y={184 - f * 150} textAnchor="end" fontSize="10" fill="currentColor">
-                      {tokenLabel(usageMaximum * f)}
-                    </text>
-                  </g>
-                ))}
-                {usage.map((t, i) => {
-                  const x = 75 + i * (475 / Math.max(1, usage.length));
-                  const width = Math.min(70, 330 / Math.max(1, usage.length));
-                  const input = (t.input / usageMaximum) * 150;
-                  const output = (t.output / usageMaximum) * 150;
-                  const cached = (t.cached / usageMaximum) * 150;
-                  return (
-                    <g key={t.id}>
-                      <rect
-                        data-organization={t.id}
-                        data-kind="input"
-                        x={x}
-                        y={180 - input}
-                        width={width}
-                        height={input}
-                        fill="#0066cc"
-                        opacity="0.7"
-                      />
-                      <rect
-                        data-kind="output"
-                        x={x}
-                        y={180 - input - output}
-                        width={width}
-                        height={output}
-                        fill="#3e8635"
-                        opacity="0.7"
-                      />
-                      <rect
-                        data-kind="cached"
-                        x={x}
-                        y={180 - input - output - cached}
-                        width={width}
-                        height={cached}
-                        fill="#6b46c1"
-                        opacity="0.7"
-                      />
-                      <text
-                        x={x + width / 2}
-                        y={172 - input - output - cached}
-                        textAnchor="middle"
-                        fontSize="11"
-                        fill="currentColor"
-                      >
-                        {tokenLabel(t.input + t.output + t.cached)}
-                      </text>
-                      <text x={x + width / 2} y="210" textAnchor="middle" fontSize="12" fill="currentColor">
-                        {t.name}
-                      </text>
-                      <title>
-                        {t.name}: {t.input.toLocaleString()} uncached input, {t.output.toLocaleString()} output,{' '}
-                        {t.cached.toLocaleString()} cached tokens
-                      </title>
-                    </g>
-                  );
-                })}
-              </svg>
-              <p className="observability-chart-caption">Blue: uncached input · Green: output · Purple: cached input</p>
+              <UsageChart usage={usage} />
             </CardBody>
           </Card>
-        </div>
-        <Card className="observability-metric-card">
-          <CardBody>
-            <Title headingLevel="h3" size="md" className="observability-metric-card__title">
-              Usage by organization
-            </Title>
-            <div className="grid-table-scroll">
-              <table className="grid-table" aria-label="Organization usage">
-                <thead>
-                  <tr>
-                    {['Organization', 'Organization ID', 'Uncached input tokens', 'Output tokens', 'Cached tokens'].map(
-                      (h) => (
-                        <th key={h}>{h}</th>
-                      ),
-                    )}
-                  </tr>
-                </thead>
-                <tbody>
-                  {usage.map((t) => (
-                    <tr key={t.id}>
-                      <td>{t.name}</td>
-                      <td>
-                        <code>{t.id}</code>
-                      </td>
-                      <td>{t.input.toLocaleString()}</td>
-                      <td>{t.output.toLocaleString()}</td>
-                      <td>{t.cached.toLocaleString()}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardBody>
-        </Card>
+        </Section>
+        <Section title="Usage by organization">
+          <Table aria-label="Organization usage" variant="compact">
+            <Thead>
+              <Tr>
+                <Th>Organization</Th>
+                <Th className="console-number">Uncached input tokens</Th>
+                <Th className="console-number">Output tokens</Th>
+                <Th className="console-number">Cached input tokens</Th>
+              </Tr>
+            </Thead>
+            <Tbody>
+              {usage.map((t) => (
+                <Tr key={t.id}>
+                  <Td dataLabel="Organization">
+                    <Link to={`/organizations/${encodeURIComponent(t.id)}`}>{t.name}</Link>
+                  </Td>
+                  <Td dataLabel="Uncached input tokens" className="console-number">
+                    {t.input.toLocaleString()}
+                  </Td>
+                  <Td dataLabel="Output tokens" className="console-number">
+                    {t.output.toLocaleString()}
+                  </Td>
+                  <Td dataLabel="Cached input tokens" className="console-number">
+                    {t.cached.toLocaleString()}
+                  </Td>
+                </Tr>
+              ))}
+            </Tbody>
+          </Table>
+        </Section>
       </>
     );
   };
@@ -373,12 +394,12 @@ export function ObservabilityPanel({
   return (
     <>
       <Tabs activeKey={tab} onSelect={(_, key) => setTab(key)}>
-        <Tab eventKey="cluster" title={<TabTitleText>Cluster</TabTitleText>} />
+        <Tab eventKey="cluster" title={<TabTitleText>Clusters</TabTitleText>} />
         <Tab eventKey="models" title={<TabTitleText>Models</TabTitleText>} />
         <Tab eventKey="usage" title={<TabTitleText>Usage</TabTitleText>} />
       </Tabs>
       <div className="observability-dashboard">
-        {loading && <p role="status">Loading metrics for the selected site and time range…</p>}
+        {loading && <Spinner size="lg" aria-label="Loading metrics" />}
         {error && (
           <Alert isInline variant="danger" title="Monitoring unavailable">
             {error}
@@ -386,16 +407,16 @@ export function ObservabilityPanel({
         )}
         {tab === 'cluster' && (
           <>
-            <Section title="Overview">
-              <p className="observability-chart-caption">
-                Metrics summarize the selected {range} window. Cluster availability is current ACM inventory.
-              </p>
+            <Section
+              title="Overview"
+              help={`Requests, GPU use and success rate cover the last ${range}. Ready clusters is the current state.`}
+            >
               <div className="observability-stat-row">
                 <Stat
-                  label="Available clusters"
+                  label="Ready clusters"
                   value={`${clusters.filter((c) => c.status === 'Ready').length}/${clusters.length}`}
                 />
-                <Stat label="Requests in window" value={metricText(requestTotal, 0)} />
+                <Stat label="Requests" value={metricText(requestTotal, 0)} />
                 <Stat
                   label="Average GPU utilization"
                   value={metricText(gpu)}
@@ -405,40 +426,38 @@ export function ObservabilityPanel({
                 <Stat label="Request success rate" value={metricText(success)} unit="%" />
               </div>
             </Section>
-            <Section title="Cluster resource overview">{charts(['gpu', 'requests'])}</Section>
+            <Section title="Cluster resources">{charts(['gpu', 'requests'])}</Section>
             <Section title="Gateway performance">{charts(['errors', 'latency'])}</Section>
-            <Section title="Managed clusters">
-              <Card className="observability-metric-card">
-                <CardBody>
-                  <div className="grid-table-scroll">
-                    <table className="grid-table" aria-label="Clusters">
-                      <thead>
-                        <tr>
-                          {['Cluster', 'Site', 'Location', 'Availability', 'Provisioning'].map((h) => (
-                            <th key={h}>{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {clusters.map((c) => (
-                          <tr key={c.name}>
-                            <td>{c.name}</td>
-                            <td>{c.siteName ?? c.site ?? 'Not assigned'}</td>
-                            <td>{c.location ?? '—'}</td>
-                            <td>
-                              <Label color={c.status === 'Ready' ? 'green' : c.status === 'Offline' ? 'red' : 'grey'}>
-                                {c.status}
-                              </Label>
-                            </td>
-                            <td>{c.provisioningStatus}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  {!clusters.length && <p>No enrolled clusters match this selection.</p>}
-                </CardBody>
-              </Card>
+            <Section title="Clusters">
+              <Table aria-label="Clusters" variant="compact">
+                <Thead>
+                  <Tr>
+                    <Th>Cluster</Th>
+                    <Th>Site</Th>
+                    <Th>Location</Th>
+                    <Th>Status</Th>
+                    <Th>Provisioning</Th>
+                  </Tr>
+                </Thead>
+                <Tbody>
+                  {clusters.map((c) => (
+                    <Tr key={c.name}>
+                      <Td dataLabel="Cluster">
+                        <Link to={`/ai-grid?cluster=${encodeURIComponent(c.name)}`}>{c.name}</Link>
+                      </Td>
+                      <Td dataLabel="Site">{c.siteName ?? c.site ?? EMPTY_VALUE}</Td>
+                      <Td dataLabel="Location">{c.location ?? EMPTY_VALUE}</Td>
+                      <Td dataLabel="Status">
+                        <StatusLabel isCompact status={c.status} />
+                      </Td>
+                      <Td dataLabel="Provisioning">
+                        <StatusLabel isCompact status={c.provisioningStatus} />
+                      </Td>
+                    </Tr>
+                  ))}
+                </Tbody>
+              </Table>
+              {!clusters.length && <p>No enrolled clusters match this selection.</p>}
             </Section>
           </>
         )}
@@ -449,73 +468,73 @@ export function ObservabilityPanel({
                 {modelsError}
               </Alert>
             )}
-            <div className="observability-model-filter">
+            <Flex
+              className="observability-model-filter"
+              alignItems={{ default: 'alignItemsCenter' }}
+              spaceItems={{ default: 'spaceItemsSm' }}
+            >
               <label htmlFor="observability-model">Model deployment</label>
-              <FormSelect
-                id="observability-model"
-                aria-label="Select model deployment"
-                value={model}
-                onChange={(_, value) => setModel(value)}
-              >
-                <FormSelectOption value="all" label="All models" />
-                {relevantModels.map((m) => (
-                  <FormSelectOption key={modelKey(m)} value={modelKey(m)} label={m.displayName ?? m.name} />
-                ))}
-              </FormSelect>
-            </div>
-            <Section title="Model deployments">
-              <Card className="observability-metric-card">
-                <CardBody>
-                  <div className="grid-table-scroll">
-                    <table className="grid-table" aria-label="Model deployments">
-                      <thead>
-                        <tr>
-                          {['Model deployment', 'Model', 'Target sites', 'Replicas', 'Configuration'].map((h) => (
-                            <th key={h}>{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {visibleModels.map((m) => (
-                          <tr key={modelKey(m)}>
-                            <td>{m.displayName ?? m.name}</td>
-                            <td>{m.modelName ?? m.modelRef.name}</td>
-                            <td>
-                              {[
-                                ...new Set(
-                                  clusters
-                                    .filter((c) => c.location && m.locations.includes(c.location))
-                                    .map((c) => c.siteName ?? c.site ?? c.name),
-                                ),
-                              ].join(', ') || 'Not assigned'}
-                            </td>
-                            <td>{m.replicas ?? '—'}</td>
-                            <td>{m.phase}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  {!visibleModels.length && <p>No model deployments match this selection.</p>}
-                </CardBody>
-              </Card>
+              <div className="observability-model-filter__select">
+                <TypeaheadSelect
+                  id="observability-model"
+                  aria-label="Select model deployment"
+                  value={model}
+                  options={modelOptions}
+                  onChange={setModel}
+                />
+              </div>
+            </Flex>
+            <Section
+              title="Model deployments"
+              help="Target sites are the sites of the clusters each model's placement chose; they don't confirm the model is serving there."
+            >
+              <Table aria-label="Model deployments" variant="compact">
+                <Thead>
+                  <Tr>
+                    <Th>Model deployment</Th>
+                    <Th>Model</Th>
+                    <Th>Target sites</Th>
+                    <Th className="console-number">Replicas</Th>
+                    <Th>Status</Th>
+                  </Tr>
+                </Thead>
+                <Tbody>
+                  {visibleModels.map((m) => (
+                    <Tr key={modelKey(m)}>
+                      <Td dataLabel="Model deployment">
+                        <Link to={modelPath(m)}>{m.displayName ?? m.name}</Link>
+                      </Td>
+                      <Td dataLabel="Model" modifier="breakWord">
+                        {m.modelName ?? m.modelRef.name}
+                      </Td>
+                      <Td dataLabel="Target sites">
+                        {[
+                          ...new Set(
+                            clusters
+                              .filter((c) => c.location && m.locations.includes(c.location))
+                              .map((c) => c.siteName ?? c.site ?? c.name),
+                          ),
+                        ].join(', ') || EMPTY_VALUE}
+                      </Td>
+                      <Td dataLabel="Replicas" className="console-number">
+                        {m.replicas ?? EMPTY_VALUE}
+                      </Td>
+                      <Td dataLabel="Status">
+                        <StatusLabel isCompact status={m.phase ?? 'Pending'} />
+                      </Td>
+                    </Tr>
+                  ))}
+                </Tbody>
+              </Table>
+              {!visibleModels.length && <p>No model deployments match this selection.</p>}
             </Section>
-            <Section title="Performance metrics">
-              {simulated && (
-                <p className="observability-chart-caption">
-                  Simulated per-model performance for the selected time window.
-                </p>
-              )}
+            <Section title="Performance">
               <div className="observability-chart-grid observability-chart-grid--2col">
                 {modelSeries.map((m) => (
                   <MetricChart key={m.key} metric={m} />
                 ))}
               </div>
             </Section>
-            <p className="observability-chart-caption">
-              Sites come from the clusters each model's placement selected. Simulated metrics demonstrate the design and
-              do not confirm deployment readiness.
-            </p>
           </>
         )}
         {tab === 'usage' && usageTab()}

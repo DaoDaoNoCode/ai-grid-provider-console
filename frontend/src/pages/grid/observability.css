@@ -66,46 +66,12 @@
   grid-template-columns: 1fr 1fr;
 }
 
-.observability-chart-grid--3col {
-  grid-template-columns: 1fr 1fr 1fr;
-}
-
-@media (max-width: 960px) {
-  .observability-chart-grid--3col {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
 @media (max-width: 640px) {
-  .observability-chart-grid--2col,
-  .observability-chart-grid--3col {
+  .observability-chart-grid--2col {
     grid-template-columns: 1fr;
   }
 }
 
-.observability-timeframe-selector {
-  flex-shrink: 0;
-}
-.observability-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 24px;
-  align-items: flex-start;
-  flex-wrap: wrap;
-}
-.observability-header h1 {
-  margin-bottom: 8px;
-}
-.observability-header p {
-  color: var(--pf-t--global--text--color--subtle);
-}
-.observability-time-controls {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  flex-wrap: wrap;
-  font-size: 13px;
-}
 .observability-chart {
   display: block;
   width: 100%;
@@ -126,30 +92,46 @@
 .observability-metric-card__title.pf-v6-c-title {
   font-size: 14px;
 }
-.observability-model-filter {
+.observability-section {
   display: flex;
-  gap: 16px;
-  align-items: center;
+  flex-direction: column;
+  gap: var(--pf-t--global--spacer--md);
 }
-.observability-model-filter select {
-  max-width: 260px;
+.observability-metric-card__unit {
+  font-weight: var(--pf-t--global--font--weight--body--default);
 }
-.observability-dashboard .pf-v6-c-expandable-section__content {
-  margin-top: 12px;
+/* A normal-width select beside its label, not one spanning the page. */
+.observability-model-filter__select {
+  width: 20rem;
+  max-width: 100%;
 }
-
-/* The PoC's table styles (src/style.css at 62319b8); only the Monitoring tables use them. */
-.grid-table-scroll {
-  overflow: auto;
+.observability-consumption-total {
+  color: var(--pf-t--global--text--color--subtle);
+  margin-block-end: var(--pf-t--global--spacer--sm);
 }
-.grid-table {
+.observability-usage-chart {
+  display: block;
   width: 100%;
-  border-collapse: collapse;
-  margin-top: 16px;
-  text-align: left;
+  max-width: 720px;
+  height: auto;
 }
-.grid-table th,
-.grid-table td {
-  padding: 14px;
-  border-bottom: 1px solid var(--pf-t--global--border--color--default);
+.observability-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pf-t--global--spacer--md);
+  list-style: none;
+  padding: 0;
+  margin-block-start: var(--pf-t--global--spacer--sm);
+  font-size: var(--pf-t--global--font--size--sm);
+}
+.observability-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pf-t--global--spacer--xs);
+}
+.observability-legend__swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  opacity: 0.75;
 }

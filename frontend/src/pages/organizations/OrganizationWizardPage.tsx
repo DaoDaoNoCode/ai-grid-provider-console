@@ -6,12 +6,13 @@ import type { OrganizationsService } from '../../api/organizations';
 import type { Organization } from '../../api/types';
 import { PageHeader } from '../../components/PageHeader';
 import { useServiceData } from '../../hooks/useServiceData';
+import { OrganizationEditForm } from './OrganizationEditForm';
 import { OrganizationFormWizard } from './OrganizationFormWizard';
 import { OrganizationLoadError } from './OrganizationLoadError';
 
 type Props = { service: OrganizationsService & UserService };
 
-/** Create at /organizations/create, edit at /organizations/:id/edit. */
+/** Create at /organizations/create (a wizard), edit at /organizations/:id/edit (one form). */
 export const OrganizationWizardPage: React.FC<Props> = ({ service }) => {
   const { id } = useParams();
   const [organization, loaded, error] = useServiceData<Organization | undefined>(
@@ -19,29 +20,41 @@ export const OrganizationWizardPage: React.FC<Props> = ({ service }) => {
     undefined,
     0,
   );
-  const title = id ? 'Edit organization' : 'Create organization';
+  const name = organization?.name ?? id;
+  const title = id ? `Edit ${name}` : 'Create organization';
 
   return (
     <>
       <PageHeader
         title={title}
-        description="Configure organization details and an OIDC identity provider."
+        description={
+          id
+            ? 'Change the organization’s domains and its OIDC identity provider.'
+            : 'Configure organization details and an OIDC identity provider.'
+        }
         breadcrumb={
           <Breadcrumb>
             <BreadcrumbItem>
               <Link to="/organizations">Organizations</Link>
             </BreadcrumbItem>
-            <BreadcrumbItem isActive>{title}</BreadcrumbItem>
+            {id && (
+              <BreadcrumbItem>
+                <Link to={`/organizations/${encodeURIComponent(id)}`}>{name}</Link>
+              </BreadcrumbItem>
+            )}
+            <BreadcrumbItem isActive>{id ? 'Edit' : title}</BreadcrumbItem>
           </Breadcrumb>
         }
       />
       <PageSection hasBodyWrapper={false}>
         {error ? (
           <OrganizationLoadError error={error} />
-        ) : !loaded ? (
+        ) : !loaded || (id && !organization) ? (
           <Spinner aria-label="Loading organization" />
+        ) : organization ? (
+          <OrganizationEditForm key={organization.id} service={service} organization={organization} />
         ) : (
-          <OrganizationFormWizard key={id ?? 'create'} service={service} initial={organization} />
+          <OrganizationFormWizard service={service} />
         )}
       </PageSection>
     </>

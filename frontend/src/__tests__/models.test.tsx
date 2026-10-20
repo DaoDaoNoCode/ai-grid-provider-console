@@ -10,7 +10,7 @@
 //   assertions (A5, D3); a referenced model is the blocked-delete case.
 // - "explains a 200 response from an outdated backend" tests a PoC-only legacy payload and is
 //   not ported.
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import getModels from '../../../mock/examples/get-models.json';
 import { ServiceError } from '../api/ConsoleService';
@@ -37,15 +37,27 @@ const viewer = { username: 'viewer', groups: [], isProviderAdmin: false };
 
 type User = ReturnType<typeof userEvent.setup>;
 
-/** Fills the model details and deployment steps and moves on to Advanced settings. */
+/** Names the deployment, replacing the name the wizard starts from the model's. */
+const nameDeployment = async (user: User, name: string) => {
+  const field = await screen.findByTestId('model-name-desc-name');
+  await user.clear(field);
+  await user.type(field, name);
+};
+
+/** Fills the source and deployment steps and moves on to Locations. */
 const fillModel = async (user: User) => {
   await user.type(await screen.findByRole('textbox', { name: /Model URI/ }), 'hf://org/widget');
   await user.type(screen.getByRole('textbox', { name: /^Model name/ }), 'org/widget');
   await user.click(screen.getByRole('button', { name: 'Next' }));
-  await user.type(await screen.findByTestId('model-name-desc-name'), 'Widget');
+  await nameDeployment(user, 'Widget');
   await user.type(screen.getByRole('textbox', { name: /Runtime image/ }), 'registry.example/runtime:test');
   await user.click(screen.getByRole('button', { name: 'Next' }));
 };
+
+/** The mock's locations, as the wizard names them: the site, then the location key. */
+const site1 = 'San Francisco (site1)';
+const site2 = 'New York (site2)';
+const site3 = 'Brussels (site3)';
 
 it('walks the deployment wizard, selects locations, saves the model and removes it', async () => {
   const service = new MockConsoleService();
@@ -56,7 +68,6 @@ it('walks the deployment wizard, selects locations, saves the model and removes 
   expect(await screen.findByRole('button', { name: 'Next' })).toBeDisabled();
   await fillModel(user);
   expect(screen.queryByLabelText('Publish as MaaS')).not.toBeInTheDocument();
-  await user.click(screen.getByRole('button', { name: 'Next' }));
   expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
   const reviewNav = within(screen.getByRole('navigation', { name: 'Wizard steps' })).getByRole('button', {
     name: /Review/,
@@ -64,28 +75,26 @@ it('walks the deployment wizard, selects locations, saves the model and removes 
   expect(reviewNav).toBeVisible();
   expect(reviewNav).toBeDisabled();
   await user.click(await screen.findByRole('combobox', { name: 'Locations' }));
-  await user.click(screen.getByRole('option', { name: 'site1' }));
-  await user.click(screen.getByRole('option', { name: 'site2' }));
+  await user.click(screen.getByRole('option', { name: site1 }));
+  await user.click(screen.getByRole('option', { name: site2 }));
   await user.keyboard('{Escape}');
   expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
   await user.click(screen.getByRole('button', { name: 'Next' }));
-  await user.click(await screen.findByRole('button', { name: 'Save deployment' }));
+  const review = screen.getByTestId('model-review');
+  expect(review).toHaveTextContent(`${site1}, ${site2}`);
+  // Empty optional fields are left out of the review.
+  expect(review).not.toHaveTextContent('Additional runtime arguments');
+  await user.click(await screen.findByRole('button', { name: 'Deploy' }));
 
   const table = await screen.findByTestId('model-deployments-table');
   expect(table).toHaveTextContent('Widget');
-  expect(await screen.findByText('Model deployment saved')).toBeVisible();
-  const locationsCell = screen.getByTestId('model-locations-expand-widget');
-  const expandLocations = within(locationsCell).getByRole('button');
-  expect(expandLocations).toHaveTextContent('2');
-  expect(expandLocations).toHaveAttribute('aria-expanded', 'false');
-  await user.click(expandLocations);
-  const panel = within(locationsCell.closest('tbody')!).getByTestId('locations-expanded-panel');
-  expect(panel).toBeVisible();
-  expect(panel).toHaveTextContent('site1');
-  expect(panel).toHaveTextContent('site2');
-  await user.click(expandLocations);
-  expect(expandLocations).toHaveAttribute('aria-expanded', 'false');
-  expect(panel).not.toBeVisible();
+  expect(await screen.findByText('Model deployed')).toBeVisible();
+  // The first location, and the rest behind "+1 more".
+  const locationsCell = screen.getByTestId('model-locations-widget');
+  expect(locationsCell).toHaveTextContent(site1);
+  await user.click(within(locationsCell).getByText('+1 more'));
+  expect(await screen.findByText('Locations (2)')).toBeVisible();
+  expect(screen.getAllByText(site2).length).toBeGreaterThan(0);
   const saved = (await service.listModels()).find((m) => m.name === 'widget');
   expect(saved).toMatchObject({
     namespace: 'ai-grid-models',
@@ -99,6 +108,8 @@ it('walks the deployment wizard, selects locations, saves the model and removes 
   await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
   const dialog = await screen.findByTestId('delete-deployment-modal');
   expect(dialog).toHaveTextContent('Delete model deployment?');
+  // The backend also refuses while an authorization policy references the model.
+  expect(dialog).toHaveTextContent('Remove references from subscriptions and authorization policies first.');
   expect(within(dialog).getByRole('button', { name: 'Delete' })).toBeDisabled();
   await user.type(within(dialog).getByTestId('delete-modal-input'), 'Widget');
   await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
@@ -121,6 +132,12 @@ it('keeps the confirmation dialog and model when a subscription blocks deletion'
   renderAt('/models', service);
   await user.click(await screen.findByTestId('model-actions-widget'));
   await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
+  // The dialog names the subscriptions that still use the model.
+  const references = await screen.findByTestId('model-references');
+  expect(within(references).getByRole('link', { name: 'widget-users' })).toHaveAttribute(
+    'href',
+    '/subscriptions/view/widget-users',
+  );
   await user.type(screen.getByTestId('delete-modal-input'), 'Widget');
   await user.click(within(screen.getByTestId('delete-deployment-modal')).getByRole('button', { name: 'Delete' }));
   expect(await screen.findByTestId('delete-model-error-message-alert')).toHaveTextContent('Remove this model');
@@ -154,25 +171,107 @@ it('offers Ready, provisioned locations and protects models from stale versions'
 
 it('keeps the wizard usable after a location failure and retries', async () => {
   const service = new MockConsoleService();
-  const list = service.listLocations;
+  const list = service.listLocations.bind(service);
+  // Fails when the wizard opens and again when the Locations step reloads; Retry succeeds.
+  let failures = 2;
   service.listLocations = async () => {
-    service.listLocations = list;
-    throw new ServiceError(503, 'Location catalog unavailable.');
+    if (failures-- > 0) throw new ServiceError(503, 'Location catalog unavailable.');
+    return list();
   };
   const user = userEvent.setup();
   renderAt('/models/deploy', service);
   await fillModel(user);
-  await user.click(screen.getByRole('button', { name: 'Next' }));
   expect(await screen.findByText('Location catalog unavailable.')).toBeVisible();
   expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
   await user.click(screen.getByRole('button', { name: 'Retry' }));
   await user.click(await screen.findByRole('combobox', { name: 'Locations' }));
-  await user.click(screen.getByRole('option', { name: 'site1' }));
+  await user.click(screen.getByRole('option', { name: site1 }));
   await user.keyboard('{Escape}');
   await user.click(screen.getByRole('button', { name: 'Next' }));
   expect(screen.getByText('hf://org/widget')).toBeVisible();
-  expect(screen.getByText('site1')).toBeVisible();
-  expect(screen.getByRole('button', { name: 'Save deployment' })).toBeEnabled();
+  expect(screen.getByText(site1)).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Deploy' })).toBeEnabled();
+});
+
+it('loads the locations again when the Locations step opens', async () => {
+  const service = new MockConsoleService();
+  const list = service.listLocations.bind(service);
+  // When the wizard opens only site1 is available; by the Locations step all three are.
+  let calls = 0;
+  service.listLocations = async () => (calls++ === 0 ? ['site1'] : list());
+  const user = userEvent.setup();
+  renderAt('/models/deploy', service);
+  await fillModel(user);
+  await user.click(await screen.findByRole('combobox', { name: 'Locations' }));
+  expect(await screen.findByRole('option', { name: site3 })).toBeVisible();
+  expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual([site1, site2, site3]);
+});
+
+it('keeps a chosen location the reload no longer offers, and says to remove it', async () => {
+  const service = new MockConsoleService();
+  const list = service.listLocations.bind(service);
+  // site2 drops out after the first visit to the Locations step.
+  let calls = 0;
+  service.listLocations = async () => (calls++ < 2 ? list() : ['site1', 'site3']);
+  const user = userEvent.setup();
+  renderAt('/models/deploy', service);
+  await fillModel(user);
+  await user.click(await screen.findByRole('combobox', { name: 'Locations' }));
+  await user.click(screen.getByRole('option', { name: site1 }));
+  await user.click(screen.getByRole('option', { name: site2 }));
+  await user.keyboard('{Escape}');
+  await user.click(screen.getByRole('button', { name: 'Next' }));
+  await user.click(screen.getByRole('button', { name: 'Back' }));
+  expect(await screen.findByText(`${site2} is no longer available. Remove it to continue.`)).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+  await user.click(screen.getByRole('button', { name: `Remove ${site2}` }));
+  expect(screen.queryByText(/no longer available/)).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Next' }));
+  // An exact match: the review lists site1 alone.
+  expect(within(screen.getByTestId('model-review')).getByText(site1)).toBeVisible();
+});
+
+it('keeps Next disabled until the Locations reload answers', async () => {
+  const service = new MockConsoleService();
+  const list = service.listLocations.bind(service);
+  let release!: () => void;
+  const held = new Promise<void>((r) => {
+    release = r;
+  });
+  let calls = 0;
+  // The reload on entering the step waits for the test.
+  service.listLocations = async () => {
+    if (calls++ === 1) await held;
+    return list();
+  };
+  const user = userEvent.setup();
+  renderAt('/models/deploy', service);
+  await fillModel(user);
+  await user.click(await screen.findByRole('combobox', { name: 'Locations' }));
+  await user.click(screen.getByRole('option', { name: site1 }));
+  await user.keyboard('{Escape}');
+  expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+  await act(async () => release());
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
+});
+
+it('keeps chosen locations visible when the reload offers none', async () => {
+  const service = new MockConsoleService();
+  const list = service.listLocations.bind(service);
+  let calls = 0;
+  service.listLocations = async () => (calls++ < 2 ? list() : []);
+  const user = userEvent.setup();
+  renderAt('/models/deploy', service);
+  await fillModel(user);
+  await user.click(await screen.findByRole('combobox', { name: 'Locations' }));
+  await user.click(screen.getByRole('option', { name: site1 }));
+  await user.keyboard('{Escape}');
+  await user.click(screen.getByRole('button', { name: 'Next' }));
+  await user.click(screen.getByRole('button', { name: 'Back' }));
+  expect(await screen.findByText(`${site1} is no longer available. Remove it to continue.`)).toBeVisible();
+  expect(screen.getByRole('combobox', { name: 'Locations' })).toHaveAttribute('aria-invalid', 'true');
+  await user.click(screen.getByRole('button', { name: `Remove ${site1}` }));
+  expect(await screen.findByText('No locations available')).toBeVisible();
 });
 
 it('keeps input when saving fails', async () => {
@@ -181,16 +280,15 @@ it('keeps input when saving fails', async () => {
   const user = userEvent.setup();
   renderAt('/models/deploy', service);
   await fillModel(user);
-  await user.click(screen.getByRole('button', { name: 'Next' }));
   await user.click(await screen.findByRole('combobox', { name: 'Locations' }));
-  await user.click(screen.getByRole('option', { name: 'site3' }));
+  await user.click(screen.getByRole('option', { name: site3 }));
   await user.keyboard('{Escape}');
   await user.click(screen.getByRole('button', { name: 'Next' }));
-  await user.click(screen.getByRole('button', { name: 'Save deployment' }));
+  await user.click(screen.getByRole('button', { name: 'Deploy' }));
   expect(await screen.findByText('A model with this resource name already exists.')).toBeVisible();
-  expect(screen.getByText('Unable to save deployment')).toBeVisible();
+  expect(screen.getByText('Unable to deploy model')).toBeVisible();
   expect(screen.getByText('hf://org/widget')).toBeVisible();
-  expect(screen.getByRole('button', { name: 'Save deployment' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Deploy' })).toBeEnabled();
   expect((await service.listModels()).find((m) => m.name === 'widget')?.locations).toEqual(['site1', 'site2']);
 });
 
@@ -214,10 +312,10 @@ it('shows the not-available state when the backend has no models yet', async () 
   expect(screen.queryByTestId('model-deployments-table')).not.toBeInTheDocument();
 });
 
-it('paginates the list like the PoC', async () => {
+it('shows one pagination, in the toolbar, for a single page', async () => {
   renderAt('/models', new MockConsoleService());
   expect(await screen.findByTestId('model-deployments-table')).toBeVisible();
-  expect(screen.getAllByRole('navigation', { name: /pagination/i })).toHaveLength(2);
+  expect(screen.getAllByRole('navigation', { name: /pagination/i })).toHaveLength(1);
 });
 
 const jsonResponse = (status: number, body: unknown) =>
@@ -245,30 +343,36 @@ const modelJsonFetch = () =>
   });
 
 it('lists PR 12 models with their locations', async () => {
-  const user = userEvent.setup();
   renderAt('/models', serviceOnModelJson(modelJsonFetch()));
   const table = await screen.findByTestId('model-deployments-table');
   expect(table).toHaveTextContent('Granite 8B Instruct');
   expect(table).toHaveTextContent('Tiny LLM (CPU)');
-  const cell = screen.getByTestId('model-locations-expand-granite-8b-instruct');
-  await user.click(within(cell).getByRole('button'));
-  expect(within(cell.closest('tbody')!).getByTestId('locations-expanded-panel')).toHaveTextContent('paris');
-  expect(within(screen.getByTestId('model-locations-expand-tiny-llm')).getByRole('button')).toHaveTextContent('0');
+  expect(screen.getByTestId('model-locations-granite-8b-instruct')).toHaveTextContent(/^paris$/);
+  // No locations reads as a dash, with nothing to open.
+  const none = screen.getByTestId('model-locations-tiny-llm');
+  expect(none).toHaveTextContent('—');
+  expect(within(none).queryByRole('button')).not.toBeInTheDocument();
 });
 
 it('shows the phase', async () => {
   const user = userEvent.setup();
   renderAt('/models', serviceOnModelJson(modelJsonFetch()));
   const row = async (name: string) =>
-    (await screen.findByTestId(`model-locations-expand-${name}`)).closest('tr') as HTMLElement;
+    (await screen.findByTestId(`model-locations-${name}`)).closest('tr') as HTMLElement;
   expect(within(await row('granite-8b-instruct')).getByTestId('model-phase')).toHaveTextContent('Ready');
   expect(within(await row('codellama-13b')).getByTestId('model-phase')).toHaveTextContent('Pending');
   const failed = within(await row('llama-3-70b')).getByTestId('model-phase');
   expect(failed).toHaveTextContent('Failed');
   expect(screen.queryByText(/Git/)).not.toBeInTheDocument();
   await user.click(within(failed).getByRole('button', { name: 'Failed' }));
-  expect(await screen.findByText('ConfigNotFound')).toBeVisible();
-  expect(screen.getByText(/v3-6-0-kserve-config-llm-template-tpu" not found/)).toBeVisible();
+  // A sentence and the next step; the controller's own words fold away under Details.
+  expect(await screen.findByText('Deployment failed')).toBeVisible();
+  expect(screen.getByText('A runtime template this model needs isn’t installed on the hub.')).toBeVisible();
+  const raw = screen.getByText(/v3-6-0-kserve-config-llm-template-tpu" not found/);
+  expect(raw).not.toBeVisible();
+  await user.click(screen.getByRole('button', { name: 'Details' }));
+  expect(raw).toBeVisible();
+  expect(raw).toHaveTextContent(/^ConfigNotFound: /);
 });
 
 it('offers only eligible locations', async () => {
@@ -276,7 +380,6 @@ it('offers only eligible locations', async () => {
   const user = userEvent.setup();
   renderAt('/models/deploy', serviceOnModelJson(fetchFn));
   await fillModel(user);
-  await user.click(screen.getByRole('button', { name: 'Next' }));
   await user.click(await screen.findByRole('combobox', { name: 'Locations' }));
   expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['paris']);
   expect(fetchFn).toHaveBeenCalledWith('/api/v1/locations', expect.objectContaining({ method: 'GET' }));
@@ -333,7 +436,7 @@ it('says why the deployment step cannot continue when the CPU is invalid', async
   await user.type(await screen.findByRole('textbox', { name: /Model URI/ }), 'hf://org/widget');
   await user.type(screen.getByRole('textbox', { name: /^Model name/ }), 'org/widget');
   await user.click(screen.getByRole('button', { name: 'Next' }));
-  await user.type(await screen.findByTestId('model-name-desc-name'), 'Widget');
+  await nameDeployment(user, 'Widget');
   await user.type(screen.getByRole('textbox', { name: /Runtime image/ }), 'registry.example/runtime:test');
   const cpu = screen.getByRole('textbox', { name: /^CPU/ });
   await user.clear(cpu);
@@ -348,12 +451,11 @@ it('shows the Locations error only after the user clears a selection', async () 
   const user = userEvent.setup();
   renderAt('/models/deploy', new MockConsoleService());
   await fillModel(user);
-  await user.click(screen.getByRole('button', { name: 'Next' }));
   const combobox = await screen.findByRole('combobox', { name: 'Locations' });
   expect(screen.queryByText('Select at least one location.')).not.toBeInTheDocument();
   await user.click(combobox);
-  await user.click(screen.getByRole('option', { name: 'site1' }));
-  await user.click(screen.getByRole('option', { name: 'site1' }));
+  await user.click(screen.getByRole('option', { name: site1 }));
+  await user.click(screen.getByRole('option', { name: site1 }));
   await user.keyboard('{Escape}');
   expect(screen.getByText('Select at least one location.')).toBeVisible();
   expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
@@ -371,15 +473,14 @@ it("takes only the fake backend's URI schemes and sends the URI trimmed", async 
   await user.clear(uri);
   await user.type(uri, ' hf://org/widget ');
   await user.click(screen.getByRole('button', { name: 'Next' }));
-  await user.type(await screen.findByTestId('model-name-desc-name'), 'Widget');
+  await nameDeployment(user, 'Widget');
   await user.type(screen.getByRole('textbox', { name: /Runtime image/ }), 'registry.example/runtime:test');
   await user.click(screen.getByRole('button', { name: 'Next' }));
-  await user.click(screen.getByRole('button', { name: 'Next' }));
   await user.click(await screen.findByRole('combobox', { name: 'Locations' }));
-  await user.click(screen.getByRole('option', { name: 'site1' }));
+  await user.click(screen.getByRole('option', { name: site1 }));
   await user.keyboard('{Escape}');
   await user.click(screen.getByRole('button', { name: 'Next' }));
-  await user.click(screen.getByRole('button', { name: 'Save deployment' }));
+  await user.click(screen.getByRole('button', { name: 'Deploy' }));
   await waitFor(() => expect(create).toHaveBeenCalled());
   expect(create.mock.calls[0][0].modelUri).toBe('hf://org/widget');
 }, 20000);
@@ -450,8 +551,158 @@ it('takes a display name longer than a resource name', async () => {
   await user.type(await screen.findByRole('textbox', { name: /Model URI/ }), 'hf://org/widget');
   await user.type(screen.getByRole('textbox', { name: /^Model name/ }), 'org/widget');
   await user.click(screen.getByRole('button', { name: 'Next' }));
-  await user.type(await screen.findByTestId('model-name-desc-name'), 'W'.repeat(70));
+  await nameDeployment(user, 'W'.repeat(70));
   await user.type(screen.getByRole('textbox', { name: /Runtime image/ }), 'registry.example/runtime:test');
   expect(screen.getByText('w'.repeat(63))).toBeVisible();
   expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
+});
+
+it('starts the deployment name from the model name, and keeps a name the user typed', async () => {
+  const user = userEvent.setup();
+  renderAt('/models/deploy', new MockConsoleService());
+  expect(await screen.findByRole('button', { name: 'Back' })).toBeDisabled();
+  await user.type(screen.getByRole('textbox', { name: /Model URI/ }), 'hf://org/widget');
+  await user.type(screen.getByRole('textbox', { name: /^Model name/ }), 'org/widget');
+  await user.click(screen.getByRole('button', { name: 'Next' }));
+  expect(await screen.findByTestId('model-name-desc-name')).toHaveValue('widget');
+  await nameDeployment(user, 'My widget');
+  await user.click(screen.getByRole('button', { name: 'Back' }));
+  await user.click(screen.getByRole('button', { name: 'Next' }));
+  expect(screen.getByTestId('model-name-desc-name')).toHaveValue('My widget');
+});
+
+it('folds the runtime arguments away under Advanced settings, with no dead controls', async () => {
+  const user = userEvent.setup();
+  renderAt('/models/deploy', new MockConsoleService());
+  await user.type(await screen.findByRole('textbox', { name: /Model URI/ }), 'hf://org/widget');
+  await user.type(screen.getByRole('textbox', { name: /^Model name/ }), 'org/widget');
+  await user.click(screen.getByRole('button', { name: 'Next' }));
+  const args = await screen.findByTestId('runtime-args-textarea');
+  expect(args).not.toBeVisible();
+  await user.click(screen.getByRole('button', { name: 'Advanced settings' }));
+  expect(args).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'View predefined arguments' })).not.toBeInTheDocument();
+});
+
+it('asks before Cancel discards the wizard input', async () => {
+  const service = new MockConsoleService();
+  const user = userEvent.setup();
+  renderAt('/models/deploy', service);
+  // Nothing typed yet: Cancel leaves at once.
+  await user.click(await screen.findByRole('button', { name: 'Cancel' }));
+  expect(await screen.findByTestId('model-deployments-table')).toBeVisible();
+  await user.click(screen.getByRole('link', { name: 'Deploy model' }));
+  await user.type(await screen.findByRole('textbox', { name: /Model URI/ }), 'hf://org/widget');
+  await user.click(screen.getByRole('button', { name: 'Cancel' }));
+  const discard = await screen.findByTestId('discard-changes-modal');
+  await user.click(within(discard).getByRole('button', { name: 'Keep editing' }));
+  expect(screen.getByRole('textbox', { name: /Model URI/ })).toHaveValue('hf://org/widget');
+  await user.click(screen.getByRole('button', { name: 'Cancel' }));
+  await user.click(within(await screen.findByTestId('discard-changes-modal')).getByRole('button', { name: 'Discard' }));
+  expect(await screen.findByTestId('model-deployments-table')).toBeVisible();
+});
+
+it('opens a model page with its configuration, locations by site, and a failure explained', async () => {
+  const user = userEvent.setup();
+  renderAt('/models', serviceOnModelJson(modelJsonFetch()));
+  await user.click(await screen.findByRole('link', { name: 'Llama 3 70B' }));
+  expect(await screen.findByRole('heading', { name: 'Llama 3 70B' })).toBeVisible();
+  const alert = screen.getByTestId('model-status-alert');
+  expect(alert).toHaveTextContent('Deployment failed');
+  expect(alert).toHaveTextContent('Install the template on the hub, or deploy the model with another runtime.');
+  expect(screen.getByText('hf://example-org/llama-3-70b')).toBeVisible();
+  expect(screen.getByText('The placement hasn’t chosen any locations yet.')).toBeVisible();
+});
+
+it('deletes a model from its page and returns to the list', async () => {
+  const service = new MockConsoleService();
+  const user = userEvent.setup();
+  renderAt('/models/ai-grid-models/granite-research', service);
+  await user.click(await screen.findByTestId('model-actions'));
+  await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
+  const dialog = await screen.findByTestId('delete-deployment-modal');
+  await user.type(within(dialog).getByTestId('delete-modal-input'), 'Granite research endpoint');
+  await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+  expect(await screen.findByText('Model deployment deleted')).toBeVisible();
+  expect(await screen.findByTestId('model-deployments-table')).not.toHaveTextContent('Granite research endpoint');
+});
+
+it('says when a model page has no model', async () => {
+  renderAt('/models/ai-grid-models/nope', new MockConsoleService());
+  expect(await screen.findByText('Model deployment not found')).toBeVisible();
+});
+
+it('takes only whole numbers in the number fields, so the shown and sent counts agree', async () => {
+  const service = new MockConsoleService();
+  const create = vi.spyOn(service, 'createModel');
+  const user = userEvent.setup();
+  renderAt('/models/deploy', service);
+  await user.type(await screen.findByRole('textbox', { name: /Model URI/ }), 'hf://org/widget');
+  await user.type(screen.getByRole('textbox', { name: /^Model name/ }), 'org/widget');
+  await user.click(screen.getByRole('button', { name: 'Next' }));
+  await user.type(screen.getByRole('textbox', { name: /Runtime image/ }), 'registry.example/runtime:test');
+  const replicas = screen.getByRole('spinbutton', { name: 'Replicas' });
+  // 1e1 and 1.5 would show as 1 but parse as 10 and 1.5: they're refused.
+  fireEvent.change(replicas, { target: { value: '1e1' } });
+  expect(replicas).toHaveValue(1);
+  fireEvent.change(replicas, { target: { value: '1.5' } });
+  expect(replicas).toHaveValue(1);
+  fireEvent.change(replicas, { target: { value: '3' } });
+  expect(replicas).toHaveValue(3);
+  await user.click(screen.getByRole('button', { name: 'Next' }));
+  await user.click(await screen.findByRole('combobox', { name: 'Locations' }));
+  await user.click(screen.getByRole('option', { name: site1 }));
+  await user.keyboard('{Escape}');
+  await user.click(screen.getByRole('button', { name: 'Next' }));
+  expect(screen.getByTestId('model-review')).toHaveTextContent('Replicas3');
+  await user.click(screen.getByRole('button', { name: 'Deploy' }));
+  await waitFor(() => expect(create).toHaveBeenCalled());
+  expect(create.mock.calls[0][0].replicas).toBe(3);
+});
+
+it('keeps an emptied Replicas or GPUs field empty and says it is required', async () => {
+  const user = userEvent.setup();
+  renderAt('/models/deploy', new MockConsoleService());
+  await user.type(await screen.findByRole('textbox', { name: /Model URI/ }), 'hf://org/widget');
+  await user.type(screen.getByRole('textbox', { name: /^Model name/ }), 'org/widget');
+  await user.click(screen.getByRole('button', { name: 'Next' }));
+  for (const name of ['Replicas', 'GPUs']) {
+    const field = screen.getByRole('spinbutton', { name });
+    expect(field).toHaveAccessibleDescription(name === 'Replicas' ? 'Between 1 and 99.' : 'Between 0 and 64.');
+    await user.clear(field);
+    await user.tab();
+    // NumberInput would turn the empty field into 0 on blur.
+    expect(field).toHaveValue(null);
+    // PatternFly adds ": error status;" for screen readers.
+    expect(field).toHaveAccessibleDescription(/^Required\./);
+  }
+  expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+});
+
+it("names only the subscriptions that use this model, reading no namespace as the console's", async () => {
+  const service = new MockConsoleService();
+  await service.createModel(input);
+  const widget = service.models.find((m) => m.name === 'widget')!;
+  service.models.push({ ...widget, namespace: 'team-models', resourceVersion: '1' });
+  await service.createSubscription({
+    name: 'widget-users',
+    owner: { groups: [{ name: 'widget-users' }] },
+    modelRefs: [{ name: 'widget', tokenRateLimits: [{ limit: 1000, window: '1h' }] }],
+    priority: 0,
+    tokenMetadata: { organizationId: '3f1c9a72-5b6e-4d2a-8c01-2d3e4f5a6b7c' },
+    createAuthPolicy: true,
+  });
+  const user = userEvent.setup();
+  const team = renderAt('/models/team-models/widget', service);
+  await user.click(await screen.findByTestId('model-actions'));
+  await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
+  expect(await screen.findByTestId('delete-deployment-modal')).toBeVisible();
+  // Let the subscriptions and config load before checking nothing is named.
+  await act(async () => {});
+  expect(screen.queryByTestId('model-references')).not.toBeInTheDocument();
+  team.unmount();
+  renderAt('/models/ai-grid-models/widget', service);
+  await user.click(await screen.findByTestId('model-actions'));
+  await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
+  expect(await screen.findByTestId('model-references')).toHaveTextContent('widget-users');
 });

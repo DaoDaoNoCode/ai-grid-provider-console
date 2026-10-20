@@ -23,6 +23,7 @@ import type { ConsoleService } from './api/ConsoleService';
 import { AppRoutes } from './AppRoutes';
 import { FakeBackendBanner } from './components/FakeBackendBanner';
 import { NoticeToast } from './components/NoticeToast';
+import { UserMenu } from './components/UserMenu';
 import { useServiceData } from './hooks/useServiceData';
 
 type Props = { service: ConsoleService };
@@ -40,6 +41,7 @@ const sections: { path: string; label: string; exact?: boolean }[] = [
 
 export const App: React.FC<Props> = ({ service }) => {
   const [user, userLoaded, userError] = useServiceData(() => service.getUser(), undefined, 0);
+  const [config] = useServiceData(() => service.getConfig(), undefined, 0);
   const { pathname } = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
@@ -67,10 +69,7 @@ export const App: React.FC<Props> = ({ service }) => {
         <Toolbar isFullHeight isStatic>
           <ToolbarContent>
             <ToolbarItem align={{ default: 'alignEnd' }}>
-              <span data-testid="masthead-user">
-                {userError ? 'Not signed in' : !userLoaded ? 'Signing in...' : user?.username}
-                {user?.isProviderAdmin ? ' (provider admin)' : ''}
-              </span>
+              <UserMenu user={user} loaded={userLoaded} error={userError} canSignOut={config?.fakeBackend !== true} />
             </ToolbarItem>
           </ToolbarContent>
         </Toolbar>

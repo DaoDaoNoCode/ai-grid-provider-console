@@ -138,12 +138,17 @@ export type OrganizationInput = { name: string; domains: string[]; identityProvi
 export type Organization = Omit<OrganizationInput, 'identityProvider'> & {
   id: string;
   identityProvider?: IdentityProvider;
-  /** "Saved" for an enabled organization, as the PoC shows every saved one; "Disabled" otherwise. */
-  status: 'Saved' | 'Disabled';
+  /** Whether members can sign in (Keycloak's `enabled`). */
+  status: 'Enabled' | 'Disabled';
   /** Opaque; sent back as If-Match on update and delete. Empty when the backend sends none. */
   resourceVersion: string;
   /** When the backend created it; empty when it doesn't know. */
   creationTimestamp: string;
+  description?: string;
+  /** Keycloak's organization attributes, for example a billing account. */
+  attributes?: Record<string, string>;
+  /** Each domain's verification state, when the backend reports it. */
+  domainDetails?: { name: string; verified: boolean }[];
 };
 
 /**
@@ -333,6 +338,8 @@ export type MaaSSubscription = {
 
 /** A MaaS model registration; a ManagedModel is one. */
 export type MaaSModelRefSummary = {
+  /** Console-side: set for a reference to a model the hub doesn't have (modelRefsToSummaries). */
+  notFound?: boolean;
   resourceVersion?: string;
   creationTimestamp?: string;
   name: string;

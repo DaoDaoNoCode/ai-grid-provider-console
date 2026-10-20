@@ -21,6 +21,7 @@ export const CreateSubscriptionPage: React.FC<Props> = ({ service }) => {
   return (
     <ApplicationsPage
       title="Create subscription"
+      description="Give groups of an organization's users access to models, with token limits for each model."
       breadcrumb={
         <Breadcrumb>
           <BreadcrumbItem

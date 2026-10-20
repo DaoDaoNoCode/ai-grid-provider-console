@@ -100,18 +100,27 @@ const toIdentityProvider = (json: NonNullable<ApiTenant['identityProvider']>): I
 };
 
 /**
- * Maps a tenant of GET/POST/PATCH /tenants to the PoC's organization: "Saved" when enabled,
- * "Disabled" otherwise; the backend's version and creation time, empty when it sends none.
+ * Maps a tenant of GET/POST/PATCH /tenants to the PoC's organization: "Enabled" or "Disabled" from
+ * `enabled`, and the backend's version and creation time, empty when it sends none.
  */
 export const toOrganization = (json: ApiTenant): Organization => {
   const out: Organization = {
     id: json.id,
     name: json.name,
     domains: json.domains ?? [],
-    status: json.enabled ? 'Saved' : 'Disabled',
+    status: json.enabled ? 'Enabled' : 'Disabled',
     resourceVersion: json.resourceVersion ?? '',
     creationTimestamp: json.createTime ?? '',
   };
+  if (json.description) {
+    out.description = json.description;
+  }
+  if (json.attributes && Object.keys(json.attributes).length) {
+    out.attributes = json.attributes;
+  }
+  if (json.domainDetails?.length) {
+    out.domainDetails = json.domainDetails.map(({ name, verified }) => ({ name, verified }));
+  }
   if (json.identityProvider) {
     out.identityProvider = toIdentityProvider(json.identityProvider);
   }

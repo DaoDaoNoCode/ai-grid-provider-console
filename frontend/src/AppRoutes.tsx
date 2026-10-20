@@ -3,8 +3,9 @@ import { Navigate, Outlet, Route, Routes, useParams } from 'react-router-dom';
 import type { ConsoleService } from './api/ConsoleService';
 import { NotFoundPage } from './components/NotFoundPage';
 import { MaaSGovernanceProvider } from './context/MaaSGovernanceContext';
-import { ClustersPage } from './pages/ClustersPage';
+import { ClustersPage } from './pages/clusters/ClustersPage';
 import { GridPage } from './pages/grid/GridPage';
+import { ModelDetailsPage } from './pages/models/ModelDetailsPage';
 import { ModelWizard } from './pages/models/ModelWizard';
 import { ModelsPage } from './pages/models/ModelsPage';
 import { OrganizationDetailsPage } from './pages/organizations/OrganizationDetailsPage';
@@ -50,6 +51,14 @@ export const AppRoutes: React.FC<Props> = ({ service }) => (
     />
     <Route path="/models" element={<ModelsPage service={service} />} />
     <Route path="/models/deploy" element={<ModelWizard service={service} />} />
+    <Route
+      path="/models/:namespace/:name"
+      element={
+        <ByParams>
+          <ModelDetailsPage service={service} />
+        </ByParams>
+      }
+    />
     {/* The subscription pages share the PoC's governance context, and only they use it (A25). */}
     <Route
       element={

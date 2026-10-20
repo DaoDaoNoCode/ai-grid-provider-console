@@ -27,7 +27,7 @@ type Props = {
   onClose: () => void;
 };
 
-const title = 'Edit subscription token limits';
+const title = 'Edit token limits';
 
 /** Edits one model's token limits; a model without limits starts with 1,000 tokens per hour. */
 export const EditRateLimitsModal: React.FC<Props> = ({ modelName, rateLimits, onSave, onClose }) => {
@@ -53,8 +53,7 @@ export const EditRateLimitsModal: React.FC<Props> = ({ modelName, rateLimits, on
         title={title}
         description={
           <>
-            Set limits on the number of tokens that can be consumed by each member of the <b>{modelName}</b> in this
-            subscription.
+            Limit how many tokens each member of this subscription can use with <b>{modelName}</b>.
           </>
         }
       />
@@ -82,7 +81,7 @@ export const EditRateLimitsModal: React.FC<Props> = ({ modelName, rateLimits, on
               onClick={() => setLocalLimits((prev) => [...prev, { ...DEFAULT_RATE_LIMIT }])}
               data-testid="add-token-rate-limit"
             >
-              Add token rate limit
+              Add token limit
             </Button>
           </StackItem>
         </Stack>

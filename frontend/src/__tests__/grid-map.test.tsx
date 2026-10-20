@@ -2,7 +2,10 @@
 // The PoC's demo clusters become the console's fixture clusters: demo-new-york is site2 and
 // demo-brussels is site3, whose placement location is its name. The monitoring cases belong to
 // Task 11. The real-Leaflet cases are in GridFleetMap.test.tsx, because this file mocks the map (A31).
-import { screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
+import type { NavigateFunction } from 'react-router-dom';
+import { App } from '../App';
 import userEvent from '@testing-library/user-event';
 import { ServiceError } from '../api/ConsoleService';
 import { HttpConsoleService } from '../api/HttpConsoleService';
@@ -42,6 +45,16 @@ it('uses the reference map-and-drawer layout and opens cluster details from a pi
   expect(screen.queryByRole('combobox', { name: 'Filter by site' })).not.toBeInTheDocument();
 });
 
+it('opens the drawer on the cluster or model a link names', async () => {
+  const service = new MockConsoleService();
+  const view = renderAt('/ai-grid?cluster=site3', service);
+  expect(await screen.findByRole('heading', { name: 'site3' })).toBeVisible();
+  view.unmount();
+  const [model] = await service.listModels();
+  renderAt(`/ai-grid?model=${encodeURIComponent(`${model.namespace}/${model.name}`)}`, service);
+  expect(await screen.findByRole('heading', { name: model.displayName ?? model.name })).toBeVisible();
+});
+
 it('filters the drawer and map by availability while retaining inventory summaries', async () => {
   const service = new MockConsoleService();
   service.clusters[1] = { ...service.clusters[1], status: 'Offline' };
@@ -65,20 +78,21 @@ it('switches between clusters and models and follows placement cross-links', asy
   service.models = [{ ...model, locations: ['site3'] }];
   const user = userEvent.setup();
   renderAt('/ai-grid', service);
-  await screen.findByRole('button', { name: 'View site3 details' });
-  const card = screen.getByRole('button', { name: 'View site3 details' }).closest('article')!;
-  await user.click(await within(card).findByRole('button', { name: model.displayName ?? model.name }));
+  // A card is one control; its models are links in the cluster's details.
+  await user.click(await screen.findByRole('button', { name: 'View site3 details' }));
+  await user.click(await screen.findByRole('button', { name: model.displayName ?? model.name }));
   expect(screen.getByRole('heading', { name: 'Model configuration' })).toBeVisible();
   await user.click(screen.getByRole('button', { name: 'Brussels · site3' }));
   expect(screen.getByRole('heading', { name: 'Site and cluster' })).toBeVisible();
   await user.click(screen.getByRole('button', { name: 'Back' }));
   expect(screen.getByRole('heading', { name: 'Model configuration' })).toBeVisible();
+  await user.click(screen.getByRole('button', { name: 'Back' }));
   await user.click(screen.getByRole('button', { name: 'Clusters' }));
   await user.click(
     within(screen.getByRole('group', { name: 'Grid object type' })).getByRole('button', { name: 'Models' }),
   );
   expect(screen.getByRole('heading', { name: 'Models' })).toBeVisible();
-  expect(screen.getByRole('button', { name: 'Brussels · site3' })).toBeVisible();
+  expect(screen.getByText('Sites: Brussels')).toBeVisible();
   expect(screen.queryByText('GPU utilization')).not.toBeInTheDocument();
   expect(screen.queryByText('Fleet metrics')).not.toBeInTheDocument();
 });
@@ -86,10 +100,9 @@ it('switches between clusters and models and follows placement cross-links', asy
 it("follows placement cross-links on PR 12's model JSON", async () => {
   const user = userEvent.setup();
   renderAt('/ai-grid', serviceOnPr12Json());
-  const card = (await screen.findByRole('button', { name: 'View site-paris-1 details' })).closest('article')!;
-  await user.click(await within(card).findByRole('button', { name: 'Granite 8B Instruct' }));
+  await user.click(await screen.findByRole('button', { name: 'View site-paris-1 details' }));
+  await user.click(await screen.findByRole('button', { name: 'Granite 8B Instruct' }));
   expect(screen.getByRole('heading', { name: 'Model configuration' })).toBeVisible();
-  expect(screen.getByText('paris')).toBeVisible();
   await user.click(screen.getByRole('button', { name: 'Paris DC1 · site-paris-1' }));
   expect(screen.getByRole('heading', { name: 'Site and cluster' })).toBeVisible();
 });
@@ -136,7 +149,8 @@ it('shows the map when the backend leaves the inventory and metrics sources out'
   service.getGridOverview = (...args) => new HttpConsoleService(fetchFn).getGridOverview(...args);
   renderAt('/ai-grid', service);
   expect(await screen.findByRole('button', { name: 'Map pin site-paris-1' })).toBeInTheDocument();
-  expect(screen.getByText(/Retrieved/)).not.toHaveTextContent('Inventory:');
+  expect(screen.queryByText(/Inventory:/)).not.toBeInTheDocument();
+  expect(screen.getByText(/^Updated/)).toBeVisible();
 });
 
 it('shows the page when the backend sends no updated time', async () => {
@@ -164,8 +178,9 @@ it('shows the page when the backend sends no updated time', async () => {
   service.getGridOverview = (...args) => new HttpConsoleService(fetchFn).getGridOverview(...args);
   renderAt('/ai-grid', service);
   expect(await screen.findByRole('button', { name: 'Map pin site-paris-1' })).toBeInTheDocument();
-  expect(screen.getByText(/Retrieved/)).toHaveTextContent('Retrieved —');
-  expect(screen.getByText(/Retrieved/)).not.toHaveTextContent('Invalid Date');
+  // No time to show, so no "Updated" line, and never "Invalid Date".
+  expect(screen.queryByText(/^Updated/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/Invalid Date/)).not.toBeInTheDocument();
 });
 
 it('shows a model by its phase, not "Deployment saved"', async () => {
@@ -199,16 +214,30 @@ it('keeps the map, its selection and its models when a refresh fails', async () 
   expect(screen.getByRole('button', { name: model.displayName })).toBeVisible();
 });
 
-it("says the sites come from the clusters each model's placement selected", async () => {
+it("explains, in a help popover, where a cluster's models come from", async () => {
   const user = userEvent.setup();
   renderAt('/ai-grid', new MockConsoleService());
   await user.click(await screen.findByRole('button', { name: 'Map pin site1' }));
-  expect(screen.getByText(/^Assignments come from the clusters each model's placement selected\./)).toBeVisible();
-  await user.click(screen.getByRole('button', { name: 'Clusters' }));
-  await user.click(
-    within(screen.getByRole('group', { name: 'Grid object type' })).getByRole('button', { name: 'Models' }),
-  );
-  expect(screen.getByText("Sites come from the clusters each model's placement selected.")).toBeVisible();
+  expect(screen.queryByText(/whose placement chose/)).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'More about models at this location' }));
+  expect(await screen.findByText(/^The models whose placement chose this cluster's location\./)).toBeVisible();
+});
+
+it('says no clusters match and clears the search and filter', async () => {
+  const user = userEvent.setup();
+  renderAt('/ai-grid', new MockConsoleService());
+  await user.type(await screen.findByRole('textbox', { name: 'Search grid clusters' }), 'zzz');
+  expect(screen.getByText('No clusters match')).toBeVisible();
+  await user.click(screen.getByRole('button', { name: 'Clear all filters' }));
+  expect(screen.getByRole('button', { name: 'View site1 details' })).toBeVisible();
+});
+
+it('names the page like every other page, with no status chips over the map', async () => {
+  const service = new MockConsoleService();
+  service.clusters[1] = { ...service.clusters[1], status: 'Offline' };
+  renderAt('/ai-grid', service);
+  expect(await screen.findByRole('heading', { name: 'AI Grid', level: 1 })).toBeVisible();
+  expect(screen.queryByText('site2: Offline')).not.toBeInTheDocument();
 });
 
 it('does not call a failed model available for subscriptions', async () => {
@@ -241,4 +270,57 @@ it('exposes the map area and the fleet summary as named regions', async () => {
   renderAt('/ai-grid', new MockConsoleService());
   expect(await screen.findByRole('region', { name: 'AI Grid map and drawer' })).toBeVisible();
   expect(screen.getByRole('region', { name: 'Fleet summary' })).toBeVisible();
+});
+
+it('keeps the URL in step with the drawer, and clears it when the drawer closes', async () => {
+  let search = '';
+  const Probe = () => {
+    search = useLocation().search;
+    return null;
+  };
+  const user = userEvent.setup();
+  render(
+    <MemoryRouter initialEntries={['/ai-grid']}>
+      <Probe />
+      <App service={new MockConsoleService()} />
+    </MemoryRouter>,
+  );
+  await user.click(await screen.findByRole('button', { name: 'Map pin site3' }));
+  expect(search).toBe('?cluster=site3');
+  await user.click(screen.getByRole('button', { name: 'Clusters' }));
+  expect(search).toBe('');
+});
+
+it('closes the drawer when the AI Grid nav link drops the cluster from the URL', async () => {
+  const user = userEvent.setup();
+  renderAt('/ai-grid?cluster=site2', new MockConsoleService());
+  expect(await screen.findByRole('heading', { name: 'site2' })).toBeVisible();
+  await user.click(screen.getByRole('link', { name: 'AI Grid' }));
+  expect(screen.queryByRole('heading', { name: 'site2' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'View site2 details' })).toBeVisible();
+});
+
+it("drops the Back trail when a link moves the drawer to something the trail wasn't built for", async () => {
+  const service = new MockConsoleService();
+  const [model] = service.models;
+  service.models = [{ ...model, locations: ['site3'] }];
+  let navigate: NavigateFunction = () => undefined;
+  const Probe = () => {
+    navigate = useNavigate();
+    return null;
+  };
+  const user = userEvent.setup();
+  render(
+    <MemoryRouter initialEntries={['/ai-grid?cluster=site3']}>
+      <Probe />
+      <App service={service} />
+    </MemoryRouter>,
+  );
+  await user.click(await screen.findByRole('button', { name: model.displayName ?? model.name }));
+  expect(screen.getByRole('button', { name: 'Back' })).toBeVisible();
+  // A link elsewhere opens site2: Back would have led to site3, which isn't where the user came from.
+  act(() => navigate('/ai-grid?cluster=site2'));
+  expect(await screen.findByRole('heading', { name: 'site2' })).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Back' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Clusters' })).toBeVisible();
 });

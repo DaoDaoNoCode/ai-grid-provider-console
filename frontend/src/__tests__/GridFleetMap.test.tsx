@@ -10,9 +10,12 @@ const members = seedClusters().filter((c) => c.aiGridEnabled);
 
 afterEach(() => vi.restoreAllMocks());
 
+/** How many pins the map drew. */
+const pinsDrawn = (marker: { mock: { calls: unknown[] } }) => marker.mock.calls.length;
+
 it('keeps pins when tiles fail', () => {
   const tileLayer = vi.spyOn(L, 'tileLayer');
-  render(<GridFleetMap clusters={members} selected={null} onSelect={() => {}} tiles={tiles} />);
+  const { container } = render(<GridFleetMap clusters={members} selected={null} onSelect={() => {}} tiles={tiles} />);
   expect(tileLayer).toHaveBeenCalledWith(tiles.url, expect.objectContaining({ attribution: tiles.attribution }));
   expect(screen.queryByText(/Basemap tiles unavailable/)).not.toBeInTheDocument();
 
@@ -23,17 +26,37 @@ it('keeps pins when tiles fail', () => {
   expect(
     screen.getByText('Basemap tiles unavailable. Cluster pins and the cluster list remain available.'),
   ).toBeInTheDocument();
-  for (const site of ['San Francisco', 'New York', 'Brussels']) {
-    expect(screen.getByText(site)).toBeInTheDocument();
-  }
+  // Counted on the page after the error, so a pin the error removed fails the test.
+  expect(container.querySelectorAll('path.fleet-pin')).toHaveLength(3);
   expect(
     screen.queryByText('No mapped clusters. Add site coordinates to ManagedCluster annotations.'),
   ).not.toBeInTheDocument();
 });
 
+it('labels only the selected pin, which keeps its status colour; the others label on hover', () => {
+  const marker = vi.spyOn(L, 'circleMarker');
+  render(<GridFleetMap clusters={members} selected="site3" onSelect={() => {}} tiles={tiles} />);
+  expect(screen.getByText('Brussels · site3 · Ready')).toBeInTheDocument();
+  expect(screen.queryByText('San Francisco')).not.toBeInTheDocument();
+  const selected = marker.mock.calls.find(([, options]) => options?.radius === 11);
+  expect(selected?.[1]).toMatchObject({ color: '#3d7317', weight: 4 });
+});
+
+it('fits the pins without zooming in past the region around them', () => {
+  const fitBounds = vi.spyOn(L.Map.prototype, 'fitBounds');
+  render(<GridFleetMap clusters={members.slice(0, 1)} selected={null} onSelect={() => {}} tiles={tiles} />);
+  expect(fitBounds).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ maxZoom: 4 }));
+});
+
+it('says a filter, not missing coordinates, emptied the map', () => {
+  render(<GridFleetMap clusters={[]} selected={null} onSelect={() => {}} tiles={tiles} isFiltered />);
+  expect(screen.getByText('No clusters match the search or filter.')).toBeInTheDocument();
+});
+
 it('draws the bundled land outline instead of tiles without a tile URL', async () => {
   const tileLayer = vi.spyOn(L, 'tileLayer');
   const geoJSON = vi.spyOn(L, 'geoJSON');
+  const marker = vi.spyOn(L, 'circleMarker');
   render(<GridFleetMap clusters={members} selected={null} onSelect={() => {}} tiles={{ url: '', attribution: '' }} />);
   await waitFor(() => expect(geoJSON).toHaveBeenCalledTimes(1));
   expect(tileLayer).not.toHaveBeenCalled();
@@ -44,7 +67,7 @@ it('draws the bundled land outline instead of tiles without a tile URL', async (
   const land = geoJSON.mock.results[0].value as L.GeoJSON;
   expect(land.getLayers().length).toBeGreaterThan(100);
   expect(screen.queryByText(/basemap/i)).not.toBeInTheDocument();
-  expect(screen.getByText('San Francisco')).toBeInTheDocument();
+  expect(pinsDrawn(marker)).toBe(3);
 });
 
 it('draws no land outline when tiles are configured', async () => {
@@ -84,9 +107,10 @@ it('says there is no basemap when the land outline fails to load', async () => {
 
 it('explains a map without coordinates', () => {
   const unmapped = members.map(({ latitude: _lat, longitude: _lng, ...c }) => c);
+  const marker = vi.spyOn(L, 'circleMarker');
   render(<GridFleetMap clusters={unmapped} selected={null} onSelect={() => {}} tiles={tiles} />);
   expect(
     screen.getByText('No mapped clusters. Add site coordinates to ManagedCluster annotations.'),
   ).toBeInTheDocument();
-  expect(screen.queryByText('San Francisco')).not.toBeInTheDocument();
+  expect(pinsDrawn(marker)).toBe(0);
 });

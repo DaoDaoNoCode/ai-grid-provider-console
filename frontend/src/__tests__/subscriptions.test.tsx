@@ -21,6 +21,12 @@ const viewer = { username: 'viewer', groups: [], isProviderAdmin: false };
 
 type User = ReturnType<typeof userEvent.setup>;
 
+/** Picks an organization in the create form's Organization select. */
+const pickOrganization = async (user: User, name: string) => {
+  await user.click(await screen.findByRole('combobox', { name: 'Organization' }));
+  await user.click(screen.getByRole('option', { name }));
+};
+
 /** Fills the create form for "Test team" with one group and granite-3-8b at the default limit. */
 const fillNewSubscription = async (user: User) => {
   const name = await screen.findByTestId('subscription-name-desc-name');
@@ -37,19 +43,33 @@ const fillNewSubscription = async (user: User) => {
 };
 
 describe('administrator subscription flows', () => {
-  it('renders the list, expands groups, filters and shows details', async () => {
+  it('renders the list with its groups, filters and shows details', async () => {
     const user = userEvent.setup();
     renderAt('/subscriptions', new MockConsoleService());
     const table = await screen.findByTestId('subscriptions-table');
     expect(within(table).getByRole('link', { name: 'Engineering' })).toBeVisible();
     const row = within(table).getByRole('link', { name: 'Engineering' }).closest('tr')!;
-    await user.click(within(row).getByTestId('subscription-groups-expand-btn').querySelector('button')!);
-    expect(within(row.closest('tbody')!).getByTestId('expanded-group-name')).toHaveTextContent('engineering');
+    // Groups and models are short lists in their cells, not nested tables.
+    expect(within(row).getByTestId('subscription-groups')).toHaveTextContent('engineering');
+    expect(within(row).getByTestId('subscription-models')).toHaveTextContent('Granite');
     await user.type(screen.getByTestId('subscriptions-filter-input').querySelector('input')!, 'production');
     expect(within(table).queryByRole('link', { name: 'Research' })).not.toBeInTheDocument();
     await user.click(within(table).getByRole('link', { name: 'Engineering' }));
-    expect(await screen.findByTestId('subscription-details-section')).toHaveTextContent('Engineering');
+    expect(await screen.findByRole('heading', { name: 'Engineering', level: 1 })).toBeVisible();
+    // One view: no single "Details" tab, and no Name row repeating the title.
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+    const details = screen.getByTestId('subscription-details-section');
+    expect(details).not.toHaveTextContent(/^Name/);
+    expect(within(details).getByTestId('subscription-priority')).toHaveTextContent('100');
+    // The backend lists every policy covering one of its models, so the term says so; a policy's
+    // phase reads as itself (Active), not as a subscription's Ready.
+    const policies = within(details).getByTestId('subscription-auth-policies');
+    expect(policies).toHaveTextContent('Engineering policy');
+    expect(policies).toHaveTextContent('Active');
+    expect(policies).not.toHaveTextContent('Ready');
+    expect(within(details).getByText('Policies for its models')).toBeVisible();
     expect(screen.getByTestId('subscription-models-table')).toHaveTextContent('100,000 / 1 hour');
+    expect(screen.getByTestId('subscription-models-table')).toHaveTextContent('Ready');
   });
 
   it('creates a subscription using the group and model selectors and token-limit modal', async () => {
@@ -59,7 +79,7 @@ describe('administrator subscription flows', () => {
     await screen.findByTestId('subscription-name-desc-name');
     expect(screen.queryByTestId('subscription-create-auth-policy')).not.toBeInTheDocument();
     expect(screen.getByTestId('create-subscription-button')).toBeDisabled();
-    await user.selectOptions(await screen.findByRole('combobox', { name: 'Organization' }), 'acme-robotics');
+    await pickOrganization(user, 'acme-robotics');
     await user.type(screen.getByTestId('subscription-name-desc-name'), 'Test team');
     await user.type(screen.getByRole('combobox', { name: 'Enter groups' }), 'engineering');
     const option = await screen.findByRole('option', { name: 'Add group "engineering"' });
@@ -204,9 +224,16 @@ it('requires an organization and shows it in the table', async () => {
   await fillNewSubscription(user);
   const create = screen.getByTestId('create-subscription-button');
   expect(create).toBeDisabled();
+  // Tabbing past the empty select says why Create is disabled.
   const organization = screen.getByRole('combobox', { name: 'Organization' });
-  expect(within(organization).getByRole('option', { name: 'globex-research' })).toBeInTheDocument();
-  await user.selectOptions(organization, 'globex-research');
+  expect(screen.queryByText('Select an organization')).not.toBeInTheDocument();
+  organization.focus();
+  await user.tab();
+  expect(organization).toHaveAttribute('aria-invalid', 'true');
+  expect(screen.getByText('Select an organization')).toBeVisible();
+  await pickOrganization(user, 'globex-research');
+  expect(organization).toHaveAttribute('aria-invalid', 'false');
+  expect(screen.getByRole('combobox', { name: 'Organization' })).toHaveValue('globex-research');
   expect(create).toBeEnabled();
   await user.click(create);
 
@@ -260,16 +287,16 @@ it('says creating is not available on a backend without subscriptions', async ()
   const user = userEvent.setup();
   renderAt('/subscriptions/create', service);
   await fillNewSubscription(user);
-  await user.selectOptions(screen.getByRole('combobox', { name: 'Organization' }), 'acme-robotics');
+  await pickOrganization(user, 'acme-robotics');
   await user.click(screen.getByTestId('create-subscription-button'));
   expect(await screen.findByText('Creating subscriptions is not available on this backend yet.')).toBeVisible();
   expect(screen.getByText('Failed to create subscription')).toBeVisible();
 }, 20000);
 
-it('paginates the list like the PoC', async () => {
+it('shows one pagination, in the toolbar, for a single page', async () => {
   renderAt('/subscriptions', new MockConsoleService());
   expect(await screen.findByTestId('subscriptions-table')).toBeVisible();
-  expect(screen.getAllByRole('navigation', { name: /pagination/i })).toHaveLength(2);
+  expect(screen.getAllByRole('navigation', { name: /pagination/i })).toHaveLength(1);
 });
 
 describe('a failed background poll', () => {
@@ -402,7 +429,7 @@ describe('MaaS subscription phases', () => {
     const modal = await screen.findByTestId('phase-modal');
     expect(modal).toHaveTextContent('Awaiting governance pairing');
     expect(modal).toHaveTextContent('Governed but backend is not ready');
-    expect(modal).toHaveTextContent('Model not found. The MaaSModelRef does not exist.');
+    expect(modal).toHaveTextContent('Model not found. It may have been deleted.');
   });
 });
 
@@ -412,7 +439,7 @@ describe("model references on PR 12's models", () => {
     const create = vi.spyOn(service, 'createSubscription');
     const user = userEvent.setup();
     renderAt('/subscriptions/create', service);
-    await user.selectOptions(await screen.findByRole('combobox', { name: 'Organization' }), 'acme-robotics');
+    await pickOrganization(user, 'acme-robotics');
     await user.type(screen.getByTestId('subscription-name-desc-name'), 'Test team');
     await user.type(screen.getByRole('combobox', { name: 'Enter groups' }), 'engineering');
     const option = await screen.findByRole('option', { name: 'Add group "engineering"' });
@@ -451,8 +478,8 @@ describe("model references on PR 12's models", () => {
     await user.click(screen.getByTestId('add-models-button'));
     const rows = within(screen.getByTestId('add-models-table')).getAllByRole('row');
     const row = (name: string) => rows.find((r) => r.textContent?.includes(name))!;
-    expect(within(row('Team granite')).getByRole('button', { name: 'Remove model' })).toBeVisible();
-    expect(within(row('Shared granite')).getByRole('button', { name: 'Add model' })).toBeVisible();
+    expect(within(row('Team granite')).getByRole('checkbox', { name: 'Select Team granite' })).toBeChecked();
+    expect(within(row('Shared granite')).getByRole('checkbox', { name: 'Select Shared granite' })).not.toBeChecked();
     await user.keyboard('{Escape}');
     await user.click(screen.getByTestId('update-subscription-button'));
     await waitFor(() => expect(update).toHaveBeenCalled());
@@ -471,8 +498,8 @@ it('sends a re-added unlimited model with its new limits only', async () => {
   const update = vi.spyOn(service, 'updateSubscription');
   const user = userEvent.setup();
   renderAt('/subscriptions/edit/engineering', service);
-  await user.click(await screen.findByRole('button', { name: 'Actions for granite-3-8b' }));
-  await user.click(screen.getByRole('menuitem', { name: 'Remove' }));
+  const models = await screen.findByTestId('subscription-models-table');
+  await user.click(within(models).getByRole('button', { name: /^Remove / }));
   await user.click(screen.getByTestId('add-models-button'));
   await user.click(screen.getByTestId('toggle-model-granite-3-8b'));
   await user.click(screen.getByTestId('confirm-add-models'));
@@ -512,4 +539,50 @@ it('matches a model reference only in its own namespace', () => {
   // The backend names every reference's namespace, so a missing one matches nothing.
   expect(isSameModel({ name: 'm' }, { name: 'm', namespace: 'team-models' })).toBe(false);
   expect(isSameModel({ name: 'm', namespace: 'team-models' }, { name: 'm', namespace: 'team-models' })).toBe(true);
+});
+
+it('hints that a new model needs a token limit, and labels the limit fields', async () => {
+  const user = userEvent.setup();
+  renderAt('/subscriptions/create', new MockConsoleService());
+  expect(await screen.findByText(/^Give groups of an organization's users access to models/)).toBeVisible();
+  await user.click(screen.getByTestId('add-models-button'));
+  await user.click(screen.getByTestId('toggle-model-granite-3-8b'));
+  await user.click(screen.getByTestId('confirm-add-models'));
+  // A hint, not an error, before the user has done anything with the model.
+  const hint = screen.getByTestId('token-limit-required-0');
+  expect(hint).toHaveTextContent('Required: add at least one.');
+  expect(hint).not.toHaveClass('pf-m-error');
+  await user.click(screen.getByTestId('add-token-limit-0'));
+  expect(screen.getByRole('dialog', { name: 'Edit token limits' })).toHaveTextContent(
+    /^Edit token limitsLimit how many tokens each member of this subscription can use with/,
+  );
+  expect(screen.getByRole('spinbutton', { name: 'Tokens' })).toHaveValue(1000);
+  expect(screen.getByRole('spinbutton', { name: 'Per' })).toHaveValue(1);
+  expect(screen.getByRole('button', { name: 'Add token limit' })).toBeVisible();
+});
+
+it('says straight away that a subscription saved without an organization needs one', async () => {
+  const service = new MockConsoleService();
+  service.subscriptions[0].tokenMetadata = undefined;
+  renderAt(`/subscriptions/edit/${service.subscriptions[0].name}`, service);
+  const organization = await screen.findByRole('combobox', { name: 'Organization' });
+  expect(organization).toHaveAttribute('aria-invalid', 'true');
+  expect(screen.getByText('Select an organization')).toBeVisible();
+});
+
+it('keeps a set organization read-only when editing', async () => {
+  renderAt('/subscriptions/edit/engineering', new MockConsoleService());
+  const organization = await screen.findByTestId('subscription-organization');
+  expect(organization).toHaveAttribute('readonly');
+  expect(organization).toHaveValue('acme-robotics');
+  expect(screen.getByText('The organization can’t be changed once it is set.')).toBeVisible();
+});
+
+it('shows Not found for a referenced model the hub no longer has, even with a namespace', async () => {
+  const service = new MockConsoleService();
+  const seed = structuredClone(seedSubscriptions()[0]);
+  seed.modelRefs = [{ name: 'gone', namespace: 'ai-grid-models', tokenRateLimits: [{ limit: 5, window: '1m' }] }];
+  service.subscriptions = [seed];
+  renderAt(`/subscriptions/view/${seed.name}`, service);
+  expect(await screen.findByTestId('subscription-models-table')).toHaveTextContent('Not found');
 });
