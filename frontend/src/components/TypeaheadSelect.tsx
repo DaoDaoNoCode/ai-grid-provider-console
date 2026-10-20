@@ -44,7 +44,8 @@ export const TypeaheadSelect = ({
   const [isOpen, setIsOpen] = useState(false);
   // What the user has typed since the menu opened; null shows the selected option's label.
   const [filter, setFilter] = useState<string | null>(null);
-  const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
+  // The highlighted option, by value, so a list that changes under it can't leave a stale highlight.
+  const [focusedValue, setFocusedValue] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const instanceId = useId().replace(/:/g, '');
   const listboxId = `${id}-listbox`;
@@ -57,12 +58,15 @@ export const TypeaheadSelect = ({
     const text = filter?.trim().toLowerCase();
     return text ? options.filter((o) => o.label.toLowerCase().includes(text)) : options;
   }, [filter, options]);
+  const focusedIndex = visible.findIndex((o) => o.value === focusedValue);
 
+  // Every way of closing goes through here, so typed text never stays on a closed field.
   const close = () => {
     setIsOpen(false);
     setFilter(null);
-    setFocusedIndex(null);
+    setFocusedValue(null);
   };
+  const toggleMenu = () => (isOpen ? close() : setIsOpen(true));
 
   const choose = (next: string) => {
     onChange(next);
@@ -78,19 +82,25 @@ export const TypeaheadSelect = ({
         setIsOpen(true);
         if (visible.length === 0) return;
         const step = event.key === 'ArrowDown' ? 1 : -1;
-        setFocusedIndex((i) =>
-          i === null ? (step > 0 ? 0 : visible.length - 1) : (i + step + visible.length) % visible.length,
-        );
+        const next =
+          focusedIndex < 0
+            ? step > 0
+              ? 0
+              : visible.length - 1
+            : (focusedIndex + step + visible.length) % visible.length;
+        setFocusedValue(visible[next].value);
         return;
       }
       case 'Enter':
         event.preventDefault();
-        if (isOpen && focusedIndex !== null && visible[focusedIndex]) {
+        if (isOpen && focusedIndex >= 0) {
           choose(visible[focusedIndex].value);
         } else {
-          setIsOpen(!isOpen);
+          toggleMenu();
         }
         return;
+      // Tab keeps its default, moving focus on; Select only closes on Escape (see onOpenChangeKeys).
+      case 'Tab':
       case 'Escape':
         close();
         return;
@@ -105,14 +115,14 @@ export const TypeaheadSelect = ({
       isExpanded={isOpen}
       status={status}
       onClick={() => {
-        setIsOpen(!isOpen);
+        toggleMenu();
         inputRef.current?.focus();
       }}
     >
       <TextInputGroup isPlain>
         <TextInputGroupMain
           inputId={id}
-          inputProps={testId ? { 'data-testid': testId } : undefined}
+          inputProps={{ autoComplete: 'off', ...(testId && { 'data-testid': testId }) }}
           ref={inputRef}
           value={filter ?? selected?.label ?? ''}
           placeholder={placeholder}
@@ -120,12 +130,11 @@ export const TypeaheadSelect = ({
           role="combobox"
           isExpanded={isOpen}
           aria-controls={listboxId}
-          aria-activedescendant={isOpen && focusedIndex !== null ? optionId(focusedIndex) : undefined}
-          autoComplete="off"
-          onClick={() => setIsOpen(!isOpen)}
+          aria-activedescendant={isOpen && focusedIndex >= 0 ? optionId(focusedIndex) : undefined}
+          onClick={toggleMenu}
           onChange={(_event, text) => {
             setFilter(text);
-            setFocusedIndex(null);
+            setFocusedValue(null);
             setIsOpen(true);
           }}
           onKeyDown={onKeyDown}
@@ -145,6 +154,9 @@ export const TypeaheadSelect = ({
       onOpenChange={(open) => {
         if (!open) close();
       }}
+      // PatternFly's default also takes Tab, prevents it and refocuses the toggle, which here is the
+      // input itself, so focus would stay put; onKeyDown closes on Tab and lets focus move instead.
+      onOpenChangeKeys={['Escape']}
       toggle={toggle}
       variant="typeahead"
       isScrollable

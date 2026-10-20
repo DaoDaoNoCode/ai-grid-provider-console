@@ -9,15 +9,23 @@ const OPTIONS = [
   { value: 'i', label: 'initech' },
 ];
 
-const Harness = ({ onChange }: { onChange: (value: string) => void }) => {
-  const [value, setValue] = useState('');
+const Harness = ({
+  onChange = () => undefined,
+  options = OPTIONS,
+  initial = '',
+}: {
+  onChange?: (value: string) => void;
+  options?: typeof OPTIONS;
+  initial?: string;
+}) => {
+  const [value, setValue] = useState(initial);
   return (
     <TypeaheadSelect
       id="org"
       aria-label="Organization"
       placeholder="Select an organization"
       value={value}
-      options={OPTIONS}
+      options={options}
       onChange={(next) => {
         setValue(next);
         onChange(next);
@@ -32,6 +40,7 @@ it('draws a PatternFly menu, filters as you type and picks with the keyboard', a
   render(<Harness onChange={onChange} />);
   const input = screen.getByRole('combobox', { name: 'Organization' });
   expect(input).toHaveAttribute('placeholder', 'Select an organization');
+  expect(input).toHaveAttribute('autocomplete', 'off');
 
   await user.click(input);
   expect(screen.getAllByRole('option')).toHaveLength(3);
@@ -48,4 +57,49 @@ it('draws a PatternFly menu, filters as you type and picks with the keyboard', a
   await user.keyboard('{Escape}');
   expect(input).toHaveValue('globex-research');
   expect(onChange).toHaveBeenCalledTimes(1);
+});
+
+it('shows the selection again when closed by a click, without choosing', async () => {
+  const user = userEvent.setup();
+  render(<Harness initial="g" />);
+  const input = screen.getByRole('combobox', { name: 'Organization' });
+  await user.click(input);
+  await user.type(input, 'ini');
+  await user.click(input);
+  expect(input).toHaveAttribute('aria-expanded', 'false');
+  expect(input).toHaveValue('globex-research');
+  await user.click(screen.getByRole('button', { expanded: false }));
+  expect(screen.getAllByRole('option')).toHaveLength(3);
+});
+
+it('closes on Tab and lets focus move to the next control', async () => {
+  const user = userEvent.setup();
+  render(
+    <>
+      <Harness initial="a" />
+      <button type="button">Next field</button>
+    </>,
+  );
+  const input = screen.getByRole('combobox', { name: 'Organization' });
+  await user.click(input);
+  await user.type(input, 'glo');
+  await user.tab();
+  expect(input).toHaveAttribute('aria-expanded', 'false');
+  expect(input).toHaveValue('acme-robotics');
+  // One Tab: PatternFly's toggle button has tabIndex -1, so the next field is next.
+  expect(screen.getByRole('button', { name: 'Next field' })).toHaveFocus();
+});
+
+it('drops the highlight when the highlighted option goes away', async () => {
+  const onChange = vi.fn();
+  const user = userEvent.setup();
+  const { rerender } = render(<Harness onChange={onChange} />);
+  const input = screen.getByRole('combobox', { name: 'Organization' });
+  await user.click(input);
+  await user.keyboard('{ArrowDown}{ArrowDown}{ArrowDown}');
+  expect(input).toHaveAttribute('aria-activedescendant', screen.getByRole('option', { name: 'initech' }).id);
+  rerender(<Harness onChange={onChange} options={OPTIONS.slice(0, 1)} />);
+  expect(input).not.toHaveAttribute('aria-activedescendant');
+  await user.keyboard('{ArrowDown}{Enter}');
+  expect(onChange).toHaveBeenLastCalledWith('a');
 });
