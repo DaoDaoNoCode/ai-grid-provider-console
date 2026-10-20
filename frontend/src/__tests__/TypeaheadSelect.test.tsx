@@ -10,10 +10,12 @@ const OPTIONS = [
 ];
 
 const Harness = ({
+  onBlur,
   onChange = () => undefined,
   options = OPTIONS,
   initial = '',
 }: {
+  onBlur?: () => void;
   onChange?: (value: string) => void;
   options?: typeof OPTIONS;
   initial?: string;
@@ -26,6 +28,7 @@ const Harness = ({
       placeholder="Select an organization"
       value={value}
       options={options}
+      onBlur={onBlur}
       onChange={(next) => {
         setValue(next);
         onChange(next);
@@ -102,4 +105,22 @@ it('drops the highlight when the highlighted option goes away', async () => {
   expect(input).not.toHaveAttribute('aria-activedescendant');
   await user.keyboard('{ArrowDown}{Enter}');
   expect(onChange).toHaveBeenLastCalledWith('a');
+});
+
+it('calls onBlur when focus leaves the field, not when an option is clicked', async () => {
+  const onBlur = vi.fn();
+  const user = userEvent.setup();
+  render(
+    <>
+      <Harness onBlur={onBlur} />
+      <button type="button">Next field</button>
+    </>,
+  );
+  const input = screen.getByRole('combobox', { name: 'Organization' });
+  await user.click(input);
+  await user.click(screen.getByRole('option', { name: 'initech' }));
+  expect(input).toHaveValue('initech');
+  expect(onBlur).not.toHaveBeenCalled();
+  await user.tab();
+  expect(onBlur).toHaveBeenCalledTimes(1);
 });

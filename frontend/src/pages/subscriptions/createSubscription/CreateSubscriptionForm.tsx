@@ -110,7 +110,9 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ service, modelRefs, su
   const [groupsTouched, setGroupsTouched] = useState(false);
   const [modelsTouched, setModelsTouched] = useState(false);
   const [organizationId, setOrganizationId] = useState(subscription?.tokenMetadata?.organizationId ?? '');
-  const [organizationTouched, setOrganizationTouched] = useState(false);
+  // A subscription saved before Organization was required opens with Save disabled, so it says
+  // why straight away instead of waiting for the field to be touched.
+  const [organizationTouched, setOrganizationTouched] = useState(!!subscription && !organizationId);
   const [priority, setPriority] = useState<number | undefined>(subscription?.priority ?? 0);
   // Every subscription created here gets a matching authorization policy, as in the PoC.
   const createAuthPolicy = true;
@@ -299,6 +301,7 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ service, modelRefs, su
                 setOrganizationTouched(true);
                 setOrganizationId(value);
               }}
+              onBlur={() => setOrganizationTouched(true)}
             />
           )}
           {organizationHelper}

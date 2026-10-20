@@ -1,6 +1,6 @@
 // A single-value PatternFly typeahead select (PatternFly 6 "Select > Typeahead" example), so a
 // form's one-of-many pickers draw the same menu as MultiSelection instead of the browser's.
-import { useId, useMemo, useRef, useState, type KeyboardEvent, type Ref } from 'react';
+import { useId, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent, type Ref } from 'react';
 import {
   MenuToggle,
   type MenuToggleElement,
@@ -24,9 +24,12 @@ type Props = {
   value: string;
   options: TypeaheadSelectOption[];
   onChange: (value: string) => void;
+  /** Focus left the field (not into its own menu or toggle), as a text input's blur. */
+  onBlur?: () => void;
   placeholder?: string;
   /** Required: PatternFly's input otherwise announces itself as "Type to filter", over any <label>. */
   'aria-label': string;
+  /** 'danger' marks the field invalid, for the eye and for assistive technology. */
   status?: 'danger';
   'data-testid'?: string;
 };
@@ -36,6 +39,7 @@ export const TypeaheadSelect = ({
   value,
   options,
   onChange,
+  onBlur,
   placeholder,
   'aria-label': ariaLabel,
   status,
@@ -67,6 +71,15 @@ export const TypeaheadSelect = ({
     setFocusedValue(null);
   };
   const toggleMenu = () => (isOpen ? close() : setIsOpen(true));
+
+  // Clicking an option or the toggle button moves focus there for a moment; that isn't leaving
+  // the field, so it doesn't mark it touched before the choice lands.
+  const onInputBlur = (event: FocusEvent<HTMLInputElement>) => {
+    const next = event.relatedTarget as Node | null;
+    const ownToggle = event.currentTarget.closest('.pf-v6-c-menu-toggle');
+    if (next && (ownToggle?.contains(next) || document.getElementById(listboxId)?.contains(next))) return;
+    onBlur?.();
+  };
 
   const choose = (next: string) => {
     onChange(next);
@@ -122,7 +135,11 @@ export const TypeaheadSelect = ({
       <TextInputGroup isPlain>
         <TextInputGroupMain
           inputId={id}
-          inputProps={{ autoComplete: 'off', ...(testId && { 'data-testid': testId }) }}
+          inputProps={{
+            autoComplete: 'off',
+            'aria-invalid': status === 'danger',
+            ...(testId && { 'data-testid': testId }),
+          }}
           ref={inputRef}
           value={filter ?? selected?.label ?? ''}
           placeholder={placeholder}
@@ -138,6 +155,7 @@ export const TypeaheadSelect = ({
             setIsOpen(true);
           }}
           onKeyDown={onKeyDown}
+          onBlur={onInputBlur}
         />
       </TextInputGroup>
     </MenuToggle>

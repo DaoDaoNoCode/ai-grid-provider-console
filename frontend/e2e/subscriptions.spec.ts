@@ -12,6 +12,11 @@ test('creates, views, edits and deletes a subscription', async ({ page }) => {
   await page.getByTestId('create-subscription-button').click();
 
   await page.getByTestId('subscription-name-desc-name').fill(unique);
+  // Leaving the organization unset marks it invalid, so a disabled Create says why (from #28).
+  await page.getByTestId('subscription-organization').focus();
+  await page.keyboard.press('Tab');
+  await expect(page.getByTestId('subscription-organization')).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.getByText('Select an organization', { exact: true })).toBeVisible();
   await page.getByTestId('subscription-organization').click();
   await page.getByRole('option', { name: ORGANIZATION }).click();
   await page.getByTestId('subscription-groups').click();

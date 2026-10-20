@@ -218,7 +218,15 @@ it('requires an organization and shows it in the table', async () => {
   await fillNewSubscription(user);
   const create = screen.getByTestId('create-subscription-button');
   expect(create).toBeDisabled();
+  // Tabbing past the empty select says why Create is disabled.
+  const organization = screen.getByRole('combobox', { name: 'Organization' });
+  expect(screen.queryByText('Select an organization')).not.toBeInTheDocument();
+  organization.focus();
+  await user.tab();
+  expect(organization).toHaveAttribute('aria-invalid', 'true');
+  expect(screen.getByText('Select an organization')).toBeVisible();
   await pickOrganization(user, 'globex-research');
+  expect(organization).toHaveAttribute('aria-invalid', 'false');
   expect(screen.getByRole('combobox', { name: 'Organization' })).toHaveValue('globex-research');
   expect(create).toBeEnabled();
   await user.click(create);
@@ -545,6 +553,15 @@ it('hints that a new model needs a token limit, and labels the limit fields', as
   expect(screen.getByRole('spinbutton', { name: 'Tokens' })).toHaveValue(1000);
   expect(screen.getByRole('spinbutton', { name: 'Per' })).toHaveValue(1);
   expect(screen.getByRole('button', { name: 'Add token limit' })).toBeVisible();
+});
+
+it('says straight away that a subscription saved without an organization needs one', async () => {
+  const service = new MockConsoleService();
+  service.subscriptions[0].tokenMetadata = undefined;
+  renderAt(`/subscriptions/edit/${service.subscriptions[0].name}`, service);
+  const organization = await screen.findByRole('combobox', { name: 'Organization' });
+  expect(organization).toHaveAttribute('aria-invalid', 'true');
+  expect(screen.getByText('Select an organization')).toBeVisible();
 });
 
 it('keeps a set organization read-only when editing', async () => {
