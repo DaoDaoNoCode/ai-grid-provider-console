@@ -10,6 +10,8 @@ type Props = {
   max: number;
   onChange: (value: string) => void;
   onBlur?: () => void;
+  /** The id of the field's helper text, read with the field. */
+  describedBy?: string;
   validated?: 'error' | 'default';
   isDisabled?: boolean;
 };
@@ -26,6 +28,7 @@ export const CountInput: React.FC<Props> = ({
   max,
   onChange,
   onBlur,
+  describedBy,
   validated,
   isDisabled,
 }) => {
@@ -34,7 +37,8 @@ export const CountInput: React.FC<Props> = ({
     onChange(String(Math.min(max, Math.max(min, (Number.isNaN(current) ? min : current) + delta))));
   return (
     <NumberInput
-      id={id}
+      // The id goes on the <input> itself, so the FormGroup's label and the helper text attach to it.
+      inputProps={{ id, 'aria-describedby': describedBy }}
       inputName={id}
       inputAriaLabel={label}
       minusBtnAriaLabel={`Decrease ${label.toLowerCase()}`}
@@ -48,6 +52,12 @@ export const CountInput: React.FC<Props> = ({
       onMinus={() => step(-1)}
       onPlus={() => step(1)}
       onChange={(event: React.FormEvent<HTMLInputElement>) => {
+        // On blur NumberInput rewrites the input to Number(text), turning an empty field into 0.
+        // Put back what the user left, so an emptied field stays empty and says "Required.".
+        if (event.type === 'blur') {
+          event.currentTarget.value = value;
+          return;
+        }
         // Anything but digits (1e1, 1.5, -2) is refused rather than shown as one number and sent as another.
         const text = event.currentTarget.value.trim();
         if (WHOLE_NUMBER.test(text)) {

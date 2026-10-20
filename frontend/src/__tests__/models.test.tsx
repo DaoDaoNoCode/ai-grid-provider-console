@@ -575,6 +575,25 @@ it('takes only whole numbers in the number fields, so the shown and sent counts 
   expect(create.mock.calls[0][0].replicas).toBe(3);
 });
 
+it('keeps an emptied Replicas or GPUs field empty and says it is required', async () => {
+  const user = userEvent.setup();
+  renderAt('/models/deploy', new MockConsoleService());
+  await user.type(await screen.findByRole('textbox', { name: /Model URI/ }), 'hf://org/widget');
+  await user.type(screen.getByRole('textbox', { name: /^Model name/ }), 'org/widget');
+  await user.click(screen.getByRole('button', { name: 'Next' }));
+  for (const name of ['Replicas', 'GPUs']) {
+    const field = screen.getByRole('spinbutton', { name });
+    expect(field).toHaveAccessibleDescription(name === 'Replicas' ? 'Between 1 and 99.' : 'Between 0 and 64.');
+    await user.clear(field);
+    await user.tab();
+    // NumberInput would turn the empty field into 0 on blur.
+    expect(field).toHaveValue(null);
+    // PatternFly adds ": error status;" for screen readers.
+    expect(field).toHaveAccessibleDescription(/^Required\./);
+  }
+  expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+});
+
 it("names only the subscriptions that use this model, reading no namespace as the console's", async () => {
   const service = new MockConsoleService();
   await service.createModel(input);

@@ -370,9 +370,12 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
                   value={replicas}
                   onChange={setReplicas}
                   onBlur={() => touch('replicas')}
+                  describedBy="deployment-replicas-help"
                   validated={replicasError ? 'error' : 'default'}
                 />
-                <Help error={replicasError}>Between 1 and 99.</Help>
+                <Help id="deployment-replicas-help" error={replicasError}>
+                  Between 1 and 99.
+                </Help>
               </FormGroup>
               <FormGroup label="CPU" fieldId="deployment-cpu" isRequired>
                 <TextInput
@@ -411,9 +414,12 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
                   value={gpuCount}
                   onChange={setGpuCount}
                   onBlur={() => touch('gpuCount')}
+                  describedBy="deployment-gpus-help"
                   validated={gpuCountError ? 'error' : 'default'}
                 />
-                <Help error={gpuCountError}>Between 0 and 64.</Help>
+                <Help id="deployment-gpus-help" error={gpuCountError}>
+                  Between 0 and 64.
+                </Help>
               </FormGroup>
               <ExpandableSection toggleText="Advanced settings" isIndented>
                 <RuntimeArgsField data={runtimeArgs} onChange={setRuntimeArgs} />
