@@ -66,6 +66,12 @@ const Help: React.FC<{ children: React.ReactNode; error?: string; id?: string }>
 const notAvailable = (err: unknown, what: string) =>
   err instanceof ServiceError && err.isNotImplemented ? `${what} not available on this backend yet.` : undefined;
 
+/** Says which chosen locations are no longer offered; undefined when none are. */
+const goneLocationsError = (names: string[]) =>
+  names.length === 0
+    ? undefined
+    : `${names.join(', ')} ${names.length === 1 ? 'is' : 'are'} no longer available. Remove ${names.length === 1 ? 'it' : 'them'} to continue.`;
+
 /** "org/model" names a deployment "model": the last path segment, as a starting point. */
 const deploymentNameFor = (modelName: string) => modelName.trim().split('/').filter(Boolean).pop() ?? '';
 
@@ -93,13 +99,15 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
     [],
     0,
   );
-  const [clusters] = useServiceData(() => service.listClusters(), [], 0);
+  const [clusters, , , reloadClusters] = useServiceData(() => service.listClusters(), [], 0);
   const siteNames = useMemo(() => siteNamesOf(clusters), [clusters]);
   // AI Grid members whose location can't be chosen yet: not Ready, not provisioned, or unlabeled.
   const unavailableMembers = clusters.filter(
     (c) => c.aiGridEnabled && !(c.location && availableLocations.includes(c.location)),
   ).length;
   const [locations, setLocations] = useState<string[]>([]);
+  // Chosen locations that a reload no longer offers. They stay as chips, so the user sees why Next is disabled.
+  const goneLocations = locationsLoaded ? locations.filter((location) => !availableLocations.includes(location)) : [];
   // Like the text fields, Locations shows its error only once the user has changed it.
   const [locationsTouched, setLocationsTouched] = useState(false);
   const { data: nameDescData, onDataChange: onNameDescChange } = useK8sNameDescriptionFieldData({ maxLength: 63 });
@@ -161,11 +169,7 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
     .safeParse({ modelUri, modelName }).success;
   const deploymentValid =
     replicas !== '' && gpuCount !== '' && createModelSchema.omit({ locations: true }).strip().safeParse(input).success;
-  const locationsValid =
-    locationsLoaded &&
-    !locationsError &&
-    locations.length > 0 &&
-    locations.every((location) => availableLocations.includes(location));
+  const locationsValid = locationsLoaded && !locationsError && locations.length > 0 && goneLocations.length === 0;
   const isStepValid = (step: string) =>
     step === steps.source
       ? sourceValid
@@ -217,18 +221,26 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
           placeholder="Select locations"
           selectionRequired={locationsTouched}
           noSelectedOptionsMessage="Select at least one location."
-          value={availableLocations.map((location) => ({
-            id: location,
-            name: locationLabel(location, siteNames),
-            selected: locations.includes(location),
-          }))}
+          value={[
+            ...availableLocations.map((location) => ({
+              id: location,
+              name: locationLabel(location, siteNames),
+              selected: locations.includes(location),
+            })),
+            ...goneLocations.map((location) => ({
+              id: location,
+              name: locationLabel(location, siteNames),
+              selected: true,
+              chipOnly: true,
+            })),
+          ]}
           setValue={(options) => {
             setLocationsTouched(true);
             setLocations(options.filter((option) => option.selected).map((o) => String(o.id)));
           }}
           isDisabled={saving}
         />
-        <Help>
+        <Help error={goneLocationsError(goneLocations.map((location) => locationLabel(location, siteNames)))}>
           The model runs on the AI Grid clusters at each location you choose.
           {unavailableMembers > 0 &&
             ` ${unavailableMembers} AI Grid ${unavailableMembers === 1 ? 'cluster isn’t' : 'clusters aren’t'} listed because ${unavailableMembers === 1 ? 'it isn’t' : 'they aren’t'} Ready and provisioned with a location.`}
@@ -286,10 +298,15 @@ export const ModelWizard: React.FC<Props> = ({ service }) => {
           className="portal-model-wizard"
           isProgressive={false}
           onClose={requestLeave}
-          onStepChange={(_event, _current, previous) => {
+          onStepChange={(_event, current, previous) => {
             // Start the deployment's name from the model's, once.
             if (previous.id === steps.source && !nameDescData.name) {
               onNameDescChange('name', deploymentNameFor(modelName));
+            }
+            // A cluster can change state while the earlier steps are filled in, so offer what is available now.
+            if (current.id === steps.locations) {
+              void reloadLocations();
+              void reloadClusters();
             }
           }}
           footer={

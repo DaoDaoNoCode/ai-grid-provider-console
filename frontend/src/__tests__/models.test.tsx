@@ -171,10 +171,12 @@ it('offers Ready, provisioned locations and protects models from stale versions'
 
 it('keeps the wizard usable after a location failure and retries', async () => {
   const service = new MockConsoleService();
-  const list = service.listLocations;
+  const list = service.listLocations.bind(service);
+  // Fails when the wizard opens and again when the Locations step reloads; Retry succeeds.
+  let failures = 2;
   service.listLocations = async () => {
-    service.listLocations = list;
-    throw new ServiceError(503, 'Location catalog unavailable.');
+    if (failures-- > 0) throw new ServiceError(503, 'Location catalog unavailable.');
+    return list();
   };
   const user = userEvent.setup();
   renderAt('/models/deploy', service);
@@ -189,6 +191,44 @@ it('keeps the wizard usable after a location failure and retries', async () => {
   expect(screen.getByText('hf://org/widget')).toBeVisible();
   expect(screen.getByText(site1)).toBeVisible();
   expect(screen.getByRole('button', { name: 'Deploy' })).toBeEnabled();
+});
+
+it('loads the locations again when the Locations step opens', async () => {
+  const service = new MockConsoleService();
+  const list = service.listLocations.bind(service);
+  // When the wizard opens only site1 is available; by the Locations step all three are.
+  let calls = 0;
+  service.listLocations = async () => (calls++ === 0 ? ['site1'] : list());
+  const user = userEvent.setup();
+  renderAt('/models/deploy', service);
+  await fillModel(user);
+  await user.click(await screen.findByRole('combobox', { name: 'Locations' }));
+  expect(await screen.findByRole('option', { name: site3 })).toBeVisible();
+  expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual([site1, site2, site3]);
+});
+
+it('keeps a chosen location the reload no longer offers, and says to remove it', async () => {
+  const service = new MockConsoleService();
+  const list = service.listLocations.bind(service);
+  // site2 drops out after the first visit to the Locations step.
+  let calls = 0;
+  service.listLocations = async () => (calls++ < 2 ? list() : ['site1', 'site3']);
+  const user = userEvent.setup();
+  renderAt('/models/deploy', service);
+  await fillModel(user);
+  await user.click(await screen.findByRole('combobox', { name: 'Locations' }));
+  await user.click(screen.getByRole('option', { name: site1 }));
+  await user.click(screen.getByRole('option', { name: site2 }));
+  await user.keyboard('{Escape}');
+  await user.click(screen.getByRole('button', { name: 'Next' }));
+  await user.click(screen.getByRole('button', { name: 'Back' }));
+  expect(await screen.findByText(`${site2} is no longer available. Remove it to continue.`)).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+  await user.click(screen.getByRole('button', { name: `Remove ${site2}` }));
+  expect(screen.queryByText(/no longer available/)).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Next' }));
+  // An exact match: the review lists site1 alone.
+  expect(within(screen.getByTestId('model-review')).getByText(site1)).toBeVisible();
 });
 
 it('keeps input when saving fails', async () => {
