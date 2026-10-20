@@ -3,7 +3,7 @@
 # spare port, calls the read-only endpoints as the user from `oc login`, and
 # stops it. Nothing is changed on the cluster.
 #
-#   BACKEND_ADDRESS  backend gRPC address (default 127.0.0.1:9090, see hack/dev-backend.sh)
+#   BACKEND_ADDRESS  backend gRPC address (default 127.0.0.1:9090: make dev-forward-backend, or one from its repository)
 #   HUB_API_URL      hub API server for the provider-admin check (default: oc whoami --show-server)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -34,7 +34,7 @@ check() {
 }
 
 if ! curl -sf "${BFF_URL}/readyz" >/dev/null; then
-  echo "FAIL /readyz: no backend at ${BACKEND_ADDRESS} (run hack/dev-backend.sh)" >&2
+  echo "FAIL /readyz: no backend at ${BACKEND_ADDRESS} (run make dev-forward-backend, or the backend from its repository)" >&2
   exit 1
 fi
 echo "ok   /readyz"

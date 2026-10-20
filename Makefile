@@ -5,22 +5,34 @@ TAG ?= dev
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 CONTAINER_ENGINE ?= $(shell command -v podman 2>/dev/null || command -v docker)
 
-.PHONY: help dev dev-fake dev-fake-poc dev-backend dev-fake-backend dev-bff dev-bff-fake dev-frontend dev-frontend-fake install lint test build e2e image manifests deploy undeploy
+# The backend address the BFF dials, and where make dev-cluster forwards the hub's backend to.
+BACKEND_ADDRESS ?= 127.0.0.1:9090
+
+.PHONY: help start dev dev-cluster dev-fake dev-fake-poc dev-forward-backend dev-fake-backend dev-bff dev-bff-fake dev-frontend dev-frontend-fake install lint test build e2e image manifests deploy undeploy
 
 help: ## Show targets
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
-##@ Development against the cluster from your kubeconfig (run `oc login` first)
+##@ Development against the hub from your kubeconfig (run `oc login` first)
 
-dev: ## Run the backend on :9090, the BFF on :8080 and the frontend on :9000 together
+start: dev-cluster ## Same as dev-cluster: oc login, then make start
+
+dev-cluster: ## The console as the hub serves it: its deployed backend (port-forwarded to :9090), the BFF on :8080 and the frontend on :9000
+	@BACKEND_ADDRESS=$(BACKEND_ADDRESS) hack/forward-backend.sh --check
 	@trap 'kill 0' INT TERM; \
-	$(MAKE) -s dev-backend & \
+	$(MAKE) -s dev-forward-backend & \
 	$(MAKE) -s dev-bff & \
 	$(MAKE) -s dev-frontend & \
 	wait
 
-dev-backend: ## Run ai-grid-backend locally against your kubeconfig (clones it on first use)
-	hack/dev-backend.sh
+dev: ## The BFF on :8080 and the frontend on :9000, against a backend you run on BACKEND_ADDRESS (from ai-grid-provider-backend)
+	@trap 'kill 0' INT TERM; \
+	$(MAKE) -s dev-bff & \
+	$(MAKE) -s dev-frontend & \
+	wait
+
+dev-forward-backend: ## Forward the backend of the console deployed on the hub to BACKEND_ADDRESS (NAMESPACE, DEPLOYMENT)
+	BACKEND_ADDRESS=$(BACKEND_ADDRESS) hack/forward-backend.sh
 
 ##@ Development without a cluster (fake backend and fake hub from mock/fixtures, see mock/README.md)
 
@@ -44,7 +56,7 @@ dev-frontend-fake: ## Run the Vite dev server as dev-user with a fixture token (
 	cd frontend && AUTH_TOKEN=$${AUTH_TOKEN:-dev-token} AUTH_USER=$${AUTH_USER:-dev-user} pnpm dev
 
 dev-bff: ## Run the BFF; callers must send the identity headers (see hack/api.sh)
-	$(MAKE) -C bff run
+	$(MAKE) -C bff run BACKEND_ADDRESS=$(BACKEND_ADDRESS)
 
 dev-frontend: ## Run the Vite dev server, which injects `oc whoami -t`
 	cd frontend && pnpm dev

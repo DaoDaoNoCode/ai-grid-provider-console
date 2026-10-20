@@ -9,7 +9,7 @@ browser --JSON--> kube-auth-proxy + bff --gRPC--> ai-grid-backend --> hub API, K
 ```
 
 The BFF owns login, the browser API and the static frontend. Every call to the cluster
-goes through [ai-grid-backend](https://github.com/yuvalturg/ai-grid-backend), which runs in
+goes through [ai-grid-provider-backend](https://github.com/ai-grid-cloud/ai-grid-provider-backend), which runs in
 the same pod. The BFF forwards who is calling, and asks the hub one question itself with
 the caller's own token: may this user patch ManagedClusters? That answer is `isProviderAdmin`.
 
@@ -20,7 +20,7 @@ the caller's own token: may this user patch ManagedClusters? That answer is `isP
 | `bff/` | Go backend-for-frontend: `/api/v1/*` as JSON over the backend's gRPC, plus the built frontend |
 | `frontend/` | Vite, React 18, PatternFly 6 |
 | `manifests/` | Kustomize deployment: kube-auth-proxy, bff and ai-grid-backend in one pod |
-| `hack/` | `dev-backend.sh`, `deploy.sh`, `undeploy.sh`, `api.sh` (curl as you), `smoke.sh` |
+| `hack/` | `forward-backend.sh` (the hub's backend for `make start`), `hub-ca.sh`, `deploy.sh`, `undeploy.sh`, `api.sh` (curl as you), `smoke.sh` |
 | `docs/dev-setup.md` | Running against a real cluster, checks, deploying |
 | `docs/plan/bff-api.md` | API decisions, endpoint list, RPCs still needed from the backend |
 | `docs/plan/work-breakdown.md` | Work split across backend, BFF and frontend |
@@ -31,10 +31,11 @@ the caller's own token: may this user patch ManagedClusters? That answer is `isP
 ```sh
 oc login ...
 make install
-make dev          # backend :9090, BFF :8080, frontend :9000
+make start        # the hub's deployed backend on :9090, BFF :8080, frontend :9000
 ```
 
-Then open http://127.0.0.1:9000. See `docs/dev-setup.md` for details.
+Then open http://127.0.0.1:9000. To run your own backend from its repository instead, use
+`make dev`; without a cluster, `make dev-fake`. See `docs/dev-setup.md` for details.
 
 ## Pages
 

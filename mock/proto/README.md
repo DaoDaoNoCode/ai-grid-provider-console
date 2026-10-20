@@ -28,8 +28,7 @@ What keeps it honest:
   and methods are only appended.
 - **The backend's real file is vendored.** `mock/proto/upstream/ai_grid.proto` is a copy of
   `proto/ai_grid/v1/ai_grid.proto` from the backend repository at the commit in
-  `mock/proto/upstream/COMMIT`. `hack/sync-upstream-proto.sh <ref>` refreshes both;
-  `hack/dev-backend.sh` runs the backend at that commit.
+  `mock/proto/upstream/COMMIT`. `hack/sync-upstream-proto.sh <ref>` refreshes both.
 - **A test proves the superset.** `bff/internal/protodrift` compiles the vendored file with
   `protocompile` and checks, against the draft's generated descriptors, that every upstream
   service, method (same input and output), message, field (same number, name, cardinality
