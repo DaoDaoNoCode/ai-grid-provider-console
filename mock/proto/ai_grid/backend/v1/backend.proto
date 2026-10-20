@@ -1,0 +1,100 @@
+// Stopgap: the messages of the backend's real ai_grid.v1 Clusters and
+// Tenants services, copied from ai-grid-provider-backend proto/ai_grid/v1 at ca9703c
+// (clusters_service, managed_cluster_type, metadata_type, tenant_type, tenants_service), so the
+// BFF can call those RPCs. Field numbers, names and types are unchanged; the validation and HTTP
+// options are dropped. The package is renamed because the draft in ../../v1 declares the same
+// message names in ai_grid.v1: protobuf is wire-compatible across package names, and the BFF
+// calls the real method paths (/ai_grid.v1.Clusters/List ...) itself (bff/internal/backend/v1.go).
+syntax = "proto3";
+
+package ai_grid.backend.v1;
+
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/backend/v1;backendv1";
+
+message Metadata {
+  google.protobuf.Timestamp creation_timestamp = 1;
+  google.protobuf.Timestamp deletion_timestamp = 2;
+  string creator = 3;
+  string tenant = 4;
+  string name = 5;
+  map<string, string> labels = 6;
+  map<string, string> annotations = 7;
+  int32 version = 8;
+}
+
+message ManagedCluster {
+  string id = 1;
+  Metadata metadata = 2;
+  ManagedClusterSpec spec = 3;
+  ManagedClusterStatus status = 4;
+}
+
+message ManagedClusterSpec {
+  bool hub_accepts_client = 1;
+}
+
+message ManagedClusterStatus {
+  bool available = 1;
+  bool joined = 2;
+  string available_condition = 3;
+}
+
+message ClustersListRequest {
+  optional int32 offset = 1;
+  optional int32 limit = 2;
+  optional string filter = 3;
+  optional string order = 4;
+}
+
+message ClustersListResponse {
+  int32 size = 1;
+  int32 total = 2;
+  repeated ManagedCluster items = 3;
+}
+
+message ClustersGetRequest {
+  string id = 1;
+}
+
+message ClustersGetResponse {
+  ManagedCluster object = 1;
+}
+
+message ClustersUpdateRequest {
+  ManagedCluster object = 1;
+  google.protobuf.FieldMask update_mask = 2;
+  bool lock = 3;
+}
+
+message ClustersUpdateResponse {
+  ManagedCluster object = 1;
+}
+
+message Tenant {
+  string id = 1;
+  Metadata metadata = 2;
+  TenantSpec spec = 3;
+  TenantStatus status = 4;
+}
+
+message TenantSpec {
+  repeated string domains = 1;
+}
+
+message TenantStatus {}
+
+message TenantsListRequest {
+  optional int32 offset = 1;
+  optional int32 limit = 2;
+  optional string filter = 3;
+  optional string order = 4;
+}
+
+message TenantsListResponse {
+  int32 size = 1;
+  int32 total = 2;
+  repeated Tenant items = 3;
+}

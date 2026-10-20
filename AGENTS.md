@@ -64,6 +64,11 @@ when the RPCs allow it.
   `feature.open-cluster-management.io/addon-*` labels; the list sorted by name.
 - `fetchCluster`: against a backend without `GetManagedCluster` (the shipped one), the BFF
   filters `ListManagedClusters` by name and writes its own NotFound message.
+- The stopgap clients for the backend's current `ai_grid.v1` (`bff/internal/backend/v1.go`),
+  until the console moves to Connect and the backend's contract: `FromV1Cluster` derives the
+  draft's cluster state from `spec.hub_accepts_client`, `status.joined`,
+  `status.available_condition` and the deletion time, and `GetTenant` finds the tenant in the
+  list.
 - `toTenant` (`bff/internal/api/tenants.go`), fallbacks for the shipped backend: `alias`
   defaults to the name, `enabled` defaults to true, `domainDetails` is built from `domains`.
 - `toModel` (`bff/internal/api/models.go`): `displayName` and `description` from the

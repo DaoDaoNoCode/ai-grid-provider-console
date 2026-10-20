@@ -64,4 +64,4 @@ check-generated: ## fail when gen/ differs from what ../mock/proto generates: st
 	tmp="$$(mktemp -d)" && trap 'rm -rf "$$tmp"' EXIT && \
 	sed "s#\.\./\.\./bff/gen#$$tmp/gen#" $(PROTO_DIR)/buf.gen.yaml > "$$tmp/buf.gen.yaml" && \
 	(cd $(PROTO_DIR) && GOTOOLCHAIN=$(GEN_TOOLCHAIN) $(BUF) generate --template "$$tmp/buf.gen.yaml") && \
-	diff -r --exclude=README.md "$$tmp/gen/ai_grid/v1" gen/ai_grid/v1
+	diff -r --exclude=README.md "$$tmp/gen/ai_grid" gen/ai_grid

@@ -34,6 +34,22 @@ backend service for cluster access and this BFF for the browser.
 - RPCs on 2026-10-15: `AiGrid/Ping`, `ManagedClusters/ListManagedClusters` (name, labels,
   hubAcceptsClient), `Tenants/ListTenants` (Keycloak Organizations in the `ai-grid` realm).
 
+
+### Against a real backend (stopgap)
+
+Until the console moves to Connect and the backend's generated contract (issues 20–27 and the
+ADRs in `docs/adr/`), the BFF calls a real backend's `ai_grid.v1.Clusters` `List`, `Get` and
+`Update` and `Tenants/List` for the clusters and tenants routes, and maps them onto the draft
+types, so the handlers and the JSON above are unchanged (`bff/internal/backend/v1.go`, messages in
+`mock/proto/ai_grid/backend/v1`). The fake backend still serves the draft, so `--fake-backend`
+keeps the draft clients. `If-Match` maps to `metadata.version` with `lock: true`, and the
+`labels` and `annotations` mask paths to `metadata.labels` and `metadata.annotations`. The
+cluster state is derived from `spec.hub_accepts_client`, `status.joined` and
+`status.available_condition` only. The tenant list forwards `offset`, `limit` and `filter`; the
+backend pages but doesn't evaluate `filter` yet, so a filtered list answers 501. `GetTenant` reads
+the list, and tenant writes answer 501. Backend PR 12 refuses a change to a label or annotation
+outside `ai-grid/*` and `location`, and a bad coordinate, with `InvalidArgument` (422).
+
 ## Decisions
 
 | Topic | Decision | Why |
