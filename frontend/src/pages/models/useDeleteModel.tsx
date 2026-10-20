@@ -74,7 +74,10 @@ export const useDeleteModel = (
       testId="delete-deployment-modal"
     >
       <Stack hasGutter>
-        <p>Delete this model, its saved deployment, and its location placement resources?</p>
+        <p>
+          Delete this model, its saved deployment, and its location placement resources? Remove references from
+          subscriptions and authorization policies first.
+        </p>
         <ReferencingSubscriptions service={service} model={selected} />
       </Stack>
     </DeleteModal>

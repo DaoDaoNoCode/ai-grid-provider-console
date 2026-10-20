@@ -108,6 +108,8 @@ it('walks the deployment wizard, selects locations, saves the model and removes 
   await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
   const dialog = await screen.findByTestId('delete-deployment-modal');
   expect(dialog).toHaveTextContent('Delete model deployment?');
+  // The backend also refuses while an authorization policy references the model.
+  expect(dialog).toHaveTextContent('Remove references from subscriptions and authorization policies first.');
   expect(within(dialog).getByRole('button', { name: 'Delete' })).toBeDisabled();
   await user.type(within(dialog).getByTestId('delete-modal-input'), 'Widget');
   await user.click(within(dialog).getByRole('button', { name: 'Delete' }));

@@ -61,7 +61,13 @@ describe('administrator subscription flows', () => {
     const details = screen.getByTestId('subscription-details-section');
     expect(details).not.toHaveTextContent(/^Name/);
     expect(within(details).getByTestId('subscription-priority')).toHaveTextContent('100');
-    expect(within(details).getByTestId('subscription-auth-policies')).toHaveTextContent('Engineering policy');
+    // The backend lists every policy covering one of its models, so the term says so; a policy's
+    // phase reads as itself (Active), not as a subscription's Ready.
+    const policies = within(details).getByTestId('subscription-auth-policies');
+    expect(policies).toHaveTextContent('Engineering policy');
+    expect(policies).toHaveTextContent('Active');
+    expect(policies).not.toHaveTextContent('Ready');
+    expect(within(details).getByText('Policies for its models')).toBeVisible();
     expect(screen.getByTestId('subscription-models-table')).toHaveTextContent('100,000 / 1 hour');
     expect(screen.getByTestId('subscription-models-table')).toHaveTextContent('Ready');
   });

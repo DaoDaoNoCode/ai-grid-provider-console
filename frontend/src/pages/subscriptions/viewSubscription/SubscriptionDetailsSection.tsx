@@ -12,13 +12,12 @@ import { PhaseLabel } from '../../../components/Phase/PhaseLabel';
 import { StatusLabel } from '../../../components/StatusLabel';
 import { getSubscriptionAffectedModels } from '../../../hooks/useGovernanceAffectedModels';
 import { formatDateTime } from '../../../utilities/format';
-import { normalizePhase } from '../../../utilities/phaseLabelUtils';
 
 type Props = {
   subscription: MaaSSubscription;
   /** The referenced models' MaaSModelRef statuses. */
   modelRegistrations: ModelRegistration[];
-  /** The authorization policies that grant this subscription's groups its models. */
+  /** The authorization policies that cover any of this subscription's models, as the backend lists them. */
   authPolicies: MaaSAuthPolicy[];
   /** The organization's name, or its id when the organization is unknown. */
   organization: string;
@@ -56,14 +55,18 @@ export const SubscriptionDetailsSection: React.FC<Props> = ({
           { term: 'Organization', value: organization, 'data-testid': 'subscription-organization' },
           { term: 'Priority', value: subscription.priority, 'data-testid': 'subscription-priority' },
           {
-            term: 'Authorization policies',
+            // The backend lists every policy covering one of the models, whichever groups it
+            // grants, so the term says that rather than implying these policies are this
+            // subscription's own.
+            term: 'Policies for its models',
             'data-testid': 'subscription-auth-policies',
             value: authPolicies.length ? (
               <Stack>
                 {authPolicies.map((policy) => (
                   <Flex key={policy.name} spaceItems={{ default: 'spaceItemsSm' }}>
                     <span>{policy.displayName ?? policy.name}</span>
-                    <StatusLabel isCompact status={normalizePhase(policy.phase)} reason={policy.statusMessage} />
+                    {/* A policy's phases are Pending and Active; only a subscription's Active reads Ready. */}
+                    <StatusLabel isCompact status={policy.phase?.trim() || 'Unknown'} reason={policy.statusMessage} />
                   </Flex>
                 ))}
               </Stack>
