@@ -156,10 +156,14 @@ func toGridCluster(mc *aigridv1.ManagedCluster) GridCluster {
 		}
 	}
 	gpu, _ := strconv.Atoi(st.GetCapacity()[CapacityGPU])
+	provisioned := labels[LabelProvisioned] == "true"
+	if st != nil && st.Provisioning != nil {
+		provisioned = st.GetProvisioning() == "Compliant"
+	}
 	return GridCluster{
 		Name:              mc.GetName(),
 		AIGridEnabled:     labels[LabelEnabled] == "true",
-		Provisioned:       labels[LabelProvisioned] == "true",
+		Provisioned:       provisioned,
 		HubAcceptsClient:  mc.GetHubAcceptsClient(),
 		Location:          labels[LabelLocation],
 		Site:              labels[LabelSite],

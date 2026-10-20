@@ -477,7 +477,13 @@ type ManagedClusterStatus struct {
 	// UNKNOWN with the Available condition absent). Filling it for every state
 	// is this proposal's choice: the ACM console shows a message only for
 	// importing, importfailed, offline and unknown.
-	StateMessage  string `protobuf:"bytes,7,opt,name=state_message,json=stateMessage,proto3" json:"state_message,omitempty"`
+	StateMessage string `protobuf:"bytes,7,opt,name=state_message,json=stateMessage,proto3" json:"state_message,omitempty"`
+	// AI Grid provisioning, from the cluster's compliance with the hub's
+	// ai-grid-ready Policy: "Compliant", "NonCompliant", "Pending" (placed, no
+	// result yet), or empty when the Policy doesn't cover the cluster. Unset
+	// when the backend doesn't report it; the console then reads the
+	// ai-grid/provisioned label.
+	Provisioning  *string `protobuf:"bytes,8,opt,name=provisioning,proto3,oneof" json:"provisioning,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -557,6 +563,13 @@ func (x *ManagedClusterStatus) GetClusterClaims() []*ClusterClaim {
 func (x *ManagedClusterStatus) GetStateMessage() string {
 	if x != nil {
 		return x.StateMessage
+	}
+	return ""
+}
+
+func (x *ManagedClusterStatus) GetProvisioning() string {
+	if x != nil && x.Provisioning != nil {
+		return *x.Provisioning
 	}
 	return ""
 }
@@ -656,7 +669,7 @@ const file_ai_grid_v1_managed_cluster_type_proto_rawDesc = "" +
 	"time_added\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\ttimeAdded\"=\n" +
 	"\fClientConfig\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\x12\x1b\n" +
-	"\tca_bundle\x18\x02 \x01(\fR\bcaBundle\"\xb7\x04\n" +
+	"\tca_bundle\x18\x02 \x01(\fR\bcaBundle\"\xf1\x04\n" +
 	"\x14ManagedClusterStatus\x125\n" +
 	"\x05state\x18\x01 \x01(\x0e2\x1f.ai_grid.v1.ManagedClusterStateR\x05state\x125\n" +
 	"\n" +
@@ -666,13 +679,15 @@ const file_ai_grid_v1_managed_cluster_type_proto_rawDesc = "" +
 	"\bcapacity\x18\x04 \x03(\v2..ai_grid.v1.ManagedClusterStatus.CapacityEntryR\bcapacity\x12S\n" +
 	"\vallocatable\x18\x05 \x03(\v21.ai_grid.v1.ManagedClusterStatus.AllocatableEntryR\vallocatable\x12?\n" +
 	"\x0ecluster_claims\x18\x06 \x03(\v2\x18.ai_grid.v1.ClusterClaimR\rclusterClaims\x12#\n" +
-	"\rstate_message\x18\a \x01(\tR\fstateMessage\x1a;\n" +
+	"\rstate_message\x18\a \x01(\tR\fstateMessage\x12'\n" +
+	"\fprovisioning\x18\b \x01(\tH\x00R\fprovisioning\x88\x01\x01\x1a;\n" +
 	"\rCapacityEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a>\n" +
 	"\x10AllocatableEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"8\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\x0f\n" +
+	"\r_provisioning\"8\n" +
 	"\fClusterClaim\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value*\x93\x03\n" +
@@ -743,6 +758,7 @@ func file_ai_grid_v1_managed_cluster_type_proto_init() {
 		return
 	}
 	file_ai_grid_v1_condition_type_proto_init()
+	file_ai_grid_v1_managed_cluster_type_proto_msgTypes[3].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

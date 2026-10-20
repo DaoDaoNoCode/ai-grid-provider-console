@@ -24,6 +24,7 @@ const tones: Record<string, StatusTone> = {
   Unknown: 'neutral',
   Provisioned: 'success',
   Provisioning: 'info',
+  'Provisioning failed': 'danger',
   'Not provisioned': 'neutral',
   // Models (ManagedModel.phase) and subscriptions (normalized MaaSSubscription phases).
   Active: 'success',

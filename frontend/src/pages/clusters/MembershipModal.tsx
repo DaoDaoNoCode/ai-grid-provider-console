@@ -1,14 +1,53 @@
 import { useState } from 'react';
-import { Alert, Button, Modal, ModalBody, ModalFooter, ModalHeader, Stack } from '@patternfly/react-core';
+import {
+  Alert,
+  Button,
+  Form,
+  FormGroup,
+  FormHelperText,
+  HelperText,
+  HelperTextItem,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
+  Stack,
+  TextInput,
+} from '@patternfly/react-core';
+import type { ClusterRole, GridMembership } from '../../api/clusters';
 import { ServiceError } from '../../api/ConsoleService';
 import type { GridCluster } from '../../api/types';
+import { TypeaheadSelect } from '../../components/TypeaheadSelect';
 
 export type MembershipChange = { cluster: GridCluster; join: boolean };
 
 type Props = MembershipChange & {
   /** Makes the change; the modal closes once it resolves and shows the error if it throws. */
-  onConfirm: () => Promise<void>;
+  onConfirm: (membership?: GridMembership) => Promise<void>;
   onClose: () => void;
+};
+
+const roles: { value: ClusterRole; label: string; description: string }[] = [
+  { value: 'combined', label: 'Combined', description: 'Takes tenant traffic and serves models.' },
+  { value: 'ingress', label: 'Ingress', description: 'Takes tenant traffic and routes it to inference clusters.' },
+  { value: 'inference', label: 'Inference', description: 'Serves models behind an ingress cluster.' },
+];
+
+// A Kubernetes label value: what the hub accepts for `location`.
+const labelValue = /^[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$/;
+
+const locationError = (location: string) => {
+  if (!location) return 'Required.';
+  if (!labelValue.test(location)) {
+    return 'Use up to 63 letters, digits, hyphens, underscores or dots, starting and ending with a letter or digit.';
+  }
+  return undefined;
+};
+
+/** The cluster's role label when it's one of ours; otherwise combined for the hub itself. */
+const defaultRole = (cluster: GridCluster): ClusterRole | '' => {
+  const current = roles.find((r) => r.value === cluster.labels['ai-grid/role']);
+  return current?.value ?? (cluster.name === 'local-cluster' ? 'combined' : '');
 };
 
 const errorMessage = (err: unknown, join: boolean) => {
@@ -18,17 +57,27 @@ const errorMessage = (err: unknown, join: boolean) => {
   return err instanceof Error ? err.message : 'The cluster could not be changed.';
 };
 
-/** Confirms adding a cluster to AI Grid or removing it, and keeps a failure in view. */
+/** Confirms adding a cluster to AI Grid, with its location and role, or removing it, and keeps a failure in view. */
 export const MembershipModal: React.FC<Props> = ({ cluster, join, onConfirm, onClose }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const [location, setLocation] = useState(cluster.location ?? '');
+  const [role, setRole] = useState(defaultRole(cluster));
+  const [touched, setTouched] = useState({ location: false, role: false });
   const title = join ? `Add ${cluster.name} to AI Grid?` : `Remove ${cluster.name} from AI Grid?`;
+  const locationInvalid = locationError(location.trim());
+  const shownLocationError = touched.location ? locationInvalid : undefined;
+  const shownRoleError = touched.role && !role ? 'Required.' : undefined;
 
   const confirm = async () => {
+    if (join && (locationInvalid || !role)) {
+      setTouched({ location: true, role: true });
+      return;
+    }
     setBusy(true);
     setError(undefined);
     try {
-      await onConfirm();
+      await onConfirm(join && role ? { location: location.trim(), role } : undefined);
     } catch (err) {
       setError(errorMessage(err, join));
       setBusy(false);
@@ -42,13 +91,55 @@ export const MembershipModal: React.FC<Props> = ({ cluster, join, onConfirm, onC
         <Stack hasGutter>
           <p>
             {join
-              ? 'AI Grid provisions the cluster, and model placements can then choose its location.'
-              : 'Model placements stop choosing this cluster, and models already placed on it are removed from it.'}
+              ? 'The hub installs AI Grid on the cluster for its role, and model placements can then choose its location.'
+              : 'The hub stops delivering AI Grid to this cluster, and model placements stop choosing it. Nothing is uninstalled: OpenShift AI, the grid and the models already on the cluster keep running.'}
           </p>
-          {join && !cluster.location && (
-            <Alert isInline isPlain variant="warning" title="This cluster has no location label">
-              Models can’t be deployed to it until it has one.
-            </Alert>
+          {join && (
+            <Form id="cluster-membership-form" onSubmit={(e) => e.preventDefault()}>
+              <FormGroup label="Location" fieldId="cluster-location" isRequired>
+                <TextInput
+                  id="cluster-location"
+                  value={location}
+                  isRequired
+                  isDisabled={busy}
+                  validated={shownLocationError ? 'error' : 'default'}
+                  aria-describedby="cluster-location-help"
+                  onChange={(_e, value) => setLocation(value)}
+                  onBlur={() => setTouched((t) => ({ ...t, location: true }))}
+                />
+                <FormHelperText>
+                  <HelperText id="cluster-location-help">
+                    <HelperTextItem variant={shownLocationError ? 'error' : 'default'}>
+                      {shownLocationError ??
+                        'The location label that model placements choose clusters by, such as us-east.'}
+                    </HelperTextItem>
+                  </HelperText>
+                </FormHelperText>
+              </FormGroup>
+              <FormGroup label="Role" fieldId="cluster-role" isRequired>
+                <TypeaheadSelect
+                  id="cluster-role"
+                  aria-label="Role"
+                  value={role}
+                  options={roles}
+                  placeholder="Select a role"
+                  status={shownRoleError ? 'danger' : undefined}
+                  aria-describedby="cluster-role-help"
+                  onChange={(value) => {
+                    setTouched((t) => ({ ...t, role: true }));
+                    setRole(value as ClusterRole);
+                  }}
+                  onBlur={() => setTouched((t) => ({ ...t, role: true }))}
+                />
+                <FormHelperText>
+                  <HelperText id="cluster-role-help">
+                    <HelperTextItem variant={shownRoleError ? 'error' : 'default'}>
+                      {shownRoleError ?? 'Which AI Grid pieces the hub installs on the cluster.'}
+                    </HelperTextItem>
+                  </HelperText>
+                </FormHelperText>
+              </FormGroup>
+            </Form>
           )}
           {error && (
             <Alert

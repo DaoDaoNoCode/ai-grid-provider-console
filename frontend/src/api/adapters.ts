@@ -42,7 +42,13 @@ export const toGridCluster = (json: ApiCluster): GridCluster => ({
   statusMessage: json.statusMessage,
   aiGridEnabled: json.aiGridEnabled,
   provisioned: json.provisioned,
-  provisioningStatus: json.provisioned ? 'Provisioned' : json.aiGridEnabled ? 'Provisioning' : 'Not provisioned',
+  provisioningStatus: json.provisioned
+    ? 'Provisioned'
+    : json.aiGridEnabled
+      ? json.provisioning === 'NonCompliant'
+        ? 'Provisioning failed'
+        : 'Provisioning'
+      : 'Not provisioned',
   hubAcceptsClient: json.hubAcceptsClient ?? false,
   location: json.location,
   site: json.site,

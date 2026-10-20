@@ -59,6 +59,12 @@ describe('toGridCluster', () => {
   it('shows the provisioning word', () => {
     expect(toGridCluster(apiCluster()).provisioningStatus).toBe('Provisioned');
     expect(toGridCluster(apiCluster({ provisioned: false })).provisioningStatus).toBe('Provisioning');
+    expect(toGridCluster(apiCluster({ provisioned: false, provisioning: 'Pending' })).provisioningStatus).toBe(
+      'Provisioning',
+    );
+    expect(toGridCluster(apiCluster({ provisioned: false, provisioning: 'NonCompliant' })).provisioningStatus).toBe(
+      'Provisioning failed',
+    );
     expect(toGridCluster(apiCluster({ aiGridEnabled: false, provisioned: false })).provisioningStatus).toBe(
       'Not provisioned',
     );

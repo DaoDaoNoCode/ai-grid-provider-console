@@ -599,6 +599,15 @@ func TestStateStrings(t *testing.T) {
 	if lat := toGridCluster(&aigridv1.ManagedCluster{Annotations: map[string]string{AnnotationLatitude: "north"}}).Latitude; lat != nil {
 		t.Errorf("invalid latitude must be omitted, got %v", *lat)
 	}
+	// A backend that reports provisioning decides it over the ai-grid/provisioned
+	// label. NonCompliant isn't failed: the cluster may still be installing.
+	stale := map[string]string{LabelEnabled: "true", LabelProvisioned: "true"}
+	for value, want := range map[string]bool{"Compliant": true, "NonCompliant": false, "Pending": false, "": false} {
+		c := toGridCluster(&aigridv1.ManagedCluster{Labels: stale, Status: &aigridv1.ManagedClusterStatus{Provisioning: &value}})
+		if c.Provisioned != want {
+			t.Errorf("provisioning %q -> provisioned %v, want %v", value, c.Provisioned, want)
+		}
+	}
 }
 
 // withIfMatch sets the If-Match header every PATCH and DELETE must carry.

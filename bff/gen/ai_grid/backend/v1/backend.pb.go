@@ -1,5 +1,6 @@
 // Stopgap: the messages of the backend's real ai_grid.v1 Clusters and
-// Tenants services, copied from ai-grid-provider-backend proto/ai_grid/v1 at ca9703c
+// Tenants services, copied from ai-grid-provider-backend proto/ai_grid/v1 at ca9703c (and
+// ManagedClusterStatus.provisioning from ai-grid-provider-backend PR 12, 5a5c51e)
 // (clusters_service, managed_cluster_type, metadata_type, tenant_type, tenants_service), so the
 // BFF can call those RPCs. Field numbers, names and types are unchanged; the validation and HTTP
 // options are dropped. The package is renamed because the draft in ../../v1 declares the same
@@ -248,6 +249,7 @@ type ManagedClusterStatus struct {
 	Available          bool                   `protobuf:"varint,1,opt,name=available,proto3" json:"available,omitempty"`
 	Joined             bool                   `protobuf:"varint,2,opt,name=joined,proto3" json:"joined,omitempty"`
 	AvailableCondition string                 `protobuf:"bytes,3,opt,name=available_condition,json=availableCondition,proto3" json:"available_condition,omitempty"`
+	Provisioning       string                 `protobuf:"bytes,4,opt,name=provisioning,proto3" json:"provisioning,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -299,6 +301,13 @@ func (x *ManagedClusterStatus) GetJoined() bool {
 func (x *ManagedClusterStatus) GetAvailableCondition() string {
 	if x != nil {
 		return x.AvailableCondition
+	}
+	return ""
+}
+
+func (x *ManagedClusterStatus) GetProvisioning() string {
+	if x != nil {
+		return x.Provisioning
 	}
 	return ""
 }
@@ -925,11 +934,12 @@ const file_ai_grid_backend_v1_backend_proto_rawDesc = "" +
 	"\x04spec\x18\x03 \x01(\v2&.ai_grid.backend.v1.ManagedClusterSpecR\x04spec\x12@\n" +
 	"\x06status\x18\x04 \x01(\v2(.ai_grid.backend.v1.ManagedClusterStatusR\x06status\"B\n" +
 	"\x12ManagedClusterSpec\x12,\n" +
-	"\x12hub_accepts_client\x18\x01 \x01(\bR\x10hubAcceptsClient\"}\n" +
+	"\x12hub_accepts_client\x18\x01 \x01(\bR\x10hubAcceptsClient\"\xa1\x01\n" +
 	"\x14ManagedClusterStatus\x12\x1c\n" +
 	"\tavailable\x18\x01 \x01(\bR\tavailable\x12\x16\n" +
 	"\x06joined\x18\x02 \x01(\bR\x06joined\x12/\n" +
-	"\x13available_condition\x18\x03 \x01(\tR\x12availableCondition\"\xaf\x01\n" +
+	"\x13available_condition\x18\x03 \x01(\tR\x12availableCondition\x12\"\n" +
+	"\fprovisioning\x18\x04 \x01(\tR\fprovisioning\"\xaf\x01\n" +
 	"\x13ClustersListRequest\x12\x1b\n" +
 	"\x06offset\x18\x01 \x01(\x05H\x00R\x06offset\x88\x01\x01\x12\x19\n" +
 	"\x05limit\x18\x02 \x01(\x05H\x01R\x05limit\x88\x01\x01\x12\x1b\n" +

@@ -40,10 +40,12 @@ const pick = async (user: User, cluster: string, item: string) => {
   await user.click(screen.getByRole('menuitem', { name: item }));
 };
 
-/** Adds a cluster from its row menu and confirms. */
+/** Adds a cluster from its row menu as an inference cluster, keeping its location, and confirms. */
 const add = async (user: User, cluster: string) => {
   await pick(user, cluster, 'Add to AI Grid');
   const modal = await screen.findByTestId('cluster-membership-modal');
+  await user.click(within(modal).getByRole('combobox', { name: 'Role' }));
+  await user.click(await screen.findByRole('option', { name: /Inference/ }));
   await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
   return modal;
 };
@@ -71,7 +73,7 @@ it('lists live Hub states, includes AI Grid navigation and enrolls with a label-
   expect(await screen.findByText('cluster-b added to AI Grid')).toBeVisible();
   expect(screen.queryByTestId('cluster-membership-modal')).not.toBeInTheDocument();
   const enrolled = service.clusters.find((c) => c.name === 'cluster-b')!;
-  expect(enrolled.labels).toEqual({ location: 'site2', 'ai-grid/enabled': 'true' });
+  expect(enrolled.labels).toEqual({ location: 'site2', 'ai-grid/enabled': 'true', 'ai-grid/role': 'inference' });
   expect(enrolled.location).toBe('site2');
   await user.type(screen.getByRole('textbox', { name: 'Search clusters' }), 'cluster-c');
   expect(within(screen.getByTestId('clusters-table')).queryByText('cluster-a')).not.toBeInTheDocument();
@@ -86,6 +88,7 @@ it('removes a member from AI Grid after a confirmation', async () => {
   await pick(user, 'cluster-a', 'Remove from AI Grid');
   const modal = await screen.findByTestId('cluster-membership-modal');
   expect(modal).toHaveTextContent('Remove cluster-a from AI Grid?');
+  expect(modal).toHaveTextContent('Nothing is uninstalled');
   await user.click(within(modal).getByRole('button', { name: 'Remove' }));
   expect(await screen.findByText('cluster-a removed from AI Grid')).toBeVisible();
   const removed = service.clusters.find((c) => c.name === 'cluster-a')!;
@@ -95,18 +98,34 @@ it('removes a member from AI Grid after a confirmation', async () => {
   ).not.toBeInTheDocument();
 });
 
-it('warns about a member without a location, and before adding a cluster without one', async () => {
+it('warns about a member without a location, and asks for a location and role before adding', async () => {
   const user = userEvent.setup();
-  renderAt(
-    '/clusters',
-    serviceWith([
-      cluster('no-location-member', 'Ready', { 'ai-grid/enabled': 'true' }),
-      cluster('no-location', 'Ready'),
-    ]),
-  );
+  const service = serviceWith([
+    cluster('no-location-member', 'Ready', { 'ai-grid/enabled': 'true' }),
+    cluster('no-location', 'Ready'),
+    cluster('local-cluster', 'Ready'),
+  ]);
+  renderAt('/clusters', service);
   expect(await screen.findByTestId('missing-location-no-location-member')).toHaveTextContent('No location');
   await pick(user, 'no-location', 'Add to AI Grid');
-  expect(await screen.findByTestId('cluster-membership-modal')).toHaveTextContent('This cluster has no location label');
+  const modal = await screen.findByTestId('cluster-membership-modal');
+  await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
+  // Nothing is written until both are given; each field says why and describes its error.
+  const location = within(modal).getByRole('textbox', { name: 'Location' });
+  const role = within(modal).getByRole('combobox', { name: 'Role' });
+  expect(location).toHaveAttribute('aria-invalid', 'true');
+  expect(role).toHaveAttribute('aria-invalid', 'true');
+  expect(location).toHaveAccessibleDescription(/^Required\./);
+  expect(role).toHaveAccessibleDescription(/^Required\./);
+  await user.type(location, 'us east');
+  expect(location).toHaveAccessibleDescription(/Use up to 63 letters/);
+  expect(service.clusters[1].labels).toEqual({});
+  await user.click(within(modal).getByRole('button', { name: 'Cancel' }));
+  // The hub itself defaults to the combined role.
+  await pick(user, 'local-cluster', 'Add to AI Grid');
+  expect(
+    within(await screen.findByTestId('cluster-membership-modal')).getByRole('combobox', { name: 'Role' }),
+  ).toHaveValue('Combined');
 });
 
 it('keeps an unenrolled cluster on patch failure and allows a retry', async () => {
@@ -312,6 +331,8 @@ it('wraps the headers and keeps Site, Region and Hub for wide screens only', asy
     expect(within(table).getByRole('columnheader', { name })).toHaveClass('pf-m-hidden', 'pf-m-visible-on-2xl');
   }
   expect(within(table).getByRole('columnheader', { name: 'OpenShift' })).not.toHaveClass('pf-m-hidden');
+  // The hub's connection to the cluster, not its AI Grid provisioning, which has its own column.
+  expect(within(table).getByRole('columnheader', { name: /^Connection/ })).toBeInTheDocument();
 });
 
 it('says when the search matches no cluster, and clears it from the table', async () => {

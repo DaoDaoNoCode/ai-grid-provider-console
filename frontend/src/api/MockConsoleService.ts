@@ -5,6 +5,7 @@ import {
   toSubscriptionInfo,
   withRuntimeArgs,
 } from './adapters';
+import type { GridMembership } from './clusters';
 import type { ConsoleService } from './ConsoleService';
 import { ServiceError } from './ConsoleService';
 import type {
@@ -69,21 +70,27 @@ export class MockConsoleService implements ConsoleService {
 
   listClusters = async (): Promise<GridCluster[]> => [...this.clusters];
 
-  /** Sets only the `ai-grid/enabled` label, as the BFF does. */
-  enrollCluster = async ({ name }: GridCluster): Promise<GridCluster> => this.setMembership(name, true);
+  /** Sets `ai-grid/enabled`, `ai-grid/role` and `location`, as the BFF's PATCH does. */
+  enrollCluster = async ({ name }: GridCluster, membership: GridMembership): Promise<GridCluster> =>
+    this.setMembership(name, membership);
 
-  removeClusterFromGrid = async ({ name }: GridCluster): Promise<GridCluster> => this.setMembership(name, false);
+  removeClusterFromGrid = async ({ name }: GridCluster): Promise<GridCluster> => this.setMembership(name);
 
-  /** Sets or drops the `ai-grid/enabled` label, as the BFF's PATCH does; provisioning follows toGridCluster. */
-  private setMembership(name: string, member: boolean): GridCluster {
+  /** Writes a membership's labels, or drops `ai-grid/enabled` without one; provisioning follows toGridCluster. */
+  private setMembership(name: string, membership?: GridMembership): GridCluster {
     const index = this.clusters.findIndex((c) => c.name === name);
     if (index < 0) {
       throw new ServiceError(404, `object with identifier '${name}' not found`);
     }
     const current = this.clusters[index];
     const labels = { ...current.labels };
-    if (member) {
-      labels['ai-grid/enabled'] = 'true';
+    const member = !!membership;
+    if (membership) {
+      Object.assign(labels, {
+        'ai-grid/enabled': 'true',
+        'ai-grid/role': membership.role,
+        location: membership.location,
+      });
     } else {
       delete labels['ai-grid/enabled'];
     }
@@ -91,6 +98,7 @@ export class MockConsoleService implements ConsoleService {
       ...current,
       aiGridEnabled: member,
       provisioningStatus: current.provisioned ? 'Provisioned' : member ? 'Provisioning' : 'Not provisioned',
+      ...(labels.location ? { location: labels.location } : {}),
       labels,
       resourceVersion: String(Number(current.resourceVersion ?? '0') + 1),
     };

@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	backendv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/backend/v1"
@@ -79,7 +80,8 @@ func (c v1Clusters) UpdateManagedCluster(ctx context.Context, in *aigridv1.Updat
 // FromV1Cluster maps a real ManagedCluster onto the draft. The real status has
 // only the Joined and Available conditions, so the state is derived from them
 // in the fake's order (fakebackend/state.go); import progress, claims and
-// capacity are not available.
+// capacity are not available. Provisioning is always set, so the console
+// reads it instead of the ai-grid/provisioned label.
 func FromV1Cluster(mc *backendv1.ManagedCluster) *aigridv1.ManagedCluster {
 	meta := mc.GetMetadata()
 	st := mc.GetStatus()
@@ -104,7 +106,7 @@ func FromV1Cluster(mc *backendv1.ManagedCluster) *aigridv1.ManagedCluster {
 		ResourceVersion:   strconv.Itoa(int(meta.GetVersion())),
 		CreationTimestamp: meta.GetCreationTimestamp(),
 		DeletionTimestamp: meta.GetDeletionTimestamp(),
-		Status:            &aigridv1.ManagedClusterStatus{State: state},
+		Status:            &aigridv1.ManagedClusterStatus{State: state, Provisioning: proto.String(st.GetProvisioning())},
 	}
 }
 

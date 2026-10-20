@@ -56,7 +56,9 @@ The BFF still derives or decides these itself. Do not add more; move these into 
 when the RPCs allow it.
 
 - `toGridCluster` (`bff/internal/api/clusters.go`): `aiGridEnabled` and `provisioned` (the
-  `ai-grid/enabled` and `ai-grid/provisioned` labels equal to `"true"`), `location`, `site`,
+  `ai-grid/enabled` and `ai-grid/provisioned` labels equal to `"true"`; when the backend reports
+  `status.provisioning`, `provisioned` is that equal to `"Compliant"` instead, until the backend
+  serves a provisioned state), `location`, `site`,
   `region` and `openshiftVersion` from labels; `siteName`, `latitude` and `longitude` from the
   `ai-grid/site-name`, `ai-grid/latitude` and `ai-grid/longitude` annotations, with coordinates
   that do not parse or are out of range left out; `consoleUrl`, `platform` and `product` from

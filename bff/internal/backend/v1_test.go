@@ -51,6 +51,9 @@ func TestV1UpdateSendsMetadataPathsAndVersion(t *testing.T) {
 	if conn.method != methodClustersUpdate || !proto.Equal(conn.req.(proto.Message), want) {
 		t.Fatalf("sent %s %v, want %v", conn.method, conn.req, want)
 	}
+	if p := resp.GetObject().GetStatus().Provisioning; p == nil || *p != "" {
+		t.Fatalf("provisioning %v, want set and empty", p)
+	}
 	if got := resp.GetObject().GetResourceVersion(); got != "8" {
 		t.Fatalf("resource version %q, want 8", got)
 	}
