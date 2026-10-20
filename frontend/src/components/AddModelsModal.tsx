@@ -5,6 +5,7 @@
 import { useMemo, useState } from 'react';
 import {
   Button,
+  Checkbox,
   Modal,
   ModalBody,
   ModalFooter,
@@ -16,6 +17,8 @@ import {
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { MaaSModelRefSummary } from '../api/types';
 import { isSameModel, modelKey } from '../utilities/authpolicies';
+import { normalizePhase } from '../utilities/phaseLabelUtils';
+import { StatusLabel } from './StatusLabel';
 
 type Props = {
   availableModelRefs: MaaSModelRefSummary[];
@@ -32,7 +35,10 @@ const toggled = (set: Set<string>, key: string) => {
   return next;
 };
 
-/** Picks the models of a subscription from the listed models. */
+/**
+ * Picks the models of a subscription: a checkbox per model (checked for the ones it has), with
+ * each model's status, so a failed or pending model isn't added unnoticed.
+ */
 export const AddModelsModal: React.FC<Props> = ({ availableModelRefs, currentModels, onAdd, onRemove, onClose }) => {
   const [filter, setFilter] = useState('');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -81,7 +87,7 @@ export const AddModelsModal: React.FC<Props> = ({ availableModelRefs, currentMod
       <ModalBody>
         <Stack hasGutter>
           <StackItem>
-            Select models to make available to members of this subscription, then set token limits for each one.
+            Select the models members of this subscription can use. You set their token limits next.
           </StackItem>
           <StackItem>
             <SearchInput
@@ -96,6 +102,7 @@ export const AddModelsModal: React.FC<Props> = ({ availableModelRefs, currentMod
             <Table aria-label="Available models" data-testid="add-models-table">
               <Thead>
                 <Tr>
+                  <Th screenReaderText="Selected" />
                   <Th
                     sort={{
                       sortBy: { index: 0, direction: sortDirection },
@@ -105,34 +112,34 @@ export const AddModelsModal: React.FC<Props> = ({ availableModelRefs, currentMod
                   >
                     Model name
                   </Th>
-                  <Th screenReaderText="Actions" />
+                  <Th>Status</Th>
                 </Tr>
               </Thead>
               <Tbody>
-                {filteredModels.map((ref) => {
-                  const selected = isInCurrentSelection(ref);
+                {filteredModels.map((ref, rowIndex) => {
+                  const name = ref.displayName ?? ref.name;
                   return (
                     <Tr key={modelKey(ref)}>
-                      <Td dataLabel="Model name">
-                        <strong>{ref.displayName ?? ref.name}</strong>
-                      </Td>
-                      <Td isActionCell style={{ textAlign: 'center' }}>
-                        <Button
-                          variant={selected ? 'secondary' : 'link'}
-                          size={selected ? 'sm' : 'default'}
-                          isDanger={selected}
-                          onClick={() => handleToggleModel(ref)}
+                      {/* PatternFly's select cell names every box "Select row N"; this one names the model. */}
+                      <Td className="pf-v6-c-table__check">
+                        <Checkbox
+                          id={`add-model-${rowIndex}`}
+                          aria-label={`Select ${name}`}
                           data-testid={`toggle-model-${ref.name}`}
-                        >
-                          {selected ? 'Remove model' : 'Add model'}
-                        </Button>
+                          isChecked={isInCurrentSelection(ref)}
+                          onChange={() => handleToggleModel(ref)}
+                        />
+                      </Td>
+                      <Td dataLabel="Model name">{name}</Td>
+                      <Td dataLabel="Status">
+                        <StatusLabel isCompact status={normalizePhase(ref.phase)} reason={ref.statusMessage} />
                       </Td>
                     </Tr>
                   );
                 })}
                 {filteredModels.length === 0 && (
                   <Tr>
-                    <Td colSpan={2}>No models match the filter criteria.</Td>
+                    <Td colSpan={3}>No models match the filter criteria.</Td>
                   </Tr>
                 )}
               </Tbody>
@@ -142,7 +149,7 @@ export const AddModelsModal: React.FC<Props> = ({ availableModelRefs, currentMod
       </ModalBody>
       <ModalFooter>
         <Button variant="primary" onClick={handleConfirm} data-testid="confirm-add-models">
-          Add models
+          {currentModels.length ? 'Update models' : 'Add models'}
         </Button>
         <Button variant="link" onClick={onClose}>
           Cancel

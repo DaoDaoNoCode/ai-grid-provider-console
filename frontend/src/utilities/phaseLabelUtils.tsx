@@ -50,7 +50,8 @@ export const normalizePhase = (phase: string | undefined): string => {
   return normalized || PhaseStatus.UNKNOWN;
 };
 
-export const MODEL_NOT_FOUND_STATUS_MESSAGE = 'Model not found. The MaaSModelRef does not exist.';
+/** An affected model the subscription names but the hub doesn't have (no MaaSModelRef). */
+export const MODEL_NOT_FOUND_STATUS_MESSAGE = 'Model not found. It may have been deleted.';
 
 /** The subtext under a label; for Degraded, the Ready condition's message when there is one. */
 export const getStatusSubtext = (phase: string, statusMessage?: string): React.ReactNode | undefined => {
@@ -153,17 +154,20 @@ export const getModalAlertProps = (
   };
 };
 
+/**
+ * The subtext's colour. It isn't underlined: unlike odh-dashboard's, it isn't a link (the label
+ * opens the status), so it shouldn't look like one.
+ */
 export const getSubtextProps = (phase: string): ContentProps | undefined => {
-  const sharedStyle: React.CSSProperties = { textDecoration: 'underline dotted' };
   switch (phase) {
     case PhaseStatus.DEGRADED:
     case PhaseStatus.UNAVAILABLE:
-      return { className: 'pf-v6-u-text-color-status-warning', style: sharedStyle };
+      return { className: 'pf-v6-u-text-color-status-warning' };
     case PhaseStatus.FAILED:
     case PhaseStatus.INVALID:
-      return { className: 'pf-v6-u-text-color-status-danger', style: sharedStyle };
+      return { className: 'pf-v6-u-text-color-status-danger' };
     case PhaseStatus.PENDING:
-      return { className: 'pf-v6-u-text-color-status-info', style: sharedStyle };
+      return { className: 'pf-v6-u-text-color-status-info' };
     default:
       return undefined;
   }

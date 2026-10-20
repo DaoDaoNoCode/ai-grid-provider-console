@@ -18,6 +18,7 @@ import {
   HelperTextItem,
   NumberInput,
   PageSection,
+  TextInput,
 } from '@patternfly/react-core';
 import { z } from 'zod';
 import { ServiceError } from '../../../api/ConsoleService';
@@ -158,7 +159,10 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ service, modelRefs, su
     models,
   });
   const isPriorityValid = priority != null && !Number.isNaN(priority);
-  const organizationMissing = !isEditing && !organizationId;
+  // Required on create and edit. The planned API makes it immutable once set, so the edit form
+  // shows a set organization read-only.
+  const organizationLocked = !!subscription?.tokenMetadata?.organizationId;
+  const organizationMissing = !organizationId;
 
   const canSubmit =
     isNameValid &&
@@ -251,7 +255,11 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ service, modelRefs, su
   let organizationHelper = (
     <FormHelperText>
       <HelperText>
-        <HelperTextItem>The organization whose users this subscription serves.</HelperTextItem>
+        <HelperTextItem>
+          {organizationLocked
+            ? 'The organization can’t be changed once it is set.'
+            : 'The organization whose users this subscription serves.'}
+        </HelperTextItem>
       </HelperText>
     </FormHelperText>
   );
@@ -270,33 +278,35 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ service, modelRefs, su
           dataTestId="subscription-name-desc"
         />
 
-        <FormGroup label="Organization" fieldId="subscription-organization" isRequired={!isEditing}>
-          <FormSelect
-            id="subscription-organization"
-            data-testid="subscription-organization"
-            value={organizationId}
-            validated={organizationTouched && organizationMissing ? 'error' : 'default'}
-            onChange={(_event, value) => {
-              setOrganizationTouched(true);
-              setOrganizationId(value);
-            }}
-          >
-            {(!isEditing || !subscription?.tokenMetadata?.organizationId) && (
+        <FormGroup label="Organization" fieldId="subscription-organization" isRequired={!organizationLocked}>
+          {organizationLocked ? (
+            <TextInput
+              id="subscription-organization"
+              data-testid="subscription-organization"
+              readOnlyVariant="default"
+              value={organizationOptions.find((o) => o.value === organizationId)?.label ?? organizationId}
+            />
+          ) : (
+            <FormSelect
+              id="subscription-organization"
+              data-testid="subscription-organization"
+              value={organizationId}
+              validated={organizationTouched && organizationMissing ? 'error' : 'default'}
+              onChange={(_event, value) => {
+                setOrganizationTouched(true);
+                setOrganizationId(value);
+              }}
+            >
               <FormSelectOption value="" label={SELECT_ORGANIZATION} isPlaceholder />
-            )}
-            {organizationOptions.map((o) => (
-              <FormSelectOption key={o.value} value={o.value} label={o.label} />
-            ))}
-          </FormSelect>
+              {organizationOptions.map((o) => (
+                <FormSelectOption key={o.value} value={o.value} label={o.label} />
+              ))}
+            </FormSelect>
+          )}
           {organizationHelper}
         </FormGroup>
 
         <FormGroup label="Priority" fieldId="subscription-priority" isRequired>
-          <FormHelperText>
-            <HelperText>
-              <HelperTextItem variant="default">Higher numbers indicate higher priority.</HelperTextItem>
-            </HelperText>
-          </FormHelperText>
           <NumberInput
             id="subscription-priority"
             data-testid="subscription-priority"
@@ -322,16 +332,16 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ service, modelRefs, su
               }
             }}
           />
-        </FormGroup>
-
-        <FormGroup label="Groups" fieldId="subscription-groups" isRequired>
           <FormHelperText>
             <HelperText>
-              <HelperTextItem>
-                Type each group name and choose Add group to grant access to models in this subscription.
+              <HelperTextItem variant={isPriorityValid ? 'default' : 'error'}>
+                {isPriorityValid ? 'Higher numbers indicate higher priority.' : fieldErrors.priority}
               </HelperTextItem>
             </HelperText>
           </FormHelperText>
+        </FormGroup>
+
+        <FormGroup label="Groups" fieldId="subscription-groups" isRequired>
           <MultiSelection
             ariaLabel="Enter groups"
             value={selectedGroups}
@@ -344,8 +354,18 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ service, modelRefs, su
             createOptionMessage={(value) => `Add group "${value}"`}
             placeholder="Type a group name"
           />
+          {groupsTouched && fieldErrors.groups ? (
+            errorText(fieldErrors.groups)
+          ) : (
+            <FormHelperText>
+              <HelperText>
+                <HelperTextItem>
+                  Type each group name and choose Add group. Members of these groups can use the models.
+                </HelperTextItem>
+              </HelperText>
+            </FormHelperText>
+          )}
           {selectedGroupNames.includes(SYSTEM_AUTHENTICATED_GROUP) && <SystemAuthenticatedWarning />}
-          {groupsTouched && fieldErrors.groups && errorText(fieldErrors.groups)}
         </FormGroup>
 
         {showNoModelsWarning ? (

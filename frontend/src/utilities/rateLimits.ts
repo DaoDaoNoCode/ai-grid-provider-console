@@ -3,8 +3,7 @@
 // packages/maas/frontend/src/app/utilities/rateLimits.ts
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
 import { z } from 'zod';
-import type { ModelSubscriptionRef, TokenRateLimit } from '../api/types';
-import { EMPTY_VALUE } from './format';
+import type { TokenRateLimit } from '../api/types';
 
 /** A token limit as the form edits it: count tokens per time unit(s). */
 export type RateLimit = { count: number; time: number; unit: 'hour' | 'minute' | 'second' };
@@ -109,13 +108,6 @@ export const toTokenRateLimit = (rl: RateLimit): TokenRateLimit => ({
   limit: rl.count,
   window: `${rl.time}${UNIT_TO_WINDOW_SUFFIX[rl.unit]}`,
 });
-
-export const formatTokenLimits = (limits: ModelSubscriptionRef['tokenRateLimits']): string => {
-  if (limits.length === 0) {
-    return EMPTY_VALUE;
-  }
-  return limits.map((l) => formatTokenRateLimitLine(l.limit, l.window)).join(' | ');
-};
 
 export const DEFAULT_RATE_LIMIT: RateLimit = { count: 1000, time: 1, unit: 'hour' };
 export const MAX_VALUE = 1_000_000_000;

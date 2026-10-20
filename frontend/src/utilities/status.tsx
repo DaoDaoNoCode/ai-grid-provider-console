@@ -33,6 +33,8 @@ const tones: Record<string, StatusTone> = {
   Unavailable: 'danger',
   Unhealthy: 'danger',
   Degraded: 'warning',
+  // A subscription's model that the hub doesn't have.
+  'Not found': 'danger',
   // Organizations.
   Enabled: 'success',
   Disabled: 'neutral',

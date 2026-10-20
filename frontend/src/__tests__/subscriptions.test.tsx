@@ -37,19 +37,27 @@ const fillNewSubscription = async (user: User) => {
 };
 
 describe('administrator subscription flows', () => {
-  it('renders the list, expands groups, filters and shows details', async () => {
+  it('renders the list with its groups, filters and shows details', async () => {
     const user = userEvent.setup();
     renderAt('/subscriptions', new MockConsoleService());
     const table = await screen.findByTestId('subscriptions-table');
     expect(within(table).getByRole('link', { name: 'Engineering' })).toBeVisible();
     const row = within(table).getByRole('link', { name: 'Engineering' }).closest('tr')!;
-    await user.click(within(row).getByTestId('subscription-groups-expand-btn').querySelector('button')!);
-    expect(within(row.closest('tbody')!).getByTestId('expanded-group-name')).toHaveTextContent('engineering');
+    // Groups and models are short lists in their cells, not nested tables.
+    expect(within(row).getByTestId('subscription-groups')).toHaveTextContent('engineering');
+    expect(within(row).getByTestId('subscription-models')).toHaveTextContent('Granite');
     await user.type(screen.getByTestId('subscriptions-filter-input').querySelector('input')!, 'production');
     expect(within(table).queryByRole('link', { name: 'Research' })).not.toBeInTheDocument();
     await user.click(within(table).getByRole('link', { name: 'Engineering' }));
-    expect(await screen.findByTestId('subscription-details-section')).toHaveTextContent('Engineering');
+    expect(await screen.findByRole('heading', { name: 'Engineering', level: 1 })).toBeVisible();
+    // One view: no single "Details" tab, and no Name row repeating the title.
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+    const details = screen.getByTestId('subscription-details-section');
+    expect(details).not.toHaveTextContent(/^Name/);
+    expect(within(details).getByTestId('subscription-priority')).toHaveTextContent('100');
+    expect(within(details).getByTestId('subscription-auth-policies')).toHaveTextContent('Engineering policy');
     expect(screen.getByTestId('subscription-models-table')).toHaveTextContent('100,000 / 1 hour');
+    expect(screen.getByTestId('subscription-models-table')).toHaveTextContent('Ready');
   });
 
   it('creates a subscription using the group and model selectors and token-limit modal', async () => {
@@ -402,7 +410,7 @@ describe('MaaS subscription phases', () => {
     const modal = await screen.findByTestId('phase-modal');
     expect(modal).toHaveTextContent('Awaiting governance pairing');
     expect(modal).toHaveTextContent('Governed but backend is not ready');
-    expect(modal).toHaveTextContent('Model not found. The MaaSModelRef does not exist.');
+    expect(modal).toHaveTextContent('Model not found. It may have been deleted.');
   });
 });
 
@@ -451,8 +459,8 @@ describe("model references on PR 12's models", () => {
     await user.click(screen.getByTestId('add-models-button'));
     const rows = within(screen.getByTestId('add-models-table')).getAllByRole('row');
     const row = (name: string) => rows.find((r) => r.textContent?.includes(name))!;
-    expect(within(row('Team granite')).getByRole('button', { name: 'Remove model' })).toBeVisible();
-    expect(within(row('Shared granite')).getByRole('button', { name: 'Add model' })).toBeVisible();
+    expect(within(row('Team granite')).getByRole('checkbox', { name: 'Select Team granite' })).toBeChecked();
+    expect(within(row('Shared granite')).getByRole('checkbox', { name: 'Select Shared granite' })).not.toBeChecked();
     await user.keyboard('{Escape}');
     await user.click(screen.getByTestId('update-subscription-button'));
     await waitFor(() => expect(update).toHaveBeenCalled());
@@ -471,8 +479,8 @@ it('sends a re-added unlimited model with its new limits only', async () => {
   const update = vi.spyOn(service, 'updateSubscription');
   const user = userEvent.setup();
   renderAt('/subscriptions/edit/engineering', service);
-  await user.click(await screen.findByRole('button', { name: 'Actions for granite-3-8b' }));
-  await user.click(screen.getByRole('menuitem', { name: 'Remove' }));
+  const models = await screen.findByTestId('subscription-models-table');
+  await user.click(within(models).getByRole('button', { name: /^Remove / }));
   await user.click(screen.getByTestId('add-models-button'));
   await user.click(screen.getByTestId('toggle-model-granite-3-8b'));
   await user.click(screen.getByTestId('confirm-add-models'));
@@ -512,4 +520,32 @@ it('matches a model reference only in its own namespace', () => {
   // The backend names every reference's namespace, so a missing one matches nothing.
   expect(isSameModel({ name: 'm' }, { name: 'm', namespace: 'team-models' })).toBe(false);
   expect(isSameModel({ name: 'm', namespace: 'team-models' }, { name: 'm', namespace: 'team-models' })).toBe(true);
+});
+
+it('hints that a new model needs a token limit, and labels the limit fields', async () => {
+  const user = userEvent.setup();
+  renderAt('/subscriptions/create', new MockConsoleService());
+  expect(await screen.findByText(/^Give groups of an organization's users access to models/)).toBeVisible();
+  await user.click(screen.getByTestId('add-models-button'));
+  await user.click(screen.getByTestId('toggle-model-granite-3-8b'));
+  await user.click(screen.getByTestId('confirm-add-models'));
+  // A hint, not an error, before the user has done anything with the model.
+  const hint = screen.getByTestId('token-limit-required-0');
+  expect(hint).toHaveTextContent('Required: add at least one.');
+  expect(hint).not.toHaveClass('pf-m-error');
+  await user.click(screen.getByTestId('add-token-limit-0'));
+  expect(screen.getByRole('dialog', { name: 'Edit token limits' })).toHaveTextContent(
+    /^Edit token limitsLimit how many tokens each member of this subscription can use with/,
+  );
+  expect(screen.getByRole('spinbutton', { name: 'Tokens' })).toHaveValue(1000);
+  expect(screen.getByRole('spinbutton', { name: 'Per' })).toHaveValue(1);
+  expect(screen.getByRole('button', { name: 'Add token limit' })).toBeVisible();
+});
+
+it('keeps a set organization read-only when editing', async () => {
+  renderAt('/subscriptions/edit/engineering', new MockConsoleService());
+  const organization = await screen.findByTestId('subscription-organization');
+  expect(organization).toHaveAttribute('readonly');
+  expect(organization).toHaveValue('acme-robotics');
+  expect(screen.getByText('The organization can’t be changed once it is set.')).toBeVisible();
 });

@@ -41,18 +41,14 @@ export const SubscriptionsTable: React.FC<Props> = ({
     <>
       <PaginatedTable rows={sorted} toolbar={toolbarContent}>
         {(pageRows) => (
-          <Table
-            aria-label="Subscriptions"
-            className="portal-resource-table"
-            isExpandable
-            data-testid="subscriptions-table"
-          >
+          <Table aria-label="Subscriptions" className="portal-resource-table" data-testid="subscriptions-table">
             <Thead>
               <Tr>
                 {columns.map((col, index) => (
                   <Th
                     key={col.label}
                     width={col.width}
+                    className={col.isNumeric ? 'console-number' : undefined}
                     modifier="wrap"
                     sort={{
                       sortBy,
@@ -67,17 +63,18 @@ export const SubscriptionsTable: React.FC<Props> = ({
               </Tr>
             </Thead>
             {sorted.length ? (
-              pageRows.map((subscription, rowIndex) => (
-                <SubscriptionTableRow
-                  key={subscription.name}
-                  subscription={subscription}
-                  columns={columns}
-                  organization={organizationName(subscription)}
-                  rowIndex={rowIndex}
-                  canWrite={canWrite}
-                  setDeleteSubscription={setDeleteSubscription}
-                />
-              ))
+              <Tbody>
+                {pageRows.map((subscription) => (
+                  <SubscriptionTableRow
+                    key={subscription.name}
+                    subscription={subscription}
+                    columns={columns}
+                    organization={organizationName(subscription)}
+                    canWrite={canWrite}
+                    setDeleteSubscription={setDeleteSubscription}
+                  />
+                ))}
+              </Tbody>
             ) : (
               <Tbody>
                 <Tr>

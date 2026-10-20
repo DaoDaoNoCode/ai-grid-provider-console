@@ -84,11 +84,6 @@
 .portal-model-wizard .pf-v6-c-wizard__inner-wrap {
   min-height: 24rem;
 }
-/* Page sections don't shrink in the page's flex column, but a bare Tabs does: on a page that
-   scrolls, its overflow: hidden lets it collapse to nothing and hide its labels. */
-.pf-v6-c-page__main > .pf-v6-c-tabs {
-  flex-shrink: 0;
-}
 
 /* Console conventions shared by every page (see components/ and utilities/). */
 
@@ -116,4 +111,11 @@
 .console-number {
   text-align: end;
   font-variant-numeric: tabular-nums;
+}
+
+/* A control with its label above it, in a row of such controls (e.g. a token limit). */
+.console-labeled-control > label {
+  font-weight: var(--pf-t--global--font--weight--body--bold);
+  font-size: var(--pf-t--global--font--size--sm);
+  margin-block-end: var(--pf-t--global--spacer--xs);
 }

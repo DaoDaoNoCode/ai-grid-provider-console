@@ -11,10 +11,9 @@ import {
   FormHelperText,
   HelperText,
   HelperTextItem,
+  Flex,
   MenuToggle,
   NumberInput,
-  Split,
-  SplitItem,
   Stack,
   StackItem,
   ValidatedOptions,
@@ -44,7 +43,7 @@ const parsed = (value: string, previous: number): number => {
   return Number.isNaN(n) ? previous : Math.min(Number.MAX_SAFE_INTEGER, n);
 };
 
-/** One token limit: count, "tokens per", time and unit. */
+/** One token limit, "<Tokens> per <time> <unit>", each part under a visible label. */
 export const RateLimitRow: React.FC<Props> = ({
   id,
   rateLimit,
@@ -64,16 +63,20 @@ export const RateLimitRow: React.FC<Props> = ({
   return (
     <Stack hasGutter>
       <StackItem>
-        <Split hasGutter>
-          <SplitItem>
+        <Flex alignItems={{ default: 'alignItemsFlexEnd' }} spaceItems={{ default: 'spaceItemsMd' }}>
+          <Stack className="console-labeled-control">
+            <label htmlFor={`${id}-count-input`}>Tokens</label>
             <NumberInput
               validated={countMessage != null ? ValidatedOptions.error : ValidatedOptions.default}
               id={`${id}-count`}
               data-testid={`${id}-count`}
-              inputAriaLabel="Token count"
+              inputName={`${id}-count-input`}
+              inputProps={{ id: `${id}-count-input` }}
+              inputAriaLabel="Tokens"
               value={Number.isNaN(rateLimit.count) ? '' : rateLimit.count}
               min={1}
               max={Number.MAX_SAFE_INTEGER}
+              widthChars={9}
               onMinus={() =>
                 onChange({ ...rateLimit, count: Math.max(1, (rateLimit.count || COUNT_STEP) - COUNT_STEP) })
               }
@@ -87,65 +90,71 @@ export const RateLimitRow: React.FC<Props> = ({
                 onChange({ ...rateLimit, count: parsed(event.currentTarget.value, rateLimit.count) })
               }
             />
-          </SplitItem>
-          <SplitItem style={{ alignSelf: 'center' }}>tokens per</SplitItem>
-          <SplitItem>
-            <NumberInput
-              validated={timeMessage != null ? ValidatedOptions.error : ValidatedOptions.default}
-              id={`${id}-time`}
-              data-testid={`${id}-time`}
-              inputAriaLabel="Time value"
-              value={Number.isNaN(rateLimit.time) ? '' : rateLimit.time}
-              min={1}
-              max={Number.MAX_SAFE_INTEGER}
-              onMinus={() => onChange({ ...rateLimit, time: Math.max(1, (rateLimit.time || 1) - 1) })}
-              onPlus={() =>
-                onChange({ ...rateLimit, time: Math.min(Number.MAX_SAFE_INTEGER, (rateLimit.time || 0) + 1) })
-              }
-              onChange={(event: React.FormEvent<HTMLInputElement>) =>
-                onChange({ ...rateLimit, time: parsed(event.currentTarget.value, rateLimit.time) })
-              }
-            />
-          </SplitItem>
-          <SplitItem>
-            <Dropdown
-              isOpen={unitDropdownOpen}
-              onOpenChange={setUnitDropdownOpen}
-              toggle={(toggleRef) => (
-                <MenuToggle
-                  ref={toggleRef}
-                  onClick={() => setUnitDropdownOpen(!unitDropdownOpen)}
-                  isExpanded={unitDropdownOpen}
-                  data-testid={`${id}-unit`}
-                  style={{ minWidth: 100 }}
-                >
-                  {selectedUnitLabel}
-                </MenuToggle>
-              )}
-            >
-              <DropdownList>
-                {UNIT_OPTIONS.map((option) => (
-                  <DropdownItem
-                    key={option.value}
-                    onClick={() => {
-                      onChange({ ...rateLimit, unit: option.value });
-                      setUnitDropdownOpen(false);
-                    }}
+          </Stack>
+          <Stack className="console-labeled-control">
+            <label htmlFor={`${id}-time-input`}>Per</label>
+            <Flex spaceItems={{ default: 'spaceItemsSm' }} flexWrap={{ default: 'nowrap' }}>
+              <NumberInput
+                validated={timeMessage != null ? ValidatedOptions.error : ValidatedOptions.default}
+                id={`${id}-time`}
+                data-testid={`${id}-time`}
+                inputName={`${id}-time-input`}
+                inputProps={{ id: `${id}-time-input` }}
+                inputAriaLabel="Per"
+                value={Number.isNaN(rateLimit.time) ? '' : rateLimit.time}
+                min={1}
+                max={Number.MAX_SAFE_INTEGER}
+                widthChars={3}
+                onMinus={() => onChange({ ...rateLimit, time: Math.max(1, (rateLimit.time || 1) - 1) })}
+                onPlus={() =>
+                  onChange({ ...rateLimit, time: Math.min(Number.MAX_SAFE_INTEGER, (rateLimit.time || 0) + 1) })
+                }
+                onChange={(event: React.FormEvent<HTMLInputElement>) =>
+                  onChange({ ...rateLimit, time: parsed(event.currentTarget.value, rateLimit.time) })
+                }
+              />
+              <Dropdown
+                isOpen={unitDropdownOpen}
+                onOpenChange={setUnitDropdownOpen}
+                toggle={(toggleRef) => (
+                  <MenuToggle
+                    ref={toggleRef}
+                    onClick={() => setUnitDropdownOpen(!unitDropdownOpen)}
+                    isExpanded={unitDropdownOpen}
+                    data-testid={`${id}-unit`}
+                    aria-label={`Time unit, ${selectedUnitLabel}`}
+                    style={{ minWidth: 100 }}
                   >
-                    {option.label}
-                  </DropdownItem>
-                ))}
-              </DropdownList>
-            </Dropdown>
-          </SplitItem>
+                    {selectedUnitLabel}
+                  </MenuToggle>
+                )}
+              >
+                <DropdownList>
+                  {UNIT_OPTIONS.map((option) => (
+                    <DropdownItem
+                      key={option.value}
+                      onClick={() => {
+                        onChange({ ...rateLimit, unit: option.value });
+                        setUnitDropdownOpen(false);
+                      }}
+                    >
+                      {option.label}
+                    </DropdownItem>
+                  ))}
+                </DropdownList>
+              </Dropdown>
+            </Flex>
+          </Stack>
           {showRemove && (
-            <SplitItem>
-              <Button variant="plain" aria-label="Remove rate limit" onClick={onRemove} data-testid={`${id}-remove`}>
-                <MinusCircleIcon />
-              </Button>
-            </SplitItem>
+            <Button
+              variant="plain"
+              aria-label="Remove token limit"
+              onClick={onRemove}
+              data-testid={`${id}-remove`}
+              icon={<MinusCircleIcon />}
+            />
           )}
-        </Split>
+        </Flex>
       </StackItem>
       <StackItem>
         <FormHelperText data-testid={`${id}-helper-text`}>
