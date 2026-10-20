@@ -63,9 +63,9 @@ Owner: the backend team ([ai-grid-provider-backend](https://github.com/ai-grid-c
 
 Owner: console team. A handler per RPC, nothing else.
 
-1. As RPCs land in the backend, sync the vendored proto (`hack/sync-upstream-proto.sh`) and
-   reconcile the draft in `mock/proto` (cluster PATCH, tenants, models and capabilities are
-   already mapped against it), and map the rest in `internal/api`: `GetOverview` to
+1. As RPCs land in the backend, sync the vendored proto (`hack/sync-upstream-proto.sh`),
+   extend the BFF's copy in `mock/proto/ai_grid/backend/v1` (the drift test checks it), and map
+   the rest in `internal/api`: `GetOverview` to
    `GET /grid/overview`, `GetCurrentUser` into `/user`, catalog, subscriptions. Keep the
    error table in `bff-api.md` true.
 2. When the backend moves to its own Deployment: `BACKEND_ADDRESS` to its Service,

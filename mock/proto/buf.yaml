@@ -1,6 +1,7 @@
 # buf module for the console's draft ai_grid.v1 proto (see mock/proto/README.md).
-# upstream/ holds the backend's real file, vendored unchanged for the drift test; it is
-# excluded because it declares the same package and the same messages as the draft.
+# upstream/ holds the backend's real files, vendored unchanged for the drift test; it is
+# excluded because it declares the same package as the draft and imports modules this one
+# doesn't depend on (googleapis, protovalidate).
 version: v2
 modules:
   - path: .

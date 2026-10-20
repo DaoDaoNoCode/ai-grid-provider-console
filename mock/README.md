@@ -29,9 +29,10 @@ documentation, from the POC, or from the backend's own conventions. The sources 
 
 1. **The proto is the contract.** The BFF and the fake compile against one generated
    `ai_grid.v1` package (`bff/gen`), built from the console's draft proto in `proto/`. The
-   draft carries the backend's shipped services unchanged, and `bff/internal/protodrift`
-   fails if the backend's proto, vendored in `proto/upstream`, has anything the draft lacks
-   or defines differently. `TestFakeImplementsEveryProtoMethod` calls every method of the
+   draft began as a superset of the first backend's services. Against the real backend the
+   BFF uses a copy of its Clusters and Tenants messages (`proto/ai_grid/backend/v1`), and
+   `bff/internal/protodrift` fails if the backend's proto, vendored in `proto/upstream`,
+   no longer matches that copy. `TestFakeImplementsEveryProtoMethod` calls every method of the
    draft over an in-memory connection and fails on any that answers `Unimplemented`, except
    the deliberate stubs listed with a reason in `intentionallyUnimplemented` (today
    `GetCurrentUser` and the `Grid`, `CatalogItems` and `Subscriptions` services), so the fake
@@ -352,15 +353,14 @@ Backend ask: `Grid/GetNetwork` once the CRDs ship through the AI Gateway compone
    `Unimplemented*Server` makes it compile and answer `Unimplemented`. Both teams review the
    shape.
 2. **Console syncs and the fake follows.** `hack/sync-upstream-proto.sh` refreshes the vendored
-   copy, the drift test shows where the shipped shape differs from the draft and the draft is
-   reconciled, the fake implements the new methods (or lists them as intentional stubs) with
+   copy, the shipped shape is compared with the draft and the draft is reconciled, the fake implements the new methods (or lists them as intentional stubs) with
    the behaviour from the research, the BFF handler lands, the page switches from mock to real
    types. Each step is a small PR.
 3. **Stubs are fine in production.** A deployed console in front of a backend that lacks an
    RPC shows "not available yet" on that page and works everywhere else.
 4. **Drift is caught nightly.** `.github/workflows/drift.yaml` syncs the vendored copy from the
-   backend's `main` every night and runs the drift test, so a change to the backend's proto
-   shows up within a day of its merge.
+   backend's `main` every night and runs the drift test, so a change to a message or RPC the
+   BFF uses shows up within a day of its merge.
 5. **The research is the shared source.** When the backend team implements an area, the
    report for that area is the specification both sides test against; disagreements go into
    the report's open questions and are resolved there before code.

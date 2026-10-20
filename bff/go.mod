@@ -3,7 +3,6 @@ module github.com/ai-grid-cloud/ai-grid-provider-console/bff
 go 1.26.3
 
 require (
-	github.com/bufbuild/protocompile v0.14.1
 	github.com/google/cel-go v0.31.0
 	golang.org/x/sync v0.24.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260706201446-f0a921348800

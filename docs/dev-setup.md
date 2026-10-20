@@ -124,13 +124,16 @@ CI runs the same plus `make -C bff check-generated` (a fresh generation in a tem
 directory must match `bff/gen`, file for file), `kustomize build` and a container image
 build. A separate nightly workflow (`.github/workflows/drift.yaml`, also runnable by hand)
 refreshes the vendored backend proto from the backend's `main` in the runner's checkout and
-runs the drift test, so a backend proto change is reported the day after it merges.
+runs the drift test, so a backend change to a message or RPC the BFF uses is reported the day
+after it merges.
 
 ## The proto the BFF compiles against
 
 The BFF imports `bff/gen/ai_grid/v1`, generated from the console's draft proto in
-`mock/proto/ai_grid/v1` (the backend's three RPCs plus the shapes the console proposes; see
-`mock/proto/README.md`). After editing a `.proto` file:
+`mock/proto/ai_grid/v1` (the console's proposal, which the fake backend serves; see
+`mock/proto/README.md`), and `bff/gen/ai_grid/backend/v1`, generated from its copy of the real
+backend's Clusters and Tenants messages in `mock/proto/ai_grid/backend/v1`. After editing a
+`.proto` file:
 
 ```sh
 make -C bff generate      # buf generate; buf and the protoc plugins run through `go run`, nothing to install
@@ -144,10 +147,14 @@ which is what CI installs, because the generated comments depend on the Go relea
 the BFF's JSON or the fixtures, `make -C bff golden` rewrites the golden responses in
 `mock/examples/` (see `mock/AGENTS.md`).
 
-`hack/sync-upstream-proto.sh <ref>` refreshes the vendored copy of the backend's real proto
-(it fetches into a temporary directory and only then replaces `mock/proto/upstream`, so a
-failed fetch leaves the previous copy intact); `go test ./internal/protodrift/` then says
-whether the draft still covers it.
+`hack/sync-upstream-proto.sh <ref>` refreshes the vendored copy of the backend's real proto,
+`proto/ai_grid/v1` of ai-grid-cloud/ai-grid-provider-backend: the files as they are, and an
+image `buf build` compiles from them with their imports (it fetches and builds in a temporary
+directory and only then replaces `mock/proto/upstream`, so a failed fetch leaves the previous
+copy intact). `go test ./internal/protodrift/` then says whether the BFF's copy in
+`mock/proto/ai_grid/backend/v1` still matches it, and whether the RPCs the BFF calls still
+exist. The vendored commit is the backend's `main` (`mock/proto/upstream/COMMIT`), and the nightly
+`.github/workflows/drift.yaml` checks the copy against the newest one.
 
 ## Deploy to a cluster
 

@@ -18,16 +18,16 @@ backend service for cluster access and this BFF for the browser.
 
 - Repository: https://github.com/ai-grid-cloud/ai-grid-provider-backend. The Go module path is
   `github.com/osac-project/ai-grid-provider-backend`; the console does not import the module.
-- Contract: `proto/ai_grid/v1/ai_grid.proto` in the backend repository. The console pins it
-  by a vendored copy, `mock/proto/upstream/ai_grid.proto` with its commit in
-  `mock/proto/upstream/COMMIT` (`hack/sync-upstream-proto.sh <ref>` refreshes both).
+- Contract: `proto/ai_grid/v1` in the backend repository. The console pins it by a vendored
+  copy in `mock/proto/upstream` with its commit in `mock/proto/upstream/COMMIT`
+  (`hack/sync-upstream-proto.sh <ref>` refreshes both).
 - What the BFF compiles against: the console's draft proto in `mock/proto/ai_grid/v1`,
-  generated into `bff/gen/ai_grid/v1` (`make -C bff generate`). The draft carries the
-  backend's three RPCs unchanged plus the shapes proposed in
-  `mock/research/backend-conventions.md` section 6; `bff/internal/protodrift` fails when it
-  stops being a superset of the vendored backend file. When the backend ships the RPCs the
-  console switches the import back to the backend's `gen/ai_grid/v1` and deletes the draft.
-  See `mock/proto/README.md`.
+  generated into `bff/gen/ai_grid/v1` (`make -C bff generate`), which the fake backend serves;
+  and, for the real backend's Clusters and Tenants RPCs, a copy of their messages in
+  `mock/proto/ai_grid/backend/v1` (see "Against a real backend" below).
+  `bff/internal/protodrift` fails when that copy stops matching the vendored backend proto.
+  When the console generates its types from the backend's proto, the copy, the draft and the
+  drift test go. See `mock/proto/README.md`.
 - Runs with its own ServiceAccount (`get/list/watch` on `ManagedCluster`) and Keycloak admin
   credentials. It is aligned with OSAC's fulfillment-service and is the "OSAC-like API
   layer" from the 2026-10-14 thread.
@@ -47,8 +47,9 @@ keeps the draft clients. `If-Match` maps to `metadata.version` with `lock: true`
 cluster state is derived from `spec.hub_accepts_client`, `status.joined` and
 `status.available_condition` only. The tenant list forwards `offset`, `limit` and `filter`; the
 backend pages but doesn't evaluate `filter` yet, so a filtered list answers 501. `GetTenant` reads
-the list, and tenant writes answer 501. Backend PR 12 refuses a change to a label or annotation
-outside `ai-grid/*` and `location`, and a bad coordinate, with `InvalidArgument` (422).
+the list, and tenant writes answer 501. The backend refuses a change to a label or annotation
+outside `ai-grid/*` and the `location` label, and a bad coordinate, with `InvalidArgument` (422),
+after it checks the version: a stale one is `Aborted` (409) whatever the labels.
 
 ## Decisions
 

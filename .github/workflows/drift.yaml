@@ -1,21 +1,26 @@
-# Does the console's draft proto still cover the backend's real one? Nightly, and on
-# demand, this refreshes the vendored copy in mock/proto/upstream from the backend's
-# main branch and runs the drift test against it. The refresh happens in the runner's
-# checkout only; nothing is committed. A failure means the backend changed its proto:
-# run hack/sync-upstream-proto.sh main locally, reconcile the draft, and commit both.
+# Does the BFF's copy of the backend's messages (mock/proto/ai_grid/backend/v1) still match
+# the backend? Nightly, and on demand, this refreshes the vendored copy in mock/proto/upstream
+# from the backend's main branch (or the ref you give) and runs the drift test against it. The
+# refresh happens in the runner's checkout only; nothing is committed. A failure means the
+# backend changed a message or RPC the BFF uses: run hack/sync-upstream-proto.sh <ref>
+# locally, update the copy and bff/internal/backend/v1.go, and commit them together.
 name: Proto drift
 
 on:
   schedule:
     - cron: "30 4 * * *"
   workflow_dispatch:
+    inputs:
+      ref:
+        description: Backend branch, tag or commit to check against
+        default: main
 
 permissions:
   contents: read
 
 jobs:
   drift:
-    name: Draft proto covers the backend's main
+    name: The BFF's copy matches the backend
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,10 +28,10 @@ jobs:
         with:
           go-version-file: bff/go.mod
           cache-dependency-path: bff/go.sum
-      - name: Refresh the vendored backend proto from main (not committed)
+      - name: Refresh the vendored backend proto (not committed)
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: hack/sync-upstream-proto.sh main
+          REF: ${{ inputs.ref || 'main' }}
+        run: hack/sync-upstream-proto.sh "$REF"
       - name: What changed upstream since the vendored commit
         run: git --no-pager diff --stat -- mock/proto/upstream
       - name: Drift test
