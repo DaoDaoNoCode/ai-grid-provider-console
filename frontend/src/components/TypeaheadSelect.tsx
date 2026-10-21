@@ -29,6 +29,8 @@ type Props = {
   placeholder?: string;
   /** Required: PatternFly's input otherwise announces itself as "Type to filter", over any <label>. */
   'aria-label': string;
+  /** The id of the field's helper text, read with the field. */
+  'aria-describedby'?: string;
   /** 'danger' marks the field invalid, for the eye and for assistive technology. */
   status?: 'danger';
   'data-testid'?: string;
@@ -42,6 +44,7 @@ export const TypeaheadSelect = ({
   onBlur,
   placeholder,
   'aria-label': ariaLabel,
+  'aria-describedby': ariaDescribedBy,
   status,
   'data-testid': testId,
 }: Props) => {
@@ -139,6 +142,7 @@ export const TypeaheadSelect = ({
             autoComplete: 'off',
             'aria-invalid': status === 'danger',
             ...(testId && { 'data-testid': testId }),
+            ...(ariaDescribedBy && { 'aria-describedby': ariaDescribedBy }),
           }}
           ref={inputRef}
           value={filter ?? selected?.label ?? ''}

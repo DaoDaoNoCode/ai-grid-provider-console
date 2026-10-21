@@ -169,7 +169,7 @@ describe('HttpConsoleService', () => {
     ]);
   });
 
-  it('enrolls a cluster with a JSON PATCH of its whole labels map at the version it was read', async () => {
+  it('enrolls a cluster with a JSON PATCH of its whole labels map, role and location at the version it was read', async () => {
     const fetchFn = vi
       .fn()
       .mockResolvedValue(jsonResponse(200, { data: { name: 'site4', aiGridEnabled: true, status: 'ready' } }));
@@ -181,7 +181,9 @@ describe('HttpConsoleService', () => {
       resourceVersion: '7',
       labels: { location: 'sydney' },
     });
-    await expect(new HttpConsoleService(fetchFn).enrollCluster(read)).resolves.toMatchObject({
+    await expect(
+      new HttpConsoleService(fetchFn).enrollCluster(read, { location: 'us-east', role: 'combined' }),
+    ).resolves.toMatchObject({
       aiGridEnabled: true,
       status: 'Ready',
     });
@@ -189,7 +191,7 @@ describe('HttpConsoleService', () => {
       '/api/v1/clusters/site4',
       expect.objectContaining({
         method: 'PATCH',
-        body: '{"labels":{"location":"sydney","ai-grid/enabled":"true"}}',
+        body: '{"labels":{"location":"us-east","ai-grid/enabled":"true","ai-grid/role":"combined"}}',
         headers: expect.objectContaining({ 'Content-Type': 'application/json', 'If-Match': '"7"' }),
       }),
     );

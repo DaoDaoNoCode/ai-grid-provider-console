@@ -56,7 +56,9 @@ The BFF still derives or decides these itself. Do not add more; move these into 
 when the RPCs allow it.
 
 - `toGridCluster` (`bff/internal/api/clusters.go`): `aiGridEnabled` and `provisioned` (the
-  `ai-grid/enabled` and `ai-grid/provisioned` labels equal to `"true"`), `location`, `site`,
+  `ai-grid/enabled` and `ai-grid/provisioned` labels equal to `"true"`; when the backend reports
+  `status.provisioning`, `provisioned` is that equal to `"Compliant"` instead, until the backend
+  serves a provisioned state), `location`, `site`,
   `region` and `openshiftVersion` from labels; `siteName`, `latitude` and `longitude` from the
   `ai-grid/site-name`, `ai-grid/latitude` and `ai-grid/longitude` annotations, with coordinates
   that do not parse or are out of range left out; `consoleUrl`, `platform` and `product` from
@@ -64,6 +66,11 @@ when the RPCs allow it.
   `feature.open-cluster-management.io/addon-*` labels; the list sorted by name.
 - `fetchCluster`: against a backend without `GetManagedCluster` (the shipped one), the BFF
   filters `ListManagedClusters` by name and writes its own NotFound message.
+- The stopgap clients for the backend's current `ai_grid.v1` (`bff/internal/backend/v1.go`),
+  until the console moves to Connect and the backend's contract: `FromV1Cluster` derives the
+  draft's cluster state from `spec.hub_accepts_client`, `status.joined`,
+  `status.available_condition` and the deletion time, and `GetTenant` finds the tenant in the
+  list.
 - `toTenant` (`bff/internal/api/tenants.go`), fallbacks for the shipped backend: `alias`
   defaults to the name, `enabled` defaults to true, `domainDetails` is built from `domains`.
 - `toModel` (`bff/internal/api/models.go`): `displayName` and `description` from the
@@ -83,3 +90,6 @@ when the RPCs allow it.
   backend that ignored `filter`, `offset` and `limit` (the shipped one), so the BFF answers 501
   when the caller sent any of them; without them `listMeta` falls back to a total it can prove.
   This is compatibility with the shipped backend, not filtering.
+- `requireProviderAdmin` (`bff/internal/api/middleware.go`), the BFF's one authorization
+  decision: every `/api/v1` call except `GET /user` and `GET /config` needs the caller's
+  `isProviderAdmin` review to pass (403 otherwise), until the backend authorizes the caller.

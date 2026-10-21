@@ -34,13 +34,29 @@ backend service for cluster access and this BFF for the browser.
 - RPCs on 2026-10-15: `AiGrid/Ping`, `ManagedClusters/ListManagedClusters` (name, labels,
   hubAcceptsClient), `Tenants/ListTenants` (Keycloak Organizations in the `ai-grid` realm).
 
+
+### Against a real backend (stopgap)
+
+Until the console moves to Connect and the backend's generated contract (issues 20–27 and the
+ADRs in `docs/adr/`), the BFF calls a real backend's `ai_grid.v1.Clusters` `List`, `Get` and
+`Update` and `Tenants/List` for the clusters and tenants routes, and maps them onto the draft
+types, so the handlers and the JSON above are unchanged (`bff/internal/backend/v1.go`, messages in
+`mock/proto/ai_grid/backend/v1`). The fake backend still serves the draft, so `--fake-backend`
+keeps the draft clients. `If-Match` maps to `metadata.version` with `lock: true`, and the
+`labels` and `annotations` mask paths to `metadata.labels` and `metadata.annotations`. The
+cluster state is derived from `spec.hub_accepts_client`, `status.joined` and
+`status.available_condition` only. The tenant list forwards `offset`, `limit` and `filter`; the
+backend pages but doesn't evaluate `filter` yet, so a filtered list answers 501. `GetTenant` reads
+the list, and tenant writes answer 501. Backend PR 12 refuses a change to a label or annotation
+outside `ai-grid/*` and `location`, and a bad coordinate, with `InvalidArgument` (422).
+
 ## Decisions
 
 | Topic | Decision | Why |
 |---|---|---|
 | Language | Go, standard library `net/http` router, `google.golang.org/grpc` client against the draft `ai_grid.v1` package generated in `bff/gen` from `mock/proto`. No `client-go`, no backend module dependency. | The BFF reads nothing from the hub; its one Kubernetes call is a `SelfSubjectAccessReview` over plain HTTPS (`internal/hub`). One dependency less to keep in step with the hub. Compiling against the draft lets the BFF, the fake and the UI move ahead of the backend; the drift test keeps the draft honest against the vendored backend proto. |
-| Identity | kube-auth-proxy authenticates the browser and sets `x-forwarded-user`, `x-forwarded-email`, `x-forwarded-groups` and `x-forwarded-access-token`. The BFF reads them (`internal/identity`) and forwards the token as `authorization: Bearer` plus the user, email and groups as gRPC metadata on every RPC (`internal/backend`). The draft proto's `AiGrid/GetCurrentUser` is the RPC that will return the backend's view of the caller. | The backend decides what the caller may do; the BFF has no credential of its own and no authorization logic. The proxy's provider can change (OpenShift OAuth today, a Keycloak realm later) without touching the BFF. |
-| `isProviderAdmin` | The hub's answer to a `SelfSubjectAccessReview` for `patch` on `managedclusters`, asked with the caller's own token (`HUB_API_URL`, in-cluster by default). | The user's RBAC decides, not a console setting, as PR 1 did (review of 2026-10-15). The UI only uses it to show or hide actions; the backend authorizes every call. A `GetCurrentUser` RPC can take this over once the backend acts as the caller. |
+| Identity | kube-auth-proxy authenticates the browser and sets `x-forwarded-user`, `x-forwarded-email`, `x-forwarded-groups` and `x-forwarded-access-token`. The BFF reads them (`internal/identity`) and forwards the token as `authorization: Bearer` plus the user, email and groups as gRPC metadata on every RPC (`internal/backend`). The draft proto's `AiGrid/GetCurrentUser` is the RPC that will return the backend's view of the caller. | The backend decides what the caller may do, and the BFF has no credential of its own. Until the backend authorizes the caller, the BFF makes one decision itself: only a provider admin (see `isProviderAdmin`) reaches `/api/v1` beyond `GET /user` and `GET /config`, and others get 403 (`AGENTS.md`, known exceptions). The proxy's provider can change (OpenShift OAuth today, a Keycloak realm later) without touching the BFF. |
+| `isProviderAdmin` | The hub's answer to a `SelfSubjectAccessReview` for `patch` on `managedclusters`, asked with the caller's own token (`HUB_API_URL`, in-cluster by default). | The user's RBAC decides, not a console setting, as PR 1 did (review of 2026-10-15). The UI uses it to show or hide actions, and until the backend authorizes the caller the BFF also refuses non-admins on `/api/v1` with it (see Identity). A `GetCurrentUser` RPC can take this over once the backend acts as the caller. |
 | Login in development | The Vite dev server and `hack/api.sh` set the same headers from `oc whoami` and `oc whoami -t`. The backend runs locally with `--kubeconfig` (`hack/dev-backend.sh`). | Any developer who has run `oc login` works against a real hub. |
 | Deployment | One pod: kube-auth-proxy (:8443), bff on `127.0.0.1:8080`, ai-grid-backend on `127.0.0.1:9090`. The BFF dials the backend in plaintext over loopback; plaintext to any other address is refused unless `BACKEND_INSECURE=true`. The kubelet probes `/readyz` through the proxy (`--skip-auth-route=^/readyz$`); neither the BFF nor the backend has a probe of its own. | Nothing on the pod network can reach the BFF with forged identity headers or the backend at all. When the backend gets its own Deployment, set `BACKEND_ADDRESS` to its Service and `BACKEND_CA_FILE` to its serving CA. |
 | Cluster labels | `ai-grid/enabled`, `ai-grid/provisioned`, `location`, `ai-grid/site`, `ai-grid/region`, and ACM's `openshiftVersion`. | The POC's conventions (site and region were added to the POC on 2026-10-14) so that Placements written by either tool select the same clusters. The BFF derives fields from the labels the backend returns. |
@@ -391,8 +407,8 @@ decides.
   is read and before any call: `this write needs an If-Match header: send the ETag that GET
   answered (the object's resourceVersion), for example If-Match: "42"`; `If-Match: *`, which
   names no version, is 428 too (`If-Match: * names no version: ...`). So every write carries the
-  version its client read. The checks run in this order: 415 for a body that is not JSON, then
-  428, then the body (422, 413). `If-Match` must be one strong entity tag exactly as `ETag` sent
+  version its client read. After the provider-admin check (403 for a non-admin), the checks run in this order: 415 for a
+  body that is not JSON, then 428, then the body (422, 413). `If-Match` must be one strong entity tag exactly as `ETag` sent
   it (`"42"`); a bare value, a weak tag (`W/"42"`) or a list is 422 `If-Match must be one entity
   tag as the ETag header sent it, for example "42"` before any call. The tenant version is the
   backend's (`Tenant.resource_version`, kept in an organization attribute;
@@ -400,7 +416,8 @@ decides.
 - **Every PATCH is one update; the backend decides what changes.** The BFF reads nothing before
   a PATCH: each field present in the body goes into the update's object and its mask, whatever
   the stored value, and the backend applies the mask under optimistic locking. A body that names
-  no field is 422 `the request body names no field to change` before any call (there is nothing
+  no field is 422 `the request body names no field to change` before any call (a non-admin gets
+  403 from the provider-admin check first) (there is nothing
   to send; answering it like the GET would skip the version check). Whether an update changes
   anything is the backend's answer: a cluster or model update that leaves the object as stored
   is not written and comes back with the stored `resourceVersion` (the Kubernetes API server
@@ -491,8 +508,9 @@ exists; the frontend uses the mock service meanwhile.
 | Missing or malformed token header | 401 |
 | Hub rejects the token in the access review | 401 |
 | Hub unreachable or failing during the access review | 502, generic message, detail in the BFF log |
+| The access review says the caller may not patch ManagedClusters: every `/api/v1` request but `GET /user` and `GET /config` (the provider-admin check, until the backend authorizes the caller) | 403, `the console is for provider admins: the hub says you may not patch ManagedClusters` |
 | Backend `Unauthenticated` | 401 |
-| Backend `PermissionDenied` (the hub's RBAC denies the caller, e.g. a PATCH by a user who may not patch ManagedClusters) | 403, backend message kept |
+| Backend `PermissionDenied` (the hub's RBAC denies the caller) | 403, backend message kept |
 | Backend `NotFound` | 404, backend message kept (`object with identifier '<name>' not found`) |
 | Invalid POST, PATCH or PUT body (unknown field, wrong type, trailing content), bad `offset`/`limit` query, a removed list parameter (`search`, `namespace`, `label`), malformed `If-Match` | 422, BFF message |
 | POST, PATCH or PUT body not declared `application/json` | 415, BFF message |

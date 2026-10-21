@@ -6,6 +6,7 @@ import {
   toSubscription,
   toSubscriptionInfo,
 } from './adapters';
+import type { GridMembership } from './clusters';
 import type { ConsoleService } from './ConsoleService';
 import { ServiceError } from './ConsoleService';
 import type {
@@ -56,10 +57,10 @@ export class HttpConsoleService implements ConsoleService {
     return clusters.map(toGridCluster);
   }
 
-  async enrollCluster(cluster: GridCluster): Promise<GridCluster> {
+  async enrollCluster(cluster: GridCluster, { location, role }: GridMembership): Promise<GridCluster> {
     // The BFF replaces the labels map as a whole, so send every label read with the cluster.
     const updated = await this.request<ApiCluster>('PATCH', `/clusters/${encodeURIComponent(cluster.name)}`, {
-      body: { labels: { ...cluster.labels, 'ai-grid/enabled': 'true' } },
+      body: { labels: { ...cluster.labels, 'ai-grid/enabled': 'true', 'ai-grid/role': role, location } },
       ifMatch: cluster.resourceVersion,
     });
     return toGridCluster(updated);

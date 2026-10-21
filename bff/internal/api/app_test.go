@@ -198,6 +198,35 @@ func TestUserFromProxyHeaders(t *testing.T) {
 	}
 }
 
+func TestOnlyProviderAdminsReachTheAPI(t *testing.T) {
+	cfg := testConfig(t)
+	patch := func() *http.Request {
+		return withIfMatch(patchRequest("site-1", `{"labels":{"ai-grid/enabled":"true"}}`), `"7"`)
+	}
+	fake := &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{{Name: "site-1", ResourceVersion: "7"}}}
+	denied := newTestAppWithHub(t, cfg, fake, &fakeHub{allowed: false})
+	for _, req := range []*http.Request{patch(), asUser(http.MethodGet, "/api/v1/clusters"), asUser(http.MethodGet, "/api/v1/tenants")} {
+		if rec := serve(denied, req); rec.Code != http.StatusForbidden {
+			t.Fatalf("%s %s by a non-admin: got %d %s, want 403", req.Method, req.URL.Path, rec.Code, rec.Body.String())
+		}
+	}
+	if fake.Metadata != nil {
+		t.Fatalf("a refused call must not reach the backend: %v", fake.Metadata)
+	}
+	// Who the caller is stays answerable, so the UI can say why.
+	for _, path := range []string{"/api/v1/user", "/api/v1/config"} {
+		if rec := serve(denied, asUser(http.MethodGet, path)); rec.Code != http.StatusOK {
+			t.Fatalf("GET %s by a non-admin: got %d %s", path, rec.Code, rec.Body.String())
+		}
+	}
+	if rec := serve(newTestApp(t, cfg, fake), patch()); rec.Code != http.StatusOK {
+		t.Fatalf("PATCH by a provider admin: got %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := serve(newTestAppWithHub(t, cfg, fake, &fakeHub{status: http.StatusUnauthorized}), patch()); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expired token: got %d, want 401", rec.Code)
+	}
+}
+
 func TestConfigEndpoint(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.GridEndpoint = "https://grid.example.com"
@@ -598,6 +627,15 @@ func TestStateStrings(t *testing.T) {
 	}
 	if lat := toGridCluster(&aigridv1.ManagedCluster{Annotations: map[string]string{AnnotationLatitude: "north"}}).Latitude; lat != nil {
 		t.Errorf("invalid latitude must be omitted, got %v", *lat)
+	}
+	// A backend that reports provisioning decides it over the ai-grid/provisioned
+	// label. NonCompliant isn't failed: the cluster may still be installing.
+	stale := map[string]string{LabelEnabled: "true", LabelProvisioned: "true"}
+	for value, want := range map[string]bool{"Compliant": true, "NonCompliant": false, "Pending": false, "": false} {
+		c := toGridCluster(&aigridv1.ManagedCluster{Labels: stale, Status: &aigridv1.ManagedClusterStatus{Provisioning: &value}})
+		if c.Provisioned != want {
+			t.Errorf("provisioning %q -> provisioned %v, want %v", value, c.Provisioned, want)
+		}
 	}
 }
 

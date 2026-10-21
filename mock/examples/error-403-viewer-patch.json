@@ -29,7 +29,7 @@
   "body": {
     "error": {
       "code": "403",
-      "message": "managedclusters.cluster.open-cluster-management.io \"site-frankfurt-1\" is forbidden: User \"viewer\" cannot patch resource \"managedclusters\" in API group \"cluster.open-cluster-management.io\" at the cluster scope"
+      "message": "the console is for provider admins: the hub says you may not patch ManagedClusters"
     }
   }
 }

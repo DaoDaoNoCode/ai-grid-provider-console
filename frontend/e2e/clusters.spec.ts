@@ -18,7 +18,12 @@ test('adds an enrollable cluster to the AI Grid and keeps it after a reload', as
   await expect(add.or(page.getByRole('menuitem', { name: 'Remove from AI Grid' }))).toBeVisible();
   if (await add.isVisible()) {
     await add.click();
-    await page.getByTestId('cluster-membership-modal').getByRole('button', { name: 'Add to AI Grid' }).click();
+    // The location is prefilled from the cluster's label; the role has to be chosen.
+    const modal = page.getByTestId('cluster-membership-modal');
+    await expect(modal.getByRole('textbox', { name: 'Location' })).toHaveValue(ENROLLABLE);
+    await modal.getByRole('combobox', { name: 'Role' }).click();
+    await page.getByRole('option', { name: /Combined/ }).click();
+    await modal.getByRole('button', { name: 'Add to AI Grid' }).click();
     await expect(page.getByText(`${ENROLLABLE} added to AI Grid`)).toBeVisible();
   } else {
     await page.keyboard.press('Escape');

@@ -717,7 +717,7 @@ func serve(t *testing.T, srv *grpc.Server, lis *bufconn.Listener) *backend.Clien
 	t.Helper()
 	go func() { _ = srv.Serve(lis) }()
 
-	client, err := backend.Dial(backend.Config{Address: "passthrough:///bufconn", Insecure: true},
+	client, err := backend.Dial(backend.Config{Address: "passthrough:///bufconn", Insecure: true, DraftAPI: true},
 		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return lis.DialContext(ctx) }))
 	if err != nil {
 		t.Fatal(err)

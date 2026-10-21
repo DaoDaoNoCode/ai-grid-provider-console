@@ -62,6 +62,10 @@ describe('toGridCluster', () => {
     expect(toGridCluster(apiCluster({ aiGridEnabled: false, provisioned: false })).provisioningStatus).toBe(
       'Not provisioned',
     );
+    // Just removed: the hub still reports it provisioned until its Policy lets go.
+    expect(toGridCluster(apiCluster({ aiGridEnabled: false, provisioned: true })).provisioningStatus).toBe(
+      'Not provisioned',
+    );
   });
 
   it('reads coordinates and keeps them absent when the backend sends none', () => {

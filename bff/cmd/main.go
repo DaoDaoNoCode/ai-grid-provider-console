@@ -40,6 +40,7 @@ func run() error {
 		ServerName: cfg.BackendServerName,
 		Insecure:   cfg.BackendInsecure,
 		Timeout:    cfg.BackendTimeout,
+		DraftAPI:   cfg.FakeBackend,
 	})
 	if err != nil {
 		return err

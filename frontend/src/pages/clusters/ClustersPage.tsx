@@ -16,7 +16,7 @@ import { ExclamationTriangleIcon } from '@patternfly/react-icons';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { ThProps } from '@patternfly/react-table';
 import { Link, useNavigate } from 'react-router-dom';
-import type { ClustersService } from '../../api/clusters';
+import type { ClustersService, GridMembership } from '../../api/clusters';
 import type { UserService } from '../../api/ConsoleService';
 import { ServiceError } from '../../api/ConsoleService';
 import type { GridCluster } from '../../api/types';
@@ -36,7 +36,7 @@ import { MembershipModal } from './MembershipModal';
 
 // Ported from krisv/ai-grid-cloud-provider-poc src/app/pages/clusters/ClustersPage.tsx at 62319b8.
 // The PoC's columns, labels, and enroll flow, plus the console's Site, Region, Hub, and
-// OpenShift columns, removal from AI Grid, and a confirmation both ways. The Status tooltip
+// OpenShift columns, removal from AI Grid, and a confirmation both ways. The Connection tooltip
 // adds the ACM state behind Unknown (such as Importing) and the backend's message, which the
 // PoC's three states don't have.
 
@@ -49,7 +49,7 @@ type Column = { label: string; sort?: (a: GridCluster, b: GridCluster) => number
 const columns: Column[] = [
   { label: 'Cluster', sort: (a, b) => a.name.localeCompare(b.name) },
   { label: 'Location', sort: (a, b) => (a.location ?? '').localeCompare(b.location ?? '') },
-  { label: 'Status', sort: (a, b) => a.status.localeCompare(b.status) },
+  { label: 'Connection', sort: (a, b) => a.status.localeCompare(b.status) },
   { label: 'AI Grid', sort: (a, b) => membership(a).localeCompare(membership(b)) },
   { label: 'Site', wide: true },
   { label: 'Region', wide: true },
@@ -62,7 +62,7 @@ const wideOnly: ThProps['visibility'] = ['hidden', 'visibleOn2Xl'];
 /** A member's provisioning, or nothing for a cluster outside AI Grid (sorts first). */
 const membership = (c: GridCluster) => (c.aiGridEnabled ? c.provisioningStatus : '');
 
-/** The Status tooltip: the ACM state behind Unknown, then the backend's message. */
+/** The Connection tooltip: the ACM state behind Unknown, then the backend's message. */
 const statusReason = (c: GridCluster) => [c.state, c.statusMessage].filter(Boolean).join(': ') || undefined;
 
 /** Why a cluster can't be added: the hub hasn't finished importing it (or is detaching it). */
@@ -97,8 +97,10 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
   };
 
   /** Adds the cluster to AI Grid or removes it; throws for the modal to show. */
-  const applyChange = async ({ cluster, join }: MembershipChange) => {
-    const updated = join ? await service.enrollCluster(cluster) : await service.removeClusterFromGrid(cluster);
+  const applyChange = async ({ cluster, join }: MembershipChange, membership?: GridMembership) => {
+    const updated = membership
+      ? await service.enrollCluster(cluster, membership)
+      : await service.removeClusterFromGrid(cluster);
     if (updated.aiGridEnabled !== join) {
       throw new Error('The Hub did not confirm the change. Refresh and try again.');
     }
@@ -209,7 +211,7 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
                             EMPTY_VALUE
                           ))}
                       </Td>
-                      <Td dataLabel="Status">
+                      <Td dataLabel="Connection">
                         <StatusLabel isCompact status={c.status} reason={statusReason(c)} />
                       </Td>
                       <Td dataLabel="AI Grid">
@@ -268,7 +270,11 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
       <PageHeader title="Clusters" description="Manage AI Grid membership and provisioning readiness." />
       {!error && !loaded ? <PageLoading label="Loading clusters" /> : <PageSection isFilled>{body()}</PageSection>}
       {change && (
-        <MembershipModal {...change} onConfirm={() => applyChange(change)} onClose={() => setChange(undefined)} />
+        <MembershipModal
+          {...change}
+          onConfirm={(membership) => applyChange(change, membership)}
+          onClose={() => setChange(undefined)}
+        />
       )}
     </>
   );
