@@ -35,8 +35,9 @@ import type { MembershipChange } from './MembershipModal';
 import { MembershipModal } from './MembershipModal';
 
 // Ported from krisv/ai-grid-cloud-provider-poc src/app/pages/clusters/ClustersPage.tsx at 62319b8.
-// The PoC's columns, labels, and enroll flow, plus the console's Site, Region, Hub, and
-// OpenShift columns, removal from AI Grid, and a confirmation both ways. The Connection tooltip
+// The PoC's columns, labels, and enroll flow, plus the console's Hub and OpenShift columns,
+// removal from AI Grid, and a confirmation both ways. Site and Region are left out until clusters
+// carry them (ai-grid/site and ai-grid/region; nothing sets them yet). The Connection tooltip
 // adds the ACM state behind Unknown (such as Importing) and the backend's message, which the
 // PoC's three states don't have.
 
@@ -51,8 +52,6 @@ const columns: Column[] = [
   { label: 'Location', sort: (a, b) => (a.location ?? '').localeCompare(b.location ?? '') },
   { label: 'Connection', sort: (a, b) => a.status.localeCompare(b.status) },
   { label: 'AI Grid', sort: (a, b) => membership(a).localeCompare(membership(b)) },
-  { label: 'Site', wide: true },
-  { label: 'Region', wide: true },
   { label: 'Hub', wide: true },
   { label: 'OpenShift' },
 ];
@@ -216,12 +215,6 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
                       </Td>
                       <Td dataLabel="AI Grid">
                         {c.aiGridEnabled ? <StatusLabel isCompact status={c.provisioningStatus} /> : EMPTY_VALUE}
-                      </Td>
-                      <Td dataLabel="Site" visibility={wideOnly}>
-                        {c.site ?? EMPTY_VALUE}
-                      </Td>
-                      <Td dataLabel="Region" visibility={wideOnly}>
-                        {c.region ?? EMPTY_VALUE}
                       </Td>
                       <Td dataLabel="Hub" visibility={wideOnly}>
                         {c.hubAcceptsClient ? 'Accepted' : 'Pending'}
