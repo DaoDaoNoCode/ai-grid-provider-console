@@ -38,19 +38,24 @@ type Inventory = { overview: GridOverview; served: boolean };
 /**
  * The backend's overview, or, when it doesn't serve Grid/GetOverview yet (501), the AI Grid members
  * from the Clusters list with no metrics: the overview's clusters are exactly those members.
- * `notServed` remembers a 501, so later polls ask the Clusters list alone instead of two calls.
+ * `support` remembers a 501, so later polls ask the Clusters list alone instead of two calls. Refresh
+ * starts a new generation: a 501 for a request from before it can't mark a backend that now serves
+ * the overview as not serving it.
  */
+type OverviewSupport = { notServed: boolean; generation: number };
+
 const overviewOrClusters = async (
   service: GridService & Pick<ClustersService, 'listClusters'>,
-  notServed: { current: boolean },
+  support: OverviewSupport,
   ...args: Parameters<GridService['getGridOverview']>
 ): Promise<Inventory> => {
-  if (!notServed.current) {
+  if (!support.notServed) {
+    const generation = support.generation;
     try {
       return { overview: await service.getGridOverview(...args), served: true };
     } catch (err) {
       if (!(err instanceof ServiceError && err.isNotImplemented)) throw err;
-      notServed.current = true;
+      if (support.generation === generation) support.notServed = true;
     }
   }
   const clusters = (await service.listClusters()).filter((c) => c.aiGridEnabled);
@@ -68,14 +73,14 @@ const organizationsErrorOf = (err: Error) =>
 const ranges: GridRange[] = ['1h', '6h', '24h'];
 
 export const GridPage: React.FC<Props> = ({ service, monitoring = false }) => {
-  // Set once the backend answers 501 for the overview; Refresh asks it again.
-  const overviewNotServed = useRef(false);
+  // Whether the backend answered 501 for the overview; Refresh asks it again.
+  const overviewSupport = useRef<OverviewSupport>({ notServed: false, generation: 0 });
   // On /monitoring the metrics answer below carries the clusters too, so only the map asks for them alone.
   const [inventory, inventoryLoaded, inventoryError, refreshOverview] = useServiceData<Inventory | undefined>(
     () =>
       monitoring
         ? Promise.resolve(undefined)
-        : overviewOrClusters(service, overviewNotServed, '1h', { includeMetrics: false }),
+        : overviewOrClusters(service, overviewSupport.current, '1h', { includeMetrics: false }),
     undefined,
   );
   const [models, , modelsLoadError, refreshModels] = useServiceData<ManagedModel[]>(() => service.listModels(), []);
@@ -92,7 +97,7 @@ export const GridPage: React.FC<Props> = ({ service, monitoring = false }) => {
   >(
     () =>
       monitoring
-        ? overviewOrClusters(service, overviewNotServed, range).then((answer) => ({ ...answer, range }))
+        ? overviewOrClusters(service, overviewSupport.current, range).then((answer) => ({ ...answer, range }))
         : Promise.resolve(undefined),
     undefined,
   );
@@ -115,7 +120,8 @@ export const GridPage: React.FC<Props> = ({ service, monitoring = false }) => {
   const refresh = async () => {
     setRefreshing(true);
     // A backend redeployed with Grid/GetOverview is picked up without reloading the page.
-    overviewNotServed.current = false;
+    overviewSupport.current.notServed = false;
+    overviewSupport.current.generation += 1;
     await Promise.all([
       refreshOverview(),
       refreshModels(),

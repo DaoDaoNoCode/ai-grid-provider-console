@@ -270,3 +270,32 @@ it('asks for the overview once the backend has said it has none, until Refresh a
   await user.click(screen.getByRole('button', { name: 'Refresh' }));
   await waitFor(() => expect(overview).toHaveBeenCalledTimes(2));
 });
+
+it("doesn't let a 501 from before Refresh hide an overview the backend now serves", async () => {
+  const service = withOrganizations();
+  const serve = service.getGridOverview.bind(service);
+  let refuse: () => void = () => undefined;
+  const overview = vi
+    .spyOn(service, 'getGridOverview')
+    .mockImplementationOnce(serve)
+    // The range change's request is still out when Refresh asks again, and is refused only afterwards.
+    .mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          refuse = () => reject(new ServiceError(501, 'the AI Grid backend does not support this operation yet'));
+        }),
+    )
+    .mockImplementation(serve);
+  const user = userEvent.setup();
+  renderAt('/monitoring', service);
+  expect(await screen.findByRole('img', { name: 'Gateway request rate over time' })).toBeVisible();
+  await user.click(screen.getByRole('button', { name: 'Last 6h' }));
+  await waitFor(() => expect(overview).toHaveBeenCalledTimes(2));
+  await user.click(screen.getByRole('button', { name: 'Refresh' }));
+  await waitFor(() => expect(overview).toHaveBeenCalledTimes(3));
+  await act(async () => refuse());
+  // The next load still asks for the overview, and the page stays on the served one.
+  await user.click(screen.getByRole('button', { name: 'Last 24h' }));
+  await waitFor(() => expect(overview).toHaveBeenCalledTimes(4));
+  expect(screen.queryByText('Showing clusters from the Clusters list')).not.toBeInTheDocument();
+});
