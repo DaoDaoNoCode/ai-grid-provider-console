@@ -1,6 +1,5 @@
 // Stopgap: the messages of the backend's real ai_grid.v1 Clusters and
-// Tenants services, copied from ai-grid-provider-backend proto/ai_grid/v1 at ca9703c (and
-// ManagedClusterStatus.provisioning from ai-grid-provider-backend PR 12, 5a5c51e)
+// Tenants services, copied from ai-grid-provider-backend proto/ai_grid/v1 at 9827991 (main)
 // (clusters_service, managed_cluster_type, metadata_type, tenant_type, tenants_service), so the
 // BFF can call those RPCs. Field numbers, names and types are unchanged; the validation and HTTP
 // options are dropped. The package is renamed because the draft in ../../v1 declares the same

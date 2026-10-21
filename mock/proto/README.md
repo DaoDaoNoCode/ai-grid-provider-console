@@ -9,7 +9,7 @@ shapes it starts from are in `mock/research/backend-conventions.md` sections 5 a
 
 ## What it is
 
-The backend's proto has three RPCs. The console needs more than that, so it carries a
+The first backend's proto had three RPCs. The console needs more than that, so it carries a
 **draft** of the next proto in `mock/proto/ai_grid/v1/`, split by type as the style guide in
 `mock/research/backend-conventions.md` section 5 says (`ai_grid.proto`, `condition_type.proto`,
 `metadata_type.proto`, `managed_cluster_type.proto`, `managed_clusters_service.proto`,
@@ -22,19 +22,23 @@ console's own (`bff/gen/ai_grid/v1`), not the backend's.
 
 What keeps it honest:
 
-- **The backend's three services are in it unchanged.** `AiGrid/Ping`,
-  `ManagedClusters/ListManagedClusters` and `Tenants/ListTenants`, with `ManagedCluster`
-  fields 1-3 and `Tenant` fields 1-3 byte-for-byte as the backend defines them. New fields
-  and methods are only appended.
-- **The backend's real file is vendored.** `mock/proto/upstream/ai_grid.proto` is a copy of
-  `proto/ai_grid/v1/ai_grid.proto` from the backend repository at the commit in
-  `mock/proto/upstream/COMMIT`. `hack/sync-upstream-proto.sh <ref>` refreshes both;
-  `hack/dev-backend.sh` runs the backend at that commit.
-- **A test proves the superset.** `bff/internal/protodrift` compiles the vendored file with
-  `protocompile` and checks, against the draft's generated descriptors, that every upstream
-  service, method (same input and output), message, field (same number, name, cardinality
-  and type) and enum value exists. The day the backend changes its proto, the sync script
-  plus this test name every difference. `TestFakeImplementsEveryProtoMethod` in
+- **It started from the first backend's services.** `AiGrid/Ping`,
+  `ManagedClusters/ListManagedClusters` and `Tenants/ListTenants` came from that backend
+  unchanged; new fields and methods were only appended. The backend is now
+  ai-grid-cloud/ai-grid-provider-backend, whose `ai_grid.v1` follows OSAC's shapes
+  (`Clusters/List`, `id + metadata + spec + status`) instead, so the draft is the fake
+  backend's contract, not a superset of the real one.
+- **The real backend's proto is vendored.** `mock/proto/upstream/ai_grid/v1/*.proto` are the
+  backend's `proto/ai_grid/v1` at the commit in `mock/proto/upstream/COMMIT`, and
+  `mock/proto/upstream/image.binpb` is those files compiled with their imports by `buf build`.
+  `hack/sync-upstream-proto.sh <ref>` refreshes all three.
+- **A test guards the BFF's copy.** Against the real backend the BFF calls `Clusters` and
+  `Tenants` with a copy of their messages, `mock/proto/ai_grid/backend/v1`.
+  `bff/internal/protodrift` loads the vendored image and checks that every copied message,
+  field (same number, name, cardinality, presence, oneof and type) and enum value is still
+  the backend's, and that the four RPCs the BFF calls still take and return those messages.
+  The day the backend changes one of them, the sync script plus this test name every
+  difference. `TestFakeImplementsEveryProtoMethod` in
   `bff/internal/fakebackend` then calls every method of every draft service and fails on an
   `Unimplemented` answer, except for the methods listed in `intentionallyUnimplemented`
   (`fakebackend_test.go`), each with its reason: the placeholder `Grid/GetNetwork` and
@@ -142,17 +146,16 @@ of P8 are not in the draft yet.
    `Unimplemented*Server` makes it compile and answer `Unimplemented`. Both teams review the
    shape. On merge the backend tags a version.
 2. **Console syncs and the fake follows.** The console runs `hack/sync-upstream-proto.sh`,
-   the drift test shows where the shipped shape differs from the draft and the draft is
-   reconciled, the fake gains the behaviour from the research, the BFF handler lands, the
+   the shipped shape is compared with the draft and the draft is reconciled, the fake gains the behaviour from the research, the BFF handler lands, the
    page switches from mock to real types. Each step is a small PR.
 3. **Stubs are fine in production.** A deployed console in front of a backend that lacks an
    RPC shows "not available yet" on that page and works everywhere else.
 4. **Drift is caught nightly.** `.github/workflows/drift.yaml` runs every night (and on
    demand) on a throwaway checkout: `hack/sync-upstream-proto.sh main`, then the drift test.
-   Nothing is committed; a red run means the backend changed its proto, and the fix is to
-   run the sync locally, reconcile the draft and commit both. CI on pull requests tests the
-   draft against the vendored copy only, so a backend change that lands between syncs
-   shows up in the nightly run, not in the pull request.
+   Nothing is committed; a red run means the backend changed a message or RPC the BFF uses,
+   and the fix is to run the sync locally, update the BFF's copy and commit both. CI on pull
+   requests tests the copy against the vendored proto only, so a backend change that lands
+   between syncs shows up in the nightly run, not in the pull request.
 5. **The research is the shared source.** When the backend team implements an area, the
    report for that area is the specification both sides test against; disagreements go into
    the report's open questions and are resolved there before code.

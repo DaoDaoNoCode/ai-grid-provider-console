@@ -15,7 +15,7 @@ frontend/.vite/
 !.env.example
 .DS_Store
 
-# local checkout of ai-grid-backend (hack/dev-backend.sh)
+# local files the hack scripts write (hack/hub-ca.sh)
 .cache/
 
 .local/

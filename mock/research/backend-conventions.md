@@ -2,6 +2,10 @@
 
 Date: 2026-10-15. Read-only research. Nothing in the console repo was modified.
 
+> This describes the backend as it was then, `yuvalturg/ai-grid-backend`. The backend is now
+> [ai-grid-cloud/ai-grid-provider-backend](https://github.com/ai-grid-cloud/ai-grid-provider-backend);
+> the findings are kept as recorded.
+
 Paths used below:
 
 - Console: `<console repo>` (branch `mock-backend`)

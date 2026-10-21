@@ -3,16 +3,21 @@
 #
 #   hack/sync-upstream-proto.sh <ref>      a branch, tag or commit of the backend repository
 #
-# Writes mock/proto/upstream/ai_grid.proto unchanged from the backend and the resolved
-# commit into mock/proto/upstream/COMMIT. Then run `make -C bff test`: the drift test in
-# bff/internal/protodrift fails when the draft in mock/proto is no longer a superset of
-# the backend's file, which is the signal to update the draft (or adopt the backend's
-# package and delete it). .github/workflows/drift.yaml runs both nightly against main.
+# Writes mock/proto/upstream/:
+#   ai_grid/v1/*.proto  the backend's proto/ai_grid/v1, unchanged, to read and diff
+#   image.binpb         those files compiled with their imports (googleapis, protovalidate,
+#                       the OpenAPI options) by `buf build`, so the drift test can compare
+#                       descriptors without fetching anything
+#   COMMIT              the repository, commit and path they came from
+# Then run `make -C bff test`: bff/internal/protodrift fails when the BFF's copy of the
+# backend's messages (mock/proto/ai_grid/backend/v1) no longer matches. The nightly
+# .github/workflows/drift.yaml runs both against the backend's main.
 #
-# The fetch lands in a temporary directory; the vendored files are replaced only once
-# it succeeded, so a network error or a moved file leaves the previous copy in place.
+# Everything lands in a temporary directory first; the vendored files are replaced only once
+# the fetch and the build succeeded, so an error leaves the previous copy in place.
 #
 #   BACKEND_REPO  git URL (default: the repo= line of COMMIT)
+#   BUF           buf command (default: bff/Makefile's, run through go run)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 UPSTREAM="${ROOT}/mock/proto/upstream"
@@ -23,35 +28,55 @@ if [[ -z "${REF}" ]]; then
   exit 2
 fi
 REPO="${BACKEND_REPO:-$(sed -n 's/^repo=//p' "${COMMIT_FILE}")}"
-PROTO_PATH="$(sed -n 's/^path=//p' "${COMMIT_FILE}")"
-OWNER_REPO="${REPO#https://github.com/}"
-OWNER_REPO="${OWNER_REPO%.git}"
+PROTO_PATH="$(sed -n 's/^path=//p' "${COMMIT_FILE}")"   # proto/ai_grid/v1
+MODULE_DIR="${PROTO_PATH%/ai_grid/v1}"                    # proto: the buf module root
+BUF="${BUF:-$(sed -n 's/^BUF := //p' "${ROOT}/bff/Makefile")}"
 TMP="$(mktemp -d)"
-trap 'rm -rf "${TMP}"' EXIT
-FETCHED="${TMP}/ai_grid.proto"
+# If the swap below is cut short, put the previous copy back before the temporary directory goes.
+trap '[[ -e "${UPSTREAM}" ]] || mv "${TMP}/previous" "${UPSTREAM}" 2>/dev/null; rm -rf "${TMP}"' EXIT
 
-if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-  SHA="$(gh api "repos/${OWNER_REPO}/commits/${REF}" --jq .sha)"
-  gh api -H "Accept: application/vnd.github.raw" "repos/${OWNER_REPO}/contents/${PROTO_PATH}?ref=${SHA}" > "${FETCHED}"
+git clone -q --filter=blob:none --no-checkout "${REPO}" "${TMP}/repo"
+# A branch, a tag or a full SHA is fetched. A short SHA can't be, but the clone already has every
+# commit on the remote's branches and tags, so a short SHA alone resolves there; any other failed
+# fetch (a missing ref, the network) stops with git's own error. ^{commit} records the commit an
+# annotated tag points at, not the tag object.
+if fetch_err="$(git -C "${TMP}/repo" fetch -q origin -- "${REF}" 2>&1)"; then
+  SHA="$(git -C "${TMP}/repo" rev-parse "FETCH_HEAD^{commit}")"
+elif [[ "${REF}" =~ ^[0-9a-f]{4,39}$ ]]; then
+  if ! SHA="$(git -C "${TMP}/repo" rev-parse -q --verify --end-of-options "${REF}^{commit}")"; then
+    echo "error: no single commit ${REF} on a branch or tag of ${REPO} (a commit only on a pull request needs its full SHA); keeping the vendored copy" >&2
+    exit 1
+  fi
 else
-  git clone -q --filter=blob:none --no-checkout "${REPO}" "${TMP}/repo"
-  git -C "${TMP}/repo" fetch -q origin "${REF}" || true
-  SHA="$(git -C "${TMP}/repo" rev-parse "${REF}^{commit}" 2>/dev/null || git -C "${TMP}/repo" rev-parse "origin/${REF}^{commit}")"
-  git -C "${TMP}/repo" show "${SHA}:${PROTO_PATH}" > "${FETCHED}"
+  echo "error: could not fetch ${REF} from ${REPO}; keeping the vendored copy" >&2
+  echo "${fetch_err}" >&2
+  exit 1
 fi
-
-if ! grep -q '^syntax' "${FETCHED}"; then
-  echo "error: ${PROTO_PATH} at ${SHA} does not look like a proto file; keeping the vendored copy" >&2
+git -C "${TMP}/repo" checkout -q "${SHA}" -- "${MODULE_DIR}"
+SRC="${TMP}/repo/${MODULE_DIR}"
+if ! ls "${TMP}/repo/${PROTO_PATH}"/*.proto >/dev/null 2>&1; then
+  echo "error: no .proto files in ${PROTO_PATH} at ${SHA}; keeping the vendored copy" >&2
   exit 1
 fi
 
-cat > "${TMP}/COMMIT" <<COMMIT
-# Source of upstream/ai_grid.proto: the backend's real proto, vendored unchanged.
-# Update with hack/sync-upstream-proto.sh <ref>; hack/dev-backend.sh checks out this commit.
+# The backend's buf.yaml and buf.lock pin the imports; buf fetches them from the BSR.
+(cd "${SRC}" && ${BUF} build --exclude-source-info --path ai_grid/v1 -o "${TMP}/image.binpb")
+
+mkdir -p "${TMP}/out/ai_grid/v1"
+cp "${TMP}/repo/${PROTO_PATH}"/*.proto "${TMP}/out/ai_grid/v1/"
+mv "${TMP}/image.binpb" "${TMP}/out/image.binpb"
+cat > "${TMP}/out/COMMIT" <<COMMIT
+# Source of ai_grid/v1/*.proto and image.binpb: the backend's real proto, vendored unchanged.
+# Update with hack/sync-upstream-proto.sh <ref>.
 repo=${REPO}
 commit=${SHA}
 path=${PROTO_PATH}
 COMMIT
-mv "${FETCHED}" "${UPSTREAM}/ai_grid.proto"
-mv "${TMP}/COMMIT" "${COMMIT_FILE}"
-echo "==> ${UPSTREAM}/ai_grid.proto now at ${SHA} (${REF}); run 'make -C bff test' for the drift test"
+# Swap the directories with a backup, so an interrupted swap leaves one of the two in place.
+mv "${UPSTREAM}" "${TMP}/previous"
+if ! mv "${TMP}/out" "${UPSTREAM}"; then
+  mv "${TMP}/previous" "${UPSTREAM}"
+  echo "error: could not replace ${UPSTREAM}; kept the previous copy" >&2
+  exit 1
+fi
+echo "==> ${UPSTREAM} now at ${SHA} (${REF}); run 'make -C bff test' for the drift test"

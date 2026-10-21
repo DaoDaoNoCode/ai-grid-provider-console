@@ -42,7 +42,7 @@ build: ## build ./bin/bff and ./bin/fake-backend
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o bin/bff ./cmd
 	CGO_ENABLED=0 go build -o bin/fake-backend ./cmd/fake-backend
 
-run: ## run against a local ai-grid-backend (hack/dev-backend.sh); callers must send the identity headers
+run: ## run against the backend on BACKEND_ADDRESS (make dev-forward-backend, or one from its repository); callers must send the identity headers
 	go run -ldflags "$(LDFLAGS)" ./cmd --port=$(PORT) --backend-address=$(BACKEND_ADDRESS) --hub-api-url=$(HUB_API_URL) --hub-ca-file=$(HUB_CA_FILE) --log-level=$(LOG_LEVEL)
 
 fake-backend: ## run the fake ai-grid-backend (:9090) and fake hub API (:9091) from ../mock/fixtures

@@ -4,7 +4,7 @@ Three repositories, three owners, one contract. The backend's proto file is the 
 `docs/plan/bff-api.md` records how each RPC appears to the browser.
 
 ```
-frontend (this repo)  --JSON-->  bff (this repo)  --gRPC-->  ai-grid-backend (yuvalturg/ai-grid-backend)
+frontend (this repo)  --JSON-->  bff (this repo)  --gRPC-->  ai-grid-provider-backend (ai-grid-cloud/ai-grid-provider-backend)
 ```
 
 The foundation and the thin-BFF branches delivered: login through kube-auth-proxy, a BFF
@@ -14,7 +14,7 @@ the backend running from a local checkout.
 
 ## Backend (ai-grid-backend)
 
-Owner: Yuval Turgeman. Everything that touches the hub, Keycloak or metrics.
+Owner: the backend team ([ai-grid-provider-backend](https://github.com/ai-grid-cloud/ai-grid-provider-backend)). Everything that touches the hub, Keycloak or metrics.
 
 1. Publish a container image and manifests for OpenShift (the Kind manifests already
    apply; only the image reference and the Keycloak values differ). Keycloak credentials
@@ -63,9 +63,9 @@ Owner: Yuval Turgeman. Everything that touches the hub, Keycloak or metrics.
 
 Owner: console team. A handler per RPC, nothing else.
 
-1. As RPCs land in the backend, sync the vendored proto (`hack/sync-upstream-proto.sh`) and
-   reconcile the draft in `mock/proto` (cluster PATCH, tenants, models and capabilities are
-   already mapped against it), and map the rest in `internal/api`: `GetOverview` to
+1. As RPCs land in the backend, sync the vendored proto (`hack/sync-upstream-proto.sh`),
+   extend the BFF's copy in `mock/proto/ai_grid/backend/v1` (the drift test checks it), and map
+   the rest in `internal/api`: `GetOverview` to
    `GET /grid/overview`, `GetCurrentUser` into `/user`, catalog, subscriptions. Keep the
    error table in `bff-api.md` true.
 2. When the backend moves to its own Deployment: `BACKEND_ADDRESS` to its Service,
@@ -95,11 +95,11 @@ Owner: console team.
 
 | Question | Who | Why it matters |
 |---|---|---|
-| Does the backend authorize per caller, or does everyone with console access get the pod ServiceAccount's rights? | Yuval Turgeman, Lindani Phiri | Decides whether `isProviderAdmin` can mean anything and whether the BFF must restrict who reaches the backend |
+| Does the backend authorize per caller, or does everyone with console access get the pod ServiceAccount's rights? | the backend team, Lindani Phiri | Decides whether `isProviderAdmin` can mean anything and whether the BFF must restrict who reaches the backend |
 | Auth setup for AI Grid: OpenShift OAuth as deployed here, or a Keycloak realm shared with tenants? | Lindani Phiri, Andrew Ballantyne | Decides the kube-auth-proxy provider; the dev hub already has Keycloak in `grid-sso` |
-| Are Keycloak Organizations the tenant model, or will the tenant layer defined with Swati's team look different? | Swati's team, Yuval Turgeman | The backend's `ListTenants` already assumes Organizations |
+| Are Keycloak Organizations the tenant model, or will the tenant layer defined with Swati's team look different? | Swati's team, the backend team | The backend's `ListTenants` already assumes Organizations |
 | Which Thanos (ACM observability or user-workload monitoring) and which metric names? | Kevin Howell, Praxis team | Unblocks `GetOverview` with real data; the POC's names are assumptions |
-| Where does the backend's image get published, and does the repository move to `osac-project`? | Yuval Turgeman | Decides the import path the console switches to when it drops the draft proto in `mock/proto`, and replaces the placeholder image in `manifests/` |
+| Where does the backend's image get published, and does the repository move to `osac-project`? | the backend team | Decides the import path the console switches to when it drops the draft proto in `mock/proto`, and replaces the placeholder image in `manifests/` |
 | Is there a cost or spend view for AI Grid at all? | Myriam Fentanes, Jenny Yi, Daniele Zonca | Decides whether `billingUrl` ever points anywhere |
 
 ## Shared rules
