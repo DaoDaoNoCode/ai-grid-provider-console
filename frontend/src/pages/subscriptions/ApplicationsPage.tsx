@@ -5,10 +5,11 @@
 // not-available state. A load error replaces the content only until the content first shows:
 // the governance data polls, and a failed poll must not unmount a form with the user's input.
 import { useState } from 'react';
-import { Alert, AlertActionLink, PageSection, Spinner } from '@patternfly/react-core';
+import { Alert, AlertActionLink, PageSection } from '@patternfly/react-core';
 import { ServiceError } from '../../api/ConsoleService';
 import { LoadError } from '../../components/LoadError';
 import { PageHeader } from '../../components/PageHeader';
+import { PageLoading } from '../../components/PageLoading';
 
 type Props = {
   title: string;
@@ -40,11 +41,7 @@ export const ApplicationsPage: React.FC<Props> = ({
   }
   let body: React.ReactNode = children;
   if (!contentShown && !loaded) {
-    body = (
-      <PageSection isFilled>
-        <Spinner aria-label="Loading data" />
-      </PageSection>
-    );
+    body = <PageLoading label="Loading data" />;
   } else if (!contentShown && loadError instanceof ServiceError && loadError.isNotImplemented) {
     body = (
       <PageSection isFilled>

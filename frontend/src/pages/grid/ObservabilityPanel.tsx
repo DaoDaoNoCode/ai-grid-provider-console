@@ -7,6 +7,7 @@ import { useId, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   Alert,
+  Bullseye,
   Card,
   CardBody,
   CardTitle,
@@ -427,7 +428,11 @@ export function ObservabilityPanel({
         <Tab eventKey="usage" title={<TabTitleText>Usage</TabTitleText>} />
       </Tabs>
       <Flex direction={{ default: 'column' }} flexWrap={{ default: 'nowrap' }} spaceItems={{ default: 'spaceItemsXl' }}>
-        {loading && <Spinner size="lg" aria-label="Loading metrics" />}
+        {loading && (
+          <Bullseye>
+            <Spinner size="lg" aria-label="Loading metrics" />
+          </Bullseye>
+        )}
         {error && (
           <Alert isInline variant="danger" title="Monitoring unavailable">
             {error}

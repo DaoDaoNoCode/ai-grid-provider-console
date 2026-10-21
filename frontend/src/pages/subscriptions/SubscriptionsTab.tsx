@@ -7,7 +7,6 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
   AlertActionCloseButton,
-  Bullseye,
   Button,
   EmptyState,
   EmptyStateActions,
@@ -15,12 +14,12 @@ import {
   EmptyStateFooter,
   EmptyStateVariant,
   PageSection,
-  Spinner,
 } from '@patternfly/react-core';
 import { ExclamationCircleIcon } from '@patternfly/react-icons';
 import { ServiceError } from '../../api/ConsoleService';
 import type { MaaSSubscription } from '../../api/types';
 import { LoadError } from '../../components/LoadError';
+import { PageLoading } from '../../components/PageLoading';
 import type { GovernanceService } from '../../context/useMaaSGovernanceContext';
 import { useMaaSGovernanceContext } from '../../context/useMaaSGovernanceContext';
 import type { SubscriptionsFilterDataType } from './allSubscriptions/const';
@@ -72,13 +71,7 @@ export const SubscriptionsTab: React.FC<Props> = ({ service }) => {
   }, [subscriptions, filterData]);
 
   if (!loaded && !error) {
-    return (
-      <PageSection isFilled>
-        <Bullseye>
-          <Spinner aria-label="Loading subscriptions" />
-        </Bullseye>
-      </PageSection>
-    );
+    return <PageLoading label="Loading subscriptions" />;
   }
 
   if (error instanceof ServiceError && error.isNotImplemented) {

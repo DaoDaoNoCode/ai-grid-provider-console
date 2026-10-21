@@ -8,7 +8,6 @@ import {
   List,
   ListItem,
   PageSection,
-  Spinner,
   Stack,
 } from '@patternfly/react-core';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -19,6 +18,7 @@ import { DetailsList } from '../../components/DetailsList';
 import { DetailsSection } from '../../components/DetailsSection';
 import { LoadError } from '../../components/LoadError';
 import { PageHeader } from '../../components/PageHeader';
+import { PageLoading } from '../../components/PageLoading';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
 import { useServiceData } from '../../hooks/useServiceData';
 import { formatDateTime } from '../../utilities/format';
@@ -49,9 +49,6 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
   const body = () => {
     if (error && !model) {
       return <LoadError subject="Models" error={error} />;
-    }
-    if (!loaded) {
-      return <Spinner aria-label="Loading model" />;
     }
     if (!model) {
       return (
@@ -143,7 +140,11 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
           </Breadcrumb>
         }
       />
-      <PageSection isFilled>{body()}</PageSection>
+      {!(error && !model) && !loaded ? (
+        <PageLoading label="Loading model" />
+      ) : (
+        <PageSection isFilled>{body()}</PageSection>
+      )}
       {deleteModal}
     </>
   );

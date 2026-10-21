@@ -11,7 +11,6 @@ import {
   EmptyStateBody,
   EmptyStateFooter,
   PageSection,
-  Spinner,
   ToolbarItem,
 } from '@patternfly/react-core';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
@@ -22,6 +21,7 @@ import { ServiceError } from '../../api/ConsoleService';
 import type { OrganizationsService } from '../../api/organizations';
 import type { Organization } from '../../api/types';
 import { PageHeader } from '../../components/PageHeader';
+import { PageLoading } from '../../components/PageLoading';
 import { LoadError } from '../../components/LoadError';
 import { PaginatedTable } from '../../components/PaginatedTable';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
@@ -88,9 +88,6 @@ export const OrganizationListPage: React.FC<Props> = ({ service }) => {
           {error.message}
         </Alert>
       );
-    }
-    if (!loaded) {
-      return <Spinner aria-label="Loading organizations" />;
     }
     if (organizations.length === 0) {
       return (
@@ -185,7 +182,7 @@ export const OrganizationListPage: React.FC<Props> = ({ service }) => {
   return (
     <>
       <PageHeader title="Organizations" description="Manage organizations and their identity providers." />
-      <PageSection isFilled>{body()}</PageSection>
+      {!error && !loaded ? <PageLoading label="Loading organizations" /> : <PageSection isFilled>{body()}</PageSection>}
       {deleteModal}
     </>
   );

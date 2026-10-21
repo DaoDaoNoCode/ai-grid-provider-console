@@ -13,7 +13,6 @@ import {
   EmptyStateBody,
   EmptyStateFooter,
   PageSection,
-  Spinner,
   Stack,
   ToolbarItem,
 } from '@patternfly/react-core';
@@ -26,6 +25,7 @@ import type { ManagedModel } from '../../api/types';
 import { LoadError } from '../../components/LoadError';
 import { OverflowList } from '../../components/OverflowList';
 import { PageHeader } from '../../components/PageHeader';
+import { PageLoading } from '../../components/PageLoading';
 import { PaginatedTable } from '../../components/PaginatedTable';
 import { RelativeTime } from '../../components/RelativeTime';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
@@ -107,9 +107,6 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
     // A failed refresh keeps the last list and shows the error above it.
     if (error && deployments.length === 0) {
       return errorAlert;
-    }
-    if (!loaded) {
-      return <Spinner aria-label="Loading models" />;
     }
     if (deployments.length === 0) {
       return (
@@ -227,7 +224,11 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
   return (
     <>
       <PageHeader title="Models" description="Add and remove model deployments." />
-      <PageSection isFilled>{body()}</PageSection>
+      {!(error && deployments.length === 0) && !loaded ? (
+        <PageLoading label="Loading models" />
+      ) : (
+        <PageSection isFilled>{body()}</PageSection>
+      )}
       {deleteModal}
     </>
   );

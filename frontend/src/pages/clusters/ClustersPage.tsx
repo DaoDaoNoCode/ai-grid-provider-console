@@ -9,7 +9,6 @@ import {
   EmptyStateFooter,
   Icon,
   PageSection,
-  Spinner,
   ToolbarItem,
   Tooltip,
 } from '@patternfly/react-core';
@@ -23,6 +22,7 @@ import { ServiceError } from '../../api/ConsoleService';
 import type { GridCluster } from '../../api/types';
 import { LoadError } from '../../components/LoadError';
 import { PageHeader } from '../../components/PageHeader';
+import { PageLoading } from '../../components/PageLoading';
 import { PaginatedTable } from '../../components/PaginatedTable';
 import { RefreshButton } from '../../components/RefreshButton';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
@@ -132,9 +132,6 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
           {error.message}
         </Alert>
       );
-    }
-    if (!loaded) {
-      return <Spinner aria-label="Loading clusters" />;
     }
     if (clusters.length === 0) {
       return (
@@ -269,7 +266,7 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
   return (
     <>
       <PageHeader title="Clusters" description="Manage AI Grid membership and provisioning readiness." />
-      <PageSection isFilled>{body()}</PageSection>
+      {!error && !loaded ? <PageLoading label="Loading clusters" /> : <PageSection isFilled>{body()}</PageSection>}
       {change && (
         <MembershipModal {...change} onConfirm={() => applyChange(change)} onClose={() => setChange(undefined)} />
       )}

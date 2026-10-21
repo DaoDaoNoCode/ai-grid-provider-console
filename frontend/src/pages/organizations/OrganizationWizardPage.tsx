@@ -1,10 +1,11 @@
 // Ported from krisv/ai-grid-cloud-provider-poc src/app/pages/tenants/TenantWizardPage.tsx at 62319b8.
-import { Breadcrumb, BreadcrumbItem, PageSection, Spinner } from '@patternfly/react-core';
+import { Breadcrumb, BreadcrumbItem, PageSection } from '@patternfly/react-core';
 import { Link, useParams } from 'react-router-dom';
 import type { UserService } from '../../api/ConsoleService';
 import type { OrganizationsService } from '../../api/organizations';
 import type { Organization } from '../../api/types';
 import { PageHeader } from '../../components/PageHeader';
+import { PageLoading } from '../../components/PageLoading';
 import { useServiceData } from '../../hooks/useServiceData';
 import { OrganizationFormWizard } from './OrganizationFormWizard';
 import { OrganizationLoadError } from './OrganizationLoadError';
@@ -45,15 +46,17 @@ export const OrganizationWizardPage: React.FC<Props> = ({ service }) => {
           </Breadcrumb>
         }
       />
-      <PageSection hasBodyWrapper={false} isFilled>
-        {error ? (
-          <OrganizationLoadError error={error} />
-        ) : !loaded || (id && !organization) ? (
-          <Spinner aria-label="Loading organization" />
-        ) : (
-          <OrganizationFormWizard key={organization?.id} service={service} organization={organization} />
-        )}
-      </PageSection>
+      {!error && (!loaded || (id && !organization)) ? (
+        <PageLoading label="Loading organization" />
+      ) : (
+        <PageSection hasBodyWrapper={false} isFilled>
+          {error ? (
+            <OrganizationLoadError error={error} />
+          ) : (
+            <OrganizationFormWizard key={organization?.id} service={service} organization={organization} />
+          )}
+        </PageSection>
+      )}
     </>
   );
 };
