@@ -66,7 +66,7 @@ k wait --for=condition=Established --timeout=60s \
   crd/routes.route.openshift.io crd/managedclusters.cluster.open-cluster-management.io >/dev/null
 
 step "images: the console from this checkout, ${BACKEND_IMAGE}, ${PROXY_IMAGE}"
-docker build -q -t localhost/ai-grid-provider-console:kind --build-arg VERSION=kind "${ROOT}" >/dev/null
+docker build -q -t localhost/ai-grid-provider-console:kind --build-arg CONSOLE_VERSION=kind "${ROOT}" >/dev/null
 docker pull -q --platform linux/amd64 "${BACKEND_IMAGE}" >/dev/null
 docker pull -q --platform linux/amd64 "${PROXY_IMAGE}" >/dev/null
 docker tag "${BACKEND_IMAGE}" localhost/ai-grid-backend:kind

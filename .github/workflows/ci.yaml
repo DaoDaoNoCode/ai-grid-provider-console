@@ -154,7 +154,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: VERSION=${{ github.sha }}
+          build-args: CONSOLE_VERSION=${{ github.sha }}
           cache-from: type=gha,scope=ai-grid-provider-console
           cache-to: type=gha,mode=max,scope=ai-grid-provider-console,ignore-error=true
           # No unknown/unknown attestation manifest: it shows as a phantom untagged version in ghcr.
