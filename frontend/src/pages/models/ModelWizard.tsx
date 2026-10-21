@@ -64,6 +64,9 @@ const DISPLAY_NAME = 'openshift.io/display-name';
 const DESCRIPTION = 'openshift.io/description';
 
 /** Why a field is read-only when editing: UpdateModel changes only the replicas, image, env, placement and metadata. */
+/** A resource the model was deployed without, shown in its read-only field. */
+const NOT_SET = 'Not set';
+
 const fixedReason = {
   source: 'The model a deployment serves is fixed. Deploy a new model to serve another one.',
   resources: 'Resources are set when the model is deployed. Deploy it again to change them.',
@@ -588,11 +591,17 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
               )}
               {editing ? (
                 <>
-                  <ReadOnlyField label="CPU" fieldId="deployment-cpu" value={cpu} reason={fixedReason.resources} />
+                  {/* A model deployed without requests has none to show. */}
+                  <ReadOnlyField
+                    label="CPU"
+                    fieldId="deployment-cpu"
+                    value={cpu || NOT_SET}
+                    reason={fixedReason.resources}
+                  />
                   <ReadOnlyField
                     label="Memory"
                     fieldId="deployment-memory"
-                    value={memory}
+                    value={memory || NOT_SET}
                     reason={fixedReason.resources}
                   />
                   <ReadOnlyField

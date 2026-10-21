@@ -812,6 +812,16 @@ describe('editing a model deployment', () => {
     expect(service.models[0].displayName).toBeUndefined();
   });
 
+  it('says a resource the model was deployed without is not set', async () => {
+    const service = new MockConsoleService();
+    service.models[0] = { ...service.models[0], cpu: undefined, memory: undefined };
+    const user = userEvent.setup();
+    renderAt(`/models/ai-grid-models/${service.models[0].name}/edit`, service);
+    await openStep(user, 'Deployment');
+    expect(await screen.findByRole('textbox', { name: 'CPU' })).toHaveValue('Not set');
+    expect(screen.getByRole('textbox', { name: 'Memory' })).toHaveValue('Not set');
+  });
+
   it('treats spaces around a runtime argument as no change', async () => {
     const service = new MockConsoleService();
     service.models[0].env = [{ name: 'VLLM_ADDITIONAL_ARGS', value: '--enforce-eager' }];
