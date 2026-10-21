@@ -19,8 +19,9 @@ the caller's own token: may this user patch ManagedClusters? That answer is `isP
 |---|---|
 | `bff/` | Go backend-for-frontend: `/api/v1/*` as JSON over the backend's gRPC, plus the built frontend |
 | `frontend/` | Vite, React 18, PatternFly 6 |
-| `manifests/` | Kustomize deployment: kube-auth-proxy, bff and ai-grid-backend in one pod |
-| `hack/` | `forward-backend.sh` (the hub's backend for `make start`), `hub-ca.sh`, `deploy.sh`, `undeploy.sh`, `api.sh` (curl as you), `smoke.sh` |
+| `charts/ai-grid-provider-console/` | Helm chart: kube-auth-proxy, bff and ai-grid-backend in one pod, one per ACM hub |
+| `manifests/` | The same pod as kustomize, which ai-grid-env-setup deploys until it moves to the chart (`make chart-check` keeps them equal) |
+| `hack/` | `forward-backend.sh` (the hub's backend for `make start`), `hub-ca.sh`, `deploy.sh`, `undeploy.sh`, `chart-takeover.sh`, `check-chart.sh`, `test-chart-kind.sh`, `api.sh` (curl as you), `smoke.sh` |
 | `docs/dev-setup.md` | Running against a real cluster, checks, deploying |
 | `docs/plan/bff-api.md` | API decisions, endpoint list, RPCs still needed from the backend |
 | `docs/plan/work-breakdown.md` | Work split across backend, BFF and frontend |

@@ -1,0 +1,198 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "console.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "console.labels" . | nindent 4 }}
+spec:
+  # One pod: the console holds no state, and one per hub is the supported topology.
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "console.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      # The selector labels only: a chart or version label here would restart the pod on every
+      # chart release.
+      labels:
+        {{- include "console.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "console.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        # Login: OpenShift OAuth via kube-auth-proxy, the proxy RHOAI uses.
+        # Flags follow the opendatahub-operator gateway template. The proxy
+        # forwards the user's access token and name to the BFF in
+        # X-Forwarded-Access-Token and X-Forwarded-User.
+        - name: kube-auth-proxy
+          image: {{ include "console.image" .Values.images.authProxy }}
+          {{- with .Values.imagePullPolicy }}
+          imagePullPolicy: {{ . }}
+          {{- end }}
+          args:
+            - --provider=openshift
+            - --https-address=0.0.0.0:8443
+            - --http-address=127.0.0.1:4180
+            - --tls-cert-file=/etc/tls/private/tls.crt
+            - --tls-key-file=/etc/tls/private/tls.key
+            - --upstream=http://127.0.0.1:8080/
+            - --redirect-url=$(OAUTH2_PROXY_REDIRECT_URL)
+            - --email-domain=*
+            - --scope=user:full
+            - --skip-provider-button
+            - --pass-access-token=true
+            - --pass-user-headers=true
+            - --set-xauthrequest=true
+            - --skip-jwt-bearer-tokens=true
+            - --enable-k8s-token-validation=true
+            - --use-system-trust-store=true
+            - --cookie-name={{ .Values.oauth.cookieName }}
+            - --cookie-secure=true
+            - --cookie-httponly=true
+            - --cookie-samesite=lax
+            - --cookie-expire=24h
+            - --cookie-refresh=1h
+            # The BFF listens on loopback, so the kubelet probes it through
+            # the proxy. /readyz carries no user data and needs no login.
+            - --skip-auth-route=^/readyz$
+          env:
+            # Created by hack/deploy.sh together with the OAuthClient.
+            {{- $oauth := include "console.oauthSecretName" . }}
+            {{- range list "OAUTH2_PROXY_CLIENT_ID" "OAUTH2_PROXY_CLIENT_SECRET" "OAUTH2_PROXY_COOKIE_SECRET" "OAUTH2_PROXY_REDIRECT_URL" }}
+            - name: {{ . }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $oauth }}
+                  key: {{ . }}
+            {{- end }}
+          ports:
+            - name: https
+              containerPort: 8443
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: https
+              scheme: HTTPS
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: https
+              scheme: HTTPS
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.authProxy.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/tls/private
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+
+        # The console: a thin BFF plus the built frontend. It translates the
+        # frontend's JSON calls into gRPC on the backend container over
+        # loopback and forwards the caller's identity in request metadata.
+        # It binds to loopback so that nothing on the pod network can reach
+        # it with forged identity headers: every request comes through the
+        # proxy. The only hub call it makes is a SelfSubjectAccessReview with
+        # the caller's token (isProviderAdmin), using the in-cluster API
+        # address and CA that every pod gets.
+        - name: bff
+          image: {{ include "console.image" .Values.images.console }}
+          {{- with .Values.imagePullPolicy }}
+          imagePullPolicy: {{ . }}
+          {{- end }}
+          args:
+            - --bind-address=127.0.0.1
+            - --port=8080
+            - --static-assets-dir=/static
+            - --backend-address=127.0.0.1:9090
+          env:
+            - name: GRID_CONSUMER_URL
+              value: {{ .Values.console.gridConsumerUrl | quote }}
+            - name: MAP_TILE_URL
+              value: {{ .Values.console.mapTileUrl | quote }}
+            - name: BILLING_URL
+              value: {{ .Values.console.billingUrl | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.console.logLevel | quote }}
+          # Probed through the proxy (same pod, port 8443): the kubelet cannot
+          # reach a loopback port. /readyz also pings the backend, so this one
+          # probe gates traffic for all three containers. No liveness probe:
+          # it would restart the BFF whenever the proxy is down.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8443
+              scheme: HTTPS
+            periodSeconds: 5
+            # /readyz waits up to 3s for the backend's Ping; leave room for it
+            # plus the hop through the proxy, or a slow ping flaps readiness.
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.console.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+
+        # ai-grid-backend: owns every call to the hub API, Keycloak and
+        # metrics using the pod's ServiceAccount. Its gRPC port and its REST
+        # gateway (with Swagger UI, unauthenticated, on every interface by
+        # default) bind to loopback, so only the BFF can reach the backend;
+        # nothing on the pod network can. The kubelet therefore cannot probe
+        # it directly: the BFF's /readyz pings it and takes the pod out of the
+        # Service when it does not answer.
+        - name: ai-grid-backend
+          image: {{ include "console.image" .Values.images.backend }}
+          {{- with .Values.imagePullPolicy }}
+          imagePullPolicy: {{ . }}
+          {{- end }}
+          args:
+            - --listen-address=127.0.0.1:9090
+            - --http-listen-address=127.0.0.1:8081
+          env:
+            # Keycloak settings and credentials all come from one secret that
+            # hack/deploy.sh creates from KEYCLOAK_URL, KEYCLOAK_REALM,
+            # KEYCLOAK_ADMIN_REALM, KEYCLOAK_ADMIN_USERNAME and
+            # KEYCLOAK_ADMIN_PASSWORD, so the chart carries no values of any
+            # one environment. Every key is required: without the secret the
+            # container does not start, which is the point, because the
+            # backend would otherwise fall back to its built-in admin/admin.
+            {{- $kc := .Values.backend.keycloakSecretName }}
+            {{- range list (list "KEYCLOAK_URL" "url") (list "KEYCLOAK_ADMIN_REALM" "admin-realm") (list "KEYCLOAK_REALM" "realm") (list "KEYCLOAK_ADMIN_USERNAME" "username") (list "KEYCLOAK_ADMIN_PASSWORD" "password") }}
+            - name: {{ index . 0 }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $kc }}
+                  key: {{ index . 1 }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+      volumes:
+        - name: tls
+          secret:
+            secretName: {{ include "console.tlsSecretName" . }}
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 10Mi

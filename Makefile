@@ -8,7 +8,7 @@ CONTAINER_ENGINE ?= $(shell command -v podman 2>/dev/null || command -v docker)
 # The backend address the BFF dials, and where make dev-cluster forwards the hub's backend to.
 BACKEND_ADDRESS ?= 127.0.0.1:9090
 
-.PHONY: help start dev dev-cluster dev-fake dev-fake-poc dev-forward-backend dev-fake-backend dev-bff dev-bff-fake dev-frontend dev-frontend-fake install lint test build e2e image manifests deploy undeploy
+.PHONY: help start dev dev-cluster dev-fake dev-fake-poc dev-forward-backend dev-fake-backend dev-bff dev-bff-fake dev-frontend dev-frontend-fake install lint test build e2e image manifests deploy undeploy chart-check chart-test
 
 help: ## Show targets
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -89,11 +89,17 @@ image: ## Build the container image
 push: ## Push the container image
 	$(CONTAINER_ENGINE) push $(IMAGE):$(TAG)
 
-manifests: ## Render the kustomize manifests
+manifests: ## Render the kustomize manifests (ai-grid-env-setup's source until it moves to the chart)
 	kustomize build manifests/base
 
-deploy: ## Deploy to the current cluster (needs cluster-admin for the OAuthClient)
+chart-check: ## Lint the Helm chart and check its defaults render manifests/base
+	hack/check-chart.sh
+
+chart-test: ## Install the Helm chart into a throwaway kind cluster and check it works (docker, kind)
+	hack/test-chart-kind.sh
+
+deploy: ## Deploy to the current cluster with the Helm chart (needs cluster-admin for the OAuthClient)
 	BACKEND_IMAGE=$(BACKEND_IMAGE) hack/deploy.sh $(IMAGE):$(TAG)
 
-undeploy: ## Remove the deployment and its OAuthClient
+undeploy: ## Remove the release, its secrets and its OAuthClient
 	hack/undeploy.sh

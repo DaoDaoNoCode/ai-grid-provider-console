@@ -35,8 +35,8 @@ so you see what the deployed console shows, from the same backend build, Service
 Keycloak. Writes are real and go through the deployed backend's ServiceAccount, so they work
 exactly where the deployed console's do. On a hub set up by ai-grid-env-setup, which grants that
 ServiceAccount `patch` on ManagedClusters, Add to AI Grid and Remove change the hub's clusters. With
-`make deploy` alone, `manifests/base/rbac.yaml` grants only `get`, `list` and `watch`, so they are
-refused (403). Organization writes answer 501 until the backend serves them. Before it starts
+`make deploy` alone, the chart grants only `get`, `list` and `watch` (unless
+`HELM_ARGS="--set backend.clusterWrites=true"`), so they are refused (403). Organization writes answer 501 until the backend serves them. Before it starts
 anything, `make start` checks your login, `pods/portforward` in the namespace, an available pod
 and a free local port. The forward listens on one loopback address only, reconnects when a rollout
 replaces the pod, and creates nothing on the cluster. Pages whose RPCs the backend doesn't serve
@@ -45,7 +45,7 @@ yet say "not available on this backend yet".
 Treat `pods/portforward` in the console's namespace as provider-admin access. Until the backend
 authorizes the caller, anyone who can port-forward there reaches the backend directly, here or with
 a plain `oc port-forward`, and acts with its ServiceAccount's rights: those of
-`manifests/base/rbac.yaml`, or what the deployment adds (ai-grid-env-setup's
+the chart's (`templates/rbac.yaml`), or what the deployment adds (ai-grid-env-setup's
 `apps/console/manifests` grants `patch` on ManagedClusters). The local BFF's `isProviderAdmin`
 check is a convenience, not a boundary: whoever runs the forward can call the backend without it.
 
@@ -167,8 +167,9 @@ exist. The vendored commit is the backend's `main` (`mock/proto/upstream/COMMIT`
 
 One pod with three containers: kube-auth-proxy (`quay.io/opendatahub/odh-kube-auth-proxy`,
 OpenShift OAuth, the proxy RHOAI uses), the console image (BFF plus frontend) and
-`ai-grid-backend`. The BFF and the backend both bind to loopback, so nothing on the pod
-network can reach either of them without going through the proxy. The kubelet probes the
+`ai-grid-backend`. The BFF and the backend (its gRPC port and its REST gateway) bind to
+loopback, so nothing on the pod network can reach either of them without going through the
+proxy. The kubelet probes the
 BFF's `/readyz` through the proxy, which passes that one path without login; it pings the
 backend, so it is the readiness signal for all three containers.
 
@@ -187,11 +188,14 @@ KEYCLOAK_URL=https://<keycloak-route-host> KEYCLOAK_ADMIN_USERNAME=... KEYCLOAK_
   make deploy IMAGE=quay.io/<you>/ai-grid-provider-console TAG=dev BACKEND_IMAGE=quay.io/<you>/ai-grid-provider-backend:dev
 ```
 
-`hack/deploy.sh` applies `manifests/base` (namespace `ai-grid`, ServiceAccount, a
-`system:auth-delegator` binding for token validation, the backend's ManagedCluster
-ClusterRole, Deployment, Service with an OpenShift serving certificate, reencrypt Route),
-waits for the Route host, then creates the cluster-scoped `OAuthClient` and the secret the
-proxy reads. `KEYCLOAK_URL`, `KEYCLOAK_ADMIN_USERNAME` and `KEYCLOAK_ADMIN_PASSWORD` are
+`hack/deploy.sh` installs the Helm chart `charts/ai-grid-provider-console` as release
+`ai-grid-provider-console` in namespace `ai-grid` (ServiceAccount, a `system:auth-delegator`
+binding for token validation, the backend's ManagedCluster ClusterRole, Deployment, Service with
+an OpenShift serving certificate, reencrypt Route), waits for the Route host, then creates the
+cluster-scoped `OAuthClient` and the secret the proxy reads. `HELM_ARGS` passes more chart values,
+for example `HELM_ARGS="--set backend.clusterWrites=true"`, but not the names the script relies on
+(the release's objects, the two Secrets, the Route). A console deployed before the chart, from
+`manifests/base`, is taken over in place (`hack/chart-takeover.sh`). `KEYCLOAK_URL`, `KEYCLOAK_ADMIN_USERNAME` and `KEYCLOAK_ADMIN_PASSWORD` are
 required, with `KEYCLOAK_REALM` (default `ai-grid`) and `KEYCLOAK_ADMIN_REALM` (default
 `master`) optional: all five become the secret the backend container mounts, so the
 manifests carry no environment's values and the pod does not start without the secret,
@@ -207,3 +211,36 @@ validates it with a TokenReview and forwards it:
 ```sh
 curl -H "Authorization: Bearer $(oc whoami -t)" https://<route-host>/api/v1/user
 ```
+
+### The Helm chart
+
+`charts/ai-grid-provider-console` is the console's install: one release per ACM hub, the
+standalone deployment the architecture expects for the provider console in 3.6 (there is no
+operator for it on the hub). Its values (`values.yaml`) choose the three images (tag, digest or
+both), the Route, its host and the CA it trusts for the proxy, the serving certificate
+(OpenShift's service CA, or a Secret you provide), the names of the two Secrets, the console's `/api/v1/config` settings, resources, and
+`backend.clusterWrites`: `patch` on ManagedClusters for Add to AI Grid and Remove, together with a
+`ValidatingAdmissionPolicy` (from ai-grid-env-setup) that limits the backend to the `ai-grid/*`
+and `location` labels and `ai-grid/*` annotations. Argo CD applies the policy before the grant
+(sync wave -1); `helm` applies it last, so turning `clusterWrites` on with `helm` leaves the backend
+unrestricted until the policy loads, a few seconds.
+
+The chart doesn't create the `OAuthClient`, the proxy's Secret or the backend's Keycloak Secret:
+`hack/deploy.sh` does, or ai-grid-env-setup's `bootstrap/60-console.sh`. Generated secrets would
+need Helm's `lookup`, which returns nothing under `helm template` and Argo CD, so every render
+would make new ones.
+
+`manifests/base` stays until ai-grid-env-setup deploys the chart. `make chart-check` (in CI) lints
+the chart and fails when its defaults render anything but `manifests/base`, Helm's own labels
+aside. The chart keeps the Deployment's selector of `manifests/base`, so a hub moves in place.
+
+`make chart-test` (in CI too) checks the chart on a throwaway kind cluster, without OpenShift: it
+installs the Route and ManagedCluster CRDs, a self-signed certificate and placeholder Secrets, then
+checks that `manifests/base` moves to the chart in place (applied over it as Argo CD would, and
+taken over by a Helm release as `hack/deploy.sh` does), that the pod becomes ready, that the
+proxy refuses a caller without a token and accepts a ServiceAccount token, that `isProviderAdmin`
+and the cluster list work, that only the proxy listens off loopback, that the admission policy
+allows the backend's `ai-grid/*` labels and refuses its other changes, and that uninstalling
+leaves no cluster-scoped objects. OpenShift's browser login, the service CA and the router are
+not covered. On an arm64 machine the amd64-only backend and proxy images run emulated. kind
+switches kubectl's current context; the script puts it back.
