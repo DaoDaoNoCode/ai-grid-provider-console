@@ -17,8 +17,8 @@ describe('App', () => {
     await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('dev-user (provider admin)'));
     // The menu keeps its name where a phone shows only its icon.
     expect(screen.getByRole('button', { name: 'User menu: dev-user (provider admin)' })).toBeInTheDocument();
-    expect(await screen.findByRole('row', { name: /^site1 / })).toBeInTheDocument();
-    expect(screen.getByText('brussels')).toBeInTheDocument();
+    const row = await screen.findByRole('row', { name: /^site1 / });
+    expect(within(row).getByText('4.22.15')).toBeInTheDocument();
     expect(screen.getAllByText('Provisioned')).toHaveLength(3);
   });
 

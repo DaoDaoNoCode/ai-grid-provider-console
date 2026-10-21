@@ -190,13 +190,16 @@ it('shows the PoC empty state', async () => {
   expect(screen.getByText('No ManagedClusters are available.')).toBeInTheDocument();
 });
 
-it('shows the seeded clusters with status, provisioning and site', async () => {
+it('shows the seeded clusters with location, status and provisioning, and no site or region', async () => {
   renderAt('/clusters', new MockConsoleService());
   const table = await screen.findByTestId('clusters-table');
   const sydney = within(table).getByRole('row', { name: /^site4 / });
-  expect(sydney).toHaveTextContent('sydney');
-  expect(sydney).toHaveTextContent('asia-pacific');
+  // site4 is both the name and the location.
+  expect(within(sydney).getAllByText('site4')).toHaveLength(2);
   expect(sydney).toHaveTextContent('Ready');
+  // Its ai-grid/site and ai-grid/region labels aren't shown.
+  expect(sydney).not.toHaveTextContent('sydney');
+  expect(sydney).not.toHaveTextContent('asia-pacific');
   // Not a member: no provisioning to show.
   expect(sydney).not.toHaveTextContent('provisioned');
   expect(within(table).getAllByText('Provisioned')).toHaveLength(3);
@@ -319,7 +322,7 @@ it('offers Add to AI Grid only for ready, offline or unknown clusters', async ()
   }
 });
 
-it('wraps the headers and keeps Site, Region and Hub for wide screens only', async () => {
+it('wraps the headers, keeps Hub for wide screens only, and has no Site or Region column', async () => {
   renderAt('/clusters', serviceWith(hubClusters()));
   const table = await screen.findByTestId('clusters-table');
   for (const header of within(table)
@@ -327,8 +330,10 @@ it('wraps the headers and keeps Site, Region and Hub for wide screens only', asy
     .filter((h) => h.textContent !== 'Actions')) {
     expect(header).toHaveClass('pf-m-wrap');
   }
-  for (const name of ['Site', 'Region', 'Hub']) {
-    expect(within(table).getByRole('columnheader', { name })).toHaveClass('pf-m-hidden', 'pf-m-visible-on-2xl');
+  expect(within(table).getByRole('columnheader', { name: 'Hub' })).toHaveClass('pf-m-hidden', 'pf-m-visible-on-2xl');
+  // Nothing sets ai-grid/site or ai-grid/region yet, so the columns would only show dashes.
+  for (const name of ['Site', 'Region']) {
+    expect(within(table).queryByRole('columnheader', { name })).not.toBeInTheDocument();
   }
   expect(within(table).getByRole('columnheader', { name: 'OpenShift' })).not.toHaveClass('pf-m-hidden');
   // The hub's connection to the cluster, not its AI Grid provisioning, which has its own column.

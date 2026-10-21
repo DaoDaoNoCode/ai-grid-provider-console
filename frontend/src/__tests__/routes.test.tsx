@@ -46,7 +46,6 @@ describe('routes', () => {
   // ListTenants, every page that needs a missing RPC says so instead of showing an error.
   const orgs = 'Organizations are not available on this backend yet';
   const subs = 'Subscriptions are not available on this backend yet';
-  const grid = 'AI Grid clusters are not available on this backend yet';
   /** The deploy wizard loads locations up front but shows them on its third step. */
   const toLocationsStep = async (user: ReturnType<typeof userEvent.setup>) => {
     await user.type(await screen.findByRole('textbox', { name: /Model URI/ }), 'hf://org/widget');
@@ -67,9 +66,8 @@ describe('routes', () => {
     ['/subscriptions/view/engineering', 'getSubscriptionInfo', subs],
     ['/subscriptions/create', 'listSubscriptions', subs],
     ['/subscriptions/edit/engineering', 'listSubscriptions', subs],
-    // Without the overview the pages fall back to the Clusters list, so both must be missing.
-    ['/ai-grid', 'getGridOverview+listClusters', grid],
-    ['/monitoring', 'getGridOverview+listClusters', grid],
+    ['/ai-grid', 'getGridOverview', 'AI Grid is not available on this backend yet'],
+    ['/monitoring', 'getGridOverview', 'Monitoring is not available on this backend yet'],
   ])('renders not-available pages: %s without %s', async (path, methods, text, open) => {
     const service = new MockConsoleService();
     // `methods` lists the service calls that answer 501, joined with +.

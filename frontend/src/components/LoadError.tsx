@@ -5,6 +5,8 @@ type Props = {
   /** What was being loaded, e.g. "Clusters". */
   subject: string;
   error: Error;
+  /** The not-available title when "<subject> are ..." doesn't read, e.g. "AI Grid is not available ...". */
+  notAvailableTitle?: string;
 };
 
 /**
@@ -14,10 +16,14 @@ type Props = {
  * informational empty state rather than an error. Everything else is an error
  * with the BFF's message.
  */
-export const LoadError: React.FC<Props> = ({ subject, error }) => {
+export const LoadError: React.FC<Props> = ({ subject, error, notAvailableTitle }) => {
   if (error instanceof ServiceError && error.isNotImplemented) {
     return (
-      <EmptyState titleText={`${subject} are not available on this backend yet`} headingLevel="h3" variant="sm">
+      <EmptyState
+        titleText={notAvailableTitle ?? `${subject} are not available on this backend yet`}
+        headingLevel="h3"
+        variant="sm"
+      >
         <EmptyStateBody>
           The AI Grid backend this console talks to does not implement this capability yet. The page will work without
           changes once it does.
