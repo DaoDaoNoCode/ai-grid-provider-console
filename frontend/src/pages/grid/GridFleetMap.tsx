@@ -34,12 +34,12 @@ const pinColor = (cluster: GridCluster) => statusColor[cluster.status];
 
 const isMapped = (c: GridCluster) => c.latitude !== undefined && c.longitude !== undefined;
 
-/** What the pins show; the pins are redrawn only when it changes. */
+/**
+ * What the pins show; the pins are redrawn only when it changes. JSON keeps a missing site name
+ * apart from an empty one (the labels treat them differently) and can't mix up field boundaries.
+ */
 const pinsSignature = (clusters: GridCluster[]) =>
-  clusters
-    .filter(isMapped)
-    .map((c) => [c.name, c.latitude, c.longitude, c.status, c.siteName ?? '', c.site ?? ''].join(':'))
-    .join('|');
+  JSON.stringify(clusters.filter(isMapped).map((c) => [c.name, c.latitude, c.longitude, c.status, c.siteName, c.site]));
 
 export const GridFleetMap: React.FC<Props> = ({ clusters, selected, onSelect, tiles, isFiltered }) => {
   const container = useRef<HTMLDivElement>(null);

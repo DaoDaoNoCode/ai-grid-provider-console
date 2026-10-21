@@ -126,9 +126,27 @@ it('keeps its pins through a re-render with the same clusters, and redraws when 
   expect(drawn).toBe(members.filter((c) => c.latitude !== undefined).length);
   // The fleet view passes a new array on every render; the same clusters keep the same pins, so
   // the pin under the pointer and its label stay.
+  const pin = marker.mock.results[0].value as L.CircleMarker;
+  act(() => {
+    pin.openTooltip();
+  });
   rerender(<GridFleetMap clusters={members.map((c) => ({ ...c }))} {...props} />);
   expect(pinsDrawn(marker)).toBe(drawn);
+  // The same pin, still on the map, with its label still open.
+  expect(pin.isTooltipOpen()).toBe(true);
+  expect(screen.getByText(members[0].siteName ?? members[0].site ?? members[0].name)).toBeInTheDocument();
   // A changed status is a change the pins show.
   rerender(<GridFleetMap clusters={members.map((c, i) => (i ? c : { ...c, status: 'Offline' }))} {...props} />);
+  expect(pinsDrawn(marker)).toBe(2 * drawn);
+});
+
+it('redraws a label when a site name goes from missing to empty', () => {
+  const marker = vi.spyOn(L, 'circleMarker');
+  const props = { selected: null, onSelect: () => {}, tiles };
+  const [first, ...rest] = members;
+  const { rerender } = render(<GridFleetMap clusters={[{ ...first, siteName: undefined }, ...rest]} {...props} />);
+  const drawn = pinsDrawn(marker);
+  // The label falls back to the site only when the name is missing, so an empty name is a change.
+  rerender(<GridFleetMap clusters={[{ ...first, siteName: '' }, ...rest]} {...props} />);
   expect(pinsDrawn(marker)).toBe(2 * drawn);
 });
