@@ -21,9 +21,8 @@ type Props = {
 export const UserMenu: React.FC<Props> = ({ user, loaded, error, canSignOut, onAbout }) => {
   const [isOpen, setIsOpen] = useState(false);
   const name = `${error ? 'Not signed in' : !loaded ? 'Signing in...' : user?.username}${user?.isProviderAdmin ? ' (provider admin)' : ''}`;
-  if (!user) {
-    return <span data-testid="masthead-user">{name}</span>;
-  }
+  // A menu even while signing in or when /user fails: About, with the versions a bug report
+  // needs, matters most then. Log out needs a signed-in user.
   return (
     <Dropdown
       isOpen={isOpen}
@@ -55,7 +54,7 @@ export const UserMenu: React.FC<Props> = ({ user, loaded, error, canSignOut, onA
         >
           About
         </DropdownItem>
-        {canSignOut && (
+        {user && canSignOut && (
           <DropdownItem key="sign-out" to={SIGN_OUT_URL}>
             Log out
           </DropdownItem>

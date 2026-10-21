@@ -43,6 +43,21 @@ describe('App', () => {
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
   });
 
+  it('opens About from the user menu even when the user could not be loaded', async () => {
+    const service = new MockConsoleService();
+    service.getUser = () => Promise.reject(new Error('unavailable'));
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <App service={service} />
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'User menu: Not signed in' }));
+    expect(screen.queryByRole('menuitem', { name: 'Log out' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('menuitem', { name: 'About' }));
+    expect(await screen.findByRole('dialog')).toHaveTextContent('Console version');
+  });
+
   it('does not call a viewer a provider admin', async () => {
     const service = new MockConsoleService({ username: 'viewer', groups: [], isProviderAdmin: false });
     render(

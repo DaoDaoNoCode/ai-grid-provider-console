@@ -1,6 +1,7 @@
 // Ported from krisv/ai-grid-cloud-provider-poc src/app/pages/tenants/TenantFormWizard.tsx at 62319b8.
 // Combined adaptation of OSAC TenantCreatePage and IdentityProviderCreateWizard.
 // Source commit: 8cb0a227e45cc9b17421b6e79ce493ed370ebd5d. Break-glass flow is omitted.
+import { useEffect, useRef } from 'react';
 import { Form, Wizard, WizardStep, useWizardContext } from '@patternfly/react-core';
 import type { OrganizationsService } from '../../api/organizations';
 import type { Organization, OrganizationInput } from '../../api/types';
@@ -33,6 +34,24 @@ const ReviewStep: React.FC<{ organization: OrganizationInput }> = ({ organizatio
 };
 
 /**
+ * When a save is refused with field errors, moves to the first step that shows one: Review shows no
+ * fields, and the alert alone doesn't say which field the server meant. Once per refused save
+ * (`refused` is a new object each time), so the user can still go back to Review. It sits in the
+ * footer, which stays mounted while the steps come and go.
+ */
+const GoToRefusedField: React.FC<{ refused?: object; errorStep?: string }> = ({ refused, errorStep }) => {
+  const { goToStepById } = useWizardContext();
+  const handled = useRef<object>(undefined);
+  useEffect(() => {
+    if (refused && refused !== handled.current && errorStep) {
+      handled.current = refused;
+      goToStepById(errorStep);
+    }
+  }, [refused, errorStep, goToStepById]);
+  return null;
+};
+
+/**
  * Creates an organization in three steps: its details, its identity provider, then a review. With
  * `organization` it edits that one through the same steps: every step can be opened from the start,
  * the name is read-only, and Save changes on the Review step stays disabled until something changed.
@@ -49,20 +68,32 @@ export const OrganizationFormWizard: React.FC<Props> = ({ service, organization 
         navAriaLabel="Organization onboarding steps"
         onClose={requestLeave}
         footer={
-          <ConsoleWizardFooter
-            submitStepId="tenant-review"
-            submitLabel={editing ? 'Save changes' : 'Create organization'}
-            errorTitle="Unable to save organization"
-            isStepValid={(step) =>
-              form.detailsValid &&
-              (step === 'tenant-details' || form.idpValid) &&
-              (step !== 'tenant-review' || !editing || form.isDirty)
-            }
-            saving={saving}
-            error={form.error}
-            onSubmit={form.save}
-            onCancel={requestLeave}
-          />
+          <>
+            <GoToRefusedField
+              refused={form.serverErrorsSent}
+              errorStep={
+                Object.keys(form.detailServerErrors).length
+                  ? 'tenant-details'
+                  : Object.keys(form.idpServerErrors).length
+                    ? 'tenant-idp'
+                    : undefined
+              }
+            />
+            <ConsoleWizardFooter
+              submitStepId="tenant-review"
+              submitLabel={editing ? 'Save changes' : 'Create organization'}
+              errorTitle="Unable to save organization"
+              isStepValid={(step) =>
+                form.detailsValid &&
+                (step === 'tenant-details' || form.idpValid) &&
+                (step !== 'tenant-review' || !editing || form.isDirty)
+              }
+              saving={saving}
+              error={form.error}
+              onSubmit={form.save}
+              onCancel={requestLeave}
+            />
+          </>
         }
       >
         <WizardStep name="Organization details" id="tenant-details">

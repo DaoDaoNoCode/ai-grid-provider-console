@@ -307,8 +307,8 @@ it('shows field errors from the server next to the field', async () => {
   await user.click(screen.getByRole('button', { name: 'Next' }));
   await user.click(screen.getByRole('button', { name: 'Create organization' }));
   expect(await screen.findByText('The organization is invalid.')).toBeVisible();
-  await user.click(screen.getByRole('button', { name: 'Back' }));
-  const issuer = screen.getByRole('textbox', { name: 'Issuer' });
+  // The wizard moves to the step with the field the server refused; Review shows no fields.
+  const issuer = await screen.findByRole('textbox', { name: 'Issuer' });
   expect(issuer).toHaveAttribute('aria-invalid', 'true');
   expect(screen.getByText('Enter a valid HTTP or HTTPS URL.')).toBeVisible();
   // Editing the field clears the server's message for it.
@@ -476,4 +476,26 @@ it('locks the edit wizard while it saves', async () => {
   expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
   finish();
   expect(await screen.findByText('Organization configuration saved')).toBeVisible();
+});
+
+it('moves an edit refused for a field to that field, once, and lets the user return to Review', async () => {
+  const service = new MockConsoleService();
+  const [organization] = service.organizations;
+  service.updateOrganization = async () => {
+    throw new ServiceError(422, 'The organization is invalid.', {
+      'identityProvider.config.issuer': 'Enter a valid HTTP or HTTPS URL.',
+    });
+  };
+  const user = userEvent.setup();
+  renderAt(`/organizations/${encodeURIComponent(organization.id)}/edit`, service);
+  await openStep(user, 'Identity provider');
+  await user.type(await screen.findByRole('textbox', { name: 'Title' }), ' (new)');
+  await saveEdit(user);
+  // On the Identity provider step, with the server's message next to Issuer.
+  expect(await screen.findByRole('textbox', { name: 'Issuer' })).toHaveAttribute('aria-invalid', 'true');
+  expect(screen.getByText('Enter a valid HTTP or HTTPS URL.')).toBeVisible();
+  // Going back to Review stays there: the move happens once per refused save.
+  await openStep(user, 'Review');
+  expect(screen.getByRole('button', { name: 'Save changes' })).toBeVisible();
+  expect(screen.queryByRole('textbox', { name: 'Issuer' })).not.toBeInTheDocument();
 });

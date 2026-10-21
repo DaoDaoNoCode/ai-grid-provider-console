@@ -272,7 +272,8 @@ export class MockConsoleService implements ConsoleService {
     if (update.env) model.env = structuredClone(update.env);
     if (update.annotations) {
       model.annotations = { ...update.annotations };
-      model.displayName = update.annotations['openshift.io/display-name'] || model.name;
+      // As the BFF: no display name when the annotation is missing (omitempty in toModel).
+      model.displayName = update.annotations['openshift.io/display-name'] || undefined;
       model.description = update.annotations['openshift.io/description'] || undefined;
     }
     if (update.placement && locations) {

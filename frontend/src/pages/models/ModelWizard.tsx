@@ -104,7 +104,10 @@ const modelUpdateOf = (model: ManagedModel, input: CreateModelRequest): ModelUpd
   const displayName = input.displayName.trim();
   if (displayName !== (model.displayName ?? model.name) || input.description !== (model.description ?? '')) {
     const annotations = { ...model.annotations };
-    if (displayName) annotations[DISPLAY_NAME] = displayName;
+    // The name field starts from the resource name when the model has no display name; keeping
+    // that default writes nothing, so a description edit doesn't add an annotation nobody set.
+    const hadDisplayName = model.annotations?.[DISPLAY_NAME] !== undefined;
+    if (displayName && (hadDisplayName || displayName !== model.name)) annotations[DISPLAY_NAME] = displayName;
     else delete annotations[DISPLAY_NAME];
     if (input.description) annotations[DESCRIPTION] = input.description;
     else delete annotations[DESCRIPTION];

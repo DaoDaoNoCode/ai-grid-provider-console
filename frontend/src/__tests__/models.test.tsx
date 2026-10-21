@@ -789,6 +789,47 @@ describe('editing a model deployment', () => {
     expect(Object.keys(sent).sort()).toEqual(['annotations', 'env']);
   });
 
+  it('leaves the display name alone when only the description changes on a model without one', async () => {
+    const service = new MockConsoleService();
+    const model = service.models[0];
+    const annotations = { ...model.annotations };
+    delete annotations['openshift.io/display-name'];
+    service.models[0] = { ...model, annotations, displayName: undefined };
+    const update = vi.spyOn(service, 'updateModel');
+    const user = userEvent.setup();
+    renderAt(`/models/ai-grid-models/${model.name}/edit`, service);
+    await openStep(user, 'Deployment');
+    const description = await screen.findByRole('textbox', { name: 'Description' });
+    await user.clear(description);
+    await user.type(description, 'new');
+    await openStep(user, 'Review');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(update).toHaveBeenCalled());
+    // The name field started from the resource name; keeping it writes no display name.
+    expect(update.mock.calls[0][2].annotations).not.toHaveProperty('openshift.io/display-name');
+    expect(update.mock.calls[0][2].annotations).toHaveProperty('openshift.io/description', 'new');
+    // As the BFF: no display name without the annotation.
+    expect(service.models[0].displayName).toBeUndefined();
+  });
+
+  it('treats spaces around a runtime argument as no change', async () => {
+    const service = new MockConsoleService();
+    service.models[0].env = [{ name: 'VLLM_ADDITIONAL_ARGS', value: '--enforce-eager' }];
+    const user = userEvent.setup();
+    renderAt(`/models/ai-grid-models/${service.models[0].name}/edit`, service);
+    await openStep(user, 'Deployment');
+    await user.click(await screen.findByRole('button', { name: 'Advanced settings' }));
+    // A space at the end of the argument's own line (the textarea ends with a blank line).
+    const end = '--enforce-eager'.length;
+    await user.type(screen.getByRole('textbox', { name: 'Additional runtime arguments' }), ' ', {
+      initialSelectionStart: end,
+      initialSelectionEnd: end,
+    });
+    expect(screen.getByRole('textbox', { name: 'Additional runtime arguments' })).toHaveValue('--enforce-eager \n');
+    await openStep(user, 'Review');
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
+  });
+
   it('shows a placement written outside the console read-only and leaves it alone', async () => {
     const service = new MockConsoleService();
     service.models[0].placementSpec = { clusterSets: ['global'], matchLabels: { 'ai-grid/enabled': 'true' } };

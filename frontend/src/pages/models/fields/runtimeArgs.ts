@@ -18,14 +18,12 @@ export const isValidRuntimeArgs = (value: unknown): value is RuntimeArgsFieldDat
 };
 
 /**
- * Drops blank lines and `#` comment headers before writing args onto a container.
- * Comment lines are useful in the wizard textarea but are not valid container argv.
+ * Drops blank lines and `#` comment headers before writing args onto a container, and trims the
+ * rest: comment lines are useful in the wizard textarea but are not valid container argv, and
+ * stray spaces would make an unchanged argument look edited.
  */
 export const filterRuntimeArgsForContainer = (args: string[]): string[] =>
-  args.filter((line) => {
-    const trimmed = line.trim();
-    return trimmed.length > 0 && !trimmed.startsWith('#');
-  });
+  args.map((line) => line.trim()).filter((line) => line.length > 0 && !line.startsWith('#'));
 
 // Hook
 export type RuntimeArgsFieldHook = {
