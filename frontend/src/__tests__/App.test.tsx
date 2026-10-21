@@ -58,6 +58,20 @@ describe('App', () => {
     expect(await screen.findByRole('dialog')).toHaveTextContent('Console version');
   });
 
+  it('opens About while the user is still loading, without Log out', async () => {
+    const service = new MockConsoleService();
+    service.getUser = () => new Promise(() => {});
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <App service={service} />
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'User menu: Signing in...' }));
+    expect(screen.getByRole('menuitem', { name: 'About' })).toBeVisible();
+    expect(screen.queryByRole('menuitem', { name: 'Log out' })).not.toBeInTheDocument();
+  });
+
   it('does not call a viewer a provider admin', async () => {
     const service = new MockConsoleService({ username: 'viewer', groups: [], isProviderAdmin: false });
     render(
