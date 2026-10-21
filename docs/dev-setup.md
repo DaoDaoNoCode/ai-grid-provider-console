@@ -131,12 +131,19 @@ network can reach either of them without going through the proxy. The kubelet pr
 BFF's `/readyz` through the proxy, which passes that one path without login; it pings the
 backend, so it is the readiness signal for all three containers.
 
+CI publishes the console to `ghcr.io/ai-grid-cloud/ai-grid-provider-console`: every merge to
+`main` as `sha-<full commit>` and `latest`, each `v*` tag by version, and each open pull request
+as `pr-<number>` (deleted when it closes). Deploy a published image with
+`IMAGE=ghcr.io/ai-grid-cloud/ai-grid-provider-console TAG=sha-<full commit>`, or build your own.
+A new ghcr package starts private: when CI first publishes a new image, an organization owner
+sets the package's visibility to Public, or clusters need a pull secret.
+
 ```sh
 make image IMAGE=quay.io/<you>/ai-grid-provider-console TAG=dev
 make push  IMAGE=quay.io/<you>/ai-grid-provider-console TAG=dev
-# build the backend image from its repository: podman build -f Containerfile -t quay.io/<you>/ai-grid-backend:dev . && podman push ...
+# build the backend image from its repository: podman build -f Containerfile -t quay.io/<you>/ai-grid-provider-backend:dev . && podman push ...
 KEYCLOAK_URL=https://<keycloak-route-host> KEYCLOAK_ADMIN_USERNAME=... KEYCLOAK_ADMIN_PASSWORD=... \
-  make deploy IMAGE=quay.io/<you>/ai-grid-provider-console TAG=dev BACKEND_IMAGE=quay.io/<you>/ai-grid-backend:dev
+  make deploy IMAGE=quay.io/<you>/ai-grid-provider-console TAG=dev BACKEND_IMAGE=quay.io/<you>/ai-grid-provider-backend:dev
 ```
 
 `hack/deploy.sh` applies `manifests/base` (namespace `ai-grid`, ServiceAccount, a

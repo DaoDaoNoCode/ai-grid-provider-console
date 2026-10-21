@@ -5,7 +5,7 @@
 # Usage: hack/deploy.sh [image[:tag]]
 #
 # Environment:
-#   BACKEND_IMAGE            ai-grid-backend image (default quay.io/ai-grid-cloud/ai-grid-backend:latest)
+#   BACKEND_IMAGE            ai-grid-backend image (default ghcr.io/ai-grid-cloud/ai-grid-provider-backend:latest)
 #   KEYCLOAK_URL             required: Keycloak base URL the backend lists tenants from,
 #                            https:// where the cluster offers it (the admin password
 #                            travels with every call), e.g. the Keycloak Route
@@ -29,8 +29,8 @@ if [[ "${KEYCLOAK_URL}" == http://* ]]; then
   echo "warning: KEYCLOAK_URL is plaintext; the admin password will cross the network unencrypted" >&2
 fi
 
-IMAGE="${1:-quay.io/cfchase/ai-grid-provider-console:latest}"
-BACKEND_IMAGE="${BACKEND_IMAGE:-quay.io/ai-grid-cloud/ai-grid-backend:latest}"
+IMAGE="${1:-ghcr.io/ai-grid-cloud/ai-grid-provider-console:latest}"
+BACKEND_IMAGE="${BACKEND_IMAGE:-ghcr.io/ai-grid-cloud/ai-grid-provider-backend:latest}"
 NAMESPACE="${NAMESPACE:-ai-grid}"
 NAME=ai-grid-provider-console
 SECRET="${NAME}-oauth"
@@ -38,8 +38,8 @@ MANIFESTS="$(cd "$(dirname "$0")/.." && pwd)/manifests/base"
 
 echo "==> applying manifests to namespace ${NAMESPACE} with images ${IMAGE} and ${BACKEND_IMAGE}"
 kustomize build "${MANIFESTS}" \
-  | sed -e "s#quay.io/cfchase/ai-grid-provider-console:latest#${IMAGE}#" \
-        -e "s#quay.io/ai-grid-cloud/ai-grid-backend:latest#${BACKEND_IMAGE}#" \
+  | sed -e "s#ghcr.io/ai-grid-cloud/ai-grid-provider-console:latest#${IMAGE}#" \
+        -e "s#ghcr.io/ai-grid-cloud/ai-grid-provider-backend:latest#${BACKEND_IMAGE}#" \
   | oc apply -f -
 
 echo "==> creating secret ai-grid-backend-keycloak for ${KEYCLOAK_URL} (realm ${KEYCLOAK_REALM})"
