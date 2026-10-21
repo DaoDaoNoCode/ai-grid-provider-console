@@ -83,6 +83,17 @@ type Config struct {
 	// shows a banner.
 	FakeBackend bool
 
+	// Perses is the hub's Perses server the Monitoring page reads through
+	// /perses/api; an empty URL turns Monitoring off.
+	PersesURL        string
+	PersesCAFile     string
+	PersesServerName string
+	PersesInsecure   bool
+	PersesTimeout    time.Duration
+	// PersesProject narrows the Monitoring tabs to one Perses project; empty
+	// lists the dashboard- objects of every project the caller may read.
+	PersesProject string
+
 	LogLevel slog.Level
 }
 
@@ -117,6 +128,12 @@ func Parse(args []string, lookupEnv func(string) (string, bool)) (Config, error)
 	fs.StringVar(&cfg.BillingURL, "billing-url", env.str("BILLING_URL", ""), "External billing UI URL")
 	fs.StringVar(&cfg.ModelsNamespace, "models-namespace", env.str("MODELS_NAMESPACE", DefaultModelsNamespace), "Namespace the console creates models in")
 	fs.BoolVar(&cfg.FakeBackend, "fake-backend", env.boolean("FAKE_BACKEND", false), "The backend is the fake from mock/fixtures; the UI shows a banner")
+	fs.StringVar(&cfg.PersesURL, "perses-url", env.str("PERSES_URL", ""), "The hub's Perses server for the Monitoring page; empty turns Monitoring off")
+	fs.StringVar(&cfg.PersesCAFile, "perses-ca-file", env.str("PERSES_CA_FILE", ""), "CA for the Perses server's certificate; empty for system roots")
+	fs.StringVar(&cfg.PersesServerName, "perses-server-name", env.str("PERSES_SERVER_NAME", ""), "Expected TLS server name of the Perses server (for a port-forward)")
+	fs.BoolVar(&cfg.PersesInsecure, "perses-insecure", env.boolean("PERSES_INSECURE", false), "Allow plaintext to a non-loopback Perses server (development only)")
+	fs.DurationVar(&cfg.PersesTimeout, "perses-timeout", env.duration("PERSES_TIMEOUT", 30*time.Second), "Wait for the Perses server's response headers")
+	fs.StringVar(&cfg.PersesProject, "perses-project", env.str("PERSES_PROJECT", ""), "Perses project whose dashboard- objects are the Monitoring tabs; empty for every project the caller may read")
 	fs.StringVar(&logLevel, "log-level", env.str("LOG_LEVEL", "info"), "Log level: debug, info, warn, error")
 
 	if err := fs.Parse(args); err != nil {
@@ -135,6 +152,9 @@ func Parse(args []string, lookupEnv func(string) (string, bool)) (Config, error)
 		if strings.TrimSpace(v) == "" {
 			return Config{}, fmt.Errorf("%s must not be empty", name)
 		}
+	}
+	if cfg.PersesTimeout <= 0 {
+		return Config{}, fmt.Errorf("perses-timeout must be positive")
 	}
 	if cfg.BackendTimeout <= 0 {
 		return Config{}, fmt.Errorf("backend-timeout must be positive")

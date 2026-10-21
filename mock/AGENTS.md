@@ -70,7 +70,7 @@ adds `"meta": {"size", "total", "offset", "limit"}` (`limit` only when the reque
 | Method | Path | Request body | Response `data` |
 |---|---|---|---|
 | GET | `/api/v1/user` | | `{username, email?, groups, isProviderAdmin}` |
-| GET | `/api/v1/config` | | `{gridEndpoint, mapTileUrl, mapTileAttribution, billingUrl, version, modelsNamespace, fakeBackend}` |
+| GET | `/api/v1/config` | | `{gridEndpoint, mapTileUrl, mapTileAttribution, billingUrl, version, modelsNamespace, fakeBackend, monitoring: {enabled, persesProject}}` |
 | GET | `/api/v1/clusters` | | `GridCluster[]` by name |
 | GET | `/api/v1/clusters/{name}` | | `GridCluster`, `ETag` |
 | PATCH | `/api/v1/clusters/{name}` | `{labels?, annotations?}` (whole maps; only `ai-grid/*` keys and the `location` label may change) | `GridCluster` after the write, `ETag` |

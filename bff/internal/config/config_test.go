@@ -77,6 +77,29 @@ func TestParseEnvThenFlags(t *testing.T) {
 	}
 }
 
+func TestParsePerses(t *testing.T) {
+	hub := "--hub-api-url=https://hub.example"
+	cfg, err := Parse([]string{hub}, lookup(nil))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.PersesURL != "" || cfg.PersesTimeout != 30*time.Second {
+		t.Fatalf("Monitoring should be off by default with a 30s timeout: %+v", cfg)
+	}
+	env := map[string]string{
+		"PERSES_URL": "https://perses.example:8080", "PERSES_CA_FILE": "/ca.crt", "PERSES_SERVER_NAME": "perses.ns.svc",
+		"PERSES_INSECURE": "true", "PERSES_TIMEOUT": "5s", "PERSES_PROJECT": "ai-grid",
+	}
+	cfg, err = Parse([]string{hub, "--perses-project=from-flag"}, lookup(env))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.PersesURL != "https://perses.example:8080" || cfg.PersesCAFile != "/ca.crt" || cfg.PersesServerName != "perses.ns.svc" ||
+		!cfg.PersesInsecure || cfg.PersesTimeout != 5*time.Second || cfg.PersesProject != "from-flag" {
+		t.Fatalf("Perses settings from env, flag winning: %+v", cfg)
+	}
+}
+
 func TestParseRejectsBadInput(t *testing.T) {
 	hub := "--hub-api-url=https://hub.example"
 	cases := [][]string{
@@ -86,6 +109,7 @@ func TestParseRejectsBadInput(t *testing.T) {
 		{"--auth-user-header= ", hub},
 		{"--backend-address=", hub},
 		{"--backend-timeout=0", hub},
+		{"--perses-timeout=0", hub},
 		{"--log-level=loud", hub},
 		{}, // no hub API URL outside a pod
 	}
