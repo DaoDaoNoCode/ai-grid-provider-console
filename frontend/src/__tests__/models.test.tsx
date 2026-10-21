@@ -925,3 +925,21 @@ describe('editing a model deployment', () => {
     expect(await screen.findByRole('heading', { name: 'Edit Granite 3.3 8B Instruct' })).toBeVisible();
   });
 });
+
+it('shows the loading spinner until the models arrive, then the list in its place', async () => {
+  const service = new MockConsoleService();
+  const list = service.listModels.bind(service);
+  let release: () => void = () => undefined;
+  service.listModels = () =>
+    new Promise((resolve, reject) => {
+      release = () => void list().then(resolve, reject);
+    });
+  renderAt('/models', service);
+  const spinner = await screen.findByRole('progressbar', { name: 'Loading models' });
+  // The spinner fills the content section on its own; the table isn't there yet.
+  expect(spinner.closest('.pf-v6-c-page__main-section')).toHaveClass('pf-m-fill');
+  expect(screen.queryByRole('grid', { name: 'Model deployments' })).not.toBeInTheDocument();
+  act(() => release());
+  expect(await screen.findByRole('grid', { name: 'Model deployments' })).toBeVisible();
+  expect(screen.queryByRole('progressbar', { name: 'Loading models' })).not.toBeInTheDocument();
+});
