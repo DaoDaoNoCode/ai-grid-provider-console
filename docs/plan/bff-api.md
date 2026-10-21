@@ -407,8 +407,8 @@ decides.
   is read and before any call: `this write needs an If-Match header: send the ETag that GET
   answered (the object's resourceVersion), for example If-Match: "42"`; `If-Match: *`, which
   names no version, is 428 too (`If-Match: * names no version: ...`). So every write carries the
-  version its client read. The checks run in this order: 415 for a body that is not JSON, then
-  428, then the body (422, 413). `If-Match` must be one strong entity tag exactly as `ETag` sent
+  version its client read. After the provider-admin check (403 for a non-admin), the checks run in this order: 415 for a
+  body that is not JSON, then 428, then the body (422, 413). `If-Match` must be one strong entity tag exactly as `ETag` sent
   it (`"42"`); a bare value, a weak tag (`W/"42"`) or a list is 422 `If-Match must be one entity
   tag as the ETag header sent it, for example "42"` before any call. The tenant version is the
   backend's (`Tenant.resource_version`, kept in an organization attribute;
@@ -416,7 +416,8 @@ decides.
 - **Every PATCH is one update; the backend decides what changes.** The BFF reads nothing before
   a PATCH: each field present in the body goes into the update's object and its mask, whatever
   the stored value, and the backend applies the mask under optimistic locking. A body that names
-  no field is 422 `the request body names no field to change` before any call (there is nothing
+  no field is 422 `the request body names no field to change` before any call (a non-admin gets
+  403 from the provider-admin check first) (there is nothing
   to send; answering it like the GET would skip the version check). Whether an update changes
   anything is the backend's answer: a cluster or model update that leaves the object as stored
   is not written and comes back with the stored `resourceVersion` (the Kubernetes API server
@@ -507,8 +508,9 @@ exists; the frontend uses the mock service meanwhile.
 | Missing or malformed token header | 401 |
 | Hub rejects the token in the access review | 401 |
 | Hub unreachable or failing during the access review | 502, generic message, detail in the BFF log |
+| The access review says the caller may not patch ManagedClusters: every `/api/v1` request but `GET /user` and `GET /config` (the provider-admin check, until the backend authorizes the caller) | 403, `the console is for provider admins: the hub says you may not patch ManagedClusters` |
 | Backend `Unauthenticated` | 401 |
-| Backend `PermissionDenied` (the hub's RBAC denies the caller, e.g. a PATCH by a user who may not patch ManagedClusters) | 403, backend message kept |
+| Backend `PermissionDenied` (the hub's RBAC denies the caller) | 403, backend message kept |
 | Backend `NotFound` | 404, backend message kept (`object with identifier '<name>' not found`) |
 | Invalid POST, PATCH or PUT body (unknown field, wrong type, trailing content), bad `offset`/`limit` query, a removed list parameter (`search`, `namespace`, `label`), malformed `If-Match` | 422, BFF message |
 | POST, PATCH or PUT body not declared `application/json` | 415, BFF message |
