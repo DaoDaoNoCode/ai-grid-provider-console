@@ -352,15 +352,17 @@ func TestDriftIsDetected(t *testing.T) {
 			name: "optional field lost its presence",
 			mutate: func(t *testing.T, set *descriptorpb.FileDescriptorSet) {
 				msg := message(t, set, "TenantsListRequest")
-				for _, f := range msg.Field {
-					if f.GetName() == "offset" {
-						f.Proto3Optional, f.OneofIndex = nil, nil
-					}
+				offset := field(t, set, "TenantsListRequest", "offset")
+				if offset.OneofIndex == nil {
+					t.Fatal("TenantsListRequest.offset has no synthetic oneof to drop")
 				}
-				// Drop the synthetic oneof that held it, and renumber the ones after it.
-				msg.OneofDecl = msg.OneofDecl[1:]
+				// Drop the synthetic oneof that held it, wherever the backend declares it,
+				// and renumber the ones after it.
+				dropped := offset.GetOneofIndex()
+				offset.Proto3Optional, offset.OneofIndex = nil, nil
+				msg.OneofDecl = append(msg.OneofDecl[:dropped], msg.OneofDecl[dropped+1:]...)
 				for _, f := range msg.Field {
-					if f.OneofIndex != nil {
+					if f.OneofIndex != nil && f.GetOneofIndex() > dropped {
 						f.OneofIndex = proto.Int32(f.GetOneofIndex() - 1)
 					}
 				}

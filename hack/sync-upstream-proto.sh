@@ -36,8 +36,22 @@ TMP="$(mktemp -d)"
 trap '[[ -e "${UPSTREAM}" ]] || mv "${TMP}/previous" "${UPSTREAM}" 2>/dev/null; rm -rf "${TMP}"' EXIT
 
 git clone -q --filter=blob:none --no-checkout "${REPO}" "${TMP}/repo"
-git -C "${TMP}/repo" fetch -q origin "${REF}"
-SHA="$(git -C "${TMP}/repo" rev-parse FETCH_HEAD)"
+# A branch, a tag or a full SHA is fetched. A short SHA can't be, but the clone already has every
+# commit on the remote's branches and tags, so a short SHA alone resolves there; any other failed
+# fetch (a missing ref, the network) stops with git's own error. ^{commit} records the commit an
+# annotated tag points at, not the tag object.
+if fetch_err="$(git -C "${TMP}/repo" fetch -q origin -- "${REF}" 2>&1)"; then
+  SHA="$(git -C "${TMP}/repo" rev-parse "FETCH_HEAD^{commit}")"
+elif [[ "${REF}" =~ ^[0-9a-f]{4,39}$ ]]; then
+  if ! SHA="$(git -C "${TMP}/repo" rev-parse -q --verify --end-of-options "${REF}^{commit}")"; then
+    echo "error: no single commit ${REF} on a branch or tag of ${REPO} (a commit only on a pull request needs its full SHA); keeping the vendored copy" >&2
+    exit 1
+  fi
+else
+  echo "error: could not fetch ${REF} from ${REPO}; keeping the vendored copy" >&2
+  echo "${fetch_err}" >&2
+  exit 1
+fi
 git -C "${TMP}/repo" checkout -q "${SHA}" -- "${MODULE_DIR}"
 SRC="${TMP}/repo/${MODULE_DIR}"
 if ! ls "${TMP}/repo/${PROTO_PATH}"/*.proto >/dev/null 2>&1; then

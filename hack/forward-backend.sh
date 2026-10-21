@@ -26,8 +26,11 @@ fail() {
 }
 
 # The backend authenticates nobody and acts with the deployed ServiceAccount, so it must not be
-# reachable from anywhere but this machine. Exactly one loopback address: `oc port-forward
-# --address` also takes a comma-separated list, which could add 0.0.0.0.
+# reachable from anywhere but this machine. For the same reason, pods/portforward in NAMESPACE is
+# provider-admin access until the backend authorizes the caller (docs/dev-setup.md).
+#
+# Exactly one loopback address: `oc port-forward --address` also takes a comma-separated list,
+# which could add 0.0.0.0.
 loopback='^(127\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|localhost|::1)$'
 [[ "${HOST}" =~ ${loopback} ]] ||
   fail "BACKEND_ADDRESS must be one loopback address and a port, not ${BACKEND_ADDRESS}: the backend has no authentication of its own"

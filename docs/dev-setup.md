@@ -42,6 +42,13 @@ and a free local port. The forward listens on one loopback address only, reconne
 replaces the pod, and creates nothing on the cluster. Pages whose RPCs the backend doesn't serve
 yet say "not available on this backend yet".
 
+Treat `pods/portforward` in the console's namespace as provider-admin access. Until the backend
+authorizes the caller, anyone who can port-forward there reaches the backend directly, here or with
+a plain `oc port-forward`, and acts with its ServiceAccount's rights: those of
+`manifests/base/rbac.yaml`, or what the deployment adds (ai-grid-env-setup's
+`apps/console/manifests` grants `patch` on ManagedClusters). The local BFF's `isProviderAdmin`
+check is a convenience, not a boundary: whoever runs the forward can call the backend without it.
+
 To run your own backend instead, start it in a checkout of the backend repository, then run
 `make dev` here. It uses your kubeconfig (`KUBECONFIG_PATH`) and needs the Keycloak settings
 (`KEYCLOAK_URL`, `KEYCLOAK_REALM`, `KEYCLOAK_ADMIN_USERNAME`, `KEYCLOAK_ADMIN_PASSWORD`):
