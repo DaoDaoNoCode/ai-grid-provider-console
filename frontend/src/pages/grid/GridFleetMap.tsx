@@ -34,15 +34,27 @@ const pinColor = (cluster: GridCluster) => statusColor[cluster.status];
 
 const isMapped = (c: GridCluster) => c.latitude !== undefined && c.longitude !== undefined;
 
+/** What the pins show; the pins are redrawn only when it changes. */
+const pinsSignature = (clusters: GridCluster[]) =>
+  clusters
+    .filter(isMapped)
+    .map((c) => [c.name, c.latitude, c.longitude, c.status, c.siteName ?? '', c.site ?? ''].join(':'))
+    .join('|');
+
 export const GridFleetMap: React.FC<Props> = ({ clusters, selected, onSelect, tiles, isFiltered }) => {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const layer = useRef<L.LayerGroup | null>(null);
   const lastBounds = useRef('');
   const select = useRef(onSelect);
+  // The parent builds a new clusters array on every render; the pins follow its content, so
+  // re-renders don't remove the pin under the pointer or close its label.
+  const latestClusters = useRef(clusters);
   useLayoutEffect(() => {
     select.current = onSelect;
+    latestClusters.current = clusters;
   });
+  const signature = pinsSignature(clusters);
   const [tileError, setTileError] = useState(tiles === null);
   const [outlineError, setOutlineError] = useState(false);
 
@@ -124,7 +136,7 @@ export const GridFleetMap: React.FC<Props> = ({ clusters, selected, onSelect, ti
     const group = layer.current;
     group.clearLayers();
     const bounds = L.latLngBounds([]);
-    const mapped = clusters.filter(isMapped);
+    const mapped = latestClusters.current.filter(isMapped);
     mapped.forEach((cluster) => {
       // Separate co-located cluster pins so each remains selectable.
       const siblings = mapped
@@ -171,7 +183,7 @@ export const GridFleetMap: React.FC<Props> = ({ clusters, selected, onSelect, ti
       lastBounds.current = signature;
     }
     map.current.invalidateSize();
-  }, [clusters, selected, isFiltered]);
+  }, [signature, selected, isFiltered]);
 
   return (
     <div className="fleet-map">

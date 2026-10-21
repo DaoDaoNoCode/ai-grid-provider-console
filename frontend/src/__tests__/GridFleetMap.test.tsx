@@ -117,3 +117,18 @@ it('explains a map without coordinates', () => {
   ).toBeInTheDocument();
   expect(pinsDrawn(marker)).toBe(0);
 });
+
+it('keeps its pins through a re-render with the same clusters, and redraws when they change', () => {
+  const marker = vi.spyOn(L, 'circleMarker');
+  const props = { selected: null, onSelect: () => {}, tiles };
+  const { rerender } = render(<GridFleetMap clusters={members} {...props} />);
+  const drawn = pinsDrawn(marker);
+  expect(drawn).toBe(members.filter((c) => c.latitude !== undefined).length);
+  // The fleet view passes a new array on every render; the same clusters keep the same pins, so
+  // the pin under the pointer and its label stay.
+  rerender(<GridFleetMap clusters={members.map((c) => ({ ...c }))} {...props} />);
+  expect(pinsDrawn(marker)).toBe(drawn);
+  // A changed status is a change the pins show.
+  rerender(<GridFleetMap clusters={members.map((c, i) => (i ? c : { ...c, status: 'Offline' }))} {...props} />);
+  expect(pinsDrawn(marker)).toBe(2 * drawn);
+});
