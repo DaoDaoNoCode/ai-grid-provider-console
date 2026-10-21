@@ -114,33 +114,48 @@ it('uses the configured tile URL, or none for the bundled land outline', () => {
   ).toEqual({ url: 'https://tiles.example.com/{z}/{x}/{y}.png', attribution: 'Example tiles' });
 });
 
-it('maps the AI Grid clusters from the Clusters list when the backend has no grid overview', async () => {
+it('shows the not-available page, like Models, when the backend has no grid overview', async () => {
   const service = new MockConsoleService();
   vi.spyOn(service, 'getGridOverview').mockRejectedValue(
     new ServiceError(501, 'the AI Grid backend does not support this operation yet'),
   );
+  const clusters = vi.spyOn(service, 'listClusters');
   renderAt('/ai-grid', service);
-  expect(await screen.findByText('Showing clusters from the Clusters list')).toBeVisible();
-  // The overview's clusters are the AI Grid members, and so are the fallback's.
-  const members = (await service.listClusters()).filter((c) => c.aiGridEnabled);
-  expect(members.length).toBeGreaterThan(0);
-  expect((await screen.findAllByText(members[0].name)).length).toBeGreaterThan(0);
-  expect(screen.queryByText('AI Grid clusters are not available on this backend yet')).not.toBeInTheDocument();
-  // The alert, the summary and the map are spaced by one gutter stack, not stacked flush.
-  const alert = screen.getByText('Showing clusters from the Clusters list').closest('.pf-v6-c-alert')!;
-  const stack = alert.parentElement!;
-  expect(stack).toHaveClass('pf-v6-l-stack', 'pf-m-gutter');
-  expect(stack).toContainElement(screen.getByRole('region', { name: 'Fleet summary' }));
-  expect(stack).toContainElement(screen.getByRole('region', { name: 'AI Grid map and drawer' }));
+  expect(await screen.findByRole('heading', { name: 'AI Grid is not available on this backend yet' })).toBeVisible();
+  expect(screen.getByRole('heading', { level: 1, name: 'AI Grid' })).toBeVisible();
+  // No map, no summary, and nothing to refresh or switch to.
+  expect(screen.queryByRole('region', { name: 'Fleet summary' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('region', { name: 'AI Grid map and drawer' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Refresh' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'View monitoring' })).not.toBeInTheDocument();
+  // The Clusters list isn't asked for in place of the overview.
+  expect(clusters).not.toHaveBeenCalled();
 });
 
-it('shows not-available when the backend has neither the grid overview nor the clusters', async () => {
+it('drops the map for the not-available page when a later answer is 501', async () => {
   const service = new MockConsoleService();
-  const notServed = new ServiceError(501, 'the AI Grid backend does not support this operation yet');
-  vi.spyOn(service, 'getGridOverview').mockRejectedValue(notServed);
-  vi.spyOn(service, 'listClusters').mockRejectedValue(notServed);
+  const serve = service.getGridOverview.bind(service);
+  vi.spyOn(service, 'getGridOverview')
+    .mockImplementationOnce(serve)
+    .mockRejectedValue(new ServiceError(501, 'the AI Grid backend does not support this operation yet'));
+  const user = userEvent.setup();
   renderAt('/ai-grid', service);
-  expect(await screen.findByText('AI Grid clusters are not available on this backend yet')).toBeInTheDocument();
+  expect(await screen.findByRole('region', { name: 'AI Grid map and drawer' })).toBeVisible();
+  await user.click(screen.getByRole('button', { name: 'Refresh' }));
+  expect(await screen.findByRole('heading', { name: 'AI Grid is not available on this backend yet' })).toBeVisible();
+  expect(screen.queryByRole('region', { name: 'AI Grid map and drawer' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('region', { name: 'Fleet summary' })).not.toBeInTheDocument();
+});
+
+it('shows the backend error, not the not-available page, when the overview fails otherwise', async () => {
+  const service = new MockConsoleService();
+  vi.spyOn(service, 'getGridOverview').mockRejectedValue(
+    new ServiceError(503, 'the AI Grid backend is unavailable; try again'),
+  );
+  renderAt('/ai-grid', service);
+  expect(await screen.findByText('AI Grid clusters could not be loaded')).toBeVisible();
+  expect(screen.getByText('the AI Grid backend is unavailable; try again')).toBeVisible();
+  expect(screen.queryByText('AI Grid is not available on this backend yet')).not.toBeInTheDocument();
 });
 
 it('shows the map when the backend leaves the inventory and metrics sources out', async () => {

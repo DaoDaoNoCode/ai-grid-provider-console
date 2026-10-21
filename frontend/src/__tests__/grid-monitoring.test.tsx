@@ -233,69 +233,37 @@ it('names the clusters table', async () => {
   expect(await screen.findByRole('grid', { name: 'Clusters' })).toBeVisible();
 });
 
-it('shows cluster availability from the Clusters list, without empty charts, when the backend has no overview', async () => {
+it('drops the dashboard for the not-available page when a later answer is 501', async () => {
   const service = withOrganizations();
-  vi.spyOn(service, 'getGridOverview').mockRejectedValue(
-    new ServiceError(501, 'the AI Grid backend does not support this operation yet'),
-  );
+  const serve = service.getGridOverview.bind(service);
+  vi.spyOn(service, 'getGridOverview')
+    .mockImplementationOnce(serve)
+    .mockRejectedValue(new ServiceError(501, 'the AI Grid backend does not support this operation yet'));
+  const user = userEvent.setup();
   renderAt('/monitoring', service);
-  expect(await screen.findByText('Showing clusters from the Clusters list')).toBeVisible();
-  const members = (await service.listClusters()).filter((c) => c.aiGridEnabled);
-  const table = await screen.findByRole('grid', { name: 'Clusters' });
-  for (const member of members) {
-    expect(within(table).getByRole('link', { name: member.name })).toBeVisible();
-  }
-  // No metrics are served, so the chart sections and the error alert stay out.
-  expect(screen.queryByRole('heading', { name: 'Cluster resources' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('heading', { name: 'Gateway performance' })).not.toBeInTheDocument();
-  expect(screen.queryByText('Monitoring unavailable')).not.toBeInTheDocument();
+  expect(await screen.findByRole('grid', { name: 'Clusters' })).toBeVisible();
+  await user.click(screen.getByRole('button', { name: 'Last 6h' }));
+  expect(await screen.findByRole('heading', { name: 'Monitoring is not available on this backend yet' })).toBeVisible();
+  expect(screen.queryByRole('grid', { name: 'Clusters' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Last 24h' })).not.toBeInTheDocument();
 });
 
-it('asks for the overview once the backend has said it has none, until Refresh asks again', async () => {
+it('shows the not-available page, like Models, when the backend has no overview', async () => {
   const service = withOrganizations();
   const overview = vi
     .spyOn(service, 'getGridOverview')
     .mockRejectedValue(new ServiceError(501, 'the AI Grid backend does not support this operation yet'));
   const clusters = vi.spyOn(service, 'listClusters');
-  const user = userEvent.setup();
   renderAt('/monitoring', service);
-  expect(await screen.findByText('Showing clusters from the Clusters list')).toBeVisible();
+  expect(await screen.findByRole('heading', { name: 'Monitoring is not available on this backend yet' })).toBeVisible();
+  expect(screen.getByRole('heading', { level: 1, name: 'Monitoring' })).toBeVisible();
+  // No tabs, no time range and nothing to refresh.
+  expect(screen.queryByRole('grid', { name: 'Clusters' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Last 6h' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Refresh' })).not.toBeInTheDocument();
+  // One request: the not-available answer isn't asked again for a range, and the Clusters list isn't
+  // asked at all. A refetch would start in the effects of the render above; flush them.
+  await act(async () => {});
   expect(overview).toHaveBeenCalledTimes(1);
-  // A new range reloads: one call to the Clusters list, not a 501 first.
-  const before = clusters.mock.calls.length;
-  await user.click(screen.getByRole('button', { name: 'Last 6h' }));
-  await waitFor(() => expect(clusters.mock.calls.length).toBeGreaterThan(before));
-  expect(overview).toHaveBeenCalledTimes(1);
-  // Refresh asks the backend again, so a redeployed backend is picked up.
-  await user.click(screen.getByRole('button', { name: 'Refresh' }));
-  await waitFor(() => expect(overview).toHaveBeenCalledTimes(2));
-});
-
-it("doesn't let a 501 from before Refresh hide an overview the backend now serves", async () => {
-  const service = withOrganizations();
-  const serve = service.getGridOverview.bind(service);
-  let refuse: () => void = () => undefined;
-  const overview = vi
-    .spyOn(service, 'getGridOverview')
-    .mockImplementationOnce(serve)
-    // The range change's request is still out when Refresh asks again, and is refused only afterwards.
-    .mockImplementationOnce(
-      () =>
-        new Promise((_, reject) => {
-          refuse = () => reject(new ServiceError(501, 'the AI Grid backend does not support this operation yet'));
-        }),
-    )
-    .mockImplementation(serve);
-  const user = userEvent.setup();
-  renderAt('/monitoring', service);
-  expect(await screen.findByRole('img', { name: 'Gateway request rate over time' })).toBeVisible();
-  await user.click(screen.getByRole('button', { name: 'Last 6h' }));
-  await waitFor(() => expect(overview).toHaveBeenCalledTimes(2));
-  await user.click(screen.getByRole('button', { name: 'Refresh' }));
-  await waitFor(() => expect(overview).toHaveBeenCalledTimes(3));
-  await act(async () => refuse());
-  // The next load still asks for the overview, and the page stays on the served one.
-  await user.click(screen.getByRole('button', { name: 'Last 24h' }));
-  await waitFor(() => expect(overview).toHaveBeenCalledTimes(4));
-  expect(screen.queryByText('Showing clusters from the Clusters list')).not.toBeInTheDocument();
+  expect(clusters).not.toHaveBeenCalled();
 });

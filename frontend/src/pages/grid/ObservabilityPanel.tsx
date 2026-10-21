@@ -293,8 +293,6 @@ type Props = {
   error?: string;
   simulated: boolean;
   range: GridRange;
-  /** False when the backend doesn't serve metrics: the chart sections, which would stay empty, are left out. */
-  metricsServed?: boolean;
 };
 
 /** The Monitoring page's Clusters, Models, and Usage tabs. */
@@ -309,7 +307,6 @@ export function ObservabilityPanel({
   error,
   simulated,
   range,
-  metricsServed = true,
 }: Props) {
   const [tab, setTab] = useState<string | number>('cluster');
   const [model, setModel] = useState('all');
@@ -459,12 +456,8 @@ export function ObservabilityPanel({
                 <StatCard label="Request success rate" value={metricText(success)} unit="%" />
               </Grid>
             </Section>
-            {metricsServed && (
-              <>
-                <Section title="Cluster resources">{charts(['gpu', 'requests'])}</Section>
-                <Section title="Gateway performance">{charts(['errors', 'latency'])}</Section>
-              </>
-            )}
+            <Section title="Cluster resources">{charts(['gpu', 'requests'])}</Section>
+            <Section title="Gateway performance">{charts(['errors', 'latency'])}</Section>
             <Section title="Clusters">
               <Table aria-label="Clusters" variant="compact">
                 <Thead>
@@ -571,15 +564,13 @@ export function ObservabilityPanel({
                 </Tbody>
               </Table>
             </Section>
-            {metricsServed && (
-              <Section title="Performance">
-                <Grid hasGutter md={6}>
-                  {modelSeries.map((m) => (
-                    <MetricChart key={m.key} metric={m} />
-                  ))}
-                </Grid>
-              </Section>
-            )}
+            <Section title="Performance">
+              <Grid hasGutter md={6}>
+                {modelSeries.map((m) => (
+                  <MetricChart key={m.key} metric={m} />
+                ))}
+              </Grid>
+            </Section>
           </>
         )}
         {tab === 'usage' && usageTab()}

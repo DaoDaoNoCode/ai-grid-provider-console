@@ -1,13 +1,12 @@
 // Ported from krisv/ai-grid-cloud-provider-poc src/app/pages/grid/GridPage.tsx at 62319b8: the map at
 // /ai-grid and, with `monitoring`, the dashboards at /monitoring. The PoC's loading, error, and refresh
 // state becomes useServiceData, and a failed load is a LoadError. A backend without Grid/GetOverview
-// still has its AI Grid clusters in the Clusters list, so the map and the availability panel use those.
-import { useEffect, useRef, useState } from 'react';
+// (501) gets the console's not-available page, as Models and Subscriptions do.
+import { useEffect, useState } from 'react';
 import { Alert, Flex, PageSection, Stack, ToggleGroup, ToggleGroupItem } from '@patternfly/react-core';
 import { Link } from 'react-router-dom';
 import type { ConsoleService } from '../../api/ConsoleService';
 import { ServiceError } from '../../api/ConsoleService';
-import type { ClustersService } from '../../api/clusters';
 import type { GridService } from '../../api/grid';
 import type { ModelsService } from '../../api/models';
 import type { OrganizationsService } from '../../api/organizations';
@@ -26,40 +25,9 @@ import { tileLayerConfig } from './tiles';
 type Props = {
   service: GridService &
     ModelsService &
-    Pick<ClustersService, 'listClusters'> &
     Pick<OrganizationsService, 'listOrganizations'> &
     Pick<ConsoleService, 'getConfig'>;
   monitoring?: boolean;
-};
-
-/** An overview, and whether the backend served it or the page built it from the Clusters list. */
-type Inventory = { overview: GridOverview; served: boolean };
-
-/**
- * The backend's overview, or, when it doesn't serve Grid/GetOverview yet (501), the AI Grid members
- * from the Clusters list with no metrics: the overview's clusters are exactly those members.
- * `support` remembers a 501, so later polls ask the Clusters list alone instead of two calls. Refresh
- * starts a new generation: a 501 for a request from before it can't mark a backend that now serves
- * the overview as not serving it.
- */
-type OverviewSupport = { notServed: boolean; generation: number };
-
-const overviewOrClusters = async (
-  service: GridService & Pick<ClustersService, 'listClusters'>,
-  support: OverviewSupport,
-  ...args: Parameters<GridService['getGridOverview']>
-): Promise<Inventory> => {
-  if (!support.notServed) {
-    const generation = support.generation;
-    try {
-      return { overview: await service.getGridOverview(...args), served: true };
-    } catch (err) {
-      if (!(err instanceof ServiceError && err.isNotImplemented)) throw err;
-      if (support.generation === generation) support.notServed = true;
-    }
-  }
-  const clusters = (await service.listClusters()).filter((c) => c.aiGridEnabled);
-  return { overview: { demo: false, clusters, metrics: [] }, served: false };
 };
 
 const modelsErrorOf = (err: Error) =>
@@ -73,14 +41,9 @@ const organizationsErrorOf = (err: Error) =>
 const ranges: GridRange[] = ['1h', '6h', '24h'];
 
 export const GridPage: React.FC<Props> = ({ service, monitoring = false }) => {
-  // Whether the backend answered 501 for the overview; Refresh asks it again.
-  const overviewSupport = useRef<OverviewSupport>({ notServed: false, generation: 0 });
   // On /monitoring the metrics answer below carries the clusters too, so only the map asks for them alone.
-  const [inventory, inventoryLoaded, inventoryError, refreshOverview] = useServiceData<Inventory | undefined>(
-    () =>
-      monitoring
-        ? Promise.resolve(undefined)
-        : overviewOrClusters(service, overviewSupport.current, '1h', { includeMetrics: false }),
+  const [inventory, inventoryLoaded, inventoryError, refreshOverview] = useServiceData<GridOverview | undefined>(
+    () => (monitoring ? Promise.resolve(undefined) : service.getGridOverview('1h', { includeMetrics: false })),
     undefined,
   );
   const [models, , modelsLoadError, refreshModels] = useServiceData<ManagedModel[]>(() => service.listModels(), []);
@@ -93,35 +56,33 @@ export const GridPage: React.FC<Props> = ({ service, monitoring = false }) => {
   // Each metrics response carries the range it was asked for, so a slow answer for an earlier
   // range is never shown as the current one.
   const [metricsData, metricsLoaded, metricsLoadError, refreshMetrics] = useServiceData<
-    (Inventory & { range: GridRange }) | undefined
+    { overview: GridOverview; range: GridRange } | undefined
   >(
     () =>
       monitoring
-        ? overviewOrClusters(service, overviewSupport.current, range).then((answer) => ({ ...answer, range }))
+        ? service.getGridOverview(range).then((overview) => ({ overview, range }))
         : Promise.resolve(undefined),
     undefined,
   );
   const metricsCurrent = metricsData?.range === range;
-  const answer = monitoring ? metricsData : inventory;
-  const data = answer?.overview;
-  // Built from the Clusters list: there are no per-site models or metrics to show.
-  const overviewServed = answer?.served !== false;
+  const data = monitoring ? metricsData?.overview : inventory;
   const loaded = monitoring ? metricsLoaded : inventoryLoaded;
-  // A failed range keeps the last answer's clusters; the panel shows the metrics error.
-  const error = monitoring ? (data ? undefined : metricsLoadError) : inventoryError;
+  // The backend has no Grid/GetOverview: the page is the not-available state, with nothing to refresh
+  // or switch to, even if an earlier answer is still held (a backend redeployed without it).
+  const loadError = monitoring ? metricsLoadError : inventoryError;
+  const notServed = loadError instanceof ServiceError && loadError.isNotImplemented;
+  // Otherwise a failed range keeps the last answer's clusters; the panel shows the metrics error.
+  const error = notServed || !monitoring ? loadError : data ? undefined : metricsLoadError;
   // A new range, or a late answer for an old one, asks again for the current range.
   useEffect(() => {
-    if (monitoring && metricsLoaded && !metricsCurrent) {
+    if (monitoring && metricsLoaded && !metricsCurrent && !notServed) {
       void refreshMetrics();
     }
-  }, [monitoring, range, metricsData, metricsLoaded, metricsCurrent, refreshMetrics]);
+  }, [monitoring, range, metricsData, metricsLoaded, metricsCurrent, notServed, refreshMetrics]);
   const [refreshing, setRefreshing] = useState(false);
 
   const refresh = async () => {
     setRefreshing(true);
-    // A backend redeployed with Grid/GetOverview is picked up without reloading the page.
-    overviewSupport.current.notServed = false;
-    overviewSupport.current.generation += 1;
     await Promise.all([
       refreshOverview(),
       refreshModels(),
@@ -171,15 +132,21 @@ export const GridPage: React.FC<Props> = ({ service, monitoring = false }) => {
             ? 'Cluster availability, gateway performance and resource use across AI Grid.'
             : 'Where the AI Grid clusters are, and which models they serve.'
         }
-        headerAction={toolbar}
+        headerAction={notServed ? undefined : toolbar}
       />
       {!error && !loaded ? (
         <PageLoading label="Loading AI Grid" />
       ) : (
         <PageSection isFilled>
           <Stack hasGutter>
-            {error && <LoadError subject="AI Grid clusters" error={error} />}
-            {data && (
+            {error && (
+              <LoadError
+                subject="AI Grid clusters"
+                error={error}
+                notAvailableTitle={`${monitoring ? 'Monitoring' : 'AI Grid'} is not available on this backend yet`}
+              />
+            )}
+            {data && !notServed && (
               <>
                 {data.demo && (
                   <Alert isInline variant="info" title="Demo data">
@@ -192,13 +159,6 @@ export const GridPage: React.FC<Props> = ({ service, monitoring = false }) => {
                   <Alert isInline variant="info" title="Simulated monitoring metrics">
                     Thanos is not configured. Charts show generated demo data; cluster inventory comes from the
                     configured backend.
-                  </Alert>
-                )}
-                {!overviewServed && (
-                  <Alert isInline variant="info" title="Showing clusters from the Clusters list">
-                    {monitoring
-                      ? 'This backend doesn’t serve the AI Grid overview yet, so cluster availability comes from the Clusters list and there are no metrics to chart.'
-                      : 'This backend doesn’t serve the AI Grid overview yet, so the map shows the AI Grid clusters from the Clusters list.'}
                   </Alert>
                 )}
                 {!monitoring && (
@@ -214,7 +174,6 @@ export const GridPage: React.FC<Props> = ({ service, monitoring = false }) => {
                     metrics={metricsCurrent ? metricsData.overview.metrics : []}
                     loading={!metricsLoaded || (!metricsCurrent && !metricsLoadError)}
                     error={metricsLoadError && 'Unable to load metrics for this selection. Please retry.'}
-                    metricsServed={overviewServed}
                     simulated={metricsSource === 'demo'}
                     range={range}
                   />
