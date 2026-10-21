@@ -42,13 +42,9 @@ export const toGridCluster = (json: ApiCluster): GridCluster => ({
   statusMessage: json.statusMessage,
   aiGridEnabled: json.aiGridEnabled,
   provisioned: json.provisioned,
-  provisioningStatus: json.provisioned
-    ? 'Provisioned'
-    : json.aiGridEnabled
-      ? json.provisioning === 'NonCompliant'
-        ? 'Provisioning failed'
-        : 'Provisioning'
-      : 'Not provisioned',
+  // Membership first: right after Remove the hub can still report the cluster
+  // provisioned until its ready Policy lets go of it.
+  provisioningStatus: !json.aiGridEnabled ? 'Not provisioned' : json.provisioned ? 'Provisioned' : 'Provisioning',
   hubAcceptsClient: json.hubAcceptsClient ?? false,
   location: json.location,
   site: json.site,

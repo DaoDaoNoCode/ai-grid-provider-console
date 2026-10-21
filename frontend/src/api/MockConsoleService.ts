@@ -97,7 +97,7 @@ export class MockConsoleService implements ConsoleService {
     const updated: GridCluster = {
       ...current,
       aiGridEnabled: member,
-      provisioningStatus: current.provisioned ? 'Provisioned' : member ? 'Provisioning' : 'Not provisioned',
+      provisioningStatus: !member ? 'Not provisioned' : current.provisioned ? 'Provisioned' : 'Provisioning',
       ...(labels.location ? { location: labels.location } : {}),
       labels,
       resourceVersion: String(Number(current.resourceVersion ?? '0') + 1),

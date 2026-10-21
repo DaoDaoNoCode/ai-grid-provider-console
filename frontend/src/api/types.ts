@@ -25,7 +25,7 @@ export type ClusterStatus = 'Ready' | 'Offline' | 'Unknown';
 /** The ACM console's word for a cluster that is neither ready, offline, nor unknown. */
 export type ClusterState = 'Pending import' | 'Importing' | 'Import failed' | 'Detaching' | 'Not accepted';
 
-export type ProvisioningStatus = 'Provisioned' | 'Provisioning' | 'Provisioning failed' | 'Not provisioned';
+export type ProvisioningStatus = 'Provisioned' | 'Provisioning' | 'Not provisioned';
 
 /**
  * A cluster as the BFF sends it (PR 12's `GridCluster` in bff/internal/api/clusters.go),
@@ -35,8 +35,6 @@ export type ApiCluster = {
   name: string;
   aiGridEnabled: boolean;
   provisioned: boolean;
-  /** The hub's ai-grid-ready Policy compliance, when the backend reports it; `provisioned` follows it. */
-  provisioning?: 'Compliant' | 'NonCompliant' | 'Pending';
   hubAcceptsClient?: boolean;
   location?: string;
   site?: string;
