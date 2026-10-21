@@ -27,8 +27,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: publish-pr-image-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
-  cancel-in-progress: true
+  # Shared with cleanup-pr-image (see there). Not cancel-in-progress, which
+  # would let a push cancel a running cleanup; a superseded run finds its SHA
+  # is no longer the PR's head and skips.
+  group: pr-image-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
 
 env:
   # The images this workflow may push; keep in step with publish-image.yaml.
@@ -87,10 +90,25 @@ jobs:
           RUN_ID: ${{ github.event.workflow_run.id }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
         run: |
+          set -euo pipefail
+          # Digests that a tagged index lists as children: the platform and
+          # attestation manifests of a multi-arch or attested release. ghcr
+          # shows them untagged, and a PR can push identical bytes and get them
+          # tagged pr-<number>, so they are never deleted. Reads the image's
+          # versions on stdin. A failed lookup fails the job instead of
+          # deleting with a partial list.
+          protected_digests() {
+            jq -r '.[] | select(.metadata.container.tags | length > 0) | .name' \
+              | while read -r digest; do
+                  skopeo inspect --raw "docker://ghcr.io/${OWNER}/$1@${digest}" \
+                    | jq -r '.manifests[]?.digest // empty' || exit 1
+                done | sort -u
+          }
+
           shopt -s nullglob
           dirs=(/tmp/pr-images/pr-image-*/)
           if [ ${#dirs[@]} -eq 0 ]; then
-            echo "No image artifact on run ${RUN_ID}; skipping."
+            echo "No image artifacts on run ${RUN_ID}; skipping."
             exit 0
           fi
           echo "$GH_TOKEN" | skopeo login ghcr.io --username "$ACTOR" --password-stdin
@@ -100,22 +118,30 @@ jobs:
             case " $ALLOWED_IMAGES " in
               *" $image "*) ;;
               *)
-                echo "::warning::ignoring an artifact for unexpected image '$image'"
+                echo "::warning::ignoring artifact for unexpected image '$image'"
                 continue
                 ;;
             esac
             dest="ghcr.io/${OWNER}/${image}:pr-${PR_NUMBER}"
 
-            # What pr-<number> pointed at, so the superseded version can go once the tag moves.
+            # What pr-<number> pointed at, so the superseded digest can be
+            # deleted once the tag moves; empty on the PR's first push.
             old_digest=$(skopeo inspect --format '{{.Digest}}' --no-tags "docker://${dest}" 2>/dev/null || true)
 
             skopeo copy "oci-archive:${dir}${image}.tar" "docker://${dest}"
 
             new_digest=$(skopeo inspect --format '{{.Digest}}' --no-tags "docker://${dest}")
             if [ -n "$old_digest" ] && [ "$old_digest" != "$new_digest" ]; then
-              # Delete exactly the version the tag left, and only if nothing else tags it.
-              id=$(gh api "orgs/${OWNER}/packages/container/${image}/versions" --paginate \
-                --jq ".[] | select(.name == \"${old_digest}\" and (.metadata.container.tags | length == 0)) | .id")
+              versions=$(gh api "orgs/${OWNER}/packages/container/${image}/versions" --paginate)
+              protected=$(protected_digests "$image" <<< "$versions")
+              if grep -Fxq -- "$old_digest" <<< "$protected"; then
+                echo "::warning::keeping ${image}@${old_digest}: a tagged index lists it"
+                continue
+              fi
+              # Delete exactly the version the tag moved off, and only if
+              # nothing else still tags it.
+              id=$(jq -r --arg digest "$old_digest" \
+                '.[] | select(.name == $digest and (.metadata.container.tags | length == 0)) | .id' <<< "$versions")
               if [ -n "$id" ]; then
                 echo "Deleting superseded ${image}@${old_digest} (version ${id})"
                 gh api --method DELETE "orgs/${OWNER}/packages/container/${image}/versions/${id}"

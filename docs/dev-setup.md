@@ -133,8 +133,10 @@ backend, so it is the readiness signal for all three containers.
 
 CI publishes the console to `ghcr.io/ai-grid-cloud/ai-grid-provider-console`: every merge to
 `main` as `sha-<full commit>` and `latest`, each `v*` tag by version, and each open pull request
-as `pr-<number>` (deleted when it closes). Deploy a published image with `IMAGE=ghcr.io/ai-grid-cloud/ai-grid-provider-console
-TAG=sha-<full commit>`, or build your own:
+as `pr-<number>` (deleted when it closes). Deploy a published image with
+`IMAGE=ghcr.io/ai-grid-cloud/ai-grid-provider-console TAG=sha-<full commit>`, or build your own.
+A new ghcr package starts private: when CI first publishes a new image, an organization owner
+sets the package's visibility to Public, or clusters need a pull secret.
 
 ```sh
 make image IMAGE=quay.io/<you>/ai-grid-provider-console TAG=dev

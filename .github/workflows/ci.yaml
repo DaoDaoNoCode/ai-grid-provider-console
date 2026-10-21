@@ -98,6 +98,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: kustomize build
         run: kubectl kustomize manifests/base > /dev/null
+      - name: PR-image delete logic
+        run: hack/test-image-workflows.sh
 
   # Publishes ghcr.io/ai-grid-cloud/ai-grid-provider-console after every check passes, so a commit
   # whose checks failed never ships sha-*, latest or a version. Deploy the sha-<full sha> tag, not
@@ -129,6 +131,10 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
+          # Only the default-branch rule above sets latest; the default
+          # latest=auto would also move it on every v* tag.
+          flavor: |
+            latest=false
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
