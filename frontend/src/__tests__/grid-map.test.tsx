@@ -114,11 +114,31 @@ it('uses the configured tile URL, or none for the bundled land outline', () => {
   ).toEqual({ url: 'https://tiles.example.com/{z}/{x}/{y}.png', attribution: 'Example tiles' });
 });
 
-it('shows not-available when the backend has no grid overview', async () => {
+it('maps the AI Grid clusters from the Clusters list when the backend has no grid overview', async () => {
   const service = new MockConsoleService();
   vi.spyOn(service, 'getGridOverview').mockRejectedValue(
     new ServiceError(501, 'the AI Grid backend does not support this operation yet'),
   );
+  renderAt('/ai-grid', service);
+  expect(await screen.findByText('Showing clusters from the Clusters list')).toBeVisible();
+  // The overview's clusters are the AI Grid members, and so are the fallback's.
+  const members = (await service.listClusters()).filter((c) => c.aiGridEnabled);
+  expect(members.length).toBeGreaterThan(0);
+  expect((await screen.findAllByText(members[0].name)).length).toBeGreaterThan(0);
+  expect(screen.queryByText('AI Grid clusters are not available on this backend yet')).not.toBeInTheDocument();
+  // The alert, the summary and the map are spaced by one gutter stack, not stacked flush.
+  const alert = screen.getByText('Showing clusters from the Clusters list').closest('.pf-v6-c-alert')!;
+  const stack = alert.parentElement!;
+  expect(stack).toHaveClass('pf-v6-l-stack', 'pf-m-gutter');
+  expect(stack).toContainElement(screen.getByRole('region', { name: 'Fleet summary' }));
+  expect(stack).toContainElement(screen.getByRole('region', { name: 'AI Grid map and drawer' }));
+});
+
+it('shows not-available when the backend has neither the grid overview nor the clusters', async () => {
+  const service = new MockConsoleService();
+  const notServed = new ServiceError(501, 'the AI Grid backend does not support this operation yet');
+  vi.spyOn(service, 'getGridOverview').mockRejectedValue(notServed);
+  vi.spyOn(service, 'listClusters').mockRejectedValue(notServed);
   renderAt('/ai-grid', service);
   expect(await screen.findByText('AI Grid clusters are not available on this backend yet')).toBeInTheDocument();
 });

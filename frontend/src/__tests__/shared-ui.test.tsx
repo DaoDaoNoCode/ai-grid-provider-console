@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { App } from '../App';
 import { MockConsoleService } from '../api/MockConsoleService';
 import { OverflowList } from '../components/OverflowList';
+import { PageLoading } from '../components/PageLoading';
 import { StatusLabel } from '../components/StatusLabel';
 import { tickLabel } from '../pages/grid/chartScale';
 import { getSubtextProps } from '../utilities/phaseLabelUtils';
@@ -28,6 +29,24 @@ it('says what "+N more" holds, and keys same-named items apart', async () => {
   const more = screen.getByRole('button', { name: '+1 more locations' });
   await user.click(more);
   expect(within(await screen.findByRole('dialog')).getAllByRole('listitem')).toHaveLength(2);
+});
+
+it('spaces the first item from its "+N more" label', () => {
+  const { container } = render(<OverflowList items={['Paris DC1', 'Madrid DC1']} noun="Locations" />);
+  const row = container.firstElementChild!;
+  expect(row).toHaveClass('pf-v6-l-flex', 'pf-m-space-items-sm');
+  // Flex spacing applies to elements, so the first item is one rather than a bare text node.
+  expect(row.firstChild?.nodeType).toBe(Node.ELEMENT_NODE);
+  expect(row.firstChild).toHaveTextContent('Paris DC1');
+});
+
+it("centres a page's loading spinner in a filled section", () => {
+  render(<PageLoading label="Loading clusters" />);
+  const bullseye = screen.getByRole('progressbar', { name: 'Loading clusters' }).parentElement!;
+  // A Bullseye that grows to the section's height: the section is a flex column without the body
+  // wrapper, so the spinner sits in the page's middle rather than its top left corner.
+  expect(bullseye).toHaveClass('pf-v6-l-bullseye', 'pf-v6-u-flex-grow-1');
+  expect(bullseye.parentElement).toHaveClass('pf-v6-c-page__main-section', 'pf-m-fill');
 });
 
 it('shows billions as B on chart ticks', () => {

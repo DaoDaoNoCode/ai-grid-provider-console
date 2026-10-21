@@ -2,17 +2,15 @@
 // Adapted from opendatahub-io/odh-dashboard
 // packages/maas/frontend/src/app/pages/subscriptions/createSubscription/RateLimitRow.tsx
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
-import { useState } from 'react';
 import {
   Button,
-  Dropdown,
-  DropdownItem,
-  DropdownList,
+  Flex,
+  FormGroup,
   FormHelperText,
+  FormSelect,
+  FormSelectOption,
   HelperText,
   HelperTextItem,
-  Flex,
-  MenuToggle,
   NumberInput,
   Stack,
   StackItem,
@@ -55,8 +53,6 @@ export const RateLimitRow: React.FC<Props> = ({
   countDigitError,
   timeDigitError,
 }) => {
-  const [unitDropdownOpen, setUnitDropdownOpen] = useState(false);
-  const selectedUnitLabel = UNIT_OPTIONS.find((opt) => opt.value === rateLimit.unit)?.label ?? rateLimit.unit;
   const countMessage = countDigitError ?? countError;
   const timeMessage = timeDigitError ?? timeError;
 
@@ -64,8 +60,7 @@ export const RateLimitRow: React.FC<Props> = ({
     <Stack hasGutter>
       <StackItem>
         <Flex alignItems={{ default: 'alignItemsFlexEnd' }} spaceItems={{ default: 'spaceItemsMd' }}>
-          <Stack className="console-labeled-control">
-            <label htmlFor={`${id}-count-input`}>Tokens</label>
+          <FormGroup label="Tokens" fieldId={`${id}-count-input`}>
             <NumberInput
               validated={countMessage != null ? ValidatedOptions.error : ValidatedOptions.default}
               id={`${id}-count`}
@@ -90,9 +85,8 @@ export const RateLimitRow: React.FC<Props> = ({
                 onChange({ ...rateLimit, count: parsed(event.currentTarget.value, rateLimit.count) })
               }
             />
-          </Stack>
-          <Stack className="console-labeled-control">
-            <label htmlFor={`${id}-time-input`}>Per</label>
+          </FormGroup>
+          <FormGroup label="Per" fieldId={`${id}-time-input`}>
             <Flex spaceItems={{ default: 'spaceItemsSm' }} flexWrap={{ default: 'nowrap' }}>
               <NumberInput
                 validated={timeMessage != null ? ValidatedOptions.error : ValidatedOptions.default}
@@ -113,38 +107,19 @@ export const RateLimitRow: React.FC<Props> = ({
                   onChange({ ...rateLimit, time: parsed(event.currentTarget.value, rateLimit.time) })
                 }
               />
-              <Dropdown
-                isOpen={unitDropdownOpen}
-                onOpenChange={setUnitDropdownOpen}
-                toggle={(toggleRef) => (
-                  <MenuToggle
-                    ref={toggleRef}
-                    onClick={() => setUnitDropdownOpen(!unitDropdownOpen)}
-                    isExpanded={unitDropdownOpen}
-                    data-testid={`${id}-unit`}
-                    aria-label={`Time unit, ${selectedUnitLabel}`}
-                    style={{ minWidth: 100 }}
-                  >
-                    {selectedUnitLabel}
-                  </MenuToggle>
-                )}
+              <FormSelect
+                id={`${id}-unit`}
+                data-testid={`${id}-unit`}
+                aria-label="Time unit"
+                value={rateLimit.unit}
+                onChange={(_event, value) => onChange({ ...rateLimit, unit: value as RateLimit['unit'] })}
               >
-                <DropdownList>
-                  {UNIT_OPTIONS.map((option) => (
-                    <DropdownItem
-                      key={option.value}
-                      onClick={() => {
-                        onChange({ ...rateLimit, unit: option.value });
-                        setUnitDropdownOpen(false);
-                      }}
-                    >
-                      {option.label}
-                    </DropdownItem>
-                  ))}
-                </DropdownList>
-              </Dropdown>
+                {UNIT_OPTIONS.map((option) => (
+                  <FormSelectOption key={option.value} value={option.value} label={option.label} />
+                ))}
+              </FormSelect>
             </Flex>
-          </Stack>
+          </FormGroup>
           {showRemove && (
             <Button
               variant="plain"

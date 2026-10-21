@@ -5,14 +5,15 @@
 // not-available state. A load error replaces the content only until the content first shows:
 // the governance data polls, and a failed poll must not unmount a form with the user's input.
 import { useState } from 'react';
-import { Alert, Button, PageSection, Spinner } from '@patternfly/react-core';
+import { Alert, AlertActionLink, PageSection } from '@patternfly/react-core';
 import { ServiceError } from '../../api/ConsoleService';
 import { LoadError } from '../../components/LoadError';
 import { PageHeader } from '../../components/PageHeader';
+import { PageLoading } from '../../components/PageLoading';
 
 type Props = {
   title: string;
-  description?: React.ReactNode;
+  description?: string;
   breadcrumb?: React.ReactElement;
   headerAction?: React.ReactNode;
   loaded: boolean;
@@ -40,27 +41,23 @@ export const ApplicationsPage: React.FC<Props> = ({
   }
   let body: React.ReactNode = children;
   if (!contentShown && !loaded) {
-    body = (
-      <PageSection>
-        <Spinner aria-label="Loading data" />
-      </PageSection>
-    );
+    body = <PageLoading label="Loading data" />;
   } else if (!contentShown && loadError instanceof ServiceError && loadError.isNotImplemented) {
     body = (
-      <PageSection>
+      <PageSection isFilled>
         <LoadError subject="Subscriptions" error={loadError} />
       </PageSection>
     );
   } else if (!contentShown && loadError) {
     body = (
-      <PageSection>
-        <Alert variant="danger" isInline title={errorMessage ?? 'Unable to load subscriptions'}>
+      <PageSection isFilled>
+        <Alert
+          variant="danger"
+          isInline
+          title={errorMessage ?? 'Unable to load subscriptions'}
+          actionLinks={<AlertActionLink onClick={onRetry}>Retry</AlertActionLink>}
+        >
           {loadError.message}
-          <div>
-            <Button variant="link" onClick={onRetry}>
-              Retry
-            </Button>
-          </div>
         </Alert>
       </PageSection>
     );

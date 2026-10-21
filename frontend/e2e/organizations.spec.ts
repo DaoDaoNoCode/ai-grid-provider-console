@@ -36,12 +36,14 @@ test('creates, views, edits and deletes an organization', async ({ page }) => {
   await expect(page.getByRole('heading', { name: unique })).toBeVisible();
   await expect(page.getByText(domain).first()).toBeVisible();
 
-  // Edit a domain on the one-page form; the deep link and reload land on the same page.
+  // Edit a domain in the create wizard, whose steps are all open when editing; the deep link and
+  // reload land on the same page.
   await page.getByRole('button', { name: `Actions for ${unique}` }).click();
   await page.getByRole('menuitem', { name: 'Edit' }).click();
   await expect(page).toHaveURL(/\/organizations\/[^/]+\/edit$/);
   await page.reload();
   await page.getByRole('textbox', { name: /^Domain 1/ }).fill(editedDomain);
+  await page.getByRole('button', { name: 'Review', exact: true }).click();
   await page.getByRole('button', { name: 'Save changes' }).click();
   await expect(page.getByText('Organization configuration saved')).toBeVisible();
   await expect(page.getByTestId('tenant-configuration-details')).toContainText(editedDomain);

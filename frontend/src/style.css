@@ -1,121 +1,39 @@
-/* Ported from krisv/ai-grid-cloud-provider-poc src/style.css at 62319b8: the rules whose classes the console uses. */
-.pf-v6-c-masthead.portal-masthead {
-  display: flex;
-  align-items: center;
-  flex-wrap: nowrap;
-  min-height: 4rem;
-  border-bottom: 1px solid var(--pf-t--global--border--color--default);
-}
-.portal-masthead .pf-v6-c-masthead__main {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  flex-wrap: nowrap;
-  gap: var(--pf-t--global--spacer--md);
-  flex: 1;
-  min-width: 0;
-  margin-inline-end: 0;
-}
-.portal-masthead .pf-v6-c-masthead__content {
-  flex: 0 0 auto;
-  margin-inline-start: auto;
-}
-.portal-masthead .pf-v6-c-masthead__brand {
-  min-width: 0;
-  align-self: center;
-  align-items: center;
-  padding-block: 0;
-  border: 0;
-}
-/* The default logo width is sized for an image, rather than the console title. */
-.portal-masthead .pf-v6-c-masthead__logo {
-  display: flex;
-  align-items: center;
-  width: auto;
-  max-height: none;
-}
-.portal-masthead .pf-v6-c-title {
-  margin: 0;
-  font-weight: 600;
-  white-space: nowrap;
-}
-@media (max-width: 575px) {
-  /* .pf-m-lg matches the Title's size modifier, which would otherwise keep its larger font. */
-  .portal-masthead .pf-v6-c-title.pf-m-lg {
-    font-size: 1rem;
-    white-space: normal;
-  }
-  .portal-masthead .pf-v6-c-masthead__brand {
-    flex: 0 1 auto;
-  }
-  .portal-masthead .pf-v6-c-masthead__logo {
-    min-width: 0;
-  }
-  .portal-masthead .pf-v6-c-masthead__content {
-    margin-inline-start: auto;
-    padding-inline-start: var(--pf-t--global--spacer--sm);
-    flex: 0 0 auto;
+/* The console's global rules. Layout comes from PatternFly's components and layouts (Stack, Flex,
+   Grid, Card, Toolbar); what is left here sets PatternFly's own variables where a component has no
+   prop for it, plus two table and toolbar conventions. */
+/* The masthead's logo is the console's name, not an image. From PatternFly's md breakpoint up, its
+   own masthead variables let the name sit on one line: the logo slot fits the text instead of an
+   image's width, and the brand column stops taking the sidebar's width (a subgrid). A phone keeps
+   PatternFly's defaults, which wrap the name beside the user menu. The modifier outranks
+   PatternFly's stylesheet, which loads after this one. */
+@media (min-width: 48rem) {
+  .pf-v6-c-masthead.pf-m-display-inline {
+    --pf-v6-c-masthead__logo--Width: auto;
+    --pf-v6-c-masthead--m-display-inline--breakpoint--xl--GridTemplateColumns: max-content 1fr;
   }
 }
 /* The fake-backend banner wraps instead of running off a narrow screen. */
 .pf-v6-c-page .pf-v6-c-banner {
   white-space: normal;
 }
-.portal-page-heading {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--pf-t--global--spacer--sm) var(--pf-t--global--spacer--md);
-  justify-content: space-between;
-  align-items: center;
-  margin-block: var(--pf-t--global--spacer--md);
-}
-.portal-page-heading__title {
-  display: flex;
-  align-items: center;
-  gap: var(--pf-t--global--spacer--md);
-}
-.portal-resource-table > tbody > tr > td {
-  vertical-align: middle;
-}
-.portal-organization-wizard .pf-v6-c-wizard__inner-wrap {
-  min-height: 24rem;
-}
-/* Keep every navigation step visible even when the step content is short. */
-.portal-model-wizard .pf-v6-c-wizard__inner-wrap {
-  min-height: 24rem;
+
+/* A wizard on a page keeps its steps, fields and footer in view in a short window, and the page
+   scrolls instead: PatternFly's own minimum height for the wizard's body (15.625rem by default).
+   Scoped to the page so it outranks PatternFly's stylesheet, which loads after this one. */
+.pf-v6-c-page .pf-v6-c-wizard {
+  --pf-v6-c-wizard__outer-wrap--MinHeight: 24rem;
 }
 
 /* Console conventions shared by every page (see components/ and utilities/). */
 
-/* One search width on every list page, wide enough for its placeholder (PatternFly's own
-   toolbar item width variable; a plain width loses to the toolbar's rule). */
-.console-toolbar-search {
+/* A toolbar's search box or select, the same width everywhere and wide enough for its placeholder
+   (PatternFly's own toolbar item width variable; this PatternFly has no width prop on ToolbarItem). */
+.console-toolbar-field {
   --pf-v6-c-toolbar__item--Width: 22rem;
-}
-
-/* A table cell's first item and its "+N more" label. */
-.console-overflow-list {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--pf-t--global--spacer--sm);
-}
-
-/* A controller's raw reason and message, under a status's "Details". */
-.console-raw-status {
-  font-size: var(--pf-t--global--font--size--sm);
-  overflow-wrap: anywhere;
 }
 
 /* A number in a table: right-aligned, with digits of one width so columns line up. */
 .console-number {
   text-align: end;
   font-variant-numeric: tabular-nums;
-}
-
-/* A control with its label above it, in a row of such controls (e.g. a token limit). */
-.console-labeled-control > label {
-  font-weight: var(--pf-t--global--font--weight--body--bold);
-  font-size: var(--pf-t--global--font--size--sm);
-  margin-block-end: var(--pf-t--global--spacer--xs);
 }

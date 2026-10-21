@@ -22,6 +22,8 @@ import {
   EmptyStateBody,
   EmptyStateFooter,
   Flex,
+  FlexItem,
+  Grid,
   Label,
   SearchInput,
   Stack,
@@ -34,7 +36,9 @@ import { Link, useSearchParams } from 'react-router-dom';
 import type { GridCluster, ManagedModel } from '../../api/types';
 import { DetailsList } from '../../components/DetailsList';
 import { DetailsSection } from '../../components/DetailsSection';
+import { StatCard } from '../../components/StatCard';
 import { StatusLabel } from '../../components/StatusLabel';
+import { SubtleText } from '../../components/SubtleText';
 import { modelKey } from '../../utilities/authpolicies';
 import { modelPath } from '../models/modelUtils';
 import { GridFleetMap } from './GridFleetMap';
@@ -82,7 +86,7 @@ const FleetCard: React.FC<{
   onOpen: () => void;
   children: React.ReactNode;
 }> = ({ id, title, status, actionLabel, onOpen, children }) => (
-  <Card isClickable isCompact className="fleet-card" id={`fleet-card-${id}`}>
+  <Card isClickable isCompact id={`fleet-card-${id}`}>
     <CardHeader
       selectableActions={{
         onClickAction: onOpen,
@@ -93,18 +97,19 @@ const FleetCard: React.FC<{
       {/* In the title, not in actions: PatternFly's clickable-only cards may not carry actions. */}
       <CardTitle>
         <Flex
-          className="fleet-card__title"
           justifyContent={{ default: 'justifyContentSpaceBetween' }}
           alignItems={{ default: 'alignItemsFlexStart' }}
           flexWrap={{ default: 'nowrap' }}
           spaceItems={{ default: 'spaceItemsSm' }}
         >
-          <span>{title}</span>
+          <span className="pf-v6-u-text-break-word">{title}</span>
           <StatusLabel isCompact status={status} />
         </Flex>
       </CardTitle>
     </CardHeader>
-    <CardBody className="fleet-card__body">{children}</CardBody>
+    <CardBody>
+      <Stack>{children}</Stack>
+    </CardBody>
   </Card>
 );
 
@@ -181,32 +186,38 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
   const clusterLinks = (model: ManagedModel) => {
     const targets = clustersOf(model);
     return targets.length ? (
-      <div className="fleet-related-links">
+      <Flex
+        direction={{ default: 'column' }}
+        alignItems={{ default: 'alignItemsFlexStart' }}
+        spaceItems={{ default: 'spaceItemsSm' }}
+      >
         {targets.map((c) => (
           <Button key={c.name} variant="link" isInline onClick={() => open({ kind: 'cluster', name: c.name })}>
             {siteOf(c)} · {c.name}
           </Button>
         ))}
-      </div>
+      </Flex>
     ) : (
-      <p className="fleet-muted">
-        {model.locations.length ? 'No AI Grid cluster at its locations.' : 'No locations yet.'}
-      </p>
+      <SubtleText>{model.locations.length ? 'No AI Grid cluster at its locations.' : 'No locations yet.'}</SubtleText>
     );
   };
 
   const modelLinks = (cluster: GridCluster) => {
     const assigned = modelsAt(cluster);
     return assigned.length ? (
-      <div className="fleet-related-links">
+      <Flex
+        direction={{ default: 'column' }}
+        alignItems={{ default: 'alignItemsFlexStart' }}
+        spaceItems={{ default: 'spaceItemsSm' }}
+      >
         {assigned.map((m) => (
           <Button key={modelKey(m)} variant="link" isInline onClick={() => open({ kind: 'model', name: modelKey(m) })}>
             {displayName(m)}
           </Button>
         ))}
-      </div>
+      </Flex>
     ) : (
-      <p className="fleet-muted">{modelsError ? 'Model assignments unavailable.' : 'No models at this location.'}</p>
+      <SubtleText>{modelsError ? 'Model assignments unavailable.' : 'No models at this location.'}</SubtleText>
     );
   };
 
@@ -215,31 +226,33 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
   // The same header for a cluster and a model: back, the name with its status, and what it is.
   const head =
     selection && (selectedCluster || selectedModel) ? (
-      <Stack hasGutter className="fleet-detail-header">
+      <Stack hasGutter>
         <div>
           <Button variant="link" isInline icon={<AngleLeftIcon />} onClick={back}>
             {history.length ? 'Back' : mode === 'cluster' ? 'Clusters' : 'Models'}
           </Button>
         </div>
         <Flex alignItems={{ default: 'alignItemsCenter' }} spaceItems={{ default: 'spaceItemsSm' }}>
-          <Title headingLevel="h2" size="lg">
+          <Title headingLevel="h2" size="lg" className="pf-v6-u-text-break-word">
             {selectedCluster?.name ?? (selectedModel && displayName(selectedModel))}
           </Title>
           <StatusLabel isCompact status={selectedCluster?.status ?? selectedModel?.phase ?? 'Pending'} />
         </Flex>
-        <span className="fleet-muted">
+        <SubtleText>
           {selectedCluster ? siteOf(selectedCluster) : (selectedModel?.modelName ?? selectedModel?.name)}
-        </span>
+        </SubtleText>
       </Stack>
     ) : (
-      <div className="fleet-panel-toolbar">
-        <SearchInput
-          aria-label={`Search grid ${objects}`}
-          placeholder={`Search ${objects}`}
-          value={search}
-          onChange={(_, value) => setSearch(value)}
-          onClear={() => setSearch('')}
-        />
+      <Flex alignItems={{ default: 'alignItemsCenter' }} spaceItems={{ default: 'spaceItemsSm' }}>
+        <FlexItem grow={{ default: 'grow' }}>
+          <SearchInput
+            aria-label={`Search grid ${objects}`}
+            placeholder={`Search ${objects}`}
+            value={search}
+            onChange={(_, value) => setSearch(value)}
+            onClear={() => setSearch('')}
+          />
+        </FlexItem>
         <ToggleGroup aria-label="Grid object type" isCompact>
           {(['cluster', 'model'] as const).map((value) => (
             <ToggleGroupItem
@@ -255,11 +268,11 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
             />
           ))}
         </ToggleGroup>
-      </div>
+      </Flex>
     );
 
   const clusterDetails = (cluster: GridCluster) => (
-    <Stack hasGutter className="fleet-details">
+    <Stack hasGutter>
       <DetailsSection title="Site and cluster" headingLevel="h3">
         <DetailsList
           termWidth={DRAWER_TERM_WIDTH}
@@ -290,7 +303,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
   );
 
   const modelDetails = (model: ManagedModel) => (
-    <Stack hasGutter className="fleet-details">
+    <Stack hasGutter>
       <DetailsSection title="Model configuration" headingLevel="h3">
         <DetailsList
           termWidth={DRAWER_TERM_WIDTH}
@@ -353,7 +366,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
         </ToggleGroup>
       )}
       {(mode === 'cluster' ? visibleClusters.length : visibleModels.length) === 0 && noResults}
-      <div className="fleet-card-list">
+      <Stack hasGutter>
         {mode === 'cluster'
           ? visibleClusters.map((c) => {
               const at = modelsAt(c);
@@ -367,9 +380,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
                   onOpen={() => open({ kind: 'cluster', name: c.name })}
                 >
                   <span>{[siteOf(c), c.location].filter(Boolean).join(' · ')}</span>
-                  <span className="fleet-muted">
-                    {at.length ? `Models: ${at.map(displayName).join(', ')}` : 'No models'}
-                  </span>
+                  <SubtleText>{at.length ? `Models: ${at.map(displayName).join(', ')}` : 'No models'}</SubtleText>
                 </FleetCard>
               );
             })
@@ -385,16 +396,16 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
                   onOpen={() => open({ kind: 'model', name: modelKey(m) })}
                 >
                   <span>{m.modelName ?? m.modelRef.name}</span>
-                  <span className="fleet-muted">{sites.length ? `Sites: ${sites.join(', ')}` : 'No sites'}</span>
+                  <SubtleText>{sites.length ? `Sites: ${sites.join(', ')}` : 'No sites'}</SubtleText>
                 </FleetCard>
               );
             })}
-      </div>
+      </Stack>
       {mode === 'cluster' && withoutCoordinates > 0 && (
-        <p className="fleet-muted">
+        <SubtleText>
           {withoutCoordinates} {withoutCoordinates === 1 ? 'cluster has' : 'clusters have'} no site coordinates, so{' '}
           {withoutCoordinates === 1 ? 'it is' : 'they are'} listed here but not on the map.
-        </p>
+        </SubtleText>
       )}
     </Stack>
   );
@@ -403,37 +414,33 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
     <DrawerPanelContent widths={{ default: 'width_33' }} className="fleet-drawer">
       <DrawerHead>{head}</DrawerHead>
       <DrawerPanelBody>
-        {modelsError && (
-          <Alert isInline variant="warning" title="Models unavailable">
-            {modelsError}
-          </Alert>
-        )}
-        {selectedCluster ? clusterDetails(selectedCluster) : selectedModel ? modelDetails(selectedModel) : list}
+        <Stack hasGutter>
+          {modelsError && (
+            <Alert isInline variant="warning" title="Models unavailable">
+              {modelsError}
+            </Alert>
+          )}
+          {selectedCluster ? clusterDetails(selectedCluster) : selectedModel ? modelDetails(selectedModel) : list}
+        </Stack>
       </DrawerPanelBody>
     </DrawerPanelContent>
   );
 
   const ready = clusters.filter((c) => c.status === 'Ready').length;
-  const summary: [label: string, value: string, sub?: string][] = [
+  const summary: [label: string, value: string, detail?: string][] = [
     ['Clusters', `${ready}/${clusters.length}`, 'Ready'],
     ['Sites', String(new Set(clusters.flatMap((c) => (c.site ? [c.site] : []))).size)],
     ['Models', String(relevantModels.length)],
   ];
 
   return (
-    <div className="ai-grid-future-vision">
-      <div className="vision-summary-strip" role="region" aria-label="Fleet summary">
-        {summary.map(([label, value, sub]) => (
-          <div className="vision-summary-tile" key={label}>
-            <div className="vision-summary-tile__label">{label}</div>
-            <div className="vision-summary-tile__value">
-              {value}
-              {sub && <span className="vision-summary-tile__sub">{sub}</span>}
-            </div>
-          </div>
+    <Stack hasGutter>
+      <Grid hasGutter md={4} role="region" aria-label="Fleet summary">
+        {summary.map(([label, value, detail]) => (
+          <StatCard key={label} label={label} value={value} detail={detail} />
         ))}
-      </div>
-      <div className="ai-grid-future-vision__fleet" role="region" aria-label="AI Grid map and drawer">
+      </Grid>
+      <Card className="fleet-region" role="region" aria-label="AI Grid map and drawer">
         <Drawer isExpanded isInline isStatic>
           <DrawerContent panelContent={panel}>
             <DrawerContentBody>
@@ -449,7 +456,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
             </DrawerContentBody>
           </DrawerContent>
         </Drawer>
-      </div>
-    </div>
+      </Card>
+    </Stack>
   );
 };

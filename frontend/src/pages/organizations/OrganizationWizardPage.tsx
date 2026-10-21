@@ -1,18 +1,18 @@
 // Ported from krisv/ai-grid-cloud-provider-poc src/app/pages/tenants/TenantWizardPage.tsx at 62319b8.
-import { Breadcrumb, BreadcrumbItem, PageSection, Spinner } from '@patternfly/react-core';
+import { Breadcrumb, BreadcrumbItem, PageSection } from '@patternfly/react-core';
 import { Link, useParams } from 'react-router-dom';
 import type { UserService } from '../../api/ConsoleService';
 import type { OrganizationsService } from '../../api/organizations';
 import type { Organization } from '../../api/types';
 import { PageHeader } from '../../components/PageHeader';
+import { PageLoading } from '../../components/PageLoading';
 import { useServiceData } from '../../hooks/useServiceData';
-import { OrganizationEditForm } from './OrganizationEditForm';
 import { OrganizationFormWizard } from './OrganizationFormWizard';
 import { OrganizationLoadError } from './OrganizationLoadError';
 
 type Props = { service: OrganizationsService & UserService };
 
-/** Create at /organizations/create (a wizard), edit at /organizations/:id/edit (one form). */
+/** Create at /organizations/create, edit at /organizations/:id/edit: the same wizard. */
 export const OrganizationWizardPage: React.FC<Props> = ({ service }) => {
   const { id } = useParams();
   const [organization, loaded, error] = useServiceData<Organization | undefined>(
@@ -46,17 +46,17 @@ export const OrganizationWizardPage: React.FC<Props> = ({ service }) => {
           </Breadcrumb>
         }
       />
-      <PageSection hasBodyWrapper={false}>
-        {error ? (
-          <OrganizationLoadError error={error} />
-        ) : !loaded || (id && !organization) ? (
-          <Spinner aria-label="Loading organization" />
-        ) : organization ? (
-          <OrganizationEditForm key={organization.id} service={service} organization={organization} />
-        ) : (
-          <OrganizationFormWizard service={service} />
-        )}
-      </PageSection>
+      {!error && (!loaded || (id && !organization)) ? (
+        <PageLoading label="Loading organization" />
+      ) : (
+        <PageSection hasBodyWrapper={false} isFilled>
+          {error ? (
+            <OrganizationLoadError error={error} />
+          ) : (
+            <OrganizationFormWizard key={organization?.id} service={service} organization={organization} />
+          )}
+        </PageSection>
+      )}
     </>
   );
 };

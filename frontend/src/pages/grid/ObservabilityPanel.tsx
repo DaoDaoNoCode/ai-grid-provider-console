@@ -5,12 +5,34 @@
 // horizontal usage bars with a legend.
 import { useId, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Alert, Card, CardBody, Flex, Spinner, Tab, Tabs, TabTitleText, Title } from '@patternfly/react-core';
+import {
+  Alert,
+  Bullseye,
+  Card,
+  CardBody,
+  CardTitle,
+  EmptyState,
+  EmptyStateBody,
+  Flex,
+  Grid,
+  Spinner,
+  Stack,
+  Tab,
+  Tabs,
+  TabTitleText,
+  Title,
+  Toolbar,
+  ToolbarContent,
+  ToolbarItem,
+} from '@patternfly/react-core';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import { Link } from 'react-router-dom';
 import type { GridCluster, GridMetric, GridRange, ManagedModel, Organization } from '../../api/types';
 import { HelpPopover } from '../../components/HelpPopover';
+import { StatCard } from '../../components/StatCard';
 import { StatusLabel } from '../../components/StatusLabel';
+import { SubtleText } from '../../components/SubtleText';
+import { TableEmptyRow } from '../../components/TableEmptyRow';
 import { TypeaheadSelect } from '../../components/TypeaheadSelect';
 import { modelKey } from '../../utilities/authpolicies';
 import { EMPTY_VALUE } from '../../utilities/format';
@@ -22,7 +44,7 @@ import './observability.css';
 /** A titled part of a tab, with optional background in a help popover. */
 function Section({ title, help, children }: { title: string; help?: ReactNode; children: ReactNode }) {
   return (
-    <section className="observability-section">
+    <Stack hasGutter component="section">
       <Flex alignItems={{ default: 'alignItemsCenter' }} spaceItems={{ default: 'spaceItemsSm' }}>
         <Title headingLevel="h2" size="lg">
           {title}
@@ -30,21 +52,19 @@ function Section({ title, help, children }: { title: string; help?: ReactNode; c
         {help && <HelpPopover topic={title}>{help}</HelpPopover>}
       </Flex>
       {children}
-    </section>
+    </Stack>
   );
 }
 
-function Stat({ label, value, unit, warn = false }: { label: string; value: string; unit?: string; warn?: boolean }) {
-  return (
-    <div className={`observability-stat-card${warn ? ' observability-stat-card--warn' : ''}`}>
-      <div className="observability-stat-card__label">{label}</div>
-      <div className="observability-stat-card__value">
-        {value}
-        {unit && <span className="observability-stat-card__unit">{unit}</span>}
-      </div>
-    </div>
-  );
-}
+/** Each series' line colour: PatternFly's chart palette, so the colours follow the theme. */
+const seriesColor: Record<string, string> = {
+  gpu: 'var(--pf-t--chart--color--blue--300)',
+  requests: 'var(--pf-t--chart--color--green--300)',
+  errors: 'var(--pf-t--chart--global--danger--color--100)',
+  latency: 'var(--pf-t--chart--color--purple--300)',
+};
+/** The GPU chart's 85% line, in the chart palette's warning colour. */
+const GPU_THRESHOLD_COLOR = 'var(--pf-t--chart--global--warning--color--100)';
 
 const ticks = Array.from({ length: AXIS_INTERVALS + 1 }, (_, i) => i / AXIS_INTERVALS);
 
@@ -61,24 +81,17 @@ export function MetricChart({ metric }: { metric: GridMetric }) {
   const x = (timestamp: number) => 48 + ((timestamp - start) / (end - start || 1)) * 506;
   const y = (value: number) => 156 - (value / ceiling) * 132;
   const path = points.map((p, i) => `${i ? 'L' : 'M'} ${x(p.timestamp)} ${y(p.value)}`).join(' ');
-  const color =
-    metric.key === 'gpu'
-      ? '#0066cc'
-      : metric.key === 'requests'
-        ? '#3e8635'
-        : metric.key === 'errors'
-          ? '#c9190b'
-          : '#6b46c1';
+  const color = seriesColor[metric.key] ?? seriesColor.latency;
   const point = hover === null ? undefined : points[hover];
   const format = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: ceiling < 5 ? 3 : 1 });
   const readoutX = point ? Math.min(370, Math.max(48, x(point.timestamp) - 80)) : 0;
   return (
-    <Card className="observability-metric-card">
+    <Card isFullHeight>
+      <CardTitle component="h3">
+        {metric.label}
+        {metric.unit && ` (${metric.unit})`}
+      </CardTitle>
       <CardBody>
-        <Title headingLevel="h3" size="md" className="observability-metric-card__title">
-          {metric.label}
-          {metric.unit && <span className="observability-metric-card__unit"> ({metric.unit})</span>}
-        </Title>
         {metric.status === 'ok' && last ? (
           <>
             <svg
@@ -87,7 +100,8 @@ export function MetricChart({ metric }: { metric: GridMetric }) {
               viewBox="0 0 580 190"
               role="img"
               aria-label={`${metric.label} over time`}
-              className="observability-chart"
+              width="100%"
+              height="180"
               onMouseLeave={() => setHover(null)}
               onMouseMove={(event) => {
                 const bounds = event.currentTarget.getBoundingClientRect();
@@ -114,7 +128,7 @@ export function MetricChart({ metric }: { metric: GridMetric }) {
               <path d={`${path} L554 156 L48 156 Z`} fill={`url(#fill-${id})`} />
               <path d={path} fill="none" stroke={color} strokeWidth="1.5" />
               {metric.key === 'gpu' && (
-                <line x1="48" x2="554" y1={y(90)} y2={y(90)} stroke="#f0ab00" strokeDasharray="4 3" />
+                <line x1="48" x2="554" y1={y(90)} y2={y(90)} stroke={GPU_THRESHOLD_COLOR} strokeDasharray="4 3" />
               )}
               {ticks.map((f) => (
                 <text
@@ -150,12 +164,14 @@ export function MetricChart({ metric }: { metric: GridMetric }) {
                 </g>
               )}
             </svg>
-            <p className="observability-chart-caption">
+            <SubtleText>
               Latest: {format(last.value)} {metric.unit} · {new Date(last.timestamp * 1000).toLocaleTimeString()}
-            </p>
+            </SubtleText>
           </>
         ) : (
-          <p className="observability-empty-metric">{metric.message ?? 'No data available.'}</p>
+          <EmptyState variant="xs" titleText="No data" headingLevel="h4">
+            <EmptyStateBody>{metric.message ?? 'No data available.'}</EmptyStateBody>
+          </EmptyState>
         )}
       </CardBody>
     </Card>
@@ -164,9 +180,9 @@ export function MetricChart({ metric }: { metric: GridMetric }) {
 
 /** The kinds of tokens the usage chart stacks, in order, with their colours. */
 const tokenKinds = [
-  { key: 'input', label: 'Uncached input', color: '#0066cc' },
-  { key: 'output', label: 'Output', color: '#3e8635' },
-  { key: 'cached', label: 'Cached input', color: '#6b46c1' },
+  { key: 'input', label: 'Uncached input', color: 'var(--pf-t--chart--color--blue--300)' },
+  { key: 'output', label: 'Output', color: 'var(--pf-t--chart--color--green--300)' },
+  { key: 'cached', label: 'Cached input', color: 'var(--pf-t--chart--color--purple--300)' },
 ] as const;
 
 const USAGE_ROW = 34;
@@ -185,6 +201,7 @@ function UsageChart({ usage }: { usage: ReturnType<typeof tenantUsage> }) {
         viewBox={`0 0 ${USAGE_LABEL_WIDTH + USAGE_BAR_WIDTH + 60} ${height}`}
         role="img"
         aria-label="Token consumption by organization"
+        width="100%"
         className="observability-usage-chart"
         data-total={totals.reduce((n, t) => n + t, 0)}
       >
@@ -246,14 +263,21 @@ function UsageChart({ usage }: { usage: ReturnType<typeof tenantUsage> }) {
           );
         })}
       </svg>
-      <ul className="observability-legend" aria-label="Token kinds">
+      <Flex component="ul" aria-label="Token kinds" spaceItems={{ default: 'spaceItemsMd' }}>
         {tokenKinds.map((kind) => (
-          <li key={kind.key}>
-            <span className="observability-legend__swatch" style={{ background: kind.color }} />
-            {kind.label}
-          </li>
+          <Flex
+            component="li"
+            key={kind.key}
+            alignItems={{ default: 'alignItemsCenter' }}
+            spaceItems={{ default: 'spaceItemsXs' }}
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+              <rect width="12" height="12" rx="2" fill={kind.color} opacity="0.75" />
+            </svg>
+            <SubtleText>{kind.label}</SubtleText>
+          </Flex>
         ))}
-      </ul>
+      </Flex>
     </>
   );
 }
@@ -269,6 +293,8 @@ type Props = {
   error?: string;
   simulated: boolean;
   range: GridRange;
+  /** False when the backend doesn't serve metrics: the chart sections, which would stay empty, are left out. */
+  metricsServed?: boolean;
 };
 
 /** The Monitoring page's Clusters, Models, and Usage tabs. */
@@ -283,6 +309,7 @@ export function ObservabilityPanel({
   error,
   simulated,
   range,
+  metricsServed = true,
 }: Props) {
   const [tab, setTab] = useState<string | number>('cluster');
   const [model, setModel] = useState('all');
@@ -301,12 +328,12 @@ export function ObservabilityPanel({
   const metricText = (v: number | undefined, fractionDigits = 1) =>
     v === undefined ? EMPTY_VALUE : v.toLocaleString(undefined, { maximumFractionDigits: fractionDigits });
   const charts = (keys: string[]) => (
-    <div className="observability-chart-grid observability-chart-grid--2col">
+    <Grid hasGutter md={6}>
       {keys.map((key) => {
         const metric = metrics.find((m) => m.key === key);
         return metric ? <MetricChart key={key} metric={metric} /> : null;
       })}
-    </div>
+    </Grid>
   );
   const relevantModels = models.filter(
     (m) => m.locations.length === 0 || clusters.some((c) => c.location && m.locations.includes(c.location)),
@@ -348,12 +375,14 @@ export function ObservabilityPanel({
     return (
       <>
         <Section title="Token consumption by organization">
-          <Card className="observability-metric-card">
+          <Card>
             <CardBody>
-              <p className="observability-consumption-total">
-                {usageTotal.toLocaleString()} tokens in the last {range}
-              </p>
-              <UsageChart usage={usage} />
+              <Stack hasGutter>
+                <SubtleText>
+                  {usageTotal.toLocaleString()} tokens in the last {range}
+                </SubtleText>
+                <UsageChart usage={usage} />
+              </Stack>
             </CardBody>
           </Card>
         </Section>
@@ -392,14 +421,18 @@ export function ObservabilityPanel({
   };
 
   return (
-    <>
+    <Stack hasGutter>
       <Tabs activeKey={tab} onSelect={(_, key) => setTab(key)}>
         <Tab eventKey="cluster" title={<TabTitleText>Clusters</TabTitleText>} />
         <Tab eventKey="models" title={<TabTitleText>Models</TabTitleText>} />
         <Tab eventKey="usage" title={<TabTitleText>Usage</TabTitleText>} />
       </Tabs>
-      <div className="observability-dashboard">
-        {loading && <Spinner size="lg" aria-label="Loading metrics" />}
+      <Flex direction={{ default: 'column' }} flexWrap={{ default: 'nowrap' }} spaceItems={{ default: 'spaceItemsXl' }}>
+        {loading && (
+          <Bullseye>
+            <Spinner size="lg" aria-label="Loading metrics" />
+          </Bullseye>
+        )}
         {error && (
           <Alert isInline variant="danger" title="Monitoring unavailable">
             {error}
@@ -411,23 +444,27 @@ export function ObservabilityPanel({
               title="Overview"
               help={`Requests, GPU use and success rate cover the last ${range}. Ready clusters is the current state.`}
             >
-              <div className="observability-stat-row">
-                <Stat
+              <Grid hasGutter md={6} xl={3}>
+                <StatCard
                   label="Ready clusters"
                   value={`${clusters.filter((c) => c.status === 'Ready').length}/${clusters.length}`}
                 />
-                <Stat label="Requests" value={metricText(requestTotal, 0)} />
-                <Stat
+                <StatCard label="Requests" value={metricText(requestTotal, 0)} />
+                <StatCard
                   label="Average GPU utilization"
                   value={metricText(gpu)}
                   unit="%"
-                  warn={gpu !== undefined && gpu > 85}
+                  warning={gpu !== undefined && gpu > 85 ? 'Above 85%' : undefined}
                 />
-                <Stat label="Request success rate" value={metricText(success)} unit="%" />
-              </div>
+                <StatCard label="Request success rate" value={metricText(success)} unit="%" />
+              </Grid>
             </Section>
-            <Section title="Cluster resources">{charts(['gpu', 'requests'])}</Section>
-            <Section title="Gateway performance">{charts(['errors', 'latency'])}</Section>
+            {metricsServed && (
+              <>
+                <Section title="Cluster resources">{charts(['gpu', 'requests'])}</Section>
+                <Section title="Gateway performance">{charts(['errors', 'latency'])}</Section>
+              </>
+            )}
             <Section title="Clusters">
               <Table aria-label="Clusters" variant="compact">
                 <Thead>
@@ -440,6 +477,7 @@ export function ObservabilityPanel({
                   </Tr>
                 </Thead>
                 <Tbody>
+                  {!clusters.length && <TableEmptyRow colSpan={5} body="No AI Grid clusters to show." />}
                   {clusters.map((c) => (
                     <Tr key={c.name}>
                       <Td dataLabel="Cluster">
@@ -457,7 +495,6 @@ export function ObservabilityPanel({
                   ))}
                 </Tbody>
               </Table>
-              {!clusters.length && <p>No enrolled clusters match this selection.</p>}
             </Section>
           </>
         )}
@@ -468,22 +505,22 @@ export function ObservabilityPanel({
                 {modelsError}
               </Alert>
             )}
-            <Flex
-              className="observability-model-filter"
-              alignItems={{ default: 'alignItemsCenter' }}
-              spaceItems={{ default: 'spaceItemsSm' }}
-            >
-              <label htmlFor="observability-model">Model deployment</label>
-              <div className="observability-model-filter__select">
-                <TypeaheadSelect
-                  id="observability-model"
-                  aria-label="Select model deployment"
-                  value={model}
-                  options={modelOptions}
-                  onChange={setModel}
-                />
-              </div>
-            </Flex>
+            <Toolbar inset={{ default: 'insetNone' }}>
+              <ToolbarContent alignItems="center">
+                <ToolbarItem variant="label">
+                  <label htmlFor="observability-model">Model deployment</label>
+                </ToolbarItem>
+                <ToolbarItem className="console-toolbar-field">
+                  <TypeaheadSelect
+                    id="observability-model"
+                    aria-label="Select model deployment"
+                    value={model}
+                    options={modelOptions}
+                    onChange={setModel}
+                  />
+                </ToolbarItem>
+              </ToolbarContent>
+            </Toolbar>
             <Section
               title="Model deployments"
               help="Target sites are the sites of the clusters each model's placement chose; they don't confirm the model is serving there."
@@ -499,6 +536,13 @@ export function ObservabilityPanel({
                   </Tr>
                 </Thead>
                 <Tbody>
+                  {!visibleModels.length && (
+                    <TableEmptyRow
+                      colSpan={5}
+                      body="No model deployments match this selection."
+                      onClear={model === 'all' ? undefined : () => setModel('all')}
+                    />
+                  )}
                   {visibleModels.map((m) => (
                     <Tr key={modelKey(m)}>
                       <Td dataLabel="Model deployment">
@@ -526,19 +570,20 @@ export function ObservabilityPanel({
                   ))}
                 </Tbody>
               </Table>
-              {!visibleModels.length && <p>No model deployments match this selection.</p>}
             </Section>
-            <Section title="Performance">
-              <div className="observability-chart-grid observability-chart-grid--2col">
-                {modelSeries.map((m) => (
-                  <MetricChart key={m.key} metric={m} />
-                ))}
-              </div>
-            </Section>
+            {metricsServed && (
+              <Section title="Performance">
+                <Grid hasGutter md={6}>
+                  {modelSeries.map((m) => (
+                    <MetricChart key={m.key} metric={m} />
+                  ))}
+                </Grid>
+              </Section>
+            )}
           </>
         )}
         {tab === 'usage' && usageTab()}
-      </div>
-    </>
+      </Flex>
+    </Stack>
   );
 }

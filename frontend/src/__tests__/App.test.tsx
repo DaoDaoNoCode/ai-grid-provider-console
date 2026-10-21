@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { App } from '../App';
@@ -15,6 +15,8 @@ describe('App', () => {
     );
 
     await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('dev-user (provider admin)'));
+    // The menu keeps its name where a phone shows only its icon.
+    expect(screen.getByRole('button', { name: 'User menu: dev-user (provider admin)' })).toBeInTheDocument();
     expect(await screen.findByRole('row', { name: /^site1 / })).toBeInTheDocument();
     expect(screen.getByText('brussels')).toBeInTheDocument();
     expect(screen.getAllByText('Provisioned')).toHaveLength(3);
@@ -39,6 +41,35 @@ describe('App', () => {
     );
     expect(await screen.findByRole('heading', { level: 1, name: 'AI Grid' })).toBeInTheDocument();
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+  });
+
+  it('opens About from the user menu even when the user could not be loaded', async () => {
+    const service = new MockConsoleService();
+    service.getUser = () => Promise.reject(new Error('unavailable'));
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <App service={service} />
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'User menu: Not signed in' }));
+    expect(screen.queryByRole('menuitem', { name: 'Log out' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('menuitem', { name: 'About' }));
+    expect(await screen.findByRole('dialog')).toHaveTextContent('Console version');
+  });
+
+  it('opens About while the user is still loading, without Log out', async () => {
+    const service = new MockConsoleService();
+    service.getUser = () => new Promise(() => {});
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <App service={service} />
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('button', { name: 'User menu: Signing in...' }));
+    expect(screen.getByRole('menuitem', { name: 'About' })).toBeVisible();
+    expect(screen.queryByRole('menuitem', { name: 'Log out' })).not.toBeInTheDocument();
   });
 
   it('does not call a viewer a provider admin', async () => {
@@ -111,16 +142,42 @@ describe('user menu', () => {
     expect(screen.getByRole('menuitem', { name: 'Log out' })).toHaveAttribute('href', '/oauth2/sign_out');
   });
 
-  it('shows only the user on the fake backend, where no login proxy runs', async () => {
+  it('offers About but no Log out on the fake backend, where no login proxy runs', async () => {
     const service = new MockConsoleService();
     const config = await service.getConfig();
     service.getConfig = async () => ({ ...config, fakeBackend: true });
+    const user = userEvent.setup();
     render(
       <MemoryRouter>
         <App service={service} />
       </MemoryRouter>,
     );
     await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('dev-user'));
-    expect(screen.queryByRole('button', { name: /dev-user/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /dev-user/ }));
+    expect(screen.getByRole('menuitem', { name: 'About' })).toBeVisible();
+    expect(screen.queryByRole('menuitem', { name: 'Log out' })).not.toBeInTheDocument();
+  });
+
+  it('shows the console version, the backend and the user in About', async () => {
+    const service = new MockConsoleService();
+    const config = await service.getConfig();
+    service.getConfig = async () => ({ ...config, version: '1a2b3c4', fakeBackend: true });
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <App service={service} />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('dev-user'));
+    await user.click(screen.getByRole('button', { name: /dev-user/ }));
+    await user.click(screen.getByRole('menuitem', { name: 'About' }));
+    const about = await screen.findByRole('dialog', { name: 'Cloud Provider Admin Console' });
+    expect(about).toHaveTextContent('Console version1a2b3c4');
+    expect(about).toHaveTextContent('BackendFake backend (fixture data)');
+    // The backend has no version RPC yet.
+    expect(about).toHaveTextContent('Backend versionNot reported');
+    expect(about).toHaveTextContent('Signed in asdev-user (provider admin)');
+    await user.click(within(about).getByRole('button', { name: /close/i }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 });

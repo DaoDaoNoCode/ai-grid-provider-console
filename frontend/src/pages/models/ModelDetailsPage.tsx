@@ -8,7 +8,7 @@ import {
   List,
   ListItem,
   PageSection,
-  Spinner,
+  Stack,
 } from '@patternfly/react-core';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { UserService } from '../../api/ConsoleService';
@@ -18,10 +18,11 @@ import { DetailsList } from '../../components/DetailsList';
 import { DetailsSection } from '../../components/DetailsSection';
 import { LoadError } from '../../components/LoadError';
 import { PageHeader } from '../../components/PageHeader';
+import { PageLoading } from '../../components/PageLoading';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
 import { useServiceData } from '../../hooks/useServiceData';
 import { formatDateTime } from '../../utilities/format';
-import { locationLabel, siteNamesOf } from './modelUtils';
+import { locationLabel, modelPath, siteNamesOf } from './modelUtils';
 import { ModelStatusDetails, ModelStatusLabel } from './ModelStatus';
 import { hasModelStatusDetails, modelPhase, modelStatusTitle } from './modelStatusInfo';
 import type { ModelDeleteService } from './useDeleteModel';
@@ -48,9 +49,6 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
   const body = () => {
     if (error && !model) {
       return <LoadError subject="Models" error={error} />;
-    }
-    if (!loaded) {
-      return <Spinner aria-label="Loading model" />;
     }
     if (!model) {
       return (
@@ -91,7 +89,7 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
         </DetailsSection>
         <DetailsSection title="Locations">
           {model.locations.length ? (
-            <>
+            <Stack hasGutter>
               <List data-testid="model-locations">
                 {model.locations.map((location) => (
                   <ListItem key={location}>{locationLabel(location, siteNames)}</ListItem>
@@ -100,7 +98,7 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
               <Link to={`/ai-grid?model=${encodeURIComponent(`${model.namespace}/${model.name}`)}`}>
                 Show on the AI Grid map
               </Link>
-            </>
+            </Stack>
           ) : (
             <p>The placement hasn’t chosen any locations yet.</p>
           )}
@@ -121,7 +119,15 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
               toggleLabel="Actions"
               ariaLabel={`Actions for ${title}`}
               testId="model-actions"
-              dropdownItems={[{ key: 'delete', label: 'Delete', isDanger: true, onClick: () => confirmDelete(model) }]}
+              dropdownItems={[
+                {
+                  key: 'edit',
+                  label: 'Edit',
+                  onClick: () => navigate(`${modelPath(model)}/edit`),
+                },
+                { isSpacer: true },
+                { key: 'delete', label: 'Delete', isDanger: true, onClick: () => confirmDelete(model) },
+              ]}
             />
           )
         }
@@ -134,7 +140,11 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
           </Breadcrumb>
         }
       />
-      <PageSection>{body()}</PageSection>
+      {!(error && !model) && !loaded ? (
+        <PageLoading label="Loading model" />
+      ) : (
+        <PageSection isFilled>{body()}</PageSection>
+      )}
       {deleteModal}
     </>
   );

@@ -11,7 +11,7 @@ type Props = {
 
 /** A list's search box, the same width on every list page so its placeholder isn't cut off. */
 export const ToolbarSearch: React.FC<Props> = ({ label, placeholder, value, onChange, 'data-testid': testId }) => (
-  <ToolbarItem className="console-toolbar-search">
+  <ToolbarItem className="console-toolbar-field">
     <SearchInput
       aria-label={label}
       placeholder={placeholder}

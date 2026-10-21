@@ -1,5 +1,7 @@
 import '@patternfly/react-core/dist/styles/base.css';
 import '@patternfly/patternfly/patternfly-addons.css';
+// The chart palette's colour tokens, for the Monitoring charts.
+import '@patternfly/patternfly/patternfly-charts.css';
 import './style.css';
 import React from 'react';
 import { createRoot } from 'react-dom/client';

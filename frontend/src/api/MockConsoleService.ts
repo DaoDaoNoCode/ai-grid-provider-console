@@ -1,4 +1,10 @@
-import { toSubscription, toSubscriptionInfo } from './adapters';
+import {
+  consolePlacement,
+  consolePlacementLocations,
+  toSubscription,
+  toSubscriptionInfo,
+  withRuntimeArgs,
+} from './adapters';
 import type { ConsoleService } from './ConsoleService';
 import { ServiceError } from './ConsoleService';
 import type {
@@ -13,6 +19,7 @@ import type {
   MaaSSubscription,
   ManagedModel,
   ModelRegistration,
+  ModelUpdate,
   ModelSubscriptionRef,
   Organization,
   OrganizationInput,
@@ -214,9 +221,67 @@ export class MockConsoleService implements ConsoleService {
       modelName: input.modelName.trim(),
       runtimeImage: input.runtimeImage.trim(),
       replicas: input.replicas,
+      autoscaled: false,
+      cpu: input.cpu,
+      memory: input.memory,
+      gpuCount: input.gpuCount,
+      env: withRuntimeArgs([], input.runtimeArgs),
+      annotations: {
+        ...(input.displayName.trim() ? { 'openshift.io/display-name': input.displayName.trim() } : {}),
+        ...(input.description ? { 'openshift.io/description': input.description } : {}),
+      },
+      placementSpec: consolePlacement(input.locations),
     };
     this.models.push(created);
     return structuredClone(created);
+  };
+
+  /** The fake backend's UpdateModel through the BFF's PATCH: each present field replaces the stored one. */
+  updateModel = async (
+    namespace: string,
+    name: string,
+    update: ModelUpdate,
+    resourceVersion: string,
+  ): Promise<ManagedModel> => {
+    const model = this.models.find((m) => m.namespace === namespace && m.name === name);
+    if (!model) {
+      throw new ServiceError(404, `Model ${namespace}/${name} not found.`);
+    }
+    if (resourceVersion !== model.resourceVersion) {
+      throw new ServiceError(409, 'This model changed. Reload it before saving.');
+    }
+    if (Object.keys(update).length === 0) {
+      throw new ServiceError(422, 'Name at least one field to change.');
+    }
+    const fieldErrors = fieldErrorsOf(createModelSchema.pick({ replicas: true, runtimeImage: true }).partial(), {
+      replicas: update.replicas,
+      runtimeImage: update.runtimeImage,
+    });
+    if (Object.keys(fieldErrors).length > 0) {
+      throw new ServiceError(422, 'The model is invalid.', fieldErrors);
+    }
+    const locations = consolePlacementLocations(update.placement);
+    if (update.placement) {
+      const known = await this.listLocations();
+      if (!locations?.length || locations.some((l) => !known.includes(l))) {
+        throw new ServiceError(422, unknownLocation, { locations: unknownLocation });
+      }
+    }
+    if (update.replicas !== undefined) model.replicas = update.replicas;
+    if (update.runtimeImage !== undefined) model.runtimeImage = update.runtimeImage.trim();
+    if (update.env) model.env = structuredClone(update.env);
+    if (update.annotations) {
+      model.annotations = { ...update.annotations };
+      // As the BFF: no display name when the annotation is missing (omitempty in toModel).
+      model.displayName = update.annotations['openshift.io/display-name'] || undefined;
+      model.description = update.annotations['openshift.io/description'] || undefined;
+    }
+    if (update.placement && locations) {
+      model.placementSpec = structuredClone(update.placement);
+      model.locations = [...locations];
+    }
+    model.resourceVersion = String(Number(model.resourceVersion) + 1);
+    return structuredClone(model);
   };
 
   deleteModel = async (namespace: string, name: string, resourceVersion: string): Promise<void> => {
@@ -513,6 +578,21 @@ export const seedModels = (): ManagedModel[] =>
       : {}),
     resourceVersion: '1',
     locations,
+    modelUri: `hf://example-org/${name}`,
+    modelName: `example-org/${name}`,
+    runtimeImage: 'quay.io/example/vllm:v1',
+    replicas: 1,
+    autoscaled: false,
+    cpu: '2',
+    memory: '4Gi',
+    gpuCount: 0,
+    env: [],
+    annotations: {
+      'openshift.io/display-name': displayName,
+      ...(description ? { 'openshift.io/description': description } : {}),
+    },
+    // A placed model is the console's shape; the others are served on the hub only.
+    ...(locations.length > 0 ? { placementSpec: consolePlacement(locations) } : {}),
   }));
 
 // The PoC's subscriptions and policies (with engineering in the fixture organization

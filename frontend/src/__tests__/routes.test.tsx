@@ -57,7 +57,7 @@ describe('routes', () => {
     await user.click(screen.getByRole('button', { name: 'Next' }));
     await user.click(screen.getByRole('button', { name: 'Next' }));
   };
-  it.each<[path: string, method: keyof MockConsoleService, text: string, open?: typeof toLocationsStep]>([
+  it.each<[path: string, methods: string, text: string, open?: typeof toLocationsStep]>([
     ['/organizations', 'listOrganizations', orgs],
     ['/organizations/org-1', 'getOrganization', orgs],
     ['/organizations/org-1/edit', 'getOrganization', orgs],
@@ -67,13 +67,17 @@ describe('routes', () => {
     ['/subscriptions/view/engineering', 'getSubscriptionInfo', subs],
     ['/subscriptions/create', 'listSubscriptions', subs],
     ['/subscriptions/edit/engineering', 'listSubscriptions', subs],
-    ['/ai-grid', 'getGridOverview', grid],
-    ['/monitoring', 'getGridOverview', grid],
-  ])('renders not-available pages: %s without %s', async (path, method, text, open) => {
+    // Without the overview the pages fall back to the Clusters list, so both must be missing.
+    ['/ai-grid', 'getGridOverview+listClusters', grid],
+    ['/monitoring', 'getGridOverview+listClusters', grid],
+  ])('renders not-available pages: %s without %s', async (path, methods, text, open) => {
     const service = new MockConsoleService();
-    vi.spyOn(service, method as 'listModels').mockRejectedValue(
-      new ServiceError(501, 'the AI Grid backend does not support this operation yet'),
-    );
+    // `methods` lists the service calls that answer 501, joined with +.
+    for (const name of methods.split('+') as (keyof MockConsoleService)[]) {
+      vi.spyOn(service, name as 'listModels').mockRejectedValue(
+        new ServiceError(501, 'the AI Grid backend does not support this operation yet'),
+      );
+    }
     const user = userEvent.setup();
     at(path, service);
     // Let the shell's own loads (user, config) settle first, so none lands outside act.
@@ -120,6 +124,24 @@ describe('routes', () => {
     await waitFor(() => expect(getConfig).toHaveBeenCalled());
     await getConfig.mock.results[0].value;
     expect(screen.queryByText(/fake backend/i)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    '/clusters',
+    '/organizations',
+    '/organizations/create',
+    '/models',
+    '/models/deploy',
+    '/subscriptions',
+    '/ai-grid',
+    '/monitoring',
+    '/nowhere',
+  ])('fills the page height with the content section: %s', async (path) => {
+    at(path);
+    await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('dev-user'));
+    // PatternFly's Page isContentFilled plus a PageSection isFilled: the white panel reaches the bottom.
+    expect(document.querySelector('.pf-v6-c-page__main-container.pf-m-fill')).not.toBeNull();
+    await waitFor(() => expect(document.querySelector('.pf-v6-c-page__main-section.pf-m-fill')).not.toBeNull());
   });
 
   it('shows a success toast for a notice passed through navigation state', async () => {

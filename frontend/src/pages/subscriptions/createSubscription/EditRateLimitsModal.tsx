@@ -3,7 +3,7 @@
 // packages/maas/frontend/src/app/pages/subscriptions/createSubscription/EditRateLimitsModal.tsx
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
 import { useState } from 'react';
-import { Button, Modal, ModalBody, ModalFooter, ModalHeader, Stack, StackItem } from '@patternfly/react-core';
+import { Button, Form, Modal, ModalBody, ModalFooter, ModalHeader, Stack, StackItem } from '@patternfly/react-core';
 import { PlusCircleIcon } from '@patternfly/react-icons';
 import type { TokenRateLimit } from '../../../api/types';
 import type { RateLimit } from '../../../utilities/rateLimits';
@@ -58,33 +58,38 @@ export const EditRateLimitsModal: React.FC<Props> = ({ modelName, rateLimits, on
         }
       />
       <ModalBody>
-        <Stack hasGutter>
-          {localLimits.map((limit, index) => (
-            <StackItem key={index}>
-              <RateLimitRow
-                id={`edit-token-limit-${index}`}
-                rateLimit={limit}
-                onChange={(updated) => setLocalLimits((prev) => prev.map((item, i) => (i === index ? updated : item)))}
-                onRemove={() => setLocalLimits((prev) => prev.filter((_, i) => i !== index))}
-                showRemove={localLimits.length > 1}
-                countError={submitted ? getCountError(limit) : undefined}
-                timeError={submitted ? getTimeError(limit) : undefined}
-                countDigitError={getCountDigitError(limit)}
-                timeDigitError={getTimeDigitError(limit)}
-              />
+        {/* A form, so the token limits' labels are PatternFly form labels. */}
+        <Form onSubmit={(event) => event.preventDefault()}>
+          <Stack hasGutter>
+            {localLimits.map((limit, index) => (
+              <StackItem key={index}>
+                <RateLimitRow
+                  id={`edit-token-limit-${index}`}
+                  rateLimit={limit}
+                  onChange={(updated) =>
+                    setLocalLimits((prev) => prev.map((item, i) => (i === index ? updated : item)))
+                  }
+                  onRemove={() => setLocalLimits((prev) => prev.filter((_, i) => i !== index))}
+                  showRemove={localLimits.length > 1}
+                  countError={submitted ? getCountError(limit) : undefined}
+                  timeError={submitted ? getTimeError(limit) : undefined}
+                  countDigitError={getCountDigitError(limit)}
+                  timeDigitError={getTimeDigitError(limit)}
+                />
+              </StackItem>
+            ))}
+            <StackItem>
+              <Button
+                variant="link"
+                icon={<PlusCircleIcon />}
+                onClick={() => setLocalLimits((prev) => [...prev, { ...DEFAULT_RATE_LIMIT }])}
+                data-testid="add-token-rate-limit"
+              >
+                Add token limit
+              </Button>
             </StackItem>
-          ))}
-          <StackItem>
-            <Button
-              variant="link"
-              icon={<PlusCircleIcon />}
-              onClick={() => setLocalLimits((prev) => [...prev, { ...DEFAULT_RATE_LIMIT }])}
-              data-testid="add-token-rate-limit"
-            >
-              Add token limit
-            </Button>
-          </StackItem>
-        </Stack>
+          </Stack>
+        </Form>
       </ModalBody>
       <ModalFooter>
         <Button

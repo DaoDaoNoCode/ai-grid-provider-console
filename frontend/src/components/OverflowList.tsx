@@ -1,4 +1,4 @@
-import { Label, List, ListItem, Popover } from '@patternfly/react-core';
+import { Flex, Label, List, ListItem, Popover } from '@patternfly/react-core';
 import { EMPTY_VALUE } from '../utilities/format';
 
 type Props = {
@@ -18,8 +18,13 @@ export const OverflowList: React.FC<Props> = ({ items, noun }) => {
   }
   const [first, ...rest] = items;
   return (
-    <span className="console-overflow-list">
-      {first}
+    <Flex
+      component="span"
+      display={{ default: 'inlineFlex' }}
+      alignItems={{ default: 'alignItemsCenter' }}
+      spaceItems={{ default: 'spaceItemsSm' }}
+    >
+      <span>{first}</span>
       {rest.length > 0 && (
         <Popover
           headerContent={`${noun} (${items.length})`}
@@ -37,6 +42,6 @@ export const OverflowList: React.FC<Props> = ({ items, noun }) => {
           </Label>
         </Popover>
       )}
-    </span>
+    </Flex>
   );
 };

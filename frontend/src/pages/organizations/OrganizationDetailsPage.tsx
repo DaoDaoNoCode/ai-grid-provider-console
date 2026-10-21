@@ -1,10 +1,11 @@
 // Ported from krisv/ai-grid-cloud-provider-poc src/app/pages/tenants/TenantDetailsPage.tsx at 62319b8.
-import { Breadcrumb, BreadcrumbItem, PageSection, Spinner } from '@patternfly/react-core';
+import { Breadcrumb, BreadcrumbItem, PageSection } from '@patternfly/react-core';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { UserService } from '../../api/ConsoleService';
 import type { OrganizationsService } from '../../api/organizations';
 import type { Organization } from '../../api/types';
 import { PageHeader } from '../../components/PageHeader';
+import { PageLoading } from '../../components/PageLoading';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
 import { StatusLabel } from '../../components/StatusLabel';
 import { useServiceData } from '../../hooks/useServiceData';
@@ -59,15 +60,17 @@ export const OrganizationDetailsPage: React.FC<Props> = ({ service }) => {
           </Breadcrumb>
         }
       />
-      <PageSection>
-        {error ? (
-          <OrganizationLoadError error={error} />
-        ) : !loaded || !organization ? (
-          <Spinner aria-label="Loading organization" />
-        ) : (
-          <OrganizationConfigurationDetails organization={organization} variant="details" />
-        )}
-      </PageSection>
+      {!error && (!loaded || !organization) ? (
+        <PageLoading label="Loading organization" />
+      ) : (
+        <PageSection isFilled>
+          {error ? (
+            <OrganizationLoadError error={error} />
+          ) : (
+            organization && <OrganizationConfigurationDetails organization={organization} variant="details" />
+          )}
+        </PageSection>
+      )}
       {deleteModal}
     </>
   );

@@ -39,7 +39,10 @@ it('labels only the selected pin, which keeps its status colour; the others labe
   expect(screen.getByText('Brussels · site3 · Ready')).toBeInTheDocument();
   expect(screen.queryByText('San Francisco')).not.toBeInTheDocument();
   const selected = marker.mock.calls.find(([, options]) => options?.radius === 11);
-  expect(selected?.[1]).toMatchObject({ color: '#3d7317', weight: 4 });
+  expect(selected?.[1]).toMatchObject({
+    color: 'var(--pf-t--global--icon--color--status--success--default)',
+    weight: 4,
+  });
 });
 
 it('fits the pins without zooming in past the region around them', () => {
@@ -113,4 +116,37 @@ it('explains a map without coordinates', () => {
     screen.getByText('No mapped clusters. Add site coordinates to ManagedCluster annotations.'),
   ).toBeInTheDocument();
   expect(pinsDrawn(marker)).toBe(0);
+});
+
+it('keeps its pins through a re-render with the same clusters, and redraws when they change', () => {
+  const marker = vi.spyOn(L, 'circleMarker');
+  const props = { selected: null, onSelect: () => {}, tiles };
+  const { rerender } = render(<GridFleetMap clusters={members} {...props} />);
+  const drawn = pinsDrawn(marker);
+  expect(drawn).toBe(members.filter((c) => c.latitude !== undefined).length);
+  // The fleet view passes a new array on every render; the same clusters keep the same pins, so
+  // the pin under the pointer and its label stay.
+  const pin = marker.mock.results[0].value as L.CircleMarker;
+  act(() => {
+    pin.openTooltip();
+  });
+  rerender(<GridFleetMap clusters={members.map((c) => ({ ...c }))} {...props} />);
+  expect(pinsDrawn(marker)).toBe(drawn);
+  // The same pin, still on the map, with its label still open.
+  expect(pin.isTooltipOpen()).toBe(true);
+  expect(screen.getByText(members[0].siteName ?? members[0].site ?? members[0].name)).toBeInTheDocument();
+  // A changed status is a change the pins show.
+  rerender(<GridFleetMap clusters={members.map((c, i) => (i ? c : { ...c, status: 'Offline' }))} {...props} />);
+  expect(pinsDrawn(marker)).toBe(2 * drawn);
+});
+
+it('redraws a label when a site name goes from missing to empty', () => {
+  const marker = vi.spyOn(L, 'circleMarker');
+  const props = { selected: null, onSelect: () => {}, tiles };
+  const [first, ...rest] = members;
+  const { rerender } = render(<GridFleetMap clusters={[{ ...first, siteName: undefined }, ...rest]} {...props} />);
+  const drawn = pinsDrawn(marker);
+  // The label falls back to the site only when the name is missing, so an empty name is a change.
+  rerender(<GridFleetMap clusters={[{ ...first, siteName: '' }, ...rest]} {...props} />);
+  expect(pinsDrawn(marker)).toBe(2 * drawn);
 });

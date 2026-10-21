@@ -14,7 +14,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle';
 export const NotFoundPage: React.FC = () => {
   useDocumentTitle('Page not found');
   return (
-    <PageSection>
+    <PageSection isFilled>
       <EmptyState titleText="Page not found" headingLevel="h1" icon={PathMissingIcon}>
         <EmptyStateBody>
           The page you asked for doesn't exist. Check the address, or go back to the clusters.

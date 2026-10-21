@@ -5,10 +5,10 @@
 // The PoC's dashboard Table: sortable columns, the console's PaginatedTable, and its
 // "No results found" view when the filter matches nothing.
 import { useMemo, useState } from 'react';
-import { Button, EmptyState, EmptyStateActions, EmptyStateBody, EmptyStateFooter } from '@patternfly/react-core';
-import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
+import { Table, Tbody, Th, Thead, Tr } from '@patternfly/react-table';
 import type { MaaSSubscription } from '../../../api/types';
 import { PaginatedTable } from '../../../components/PaginatedTable';
+import { TableEmptyRow } from '../../../components/TableEmptyRow';
 import { subscriptionsColumns } from './columns';
 import { SubscriptionTableRow } from './SubscriptionTableRow';
 
@@ -41,7 +41,7 @@ export const SubscriptionsTable: React.FC<Props> = ({
     <>
       <PaginatedTable rows={sorted} toolbar={toolbarContent}>
         {(pageRows) => (
-          <Table aria-label="Subscriptions" className="portal-resource-table" data-testid="subscriptions-table">
+          <Table aria-label="Subscriptions" data-testid="subscriptions-table">
             <Thead>
               <Tr>
                 {columns.map((col, index) => (
@@ -77,20 +77,11 @@ export const SubscriptionsTable: React.FC<Props> = ({
               </Tbody>
             ) : (
               <Tbody>
-                <Tr>
-                  <Td colSpan={columns.length + 1}>
-                    <EmptyState titleText="No results found" headingLevel="h2">
-                      <EmptyStateBody>Adjust your filter to find subscriptions.</EmptyStateBody>
-                      <EmptyStateFooter>
-                        <EmptyStateActions>
-                          <Button variant="link" onClick={onClearFilters}>
-                            Clear all filters
-                          </Button>
-                        </EmptyStateActions>
-                      </EmptyStateFooter>
-                    </EmptyState>
-                  </Td>
-                </Tr>
+                <TableEmptyRow
+                  colSpan={columns.length + 1}
+                  body="Change the filter to see more subscriptions."
+                  onClear={onClearFilters}
+                />
               </Tbody>
             )}
           </Table>

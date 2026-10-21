@@ -7,18 +7,19 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
   AlertActionCloseButton,
-  Bullseye,
   Button,
   EmptyState,
+  EmptyStateActions,
   EmptyStateBody,
+  EmptyStateFooter,
   EmptyStateVariant,
   PageSection,
-  Spinner,
 } from '@patternfly/react-core';
 import { ExclamationCircleIcon } from '@patternfly/react-icons';
 import { ServiceError } from '../../api/ConsoleService';
 import type { MaaSSubscription } from '../../api/types';
 import { LoadError } from '../../components/LoadError';
+import { PageLoading } from '../../components/PageLoading';
 import type { GovernanceService } from '../../context/useMaaSGovernanceContext';
 import { useMaaSGovernanceContext } from '../../context/useMaaSGovernanceContext';
 import type { SubscriptionsFilterDataType } from './allSubscriptions/const';
@@ -70,13 +71,7 @@ export const SubscriptionsTab: React.FC<Props> = ({ service }) => {
   }, [subscriptions, filterData]);
 
   if (!loaded && !error) {
-    return (
-      <PageSection isFilled>
-        <Bullseye>
-          <Spinner aria-label="Loading subscriptions" />
-        </Bullseye>
-      </PageSection>
-    );
+    return <PageLoading label="Loading subscriptions" />;
   }
 
   if (error instanceof ServiceError && error.isNotImplemented) {
@@ -97,14 +92,14 @@ export const SubscriptionsTab: React.FC<Props> = ({ service }) => {
           variant={EmptyStateVariant.lg}
           data-testid="error-empty-state"
         >
-          <EmptyStateBody data-testid="error-empty-state-body">
-            {error.message}
-            <div>
+          <EmptyStateBody data-testid="error-empty-state-body">{error.message}</EmptyStateBody>
+          <EmptyStateFooter>
+            <EmptyStateActions>
               <Button variant="link" onClick={refresh}>
                 Retry
               </Button>
-            </div>
-          </EmptyStateBody>
+            </EmptyStateActions>
+          </EmptyStateFooter>
         </EmptyState>
       </PageSection>
     );

@@ -19,7 +19,9 @@ export const ModelStatusDetails: React.FC<{ model: ManagedModel }> = ({ model })
       <p>{known?.summary ?? 'The controller couldn’t deploy this model.'}</p>
       {known && <p>{known.next}</p>}
       <ExpandableSection toggleText="Details">
-        <code className="console-raw-status">{[model.reason, model.statusMessage].filter(Boolean).join(': ')}</code>
+        <code className="pf-v6-u-font-size-sm pf-v6-u-text-break-word">
+          {[model.reason, model.statusMessage].filter(Boolean).join(': ')}
+        </code>
       </ExpandableSection>
     </Stack>
   );

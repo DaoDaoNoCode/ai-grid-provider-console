@@ -6,13 +6,14 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Alert,
+  AlertActionLink,
   Button,
   EmptyState,
   EmptyStateActions,
   EmptyStateBody,
   EmptyStateFooter,
   PageSection,
-  Spinner,
+  Stack,
   ToolbarItem,
 } from '@patternfly/react-core';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
@@ -24,10 +25,12 @@ import type { ManagedModel } from '../../api/types';
 import { LoadError } from '../../components/LoadError';
 import { OverflowList } from '../../components/OverflowList';
 import { PageHeader } from '../../components/PageHeader';
+import { PageLoading } from '../../components/PageLoading';
 import { PaginatedTable } from '../../components/PaginatedTable';
 import { RelativeTime } from '../../components/RelativeTime';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
 import { ToolbarSearch } from '../../components/ToolbarSearch';
+import { TableEmptyRow } from '../../components/TableEmptyRow';
 import { useServiceData } from '../../hooks/useServiceData';
 import { EMPTY_VALUE } from '../../utilities/format';
 import { locationLabel, modelPath, siteNamesOf } from './modelUtils';
@@ -90,11 +93,13 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
     (error instanceof ServiceError && error.isNotImplemented ? (
       <LoadError subject="Models" error={error} />
     ) : (
-      <Alert isInline variant="danger" title="Error loading models">
+      <Alert
+        isInline
+        variant="danger"
+        title="Error loading models"
+        actionLinks={<AlertActionLink onClick={() => void refresh()}>Retry</AlertActionLink>}
+      >
         {error.message}
-        <Button variant="link" onClick={() => void refresh()}>
-          Retry
-        </Button>
       </Alert>
     ));
 
@@ -102,9 +107,6 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
     // A failed refresh keeps the last list and shows the error above it.
     if (error && deployments.length === 0) {
       return errorAlert;
-    }
-    if (!loaded) {
-      return <Spinner aria-label="Loading models" />;
     }
     if (deployments.length === 0) {
       return (
@@ -119,7 +121,7 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
       );
     }
     return (
-      <>
+      <Stack hasGutter>
         {errorAlert}
         <PaginatedTable
           rows={rows}
@@ -138,7 +140,7 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
           {(pageRows) => (
             <Table
               aria-label="Model deployments"
-              className="portal-resource-table"
+
               data-testid="model-deployments-table"
             >
               <Thead>
@@ -153,14 +155,11 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
               </Thead>
               {rows.length === 0 ? (
                 <Tbody>
-                  <Tr>
-                    <Td colSpan={columns.length + 1}>
-                      <p>No models match the filter.</p>
-                      <Button variant="link" onClick={() => setFilter('')}>
-                        Clear filter
-                      </Button>
-                    </Td>
-                  </Tr>
+                  <TableEmptyRow
+                    colSpan={columns.length + 1}
+                    body="Change the filter to see more models."
+                    onClear={() => setFilter('')}
+                  />
                 </Tbody>
               ) : (
                 <Tbody>
@@ -194,6 +193,11 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
                               ariaLabel={`Actions for ${title}`}
                               dropdownItems={[
                                 { key: 'view', label: 'View details', onClick: () => navigate(modelPath(deployment)) },
+                                {
+                                  key: 'edit',
+                                  label: 'Edit',
+                                  onClick: () => navigate(`${modelPath(deployment)}/edit`),
+                                },
                                 { isSpacer: true },
                                 {
                                   key: 'delete',
@@ -213,14 +217,18 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
             </Table>
           )}
         </PaginatedTable>
-      </>
+      </Stack>
     );
   };
 
   return (
     <>
       <PageHeader title="Models" description="Add and remove model deployments." />
-      <PageSection>{body()}</PageSection>
+      {!(error && deployments.length === 0) && !loaded ? (
+        <PageLoading label="Loading models" />
+      ) : (
+        <PageSection isFilled>{body()}</PageSection>
+      )}
       {deleteModal}
     </>
   );

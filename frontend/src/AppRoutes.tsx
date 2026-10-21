@@ -6,6 +6,7 @@ import { MaaSGovernanceProvider } from './context/MaaSGovernanceContext';
 import { ClustersPage } from './pages/clusters/ClustersPage';
 import { GridPage } from './pages/grid/GridPage';
 import { ModelDetailsPage } from './pages/models/ModelDetailsPage';
+import { ModelEditPage } from './pages/models/ModelEditPage';
 import { ModelWizard } from './pages/models/ModelWizard';
 import { ModelsPage } from './pages/models/ModelsPage';
 import { OrganizationDetailsPage } from './pages/organizations/OrganizationDetailsPage';
@@ -56,6 +57,14 @@ export const AppRoutes: React.FC<Props> = ({ service }) => (
       element={
         <ByParams>
           <ModelDetailsPage service={service} />
+        </ByParams>
+      }
+    />
+    <Route
+      path="/models/:namespace/:name/edit"
+      element={
+        <ByParams>
+          <ModelEditPage service={service} />
         </ByParams>
       }
     />

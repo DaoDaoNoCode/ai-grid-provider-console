@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react';
 import {
   Alert,
+  AlertActionLink,
   Button,
   EmptyState,
+  EmptyStateActions,
   EmptyStateBody,
+  EmptyStateFooter,
   Icon,
   PageSection,
-  Spinner,
   ToolbarItem,
   Tooltip,
 } from '@patternfly/react-core';
@@ -20,11 +22,13 @@ import { ServiceError } from '../../api/ConsoleService';
 import type { GridCluster } from '../../api/types';
 import { LoadError } from '../../components/LoadError';
 import { PageHeader } from '../../components/PageHeader';
+import { PageLoading } from '../../components/PageLoading';
 import { PaginatedTable } from '../../components/PaginatedTable';
 import { RefreshButton } from '../../components/RefreshButton';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
 import { StatusLabel } from '../../components/StatusLabel';
 import { ToolbarSearch } from '../../components/ToolbarSearch';
+import { TableEmptyRow } from '../../components/TableEmptyRow';
 import { useServiceData } from '../../hooks/useServiceData';
 import { EMPTY_VALUE } from '../../utilities/format';
 import type { MembershipChange } from './MembershipModal';
@@ -119,24 +123,27 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
         return <LoadError subject="Clusters" error={error} />;
       }
       return (
-        <Alert isInline variant="danger" title="Error loading clusters">
+        <Alert
+          isInline
+          variant="danger"
+          title="Error loading clusters"
+          actionLinks={<AlertActionLink onClick={reload}>Retry</AlertActionLink>}
+        >
           {error.message}
-          <Button variant="link" onClick={reload}>
-            Retry
-          </Button>
         </Alert>
       );
-    }
-    if (!loaded) {
-      return <Spinner aria-label="Loading clusters" />;
     }
     if (clusters.length === 0) {
       return (
         <EmptyState titleText="No managed clusters" headingLevel="h3">
           <EmptyStateBody>No ManagedClusters are available.</EmptyStateBody>
-          <Button variant="link" onClick={reload}>
-            Refresh
-          </Button>
+          <EmptyStateFooter>
+            <EmptyStateActions>
+              <Button variant="link" onClick={reload}>
+                Refresh
+              </Button>
+            </EmptyStateActions>
+          </EmptyStateFooter>
         </EmptyState>
       );
     }
@@ -159,7 +166,7 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
           }
         >
           {(pageRows) => (
-            <Table aria-label="AI Grid clusters" className="portal-resource-table" data-testid="clusters-table">
+            <Table aria-label="AI Grid clusters" data-testid="clusters-table">
               <Thead>
                 <Tr>
                   {columns.map((c, i) => (
@@ -172,9 +179,11 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
               </Thead>
               <Tbody>
                 {rows.length === 0 ? (
-                  <Tr>
-                    <Td colSpan={columns.length + 1}>No clusters match your search.</Td>
-                  </Tr>
+                  <TableEmptyRow
+                    colSpan={columns.length + 1}
+                    body="Change the search to see more clusters."
+                    onClear={() => setSearch('')}
+                  />
                 ) : (
                   pageRows.map((c) => (
                     <Tr key={c.name}>
@@ -257,7 +266,7 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
   return (
     <>
       <PageHeader title="Clusters" description="Manage AI Grid membership and provisioning readiness." />
-      <PageSection>{body()}</PageSection>
+      {!error && !loaded ? <PageLoading label="Loading clusters" /> : <PageSection isFilled>{body()}</PageSection>}
       {change && (
         <MembershipModal {...change} onConfirm={() => applyChange(change)} onClose={() => setChange(undefined)} />
       )}
