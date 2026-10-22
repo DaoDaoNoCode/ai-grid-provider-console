@@ -90,7 +90,6 @@ describe('toGridCluster', () => {
       aiGridEnabled: true,
       provisioned: true,
       provisioningStatus: 'Provisioned',
-      hubAcceptsClient: true,
       location: 'paris',
       site: 'paris-dc1',
       region: 'europe-west',

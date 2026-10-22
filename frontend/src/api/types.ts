@@ -74,7 +74,6 @@ export type GridCluster = {
   aiGridEnabled: boolean;
   provisioned: boolean;
   provisioningStatus: ProvisioningStatus;
-  hubAcceptsClient: boolean;
   location?: string;
   site?: string;
   region?: string;

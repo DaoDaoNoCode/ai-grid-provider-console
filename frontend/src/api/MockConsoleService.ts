@@ -493,7 +493,6 @@ export const seedClusters = (): GridCluster[] =>
       aiGridEnabled: member,
       provisioned: member,
       provisioningStatus: member ? 'Provisioned' : 'Not provisioned',
-      hubAcceptsClient: true,
       location: name,
       site,
       region,
@@ -510,7 +509,7 @@ export const seedClusters = (): GridCluster[] =>
         'ai-grid/provisioned': String(member),
         'ai-grid/site': site,
         'ai-grid/region': region,
-        ...(member ? { 'ai-grid/enabled': 'true' } : {}),
+        ...(member ? { 'ai-grid/enabled': 'true', 'ai-grid/role': 'combined' } : {}),
       },
     };
   });

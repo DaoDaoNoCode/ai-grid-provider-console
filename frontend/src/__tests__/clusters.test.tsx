@@ -1,7 +1,7 @@
 // Ported from krisv/ai-grid-cloud-provider-poc src/app/__tests__/clusters.test.tsx at 62319b8.
 // The PoC drives a fake ACM Hub through its backend; here the same cases run on
 // MockConsoleService, and the BFF's PATCH is covered by bff/internal/api tests.
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ServiceError } from '../api/ConsoleService';
 import { HttpConsoleService } from '../api/HttpConsoleService';
@@ -18,7 +18,6 @@ const cluster = (name: string, status: GridCluster['status'], labels: Record<str
     aiGridEnabled,
     provisioned,
     provisioningStatus: provisioned ? 'Provisioned' : aiGridEnabled ? 'Provisioning' : 'Not provisioned',
-    hubAcceptsClient: true,
     ...(labels.location ? { location: labels.location } : {}),
     labels,
   };
@@ -194,6 +193,86 @@ it('refresh reflects external membership changes on the Hub', async () => {
   await waitFor(() => expect(screen.queryByRole('link', { name: 'cluster-b' })).not.toBeInTheDocument());
 });
 
+it('shows the role and location Add wrote while the list reloads', async () => {
+  const service = serviceWith([cluster('cluster-b', 'Ready')]);
+  const list = service.listClusters;
+  const user = userEvent.setup();
+  renderAt('/clusters', service);
+  await pick(user, 'cluster-b', 'Add to AI Grid');
+  // The reload after Add hasn't answered yet, so the table still holds the list from before.
+  let answer: () => void = () => {};
+  service.listClusters = () => new Promise((resolve) => (answer = () => resolve(list())));
+  const modal = await screen.findByTestId('cluster-membership-modal');
+  await user.type(within(modal).getByRole('textbox', { name: 'Location' }), 'paris');
+  await user.click(within(modal).getByRole('combobox', { name: 'Role' }));
+  await user.click(await screen.findByRole('option', { name: /Inference/ }));
+  await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
+  expect(await screen.findByText('cluster-b added to AI Grid')).toBeVisible();
+  const row = within(screen.getByTestId('clusters-table')).getByRole('row', { name: /^cluster-b / });
+  expect(row).toHaveTextContent('Inference');
+  expect(row).toHaveTextContent('paris');
+  expect(screen.queryByTestId('missing-role-cluster-b')).not.toBeInTheDocument();
+  expect(screen.queryByTestId('missing-location-cluster-b')).not.toBeInTheDocument();
+  // The reloaded list replaces it: here someone changed the role in the meantime.
+  service.clusters[0] = {
+    ...service.clusters[0],
+    labels: { ...service.clusters[0].labels, 'ai-grid/role': 'ingress' },
+  };
+  answer();
+  await waitFor(() =>
+    expect(within(screen.getByTestId('clusters-table')).getByRole('row', { name: /^cluster-b / })).toHaveTextContent(
+      'Ingress',
+    ),
+  );
+});
+
+it('keeps the cluster Add returned when a poll replaced the list during the PATCH', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    const service = serviceWith([cluster('cluster-b', 'Ready', { location: 'site2' })]);
+    const enroll = service.enrollCluster;
+    let finish: () => Promise<void> = async () => {};
+    service.enrollCluster = (c, m) => new Promise((resolve) => (finish = async () => resolve(await enroll(c, m))));
+    const list = service.listClusters;
+    let polls = 0;
+    service.listClusters = () => {
+      polls++;
+      return list();
+    };
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderAt('/clusters', service);
+    await add(user, 'cluster-b');
+    // A poll answers with the list from before the change; then the reload after Add hangs.
+    await act(() => vi.advanceTimersByTimeAsync(30000));
+    expect(polls).toBe(2);
+    service.listClusters = () => new Promise(() => {});
+    await act(() => finish());
+    expect(await screen.findByText('cluster-b added to AI Grid')).toBeVisible();
+    const row = () => within(screen.getByTestId('clusters-table')).getByRole('row', { name: /^cluster-b / });
+    expect(row()).toHaveTextContent('Inference');
+    // Refresh while that reload hangs keeps it, and an older reload that answers first (with the
+    // list from before Add) doesn't drop it either.
+    const before = [cluster('cluster-b', 'Ready', { location: 'site2' })];
+    let older: () => void = () => {};
+    service.listClusters = () => new Promise((resolve) => (older = () => resolve(before)));
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+    let latest: () => void = () => {};
+    service.listClusters = () => new Promise((resolve) => (latest = () => resolve(list())));
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+    await act(async () => older());
+    expect(row()).toHaveTextContent('Inference');
+    // The latest reload's answer replaces it: someone changed the role in the meantime.
+    service.clusters[0] = {
+      ...service.clusters[0],
+      labels: { ...service.clusters[0].labels, 'ai-grid/role': 'ingress' },
+    };
+    await act(async () => latest());
+    await waitFor(() => expect(row()).toHaveTextContent('Ingress'));
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it('rejects a response that does not confirm membership', async () => {
   const service = serviceWith(hubClusters());
   service.enrollCluster = async (c) => cluster(c.name, 'Ready');
@@ -220,9 +299,76 @@ it('shows the seeded clusters with location, status and provisioning, and no sit
   // Its ai-grid/site and ai-grid/region labels aren't shown.
   expect(sydney).not.toHaveTextContent('sydney');
   expect(sydney).not.toHaveTextContent('asia-pacific');
-  // Not a member: no provisioning to show.
+  // Not a member: says so, with no provisioning and no role.
   expect(sydney).not.toHaveTextContent('provisioned');
+  expect(within(sydney).getByText('Not added')).toBeVisible();
+  expect(sydney).not.toHaveTextContent('Combined');
   expect(within(table).getAllByText('Provisioned')).toHaveLength(3);
+  expect(within(table).getAllByText('Combined')).toHaveLength(3);
+});
+
+it('shows the role of each member, and warns about a member without one', async () => {
+  const user = userEvent.setup();
+  renderAt(
+    '/clusters',
+    serviceWith([
+      cluster('edge-1', 'Ready', { 'ai-grid/enabled': 'true', 'ai-grid/role': 'ingress', location: 'paris' }),
+      cluster('gpu-1', 'Ready', { 'ai-grid/enabled': 'true', 'ai-grid/role': 'inference', location: 'paris' }),
+      cluster('no-role', 'Ready', { 'ai-grid/enabled': 'true', location: 'paris' }),
+      // A value the console doesn't know counts as no role: the hub's Placements select on the three.
+      cluster('odd-role', 'Ready', { 'ai-grid/enabled': 'true', 'ai-grid/role': 'gateway', location: 'paris' }),
+      // A role left behind after Remove isn't shown: the cluster isn't a member.
+      cluster('former', 'Ready', { 'ai-grid/role': 'combined', location: 'paris' }),
+    ]),
+  );
+  const table = await screen.findByTestId('clusters-table');
+  expect(within(table).getByRole('row', { name: /^edge-1 / })).toHaveTextContent('Ingress');
+  expect(within(table).getByRole('row', { name: /^gpu-1 / })).toHaveTextContent('Inference');
+  const former = within(table).getByRole('row', { name: /^former / });
+  expect(former).toHaveTextContent('Not added');
+  expect(former).not.toHaveTextContent('Combined');
+  const missing = screen.getByTestId('missing-role-no-role');
+  expect(missing).toHaveTextContent('No role');
+  await user.hover(missing);
+  expect(await screen.findByText(/doesn't install OpenShift AI or MaaS on it/)).toBeInTheDocument();
+  expect(screen.getByTestId('missing-role-odd-role')).toHaveTextContent('No role');
+  // The header explains the three roles, without sorting the table.
+  const names = () =>
+    within(table)
+      .getAllByRole('row')
+      .slice(1)
+      .map((r) => r.querySelector('td')?.textContent);
+  const before = names();
+  await user.click(within(table).getByRole('button', { name: 'About cluster roles' }));
+  expect(await screen.findByText('Serves models behind an ingress cluster.')).toBeVisible();
+  expect(names()).toEqual(before);
+});
+
+it('sorts by role: clusters outside AI Grid, then members without a role, then by role', async () => {
+  const user = userEvent.setup();
+  renderAt(
+    '/clusters',
+    serviceWith([
+      cluster('c-inference', 'Ready', { 'ai-grid/enabled': 'true', 'ai-grid/role': 'inference', location: 'x' }),
+      cluster('b-outside', 'Ready'),
+      cluster('d-combined', 'Ready', { 'ai-grid/enabled': 'true', 'ai-grid/role': 'combined', location: 'x' }),
+      cluster('a-no-role', 'Ready', { 'ai-grid/enabled': 'true', location: 'x' }),
+      cluster('e-ingress', 'Ready', { 'ai-grid/enabled': 'true', 'ai-grid/role': 'ingress', location: 'x' }),
+    ]),
+  );
+  const table = await screen.findByTestId('clusters-table');
+  const names = () =>
+    within(table)
+      .getAllByRole('row')
+      .slice(1)
+      .map((r) => r.querySelector('td')?.textContent);
+  const sortButton = within(within(table).getByRole('columnheader', { name: /^Role/ })).getByRole('button', {
+    name: 'Role',
+  });
+  await user.click(sortButton);
+  expect(names()).toEqual(['b-outside', 'a-no-role', 'd-combined', 'c-inference', 'e-ingress']);
+  await user.click(sortButton);
+  expect(names()).toEqual(['e-ingress', 'c-inference', 'd-combined', 'a-no-role', 'b-outside']);
 });
 
 it('hides write actions from a viewer', async () => {
@@ -333,16 +479,22 @@ it('offers Add to AI Grid only for ready, offline or unknown clusters', async ()
     await user.keyboard('{Escape}');
   }
   // The others say why they can't be added yet.
-  for (const name of ['is-detaching', 'is-importfailed', 'is-notaccepted', 'is-pendingimport', 'is-importing']) {
+  for (const name of ['is-detaching', 'is-importfailed', 'is-pendingimport', 'is-importing']) {
     const item = await addItem(name);
     expect(item).toHaveAttribute('aria-disabled', 'true');
     await user.hover(item);
     expect(await screen.findByText(/once it has imported it/)).toBeInTheDocument();
     await user.keyboard('{Escape}');
   }
+  const notAccepted = await addItem('is-notaccepted');
+  expect(notAccepted).toHaveAttribute('aria-disabled', 'true');
+  await user.hover(notAccepted);
+  expect(
+    await screen.findByText("The hub hasn't accepted this cluster yet. Accept it in ACM, then add it to AI Grid."),
+  ).toBeInTheDocument();
 });
 
-it('wraps the headers, keeps Hub for wide screens only, and has no Site or Region column', async () => {
+it('wraps the headers, shows Role, and has no Hub, Site or Region column', async () => {
   renderAt('/clusters', serviceWith(hubClusters()));
   const table = await screen.findByTestId('clusters-table');
   for (const header of within(table)
@@ -350,9 +502,10 @@ it('wraps the headers, keeps Hub for wide screens only, and has no Site or Regio
     .filter((h) => h.textContent !== 'Actions')) {
     expect(header).toHaveClass('pf-m-wrap');
   }
-  expect(within(table).getByRole('columnheader', { name: 'Hub' })).toHaveClass('pf-m-hidden', 'pf-m-visible-on-2xl');
-  // Nothing sets ai-grid/site or ai-grid/region yet, so the columns would only show dashes.
-  for (const name of ['Site', 'Region']) {
+  expect(within(table).getByRole('columnheader', { name: /^Role/ })).not.toHaveClass('pf-m-hidden');
+  // A cluster the hub hasn't accepted says so under Connection. Site and Region are out of scope
+  // until geography is (after the MVP).
+  for (const name of ['Hub', 'Site', 'Region']) {
     expect(within(table).queryByRole('columnheader', { name })).not.toBeInTheDocument();
   }
   expect(within(table).getByRole('columnheader', { name: 'OpenShift' })).not.toHaveClass('pf-m-hidden');
