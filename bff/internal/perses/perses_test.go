@@ -185,6 +185,23 @@ func TestRelayPassesPersesErrorsThrough(t *testing.T) {
 	}
 }
 
+// An answer a browser could render, such as an HTML error page from a datasource, stays inert on
+// the console's origin, whatever headers Perses sent.
+func TestRelayAnswersCannotRunAsAPage(t *testing.T) {
+	relay := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Header().Set("Content-Security-Policy", "script-src *")
+		_, _ = w.Write([]byte(`<script>alert(document.cookie)</script>`))
+	}, nil, 0)
+	rec := serve(relay, httptest.NewRequest(http.MethodGet, Prefix+"/api/v1/projects/p/dashboards/d", nil), "t")
+	if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Errorf("X-Content-Type-Options = %q, want nosniff", got)
+	}
+	if got := rec.Header().Values("Content-Security-Policy"); len(got) != 1 || got[0] != "sandbox; default-src 'none'" {
+		t.Errorf("Content-Security-Policy = %q, want only the relay's sandbox", got)
+	}
+}
+
 func TestRelayQueriesWithTheFormThePrometheusPluginSends(t *testing.T) {
 	calls := make(chan upstreamCall, 1)
 	relay := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
