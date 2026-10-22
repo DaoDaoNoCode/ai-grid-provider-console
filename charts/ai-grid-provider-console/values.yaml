@@ -51,6 +51,8 @@ console:
   # GET /api/v1/config.
   gridConsumerUrl: ""
   mapTileUrl: ""
+  # The attribution the tile server requires, shown with mapTileUrl's tiles.
+  mapTileAttribution: ""
   billingUrl: ""
   logLevel: info
   resources:

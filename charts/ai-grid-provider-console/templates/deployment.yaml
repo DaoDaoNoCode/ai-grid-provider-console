@@ -125,6 +125,8 @@ spec:
               value: {{ .Values.console.gridConsumerUrl | quote }}
             - name: MAP_TILE_URL
               value: {{ .Values.console.mapTileUrl | quote }}
+            - name: MAP_TILE_ATTRIBUTION
+              value: {{ .Values.console.mapTileAttribution | quote }}
             - name: BILLING_URL
               value: {{ .Values.console.billingUrl | quote }}
             - name: LOG_LEVEL

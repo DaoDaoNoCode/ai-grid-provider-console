@@ -125,6 +125,8 @@ spec:
               value: ""
             - name: MAP_TILE_URL
               value: ""
+            - name: MAP_TILE_ATTRIBUTION
+              value: ""
             - name: BILLING_URL
               value: ""
             - name: LOG_LEVEL
