@@ -18,6 +18,7 @@ import type { ClusterRole, GridMembership } from '../../api/clusters';
 import { ServiceError } from '../../api/ConsoleService';
 import type { GridCluster } from '../../api/types';
 import { TypeaheadSelect } from '../../components/TypeaheadSelect';
+import { clusterRoles, roleOf } from './roles';
 
 export type MembershipChange = { cluster: GridCluster; join: boolean };
 
@@ -26,12 +27,6 @@ type Props = MembershipChange & {
   onConfirm: (membership?: GridMembership) => Promise<void>;
   onClose: () => void;
 };
-
-const roles: { value: ClusterRole; label: string; description: string }[] = [
-  { value: 'combined', label: 'Combined', description: 'Takes tenant traffic and serves models.' },
-  { value: 'ingress', label: 'Ingress', description: 'Takes tenant traffic and routes it to inference clusters.' },
-  { value: 'inference', label: 'Inference', description: 'Serves models behind an ingress cluster.' },
-];
 
 // A Kubernetes label value: what the hub accepts for `location`.
 const labelValue = /^[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$/;
@@ -46,8 +41,7 @@ const locationError = (location: string) => {
 
 /** The cluster's role label when it's one of ours; otherwise combined for the hub itself. */
 const defaultRole = (cluster: GridCluster): ClusterRole | '' => {
-  const current = roles.find((r) => r.value === cluster.labels['ai-grid/role']);
-  return current?.value ?? (cluster.name === 'local-cluster' ? 'combined' : '');
+  return roleOf(cluster.labels)?.value ?? (cluster.name === 'local-cluster' ? 'combined' : '');
 };
 
 const errorMessage = (err: unknown, join: boolean) => {
@@ -134,7 +128,7 @@ export const MembershipModal: React.FC<Props> = ({ cluster, join, onConfirm, onC
                   id="cluster-role"
                   aria-label="Role"
                   value={role}
-                  options={roles}
+                  options={clusterRoles}
                   placeholder="Select a role"
                   status={shownRoleError ? 'danger' : undefined}
                   aria-describedby="cluster-role-help"

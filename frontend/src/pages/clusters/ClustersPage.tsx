@@ -3,6 +3,10 @@ import {
   Alert,
   AlertActionLink,
   Button,
+  DescriptionList,
+  DescriptionListDescription,
+  DescriptionListGroup,
+  DescriptionListTerm,
   EmptyState,
   EmptyStateActions,
   EmptyStateBody,
@@ -33,10 +37,12 @@ import { useServiceData } from '../../hooks/useServiceData';
 import { EMPTY_VALUE } from '../../utilities/format';
 import type { MembershipChange } from './MembershipModal';
 import { MembershipModal } from './MembershipModal';
+import { clusterRoles, roleOf } from './roles';
 
 // Ported from krisv/ai-grid-cloud-provider-poc src/app/pages/clusters/ClustersPage.tsx at 62319b8.
-// The PoC's columns, labels, and enroll flow, plus the console's Hub and OpenShift columns,
-// removal from AI Grid, and a confirmation both ways. Site and Region are left out until clusters
+// The PoC's columns, labels, and enroll flow, plus the console's Role and OpenShift columns,
+// removal from AI Grid, and a confirmation both ways. No Hub column: every cluster that can be
+// added is accepted, and one that isn't shows Not accepted in the Connection tooltip. Site and Region are left out until clusters
 // carry them (ai-grid/site and ai-grid/region; nothing sets them yet). The Connection tooltip
 // adds the ACM state behind Unknown (such as Importing) and the backend's message, which the
 // PoC's three states don't have.
@@ -45,14 +51,36 @@ type Props = { service: ClustersService & UserService };
 
 // A wide column shows from the 2xl breakpoint (1450 px) up; below it the table fits the
 // content area without clipping the Action column.
-type Column = { label: string; sort?: (a: GridCluster, b: GridCluster) => number; wide?: boolean };
+type Column = {
+  label: string;
+  sort?: (a: GridCluster, b: GridCluster) => number;
+  wide?: boolean;
+  info?: ThProps['info'];
+};
 
 const columns: Column[] = [
   { label: 'Cluster', sort: (a, b) => a.name.localeCompare(b.name) },
   { label: 'Location', sort: (a, b) => (a.location ?? '').localeCompare(b.location ?? '') },
   { label: 'Connection', sort: (a, b) => a.status.localeCompare(b.status) },
   { label: 'AI Grid', sort: (a, b) => membership(a).localeCompare(membership(b)) },
-  { label: 'Hub', wide: true },
+  {
+    label: 'Role',
+    sort: (a, b) => memberRole(a).localeCompare(memberRole(b)),
+    info: {
+      ariaLabel: 'About cluster roles',
+      popover: (
+        <DescriptionList isCompact>
+          {clusterRoles.map((r) => (
+            <DescriptionListGroup key={r.value}>
+              <DescriptionListTerm>{r.label}</DescriptionListTerm>
+              <DescriptionListDescription>{r.description}</DescriptionListDescription>
+            </DescriptionListGroup>
+          ))}
+        </DescriptionList>
+      ),
+      popoverProps: { headerContent: 'What a member runs' },
+    },
+  },
   { label: 'OpenShift' },
 ];
 
@@ -60,6 +88,9 @@ const wideOnly: ThProps['visibility'] = ['hidden', 'visibleOn2Xl'];
 
 /** A member's provisioning, or nothing for a cluster outside AI Grid (sorts first). */
 const membership = (c: GridCluster) => (c.aiGridEnabled ? c.provisioningStatus : '');
+
+/** A member's role label, '-' for a member without one, nothing outside AI Grid (sorts first). */
+const memberRole = (c: GridCluster) => (c.aiGridEnabled ? (roleOf(c.labels)?.label ?? '-') : '');
 
 /** The Connection tooltip: the ACM state behind Unknown, then the backend's message. */
 const statusReason = (c: GridCluster) => [c.state, c.statusMessage].filter(Boolean).join(': ') || undefined;
@@ -171,7 +202,13 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
               <Thead>
                 <Tr>
                   {columns.map((c, i) => (
-                    <Th key={c.label} sort={sortParams(i)} modifier="wrap" visibility={c.wide ? wideOnly : undefined}>
+                    <Th
+                      key={c.label}
+                      sort={sortParams(i)}
+                      info={c.info}
+                      modifier="wrap"
+                      visibility={c.wide ? wideOnly : undefined}
+                    >
                       {c.label}
                     </Th>
                   ))}
@@ -214,10 +251,25 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
                         <StatusLabel isCompact status={c.status} reason={statusReason(c)} />
                       </Td>
                       <Td dataLabel="AI Grid">
-                        {c.aiGridEnabled ? <StatusLabel isCompact status={c.provisioningStatus} /> : EMPTY_VALUE}
+                        {c.aiGridEnabled ? (
+                          <StatusLabel isCompact status={c.provisioningStatus} />
+                        ) : (
+                          <span className="pf-v6-u-text-color-subtle">Not added</span>
+                        )}
                       </Td>
-                      <Td dataLabel="Hub" visibility={wideOnly}>
-                        {c.hubAcceptsClient ? 'Accepted' : 'Pending'}
+                      <Td dataLabel="Role">
+                        {!c.aiGridEnabled
+                          ? EMPTY_VALUE
+                          : (roleOf(c.labels)?.label ?? (
+                              <Tooltip content="This member has no role, so the hub doesn't install OpenShift AI or MaaS on it, and it never finishes provisioning. Remove it from AI Grid and add it again to choose a role.">
+                                <span tabIndex={0} data-testid={`missing-role-${c.name}`}>
+                                  <Icon status="warning" isInline>
+                                    <ExclamationTriangleIcon />
+                                  </Icon>{' '}
+                                  No role
+                                </span>
+                              </Tooltip>
+                            ))}
                       </Td>
                       <Td dataLabel="OpenShift">{c.openshiftVersion ?? EMPTY_VALUE}</Td>
                       {isProviderAdmin && (

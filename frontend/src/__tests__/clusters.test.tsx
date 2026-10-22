@@ -220,9 +220,76 @@ it('shows the seeded clusters with location, status and provisioning, and no sit
   // Its ai-grid/site and ai-grid/region labels aren't shown.
   expect(sydney).not.toHaveTextContent('sydney');
   expect(sydney).not.toHaveTextContent('asia-pacific');
-  // Not a member: no provisioning to show.
+  // Not a member: says so, with no provisioning and no role.
   expect(sydney).not.toHaveTextContent('provisioned');
+  expect(within(sydney).getByText('Not added')).toBeVisible();
+  expect(sydney).not.toHaveTextContent('Combined');
   expect(within(table).getAllByText('Provisioned')).toHaveLength(3);
+  expect(within(table).getAllByText('Combined')).toHaveLength(3);
+});
+
+it('shows the role of each member, and warns about a member without one', async () => {
+  const user = userEvent.setup();
+  renderAt(
+    '/clusters',
+    serviceWith([
+      cluster('edge-1', 'Ready', { 'ai-grid/enabled': 'true', 'ai-grid/role': 'ingress', location: 'paris' }),
+      cluster('gpu-1', 'Ready', { 'ai-grid/enabled': 'true', 'ai-grid/role': 'inference', location: 'paris' }),
+      cluster('no-role', 'Ready', { 'ai-grid/enabled': 'true', location: 'paris' }),
+      // A value the console doesn't know counts as no role: the hub's Placements select on the three.
+      cluster('odd-role', 'Ready', { 'ai-grid/enabled': 'true', 'ai-grid/role': 'gateway', location: 'paris' }),
+      // A role left behind after Remove isn't shown: the cluster isn't a member.
+      cluster('former', 'Ready', { 'ai-grid/role': 'combined', location: 'paris' }),
+    ]),
+  );
+  const table = await screen.findByTestId('clusters-table');
+  expect(within(table).getByRole('row', { name: /^edge-1 / })).toHaveTextContent('Ingress');
+  expect(within(table).getByRole('row', { name: /^gpu-1 / })).toHaveTextContent('Inference');
+  const former = within(table).getByRole('row', { name: /^former / });
+  expect(former).toHaveTextContent('Not added');
+  expect(former).not.toHaveTextContent('Combined');
+  const missing = screen.getByTestId('missing-role-no-role');
+  expect(missing).toHaveTextContent('No role');
+  await user.hover(missing);
+  expect(await screen.findByText(/doesn't install OpenShift AI or MaaS on it/)).toBeInTheDocument();
+  expect(screen.getByTestId('missing-role-odd-role')).toHaveTextContent('No role');
+  // The header explains the three roles, without sorting the table.
+  const names = () =>
+    within(table)
+      .getAllByRole('row')
+      .slice(1)
+      .map((r) => r.querySelector('td')?.textContent);
+  const before = names();
+  await user.click(within(table).getByRole('button', { name: 'About cluster roles' }));
+  expect(await screen.findByText('Serves models behind an ingress cluster.')).toBeVisible();
+  expect(names()).toEqual(before);
+});
+
+it('sorts by role: clusters outside AI Grid, then members without a role, then by role', async () => {
+  const user = userEvent.setup();
+  renderAt(
+    '/clusters',
+    serviceWith([
+      cluster('c-inference', 'Ready', { 'ai-grid/enabled': 'true', 'ai-grid/role': 'inference', location: 'x' }),
+      cluster('b-outside', 'Ready'),
+      cluster('d-combined', 'Ready', { 'ai-grid/enabled': 'true', 'ai-grid/role': 'combined', location: 'x' }),
+      cluster('a-no-role', 'Ready', { 'ai-grid/enabled': 'true', location: 'x' }),
+      cluster('e-ingress', 'Ready', { 'ai-grid/enabled': 'true', 'ai-grid/role': 'ingress', location: 'x' }),
+    ]),
+  );
+  const table = await screen.findByTestId('clusters-table');
+  const names = () =>
+    within(table)
+      .getAllByRole('row')
+      .slice(1)
+      .map((r) => r.querySelector('td')?.textContent);
+  const sortButton = within(within(table).getByRole('columnheader', { name: /^Role/ })).getByRole('button', {
+    name: 'Role',
+  });
+  await user.click(sortButton);
+  expect(names()).toEqual(['b-outside', 'a-no-role', 'd-combined', 'c-inference', 'e-ingress']);
+  await user.click(sortButton);
+  expect(names()).toEqual(['e-ingress', 'c-inference', 'd-combined', 'a-no-role', 'b-outside']);
 });
 
 it('hides write actions from a viewer', async () => {
@@ -342,7 +409,7 @@ it('offers Add to AI Grid only for ready, offline or unknown clusters', async ()
   }
 });
 
-it('wraps the headers, keeps Hub for wide screens only, and has no Site or Region column', async () => {
+it('wraps the headers, shows Role, and has no Hub, Site or Region column', async () => {
   renderAt('/clusters', serviceWith(hubClusters()));
   const table = await screen.findByTestId('clusters-table');
   for (const header of within(table)
@@ -350,9 +417,10 @@ it('wraps the headers, keeps Hub for wide screens only, and has no Site or Regio
     .filter((h) => h.textContent !== 'Actions')) {
     expect(header).toHaveClass('pf-m-wrap');
   }
-  expect(within(table).getByRole('columnheader', { name: 'Hub' })).toHaveClass('pf-m-hidden', 'pf-m-visible-on-2xl');
-  // Nothing sets ai-grid/site or ai-grid/region yet, so the columns would only show dashes.
-  for (const name of ['Site', 'Region']) {
+  expect(within(table).getByRole('columnheader', { name: /^Role/ })).not.toHaveClass('pf-m-hidden');
+  // Every cluster that can be added is accepted, and one that isn't says so under Connection.
+  // Nothing sets ai-grid/site or ai-grid/region yet, so those columns would only show dashes.
+  for (const name of ['Hub', 'Site', 'Region']) {
     expect(within(table).queryByRole('columnheader', { name })).not.toBeInTheDocument();
   }
   expect(within(table).getByRole('columnheader', { name: 'OpenShift' })).not.toHaveClass('pf-m-hidden');
