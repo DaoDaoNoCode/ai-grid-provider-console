@@ -98,6 +98,12 @@ func TestParsePerses(t *testing.T) {
 		!cfg.PersesInsecure || cfg.PersesTimeout != 5*time.Second || cfg.PersesProject != "from-flag" {
 		t.Fatalf("Perses settings from env, flag winning: %+v", cfg)
 	}
+	if cfg, err := Parse([]string{hub, "--perses-timeout=50s"}, lookup(nil)); err != nil || cfg.PersesTimeout != MaxPersesTimeout {
+		t.Fatalf("the longest Perses timeout: %+v, %v", cfg, err)
+	}
+	if _, err := Parse([]string{hub}, lookup(map[string]string{"PERSES_TIMEOUT": "2m"})); err == nil {
+		t.Fatal("PERSES_TIMEOUT past the write timeout should fail")
+	}
 }
 
 func TestParseRejectsBadInput(t *testing.T) {
@@ -110,6 +116,7 @@ func TestParseRejectsBadInput(t *testing.T) {
 		{"--backend-address=", hub},
 		{"--backend-timeout=0", hub},
 		{"--perses-timeout=0", hub},
+		{"--perses-timeout=51s", hub},
 		{"--log-level=loud", hub},
 		{}, // no hub API URL outside a pod
 	}

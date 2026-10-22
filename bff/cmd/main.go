@@ -74,7 +74,7 @@ func run() error {
 		Handler:           app.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      60 * time.Second,
+		WriteTimeout:      config.WriteTimeout,
 		IdleTimeout:       time.Minute,
 		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),
 	}

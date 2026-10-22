@@ -30,6 +30,13 @@ const (
 	DefaultBindAddress = "127.0.0.1"
 	// DefaultHubCAFile is the API server CA mounted into every pod.
 	DefaultHubCAFile = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+	// WriteTimeout is the server's write timeout: a response not written by then
+	// (for example to a browser that stopped reading) has its connection cut.
+	WriteTimeout = 60 * time.Second
+	// MaxPersesTimeout keeps the exchange with Perses, with the provider-admin
+	// check before it (at most 5 seconds, hub.Config's default), inside
+	// WriteTimeout, so the relay can still answer 504.
+	MaxPersesTimeout = WriteTimeout - 10*time.Second
 )
 
 // Config is the fully resolved BFF configuration.
@@ -132,7 +139,7 @@ func Parse(args []string, lookupEnv func(string) (string, bool)) (Config, error)
 	fs.StringVar(&cfg.PersesCAFile, "perses-ca-file", env.str("PERSES_CA_FILE", ""), "CA for the Perses server's certificate; empty for system roots")
 	fs.StringVar(&cfg.PersesServerName, "perses-server-name", env.str("PERSES_SERVER_NAME", ""), "Expected TLS server name of the Perses server (for a port-forward)")
 	fs.BoolVar(&cfg.PersesInsecure, "perses-insecure", env.boolean("PERSES_INSECURE", false), "Allow plaintext to a non-loopback Perses server (development only)")
-	fs.DurationVar(&cfg.PersesTimeout, "perses-timeout", env.duration("PERSES_TIMEOUT", 30*time.Second), "Wait for the Perses server's response headers")
+	fs.DurationVar(&cfg.PersesTimeout, "perses-timeout", env.duration("PERSES_TIMEOUT", 30*time.Second), "Bound on the exchange with the Perses server, from connecting to the last byte of its answer; at most 50s")
 	fs.StringVar(&cfg.PersesProject, "perses-project", env.str("PERSES_PROJECT", ""), "Perses project whose dashboard- objects are the Monitoring tabs; empty for every project the caller may read")
 	fs.StringVar(&logLevel, "log-level", env.str("LOG_LEVEL", "info"), "Log level: debug, info, warn, error")
 
@@ -153,8 +160,8 @@ func Parse(args []string, lookupEnv func(string) (string, bool)) (Config, error)
 			return Config{}, fmt.Errorf("%s must not be empty", name)
 		}
 	}
-	if cfg.PersesTimeout <= 0 {
-		return Config{}, fmt.Errorf("perses-timeout must be positive")
+	if cfg.PersesTimeout <= 0 || cfg.PersesTimeout > MaxPersesTimeout {
+		return Config{}, fmt.Errorf("perses-timeout must be positive and at most %s, to stay inside the server's %s write timeout", MaxPersesTimeout, WriteTimeout)
 	}
 	if cfg.BackendTimeout <= 0 {
 		return Config{}, fmt.Errorf("backend-timeout must be positive")

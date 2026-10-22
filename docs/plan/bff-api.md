@@ -518,10 +518,13 @@ owns is the boundary:
 
 Settings: `PERSES_URL` (https; `http://` only for loopback unless `PERSES_INSECURE=true`),
 `PERSES_CA_FILE` (the hub's service CA for the operator's Perses), `PERSES_SERVER_NAME` (for a
-port-forward to `127.0.0.1`), `PERSES_TIMEOUT` (30s to Perses's response headers),
-`PERSES_PROJECT`. In the hub pod, `PERSES_URL` is
-`https://perses.openshift-cluster-observability-operator.svc:8080`; `make start` forwards that
-Service when your login may (`hack/forward-perses.sh`).
+port-forward to `127.0.0.1`), `PERSES_TIMEOUT` (30s, at most 50s, for the exchange with Perses from connecting to the last byte of its answer: past it the relay answers 504, or cuts an answer already started; the ceiling keeps it, with the provider-admin check before it, inside the server's 60s write timeout, which also cuts a browser that stops reading),
+`PERSES_PROJECT`. To turn Monitoring on in the hub pod, set `PERSES_URL` to
+`https://perses.openshift-cluster-observability-operator.svc:8080` and `PERSES_CA_FILE` to the
+service CA (`/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt` in an OpenShift pod):
+the operator's Perses has a service-CA certificate, so without the CA file the relay answers 502.
+`manifests/base` sets neither yet, so a deployed console has Monitoring off. `make start` forwards
+that Service when your login may (`hack/forward-perses.sh`).
 
 ### Waiting on backend RPCs
 

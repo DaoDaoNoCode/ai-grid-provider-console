@@ -1,10 +1,19 @@
 package api
 
 import (
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/backend/backendtest"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/perses"
 )
 
@@ -101,5 +110,74 @@ func TestConfigReportsMonitoring(t *testing.T) {
 	decodeData(t, serve(app, asUser(http.MethodGet, "/api/v1/config")), &got)
 	if !got.Monitoring.Enabled || got.Monitoring.PersesProject != "ai-grid-monitoring" {
 		t.Errorf("monitoring = %+v, want enabled with project ai-grid-monitoring", got.Monitoring)
+	}
+}
+
+// lockedBuffer is a log sink the server's handler goroutines and the test can share.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// Perses stalls after the first bytes of an answer: under a real server the relay cuts the
+// connection at its timeout. The browser gets no answer (the bytes were still in the server's
+// buffer) or a truncated one, never a 500 written over it, and the request is still logged.
+func TestPersesAnswerCutAtTheTimeout(t *testing.T) {
+	stall := make(chan struct{})
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"partial":`))
+		w.(http.Flusher).Flush()
+		<-stall
+	}))
+	defer upstream.Close()
+	defer close(stall)
+	relay, err := perses.New(perses.Config{URL: upstream.URL, Timeout: 100 * time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	logs := &lockedBuffer{}
+	app := NewApp(testConfig(t), slog.New(slog.NewTextHandler(logs, nil)), backendtest.Start(t, &backendtest.Fake{}), startHub(t, &fakeHub{allowed: true})).WithPerses(relay)
+	srv := httptest.NewServer(app.Handler())
+
+	in := asUser(http.MethodGet, "/perses/api/api/v1/dashboards")
+	// Far past the relay's timeout: if the relay stops cutting the exchange, fail rather than hang.
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+in.URL.Path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header = in.Header.Clone()
+	resp, err := srv.Client().Do(req)
+	if errors.Is(err, context.DeadlineExceeded) {
+		t.Fatal("the relay did not cut a stalled answer at its timeout")
+	}
+	if err == nil {
+		body, readErr := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		// At most the bytes Perses sent before it stalled.
+		if errors.Is(readErr, context.DeadlineExceeded) {
+			t.Fatal("the relay did not cut a stalled answer at its timeout")
+		}
+		if sent := `{"partial":`; resp.StatusCode != http.StatusOK || len(body) > len(sent) || string(body) != sent[:len(body)] || readErr == nil {
+			t.Fatalf("got %d %q (read error %v), want a cut connection", resp.StatusCode, body, readErr)
+		}
+	}
+	srv.Close() // waits for the handler, so its log line is written
+	if out := logs.String(); !strings.Contains(out, `msg="request aborted"`) || strings.Contains(out, "panic serving request") {
+		t.Fatalf("log should hold the aborted request and no panic:\n%s", out)
 	}
 }

@@ -45,14 +45,17 @@ type Config struct {
 	// Insecure allows plaintext to a non-loopback host. The caller's token travels with every
 	// request, so this is for development only.
 	Insecure bool
-	// Timeout bounds the wait for Perses's response headers. Zero means 30 seconds.
+	// Timeout bounds the exchange with Perses, from connecting to the last byte of its answer:
+	// past it the relay answers 504, or cuts an answer already started. A browser that stops
+	// reading is the server's write timeout's to cut. Zero means 30 seconds.
 	Timeout time.Duration
 }
 
 // Relay is an http.Handler for the paths under Prefix.
 type Relay struct {
-	target *neturl.URL
-	proxy  *httputil.ReverseProxy
+	target  *neturl.URL
+	timeout time.Duration
+	proxy   *httputil.ReverseProxy
 }
 
 // New builds a relay. It fails when the URL is not usable or the CA file cannot be read.
@@ -70,7 +73,6 @@ func New(cfg Config) (*Relay, error) {
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
-	transport.ResponseHeaderTimeout = timeout
 	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12, ServerName: cfg.ServerName}
 	if cfg.CAFile != "" {
 		pem, err := os.ReadFile(cfg.CAFile)
@@ -85,7 +87,7 @@ func New(cfg Config) (*Relay, error) {
 	}
 	transport.TLSClientConfig = tlsCfg
 
-	r := &Relay{target: target}
+	r := &Relay{target: target, timeout: timeout}
 	r.proxy = &httputil.ReverseProxy{
 		Rewrite:        r.rewrite,
 		Transport:      transport,
@@ -128,7 +130,9 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		writeError(w, http.StatusUnauthorized, "missing caller token")
 		return
 	}
-	r.proxy.ServeHTTP(w, req)
+	ctx, cancel := context.WithTimeout(req.Context(), r.timeout)
+	defer cancel()
+	r.proxy.ServeHTTP(w, req.WithContext(ctx))
 }
 
 // forwardedHeaders are the only request headers that reach Perses besides Authorization. Cookies,
@@ -170,7 +174,7 @@ func errorHandler(w http.ResponseWriter, req *http.Request, err error) {
 	case errors.Is(err, context.Canceled):
 		// The browser went away; nobody reads the answer.
 		w.WriteHeader(499)
-	case errors.As(err, &netErr) && netErr.Timeout():
+	case errors.Is(err, context.DeadlineExceeded), errors.As(err, &netErr) && netErr.Timeout():
 		writeError(w, http.StatusGatewayTimeout, "the hub's Perses did not answer in time")
 	default:
 		writeError(w, http.StatusBadGateway, "the hub's Perses could not be reached; try again")

@@ -266,6 +266,28 @@ func TestRelayWhenPersesFails(t *testing.T) {
 		t.Errorf("slow: got %d %q, want 504", rec.Code, rec.Body)
 	}
 
+	// Slow answer: the headers arrive, the body stalls; the timeout cuts it too.
+	stall := make(chan struct{})
+	defer close(stall)
+	stalls := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"partial":`))
+		w.(http.Flusher).Flush()
+		<-stall
+	}, nil, 50*time.Millisecond)
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		done <- serve(stalls, httptest.NewRequest(http.MethodGet, Prefix+"/api/v1/dashboards", nil), "t")
+	}()
+	select {
+	case rec = <-done:
+		if rec.Body.String() != `{"partial":` {
+			t.Errorf("slow answer: body %q", rec.Body)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("slow answer: the relay did not cut a stalled body at its timeout")
+	}
+
 	// Untrusted: the certificate isn't signed by the configured CA.
 	other := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	defer other.Close()
