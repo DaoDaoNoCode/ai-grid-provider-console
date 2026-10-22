@@ -88,7 +88,11 @@ it('removes a member from AI Grid after a confirmation', async () => {
   await pick(user, 'cluster-a', 'Remove from AI Grid');
   const modal = await screen.findByTestId('cluster-membership-modal');
   expect(modal).toHaveTextContent('Remove cluster-a from AI Grid?');
-  expect(modal).toHaveTextContent('Nothing is uninstalled');
+  // A remote cluster also leaves the cross-cluster network.
+  expect(modal).toHaveTextContent('It is also disconnected from the other AI Grid clusters.');
+  expect(modal).toHaveTextContent(
+    'Models deployed to it from the Models page are removed from it. OpenShift AI is not uninstalled.',
+  );
   await user.click(within(modal).getByRole('button', { name: 'Remove' }));
   expect(await screen.findByText('cluster-a removed from AI Grid')).toBeVisible();
   const removed = service.clusters.find((c) => c.name === 'cluster-a')!;
@@ -96,6 +100,22 @@ it('removes a member from AI Grid after a confirmation', async () => {
   expect(
     within(screen.getByTestId('clusters-table')).queryByRole('link', { name: 'cluster-a' }),
   ).not.toBeInTheDocument();
+});
+
+it('does not say the hub is disconnected when removing local-cluster', async () => {
+  const user = userEvent.setup();
+  renderAt(
+    '/clusters',
+    serviceWith([cluster('local-cluster', 'Ready', { 'ai-grid/enabled': 'true', location: 'hub' })]),
+  );
+  await pick(user, 'local-cluster', 'Remove from AI Grid');
+  const modal = await screen.findByTestId('cluster-membership-modal');
+  // The network Placement always selects local-cluster.
+  expect(modal).not.toHaveTextContent('disconnected');
+  expect(modal).toHaveTextContent('AI Grid stops managing this cluster, and models are no longer placed on it.');
+  expect(modal).toHaveTextContent(
+    'Models deployed to it from the Models page are removed from it. OpenShift AI is not uninstalled.',
+  );
 });
 
 it('warns about a member without a location, and asks for a location and role before adding', async () => {
