@@ -98,7 +98,7 @@ e2e: ## Browser tests against make dev-fake-poc (Playwright; first run: cd front
 ##@ Packaging and deployment
 
 image: ## Build the container image
-	$(CONTAINER_ENGINE) build --build-arg VERSION=$(VERSION) -t $(IMAGE):$(TAG) .
+	$(CONTAINER_ENGINE) build --build-arg CONSOLE_VERSION=$(VERSION) -t $(IMAGE):$(TAG) .
 
 push: ## Push the container image
 	$(CONTAINER_ENGINE) push $(IMAGE):$(TAG)
