@@ -213,8 +213,41 @@ it('shows the role and location Add wrote while the list reloads', async () => {
   expect(row).toHaveTextContent('paris');
   expect(screen.queryByTestId('missing-role-cluster-b')).not.toBeInTheDocument();
   expect(screen.queryByTestId('missing-location-cluster-b')).not.toBeInTheDocument();
+  // The reloaded list replaces it: here someone changed the role in the meantime.
+  service.clusters[0] = {
+    ...service.clusters[0],
+    labels: { ...service.clusters[0].labels, 'ai-grid/role': 'ingress' },
+  };
   answer();
-  expect(await screen.findByRole('link', { name: 'cluster-b' })).toBeInTheDocument();
+  await waitFor(() =>
+    expect(within(screen.getByTestId('clusters-table')).getByRole('row', { name: /^cluster-b / })).toHaveTextContent(
+      'Ingress',
+    ),
+  );
+});
+
+it('keeps the cluster Add returned when a poll replaced the list during the PATCH', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    const service = serviceWith([cluster('cluster-b', 'Ready', { location: 'site2' })]);
+    const enroll = service.enrollCluster;
+    let finish: () => void = () => {};
+    service.enrollCluster = (c, m) => new Promise((resolve) => (finish = () => resolve(enroll(c, m))));
+    const list = service.listClusters;
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderAt('/clusters', service);
+    await add(user, 'cluster-b');
+    // A poll answers with the list from before the change, then the reload after Add hangs.
+    await vi.advanceTimersByTimeAsync(30000);
+    service.listClusters = () => new Promise(() => {});
+    finish();
+    expect(await screen.findByText('cluster-b added to AI Grid')).toBeVisible();
+    const row = within(screen.getByTestId('clusters-table')).getByRole('row', { name: /^cluster-b / });
+    expect(row).toHaveTextContent('Inference');
+    service.listClusters = list;
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it('rejects a response that does not confirm membership', async () => {

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   Alert,
   AlertActionLink,
@@ -42,8 +42,8 @@ import { clusterRoles, roleOf } from './roles';
 // removal from AI Grid, and a confirmation both ways. No Hub column: a cluster the hub hasn't
 // accepted shows Not accepted in the Connection tooltip, and Add says why it's disabled (on the
 // real backend the BFF derives that state from spec.hub_accepts_client, bff/internal/backend/v1.go).
-// Site and Region are left out until clusters carry them (ai-grid/site and ai-grid/region;
-// nothing sets them yet). The Connection tooltip adds the ACM state behind Unknown (such as
+// Site and Region are left out until clusters carry them (ai-grid/site and ai-grid/region; on a
+// hub nothing sets them yet, only the fake's fixtures do). The Connection tooltip adds the ACM state behind Unknown (such as
 // Importing) and the backend's message, which the PoC's three states don't have.
 
 type Props = { service: ClustersService & UserService };
@@ -106,22 +106,23 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
   const [sortBy, setSortBy] = useState<{ index: number; direction: 'asc' | 'desc' }>({ index: 0, direction: 'asc' });
   const [change, setChange] = useState<MembershipChange>();
   // Clusters as the backend returned them from Add or Remove, with their new labels (role and
-  // location), shown until the next list arrives (they apply only to the list they were
-  // confirmed against).
-  const [confirmed, setConfirmed] = useState<{ list: GridCluster[]; members: Map<string, GridCluster> }>();
-  const overrides = confirmed?.list === clusters ? confirmed.members : undefined;
+  // location), shown in place of the listed ones until the reload after the latest change
+  // answers. A poll that answers in between can't bring back the row from before the change.
+  const [confirmed, setConfirmed] = useState<Map<string, GridCluster>>(new Map());
+  const lastChange = useRef(0);
 
   const rows = useMemo(() => {
     const term = search.toLowerCase();
     const compare = columns[sortBy.index].sort!;
     return clusters
-      .map((c) => overrides?.get(c.name) ?? c)
+      .map((c) => confirmed.get(c.name) ?? c)
       .filter((c) => c.name.toLowerCase().includes(term))
       .sort((a, b) => (sortBy.direction === 'asc' ? compare(a, b) : compare(b, a)));
-  }, [clusters, overrides, search, sortBy]);
+  }, [clusters, confirmed, search, sortBy]);
 
   const reload = () => {
-    setConfirmed(undefined);
+    lastChange.current++;
+    setConfirmed(new Map());
     void refresh();
   };
 
@@ -133,10 +134,14 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
     if (updated.aiGridEnabled !== join) {
       throw new Error('The Hub did not confirm the change. Refresh and try again.');
     }
-    setConfirmed({ list: clusters, members: new Map(overrides).set(updated.name, updated) });
+    setConfirmed((prev) => new Map(prev).set(updated.name, updated));
     setChange(undefined);
     navigate('.', { state: { notice: `${updated.name} ${join ? 'added to' : 'removed from'} AI Grid` } });
-    void refresh();
+    // The reload started now includes every change so far, so its answer replaces them all.
+    const id = ++lastChange.current;
+    void refresh().then(() => {
+      if (id === lastChange.current) setConfirmed(new Map());
+    });
   };
 
   const sortParams = (index: number): ThProps['sort'] =>
