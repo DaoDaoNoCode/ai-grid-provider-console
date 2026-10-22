@@ -18,7 +18,6 @@ const cluster = (name: string, status: GridCluster['status'], labels: Record<str
     aiGridEnabled,
     provisioned,
     provisioningStatus: provisioned ? 'Provisioned' : aiGridEnabled ? 'Provisioning' : 'Not provisioned',
-    hubAcceptsClient: true,
     ...(labels.location ? { location: labels.location } : {}),
     labels,
   };
@@ -192,6 +191,30 @@ it('refresh reflects external membership changes on the Hub', async () => {
   service.clusters[1] = cluster('cluster-b', 'Ready', { location: 'site2' });
   await user.click(screen.getByRole('button', { name: 'Refresh' }));
   await waitFor(() => expect(screen.queryByRole('link', { name: 'cluster-b' })).not.toBeInTheDocument());
+});
+
+it('shows the role and location Add wrote while the list reloads', async () => {
+  const service = serviceWith([cluster('cluster-b', 'Ready')]);
+  const list = service.listClusters;
+  const user = userEvent.setup();
+  renderAt('/clusters', service);
+  await pick(user, 'cluster-b', 'Add to AI Grid');
+  // The reload after Add hasn't answered yet, so the table still holds the list from before.
+  let answer: () => void = () => {};
+  service.listClusters = () => new Promise((resolve) => (answer = () => resolve(list())));
+  const modal = await screen.findByTestId('cluster-membership-modal');
+  await user.type(within(modal).getByRole('textbox', { name: 'Location' }), 'paris');
+  await user.click(within(modal).getByRole('combobox', { name: 'Role' }));
+  await user.click(await screen.findByRole('option', { name: /Inference/ }));
+  await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
+  expect(await screen.findByText('cluster-b added to AI Grid')).toBeVisible();
+  const row = within(screen.getByTestId('clusters-table')).getByRole('row', { name: /^cluster-b / });
+  expect(row).toHaveTextContent('Inference');
+  expect(row).toHaveTextContent('paris');
+  expect(screen.queryByTestId('missing-role-cluster-b')).not.toBeInTheDocument();
+  expect(screen.queryByTestId('missing-location-cluster-b')).not.toBeInTheDocument();
+  answer();
+  expect(await screen.findByRole('link', { name: 'cluster-b' })).toBeInTheDocument();
 });
 
 it('rejects a response that does not confirm membership', async () => {
@@ -400,13 +423,19 @@ it('offers Add to AI Grid only for ready, offline or unknown clusters', async ()
     await user.keyboard('{Escape}');
   }
   // The others say why they can't be added yet.
-  for (const name of ['is-detaching', 'is-importfailed', 'is-notaccepted', 'is-pendingimport', 'is-importing']) {
+  for (const name of ['is-detaching', 'is-importfailed', 'is-pendingimport', 'is-importing']) {
     const item = await addItem(name);
     expect(item).toHaveAttribute('aria-disabled', 'true');
     await user.hover(item);
     expect(await screen.findByText(/once it has imported it/)).toBeInTheDocument();
     await user.keyboard('{Escape}');
   }
+  const notAccepted = await addItem('is-notaccepted');
+  expect(notAccepted).toHaveAttribute('aria-disabled', 'true');
+  await user.hover(notAccepted);
+  expect(
+    await screen.findByText("The hub hasn't accepted this cluster yet. Accept it in ACM, then add it to AI Grid."),
+  ).toBeInTheDocument();
 });
 
 it('wraps the headers, shows Role, and has no Hub, Site or Region column', async () => {

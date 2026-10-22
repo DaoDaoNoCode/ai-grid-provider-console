@@ -11,12 +11,9 @@ import {
   EmptyStateActions,
   EmptyStateBody,
   EmptyStateFooter,
-  Icon,
   PageSection,
   ToolbarItem,
-  Tooltip,
 } from '@patternfly/react-core';
-import { ExclamationTriangleIcon } from '@patternfly/react-icons';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { ThProps } from '@patternfly/react-table';
 import { Link, useNavigate } from 'react-router-dom';
@@ -37,24 +34,23 @@ import { useServiceData } from '../../hooks/useServiceData';
 import { EMPTY_VALUE } from '../../utilities/format';
 import type { MembershipChange } from './MembershipModal';
 import { MembershipModal } from './MembershipModal';
+import { MissingLabel } from './MissingLabel';
 import { clusterRoles, roleOf } from './roles';
 
 // Ported from krisv/ai-grid-cloud-provider-poc src/app/pages/clusters/ClustersPage.tsx at 62319b8.
 // The PoC's columns, labels, and enroll flow, plus the console's Role and OpenShift columns,
-// removal from AI Grid, and a confirmation both ways. No Hub column: every cluster that can be
-// added is accepted, and one that isn't shows Not accepted in the Connection tooltip. Site and Region are left out until clusters
-// carry them (ai-grid/site and ai-grid/region; nothing sets them yet). The Connection tooltip
-// adds the ACM state behind Unknown (such as Importing) and the backend's message, which the
-// PoC's three states don't have.
+// removal from AI Grid, and a confirmation both ways. No Hub column: a cluster the hub hasn't
+// accepted shows Not accepted in the Connection tooltip, and Add says why it's disabled (on the
+// real backend the BFF derives that state from spec.hub_accepts_client, bff/internal/backend/v1.go).
+// Site and Region are left out until clusters carry them (ai-grid/site and ai-grid/region;
+// nothing sets them yet). The Connection tooltip adds the ACM state behind Unknown (such as
+// Importing) and the backend's message, which the PoC's three states don't have.
 
 type Props = { service: ClustersService & UserService };
 
-// A wide column shows from the 2xl breakpoint (1450 px) up; below it the table fits the
-// content area without clipping the Action column.
 type Column = {
   label: string;
   sort?: (a: GridCluster, b: GridCluster) => number;
-  wide?: boolean;
   info?: ThProps['info'];
 };
 
@@ -84,8 +80,6 @@ const columns: Column[] = [
   { label: 'OpenShift' },
 ];
 
-const wideOnly: ThProps['visibility'] = ['hidden', 'visibleOn2Xl'];
-
 /** A member's provisioning, or nothing for a cluster outside AI Grid (sorts first). */
 const membership = (c: GridCluster) => (c.aiGridEnabled ? c.provisioningStatus : '');
 
@@ -95,9 +89,13 @@ const memberRole = (c: GridCluster) => (c.aiGridEnabled ? (roleOf(c.labels)?.lab
 /** The Connection tooltip: the ACM state behind Unknown, then the backend's message. */
 const statusReason = (c: GridCluster) => [c.state, c.statusMessage].filter(Boolean).join(': ') || undefined;
 
-/** Why a cluster can't be added: the hub hasn't finished importing it (or is detaching it). */
-const cannotAddReason = (c: GridCluster) =>
-  c.state ? `The hub can add this cluster to AI Grid once it has imported it (now: ${c.state}).` : undefined;
+/** Why a cluster can't be added: the hub hasn't accepted it, hasn't finished importing it, or is detaching it. */
+const cannotAddReason = (c: GridCluster) => {
+  if (c.state === 'Not accepted') {
+    return "The hub hasn't accepted this cluster yet. Accept it in ACM, then add it to AI Grid.";
+  }
+  return c.state ? `The hub can add this cluster to AI Grid once it has imported it (now: ${c.state}).` : undefined;
+};
 
 export const ClustersPage: React.FC<Props> = ({ service }) => {
   const navigate = useNavigate();
@@ -107,16 +105,17 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<{ index: number; direction: 'asc' | 'desc' }>({ index: 0, direction: 'asc' });
   const [change, setChange] = useState<MembershipChange>();
-  // Membership the backend confirmed, shown until the next list arrives (it applies only to
-  // the list it was confirmed against).
-  const [confirmed, setConfirmed] = useState<{ list: GridCluster[]; members: Map<string, boolean> }>();
+  // Clusters as the backend returned them from Add or Remove, with their new labels (role and
+  // location), shown until the next list arrives (they apply only to the list they were
+  // confirmed against).
+  const [confirmed, setConfirmed] = useState<{ list: GridCluster[]; members: Map<string, GridCluster> }>();
   const overrides = confirmed?.list === clusters ? confirmed.members : undefined;
 
   const rows = useMemo(() => {
     const term = search.toLowerCase();
     const compare = columns[sortBy.index].sort!;
     return clusters
-      .map((c) => (overrides?.has(c.name) ? { ...c, aiGridEnabled: overrides.get(c.name)! } : c))
+      .map((c) => overrides?.get(c.name) ?? c)
       .filter((c) => c.name.toLowerCase().includes(term))
       .sort((a, b) => (sortBy.direction === 'asc' ? compare(a, b) : compare(b, a)));
   }, [clusters, overrides, search, sortBy]);
@@ -134,7 +133,7 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
     if (updated.aiGridEnabled !== join) {
       throw new Error('The Hub did not confirm the change. Refresh and try again.');
     }
-    setConfirmed({ list: clusters, members: new Map(overrides).set(updated.name, join) });
+    setConfirmed({ list: clusters, members: new Map(overrides).set(updated.name, updated) });
     setChange(undefined);
     navigate('.', { state: { notice: `${updated.name} ${join ? 'added to' : 'removed from'} AI Grid` } });
     void refresh();
@@ -202,13 +201,7 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
               <Thead>
                 <Tr>
                   {columns.map((c, i) => (
-                    <Th
-                      key={c.label}
-                      sort={sortParams(i)}
-                      info={c.info}
-                      modifier="wrap"
-                      visibility={c.wide ? wideOnly : undefined}
-                    >
+                    <Th key={c.label} sort={sortParams(i)} info={c.info} modifier="wrap">
                       {c.label}
                     </Th>
                   ))}
@@ -235,14 +228,12 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
                       <Td dataLabel="Location">
                         {c.location ??
                           (c.aiGridEnabled ? (
-                            <Tooltip content="This member has no location label, so models can't be deployed to it.">
-                              <span tabIndex={0} data-testid={`missing-location-${c.name}`}>
-                                <Icon status="warning" isInline>
-                                  <ExclamationTriangleIcon />
-                                </Icon>{' '}
-                                No location
-                              </span>
-                            </Tooltip>
+                            <MissingLabel
+                              testId={`missing-location-${c.name}`}
+                              reason="This member has no location label, so models can't be deployed to it."
+                            >
+                              No location
+                            </MissingLabel>
                           ) : (
                             EMPTY_VALUE
                           ))}
@@ -261,14 +252,12 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
                         {!c.aiGridEnabled
                           ? EMPTY_VALUE
                           : (roleOf(c.labels)?.label ?? (
-                              <Tooltip content="This member has no role, so the hub doesn't install OpenShift AI or MaaS on it, and it never finishes provisioning. Remove it from AI Grid and add it again to choose a role.">
-                                <span tabIndex={0} data-testid={`missing-role-${c.name}`}>
-                                  <Icon status="warning" isInline>
-                                    <ExclamationTriangleIcon />
-                                  </Icon>{' '}
-                                  No role
-                                </span>
-                              </Tooltip>
+                              <MissingLabel
+                                testId={`missing-role-${c.name}`}
+                                reason="This member has no role, so the hub doesn't install OpenShift AI or MaaS on it, and it never finishes provisioning. Remove it from AI Grid and add it again to choose a role."
+                              >
+                                No role
+                              </MissingLabel>
                             ))}
                       </Td>
                       <Td dataLabel="OpenShift">{c.openshiftVersion ?? EMPTY_VALUE}</Td>

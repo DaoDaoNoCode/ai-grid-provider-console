@@ -493,7 +493,6 @@ export const seedClusters = (): GridCluster[] =>
       aiGridEnabled: member,
       provisioned: member,
       provisioningStatus: member ? 'Provisioned' : 'Not provisioned',
-      hubAcceptsClient: true,
       location: name,
       site,
       region,
