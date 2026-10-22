@@ -250,14 +250,24 @@ it('keeps the cluster Add returned when a poll replaced the list during the PATC
     expect(await screen.findByText('cluster-b added to AI Grid')).toBeVisible();
     const row = () => within(screen.getByTestId('clusters-table')).getByRole('row', { name: /^cluster-b / });
     expect(row()).toHaveTextContent('Inference');
-    // Refresh while that reload hangs keeps it too.
+    // Refresh while that reload hangs keeps it, and an older reload that answers first (with the
+    // list from before Add) doesn't drop it either.
+    const before = [cluster('cluster-b', 'Ready', { location: 'site2' })];
+    let older: () => void = () => {};
+    service.listClusters = () => new Promise((resolve) => (older = () => resolve(before)));
     await user.click(screen.getByRole('button', { name: 'Refresh' }));
-    expect(row()).toHaveTextContent('Inference');
-    // Once a reload answers, the list shows what the hub has.
-    service.listClusters = list;
+    let latest: () => void = () => {};
+    service.listClusters = () => new Promise((resolve) => (latest = () => resolve(list())));
     await user.click(screen.getByRole('button', { name: 'Refresh' }));
-    await waitFor(() => expect(screen.getByRole('link', { name: 'cluster-b' })).toBeInTheDocument());
+    await act(async () => older());
     expect(row()).toHaveTextContent('Inference');
+    // The latest reload's answer replaces it: someone changed the role in the meantime.
+    service.clusters[0] = {
+      ...service.clusters[0],
+      labels: { ...service.clusters[0].labels, 'ai-grid/role': 'ingress' },
+    };
+    await act(async () => latest());
+    await waitFor(() => expect(row()).toHaveTextContent('Ingress'));
   } finally {
     vi.useRealTimers();
   }
@@ -493,8 +503,8 @@ it('wraps the headers, shows Role, and has no Hub, Site or Region column', async
     expect(header).toHaveClass('pf-m-wrap');
   }
   expect(within(table).getByRole('columnheader', { name: /^Role/ })).not.toHaveClass('pf-m-hidden');
-  // Every cluster that can be added is accepted, and one that isn't says so under Connection.
-  // Nothing sets ai-grid/site or ai-grid/region yet, so those columns would only show dashes.
+  // A cluster the hub hasn't accepted says so under Connection. Site and Region are out of scope
+  // until geography is (after the MVP).
   for (const name of ['Hub', 'Site', 'Region']) {
     expect(within(table).queryByRole('columnheader', { name })).not.toBeInTheDocument();
   }
