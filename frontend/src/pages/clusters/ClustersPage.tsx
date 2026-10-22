@@ -42,8 +42,8 @@ import { clusterRoles, roleOf } from './roles';
 // removal from AI Grid, and a confirmation both ways. No Hub column: a cluster the hub hasn't
 // accepted shows Not accepted in the Connection tooltip, and Add says why it's disabled (on the
 // real backend the BFF derives that state from spec.hub_accepts_client, bff/internal/backend/v1.go).
-// Site and Region are left out until clusters carry them (ai-grid/site and ai-grid/region; on a
-// hub nothing sets them yet, only the fake's fixtures do). The Connection tooltip adds the ACM state behind Unknown (such as
+// Site and Region (ai-grid/site and ai-grid/region) are left out: geography is after the MVP, and
+// the console doesn't write either label. The Connection tooltip adds the ACM state behind Unknown (such as
 // Importing) and the backend's message, which the PoC's three states don't have.
 
 type Props = { service: ClustersService & UserService };
@@ -106,10 +106,10 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
   const [sortBy, setSortBy] = useState<{ index: number; direction: 'asc' | 'desc' }>({ index: 0, direction: 'asc' });
   const [change, setChange] = useState<MembershipChange>();
   // Clusters as the backend returned them from Add or Remove, with their new labels (role and
-  // location), shown in place of the listed ones until the reload after the latest change
+  // location), shown in place of the listed ones until a reload started after the latest change
   // answers. A poll that answers in between can't bring back the row from before the change.
   const [confirmed, setConfirmed] = useState<Map<string, GridCluster>>(new Map());
-  const lastChange = useRef(0);
+  const lastReload = useRef(0);
 
   const rows = useMemo(() => {
     const term = search.toLowerCase();
@@ -120,10 +120,12 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
       .sort((a, b) => (sortBy.direction === 'asc' ? compare(a, b) : compare(b, a)));
   }, [clusters, confirmed, search, sortBy]);
 
+  /** Reloads the list; its answer includes every change so far, so it replaces the confirmed clusters. */
   const reload = () => {
-    lastChange.current++;
-    setConfirmed(new Map());
-    void refresh();
+    const id = ++lastReload.current;
+    void refresh().then(() => {
+      if (id === lastReload.current) setConfirmed(new Map());
+    });
   };
 
   /** Adds the cluster to AI Grid or removes it; throws for the modal to show. */
@@ -137,11 +139,7 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
     setConfirmed((prev) => new Map(prev).set(updated.name, updated));
     setChange(undefined);
     navigate('.', { state: { notice: `${updated.name} ${join ? 'added to' : 'removed from'} AI Grid` } });
-    // The reload started now includes every change so far, so its answer replaces them all.
-    const id = ++lastChange.current;
-    void refresh().then(() => {
-      if (id === lastChange.current) setConfirmed(new Map());
-    });
+    reload();
   };
 
   const sortParams = (index: number): ThProps['sort'] =>

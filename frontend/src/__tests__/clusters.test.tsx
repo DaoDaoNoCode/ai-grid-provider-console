@@ -1,7 +1,7 @@
 // Ported from krisv/ai-grid-cloud-provider-poc src/app/__tests__/clusters.test.tsx at 62319b8.
 // The PoC drives a fake ACM Hub through its backend; here the same cases run on
 // MockConsoleService, and the BFF's PATCH is covered by bff/internal/api tests.
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ServiceError } from '../api/ConsoleService';
 import { HttpConsoleService } from '../api/HttpConsoleService';
@@ -231,20 +231,33 @@ it('keeps the cluster Add returned when a poll replaced the list during the PATC
   try {
     const service = serviceWith([cluster('cluster-b', 'Ready', { location: 'site2' })]);
     const enroll = service.enrollCluster;
-    let finish: () => void = () => {};
-    service.enrollCluster = (c, m) => new Promise((resolve) => (finish = () => resolve(enroll(c, m))));
+    let finish: () => Promise<void> = async () => {};
+    service.enrollCluster = (c, m) => new Promise((resolve) => (finish = async () => resolve(await enroll(c, m))));
     const list = service.listClusters;
+    let polls = 0;
+    service.listClusters = () => {
+      polls++;
+      return list();
+    };
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     renderAt('/clusters', service);
     await add(user, 'cluster-b');
-    // A poll answers with the list from before the change, then the reload after Add hangs.
-    await vi.advanceTimersByTimeAsync(30000);
+    // A poll answers with the list from before the change; then the reload after Add hangs.
+    await act(() => vi.advanceTimersByTimeAsync(30000));
+    expect(polls).toBe(2);
     service.listClusters = () => new Promise(() => {});
-    finish();
+    await act(() => finish());
     expect(await screen.findByText('cluster-b added to AI Grid')).toBeVisible();
-    const row = within(screen.getByTestId('clusters-table')).getByRole('row', { name: /^cluster-b / });
-    expect(row).toHaveTextContent('Inference');
+    const row = () => within(screen.getByTestId('clusters-table')).getByRole('row', { name: /^cluster-b / });
+    expect(row()).toHaveTextContent('Inference');
+    // Refresh while that reload hangs keeps it too.
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(row()).toHaveTextContent('Inference');
+    // Once a reload answers, the list shows what the hub has.
     service.listClusters = list;
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(screen.getByRole('link', { name: 'cluster-b' })).toBeInTheDocument());
+    expect(row()).toHaveTextContent('Inference');
   } finally {
     vi.useRealTimers();
   }
