@@ -1,0 +1,52 @@
+# kube-auth-proxy validates bearer tokens with TokenReviews
+# (--enable-k8s-token-validation), which needs system:auth-delegator.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "console.fullname" . }}-auth-delegator
+  labels:
+    {{- include "console.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "console.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+---
+# ai-grid-backend reads ManagedClusters with the pod's ServiceAccount, and with
+# backend.clusterWrites patches their labels (Add to AI Grid and Remove; admission.yaml limits
+# which). These rules are the console's part of deploy/openshift/rbac.yaml in the backend
+# repository; grow them there first when the backend needs more. The backend also reads the
+# ai-grid-policies/ai-grid-ready Policy to report a cluster's provisioning. This chart does not
+# grant that get: ai-grid-env-setup does, with a Role in apps/ai-grid-policies. Without it, a
+# cluster added to the grid stays at Provisioning in the console.
+#
+# TODO(backend-as-caller): delete this ClusterRole and its binding once the backend builds its hub
+# client from the forwarded user token (work-breakdown backend item 2).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "console.fullname" . }}-backend
+  labels:
+    {{- include "console.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["cluster.open-cluster-management.io"]
+    resources: ["managedclusters"]
+    verbs: ["get", "list", "watch"{{ if .Values.backend.clusterWrites }}, "patch"{{ end }}]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "console.fullname" . }}-backend
+  labels:
+    {{- include "console.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "console.fullname" . }}-backend
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "console.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
