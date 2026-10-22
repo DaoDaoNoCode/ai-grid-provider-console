@@ -59,6 +59,13 @@ func (a *App) recoverPanic(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rec := recover(); rec != nil {
+				if err, ok := rec.(error); ok && errors.Is(err, http.ErrAbortHandler) {
+					// A handler aborting an answer it already started (the Perses relay when
+					// the browser goes away or Perses stops mid-answer): net/http closes the
+					// connection without logging it, and a 500 can no longer be sent.
+					// logRequests has logged the request as aborted.
+					panic(http.ErrAbortHandler)
+				}
 				a.logger.Error("panic serving request", "method", r.Method, "path", r.URL.Path, "panic", fmt.Sprint(rec), "stack", string(debug.Stack()))
 				w.Header().Set("Connection", "close")
 				writeError(w, http.StatusInternalServerError, "internal server error")
@@ -78,14 +85,24 @@ func (s *statusRecorder) WriteHeader(code int) {
 	s.ResponseWriter.WriteHeader(code)
 }
 
-// logRequests emits one line per request with a request id the client also gets.
+// logRequests emits one line per request with a request id the client also gets. A handler
+// that panics (an aborted answer, or a bug recoverPanic turns into a 500) still gets its line,
+// as "request aborted" with the status sent so far.
 func (a *App) logRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		reqID := newRequestID()
 		w.Header().Set("X-Request-Id", reqID)
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		completed := false
+		defer func() {
+			// No recover here: the panic goes on to recoverPanic with its stack intact.
+			if !completed {
+				a.logger.Warn("request aborted", "id", reqID, "method", r.Method, "path", r.URL.Path, "status", rec.status, "duration", time.Since(start).Round(time.Millisecond))
+			}
+		}()
 		next.ServeHTTP(rec, r)
+		completed = true
 		a.logger.Info("request", "id", reqID, "method", r.Method, "path", r.URL.Path, "status", rec.status, "duration", time.Since(start).Round(time.Millisecond))
 	})
 }

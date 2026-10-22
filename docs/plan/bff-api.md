@@ -83,7 +83,8 @@ belong to the backend (the root `AGENTS.md`, which also lists the exceptions the
 
 ## Endpoints
 
-Paths are under `/api/v1`, except `/healthcheck` and `/readyz` at the root.
+Paths are under `/api/v1`, except `/healthcheck` and `/readyz` at the root and the Perses relay
+under `/perses/api`.
 
 ### Implemented
 
@@ -92,7 +93,7 @@ Paths are under `/api/v1`, except `/healthcheck` and `/readyz` at the root.
 | GET | `/healthcheck` | `{status, version}` | none; liveness, no auth |
 | GET | `/readyz` | `{status, version, backend}` | `AiGrid/Ping`; readiness, 503 when the backend does not answer |
 | GET | `/api/v1/user` | `{username, email?, groups, isProviderAdmin}` (`email` omitted when the proxy sends none) | none; the identity from the proxy headers, `isProviderAdmin` from a hub `SelfSubjectAccessReview` |
-| GET | `/api/v1/config` | `{gridEndpoint, mapTileUrl, mapTileAttribution, billingUrl, version, modelsNamespace, fakeBackend}`: `modelsNamespace` is the namespace the console creates models in (default `ai-grid-models`) and `fakeBackend` makes the UI show its fake-backend banner | none; env `GRID_CONSUMER_URL`, `MAP_TILE_URL`, `MAP_TILE_ATTRIBUTION` (the attribution shown with `MAP_TILE_URL`'s tiles; with no `MAP_TILE_URL` the map draws a bundled land outline), `BILLING_URL`, `MODELS_NAMESPACE`, `FAKE_BACKEND` |
+| GET | `/api/v1/config` | `{gridEndpoint, mapTileUrl, mapTileAttribution, billingUrl, version, modelsNamespace, fakeBackend, monitoring: {enabled, persesProject}}`: `modelsNamespace` is the namespace the console creates models in (default `ai-grid-models`), `fakeBackend` makes the UI show its fake-backend banner, `monitoring.enabled` says the BFF relays `/perses/api` (it has a `PERSES_URL`) and `monitoring.persesProject` names the Perses project whose `dashboard-*` objects are the Monitoring tabs (empty: every project the caller may read) | none; env `GRID_CONSUMER_URL`, `MAP_TILE_URL`, `MAP_TILE_ATTRIBUTION` (the attribution shown with `MAP_TILE_URL`'s tiles; with no `MAP_TILE_URL` the map draws a bundled land outline), `BILLING_URL`, `MODELS_NAMESPACE`, `FAKE_BACKEND`, `PERSES_URL`, `PERSES_PROJECT` |
 | GET | `/api/v1/clusters` | `GridCluster[]` sorted by name | `ManagedClusters/ListManagedClusters` |
 | GET | `/api/v1/clusters/{name}` | `GridCluster`, `ETag: "<resourceVersion>"` | `ManagedClusters/GetManagedCluster`; 404 with the backend's message when absent. Against a backend without that RPC (the shipped one answers `Unimplemented`) the BFF filters `ListManagedClusters` by name instead, so the detail works either way |
 | PATCH | `/api/v1/clusters/{name}` | `GridCluster` after the write, with its `ETag` | `UpdateManagedCluster` (no read first) with the present body fields as the object and the mask (`labels`, `annotations`) and `lock: true` on the `If-Match` version; an empty body is 422; 409 when the hub object is not at that version, 428 without `If-Match`, 422 on a bad body or `If-Match`, a coordinate annotation the backend refuses or a change to a key outside the console's (`ai-grid/*`, `location`), 413 over 1 MiB, 415 when the body is not `application/json` |
@@ -107,6 +108,7 @@ Paths are under `/api/v1`, except `/healthcheck` and `/readyz` at the root.
 | PATCH | `/api/v1/models/{namespace}/{name}` | `Model` after the write, with its `ETag` | `UpdateModel` (no read first) with every present field as the mask (`spec.replicas`, `spec.main.image`, `spec.main.env`, `spec.placement`, `spec.rollout`, `metadata.labels`, `metadata.annotations`) and `lock: true` on the `If-Match` version; an empty body is 422; 409 when the object is not at that version, 428 without `If-Match`, 412 when a placement is added on a gated hub |
 | DELETE | `/api/v1/models/{namespace}/{name}` | 204; the model is gone at once (the MWRS cascades `Background`, its works drain out of sight) | `Models/DeleteModel` with the `If-Match` version as `resource_version`; 404 when absent, 409 on a stale `If-Match`, 428 without `If-Match`, 412 while a catalog entry, a subscription or an auth policy references the model (on the fake, subscriptions and auth policies block it; catalog entries don't exist yet) |
 | GET | `/api/v1/capabilities` | `{manifestWorkReplicaSetEnabled, observabilityInstalled, acmVersion}` | `AiGrid/GetHubCapabilities`; 501 against a backend without the RPC, which a client reads as "unknown" |
+| GET, POST | `/perses/api/<Perses API path>` | Perses's own answer, status and body unchanged, without `Set-Cookie` | none; the Monitoring page's relay to the hub's Perses (`PERSES_URL`), see "The Perses relay" |
 | GET | `/api/v1/locations` | `string[]`: the `location` labels a model can be placed on, in the backend's order | `Models/ListLocations` (proposal P7, `mock/proto/README.md`) |
 | GET | `/api/v1/subscriptions` | `Subscription[]` in the backend's order | `Subscriptions/ListSubscriptions` |
 | GET | `/api/v1/subscriptions/{name}` | `ETag: "<resourceVersion>"`, `{subscription, authPolicies, modelRegistrations, modelRefs}`: the subscription, the authorization policies that cover its models, the status of each referenced model's registration, and the referenced models in the `Model` JSON | `Subscriptions/GetSubscription`; 404 with the backend's message when absent |
@@ -486,6 +488,44 @@ whatever a client sends, and the page's inline messages, which only repeat the P
 before submit, are no protection. The fake's `BadRequest` field violations are the reference
 for what to check and which message to send.
 
+### The Perses relay
+
+The Monitoring page embeds the hub's Perses dashboards the way the OpenShift AI dashboard's
+Observability page does (odh-dashboard `packages/observability`): the browser calls only
+`/perses/api`, and the server forwards the call with the user's own token
+(`bff/internal/perses`). It is transport like the rest of the BFF. Perses authenticates the token
+and authorizes each project (the Cluster Observability Operator's Perses uses Kubernetes authn
+and authz: projects are namespaces), and its datasource proxy runs the queries. What the relay
+owns is the boundary:
+
+- Only the provider-admin check's callers pass, as on `/api/v1` (401 without a token, 403 for a
+  non-admin), until Perses or the backend can tell provider views from tenant ones: an
+  organization admin must never reach the provider dashboards.
+- Only the reads the Perses React components make: `GET /api/v1/dashboards`,
+  `/api/v1/projects/{p}/dashboards[/{d}]`, `/api/v1/projects/{p}/datasources[/{d}]`,
+  `/api/v1/globaldatasources[/{d}]`, and the Prometheus and Loki query APIs behind a datasource's
+  proxy (`/proxy/projects/{p}/[dashboards/{d}/]datasources/{d}/api/v1/query…`,
+  `/proxy/globaldatasources/{d}/…`). Any other path is 404; a method other than `GET` is 405,
+  except `POST` on a query path, which the Prometheus plugin sends as a form
+  (`application/x-www-form-urlencoded`, else 415; at most 1 MiB, else 413). A path with an
+  encoded slash, a dot segment or a doubled slash is 404, so Perses never sees another path than
+  the one checked.
+- Only `Accept`, `Accept-Language`, `Content-Type` and `Authorization: Bearer <the caller's
+  token>` reach Perses: no cookies, no proxy identity headers, no client-sent `Authorization`.
+  Perses's `Set-Cookie` is dropped.
+- Without `PERSES_URL`, every `/perses/api` path is 404 "monitoring is not configured on this
+  console" and `GET /config` says `monitoring.enabled: false`.
+
+Settings: `PERSES_URL` (https; `http://` only for loopback unless `PERSES_INSECURE=true`),
+`PERSES_CA_FILE` (the hub's service CA for the operator's Perses), `PERSES_SERVER_NAME` (for a
+port-forward to `127.0.0.1`), `PERSES_TIMEOUT` (30s, at most 50s, for the exchange with Perses from connecting to the last byte of its answer: past it the relay answers 504, or cuts an answer already started; the ceiling keeps it, with the provider-admin check before it, inside the server's 60s write timeout, which also cuts a browser that stops reading),
+`PERSES_PROJECT`. To turn Monitoring on in the hub pod, set `PERSES_URL` to
+`https://perses.openshift-cluster-observability-operator.svc:8080` and `PERSES_CA_FILE` to the
+service CA (`/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt` in an OpenShift pod):
+the operator's Perses has a service-CA certificate, so without the CA file the relay answers 502.
+`manifests/base` sets neither yet, so a deployed console has Monitoring off. `make start` forwards
+that Service when your login may (`hack/forward-perses.sh`).
+
 ### Waiting on backend RPCs
 
 Each row is a request to the backend repository. The BFF mapping is small once the RPC
@@ -518,6 +558,11 @@ exists; the frontend uses the mock service meanwhile.
 | PATCH, PUT or DELETE without `If-Match`, or with `If-Match: *` | 428, BFF message |
 | `filter`, `limit` or `offset` against a backend whose list answer has no `total` | 501, BFF message |
 | Request body over 1 MiB | 413 |
+| `/perses/api` without `PERSES_URL`, or a Perses path the relay does not pass | 404, BFF message |
+| `/perses/api` with a method other than `GET` (or `POST` on a query path) | 405, `the console reads Perses only` |
+| `/perses/api` query `POST` not declared `application/x-www-form-urlencoded` | 415, BFF message |
+| Perses unreachable or its certificate untrusted; Perses slower than `PERSES_TIMEOUT` | 502, `the hub's Perses could not be reached; try again`; 504 |
+| Any answer from Perses (its 401, 403 and 404 included) | Perses's status and body unchanged |
 | Backend `InvalidArgument`, `OutOfRange`: Keycloak's validation messages ("Name can not be null", "Invalid domain format: x", "Cannot change the alias", "Domain x is already linked to organization y in realm ai-grid"), the API server's and the CRD's for a model (the DNS-1123 name message, the schema's "spec.replicas: Invalid value: -1: spec.replicas in body should be greater than or equal to 0" and "spec.scaling.maxReplicas: Required value", "replicas and scaling are mutually exclusive; ...", "at least one trigger is required when using direct KEDA scaling", "minReplicas cannot exceed maxReplicas"), and the backend's own checks with the console's proposed wording (URI scheme, Placement operators, rollout fields, `spec.rollout requires spec.placement`, the reserved tenant version attribute, an `ai-grid/latitude` or `ai-grid/longitude` annotation that is not a number in range, a list `filter` that does not compile, is not a bool or fails on an object) | 422, backend message kept; with `fieldErrors` for `InvalidArgument` only |
 | Backend `AlreadyExists` (Keycloak: "A organization with the same name already exists.", also for a blank name on update), `Aborted` (the object is not at the `If-Match` version) | 409, backend message kept |
 | Backend `FailedPrecondition` (hub feature gate missing, e.g. "ManifestWorkReplicaSet feature gate disabled on hub"; a model still referenced by a catalog entry or subscription; Keycloak realm missing or organizations disabled) | 412, backend message kept |

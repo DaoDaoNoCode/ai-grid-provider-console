@@ -61,6 +61,7 @@ export class MockConsoleService implements ConsoleService {
       version: 'mock',
       modelsNamespace: 'ai-grid-models',
       fakeBackend: false,
+      monitoring: { enabled: false, persesProject: '' },
     },
   ) {}
 

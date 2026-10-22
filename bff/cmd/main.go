@@ -17,6 +17,7 @@ import (
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/backend"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/config"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/hub"
+	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/perses"
 )
 
 func main() {
@@ -53,19 +54,34 @@ func run() error {
 	}
 
 	app := api.NewApp(cfg, logger, client, hubClient)
+	persesURL := "off"
+	if cfg.PersesURL != "" {
+		relay, err := perses.New(perses.Config{
+			URL:        cfg.PersesURL,
+			CAFile:     cfg.PersesCAFile,
+			ServerName: cfg.PersesServerName,
+			Insecure:   cfg.PersesInsecure,
+			Timeout:    cfg.PersesTimeout,
+		})
+		if err != nil {
+			return err
+		}
+		app.WithPerses(relay)
+		persesURL = relay.URL()
+	}
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr(),
 		Handler:           app.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      60 * time.Second,
+		WriteTimeout:      config.WriteTimeout,
 		IdleTimeout:       time.Minute,
 		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),
 	}
 
 	errCh := make(chan error, 1)
 	go func() {
-		logger.Info("starting server", "addr", srv.Addr, "tls", cfg.TLSEnabled(), "version", api.Version, "backend", cfg.BackendAddress, "backendTLS", cfg.BackendCAFile != "", "hub", hubClient.URL())
+		logger.Info("starting server", "addr", srv.Addr, "tls", cfg.TLSEnabled(), "version", api.Version, "backend", cfg.BackendAddress, "backendTLS", cfg.BackendCAFile != "", "hub", hubClient.URL(), "perses", persesURL)
 		var serveErr error
 		if cfg.TLSEnabled() {
 			serveErr = srv.ListenAndServeTLS(cfg.CertFile, cfg.KeyFile)

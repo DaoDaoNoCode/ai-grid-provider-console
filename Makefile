@@ -7,8 +7,12 @@ CONTAINER_ENGINE ?= $(shell command -v podman 2>/dev/null || command -v docker)
 
 # The backend address the BFF dials, and where make dev-cluster forwards the hub's backend to.
 BACKEND_ADDRESS ?= 127.0.0.1:9090
+# Where make dev-cluster forwards the hub's Perses to for the Monitoring page.
+PERSES_ADDRESS ?= 127.0.0.1:9445
+PERSES_NAMESPACE ?= openshift-cluster-observability-operator
+PERSES_SERVICE ?= perses
 
-.PHONY: help start dev dev-cluster dev-fake dev-fake-poc dev-forward-backend dev-fake-backend dev-bff dev-bff-fake dev-frontend dev-frontend-fake install lint test build e2e image manifests deploy undeploy chart-check chart-test
+.PHONY: help start dev dev-cluster dev-fake dev-fake-poc dev-forward-backend dev-forward-perses dev-fake-backend dev-bff dev-bff-fake dev-frontend dev-frontend-fake install lint test build e2e image manifests deploy undeploy chart-check chart-test
 
 help: ## Show targets
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -17,9 +21,16 @@ help: ## Show targets
 
 start: dev-cluster ## Same as dev-cluster: oc login, then make start
 
-dev-cluster: ## The console as the hub serves it: its deployed backend (port-forwarded to :9090), the BFF on :8080 and the frontend on :9000
+dev-cluster: ## The console as the hub serves it: its deployed backend (port-forwarded to :9090), the hub's Perses (to :9445, when you may forward it), the BFF on :8080 and the frontend on :9000
 	@BACKEND_ADDRESS=$(BACKEND_ADDRESS) hack/forward-backend.sh --check
 	@trap 'kill 0' INT TERM; \
+	if [ -z "$$PERSES_URL" ] && PERSES_ADDRESS=$(PERSES_ADDRESS) PERSES_NAMESPACE=$(PERSES_NAMESPACE) PERSES_SERVICE=$(PERSES_SERVICE) hack/forward-perses.sh --check && \
+		ca=$${PERSES_CA_FILE:-$$(hack/service-ca.sh $(PERSES_NAMESPACE))}; then \
+		$(MAKE) -s dev-forward-perses & \
+		export PERSES_URL=https://$(PERSES_ADDRESS) PERSES_SERVER_NAME=$(PERSES_SERVICE).$(PERSES_NAMESPACE).svc PERSES_CA_FILE="$$ca"; \
+	elif [ -z "$$PERSES_URL" ]; then \
+		echo "==> Monitoring off"; \
+	fi; \
 	$(MAKE) -s dev-forward-backend & \
 	$(MAKE) -s dev-bff & \
 	$(MAKE) -s dev-frontend & \
@@ -33,6 +44,9 @@ dev: ## The BFF on :8080 and the frontend on :9000, against a backend you run on
 
 dev-forward-backend: ## Forward the backend of the console deployed on the hub to BACKEND_ADDRESS (NAMESPACE, DEPLOYMENT)
 	BACKEND_ADDRESS=$(BACKEND_ADDRESS) hack/forward-backend.sh
+
+dev-forward-perses: ## Forward the hub's Perses to PERSES_ADDRESS for the Monitoring page (PERSES_NAMESPACE, PERSES_SERVICE)
+	PERSES_ADDRESS=$(PERSES_ADDRESS) PERSES_NAMESPACE=$(PERSES_NAMESPACE) PERSES_SERVICE=$(PERSES_SERVICE) hack/forward-perses.sh
 
 ##@ Development without a cluster (fake backend and fake hub from mock/fixtures, see mock/README.md)
 

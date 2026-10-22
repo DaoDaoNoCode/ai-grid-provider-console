@@ -25,7 +25,7 @@ sends your name and token the way kube-auth-proxy would, and the BFF forwards th
 ```sh
 oc login https://api.<hub>:6443 ...
 make install     # once: frontend dependencies
-make start       # the hub's backend (forwarded to :9090), BFF on :8080, frontend on :9000
+make start       # the hub's backend (forwarded to :9090), its Perses (:9445), BFF on :8080, frontend on :9000
 ```
 
 Open http://127.0.0.1:9000. `make start` needs the console deployed on the hub (`make deploy`, or
@@ -41,6 +41,15 @@ anything, `make start` checks your login, `pods/portforward` in the namespace, a
 and a free local port. The forward listens on one loopback address only, reconnects when a rollout
 replaces the pod, and creates nothing on the cluster. Pages whose RPCs the backend doesn't serve
 yet say "not available on this backend yet".
+
+For the Monitoring page, `make start` also forwards the hub's Perses
+(`openshift-cluster-observability-operator/perses`, `PERSES_NAMESPACE`, `PERSES_SERVICE`) to
+`127.0.0.1:9445` (`PERSES_ADDRESS`, `hack/forward-perses.sh`) and points the BFF at it, verifying
+its certificate with the hub's service CA (`hack/service-ca.sh`). That forward grants nothing:
+Perses checks the token the BFF forwards, yours. When the Service is missing, your login may not
+port-forward there or the CA can't be read, `make start` says why and runs with Monitoring off
+(`PERSES_CA_FILE` you set yourself is used instead of the cluster's). A `PERSES_URL` you set
+yourself wins, and no forward starts.
 
 Treat `pods/portforward` in the console's namespace as provider-admin access. Until the backend
 authorizes the caller, anyone who can port-forward there reaches the backend directly, here or with
@@ -114,6 +123,8 @@ Environment variables the BFF reads: `HUB_API_URL` (required outside a pod; in a
 defaults to the in-cluster API server), `HUB_CA_FILE`, `BIND_ADDRESS` (default `127.0.0.1`;
 `0.0.0.0` exposes the BFF without a proxy in front), `PORT`, `BACKEND_ADDRESS`,
 `BACKEND_CA_FILE`, `BACKEND_SERVER_NAME`, `BACKEND_INSECURE`, `BACKEND_TIMEOUT`,
+`PERSES_URL`, `PERSES_CA_FILE`, `PERSES_SERVER_NAME`, `PERSES_INSECURE`, `PERSES_TIMEOUT`,
+`PERSES_PROJECT` (the Perses relay, `docs/plan/bff-api.md`),
 `AUTH_TOKEN_HEADER`, `AUTH_USER_HEADER`, `AUTH_EMAIL_HEADER`, `AUTH_GROUPS_HEADER`,
 `GRID_CONSUMER_URL`, `MAP_TILE_URL`, `MAP_TILE_ATTRIBUTION`, `BILLING_URL`, `LOG_LEVEL`, `AUTH_TOKEN_PREFIX`,
 `CERT_FILE`, `KEY_FILE`, `STATIC_ASSETS_DIR`. Run `go run ./cmd --help`
