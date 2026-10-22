@@ -18,6 +18,15 @@ export type ConsoleConfig = {
   modelsNamespace: string;
   /** The BFF talks to the fake backend; the UI shows a banner. */
   fakeBackend: boolean;
+  /** The Monitoring page's Perses relay at /perses/api. */
+  monitoring: MonitoringConfig;
+};
+
+export type MonitoringConfig = {
+  /** The BFF relays /perses/api to the hub's Perses; off when it has no PERSES_URL. */
+  enabled: boolean;
+  /** The Perses project whose `dashboard-*` objects are the Monitoring tabs; empty for every project. */
+  persesProject: string;
 };
 
 export type ClusterStatus = 'Ready' | 'Offline' | 'Unknown';

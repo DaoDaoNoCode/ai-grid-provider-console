@@ -329,6 +329,22 @@ func TestPanicBecomes500(t *testing.T) {
 	}
 }
 
+func TestAbortedAnswerIsNotA500(t *testing.T) {
+	app := newTestApp(t, testConfig(t), nil)
+	h := app.recoverPanic(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic(http.ErrAbortHandler) }))
+	rec := httptest.NewRecorder()
+	defer func() {
+		if got, _ := recover().(error); !errors.Is(got, http.ErrAbortHandler) {
+			t.Fatalf("recovered %v, want http.ErrAbortHandler passed on to net/http", got)
+		}
+		if rec.Code == http.StatusInternalServerError {
+			t.Fatal("wrote a 500 over an aborted answer")
+		}
+	}()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	t.Fatal("recoverPanic swallowed http.ErrAbortHandler")
+}
+
 func TestClassify(t *testing.T) {
 	cases := []struct {
 		err  error

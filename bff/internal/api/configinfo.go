@@ -13,6 +13,15 @@ type ConsoleConfig struct {
 	ModelsNamespace string `json:"modelsNamespace"`
 	// FakeBackend tells the UI to show its fake-backend banner.
 	FakeBackend bool `json:"fakeBackend"`
+	// Monitoring says whether /perses/api reaches a Perses server, and which project's
+	// dashboard- objects are the Monitoring tabs (empty: every project the caller may read).
+	Monitoring MonitoringConfig `json:"monitoring"`
+}
+
+// MonitoringConfig is the Monitoring page's part of ConsoleConfig.
+type MonitoringConfig struct {
+	Enabled       bool   `json:"enabled"`
+	PersesProject string `json:"persesProject"`
 }
 
 // getConfig answers GET /api/v1/config.
@@ -25,5 +34,6 @@ func (a *App) getConfig(w http.ResponseWriter, _ *http.Request) {
 		Version:            Version,
 		ModelsNamespace:    a.cfg.ModelsNamespace,
 		FakeBackend:        a.cfg.FakeBackend,
+		Monitoring:         MonitoringConfig{Enabled: a.perses != nil, PersesProject: a.cfg.PersesProject},
 	})
 }

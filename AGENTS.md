@@ -27,7 +27,10 @@ What the BFF does:
 - maps gRPC codes to HTTP statuses, keeping the backend's message, and its own body errors to 422;
 - forwards the caller's identity (the token as `authorization`, plus user, email and groups);
 - serves the SPA, `/healthcheck`, `/readyz`, `/api/v1/config`, and asks the hub for
-  `isProviderAdmin` (a `SelfSubjectAccessReview` with the caller's token).
+  `isProviderAdmin` (a `SelfSubjectAccessReview` with the caller's token);
+- relays `/perses/api` to the hub's Perses with the caller's token, for the Monitoring page:
+  only the read and query paths the Perses components call, nothing else of the caller's
+  (`bff/internal/perses`). Perses authorizes and runs the queries.
 
 What belongs in the backend, and so in the fake (`bff/internal/fakebackend`) until the backend
 ships it: validation of values, normalization and defaults, resource versions and the
