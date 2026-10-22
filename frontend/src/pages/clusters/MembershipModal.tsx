@@ -89,11 +89,24 @@ export const MembershipModal: React.FC<Props> = ({ cluster, join, onConfirm, onC
       <ModalHeader title={title} titleIconVariant={join ? undefined : 'warning'} />
       <ModalBody>
         <Stack hasGutter>
-          <p>
-            {join
-              ? 'The hub installs AI Grid on the cluster for its role, and model placements can then choose its location.'
-              : 'The hub stops delivering AI Grid to this cluster, and model placements stop choosing it. Nothing is uninstalled: OpenShift AI, the grid and the models already on the cluster keep running.'}
-          </p>
+          {join ? (
+            <p>
+              The hub installs AI Grid on the cluster for its role, and model placements can then choose its location.
+            </p>
+          ) : (
+            <>
+              {/* Every cluster but the hub's own also leaves the cross-cluster network (Submariner):
+                  ai-grid-env-setup's network Placement selects local-cluster plus the members.
+                  A model deployed from the Models page (a ManifestWorkReplicaSet) is removed with the
+                  cluster's ManifestWork; models delivered by env-setup's GitOps apps stay. */}
+              <p>
+                {cluster.name === 'local-cluster'
+                  ? 'AI Grid stops managing this cluster, and models are no longer placed on it.'
+                  : 'AI Grid stops managing this cluster, and models are no longer placed on it. It is also disconnected from the other AI Grid clusters.'}
+              </p>
+              <p>Models deployed to it from the Models page are removed from it. OpenShift AI is not uninstalled.</p>
+            </>
+          )}
           {join && (
             <Form id="cluster-membership-form" onSubmit={(e) => e.preventDefault()}>
               <FormGroup label="Location" fieldId="cluster-location" isRequired>
