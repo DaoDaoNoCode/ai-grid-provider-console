@@ -1,7 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RelayDatasourceApi } from './persesDatasourceApi';
-
-const api = new RelayDatasourceApi();
 
 const datasource = (name: string, isDefault = false) => ({
   kind: 'Datasource',
@@ -19,6 +17,12 @@ const answer = (body: unknown, status = 200) => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('RelayDatasourceApi', () => {
+  // A fresh API per test: each has its own cache.
+  let api = new RelayDatasourceApi();
+  beforeEach(() => {
+    api = new RelayDatasourceApi();
+  });
+
   it("builds the relay's proxy paths, encoding each name", () => {
     expect(api.buildProxyUrl({ project: 'open-cluster-management-observability', name: 'thanos' })).toBe(
       '/perses/api/proxy/projects/open-cluster-management-observability/datasources/thanos',
@@ -41,6 +45,26 @@ describe('RelayDatasourceApi', () => {
     const fetchFn = answer([datasource('g', true)]);
     expect((await api.getGlobalDatasource({ kind: 'PrometheusDatasource' }))?.metadata.name).toBe('g');
     expect(fetchFn.mock.calls[0][0]).toBe('/perses/api/api/v1/globaldatasources?kind=PrometheusDatasource');
+  });
+
+  it('lists a project once for many lookups, and again after five minutes', async () => {
+    let now = 0;
+    api = new RelayDatasourceApi(() => now);
+    const fetchFn = answer([datasource('a'), datasource('b', true)]);
+    await Promise.all([api.getDatasource('p', { kind: 'K', name: 'a' }), api.getDatasource('p', { kind: 'K' })]);
+    await api.getDatasource('p', { kind: 'K', name: 'b' });
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    now = 5 * 60 * 1000;
+    await api.getDatasource('p', { kind: 'K' });
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
+  it("doesn't keep a failed list", async () => {
+    answer({ message: 'unavailable' }, 503);
+    await expect(api.listDatasources('p')).rejects.toThrow('Perses answered 503');
+    const fetchFn = answer([datasource('a', true)]);
+    expect((await api.getDatasource('p', { kind: 'K' }))?.metadata.name).toBe('a');
+    expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
   it('fails on an answer that is not 2xx', async () => {
