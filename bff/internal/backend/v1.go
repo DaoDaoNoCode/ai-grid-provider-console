@@ -8,6 +8,7 @@ package backend
 import (
 	"context"
 	"strconv"
+	"strings"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -24,6 +25,10 @@ const (
 	methodClustersGet    = "/ai_grid.v1.Clusters/Get"
 	methodClustersUpdate = "/ai_grid.v1.Clusters/Update"
 	methodTenantsList    = "/ai_grid.v1.Tenants/List"
+	methodTenantsGet     = "/ai_grid.v1.Tenants/Get"
+	methodTenantsCreate  = "/ai_grid.v1.Tenants/Create"
+	methodTenantsUpdate  = "/ai_grid.v1.Tenants/Update"
+	methodTenantsDelete  = "/ai_grid.v1.Tenants/Delete"
 )
 
 type v1Clusters struct{ conn grpc.ClientConnInterface }
@@ -134,38 +139,156 @@ func (c v1Tenants) ListTenants(ctx context.Context, in *aigridv1.ListTenantsRequ
 	return out, nil
 }
 
-// GetTenant has no RPC yet; it reads the list, as the clusters handler does.
+// GetTenant reads one tenant.
 func (c v1Tenants) GetTenant(ctx context.Context, in *aigridv1.GetTenantRequest, opts ...grpc.CallOption) (*aigridv1.GetTenantResponse, error) {
-	list, err := c.ListTenants(ctx, &aigridv1.ListTenantsRequest{}, opts...)
+	resp := &backendv1.TenantsGetResponse{}
+	if err := c.conn.Invoke(ctx, methodTenantsGet, &backendv1.TenantsGetRequest{Id: in.GetId()}, resp, opts...); err != nil {
+		return nil, err
+	}
+	return &aigridv1.GetTenantResponse{Object: FromV1Tenant(resp.GetObject())}, nil
+}
+
+// CreateTenant sends the name and domains, the only fields the backend's
+// Tenant has. A request that sets a field it lacks is Unimplemented, not
+// dropped. The backend sets the Keycloak alias to the name.
+func (c v1Tenants) CreateTenant(ctx context.Context, in *aigridv1.CreateTenantRequest, opts ...grpc.CallOption) (*aigridv1.CreateTenantResponse, error) {
+	obj := in.GetObject()
+	var unsupported []string
+	if obj.GetAlias() != "" && obj.GetAlias() != obj.GetName() {
+		unsupported = append(unsupported, "alias")
+	}
+	if obj.GetDescription() != "" {
+		unsupported = append(unsupported, "description")
+	}
+	if obj.Enabled != nil && !obj.GetEnabled() {
+		unsupported = append(unsupported, "enabled")
+	}
+	if len(obj.GetAttributes()) > 0 {
+		unsupported = append(unsupported, "attributes")
+	}
+	if obj.GetIdentityProvider() != nil {
+		unsupported = append(unsupported, "identityProvider")
+	}
+	if err := notInBackend(unsupported); err != nil {
+		return nil, err
+	}
+	req := &backendv1.TenantsCreateRequest{Object: &backendv1.Tenant{
+		Metadata: &backendv1.Metadata{Name: obj.GetName()},
+		Spec:     &backendv1.TenantSpec{Domains: obj.GetDomains()},
+	}}
+	resp := &backendv1.TenantsCreateResponse{}
+	if err := c.conn.Invoke(ctx, methodTenantsCreate, req, resp, opts...); err != nil {
+		return nil, err
+	}
+	return &aigridv1.CreateTenantResponse{Object: FromV1Tenant(resp.GetObject())}, nil
+}
+
+// tenantPaths maps the draft's mask paths onto the backend's; the others
+// name fields the backend's Tenant doesn't have.
+var tenantPaths = map[string]string{"name": "metadata.name", "domains": "spec.domains"}
+
+// UpdateTenant sends the draft's name and domains paths as the backend's, and
+// the If-Match version as metadata.version with lock. The backend (PR 16)
+// requires a version: every tenant reads as 1 or more, and 0 is
+// InvalidArgument (422). Description, enabled and attributes pass when they
+// hold what a read gives back (empty, true, none), as on create; other values,
+// and any alias (the backend can't say which one Keycloak keeps after a
+// rename), are Unimplemented. When only those no-op fields are left (an empty
+// mask would make the backend update the name and domains), the mask names
+// only id, which the backend answers with the stored tenant after checking
+// the version, writing nothing.
+func (c v1Tenants) UpdateTenant(ctx context.Context, in *aigridv1.UpdateTenantRequest, opts ...grpc.CallOption) (*aigridv1.UpdateTenantResponse, error) {
+	obj := in.GetObject()
+	version, err := tenantVersion(obj.GetResourceVersion())
 	if err != nil {
 		return nil, err
 	}
-	for _, t := range list.GetTenants() {
-		if t.GetId() == in.GetId() {
-			return &aigridv1.GetTenantResponse{Object: t}, nil
+	var paths, unsupported []string
+	for _, p := range in.GetUpdateMask().GetPaths() {
+		if real, ok := tenantPaths[p]; ok {
+			paths = append(paths, real)
+		} else if !readBackValue(p, obj) {
+			unsupported = append(unsupported, p)
 		}
 	}
-	return nil, status.Errorf(codes.NotFound, "object with identifier '%s' not found", in.GetId())
+	if err := notInBackend(unsupported); err != nil {
+		return nil, err
+	}
+	if len(paths) == 0 {
+		paths = []string{"id"}
+	}
+	req := &backendv1.TenantsUpdateRequest{
+		Object: &backendv1.Tenant{
+			Id:       obj.GetId(),
+			Metadata: &backendv1.Metadata{Name: obj.GetName(), Version: version},
+			Spec:     &backendv1.TenantSpec{Domains: obj.GetDomains()},
+		},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: paths},
+		Lock:       true,
+	}
+	resp := &backendv1.TenantsUpdateResponse{}
+	if err := c.conn.Invoke(ctx, methodTenantsUpdate, req, resp, opts...); err != nil {
+		return nil, err
+	}
+	return &aigridv1.UpdateTenantResponse{Object: FromV1Tenant(resp.GetObject())}, nil
 }
 
-func (v1Tenants) CreateTenant(context.Context, *aigridv1.CreateTenantRequest, ...grpc.CallOption) (*aigridv1.CreateTenantResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "Tenants/Create is not in the backend")
+// DeleteTenant sends the If-Match version, which the backend (PR 16) checks;
+// it answers 0 with InvalidArgument (422).
+func (c v1Tenants) DeleteTenant(ctx context.Context, in *aigridv1.DeleteTenantRequest, opts ...grpc.CallOption) (*aigridv1.DeleteTenantResponse, error) {
+	version, err := tenantVersion(in.GetResourceVersion())
+	if err != nil {
+		return nil, err
+	}
+	if err := c.conn.Invoke(ctx, methodTenantsDelete, &backendv1.TenantsDeleteRequest{Id: in.GetId(), Version: version}, &backendv1.TenantsDeleteResponse{}, opts...); err != nil {
+		return nil, err
+	}
+	return &aigridv1.DeleteTenantResponse{}, nil
 }
 
-func (v1Tenants) UpdateTenant(context.Context, *aigridv1.UpdateTenantRequest, ...grpc.CallOption) (*aigridv1.UpdateTenantResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "Tenants/Update is not in the backend")
+// tenantVersion parses an If-Match version into the backend's metadata.version.
+// A negative one is InvalidArgument: the backend never answers one.
+func tenantVersion(rv string) (int32, error) {
+	v, err := strconv.ParseInt(rv, 10, 32)
+	if err != nil {
+		return 0, status.Errorf(codes.FailedPrecondition, "version %q is not one this backend answered", rv)
+	}
+	if v < 0 {
+		return 0, status.Errorf(codes.InvalidArgument, "version %q is negative", rv)
+	}
+	return int32(v), nil
 }
 
-func (v1Tenants) DeleteTenant(context.Context, *aigridv1.DeleteTenantRequest, ...grpc.CallOption) (*aigridv1.DeleteTenantResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "Tenants/Delete is not in the backend")
+// readBackValue reports whether path p, which the backend's Tenant lacks,
+// holds what a read gives back: no description, enabled, no attributes.
+func readBackValue(p string, obj *aigridv1.Tenant) bool {
+	switch p {
+	case "description":
+		return obj.GetDescription() == ""
+	case "enabled":
+		return obj.GetEnabled()
+	case "attributes":
+		return len(obj.GetAttributes()) == 0
+	}
+	return false
 }
 
-// FromV1Tenant maps a real Tenant (id, name, domains) onto the draft.
+// notInBackend refuses a request that sets fields the backend's Tenant lacks.
+func notInBackend(fields []string) error {
+	if len(fields) == 0 {
+		return nil
+	}
+	return status.Errorf(codes.Unimplemented, "the backend's Tenants API has no %s", strings.Join(fields, ", "))
+}
+
+// FromV1Tenant maps a real Tenant (id, name, domains, version, creation time)
+// onto the draft.
 func FromV1Tenant(t *backendv1.Tenant) *aigridv1.Tenant {
 	return &aigridv1.Tenant{
-		Id:         t.GetId(),
-		Name:       t.GetMetadata().GetName(),
-		Domains:    t.GetSpec().GetDomains(),
-		CreateTime: t.GetMetadata().GetCreationTimestamp(),
+		Id:              t.GetId(),
+		Name:            t.GetMetadata().GetName(),
+		Domains:         t.GetSpec().GetDomains(),
+		ResourceVersion: strconv.Itoa(int(t.GetMetadata().GetVersion())),
+		CreateTime:      t.GetMetadata().GetCreationTimestamp(),
 	}
 }

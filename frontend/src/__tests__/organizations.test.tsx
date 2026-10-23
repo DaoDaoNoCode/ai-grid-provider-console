@@ -14,7 +14,7 @@ import { MockConsoleService } from '../api/MockConsoleService';
 import type { OrganizationInput } from '../api/types';
 import { renderAt } from './render';
 
-const input: OrganizationInput = {
+const input: Required<OrganizationInput> = {
   name: 'tenant1',
   domains: ['tenant1.example.com'],
   identityProvider: {
@@ -85,10 +85,12 @@ it('onboards organization details then IdP, saves only after review, supports de
   await user.click(screen.getByRole('button', { name: 'Add domain' }));
   await user.click(screen.getByRole('button', { name: 'Remove domain 2' }));
   await user.click(screen.getByRole('button', { name: 'Next' }));
+  // A blank identity provider is optional; a partly filled one isn't.
+  expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
+  await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Tenant 1 SSO');
   expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
   expect(await service.listOrganizations()).toEqual([]);
   await fillRequiredIdp(user, [
-    ['Title', 'Tenant 1 SSO'],
     ['Client ID', 'tenant1-client'],
     ['Client secret reference', 'tenant1-secret'],
     ['Issuer', 'https://sso.example.com/tenant1'],
@@ -363,6 +365,7 @@ const serviceOnTenantJson = (fetchFn: typeof fetch) => {
   const http = new HttpConsoleService(fetchFn);
   service.listOrganizations = () => http.listOrganizations();
   service.getOrganization = (id) => http.getOrganization(id);
+  service.createOrganization = (value) => http.createOrganization(value);
   service.updateOrganization = (id, value, version) => http.updateOrganization(id, value, version);
   return service;
 };
@@ -388,6 +391,36 @@ it('edit sends PATCH with domains, identity provider, and If-Match', async () =>
     domains: ['acme.example.net'],
     identityProvider: { ...input.identityProvider, title: 'Acme SSO' },
   });
+});
+
+it('edit: clearing an existing identity provider is not a valid save', async () => {
+  const fetchFn = vi.fn(async (url: string, _init?: RequestInit) =>
+    jsonResponse(200, { data: url.endsWith('/tenants') ? [tenantJson] : tenantJson }),
+  );
+  const user = userEvent.setup();
+  renderAt(`/organizations/${tenantJson.id}/edit`, serviceOnTenantJson(fetchFn as unknown as typeof fetch));
+  await openStep(user, 'Identity provider');
+  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Client ID' })).toHaveValue('tenant1-client'));
+  for (const box of screen.getAllByRole('textbox')) await user.clear(box);
+  expect(screen.getByRole('button', { name: 'Review' })).toBeDisabled();
+});
+
+it('create without an identity provider sends none, and Review says so', async () => {
+  const fetchFn = vi.fn(async (url: string, init?: RequestInit) =>
+    init?.method === 'POST'
+      ? jsonResponse(201, { data: { ...tenantJson, identityProvider: undefined } })
+      : jsonResponse(200, { data: url.endsWith('/tenants') ? [] : tenantJson }),
+  );
+  const user = userEvent.setup();
+  renderAt('/organizations/create', serviceOnTenantJson(fetchFn as unknown as typeof fetch));
+  await user.type(await screen.findByRole('textbox', { name: 'Name' }), 'tenant1');
+  await user.click(screen.getByRole('button', { name: 'Next' }));
+  await user.click(screen.getByRole('button', { name: 'Next' }));
+  expect(screen.getByTestId('tenant-configuration-details')).toHaveTextContent('No identity provider is configured.');
+  await user.click(screen.getByRole('button', { name: 'Create organization' }));
+  expect(await screen.findByText('Organization saved')).toBeVisible();
+  const post = fetchFn.mock.calls.find(([, init]) => init?.method === 'POST');
+  expect(JSON.parse(String(post?.[1]?.body))).toEqual({ name: 'tenant1', domains: [] });
 });
 
 it('lists the identity provider by title, a dash without one, and Disabled for a disabled organization', async () => {
