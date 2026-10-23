@@ -74,6 +74,31 @@ it("says when the caller can't read the dashboards", async () => {
   expect(screen.getByText('forbidden: project ai-grid')).toBeVisible();
 });
 
+it("says when the dashboards can't be loaded, and retries", async () => {
+  const user = userEvent.setup();
+  const service = withMonitoring('ai-grid', hub);
+  const list = service.listMonitoringDashboards;
+  service.listMonitoringDashboards = () => Promise.reject(new ServiceError(502, 'perses is unavailable'));
+  renderAt('/monitoring', service);
+  expect(await screen.findByText('Dashboards could not be loaded')).toBeVisible();
+  service.listMonitoringDashboards = list;
+  await user.click(screen.getByRole('button', { name: 'Retry' }));
+  expect(await screen.findByTestId('perses-dashboard')).toHaveTextContent('ai-grid/dashboard-1-fleet');
+});
+
+it("says when the console's configuration can't be read, instead of falling back", async () => {
+  const user = userEvent.setup();
+  const service = withMonitoring('ai-grid', hub);
+  const getConfig = service.getConfig;
+  service.getConfig = () => Promise.reject(new ServiceError(0, 'The console backend could not be reached.'));
+  renderAt('/monitoring', service);
+  expect(await screen.findByText('Monitoring could not be loaded')).toBeVisible();
+  expect(screen.queryByText(/Cluster availability, gateway performance/)).not.toBeInTheDocument();
+  service.getConfig = getConfig;
+  await user.click(screen.getByRole('button', { name: 'Retry' }));
+  expect(await screen.findByTestId('perses-dashboard')).toHaveTextContent('ai-grid/dashboard-1-fleet');
+});
+
 it("keeps the AI Grid overview's metrics when the console relays to no Perses", async () => {
   renderAt('/monitoring', new MockConsoleService());
   expect(
