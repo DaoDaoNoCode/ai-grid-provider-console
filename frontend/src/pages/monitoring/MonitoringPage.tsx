@@ -120,7 +120,7 @@ const PersesMonitoring: React.FC<{ service: ConsoleService; project: string }> =
               return;
             }
             event.preventDefault();
-            const to = monitoringLinkFor(href, tabs, project);
+            const to = monitoringLinkFor(href, tabs, project, selected.metadata.project);
             setUnreachableLink(to ? undefined : href);
             if (to) navigate(to);
           }}

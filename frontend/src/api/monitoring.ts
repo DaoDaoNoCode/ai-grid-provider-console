@@ -37,9 +37,16 @@ const carriedParam = (name: string) => name.startsWith('var-') || ['start', 'end
  * link to its Perses viewer (`/monitoring/v2/dashboards/view?dashboard=<name>&project=<project>`), and
  * those written for Perses's own app to `/projects/<project>/dashboards/<name>`; neither page exists
  * here. When the target is one of the Monitoring tabs, the answer is that tab, with the link's time
- * range and `var-*` values; otherwise undefined, as for any other path of another app.
+ * range and `var-*` values; otherwise undefined, as for any other path of another app. A link that
+ * names no project means the project of the dashboard it is in (`fromProject`), when that has the
+ * dashboard; otherwise the one tab of that name, if only one has it.
  */
-export const monitoringLinkFor = (href: string, tabs: DashboardResource[], project: string): string | undefined => {
+export const monitoringLinkFor = (
+  href: string,
+  tabs: DashboardResource[],
+  project: string,
+  fromProject: string,
+): string | undefined => {
   let url: URL;
   try {
     url = new URL(href, 'http://console.invalid');
@@ -50,12 +57,21 @@ export const monitoringLinkFor = (href: string, tabs: DashboardResource[], proje
   let linkProject = url.searchParams.get('project') ?? undefined;
   const persesApp = url.pathname.match(/^\/projects\/([^/]+)\/dashboards\/([^/]+)\/?$/);
   if (persesApp) {
-    linkProject = decodeURIComponent(persesApp[1]);
-    name = decodeURIComponent(persesApp[2]);
+    try {
+      linkProject = decodeURIComponent(persesApp[1]);
+      name = decodeURIComponent(persesApp[2]);
+    } catch {
+      // A malformed escape such as `%` alone: no dashboard has that name.
+      return undefined;
+    }
   } else if (!url.pathname.endsWith('/dashboards/view')) {
     return undefined;
   }
-  const tab = tabs.find((d) => d.metadata.name === name && (!linkProject || d.metadata.project === linkProject));
+  const named = tabs.filter((d) => d.metadata.name === name);
+  const inProject = (p: string) => named.find((d) => d.metadata.project === p);
+  const tab = linkProject
+    ? inProject(linkProject)
+    : (inProject(fromProject) ?? (named.length === 1 ? named[0] : undefined));
   if (!tab) {
     return undefined;
   }
