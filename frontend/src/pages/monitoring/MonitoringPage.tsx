@@ -1,5 +1,15 @@
 import { Suspense, lazy } from 'react';
-import { Alert, EmptyState, EmptyStateBody, PageSection, Stack, Tab, TabTitleText, Tabs } from '@patternfly/react-core';
+import {
+  Alert,
+  AlertActionLink,
+  EmptyState,
+  EmptyStateBody,
+  PageSection,
+  Stack,
+  Tab,
+  TabTitleText,
+  Tabs,
+} from '@patternfly/react-core';
 import { useSearchParams } from 'react-router-dom';
 import type { ConsoleService } from '../../api/ConsoleService';
 import { ServiceError } from '../../api/ConsoleService';
@@ -27,7 +37,7 @@ const failureOf = (error: Error) => {
  * with `?dashboard=`. The monitoring team writes the dashboards; the console only shows them.
  */
 const PersesMonitoring: React.FC<{ service: ConsoleService; project: string }> = ({ service, project }) => {
-  const [dashboards, loaded, error] = useServiceData(() => service.listMonitoringDashboards(project), [], 0);
+  const [dashboards, loaded, error, refresh] = useServiceData(() => service.listMonitoringDashboards(project), [], 0);
   const [params, setParams] = useSearchParams();
   const tabs = monitoringTabs(dashboards);
   const asked = params.get('dashboard');
@@ -38,7 +48,12 @@ const PersesMonitoring: React.FC<{ service: ConsoleService; project: string }> =
     if (error) {
       const { title, body } = failureOf(error);
       return (
-        <Alert isInline variant="danger" title={title}>
+        <Alert
+          isInline
+          variant="danger"
+          title={title}
+          actionLinks={<AlertActionLink onClick={() => void refresh()}>Retry</AlertActionLink>}
+        >
           {body}
         </Alert>
       );
@@ -87,11 +102,34 @@ const PersesMonitoring: React.FC<{ service: ConsoleService; project: string }> =
 
 /** /monitoring: the hub's Perses dashboards when the BFF relays to a Perses, else the AI Grid overview's metrics. */
 export const MonitoringPage: React.FC<Props> = ({ service }) => {
-  const [config, loaded, error] = useServiceData<ConsoleConfig | undefined>(() => service.getConfig(), undefined, 0);
+  const [config, loaded, error, refresh] = useServiceData<ConsoleConfig | undefined>(
+    () => service.getConfig(),
+    undefined,
+    0,
+  );
   if (!loaded && !error) {
     return <PageLoading label="Loading monitoring" />;
   }
-  if (config?.monitoring.enabled) {
+  // Without the configuration the page can't tell whether the console has a Perses: say so rather
+  // than fall back to the overview's metrics.
+  if (!config) {
+    return (
+      <>
+        <PageHeader title="Monitoring" />
+        <PageSection isFilled>
+          <Alert
+            isInline
+            variant="danger"
+            title="Monitoring could not be loaded"
+            actionLinks={<AlertActionLink onClick={() => void refresh()}>Retry</AlertActionLink>}
+          >
+            {error?.message}
+          </Alert>
+        </PageSection>
+      </>
+    );
+  }
+  if (config.monitoring.enabled) {
     return <PersesMonitoring service={service} project={config.monitoring.persesProject} />;
   }
   return <GridPage key="monitoring" service={service} monitoring />;
