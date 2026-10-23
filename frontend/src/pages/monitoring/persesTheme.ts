@@ -150,11 +150,12 @@ const mapPatterflyThemeToMUI = (theme: PatternFlyTheme, currentYear: number): Th
         fontSize: 'var(--pf-t--global--font--size--heading--sm)',
       },
       h2: {
-        // Panel Group Heading
+        // Panel Group Heading: PatternFly's medium heading (odh-dashboard uses font--size--600,
+        // 1.5rem, which reads larger than this console's own section titles).
         color: 'var(--pf-t--global--text--color--regular)',
         fontFamily: 'var(--pf-t--global--font--family--heading)',
         fontWeight: 'var(--pf-t--global--font--weight--heading--default)',
-        fontSize: 'var(--pf-t--global--font--size--600)',
+        fontSize: 'var(--pf-t--global--font--size--heading--md)',
       },
     },
     palette: {
