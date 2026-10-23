@@ -159,9 +159,16 @@ func (r *Relay) rewrite(pr *httputil.ProxyRequest) {
 	pr.Out.Header = h
 }
 
-// modifyResponse keeps Perses from setting cookies on the console's origin.
+// relayedCSP keeps a relayed answer inert if a browser opens it as a page: no script, no
+// subresources, a unique origin. The console reads these answers with fetch, which it doesn't affect.
+const relayedCSP = "sandbox; default-src 'none'"
+
+// modifyResponse keeps Perses from setting cookies on the console's origin, and keeps whatever it
+// answers (a datasource's error page, a label value) from running there as HTML or script.
 func modifyResponse(resp *http.Response) error {
 	resp.Header.Del("Set-Cookie")
+	resp.Header.Set("X-Content-Type-Options", "nosniff")
+	resp.Header.Set("Content-Security-Policy", relayedCSP)
 	return nil
 }
 
