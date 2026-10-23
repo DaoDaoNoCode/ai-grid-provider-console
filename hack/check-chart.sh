@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Checks the Helm chart (charts/ai-grid-provider-console):
 #   - helm lint --strict, with the default values and with every option turned on;
+#   - the Deployment's strategy is Recreate (one backend at a time);
 #   - with its default values, it renders the same objects as manifests/base, apart from the
 #     Namespace (Helm installs into one: --create-namespace) and Helm's own labels. ai-grid-env-setup
 #     still deploys manifests/base, so the two must not drift until it moves to the chart.
@@ -23,6 +24,9 @@ canonical() {
           .metadata.labels."app.kubernetes.io/version", .metadata.labels."helm.sh/chart")
     | sort_keys(..)' | sort
 }
+# One backend at a time: its per-organization write locks live in its process (Recreate, not RollingUpdate).
+strategy="$(helm template console "${CHART}" -n ai-grid | yq 'select(.kind == "Deployment") | .spec.strategy.type')"
+[[ "${strategy}" == Recreate ]] || { echo "check-chart: the Deployment's strategy is '${strategy}', not Recreate" >&2; exit 1; }
 chart="$(helm template console "${CHART}" -n ai-grid | canonical)"
 base="$(kubectl kustomize "${ROOT}/manifests/base" | canonical)"
 if [[ "${chart}" != "${base}" ]]; then

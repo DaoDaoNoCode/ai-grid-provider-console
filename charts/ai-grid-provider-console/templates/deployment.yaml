@@ -8,6 +8,11 @@ metadata:
 spec:
   # One pod: the console holds no state, and one per hub is the supported topology.
   replicas: 1
+  # Recreate, so a Deployment rollout never runs two pods at once: the backend serializes each
+  # organization's writes with in-process locks, which hold only with one backend
+  # (ai-grid-cloud/ai-grid-provider-backend#16). An upgrade stops the console until the new pod is ready.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "console.selectorLabels" . | nindent 6 }}
