@@ -1,7 +1,8 @@
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useState } from 'react';
 import {
   Alert,
   AlertActionLink,
+  AlertActionCloseButton,
   EmptyState,
   EmptyStateBody,
   PageSection,
@@ -10,10 +11,10 @@ import {
   TabTitleText,
   Tabs,
 } from '@patternfly/react-core';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { ConsoleService } from '../../api/ConsoleService';
 import { ServiceError } from '../../api/ConsoleService';
-import { dashboardKey, dashboardTitle, monitoringTabs } from '../../api/monitoring';
+import { dashboardKey, dashboardTitle, monitoringLinkFor, monitoringTabs } from '../../api/monitoring';
 import type { ConsoleConfig } from '../../api/types';
 import { PageHeader } from '../../components/PageHeader';
 import { PageLoading } from '../../components/PageLoading';
@@ -39,6 +40,10 @@ const failureOf = (error: Error) => {
 const PersesMonitoring: React.FC<{ service: ConsoleService; project: string }> = ({ service, project }) => {
   const [dashboards, loaded, error, refresh] = useServiceData(() => service.listMonitoringDashboards(project), [], 0);
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
+  // A link inside a dashboard to a page of another app (such as the OpenShift console's Perses
+  // viewer, which ACM's dashboards link to), which would be this console's 404.
+  const [unreachableLink, setUnreachableLink] = useState<string>();
   const tabs = monitoringTabs(dashboards);
   const asked = params.get('dashboard');
   const selected = tabs.find((d) => dashboardKey(d, project) === asked) ?? tabs[0];
@@ -85,9 +90,45 @@ const PersesMonitoring: React.FC<{ service: ConsoleService; project: string }> =
             />
           ))}
         </Tabs>
-        <Suspense fallback={<PageLoading label="Loading dashboard" />}>
-          <PersesDashboardView key={dashboardKey(selected, project)} dashboard={selected} />
-        </Suspense>
+        {unreachableLink && (
+          <Alert
+            isInline
+            variant="info"
+            title="This link opens a page the console doesn't have"
+            actionClose={<AlertActionCloseButton onClose={() => setUnreachableLink(undefined)} />}
+          >
+            The dashboard links to <code>{unreachableLink}</code>. Monitoring opens only its own dashboards.
+          </Alert>
+        )}
+        {/* Links in a dashboard are the dashboard author's: one to a page of this console's (another tab)
+            opens here; a relative one to any other page would be this console's 404. Links to other
+            sites, and clicks with a modifier key, are left alone. */}
+        <div
+          onClick={(event) => {
+            const href = (event.target as HTMLElement).closest('a')?.getAttribute('href');
+            if (
+              !href ||
+              !href.startsWith('/') ||
+              href.startsWith('//') ||
+              event.defaultPrevented ||
+              event.button !== 0 ||
+              event.metaKey ||
+              event.ctrlKey ||
+              event.shiftKey ||
+              event.altKey
+            ) {
+              return;
+            }
+            event.preventDefault();
+            const to = monitoringLinkFor(href, tabs, project);
+            setUnreachableLink(to ? undefined : href);
+            if (to) navigate(to);
+          }}
+        >
+          <Suspense fallback={<PageLoading label="Loading dashboard" />}>
+            <PersesDashboardView key={dashboardKey(selected, project)} dashboard={selected} />
+          </Suspense>
+        </div>
       </Stack>
     );
   };

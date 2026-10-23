@@ -5,14 +5,21 @@ import { vi } from 'vitest';
 import { ServiceError } from '../api/ConsoleService';
 import { HttpConsoleService } from '../api/HttpConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
-import { dashboardKey, monitoringTabs } from '../api/monitoring';
+import { dashboardKey, monitoringLinkFor, monitoringTabs } from '../api/monitoring';
 import { renderAt } from './render';
 
 // Perses's charts don't render in jsdom; the page is tested up to the dashboard it hands over.
+// It also renders links as a dashboard's panels would.
 vi.mock('../pages/monitoring/PersesDashboardView', () => ({
   default: ({ dashboard }: { dashboard: DashboardResource }) => (
-    <div data-testid="perses-dashboard">
-      {dashboard.metadata.project}/{dashboard.metadata.name}
+    <div>
+      <div data-testid="perses-dashboard">
+        {dashboard.metadata.project}/{dashboard.metadata.name}
+      </div>
+      <a href="/monitoring/v2/dashboards/view?dashboard=dashboard-2-usage&project=ai-grid&var-cluster=site-a">
+        usage of site-a
+      </a>
+      <a href="/monitoring/v2/dashboards/view?dashboard=acm-optimization-overview&project=ai-grid">optimization</a>
     </div>
   ),
 }));
@@ -105,6 +112,45 @@ it("keeps the AI Grid overview's metrics when the console relays to no Perses", 
     await screen.findByText('Cluster availability, gateway performance and resource use across AI Grid.'),
   ).toBeVisible();
   expect(screen.queryByTestId('monitoring-tabs')).not.toBeInTheDocument();
+});
+
+it("opens a dashboard's link to another tab here, and says when a link goes elsewhere", async () => {
+  const user = userEvent.setup();
+  renderAt('/monitoring', withMonitoring('ai-grid', hub));
+  expect(await screen.findByTestId('perses-dashboard')).toHaveTextContent('ai-grid/dashboard-1-fleet');
+  await user.click(screen.getByRole('link', { name: 'optimization' }));
+  expect(await screen.findByText("This link opens a page the console doesn't have")).toBeVisible();
+  expect(screen.getByTestId('perses-dashboard')).toHaveTextContent('ai-grid/dashboard-1-fleet');
+  await user.click(screen.getByRole('link', { name: 'usage of site-a' }));
+  expect(await screen.findByTestId('perses-dashboard')).toHaveTextContent('ai-grid/dashboard-2-usage');
+  expect(screen.getByRole('tab', { name: 'Token usage' })).toHaveAttribute('aria-selected', 'true');
+  expect(screen.queryByText("This link opens a page the console doesn't have")).not.toBeInTheDocument();
+});
+
+describe('monitoringLinkFor', () => {
+  const tabs = monitoringTabs(hub);
+  it("maps the OpenShift console's and Perses's dashboard links to a tab, keeping time and variables", () => {
+    expect(
+      monitoringLinkFor(
+        '/monitoring/v2/dashboards/view?dashboard=dashboard-2-usage&project=ai-grid&var-cluster=site-a&start=6h&x=1',
+        tabs,
+        'ai-grid',
+      ),
+    ).toBe('/monitoring?dashboard=dashboard-2-usage&var-cluster=site-a&start=6h');
+    expect(monitoringLinkFor('/projects/other/dashboards/dashboard-1-fleet?var-a=b', tabs, '')).toBe(
+      '/monitoring?dashboard=other%2Fdashboard-1-fleet&var-a=b',
+    );
+  });
+
+  it('answers undefined for a dashboard that is not a tab, another project, or another page', () => {
+    expect(monitoringLinkFor('/monitoring/v2/dashboards/view?dashboard=acm-clusters-overview', tabs, 'ai-grid')).toBe(
+      undefined,
+    );
+    expect(
+      monitoringLinkFor('/monitoring/v2/dashboards/view?dashboard=dashboard-2-usage&project=other', tabs, 'ai-grid'),
+    ).toBe(undefined);
+    expect(monitoringLinkFor('/multicloud/infrastructure/clusters', tabs, 'ai-grid')).toBe(undefined);
+  });
 });
 
 describe('monitoringTabs', () => {
