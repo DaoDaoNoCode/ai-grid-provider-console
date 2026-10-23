@@ -73,7 +73,10 @@ when the RPCs allow it.
   until the console moves to Connect and the backend's contract: `FromV1Cluster` derives the
   draft's cluster state from `spec.hub_accepts_client`, `status.joined`,
   `status.available_condition` and the deletion time, and the tenant writes refuse with
-  `Unimplemented` the draft fields the backend's `Tenant` lacks.
+  `Unimplemented` the draft fields the backend's `Tenant` lacks. They accept those fields when
+  they hold what a read shows (`description: ""`, `enabled: true`, `attributes: {}`), which may
+  not be what Keycloak stores (`readBackValue`), and send a PATCH that sets only such fields as
+  an update with the mask `id`.
 - `toTenant` (`bff/internal/api/tenants.go`), fallbacks for the shipped backend: `enabled`
   defaults to true, `domainDetails` is built from `domains`.
 - `toModel` (`bff/internal/api/models.go`): `displayName` and `description` from the

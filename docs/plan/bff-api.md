@@ -50,8 +50,9 @@ backend pages but doesn't evaluate `filter` yet, so a filtered list answers 501.
 sends `name` as `metadata.name` and `domains` as `spec.domains` (mask paths likewise), and the
 `If-Match` version as `metadata.version` with `lock: true`. Backend PR 16 requires a version:
 every tenant reads as version 1 or more, and an update or delete at version 0 is `InvalidArgument`
-(422, with the backend's message). A write that sets a field the backend's `Tenant` lacks (`alias` other than the name,
-`description`, `enabled: false`, `attributes`, `identityProvider`) answers 501 before any call. A
+(422, with the backend's message). A write that sets a field the backend's `Tenant` lacks
+(`description`, `enabled: false`, `attributes`, `identityProvider`) answers 501 before any call,
+and so does an `alias`: on create, one other than the name; on PATCH, any alias. A
 PATCH that leaves only no-op fields sends the mask `id`, which backend PR 16 answers with the
 stored tenant after checking the version, writing nothing. DELETE sends the `If-Match` version as
 `TenantsDeleteRequest.version` (backend PR 16). The backend refuses a change to a label or annotation
