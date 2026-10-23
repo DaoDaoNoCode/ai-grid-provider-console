@@ -1,6 +1,7 @@
 // Stopgap: the messages of the backend's real ai_grid.v1 Clusters, Tenants, Subscriptions and
 // Models services, copied from ai-grid-provider-backend proto/ai_grid/v1 (clusters and
-// tenants at 8c1a1bc, PR 16; subscriptions and models at PR 27's merge ref 3428d8d)
+// tenants at 8c1a1bc, PR 16, with the cluster status details at b59731c; subscriptions and
+// models at PR 27's merge ref 3428d8d)
 // (clusters_service, condition_type, managed_cluster_type, metadata_type, model_type,
 // models_service, subscription_type, subscriptions_service, tenant_type, tenants_service), so
 // the BFF can call those RPCs. Fields the BFF doesn't use are
@@ -400,11 +401,16 @@ func (x *ManagedClusterSpec) GetHubAcceptsClient() bool {
 }
 
 type ManagedClusterStatus struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	Available          bool                   `protobuf:"varint,1,opt,name=available,proto3" json:"available,omitempty"`
-	Joined             bool                   `protobuf:"varint,2,opt,name=joined,proto3" json:"joined,omitempty"`
-	AvailableCondition string                 `protobuf:"bytes,3,opt,name=available_condition,json=availableCondition,proto3" json:"available_condition,omitempty"`
-	Provisioning       string                 `protobuf:"bytes,4,opt,name=provisioning,proto3" json:"provisioning,omitempty"`
+	state              protoimpl.MessageState     `protogen:"open.v1"`
+	Available          bool                       `protobuf:"varint,1,opt,name=available,proto3" json:"available,omitempty"`
+	Joined             bool                       `protobuf:"varint,2,opt,name=joined,proto3" json:"joined,omitempty"`
+	AvailableCondition string                     `protobuf:"bytes,3,opt,name=available_condition,json=availableCondition,proto3" json:"available_condition,omitempty"`
+	Provisioning       string                     `protobuf:"bytes,4,opt,name=provisioning,proto3" json:"provisioning,omitempty"`
+	Conditions         []*ManagedClusterCondition `protobuf:"bytes,5,rep,name=conditions,proto3" json:"conditions,omitempty"`
+	KubernetesVersion  string                     `protobuf:"bytes,6,opt,name=kubernetes_version,json=kubernetesVersion,proto3" json:"kubernetes_version,omitempty"`
+	Capacity           map[string]string          `protobuf:"bytes,7,rep,name=capacity,proto3" json:"capacity,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Allocatable        map[string]string          `protobuf:"bytes,8,rep,name=allocatable,proto3" json:"allocatable,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	ClusterClaims      []*ManagedClusterClaim     `protobuf:"bytes,9,rep,name=cluster_claims,json=clusterClaims,proto3" json:"cluster_claims,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -467,6 +473,169 @@ func (x *ManagedClusterStatus) GetProvisioning() string {
 	return ""
 }
 
+func (x *ManagedClusterStatus) GetConditions() []*ManagedClusterCondition {
+	if x != nil {
+		return x.Conditions
+	}
+	return nil
+}
+
+func (x *ManagedClusterStatus) GetKubernetesVersion() string {
+	if x != nil {
+		return x.KubernetesVersion
+	}
+	return ""
+}
+
+func (x *ManagedClusterStatus) GetCapacity() map[string]string {
+	if x != nil {
+		return x.Capacity
+	}
+	return nil
+}
+
+func (x *ManagedClusterStatus) GetAllocatable() map[string]string {
+	if x != nil {
+		return x.Allocatable
+	}
+	return nil
+}
+
+func (x *ManagedClusterStatus) GetClusterClaims() []*ManagedClusterClaim {
+	if x != nil {
+		return x.ClusterClaims
+	}
+	return nil
+}
+
+type ManagedClusterCondition struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Type               string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
+	Status             string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
+	Reason             string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	Message            string                 `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
+	LastTransitionTime *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=last_transition_time,json=lastTransitionTime,proto3" json:"last_transition_time,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *ManagedClusterCondition) Reset() {
+	*x = ManagedClusterCondition{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ManagedClusterCondition) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ManagedClusterCondition) ProtoMessage() {}
+
+func (x *ManagedClusterCondition) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ManagedClusterCondition.ProtoReflect.Descriptor instead.
+func (*ManagedClusterCondition) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ManagedClusterCondition) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *ManagedClusterCondition) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *ManagedClusterCondition) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *ManagedClusterCondition) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *ManagedClusterCondition) GetLastTransitionTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastTransitionTime
+	}
+	return nil
+}
+
+type ManagedClusterClaim struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Value         string                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ManagedClusterClaim) Reset() {
+	*x = ManagedClusterClaim{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ManagedClusterClaim) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ManagedClusterClaim) ProtoMessage() {}
+
+func (x *ManagedClusterClaim) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ManagedClusterClaim.ProtoReflect.Descriptor instead.
+func (*ManagedClusterClaim) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ManagedClusterClaim) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ManagedClusterClaim) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
 type ClustersListRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Offset        *int32                 `protobuf:"varint,1,opt,name=offset,proto3,oneof" json:"offset,omitempty"`
@@ -479,7 +648,7 @@ type ClustersListRequest struct {
 
 func (x *ClustersListRequest) Reset() {
 	*x = ClustersListRequest{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[4]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -491,7 +660,7 @@ func (x *ClustersListRequest) String() string {
 func (*ClustersListRequest) ProtoMessage() {}
 
 func (x *ClustersListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[4]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -504,7 +673,7 @@ func (x *ClustersListRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClustersListRequest.ProtoReflect.Descriptor instead.
 func (*ClustersListRequest) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{4}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ClustersListRequest) GetOffset() int32 {
@@ -546,7 +715,7 @@ type ClustersListResponse struct {
 
 func (x *ClustersListResponse) Reset() {
 	*x = ClustersListResponse{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[5]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -558,7 +727,7 @@ func (x *ClustersListResponse) String() string {
 func (*ClustersListResponse) ProtoMessage() {}
 
 func (x *ClustersListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[5]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -571,7 +740,7 @@ func (x *ClustersListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClustersListResponse.ProtoReflect.Descriptor instead.
 func (*ClustersListResponse) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{5}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ClustersListResponse) GetSize() int32 {
@@ -604,7 +773,7 @@ type ClustersGetRequest struct {
 
 func (x *ClustersGetRequest) Reset() {
 	*x = ClustersGetRequest{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[6]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -616,7 +785,7 @@ func (x *ClustersGetRequest) String() string {
 func (*ClustersGetRequest) ProtoMessage() {}
 
 func (x *ClustersGetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[6]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -629,7 +798,7 @@ func (x *ClustersGetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClustersGetRequest.ProtoReflect.Descriptor instead.
 func (*ClustersGetRequest) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{6}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ClustersGetRequest) GetId() string {
@@ -648,7 +817,7 @@ type ClustersGetResponse struct {
 
 func (x *ClustersGetResponse) Reset() {
 	*x = ClustersGetResponse{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[7]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -660,7 +829,7 @@ func (x *ClustersGetResponse) String() string {
 func (*ClustersGetResponse) ProtoMessage() {}
 
 func (x *ClustersGetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[7]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -673,7 +842,7 @@ func (x *ClustersGetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClustersGetResponse.ProtoReflect.Descriptor instead.
 func (*ClustersGetResponse) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{7}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ClustersGetResponse) GetObject() *ManagedCluster {
@@ -694,7 +863,7 @@ type ClustersUpdateRequest struct {
 
 func (x *ClustersUpdateRequest) Reset() {
 	*x = ClustersUpdateRequest{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[8]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -706,7 +875,7 @@ func (x *ClustersUpdateRequest) String() string {
 func (*ClustersUpdateRequest) ProtoMessage() {}
 
 func (x *ClustersUpdateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[8]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -719,7 +888,7 @@ func (x *ClustersUpdateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClustersUpdateRequest.ProtoReflect.Descriptor instead.
 func (*ClustersUpdateRequest) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{8}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ClustersUpdateRequest) GetObject() *ManagedCluster {
@@ -752,7 +921,7 @@ type ClustersUpdateResponse struct {
 
 func (x *ClustersUpdateResponse) Reset() {
 	*x = ClustersUpdateResponse{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[9]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -764,7 +933,7 @@ func (x *ClustersUpdateResponse) String() string {
 func (*ClustersUpdateResponse) ProtoMessage() {}
 
 func (x *ClustersUpdateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[9]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -777,7 +946,7 @@ func (x *ClustersUpdateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClustersUpdateResponse.ProtoReflect.Descriptor instead.
 func (*ClustersUpdateResponse) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{9}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ClustersUpdateResponse) GetObject() *ManagedCluster {
@@ -799,7 +968,7 @@ type Tenant struct {
 
 func (x *Tenant) Reset() {
 	*x = Tenant{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[10]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -811,7 +980,7 @@ func (x *Tenant) String() string {
 func (*Tenant) ProtoMessage() {}
 
 func (x *Tenant) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[10]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -824,7 +993,7 @@ func (x *Tenant) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Tenant.ProtoReflect.Descriptor instead.
 func (*Tenant) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{10}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *Tenant) GetId() string {
@@ -864,7 +1033,7 @@ type TenantSpec struct {
 
 func (x *TenantSpec) Reset() {
 	*x = TenantSpec{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[11]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -876,7 +1045,7 @@ func (x *TenantSpec) String() string {
 func (*TenantSpec) ProtoMessage() {}
 
 func (x *TenantSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[11]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -889,7 +1058,7 @@ func (x *TenantSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TenantSpec.ProtoReflect.Descriptor instead.
 func (*TenantSpec) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{11}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *TenantSpec) GetDomains() []string {
@@ -907,7 +1076,7 @@ type TenantStatus struct {
 
 func (x *TenantStatus) Reset() {
 	*x = TenantStatus{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[12]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -919,7 +1088,7 @@ func (x *TenantStatus) String() string {
 func (*TenantStatus) ProtoMessage() {}
 
 func (x *TenantStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[12]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -932,7 +1101,7 @@ func (x *TenantStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TenantStatus.ProtoReflect.Descriptor instead.
 func (*TenantStatus) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{12}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{14}
 }
 
 type TenantsListRequest struct {
@@ -947,7 +1116,7 @@ type TenantsListRequest struct {
 
 func (x *TenantsListRequest) Reset() {
 	*x = TenantsListRequest{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[13]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -959,7 +1128,7 @@ func (x *TenantsListRequest) String() string {
 func (*TenantsListRequest) ProtoMessage() {}
 
 func (x *TenantsListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[13]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -972,7 +1141,7 @@ func (x *TenantsListRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TenantsListRequest.ProtoReflect.Descriptor instead.
 func (*TenantsListRequest) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{13}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *TenantsListRequest) GetOffset() int32 {
@@ -1014,7 +1183,7 @@ type TenantsListResponse struct {
 
 func (x *TenantsListResponse) Reset() {
 	*x = TenantsListResponse{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[14]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1026,7 +1195,7 @@ func (x *TenantsListResponse) String() string {
 func (*TenantsListResponse) ProtoMessage() {}
 
 func (x *TenantsListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[14]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1039,7 +1208,7 @@ func (x *TenantsListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TenantsListResponse.ProtoReflect.Descriptor instead.
 func (*TenantsListResponse) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{14}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *TenantsListResponse) GetSize() int32 {
@@ -1072,7 +1241,7 @@ type TenantsGetRequest struct {
 
 func (x *TenantsGetRequest) Reset() {
 	*x = TenantsGetRequest{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[15]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1084,7 +1253,7 @@ func (x *TenantsGetRequest) String() string {
 func (*TenantsGetRequest) ProtoMessage() {}
 
 func (x *TenantsGetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[15]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1097,7 +1266,7 @@ func (x *TenantsGetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TenantsGetRequest.ProtoReflect.Descriptor instead.
 func (*TenantsGetRequest) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{15}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *TenantsGetRequest) GetId() string {
@@ -1116,7 +1285,7 @@ type TenantsGetResponse struct {
 
 func (x *TenantsGetResponse) Reset() {
 	*x = TenantsGetResponse{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[16]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1128,7 +1297,7 @@ func (x *TenantsGetResponse) String() string {
 func (*TenantsGetResponse) ProtoMessage() {}
 
 func (x *TenantsGetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[16]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1141,7 +1310,7 @@ func (x *TenantsGetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TenantsGetResponse.ProtoReflect.Descriptor instead.
 func (*TenantsGetResponse) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{16}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *TenantsGetResponse) GetObject() *Tenant {
@@ -1160,7 +1329,7 @@ type TenantsCreateRequest struct {
 
 func (x *TenantsCreateRequest) Reset() {
 	*x = TenantsCreateRequest{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[17]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1172,7 +1341,7 @@ func (x *TenantsCreateRequest) String() string {
 func (*TenantsCreateRequest) ProtoMessage() {}
 
 func (x *TenantsCreateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[17]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1185,7 +1354,7 @@ func (x *TenantsCreateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TenantsCreateRequest.ProtoReflect.Descriptor instead.
 func (*TenantsCreateRequest) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{17}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *TenantsCreateRequest) GetObject() *Tenant {
@@ -1204,7 +1373,7 @@ type TenantsCreateResponse struct {
 
 func (x *TenantsCreateResponse) Reset() {
 	*x = TenantsCreateResponse{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[18]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1216,7 +1385,7 @@ func (x *TenantsCreateResponse) String() string {
 func (*TenantsCreateResponse) ProtoMessage() {}
 
 func (x *TenantsCreateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[18]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1229,7 +1398,7 @@ func (x *TenantsCreateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TenantsCreateResponse.ProtoReflect.Descriptor instead.
 func (*TenantsCreateResponse) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{18}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *TenantsCreateResponse) GetObject() *Tenant {
@@ -1250,7 +1419,7 @@ type TenantsUpdateRequest struct {
 
 func (x *TenantsUpdateRequest) Reset() {
 	*x = TenantsUpdateRequest{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[19]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1262,7 +1431,7 @@ func (x *TenantsUpdateRequest) String() string {
 func (*TenantsUpdateRequest) ProtoMessage() {}
 
 func (x *TenantsUpdateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[19]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1275,7 +1444,7 @@ func (x *TenantsUpdateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TenantsUpdateRequest.ProtoReflect.Descriptor instead.
 func (*TenantsUpdateRequest) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{19}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *TenantsUpdateRequest) GetObject() *Tenant {
@@ -1308,7 +1477,7 @@ type TenantsUpdateResponse struct {
 
 func (x *TenantsUpdateResponse) Reset() {
 	*x = TenantsUpdateResponse{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[20]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1320,7 +1489,7 @@ func (x *TenantsUpdateResponse) String() string {
 func (*TenantsUpdateResponse) ProtoMessage() {}
 
 func (x *TenantsUpdateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[20]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1333,7 +1502,7 @@ func (x *TenantsUpdateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TenantsUpdateResponse.ProtoReflect.Descriptor instead.
 func (*TenantsUpdateResponse) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{20}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *TenantsUpdateResponse) GetObject() *Tenant {
@@ -1353,7 +1522,7 @@ type TenantsDeleteRequest struct {
 
 func (x *TenantsDeleteRequest) Reset() {
 	*x = TenantsDeleteRequest{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[21]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1365,7 +1534,7 @@ func (x *TenantsDeleteRequest) String() string {
 func (*TenantsDeleteRequest) ProtoMessage() {}
 
 func (x *TenantsDeleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[21]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1378,7 +1547,7 @@ func (x *TenantsDeleteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TenantsDeleteRequest.ProtoReflect.Descriptor instead.
 func (*TenantsDeleteRequest) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{21}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *TenantsDeleteRequest) GetId() string {
@@ -1403,7 +1572,7 @@ type TenantsDeleteResponse struct {
 
 func (x *TenantsDeleteResponse) Reset() {
 	*x = TenantsDeleteResponse{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[22]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1415,7 +1584,7 @@ func (x *TenantsDeleteResponse) String() string {
 func (*TenantsDeleteResponse) ProtoMessage() {}
 
 func (x *TenantsDeleteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[22]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1428,7 +1597,7 @@ func (x *TenantsDeleteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TenantsDeleteResponse.ProtoReflect.Descriptor instead.
 func (*TenantsDeleteResponse) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{22}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{24}
 }
 
 type Condition struct {
@@ -1444,7 +1613,7 @@ type Condition struct {
 
 func (x *Condition) Reset() {
 	*x = Condition{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[23]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1456,7 +1625,7 @@ func (x *Condition) String() string {
 func (*Condition) ProtoMessage() {}
 
 func (x *Condition) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[23]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1469,7 +1638,7 @@ func (x *Condition) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Condition.ProtoReflect.Descriptor instead.
 func (*Condition) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{23}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *Condition) GetType() string {
@@ -1519,7 +1688,7 @@ type Subscription struct {
 
 func (x *Subscription) Reset() {
 	*x = Subscription{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[24]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1531,7 +1700,7 @@ func (x *Subscription) String() string {
 func (*Subscription) ProtoMessage() {}
 
 func (x *Subscription) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[24]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1544,7 +1713,7 @@ func (x *Subscription) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Subscription.ProtoReflect.Descriptor instead.
 func (*Subscription) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{24}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *Subscription) GetId() string {
@@ -1590,7 +1759,7 @@ type SubscriptionSpec struct {
 
 func (x *SubscriptionSpec) Reset() {
 	*x = SubscriptionSpec{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[25]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1602,7 +1771,7 @@ func (x *SubscriptionSpec) String() string {
 func (*SubscriptionSpec) ProtoMessage() {}
 
 func (x *SubscriptionSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[25]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1615,7 +1784,7 @@ func (x *SubscriptionSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscriptionSpec.ProtoReflect.Descriptor instead.
 func (*SubscriptionSpec) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{25}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *SubscriptionSpec) GetOwner() *SubscriptionOwner {
@@ -1676,7 +1845,7 @@ type SubscriptionOrganization struct {
 
 func (x *SubscriptionOrganization) Reset() {
 	*x = SubscriptionOrganization{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[26]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1688,7 +1857,7 @@ func (x *SubscriptionOrganization) String() string {
 func (*SubscriptionOrganization) ProtoMessage() {}
 
 func (x *SubscriptionOrganization) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[26]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1701,7 +1870,7 @@ func (x *SubscriptionOrganization) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscriptionOrganization.ProtoReflect.Descriptor instead.
 func (*SubscriptionOrganization) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{26}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *SubscriptionOrganization) GetId() string {
@@ -1721,7 +1890,7 @@ type SubscriptionOwner struct {
 
 func (x *SubscriptionOwner) Reset() {
 	*x = SubscriptionOwner{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[27]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1733,7 +1902,7 @@ func (x *SubscriptionOwner) String() string {
 func (*SubscriptionOwner) ProtoMessage() {}
 
 func (x *SubscriptionOwner) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[27]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1746,7 +1915,7 @@ func (x *SubscriptionOwner) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscriptionOwner.ProtoReflect.Descriptor instead.
 func (*SubscriptionOwner) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{27}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *SubscriptionOwner) GetGroups() []string {
@@ -1779,7 +1948,7 @@ type SubscriptionModelRef struct {
 
 func (x *SubscriptionModelRef) Reset() {
 	*x = SubscriptionModelRef{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[28]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1791,7 +1960,7 @@ func (x *SubscriptionModelRef) String() string {
 func (*SubscriptionModelRef) ProtoMessage() {}
 
 func (x *SubscriptionModelRef) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[28]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1804,7 +1973,7 @@ func (x *SubscriptionModelRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscriptionModelRef.ProtoReflect.Descriptor instead.
 func (*SubscriptionModelRef) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{28}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *SubscriptionModelRef) GetName() string {
@@ -1873,7 +2042,7 @@ type TokenRateLimit struct {
 
 func (x *TokenRateLimit) Reset() {
 	*x = TokenRateLimit{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[29]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1885,7 +2054,7 @@ func (x *TokenRateLimit) String() string {
 func (*TokenRateLimit) ProtoMessage() {}
 
 func (x *TokenRateLimit) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[29]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1898,7 +2067,7 @@ func (x *TokenRateLimit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TokenRateLimit.ProtoReflect.Descriptor instead.
 func (*TokenRateLimit) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{29}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *TokenRateLimit) GetLimit() int64 {
@@ -1924,7 +2093,7 @@ type BillingRate struct {
 
 func (x *BillingRate) Reset() {
 	*x = BillingRate{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[30]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1936,7 +2105,7 @@ func (x *BillingRate) String() string {
 func (*BillingRate) ProtoMessage() {}
 
 func (x *BillingRate) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[30]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1949,7 +2118,7 @@ func (x *BillingRate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BillingRate.ProtoReflect.Descriptor instead.
 func (*BillingRate) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{30}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *BillingRate) GetPerToken() string {
@@ -1969,7 +2138,7 @@ type TokenMetadata struct {
 
 func (x *TokenMetadata) Reset() {
 	*x = TokenMetadata{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[31]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1981,7 +2150,7 @@ func (x *TokenMetadata) String() string {
 func (*TokenMetadata) ProtoMessage() {}
 
 func (x *TokenMetadata) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[31]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1994,7 +2163,7 @@ func (x *TokenMetadata) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TokenMetadata.ProtoReflect.Descriptor instead.
 func (*TokenMetadata) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{31}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *TokenMetadata) GetCostCenter() string {
@@ -2021,7 +2190,7 @@ type GuardrailAttachment struct {
 
 func (x *GuardrailAttachment) Reset() {
 	*x = GuardrailAttachment{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[32]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2033,7 +2202,7 @@ func (x *GuardrailAttachment) String() string {
 func (*GuardrailAttachment) ProtoMessage() {}
 
 func (x *GuardrailAttachment) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[32]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2046,7 +2215,7 @@ func (x *GuardrailAttachment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GuardrailAttachment.ProtoReflect.Descriptor instead.
 func (*GuardrailAttachment) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{32}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *GuardrailAttachment) GetRefName() string {
@@ -2075,7 +2244,7 @@ type SubscriptionStatus struct {
 
 func (x *SubscriptionStatus) Reset() {
 	*x = SubscriptionStatus{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[33]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2087,7 +2256,7 @@ func (x *SubscriptionStatus) String() string {
 func (*SubscriptionStatus) ProtoMessage() {}
 
 func (x *SubscriptionStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[33]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2100,7 +2269,7 @@ func (x *SubscriptionStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscriptionStatus.ProtoReflect.Descriptor instead.
 func (*SubscriptionStatus) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{33}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *SubscriptionStatus) GetPhase() string {
@@ -2144,7 +2313,7 @@ type ResourceRefStatus struct {
 
 func (x *ResourceRefStatus) Reset() {
 	*x = ResourceRefStatus{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[34]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2156,7 +2325,7 @@ func (x *ResourceRefStatus) String() string {
 func (*ResourceRefStatus) ProtoMessage() {}
 
 func (x *ResourceRefStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[34]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2169,7 +2338,7 @@ func (x *ResourceRefStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceRefStatus.ProtoReflect.Descriptor instead.
 func (*ResourceRefStatus) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{34}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *ResourceRefStatus) GetName() string {
@@ -2217,7 +2386,7 @@ type TokenRateLimitStatus struct {
 
 func (x *TokenRateLimitStatus) Reset() {
 	*x = TokenRateLimitStatus{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[35]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2229,7 +2398,7 @@ func (x *TokenRateLimitStatus) String() string {
 func (*TokenRateLimitStatus) ProtoMessage() {}
 
 func (x *TokenRateLimitStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[35]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2242,7 +2411,7 @@ func (x *TokenRateLimitStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TokenRateLimitStatus.ProtoReflect.Descriptor instead.
 func (*TokenRateLimitStatus) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{35}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *TokenRateLimitStatus) GetRef() *ResourceRefStatus {
@@ -2273,7 +2442,7 @@ type AuthPolicy struct {
 
 func (x *AuthPolicy) Reset() {
 	*x = AuthPolicy{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[36]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2285,7 +2454,7 @@ func (x *AuthPolicy) String() string {
 func (*AuthPolicy) ProtoMessage() {}
 
 func (x *AuthPolicy) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[36]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2298,7 +2467,7 @@ func (x *AuthPolicy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuthPolicy.ProtoReflect.Descriptor instead.
 func (*AuthPolicy) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{36}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *AuthPolicy) GetId() string {
@@ -2353,7 +2522,7 @@ type AuthPolicyModelRef struct {
 
 func (x *AuthPolicyModelRef) Reset() {
 	*x = AuthPolicyModelRef{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[37]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2365,7 +2534,7 @@ func (x *AuthPolicyModelRef) String() string {
 func (*AuthPolicyModelRef) ProtoMessage() {}
 
 func (x *AuthPolicyModelRef) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[37]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2378,7 +2547,7 @@ func (x *AuthPolicyModelRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuthPolicyModelRef.ProtoReflect.Descriptor instead.
 func (*AuthPolicyModelRef) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{37}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *AuthPolicyModelRef) GetName() string {
@@ -2408,7 +2577,7 @@ type ModelRegistration struct {
 
 func (x *ModelRegistration) Reset() {
 	*x = ModelRegistration{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[38]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2420,7 +2589,7 @@ func (x *ModelRegistration) String() string {
 func (*ModelRegistration) ProtoMessage() {}
 
 func (x *ModelRegistration) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[38]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2433,7 +2602,7 @@ func (x *ModelRegistration) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelRegistration.ProtoReflect.Descriptor instead.
 func (*ModelRegistration) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{38}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *ModelRegistration) GetName() string {
@@ -2479,7 +2648,7 @@ type SubscriptionsListRequest struct {
 
 func (x *SubscriptionsListRequest) Reset() {
 	*x = SubscriptionsListRequest{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[39]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2491,7 +2660,7 @@ func (x *SubscriptionsListRequest) String() string {
 func (*SubscriptionsListRequest) ProtoMessage() {}
 
 func (x *SubscriptionsListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[39]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2504,7 +2673,7 @@ func (x *SubscriptionsListRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscriptionsListRequest.ProtoReflect.Descriptor instead.
 func (*SubscriptionsListRequest) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{39}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{41}
 }
 
 type SubscriptionsListResponse struct {
@@ -2516,7 +2685,7 @@ type SubscriptionsListResponse struct {
 
 func (x *SubscriptionsListResponse) Reset() {
 	*x = SubscriptionsListResponse{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[40]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2528,7 +2697,7 @@ func (x *SubscriptionsListResponse) String() string {
 func (*SubscriptionsListResponse) ProtoMessage() {}
 
 func (x *SubscriptionsListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[40]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2541,7 +2710,7 @@ func (x *SubscriptionsListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscriptionsListResponse.ProtoReflect.Descriptor instead.
 func (*SubscriptionsListResponse) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{40}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *SubscriptionsListResponse) GetItems() []*Subscription {
@@ -2560,7 +2729,7 @@ type SubscriptionsGetRequest struct {
 
 func (x *SubscriptionsGetRequest) Reset() {
 	*x = SubscriptionsGetRequest{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[41]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2572,7 +2741,7 @@ func (x *SubscriptionsGetRequest) String() string {
 func (*SubscriptionsGetRequest) ProtoMessage() {}
 
 func (x *SubscriptionsGetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[41]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2585,7 +2754,7 @@ func (x *SubscriptionsGetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscriptionsGetRequest.ProtoReflect.Descriptor instead.
 func (*SubscriptionsGetRequest) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{41}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *SubscriptionsGetRequest) GetId() string {
@@ -2606,7 +2775,7 @@ type SubscriptionsGetResponse struct {
 
 func (x *SubscriptionsGetResponse) Reset() {
 	*x = SubscriptionsGetResponse{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[42]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2618,7 +2787,7 @@ func (x *SubscriptionsGetResponse) String() string {
 func (*SubscriptionsGetResponse) ProtoMessage() {}
 
 func (x *SubscriptionsGetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[42]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2631,7 +2800,7 @@ func (x *SubscriptionsGetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscriptionsGetResponse.ProtoReflect.Descriptor instead.
 func (*SubscriptionsGetResponse) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{42}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *SubscriptionsGetResponse) GetObject() *Subscription {
@@ -2664,7 +2833,7 @@ type SubscriptionsCreateRequest struct {
 
 func (x *SubscriptionsCreateRequest) Reset() {
 	*x = SubscriptionsCreateRequest{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[43]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2676,7 +2845,7 @@ func (x *SubscriptionsCreateRequest) String() string {
 func (*SubscriptionsCreateRequest) ProtoMessage() {}
 
 func (x *SubscriptionsCreateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[43]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2689,7 +2858,7 @@ func (x *SubscriptionsCreateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscriptionsCreateRequest.ProtoReflect.Descriptor instead.
 func (*SubscriptionsCreateRequest) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{43}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *SubscriptionsCreateRequest) GetObject() *Subscription {
@@ -2709,7 +2878,7 @@ type SubscriptionsCreateResponse struct {
 
 func (x *SubscriptionsCreateResponse) Reset() {
 	*x = SubscriptionsCreateResponse{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[44]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2721,7 +2890,7 @@ func (x *SubscriptionsCreateResponse) String() string {
 func (*SubscriptionsCreateResponse) ProtoMessage() {}
 
 func (x *SubscriptionsCreateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[44]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2734,7 +2903,7 @@ func (x *SubscriptionsCreateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscriptionsCreateResponse.ProtoReflect.Descriptor instead.
 func (*SubscriptionsCreateResponse) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{44}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *SubscriptionsCreateResponse) GetObject() *Subscription {
@@ -2762,7 +2931,7 @@ type SubscriptionsUpdateRequest struct {
 
 func (x *SubscriptionsUpdateRequest) Reset() {
 	*x = SubscriptionsUpdateRequest{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[45]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2774,7 +2943,7 @@ func (x *SubscriptionsUpdateRequest) String() string {
 func (*SubscriptionsUpdateRequest) ProtoMessage() {}
 
 func (x *SubscriptionsUpdateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[45]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2787,7 +2956,7 @@ func (x *SubscriptionsUpdateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscriptionsUpdateRequest.ProtoReflect.Descriptor instead.
 func (*SubscriptionsUpdateRequest) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{45}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *SubscriptionsUpdateRequest) GetObject() *Subscription {
@@ -2820,7 +2989,7 @@ type SubscriptionsUpdateResponse struct {
 
 func (x *SubscriptionsUpdateResponse) Reset() {
 	*x = SubscriptionsUpdateResponse{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[46]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2832,7 +3001,7 @@ func (x *SubscriptionsUpdateResponse) String() string {
 func (*SubscriptionsUpdateResponse) ProtoMessage() {}
 
 func (x *SubscriptionsUpdateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[46]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2845,7 +3014,7 @@ func (x *SubscriptionsUpdateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscriptionsUpdateResponse.ProtoReflect.Descriptor instead.
 func (*SubscriptionsUpdateResponse) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{46}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *SubscriptionsUpdateResponse) GetObject() *Subscription {
@@ -2865,7 +3034,7 @@ type SubscriptionsDeleteRequest struct {
 
 func (x *SubscriptionsDeleteRequest) Reset() {
 	*x = SubscriptionsDeleteRequest{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[47]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2877,7 +3046,7 @@ func (x *SubscriptionsDeleteRequest) String() string {
 func (*SubscriptionsDeleteRequest) ProtoMessage() {}
 
 func (x *SubscriptionsDeleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[47]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2890,7 +3059,7 @@ func (x *SubscriptionsDeleteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscriptionsDeleteRequest.ProtoReflect.Descriptor instead.
 func (*SubscriptionsDeleteRequest) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{47}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *SubscriptionsDeleteRequest) GetId() string {
@@ -2915,7 +3084,7 @@ type SubscriptionsDeleteResponse struct {
 
 func (x *SubscriptionsDeleteResponse) Reset() {
 	*x = SubscriptionsDeleteResponse{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[48]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2927,7 +3096,7 @@ func (x *SubscriptionsDeleteResponse) String() string {
 func (*SubscriptionsDeleteResponse) ProtoMessage() {}
 
 func (x *SubscriptionsDeleteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[48]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2940,7 +3109,7 @@ func (x *SubscriptionsDeleteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscriptionsDeleteResponse.ProtoReflect.Descriptor instead.
 func (*SubscriptionsDeleteResponse) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{48}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{50}
 }
 
 type Model struct {
@@ -2955,7 +3124,7 @@ type Model struct {
 
 func (x *Model) Reset() {
 	*x = Model{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[49]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2967,7 +3136,7 @@ func (x *Model) String() string {
 func (*Model) ProtoMessage() {}
 
 func (x *Model) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[49]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2980,7 +3149,7 @@ func (x *Model) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Model.ProtoReflect.Descriptor instead.
 func (*Model) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{49}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *Model) GetId() string {
@@ -3028,7 +3197,7 @@ type ModelSpec struct {
 
 func (x *ModelSpec) Reset() {
 	*x = ModelSpec{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[50]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3040,7 +3209,7 @@ func (x *ModelSpec) String() string {
 func (*ModelSpec) ProtoMessage() {}
 
 func (x *ModelSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[50]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3053,7 +3222,7 @@ func (x *ModelSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelSpec.ProtoReflect.Descriptor instead.
 func (*ModelSpec) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{50}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *ModelSpec) GetModel() *ModelSource {
@@ -3129,7 +3298,7 @@ type ModelSource struct {
 
 func (x *ModelSource) Reset() {
 	*x = ModelSource{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[51]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3141,7 +3310,7 @@ func (x *ModelSource) String() string {
 func (*ModelSource) ProtoMessage() {}
 
 func (x *ModelSource) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[51]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3154,7 +3323,7 @@ func (x *ModelSource) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelSource.ProtoReflect.Descriptor instead.
 func (*ModelSource) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{51}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *ModelSource) GetUri() string {
@@ -3182,7 +3351,7 @@ type ModelRouter struct {
 
 func (x *ModelRouter) Reset() {
 	*x = ModelRouter{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[52]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3194,7 +3363,7 @@ func (x *ModelRouter) String() string {
 func (*ModelRouter) ProtoMessage() {}
 
 func (x *ModelRouter) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[52]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3207,7 +3376,7 @@ func (x *ModelRouter) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelRouter.ProtoReflect.Descriptor instead.
 func (*ModelRouter) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{52}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *ModelRouter) GetGatewayRefs() []*ModelGatewayRef {
@@ -3242,7 +3411,7 @@ type ModelGatewayRef struct {
 
 func (x *ModelGatewayRef) Reset() {
 	*x = ModelGatewayRef{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[53]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3254,7 +3423,7 @@ func (x *ModelGatewayRef) String() string {
 func (*ModelGatewayRef) ProtoMessage() {}
 
 func (x *ModelGatewayRef) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[53]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3267,7 +3436,7 @@ func (x *ModelGatewayRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelGatewayRef.ProtoReflect.Descriptor instead.
 func (*ModelGatewayRef) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{53}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *ModelGatewayRef) GetName() string {
@@ -3303,7 +3472,7 @@ type ModelContainer struct {
 
 func (x *ModelContainer) Reset() {
 	*x = ModelContainer{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[54]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3315,7 +3484,7 @@ func (x *ModelContainer) String() string {
 func (*ModelContainer) ProtoMessage() {}
 
 func (x *ModelContainer) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[54]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3328,7 +3497,7 @@ func (x *ModelContainer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelContainer.ProtoReflect.Descriptor instead.
 func (*ModelContainer) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{54}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *ModelContainer) GetImage() string {
@@ -3369,7 +3538,7 @@ type ModelEnvVar struct {
 
 func (x *ModelEnvVar) Reset() {
 	*x = ModelEnvVar{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[55]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3381,7 +3550,7 @@ func (x *ModelEnvVar) String() string {
 func (*ModelEnvVar) ProtoMessage() {}
 
 func (x *ModelEnvVar) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[55]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3394,7 +3563,7 @@ func (x *ModelEnvVar) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelEnvVar.ProtoReflect.Descriptor instead.
 func (*ModelEnvVar) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{55}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *ModelEnvVar) GetName() string {
@@ -3423,7 +3592,7 @@ type ModelScaling struct {
 
 func (x *ModelScaling) Reset() {
 	*x = ModelScaling{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[56]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3435,7 +3604,7 @@ func (x *ModelScaling) String() string {
 func (*ModelScaling) ProtoMessage() {}
 
 func (x *ModelScaling) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[56]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3448,7 +3617,7 @@ func (x *ModelScaling) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelScaling.ProtoReflect.Descriptor instead.
 func (*ModelScaling) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{56}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *ModelScaling) GetMinReplicas() int32 {
@@ -3489,7 +3658,7 @@ type ModelKedaTrigger struct {
 
 func (x *ModelKedaTrigger) Reset() {
 	*x = ModelKedaTrigger{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[57]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3501,7 +3670,7 @@ func (x *ModelKedaTrigger) String() string {
 func (*ModelKedaTrigger) ProtoMessage() {}
 
 func (x *ModelKedaTrigger) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[57]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3514,7 +3683,7 @@ func (x *ModelKedaTrigger) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelKedaTrigger.ProtoReflect.Descriptor instead.
 func (*ModelKedaTrigger) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{57}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *ModelKedaTrigger) GetType() string {
@@ -3542,7 +3711,7 @@ type ModelPlacement struct {
 
 func (x *ModelPlacement) Reset() {
 	*x = ModelPlacement{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[58]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3554,7 +3723,7 @@ func (x *ModelPlacement) String() string {
 func (*ModelPlacement) ProtoMessage() {}
 
 func (x *ModelPlacement) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[58]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3567,7 +3736,7 @@ func (x *ModelPlacement) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelPlacement.ProtoReflect.Descriptor instead.
 func (*ModelPlacement) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{58}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *ModelPlacement) GetClusterSets() []string {
@@ -3601,7 +3770,7 @@ type ModelLabelSelector struct {
 
 func (x *ModelLabelSelector) Reset() {
 	*x = ModelLabelSelector{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[59]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3613,7 +3782,7 @@ func (x *ModelLabelSelector) String() string {
 func (*ModelLabelSelector) ProtoMessage() {}
 
 func (x *ModelLabelSelector) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[59]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3626,7 +3795,7 @@ func (x *ModelLabelSelector) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelLabelSelector.ProtoReflect.Descriptor instead.
 func (*ModelLabelSelector) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{59}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *ModelLabelSelector) GetMatchLabels() map[string]string {
@@ -3654,7 +3823,7 @@ type ModelLabelSelectorRequirement struct {
 
 func (x *ModelLabelSelectorRequirement) Reset() {
 	*x = ModelLabelSelectorRequirement{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[60]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3666,7 +3835,7 @@ func (x *ModelLabelSelectorRequirement) String() string {
 func (*ModelLabelSelectorRequirement) ProtoMessage() {}
 
 func (x *ModelLabelSelectorRequirement) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[60]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3679,7 +3848,7 @@ func (x *ModelLabelSelectorRequirement) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelLabelSelectorRequirement.ProtoReflect.Descriptor instead.
 func (*ModelLabelSelectorRequirement) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{60}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *ModelLabelSelectorRequirement) GetKey() string {
@@ -3716,7 +3885,7 @@ type ModelRollout struct {
 
 func (x *ModelRollout) Reset() {
 	*x = ModelRollout{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[61]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3728,7 +3897,7 @@ func (x *ModelRollout) String() string {
 func (*ModelRollout) ProtoMessage() {}
 
 func (x *ModelRollout) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[61]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3741,7 +3910,7 @@ func (x *ModelRollout) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelRollout.ProtoReflect.Descriptor instead.
 func (*ModelRollout) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{61}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *ModelRollout) GetStrategy() ModelRolloutStrategy {
@@ -3795,7 +3964,7 @@ type ModelStatus struct {
 
 func (x *ModelStatus) Reset() {
 	*x = ModelStatus{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[62]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3807,7 +3976,7 @@ func (x *ModelStatus) String() string {
 func (*ModelStatus) ProtoMessage() {}
 
 func (x *ModelStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[62]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3820,7 +3989,7 @@ func (x *ModelStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelStatus.ProtoReflect.Descriptor instead.
 func (*ModelStatus) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{62}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *ModelStatus) GetUrl() string {
@@ -3890,7 +4059,7 @@ type ModelPlacementStatus struct {
 
 func (x *ModelPlacementStatus) Reset() {
 	*x = ModelPlacementStatus{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[63]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3902,7 +4071,7 @@ func (x *ModelPlacementStatus) String() string {
 func (*ModelPlacementStatus) ProtoMessage() {}
 
 func (x *ModelPlacementStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[63]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3915,7 +4084,7 @@ func (x *ModelPlacementStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelPlacementStatus.ProtoReflect.Descriptor instead.
 func (*ModelPlacementStatus) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{63}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *ModelPlacementStatus) GetNumberOfSelectedClusters() int32 {
@@ -3948,7 +4117,7 @@ type ModelRolloutStatus struct {
 
 func (x *ModelRolloutStatus) Reset() {
 	*x = ModelRolloutStatus{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[64]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3960,7 +4129,7 @@ func (x *ModelRolloutStatus) String() string {
 func (*ModelRolloutStatus) ProtoMessage() {}
 
 func (x *ModelRolloutStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[64]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3973,7 +4142,7 @@ func (x *ModelRolloutStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelRolloutStatus.ProtoReflect.Descriptor instead.
 func (*ModelRolloutStatus) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{64}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *ModelRolloutStatus) GetConditions() []*Condition {
@@ -3993,7 +4162,7 @@ type ModelsListRequest struct {
 
 func (x *ModelsListRequest) Reset() {
 	*x = ModelsListRequest{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[65]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4005,7 +4174,7 @@ func (x *ModelsListRequest) String() string {
 func (*ModelsListRequest) ProtoMessage() {}
 
 func (x *ModelsListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[65]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4018,7 +4187,7 @@ func (x *ModelsListRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelsListRequest.ProtoReflect.Descriptor instead.
 func (*ModelsListRequest) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{65}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *ModelsListRequest) GetOffset() int32 {
@@ -4046,7 +4215,7 @@ type ModelsListResponse struct {
 
 func (x *ModelsListResponse) Reset() {
 	*x = ModelsListResponse{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[66]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4058,7 +4227,7 @@ func (x *ModelsListResponse) String() string {
 func (*ModelsListResponse) ProtoMessage() {}
 
 func (x *ModelsListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[66]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4071,7 +4240,7 @@ func (x *ModelsListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelsListResponse.ProtoReflect.Descriptor instead.
 func (*ModelsListResponse) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{66}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *ModelsListResponse) GetSize() int32 {
@@ -4104,7 +4273,7 @@ type ModelsGetRequest struct {
 
 func (x *ModelsGetRequest) Reset() {
 	*x = ModelsGetRequest{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[67]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4116,7 +4285,7 @@ func (x *ModelsGetRequest) String() string {
 func (*ModelsGetRequest) ProtoMessage() {}
 
 func (x *ModelsGetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[67]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4129,7 +4298,7 @@ func (x *ModelsGetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelsGetRequest.ProtoReflect.Descriptor instead.
 func (*ModelsGetRequest) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{67}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *ModelsGetRequest) GetId() string {
@@ -4148,7 +4317,7 @@ type ModelsGetResponse struct {
 
 func (x *ModelsGetResponse) Reset() {
 	*x = ModelsGetResponse{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[68]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4160,7 +4329,7 @@ func (x *ModelsGetResponse) String() string {
 func (*ModelsGetResponse) ProtoMessage() {}
 
 func (x *ModelsGetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[68]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4173,7 +4342,7 @@ func (x *ModelsGetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelsGetResponse.ProtoReflect.Descriptor instead.
 func (*ModelsGetResponse) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{68}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *ModelsGetResponse) GetObject() *Model {
@@ -4192,7 +4361,7 @@ type ModelsCreateRequest struct {
 
 func (x *ModelsCreateRequest) Reset() {
 	*x = ModelsCreateRequest{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[69]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4204,7 +4373,7 @@ func (x *ModelsCreateRequest) String() string {
 func (*ModelsCreateRequest) ProtoMessage() {}
 
 func (x *ModelsCreateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[69]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4217,7 +4386,7 @@ func (x *ModelsCreateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelsCreateRequest.ProtoReflect.Descriptor instead.
 func (*ModelsCreateRequest) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{69}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *ModelsCreateRequest) GetObject() *Model {
@@ -4236,7 +4405,7 @@ type ModelsCreateResponse struct {
 
 func (x *ModelsCreateResponse) Reset() {
 	*x = ModelsCreateResponse{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[70]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4248,7 +4417,7 @@ func (x *ModelsCreateResponse) String() string {
 func (*ModelsCreateResponse) ProtoMessage() {}
 
 func (x *ModelsCreateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[70]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4261,7 +4430,7 @@ func (x *ModelsCreateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelsCreateResponse.ProtoReflect.Descriptor instead.
 func (*ModelsCreateResponse) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{70}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *ModelsCreateResponse) GetObject() *Model {
@@ -4282,7 +4451,7 @@ type ModelsUpdateRequest struct {
 
 func (x *ModelsUpdateRequest) Reset() {
 	*x = ModelsUpdateRequest{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[71]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4294,7 +4463,7 @@ func (x *ModelsUpdateRequest) String() string {
 func (*ModelsUpdateRequest) ProtoMessage() {}
 
 func (x *ModelsUpdateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[71]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4307,7 +4476,7 @@ func (x *ModelsUpdateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelsUpdateRequest.ProtoReflect.Descriptor instead.
 func (*ModelsUpdateRequest) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{71}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *ModelsUpdateRequest) GetObject() *Model {
@@ -4340,7 +4509,7 @@ type ModelsUpdateResponse struct {
 
 func (x *ModelsUpdateResponse) Reset() {
 	*x = ModelsUpdateResponse{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[72]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4352,7 +4521,7 @@ func (x *ModelsUpdateResponse) String() string {
 func (*ModelsUpdateResponse) ProtoMessage() {}
 
 func (x *ModelsUpdateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[72]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4365,7 +4534,7 @@ func (x *ModelsUpdateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelsUpdateResponse.ProtoReflect.Descriptor instead.
 func (*ModelsUpdateResponse) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{72}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *ModelsUpdateResponse) GetObject() *Model {
@@ -4385,7 +4554,7 @@ type ModelsDeleteRequest struct {
 
 func (x *ModelsDeleteRequest) Reset() {
 	*x = ModelsDeleteRequest{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[73]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4397,7 +4566,7 @@ func (x *ModelsDeleteRequest) String() string {
 func (*ModelsDeleteRequest) ProtoMessage() {}
 
 func (x *ModelsDeleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[73]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4410,7 +4579,7 @@ func (x *ModelsDeleteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelsDeleteRequest.ProtoReflect.Descriptor instead.
 func (*ModelsDeleteRequest) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{73}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *ModelsDeleteRequest) GetId() string {
@@ -4435,7 +4604,7 @@ type ModelsDeleteResponse struct {
 
 func (x *ModelsDeleteResponse) Reset() {
 	*x = ModelsDeleteResponse{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[74]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4447,7 +4616,7 @@ func (x *ModelsDeleteResponse) String() string {
 func (*ModelsDeleteResponse) ProtoMessage() {}
 
 func (x *ModelsDeleteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[74]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4460,7 +4629,7 @@ func (x *ModelsDeleteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelsDeleteResponse.ProtoReflect.Descriptor instead.
 func (*ModelsDeleteResponse) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{74}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{76}
 }
 
 type ModelsListLocationsRequest struct {
@@ -4471,7 +4640,7 @@ type ModelsListLocationsRequest struct {
 
 func (x *ModelsListLocationsRequest) Reset() {
 	*x = ModelsListLocationsRequest{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[75]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4483,7 +4652,7 @@ func (x *ModelsListLocationsRequest) String() string {
 func (*ModelsListLocationsRequest) ProtoMessage() {}
 
 func (x *ModelsListLocationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[75]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4496,7 +4665,7 @@ func (x *ModelsListLocationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelsListLocationsRequest.ProtoReflect.Descriptor instead.
 func (*ModelsListLocationsRequest) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{75}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{77}
 }
 
 type ModelsListLocationsResponse struct {
@@ -4508,7 +4677,7 @@ type ModelsListLocationsResponse struct {
 
 func (x *ModelsListLocationsResponse) Reset() {
 	*x = ModelsListLocationsResponse{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[76]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4520,7 +4689,7 @@ func (x *ModelsListLocationsResponse) String() string {
 func (*ModelsListLocationsResponse) ProtoMessage() {}
 
 func (x *ModelsListLocationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[76]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4533,7 +4702,7 @@ func (x *ModelsListLocationsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelsListLocationsResponse.ProtoReflect.Descriptor instead.
 func (*ModelsListLocationsResponse) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{76}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *ModelsListLocationsResponse) GetLocations() []string {
@@ -4569,12 +4738,34 @@ const file_ai_grid_backend_v1_backend_proto_rawDesc = "" +
 	"\x04spec\x18\x03 \x01(\v2&.ai_grid.backend.v1.ManagedClusterSpecR\x04spec\x12@\n" +
 	"\x06status\x18\x04 \x01(\v2(.ai_grid.backend.v1.ManagedClusterStatusR\x06status\"B\n" +
 	"\x12ManagedClusterSpec\x12,\n" +
-	"\x12hub_accepts_client\x18\x01 \x01(\bR\x10hubAcceptsClient\"\xa1\x01\n" +
+	"\x12hub_accepts_client\x18\x01 \x01(\bR\x10hubAcceptsClient\"\x9b\x05\n" +
 	"\x14ManagedClusterStatus\x12\x1c\n" +
 	"\tavailable\x18\x01 \x01(\bR\tavailable\x12\x16\n" +
 	"\x06joined\x18\x02 \x01(\bR\x06joined\x12/\n" +
 	"\x13available_condition\x18\x03 \x01(\tR\x12availableCondition\x12\"\n" +
-	"\fprovisioning\x18\x04 \x01(\tR\fprovisioning\"\xaf\x01\n" +
+	"\fprovisioning\x18\x04 \x01(\tR\fprovisioning\x12K\n" +
+	"\n" +
+	"conditions\x18\x05 \x03(\v2+.ai_grid.backend.v1.ManagedClusterConditionR\n" +
+	"conditions\x12-\n" +
+	"\x12kubernetes_version\x18\x06 \x01(\tR\x11kubernetesVersion\x12R\n" +
+	"\bcapacity\x18\a \x03(\v26.ai_grid.backend.v1.ManagedClusterStatus.CapacityEntryR\bcapacity\x12[\n" +
+	"\vallocatable\x18\b \x03(\v29.ai_grid.backend.v1.ManagedClusterStatus.AllocatableEntryR\vallocatable\x12N\n" +
+	"\x0ecluster_claims\x18\t \x03(\v2'.ai_grid.backend.v1.ManagedClusterClaimR\rclusterClaims\x1a;\n" +
+	"\rCapacityEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a>\n" +
+	"\x10AllocatableEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xc5\x01\n" +
+	"\x17ManagedClusterCondition\x12\x12\n" +
+	"\x04type\x18\x01 \x01(\tR\x04type\x12\x16\n" +
+	"\x06status\x18\x02 \x01(\tR\x06status\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\x12\x18\n" +
+	"\amessage\x18\x04 \x01(\tR\amessage\x12L\n" +
+	"\x14last_transition_time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x12lastTransitionTime\"?\n" +
+	"\x13ManagedClusterClaim\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\"\xaf\x01\n" +
 	"\x13ClustersListRequest\x12\x1b\n" +
 	"\x06offset\x18\x01 \x01(\x05H\x00R\x06offset\x88\x01\x01\x12\x19\n" +
 	"\x05limit\x18\x02 \x01(\x05H\x01R\x05limit\x88\x01\x01\x12\x1b\n" +
@@ -4915,7 +5106,7 @@ func file_ai_grid_backend_v1_backend_proto_rawDescGZIP() []byte {
 }
 
 var file_ai_grid_backend_v1_backend_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_ai_grid_backend_v1_backend_proto_msgTypes = make([]protoimpl.MessageInfo, 84)
+var file_ai_grid_backend_v1_backend_proto_msgTypes = make([]protoimpl.MessageInfo, 88)
 var file_ai_grid_backend_v1_backend_proto_goTypes = []any{
 	(ConditionStatus)(0),                  // 0: ai_grid.backend.v1.ConditionStatus
 	(ModelRolloutStrategy)(0),             // 1: ai_grid.backend.v1.ModelRolloutStrategy
@@ -4924,181 +5115,190 @@ var file_ai_grid_backend_v1_backend_proto_goTypes = []any{
 	(*ManagedCluster)(nil),                // 4: ai_grid.backend.v1.ManagedCluster
 	(*ManagedClusterSpec)(nil),            // 5: ai_grid.backend.v1.ManagedClusterSpec
 	(*ManagedClusterStatus)(nil),          // 6: ai_grid.backend.v1.ManagedClusterStatus
-	(*ClustersListRequest)(nil),           // 7: ai_grid.backend.v1.ClustersListRequest
-	(*ClustersListResponse)(nil),          // 8: ai_grid.backend.v1.ClustersListResponse
-	(*ClustersGetRequest)(nil),            // 9: ai_grid.backend.v1.ClustersGetRequest
-	(*ClustersGetResponse)(nil),           // 10: ai_grid.backend.v1.ClustersGetResponse
-	(*ClustersUpdateRequest)(nil),         // 11: ai_grid.backend.v1.ClustersUpdateRequest
-	(*ClustersUpdateResponse)(nil),        // 12: ai_grid.backend.v1.ClustersUpdateResponse
-	(*Tenant)(nil),                        // 13: ai_grid.backend.v1.Tenant
-	(*TenantSpec)(nil),                    // 14: ai_grid.backend.v1.TenantSpec
-	(*TenantStatus)(nil),                  // 15: ai_grid.backend.v1.TenantStatus
-	(*TenantsListRequest)(nil),            // 16: ai_grid.backend.v1.TenantsListRequest
-	(*TenantsListResponse)(nil),           // 17: ai_grid.backend.v1.TenantsListResponse
-	(*TenantsGetRequest)(nil),             // 18: ai_grid.backend.v1.TenantsGetRequest
-	(*TenantsGetResponse)(nil),            // 19: ai_grid.backend.v1.TenantsGetResponse
-	(*TenantsCreateRequest)(nil),          // 20: ai_grid.backend.v1.TenantsCreateRequest
-	(*TenantsCreateResponse)(nil),         // 21: ai_grid.backend.v1.TenantsCreateResponse
-	(*TenantsUpdateRequest)(nil),          // 22: ai_grid.backend.v1.TenantsUpdateRequest
-	(*TenantsUpdateResponse)(nil),         // 23: ai_grid.backend.v1.TenantsUpdateResponse
-	(*TenantsDeleteRequest)(nil),          // 24: ai_grid.backend.v1.TenantsDeleteRequest
-	(*TenantsDeleteResponse)(nil),         // 25: ai_grid.backend.v1.TenantsDeleteResponse
-	(*Condition)(nil),                     // 26: ai_grid.backend.v1.Condition
-	(*Subscription)(nil),                  // 27: ai_grid.backend.v1.Subscription
-	(*SubscriptionSpec)(nil),              // 28: ai_grid.backend.v1.SubscriptionSpec
-	(*SubscriptionOrganization)(nil),      // 29: ai_grid.backend.v1.SubscriptionOrganization
-	(*SubscriptionOwner)(nil),             // 30: ai_grid.backend.v1.SubscriptionOwner
-	(*SubscriptionModelRef)(nil),          // 31: ai_grid.backend.v1.SubscriptionModelRef
-	(*TokenRateLimit)(nil),                // 32: ai_grid.backend.v1.TokenRateLimit
-	(*BillingRate)(nil),                   // 33: ai_grid.backend.v1.BillingRate
-	(*TokenMetadata)(nil),                 // 34: ai_grid.backend.v1.TokenMetadata
-	(*GuardrailAttachment)(nil),           // 35: ai_grid.backend.v1.GuardrailAttachment
-	(*SubscriptionStatus)(nil),            // 36: ai_grid.backend.v1.SubscriptionStatus
-	(*ResourceRefStatus)(nil),             // 37: ai_grid.backend.v1.ResourceRefStatus
-	(*TokenRateLimitStatus)(nil),          // 38: ai_grid.backend.v1.TokenRateLimitStatus
-	(*AuthPolicy)(nil),                    // 39: ai_grid.backend.v1.AuthPolicy
-	(*AuthPolicyModelRef)(nil),            // 40: ai_grid.backend.v1.AuthPolicyModelRef
-	(*ModelRegistration)(nil),             // 41: ai_grid.backend.v1.ModelRegistration
-	(*SubscriptionsListRequest)(nil),      // 42: ai_grid.backend.v1.SubscriptionsListRequest
-	(*SubscriptionsListResponse)(nil),     // 43: ai_grid.backend.v1.SubscriptionsListResponse
-	(*SubscriptionsGetRequest)(nil),       // 44: ai_grid.backend.v1.SubscriptionsGetRequest
-	(*SubscriptionsGetResponse)(nil),      // 45: ai_grid.backend.v1.SubscriptionsGetResponse
-	(*SubscriptionsCreateRequest)(nil),    // 46: ai_grid.backend.v1.SubscriptionsCreateRequest
-	(*SubscriptionsCreateResponse)(nil),   // 47: ai_grid.backend.v1.SubscriptionsCreateResponse
-	(*SubscriptionsUpdateRequest)(nil),    // 48: ai_grid.backend.v1.SubscriptionsUpdateRequest
-	(*SubscriptionsUpdateResponse)(nil),   // 49: ai_grid.backend.v1.SubscriptionsUpdateResponse
-	(*SubscriptionsDeleteRequest)(nil),    // 50: ai_grid.backend.v1.SubscriptionsDeleteRequest
-	(*SubscriptionsDeleteResponse)(nil),   // 51: ai_grid.backend.v1.SubscriptionsDeleteResponse
-	(*Model)(nil),                         // 52: ai_grid.backend.v1.Model
-	(*ModelSpec)(nil),                     // 53: ai_grid.backend.v1.ModelSpec
-	(*ModelSource)(nil),                   // 54: ai_grid.backend.v1.ModelSource
-	(*ModelRouter)(nil),                   // 55: ai_grid.backend.v1.ModelRouter
-	(*ModelGatewayRef)(nil),               // 56: ai_grid.backend.v1.ModelGatewayRef
-	(*ModelContainer)(nil),                // 57: ai_grid.backend.v1.ModelContainer
-	(*ModelEnvVar)(nil),                   // 58: ai_grid.backend.v1.ModelEnvVar
-	(*ModelScaling)(nil),                  // 59: ai_grid.backend.v1.ModelScaling
-	(*ModelKedaTrigger)(nil),              // 60: ai_grid.backend.v1.ModelKedaTrigger
-	(*ModelPlacement)(nil),                // 61: ai_grid.backend.v1.ModelPlacement
-	(*ModelLabelSelector)(nil),            // 62: ai_grid.backend.v1.ModelLabelSelector
-	(*ModelLabelSelectorRequirement)(nil), // 63: ai_grid.backend.v1.ModelLabelSelectorRequirement
-	(*ModelRollout)(nil),                  // 64: ai_grid.backend.v1.ModelRollout
-	(*ModelStatus)(nil),                   // 65: ai_grid.backend.v1.ModelStatus
-	(*ModelPlacementStatus)(nil),          // 66: ai_grid.backend.v1.ModelPlacementStatus
-	(*ModelRolloutStatus)(nil),            // 67: ai_grid.backend.v1.ModelRolloutStatus
-	(*ModelsListRequest)(nil),             // 68: ai_grid.backend.v1.ModelsListRequest
-	(*ModelsListResponse)(nil),            // 69: ai_grid.backend.v1.ModelsListResponse
-	(*ModelsGetRequest)(nil),              // 70: ai_grid.backend.v1.ModelsGetRequest
-	(*ModelsGetResponse)(nil),             // 71: ai_grid.backend.v1.ModelsGetResponse
-	(*ModelsCreateRequest)(nil),           // 72: ai_grid.backend.v1.ModelsCreateRequest
-	(*ModelsCreateResponse)(nil),          // 73: ai_grid.backend.v1.ModelsCreateResponse
-	(*ModelsUpdateRequest)(nil),           // 74: ai_grid.backend.v1.ModelsUpdateRequest
-	(*ModelsUpdateResponse)(nil),          // 75: ai_grid.backend.v1.ModelsUpdateResponse
-	(*ModelsDeleteRequest)(nil),           // 76: ai_grid.backend.v1.ModelsDeleteRequest
-	(*ModelsDeleteResponse)(nil),          // 77: ai_grid.backend.v1.ModelsDeleteResponse
-	(*ModelsListLocationsRequest)(nil),    // 78: ai_grid.backend.v1.ModelsListLocationsRequest
-	(*ModelsListLocationsResponse)(nil),   // 79: ai_grid.backend.v1.ModelsListLocationsResponse
-	nil,                                   // 80: ai_grid.backend.v1.Metadata.LabelsEntry
-	nil,                                   // 81: ai_grid.backend.v1.Metadata.AnnotationsEntry
-	nil,                                   // 82: ai_grid.backend.v1.TokenMetadata.LabelsEntry
-	nil,                                   // 83: ai_grid.backend.v1.ModelContainer.RequestsEntry
-	nil,                                   // 84: ai_grid.backend.v1.ModelContainer.LimitsEntry
-	nil,                                   // 85: ai_grid.backend.v1.ModelKedaTrigger.MetadataEntry
-	nil,                                   // 86: ai_grid.backend.v1.ModelLabelSelector.MatchLabelsEntry
-	(*timestamppb.Timestamp)(nil),         // 87: google.protobuf.Timestamp
-	(*fieldmaskpb.FieldMask)(nil),         // 88: google.protobuf.FieldMask
+	(*ManagedClusterCondition)(nil),       // 7: ai_grid.backend.v1.ManagedClusterCondition
+	(*ManagedClusterClaim)(nil),           // 8: ai_grid.backend.v1.ManagedClusterClaim
+	(*ClustersListRequest)(nil),           // 9: ai_grid.backend.v1.ClustersListRequest
+	(*ClustersListResponse)(nil),          // 10: ai_grid.backend.v1.ClustersListResponse
+	(*ClustersGetRequest)(nil),            // 11: ai_grid.backend.v1.ClustersGetRequest
+	(*ClustersGetResponse)(nil),           // 12: ai_grid.backend.v1.ClustersGetResponse
+	(*ClustersUpdateRequest)(nil),         // 13: ai_grid.backend.v1.ClustersUpdateRequest
+	(*ClustersUpdateResponse)(nil),        // 14: ai_grid.backend.v1.ClustersUpdateResponse
+	(*Tenant)(nil),                        // 15: ai_grid.backend.v1.Tenant
+	(*TenantSpec)(nil),                    // 16: ai_grid.backend.v1.TenantSpec
+	(*TenantStatus)(nil),                  // 17: ai_grid.backend.v1.TenantStatus
+	(*TenantsListRequest)(nil),            // 18: ai_grid.backend.v1.TenantsListRequest
+	(*TenantsListResponse)(nil),           // 19: ai_grid.backend.v1.TenantsListResponse
+	(*TenantsGetRequest)(nil),             // 20: ai_grid.backend.v1.TenantsGetRequest
+	(*TenantsGetResponse)(nil),            // 21: ai_grid.backend.v1.TenantsGetResponse
+	(*TenantsCreateRequest)(nil),          // 22: ai_grid.backend.v1.TenantsCreateRequest
+	(*TenantsCreateResponse)(nil),         // 23: ai_grid.backend.v1.TenantsCreateResponse
+	(*TenantsUpdateRequest)(nil),          // 24: ai_grid.backend.v1.TenantsUpdateRequest
+	(*TenantsUpdateResponse)(nil),         // 25: ai_grid.backend.v1.TenantsUpdateResponse
+	(*TenantsDeleteRequest)(nil),          // 26: ai_grid.backend.v1.TenantsDeleteRequest
+	(*TenantsDeleteResponse)(nil),         // 27: ai_grid.backend.v1.TenantsDeleteResponse
+	(*Condition)(nil),                     // 28: ai_grid.backend.v1.Condition
+	(*Subscription)(nil),                  // 29: ai_grid.backend.v1.Subscription
+	(*SubscriptionSpec)(nil),              // 30: ai_grid.backend.v1.SubscriptionSpec
+	(*SubscriptionOrganization)(nil),      // 31: ai_grid.backend.v1.SubscriptionOrganization
+	(*SubscriptionOwner)(nil),             // 32: ai_grid.backend.v1.SubscriptionOwner
+	(*SubscriptionModelRef)(nil),          // 33: ai_grid.backend.v1.SubscriptionModelRef
+	(*TokenRateLimit)(nil),                // 34: ai_grid.backend.v1.TokenRateLimit
+	(*BillingRate)(nil),                   // 35: ai_grid.backend.v1.BillingRate
+	(*TokenMetadata)(nil),                 // 36: ai_grid.backend.v1.TokenMetadata
+	(*GuardrailAttachment)(nil),           // 37: ai_grid.backend.v1.GuardrailAttachment
+	(*SubscriptionStatus)(nil),            // 38: ai_grid.backend.v1.SubscriptionStatus
+	(*ResourceRefStatus)(nil),             // 39: ai_grid.backend.v1.ResourceRefStatus
+	(*TokenRateLimitStatus)(nil),          // 40: ai_grid.backend.v1.TokenRateLimitStatus
+	(*AuthPolicy)(nil),                    // 41: ai_grid.backend.v1.AuthPolicy
+	(*AuthPolicyModelRef)(nil),            // 42: ai_grid.backend.v1.AuthPolicyModelRef
+	(*ModelRegistration)(nil),             // 43: ai_grid.backend.v1.ModelRegistration
+	(*SubscriptionsListRequest)(nil),      // 44: ai_grid.backend.v1.SubscriptionsListRequest
+	(*SubscriptionsListResponse)(nil),     // 45: ai_grid.backend.v1.SubscriptionsListResponse
+	(*SubscriptionsGetRequest)(nil),       // 46: ai_grid.backend.v1.SubscriptionsGetRequest
+	(*SubscriptionsGetResponse)(nil),      // 47: ai_grid.backend.v1.SubscriptionsGetResponse
+	(*SubscriptionsCreateRequest)(nil),    // 48: ai_grid.backend.v1.SubscriptionsCreateRequest
+	(*SubscriptionsCreateResponse)(nil),   // 49: ai_grid.backend.v1.SubscriptionsCreateResponse
+	(*SubscriptionsUpdateRequest)(nil),    // 50: ai_grid.backend.v1.SubscriptionsUpdateRequest
+	(*SubscriptionsUpdateResponse)(nil),   // 51: ai_grid.backend.v1.SubscriptionsUpdateResponse
+	(*SubscriptionsDeleteRequest)(nil),    // 52: ai_grid.backend.v1.SubscriptionsDeleteRequest
+	(*SubscriptionsDeleteResponse)(nil),   // 53: ai_grid.backend.v1.SubscriptionsDeleteResponse
+	(*Model)(nil),                         // 54: ai_grid.backend.v1.Model
+	(*ModelSpec)(nil),                     // 55: ai_grid.backend.v1.ModelSpec
+	(*ModelSource)(nil),                   // 56: ai_grid.backend.v1.ModelSource
+	(*ModelRouter)(nil),                   // 57: ai_grid.backend.v1.ModelRouter
+	(*ModelGatewayRef)(nil),               // 58: ai_grid.backend.v1.ModelGatewayRef
+	(*ModelContainer)(nil),                // 59: ai_grid.backend.v1.ModelContainer
+	(*ModelEnvVar)(nil),                   // 60: ai_grid.backend.v1.ModelEnvVar
+	(*ModelScaling)(nil),                  // 61: ai_grid.backend.v1.ModelScaling
+	(*ModelKedaTrigger)(nil),              // 62: ai_grid.backend.v1.ModelKedaTrigger
+	(*ModelPlacement)(nil),                // 63: ai_grid.backend.v1.ModelPlacement
+	(*ModelLabelSelector)(nil),            // 64: ai_grid.backend.v1.ModelLabelSelector
+	(*ModelLabelSelectorRequirement)(nil), // 65: ai_grid.backend.v1.ModelLabelSelectorRequirement
+	(*ModelRollout)(nil),                  // 66: ai_grid.backend.v1.ModelRollout
+	(*ModelStatus)(nil),                   // 67: ai_grid.backend.v1.ModelStatus
+	(*ModelPlacementStatus)(nil),          // 68: ai_grid.backend.v1.ModelPlacementStatus
+	(*ModelRolloutStatus)(nil),            // 69: ai_grid.backend.v1.ModelRolloutStatus
+	(*ModelsListRequest)(nil),             // 70: ai_grid.backend.v1.ModelsListRequest
+	(*ModelsListResponse)(nil),            // 71: ai_grid.backend.v1.ModelsListResponse
+	(*ModelsGetRequest)(nil),              // 72: ai_grid.backend.v1.ModelsGetRequest
+	(*ModelsGetResponse)(nil),             // 73: ai_grid.backend.v1.ModelsGetResponse
+	(*ModelsCreateRequest)(nil),           // 74: ai_grid.backend.v1.ModelsCreateRequest
+	(*ModelsCreateResponse)(nil),          // 75: ai_grid.backend.v1.ModelsCreateResponse
+	(*ModelsUpdateRequest)(nil),           // 76: ai_grid.backend.v1.ModelsUpdateRequest
+	(*ModelsUpdateResponse)(nil),          // 77: ai_grid.backend.v1.ModelsUpdateResponse
+	(*ModelsDeleteRequest)(nil),           // 78: ai_grid.backend.v1.ModelsDeleteRequest
+	(*ModelsDeleteResponse)(nil),          // 79: ai_grid.backend.v1.ModelsDeleteResponse
+	(*ModelsListLocationsRequest)(nil),    // 80: ai_grid.backend.v1.ModelsListLocationsRequest
+	(*ModelsListLocationsResponse)(nil),   // 81: ai_grid.backend.v1.ModelsListLocationsResponse
+	nil,                                   // 82: ai_grid.backend.v1.Metadata.LabelsEntry
+	nil,                                   // 83: ai_grid.backend.v1.Metadata.AnnotationsEntry
+	nil,                                   // 84: ai_grid.backend.v1.ManagedClusterStatus.CapacityEntry
+	nil,                                   // 85: ai_grid.backend.v1.ManagedClusterStatus.AllocatableEntry
+	nil,                                   // 86: ai_grid.backend.v1.TokenMetadata.LabelsEntry
+	nil,                                   // 87: ai_grid.backend.v1.ModelContainer.RequestsEntry
+	nil,                                   // 88: ai_grid.backend.v1.ModelContainer.LimitsEntry
+	nil,                                   // 89: ai_grid.backend.v1.ModelKedaTrigger.MetadataEntry
+	nil,                                   // 90: ai_grid.backend.v1.ModelLabelSelector.MatchLabelsEntry
+	(*timestamppb.Timestamp)(nil),         // 91: google.protobuf.Timestamp
+	(*fieldmaskpb.FieldMask)(nil),         // 92: google.protobuf.FieldMask
 }
 var file_ai_grid_backend_v1_backend_proto_depIdxs = []int32{
-	87, // 0: ai_grid.backend.v1.Metadata.creation_timestamp:type_name -> google.protobuf.Timestamp
-	87, // 1: ai_grid.backend.v1.Metadata.deletion_timestamp:type_name -> google.protobuf.Timestamp
-	80, // 2: ai_grid.backend.v1.Metadata.labels:type_name -> ai_grid.backend.v1.Metadata.LabelsEntry
-	81, // 3: ai_grid.backend.v1.Metadata.annotations:type_name -> ai_grid.backend.v1.Metadata.AnnotationsEntry
+	91, // 0: ai_grid.backend.v1.Metadata.creation_timestamp:type_name -> google.protobuf.Timestamp
+	91, // 1: ai_grid.backend.v1.Metadata.deletion_timestamp:type_name -> google.protobuf.Timestamp
+	82, // 2: ai_grid.backend.v1.Metadata.labels:type_name -> ai_grid.backend.v1.Metadata.LabelsEntry
+	83, // 3: ai_grid.backend.v1.Metadata.annotations:type_name -> ai_grid.backend.v1.Metadata.AnnotationsEntry
 	3,  // 4: ai_grid.backend.v1.ManagedCluster.metadata:type_name -> ai_grid.backend.v1.Metadata
 	5,  // 5: ai_grid.backend.v1.ManagedCluster.spec:type_name -> ai_grid.backend.v1.ManagedClusterSpec
 	6,  // 6: ai_grid.backend.v1.ManagedCluster.status:type_name -> ai_grid.backend.v1.ManagedClusterStatus
-	4,  // 7: ai_grid.backend.v1.ClustersListResponse.items:type_name -> ai_grid.backend.v1.ManagedCluster
-	4,  // 8: ai_grid.backend.v1.ClustersGetResponse.object:type_name -> ai_grid.backend.v1.ManagedCluster
-	4,  // 9: ai_grid.backend.v1.ClustersUpdateRequest.object:type_name -> ai_grid.backend.v1.ManagedCluster
-	88, // 10: ai_grid.backend.v1.ClustersUpdateRequest.update_mask:type_name -> google.protobuf.FieldMask
-	4,  // 11: ai_grid.backend.v1.ClustersUpdateResponse.object:type_name -> ai_grid.backend.v1.ManagedCluster
-	3,  // 12: ai_grid.backend.v1.Tenant.metadata:type_name -> ai_grid.backend.v1.Metadata
-	14, // 13: ai_grid.backend.v1.Tenant.spec:type_name -> ai_grid.backend.v1.TenantSpec
-	15, // 14: ai_grid.backend.v1.Tenant.status:type_name -> ai_grid.backend.v1.TenantStatus
-	13, // 15: ai_grid.backend.v1.TenantsListResponse.items:type_name -> ai_grid.backend.v1.Tenant
-	13, // 16: ai_grid.backend.v1.TenantsGetResponse.object:type_name -> ai_grid.backend.v1.Tenant
-	13, // 17: ai_grid.backend.v1.TenantsCreateRequest.object:type_name -> ai_grid.backend.v1.Tenant
-	13, // 18: ai_grid.backend.v1.TenantsCreateResponse.object:type_name -> ai_grid.backend.v1.Tenant
-	13, // 19: ai_grid.backend.v1.TenantsUpdateRequest.object:type_name -> ai_grid.backend.v1.Tenant
-	88, // 20: ai_grid.backend.v1.TenantsUpdateRequest.update_mask:type_name -> google.protobuf.FieldMask
-	13, // 21: ai_grid.backend.v1.TenantsUpdateResponse.object:type_name -> ai_grid.backend.v1.Tenant
-	0,  // 22: ai_grid.backend.v1.Condition.status:type_name -> ai_grid.backend.v1.ConditionStatus
-	87, // 23: ai_grid.backend.v1.Condition.last_transition_time:type_name -> google.protobuf.Timestamp
-	3,  // 24: ai_grid.backend.v1.Subscription.metadata:type_name -> ai_grid.backend.v1.Metadata
-	28, // 25: ai_grid.backend.v1.Subscription.spec:type_name -> ai_grid.backend.v1.SubscriptionSpec
-	36, // 26: ai_grid.backend.v1.Subscription.status:type_name -> ai_grid.backend.v1.SubscriptionStatus
-	30, // 27: ai_grid.backend.v1.SubscriptionSpec.owner:type_name -> ai_grid.backend.v1.SubscriptionOwner
-	31, // 28: ai_grid.backend.v1.SubscriptionSpec.model_refs:type_name -> ai_grid.backend.v1.SubscriptionModelRef
-	29, // 29: ai_grid.backend.v1.SubscriptionSpec.organization:type_name -> ai_grid.backend.v1.SubscriptionOrganization
-	34, // 30: ai_grid.backend.v1.SubscriptionSpec.token_metadata:type_name -> ai_grid.backend.v1.TokenMetadata
-	35, // 31: ai_grid.backend.v1.SubscriptionSpec.guardrails:type_name -> ai_grid.backend.v1.GuardrailAttachment
-	32, // 32: ai_grid.backend.v1.SubscriptionModelRef.token_rate_limits:type_name -> ai_grid.backend.v1.TokenRateLimit
-	33, // 33: ai_grid.backend.v1.SubscriptionModelRef.billing_rate:type_name -> ai_grid.backend.v1.BillingRate
-	35, // 34: ai_grid.backend.v1.SubscriptionModelRef.guardrails:type_name -> ai_grid.backend.v1.GuardrailAttachment
-	82, // 35: ai_grid.backend.v1.TokenMetadata.labels:type_name -> ai_grid.backend.v1.TokenMetadata.LabelsEntry
-	26, // 36: ai_grid.backend.v1.SubscriptionStatus.conditions:type_name -> ai_grid.backend.v1.Condition
-	37, // 37: ai_grid.backend.v1.SubscriptionStatus.model_ref_statuses:type_name -> ai_grid.backend.v1.ResourceRefStatus
-	38, // 38: ai_grid.backend.v1.SubscriptionStatus.token_rate_limit_statuses:type_name -> ai_grid.backend.v1.TokenRateLimitStatus
-	37, // 39: ai_grid.backend.v1.TokenRateLimitStatus.ref:type_name -> ai_grid.backend.v1.ResourceRefStatus
-	3,  // 40: ai_grid.backend.v1.AuthPolicy.metadata:type_name -> ai_grid.backend.v1.Metadata
-	40, // 41: ai_grid.backend.v1.AuthPolicy.model_refs:type_name -> ai_grid.backend.v1.AuthPolicyModelRef
-	26, // 42: ai_grid.backend.v1.AuthPolicy.conditions:type_name -> ai_grid.backend.v1.Condition
-	26, // 43: ai_grid.backend.v1.ModelRegistration.conditions:type_name -> ai_grid.backend.v1.Condition
-	27, // 44: ai_grid.backend.v1.SubscriptionsListResponse.items:type_name -> ai_grid.backend.v1.Subscription
-	27, // 45: ai_grid.backend.v1.SubscriptionsGetResponse.object:type_name -> ai_grid.backend.v1.Subscription
-	39, // 46: ai_grid.backend.v1.SubscriptionsGetResponse.auth_policies:type_name -> ai_grid.backend.v1.AuthPolicy
-	41, // 47: ai_grid.backend.v1.SubscriptionsGetResponse.model_registrations:type_name -> ai_grid.backend.v1.ModelRegistration
-	27, // 48: ai_grid.backend.v1.SubscriptionsCreateRequest.object:type_name -> ai_grid.backend.v1.Subscription
-	27, // 49: ai_grid.backend.v1.SubscriptionsCreateResponse.object:type_name -> ai_grid.backend.v1.Subscription
-	39, // 50: ai_grid.backend.v1.SubscriptionsCreateResponse.auth_policy:type_name -> ai_grid.backend.v1.AuthPolicy
-	27, // 51: ai_grid.backend.v1.SubscriptionsUpdateRequest.object:type_name -> ai_grid.backend.v1.Subscription
-	88, // 52: ai_grid.backend.v1.SubscriptionsUpdateRequest.update_mask:type_name -> google.protobuf.FieldMask
-	27, // 53: ai_grid.backend.v1.SubscriptionsUpdateResponse.object:type_name -> ai_grid.backend.v1.Subscription
-	3,  // 54: ai_grid.backend.v1.Model.metadata:type_name -> ai_grid.backend.v1.Metadata
-	53, // 55: ai_grid.backend.v1.Model.spec:type_name -> ai_grid.backend.v1.ModelSpec
-	65, // 56: ai_grid.backend.v1.Model.status:type_name -> ai_grid.backend.v1.ModelStatus
-	54, // 57: ai_grid.backend.v1.ModelSpec.model:type_name -> ai_grid.backend.v1.ModelSource
-	55, // 58: ai_grid.backend.v1.ModelSpec.router:type_name -> ai_grid.backend.v1.ModelRouter
-	57, // 59: ai_grid.backend.v1.ModelSpec.main:type_name -> ai_grid.backend.v1.ModelContainer
-	59, // 60: ai_grid.backend.v1.ModelSpec.scaling:type_name -> ai_grid.backend.v1.ModelScaling
-	61, // 61: ai_grid.backend.v1.ModelSpec.placement:type_name -> ai_grid.backend.v1.ModelPlacement
-	64, // 62: ai_grid.backend.v1.ModelSpec.rollout:type_name -> ai_grid.backend.v1.ModelRollout
-	56, // 63: ai_grid.backend.v1.ModelRouter.gateway_refs:type_name -> ai_grid.backend.v1.ModelGatewayRef
-	83, // 64: ai_grid.backend.v1.ModelContainer.requests:type_name -> ai_grid.backend.v1.ModelContainer.RequestsEntry
-	84, // 65: ai_grid.backend.v1.ModelContainer.limits:type_name -> ai_grid.backend.v1.ModelContainer.LimitsEntry
-	58, // 66: ai_grid.backend.v1.ModelContainer.env:type_name -> ai_grid.backend.v1.ModelEnvVar
-	60, // 67: ai_grid.backend.v1.ModelScaling.triggers:type_name -> ai_grid.backend.v1.ModelKedaTrigger
-	85, // 68: ai_grid.backend.v1.ModelKedaTrigger.metadata:type_name -> ai_grid.backend.v1.ModelKedaTrigger.MetadataEntry
-	62, // 69: ai_grid.backend.v1.ModelPlacement.label_selector:type_name -> ai_grid.backend.v1.ModelLabelSelector
-	86, // 70: ai_grid.backend.v1.ModelLabelSelector.match_labels:type_name -> ai_grid.backend.v1.ModelLabelSelector.MatchLabelsEntry
-	63, // 71: ai_grid.backend.v1.ModelLabelSelector.match_expressions:type_name -> ai_grid.backend.v1.ModelLabelSelectorRequirement
-	1,  // 72: ai_grid.backend.v1.ModelRollout.strategy:type_name -> ai_grid.backend.v1.ModelRolloutStrategy
-	26, // 73: ai_grid.backend.v1.ModelStatus.conditions:type_name -> ai_grid.backend.v1.Condition
-	2,  // 74: ai_grid.backend.v1.ModelStatus.phase:type_name -> ai_grid.backend.v1.ModelPhase
-	66, // 75: ai_grid.backend.v1.ModelStatus.placement:type_name -> ai_grid.backend.v1.ModelPlacementStatus
-	67, // 76: ai_grid.backend.v1.ModelStatus.rollout:type_name -> ai_grid.backend.v1.ModelRolloutStatus
-	26, // 77: ai_grid.backend.v1.ModelPlacementStatus.conditions:type_name -> ai_grid.backend.v1.Condition
-	26, // 78: ai_grid.backend.v1.ModelRolloutStatus.conditions:type_name -> ai_grid.backend.v1.Condition
-	52, // 79: ai_grid.backend.v1.ModelsListResponse.items:type_name -> ai_grid.backend.v1.Model
-	52, // 80: ai_grid.backend.v1.ModelsGetResponse.object:type_name -> ai_grid.backend.v1.Model
-	52, // 81: ai_grid.backend.v1.ModelsCreateRequest.object:type_name -> ai_grid.backend.v1.Model
-	52, // 82: ai_grid.backend.v1.ModelsCreateResponse.object:type_name -> ai_grid.backend.v1.Model
-	52, // 83: ai_grid.backend.v1.ModelsUpdateRequest.object:type_name -> ai_grid.backend.v1.Model
-	88, // 84: ai_grid.backend.v1.ModelsUpdateRequest.update_mask:type_name -> google.protobuf.FieldMask
-	52, // 85: ai_grid.backend.v1.ModelsUpdateResponse.object:type_name -> ai_grid.backend.v1.Model
-	86, // [86:86] is the sub-list for method output_type
-	86, // [86:86] is the sub-list for method input_type
-	86, // [86:86] is the sub-list for extension type_name
-	86, // [86:86] is the sub-list for extension extendee
-	0,  // [0:86] is the sub-list for field type_name
+	7,  // 7: ai_grid.backend.v1.ManagedClusterStatus.conditions:type_name -> ai_grid.backend.v1.ManagedClusterCondition
+	84, // 8: ai_grid.backend.v1.ManagedClusterStatus.capacity:type_name -> ai_grid.backend.v1.ManagedClusterStatus.CapacityEntry
+	85, // 9: ai_grid.backend.v1.ManagedClusterStatus.allocatable:type_name -> ai_grid.backend.v1.ManagedClusterStatus.AllocatableEntry
+	8,  // 10: ai_grid.backend.v1.ManagedClusterStatus.cluster_claims:type_name -> ai_grid.backend.v1.ManagedClusterClaim
+	91, // 11: ai_grid.backend.v1.ManagedClusterCondition.last_transition_time:type_name -> google.protobuf.Timestamp
+	4,  // 12: ai_grid.backend.v1.ClustersListResponse.items:type_name -> ai_grid.backend.v1.ManagedCluster
+	4,  // 13: ai_grid.backend.v1.ClustersGetResponse.object:type_name -> ai_grid.backend.v1.ManagedCluster
+	4,  // 14: ai_grid.backend.v1.ClustersUpdateRequest.object:type_name -> ai_grid.backend.v1.ManagedCluster
+	92, // 15: ai_grid.backend.v1.ClustersUpdateRequest.update_mask:type_name -> google.protobuf.FieldMask
+	4,  // 16: ai_grid.backend.v1.ClustersUpdateResponse.object:type_name -> ai_grid.backend.v1.ManagedCluster
+	3,  // 17: ai_grid.backend.v1.Tenant.metadata:type_name -> ai_grid.backend.v1.Metadata
+	16, // 18: ai_grid.backend.v1.Tenant.spec:type_name -> ai_grid.backend.v1.TenantSpec
+	17, // 19: ai_grid.backend.v1.Tenant.status:type_name -> ai_grid.backend.v1.TenantStatus
+	15, // 20: ai_grid.backend.v1.TenantsListResponse.items:type_name -> ai_grid.backend.v1.Tenant
+	15, // 21: ai_grid.backend.v1.TenantsGetResponse.object:type_name -> ai_grid.backend.v1.Tenant
+	15, // 22: ai_grid.backend.v1.TenantsCreateRequest.object:type_name -> ai_grid.backend.v1.Tenant
+	15, // 23: ai_grid.backend.v1.TenantsCreateResponse.object:type_name -> ai_grid.backend.v1.Tenant
+	15, // 24: ai_grid.backend.v1.TenantsUpdateRequest.object:type_name -> ai_grid.backend.v1.Tenant
+	92, // 25: ai_grid.backend.v1.TenantsUpdateRequest.update_mask:type_name -> google.protobuf.FieldMask
+	15, // 26: ai_grid.backend.v1.TenantsUpdateResponse.object:type_name -> ai_grid.backend.v1.Tenant
+	0,  // 27: ai_grid.backend.v1.Condition.status:type_name -> ai_grid.backend.v1.ConditionStatus
+	91, // 28: ai_grid.backend.v1.Condition.last_transition_time:type_name -> google.protobuf.Timestamp
+	3,  // 29: ai_grid.backend.v1.Subscription.metadata:type_name -> ai_grid.backend.v1.Metadata
+	30, // 30: ai_grid.backend.v1.Subscription.spec:type_name -> ai_grid.backend.v1.SubscriptionSpec
+	38, // 31: ai_grid.backend.v1.Subscription.status:type_name -> ai_grid.backend.v1.SubscriptionStatus
+	32, // 32: ai_grid.backend.v1.SubscriptionSpec.owner:type_name -> ai_grid.backend.v1.SubscriptionOwner
+	33, // 33: ai_grid.backend.v1.SubscriptionSpec.model_refs:type_name -> ai_grid.backend.v1.SubscriptionModelRef
+	31, // 34: ai_grid.backend.v1.SubscriptionSpec.organization:type_name -> ai_grid.backend.v1.SubscriptionOrganization
+	36, // 35: ai_grid.backend.v1.SubscriptionSpec.token_metadata:type_name -> ai_grid.backend.v1.TokenMetadata
+	37, // 36: ai_grid.backend.v1.SubscriptionSpec.guardrails:type_name -> ai_grid.backend.v1.GuardrailAttachment
+	34, // 37: ai_grid.backend.v1.SubscriptionModelRef.token_rate_limits:type_name -> ai_grid.backend.v1.TokenRateLimit
+	35, // 38: ai_grid.backend.v1.SubscriptionModelRef.billing_rate:type_name -> ai_grid.backend.v1.BillingRate
+	37, // 39: ai_grid.backend.v1.SubscriptionModelRef.guardrails:type_name -> ai_grid.backend.v1.GuardrailAttachment
+	86, // 40: ai_grid.backend.v1.TokenMetadata.labels:type_name -> ai_grid.backend.v1.TokenMetadata.LabelsEntry
+	28, // 41: ai_grid.backend.v1.SubscriptionStatus.conditions:type_name -> ai_grid.backend.v1.Condition
+	39, // 42: ai_grid.backend.v1.SubscriptionStatus.model_ref_statuses:type_name -> ai_grid.backend.v1.ResourceRefStatus
+	40, // 43: ai_grid.backend.v1.SubscriptionStatus.token_rate_limit_statuses:type_name -> ai_grid.backend.v1.TokenRateLimitStatus
+	39, // 44: ai_grid.backend.v1.TokenRateLimitStatus.ref:type_name -> ai_grid.backend.v1.ResourceRefStatus
+	3,  // 45: ai_grid.backend.v1.AuthPolicy.metadata:type_name -> ai_grid.backend.v1.Metadata
+	42, // 46: ai_grid.backend.v1.AuthPolicy.model_refs:type_name -> ai_grid.backend.v1.AuthPolicyModelRef
+	28, // 47: ai_grid.backend.v1.AuthPolicy.conditions:type_name -> ai_grid.backend.v1.Condition
+	28, // 48: ai_grid.backend.v1.ModelRegistration.conditions:type_name -> ai_grid.backend.v1.Condition
+	29, // 49: ai_grid.backend.v1.SubscriptionsListResponse.items:type_name -> ai_grid.backend.v1.Subscription
+	29, // 50: ai_grid.backend.v1.SubscriptionsGetResponse.object:type_name -> ai_grid.backend.v1.Subscription
+	41, // 51: ai_grid.backend.v1.SubscriptionsGetResponse.auth_policies:type_name -> ai_grid.backend.v1.AuthPolicy
+	43, // 52: ai_grid.backend.v1.SubscriptionsGetResponse.model_registrations:type_name -> ai_grid.backend.v1.ModelRegistration
+	29, // 53: ai_grid.backend.v1.SubscriptionsCreateRequest.object:type_name -> ai_grid.backend.v1.Subscription
+	29, // 54: ai_grid.backend.v1.SubscriptionsCreateResponse.object:type_name -> ai_grid.backend.v1.Subscription
+	41, // 55: ai_grid.backend.v1.SubscriptionsCreateResponse.auth_policy:type_name -> ai_grid.backend.v1.AuthPolicy
+	29, // 56: ai_grid.backend.v1.SubscriptionsUpdateRequest.object:type_name -> ai_grid.backend.v1.Subscription
+	92, // 57: ai_grid.backend.v1.SubscriptionsUpdateRequest.update_mask:type_name -> google.protobuf.FieldMask
+	29, // 58: ai_grid.backend.v1.SubscriptionsUpdateResponse.object:type_name -> ai_grid.backend.v1.Subscription
+	3,  // 59: ai_grid.backend.v1.Model.metadata:type_name -> ai_grid.backend.v1.Metadata
+	55, // 60: ai_grid.backend.v1.Model.spec:type_name -> ai_grid.backend.v1.ModelSpec
+	67, // 61: ai_grid.backend.v1.Model.status:type_name -> ai_grid.backend.v1.ModelStatus
+	56, // 62: ai_grid.backend.v1.ModelSpec.model:type_name -> ai_grid.backend.v1.ModelSource
+	57, // 63: ai_grid.backend.v1.ModelSpec.router:type_name -> ai_grid.backend.v1.ModelRouter
+	59, // 64: ai_grid.backend.v1.ModelSpec.main:type_name -> ai_grid.backend.v1.ModelContainer
+	61, // 65: ai_grid.backend.v1.ModelSpec.scaling:type_name -> ai_grid.backend.v1.ModelScaling
+	63, // 66: ai_grid.backend.v1.ModelSpec.placement:type_name -> ai_grid.backend.v1.ModelPlacement
+	66, // 67: ai_grid.backend.v1.ModelSpec.rollout:type_name -> ai_grid.backend.v1.ModelRollout
+	58, // 68: ai_grid.backend.v1.ModelRouter.gateway_refs:type_name -> ai_grid.backend.v1.ModelGatewayRef
+	87, // 69: ai_grid.backend.v1.ModelContainer.requests:type_name -> ai_grid.backend.v1.ModelContainer.RequestsEntry
+	88, // 70: ai_grid.backend.v1.ModelContainer.limits:type_name -> ai_grid.backend.v1.ModelContainer.LimitsEntry
+	60, // 71: ai_grid.backend.v1.ModelContainer.env:type_name -> ai_grid.backend.v1.ModelEnvVar
+	62, // 72: ai_grid.backend.v1.ModelScaling.triggers:type_name -> ai_grid.backend.v1.ModelKedaTrigger
+	89, // 73: ai_grid.backend.v1.ModelKedaTrigger.metadata:type_name -> ai_grid.backend.v1.ModelKedaTrigger.MetadataEntry
+	64, // 74: ai_grid.backend.v1.ModelPlacement.label_selector:type_name -> ai_grid.backend.v1.ModelLabelSelector
+	90, // 75: ai_grid.backend.v1.ModelLabelSelector.match_labels:type_name -> ai_grid.backend.v1.ModelLabelSelector.MatchLabelsEntry
+	65, // 76: ai_grid.backend.v1.ModelLabelSelector.match_expressions:type_name -> ai_grid.backend.v1.ModelLabelSelectorRequirement
+	1,  // 77: ai_grid.backend.v1.ModelRollout.strategy:type_name -> ai_grid.backend.v1.ModelRolloutStrategy
+	28, // 78: ai_grid.backend.v1.ModelStatus.conditions:type_name -> ai_grid.backend.v1.Condition
+	2,  // 79: ai_grid.backend.v1.ModelStatus.phase:type_name -> ai_grid.backend.v1.ModelPhase
+	68, // 80: ai_grid.backend.v1.ModelStatus.placement:type_name -> ai_grid.backend.v1.ModelPlacementStatus
+	69, // 81: ai_grid.backend.v1.ModelStatus.rollout:type_name -> ai_grid.backend.v1.ModelRolloutStatus
+	28, // 82: ai_grid.backend.v1.ModelPlacementStatus.conditions:type_name -> ai_grid.backend.v1.Condition
+	28, // 83: ai_grid.backend.v1.ModelRolloutStatus.conditions:type_name -> ai_grid.backend.v1.Condition
+	54, // 84: ai_grid.backend.v1.ModelsListResponse.items:type_name -> ai_grid.backend.v1.Model
+	54, // 85: ai_grid.backend.v1.ModelsGetResponse.object:type_name -> ai_grid.backend.v1.Model
+	54, // 86: ai_grid.backend.v1.ModelsCreateRequest.object:type_name -> ai_grid.backend.v1.Model
+	54, // 87: ai_grid.backend.v1.ModelsCreateResponse.object:type_name -> ai_grid.backend.v1.Model
+	54, // 88: ai_grid.backend.v1.ModelsUpdateRequest.object:type_name -> ai_grid.backend.v1.Model
+	92, // 89: ai_grid.backend.v1.ModelsUpdateRequest.update_mask:type_name -> google.protobuf.FieldMask
+	54, // 90: ai_grid.backend.v1.ModelsUpdateResponse.object:type_name -> ai_grid.backend.v1.Model
+	91, // [91:91] is the sub-list for method output_type
+	91, // [91:91] is the sub-list for method input_type
+	91, // [91:91] is the sub-list for extension type_name
+	91, // [91:91] is the sub-list for extension extendee
+	0,  // [0:91] is the sub-list for field type_name
 }
 
 func init() { file_ai_grid_backend_v1_backend_proto_init() }
@@ -5106,20 +5306,20 @@ func file_ai_grid_backend_v1_backend_proto_init() {
 	if File_ai_grid_backend_v1_backend_proto != nil {
 		return
 	}
-	file_ai_grid_backend_v1_backend_proto_msgTypes[4].OneofWrappers = []any{}
-	file_ai_grid_backend_v1_backend_proto_msgTypes[13].OneofWrappers = []any{}
-	file_ai_grid_backend_v1_backend_proto_msgTypes[23].OneofWrappers = []any{}
+	file_ai_grid_backend_v1_backend_proto_msgTypes[6].OneofWrappers = []any{}
+	file_ai_grid_backend_v1_backend_proto_msgTypes[15].OneofWrappers = []any{}
 	file_ai_grid_backend_v1_backend_proto_msgTypes[25].OneofWrappers = []any{}
-	file_ai_grid_backend_v1_backend_proto_msgTypes[50].OneofWrappers = []any{}
-	file_ai_grid_backend_v1_backend_proto_msgTypes[58].OneofWrappers = []any{}
-	file_ai_grid_backend_v1_backend_proto_msgTypes[65].OneofWrappers = []any{}
+	file_ai_grid_backend_v1_backend_proto_msgTypes[27].OneofWrappers = []any{}
+	file_ai_grid_backend_v1_backend_proto_msgTypes[52].OneofWrappers = []any{}
+	file_ai_grid_backend_v1_backend_proto_msgTypes[60].OneofWrappers = []any{}
+	file_ai_grid_backend_v1_backend_proto_msgTypes[67].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ai_grid_backend_v1_backend_proto_rawDesc), len(file_ai_grid_backend_v1_backend_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   84,
+			NumMessages:   88,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -1,6 +1,7 @@
 // Stopgap: the messages of the backend's real ai_grid.v1 Clusters, Tenants, Subscriptions and
 // Models services, copied from ai-grid-provider-backend proto/ai_grid/v1 (clusters and
-// tenants at 8c1a1bc, PR 16; subscriptions and models at PR 27's merge ref 3428d8d)
+// tenants at 8c1a1bc, PR 16, with the cluster status details at b59731c; subscriptions and
+// models at PR 27's merge ref 3428d8d)
 // (clusters_service, condition_type, managed_cluster_type, metadata_type, model_type,
 // models_service, subscription_type, subscriptions_service, tenant_type, tenants_service), so
 // the BFF can call those RPCs. Fields the BFF doesn't use are
@@ -44,6 +45,24 @@ message ManagedClusterStatus {
   bool joined = 2;
   string available_condition = 3;
   string provisioning = 4;
+  repeated ManagedClusterCondition conditions = 5;
+  string kubernetes_version = 6;
+  map<string, string> capacity = 7;
+  map<string, string> allocatable = 8;
+  repeated ManagedClusterClaim cluster_claims = 9;
+}
+
+message ManagedClusterCondition {
+  string type = 1;
+  string status = 2;
+  string reason = 3;
+  string message = 4;
+  google.protobuf.Timestamp last_transition_time = 5;
+}
+
+message ManagedClusterClaim {
+  string name = 1;
+  string value = 2;
 }
 
 message ClustersListRequest {

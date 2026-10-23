@@ -225,8 +225,9 @@ also works against a backend that only returns `name`, `labels`, `hubAcceptsClie
   (0 when absent); `addons` from the `feature.open-cluster-management.io/addon-*` labels.
 - `capacity` and `allocatable` are `status.capacity` and `status.allocatable` as the backend
   sends them (Kubernetes quantity strings by resource name), and `creationTimestamp` is the
-  hub object's; each is omitted when the backend sends none. The real backend sends the
-  creation time but no capacity yet.
+  hub object's; each is omitted when the backend sends none. A real backend without its
+  cluster status details (conditions, Kubernetes version, capacity, allocatable, claims)
+  sends the creation time only, so the page shows those as not reported.
 - `siteName`, `latitude`, `longitude` come from the `ai-grid/site-name`, `ai-grid/latitude`,
   `ai-grid/longitude` annotations; coordinates are omitted when absent or not a finite number
   in range (`NaN` and `Inf` parse but cannot be encoded, so they count as absent).

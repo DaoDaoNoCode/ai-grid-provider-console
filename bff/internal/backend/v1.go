@@ -115,11 +115,13 @@ func (c v1Clusters) UpdateManagedCluster(ctx context.Context, in *aigridv1.Updat
 	return &aigridv1.UpdateManagedClusterResponse{Object: FromV1Cluster(resp.GetObject())}, nil
 }
 
-// FromV1Cluster maps a real ManagedCluster onto the draft. The real status has
-// only the Joined and Available conditions, so the state is derived from them
-// in the fake's order (fakebackend/state.go); import progress, claims and
-// capacity are not available. Provisioning is always set, so the console
-// reads it instead of the ai-grid/provisioned label.
+// FromV1Cluster maps a real ManagedCluster onto the draft. The state is derived
+// from the Joined and Available results in the fake's order
+// (fakebackend/state.go); import progress is not available. The conditions,
+// Kubernetes version, capacity, allocatable and claims are copied as the
+// backend sends them (a condition status other than True or False reads as
+// Unknown). Provisioning is always set, so the console reads it instead of the
+// ai-grid/provisioned label.
 func FromV1Cluster(mc *backendv1.ManagedCluster) *aigridv1.ManagedCluster {
 	meta := mc.GetMetadata()
 	st := mc.GetStatus()
@@ -144,8 +146,48 @@ func FromV1Cluster(mc *backendv1.ManagedCluster) *aigridv1.ManagedCluster {
 		ResourceVersion:   strconv.Itoa(int(meta.GetVersion())),
 		CreationTimestamp: meta.GetCreationTimestamp(),
 		DeletionTimestamp: meta.GetDeletionTimestamp(),
-		Status:            &aigridv1.ManagedClusterStatus{State: state, Provisioning: proto.String(st.GetProvisioning())},
+		Status: &aigridv1.ManagedClusterStatus{
+			State:             state,
+			Provisioning:      proto.String(st.GetProvisioning()),
+			Conditions:        fromV1ClusterConditions(st.GetConditions()),
+			KubernetesVersion: st.GetKubernetesVersion(),
+			Capacity:          st.GetCapacity(),
+			Allocatable:       st.GetAllocatable(),
+			ClusterClaims:     fromV1Claims(st.GetClusterClaims()),
+		},
 	}
+}
+
+var v1ConditionStatus = map[string]aigridv1.ConditionStatus{
+	"True":  aigridv1.ConditionStatus_CONDITION_STATUS_TRUE,
+	"False": aigridv1.ConditionStatus_CONDITION_STATUS_FALSE,
+}
+
+func fromV1ClusterConditions(in []*backendv1.ManagedClusterCondition) []*aigridv1.Condition {
+	out := make([]*aigridv1.Condition, 0, len(in))
+	for _, c := range in {
+		cond := &aigridv1.Condition{
+			Type:               c.GetType(),
+			Status:             v1ConditionStatus[c.GetStatus()],
+			LastTransitionTime: c.GetLastTransitionTime(),
+		}
+		if c.GetReason() != "" {
+			cond.Reason = proto.String(c.GetReason())
+		}
+		if c.GetMessage() != "" {
+			cond.Message = proto.String(c.GetMessage())
+		}
+		out = append(out, cond)
+	}
+	return out
+}
+
+func fromV1Claims(in []*backendv1.ManagedClusterClaim) []*aigridv1.ClusterClaim {
+	out := make([]*aigridv1.ClusterClaim, 0, len(in))
+	for _, c := range in {
+		out = append(out, &aigridv1.ClusterClaim{Name: c.GetName(), Value: c.GetValue()})
+	}
+	return out
 }
 
 type v1Tenants struct{ conn grpc.ClientConnInterface }

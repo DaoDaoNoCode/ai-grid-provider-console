@@ -53,8 +53,9 @@ version, adds a cluster to AI Grid or removes it, and links each name to the clu
 page (`ClusterDetailsPage.tsx`, `/clusters/:name`). That page shows the membership (status,
 role, location), what the hub knows about the cluster (versions, platform, product, creation
 time, console link), its capacity, its add-ons and its conditions, with the same Add and Remove
-actions. The real backend sends no claims, capacity or conditions yet, so against it those parts
-say so instead of showing zeros. The map belongs to the grid overview area; Placement
+actions. The real backend's cluster status details (conditions, Kubernetes version, capacity,
+allocatable and claims) fill the same sections; against a backend without them those parts say
+so instead of showing zeros. The map belongs to the grid overview area; Placement
 recomputation and ManifestWorkReplicaSet belong to the models area (`mock/areas/models.md`).
 
 Backend ask: ship the draft's `GetManagedCluster`, `UpdateManagedCluster` and richer
