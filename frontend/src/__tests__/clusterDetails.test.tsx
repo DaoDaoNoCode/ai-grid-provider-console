@@ -1,9 +1,9 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { ServiceError } from '../api/ConsoleService';
 import { MockConsoleService, seedClusters } from '../api/MockConsoleService';
 import type { GridCluster } from '../api/types';
 import { renderAt } from './render';
-
 
 /** A cluster as today's backend sends it: no claims, capacity or conditions. */
 const bare = (): GridCluster => ({
@@ -106,6 +106,71 @@ it('adds the cluster to AI Grid from its Actions', async () => {
   expect(await screen.findByText('site4 added to AI Grid')).toBeVisible();
   await waitFor(() => expect(screen.getByTestId('cluster-membership')).toHaveTextContent('Provisioning'));
   expect(service.clusters.find((c) => c.name === 'site4')!.labels['ai-grid/role']).toBe('inference');
+});
+
+/** Adds site4 from the details page's Actions as an inference cluster. */
+const addSite4 = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(await screen.findByRole('button', { name: 'Actions for site4' }));
+  await user.click(screen.getByRole('menuitem', { name: 'Add to AI Grid' }));
+  const modal = await screen.findByTestId('cluster-membership-modal');
+  await user.click(within(modal).getByRole('combobox', { name: 'Role' }));
+  await user.click(await screen.findByRole('option', { name: /Inference/ }));
+  await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
+};
+
+it('shows the added membership while the reload is still running', async () => {
+  const user = userEvent.setup();
+  const service = new MockConsoleService();
+  const getCluster = service.getCluster;
+  renderAt('/clusters/site4', service);
+  expect(await screen.findByTestId('cluster-membership')).toHaveTextContent('Not added');
+  // Every load from now on never answers.
+  service.getCluster = () => new Promise(() => {});
+  await addSite4(user);
+  expect(await screen.findByText('site4 added to AI Grid')).toBeVisible();
+  expect(screen.getByTestId('cluster-membership')).toHaveTextContent('Provisioning');
+  expect(screen.getByLabelText('AI Grid membership')).toHaveTextContent('Inference');
+  await user.click(screen.getByRole('button', { name: 'Actions for site4' }));
+  expect(screen.getByRole('menuitem', { name: 'Remove from AI Grid' })).toBeVisible();
+  service.getCluster = getCluster;
+});
+
+it('keeps the added membership when the reload fails', async () => {
+  const user = userEvent.setup();
+  const service = new MockConsoleService();
+  renderAt('/clusters/site4', service);
+  expect(await screen.findByTestId('cluster-membership')).toHaveTextContent('Not added');
+  service.getCluster = () => Promise.reject(new ServiceError(503, 'the hub is unavailable'));
+  await addSite4(user);
+  expect(await screen.findByText('Showing the last loaded state')).toBeVisible();
+  expect(screen.getByTestId('cluster-membership')).toHaveTextContent('Provisioning');
+});
+
+it('removes the cluster from AI Grid', async () => {
+  const user = userEvent.setup();
+  const service = new MockConsoleService();
+  renderAt('/clusters/site1', service);
+  await user.click(await screen.findByRole('button', { name: 'Actions for site1' }));
+  await user.click(screen.getByRole('menuitem', { name: 'Remove from AI Grid' }));
+  const modal = await screen.findByTestId('cluster-membership-modal');
+  await user.click(within(modal).getByRole('button', { name: 'Remove' }));
+  expect(await screen.findByText('site1 removed from AI Grid')).toBeVisible();
+  expect(screen.getByTestId('cluster-membership')).toHaveTextContent('Not added');
+  expect(service.clusters.find((c) => c.name === 'site1')!.labels['ai-grid/enabled']).toBeUndefined();
+});
+
+it('keeps the modal open with the error when the change fails', async () => {
+  const user = userEvent.setup();
+  const service = new MockConsoleService();
+  service.removeClusterFromGrid = () =>
+    Promise.reject(new ServiceError(409, 'the cluster changed since you loaded it'));
+  renderAt('/clusters/site1', service);
+  await user.click(await screen.findByRole('button', { name: 'Actions for site1' }));
+  await user.click(screen.getByRole('menuitem', { name: 'Remove from AI Grid' }));
+  const modal = await screen.findByTestId('cluster-membership-modal');
+  await user.click(within(modal).getByRole('button', { name: 'Remove' }));
+  expect(await within(modal).findByText(/the cluster changed since you loaded it/)).toBeVisible();
+  expect(screen.getByTestId('cluster-membership')).toHaveTextContent('Provisioned');
 });
 
 it('says when the hub has no such cluster', async () => {

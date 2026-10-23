@@ -137,12 +137,26 @@ const Section: React.FC<{ title: string; help?: React.ReactNode; children: React
 export const ClusterDetailsPage: React.FC<Props> = ({ service }) => {
   const { name = '' } = useParams();
   const navigate = useNavigate();
-  const [cluster, loaded, error, refresh] = useServiceData<GridCluster | undefined>(
+  const [loadedCluster, loaded, error, refresh] = useServiceData<GridCluster | undefined>(
     () => service.getCluster(name),
     undefined,
   );
   const [user] = useServiceData(() => service.getUser(), undefined, 0);
   const [change, setChange] = useState<MembershipChange>();
+  // The cluster as Add or Remove returned it, shown until a load started after that change
+  // answers: a slow or failed reload can't bring back the membership (or the version) from before
+  // it. Loads started earlier are dropped by useServiceData, so the next new load is a later one.
+  const [confirmed, setConfirmed] = useState<GridCluster>();
+  const [awaitingReload, setAwaitingReload] = useState(false);
+  const [seen, setSeen] = useState(loadedCluster);
+  if (loadedCluster !== seen) {
+    setSeen(loadedCluster);
+    if (awaitingReload) {
+      setAwaitingReload(false);
+      setConfirmed(undefined);
+    }
+  }
+  const cluster = confirmed ?? loadedCluster;
 
   /** Adds the cluster to AI Grid or removes it, then reloads it; throws for the modal to show. */
   const applyChange = async ({ cluster: c, join }: MembershipChange, membership?: GridMembership) => {
@@ -150,9 +164,11 @@ export const ClusterDetailsPage: React.FC<Props> = ({ service }) => {
     if (updated.aiGridEnabled !== join) {
       throw new Error('The Hub did not confirm the change. Refresh and try again.');
     }
+    setConfirmed(updated);
+    setAwaitingReload(true);
     setChange(undefined);
     navigate('.', { state: { notice: `${updated.name} ${join ? 'added to' : 'removed from'} AI Grid` } });
-    await refresh();
+    void refresh();
   };
 
   const notFound = error instanceof ServiceError && error.status === 404;
