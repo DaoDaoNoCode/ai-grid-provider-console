@@ -39,15 +39,23 @@ backend service for cluster access and this BFF for the browser.
 
 Until the console moves to Connect and the backend's generated contract (issues 20–27 and the
 ADRs in `docs/adr/`), the BFF calls a real backend's `ai_grid.v1.Clusters` `List`, `Get` and
-`Update` and `Tenants/List` for the clusters and tenants routes, and maps them onto the draft
+`Update` and `Tenants` `List`, `Get`, `Create`, `Update` and `Delete` for the clusters and tenants routes, and maps them onto the draft
 types, so the handlers and the JSON above are unchanged (`bff/internal/backend/v1.go`, messages in
 `mock/proto/ai_grid/backend/v1`). The fake backend still serves the draft, so `--fake-backend`
 keeps the draft clients. `If-Match` maps to `metadata.version` with `lock: true`, and the
 `labels` and `annotations` mask paths to `metadata.labels` and `metadata.annotations`. The
 cluster state is derived from `spec.hub_accepts_client`, `status.joined` and
 `status.available_condition` only. The tenant list forwards `offset`, `limit` and `filter`; the
-backend pages but doesn't evaluate `filter` yet, so a filtered list answers 501. `GetTenant` reads
-the list, and tenant writes answer 501. The backend refuses a change to a label or annotation
+backend pages but doesn't evaluate `filter` yet, so a filtered list answers 501. A tenant write
+sends `name` as `metadata.name` and `domains` as `spec.domains` (mask paths likewise), and the
+`If-Match` version as `metadata.version`, with `lock: true` unless it is 0 (a tenant the backend
+never wrote). A write that sets a field the backend's `Tenant` lacks (`alias` other than the name,
+`description`, `enabled: false`, `attributes`, `identityProvider`) answers 501 before any call. A
+PATCH that leaves only no-op fields sends the mask `id`, which backend PR 16 answers with the
+stored tenant after checking the version, writing nothing; at version 0 (every tenant on a backend
+without versions, which would PUT the stored tenant back for that mask) it's a read instead. DELETE sends the `If-Match` version as
+`TenantsDeleteRequest.version` (backend PR 16); a backend without that field ignores it, and 0
+skips the check. The backend refuses a change to a label or annotation
 outside `ai-grid/*` and the `location` label, and a bad coordinate, with `InvalidArgument` (422),
 after it checks the version: a stale one is `Aborted` (409) whatever the labels.
 
@@ -227,9 +235,10 @@ the collections are always present even though Keycloak omits an empty `domains`
 ```
 
 - `alias` is the URL-safe handle: it defaults to `name` on create and cannot change
-  afterwards. Against today's backend (fields `id`, `name`, `domains` only) the BFF fills it
-  from `name`, derives `domainDetails` from `domains` and reads the absent `enabled` as true
-  (Keycloak's default), so a client does not see every tenant as disabled.
+  afterwards. Against today's backend (fields `id`, `name`, `domains` only) the BFF leaves it
+  empty (after a rename it no longer equals `name`), derives `domainDetails` from `domains` and
+  reads the absent `enabled` as true (Keycloak's default), so a client does not see every tenant
+  as disabled.
 - `domains` are the names of `domainDetails`, lower-case, unique across tenants; Keycloak
   accepts the domain part of an e-mail address or one wildcard `*.base.tld`.
   `identityProviderAlias` is present only for a domain routed to one of the organization's
@@ -258,7 +267,7 @@ removes every domain, `attributes: {}` every attribute; a domain that stays keep
 and identity-provider metadata); `null` is the same as absent. The present fields become the
 field mask of one `UpdateTenant` call, `alias` included: the backend keeps the stored alias and
 answers a different one with Keycloak's 422 "Cannot change the alias", so a form can send back
-the alias it loaded. A body that names no field is 422, before any call. The backend skips a PUT
+the alias it loaded. Today's backend has no `alias`, so against it any `alias` is 501. A body that names no field is 422, before any call. The backend skips a PUT
 that would change nothing (console proposal, so Keycloak writes no admin event) and answers the
 tenant with its stored `resourceVersion`. Keycloak Organizations carry no version; the backend
 keeps one for them (see "Writes, versions and lists").
@@ -535,7 +544,7 @@ exists; the frontend uses the mock service meanwhile.
 |---|---|---|---|
 | GET | `/api/v1/user` (`isProviderAdmin`) | Optional: `AiGrid/GetCurrentUser` returning roles, once the backend acts as the caller; today the BFF asks the hub directly | Step 1 |
 | GET/PATCH | `/api/v1/clusters[/{name}]` (implemented against the draft) | The backend has to ship the draft's `GetManagedCluster`, `UpdateManagedCluster` and the richer `ManagedCluster` (`mock/proto/ai_grid/v1/managed_cluster*.proto`), with `status.state` derived server-side; `patch` on managedclusters in its ClusterRole | Steps 2, 10 |
-| GET/POST/PATCH/DELETE | `/api/v1/tenants[/{id}]` (implemented against the draft) | The backend has to ship the draft's `GetTenant`, `CreateTenant`, `UpdateTenant`, `DeleteTenant`, the paged `ListTenants` and the richer `Tenant` (`mock/proto/ai_grid/v1/tenant*.proto`), mapping Keycloak outcomes to the codes in `mock/research/keycloak.md` 8.2 instead of `Unknown`, and gating mutations on the provider-admin check | Step 6 |
+| GET/POST/PATCH/DELETE | `/api/v1/tenants[/{id}]` (on the backend's `Tenants` RPCs) | A version on `TenantsDeleteRequest`; the draft `Tenant`'s `alias`, `enabled`, `description`, `attributes`, `domain_details` and `identity_provider`, if the console keeps them; `filter` evaluated on `List`; mutations gated on the provider-admin check | Step 6 |
 | GET/POST/PATCH/DELETE | `/api/v1/models[/{namespace}/{name}]`, GET `/api/v1/capabilities` (implemented against the draft) | The backend has to ship the draft's `Models` service and `Model` message (`mock/proto/ai_grid/v1/model*.proto`) over LLMInferenceService, Placement and ManifestWorkReplicaSet with the status derived server-side, and `AiGrid/GetHubCapabilities`; the `ManifestWorkReplicaSet` feature gate on the hub for multi-site models (`FailedPrecondition` otherwise) | Steps 3, 4 |
 | GET/POST/PUT/DELETE | `/api/v1/catalog[/{name}]` | `Catalog/*` on ConfigMaps | Step 9 |
 | GET/POST/PUT/DELETE | `/api/v1/subscriptions[/{name}]`, GET `/api/v1/grid/overview` (implemented against the draft) | The backend has to ship the draft's `Subscriptions` service and `Grid/GetOverview` (`mock/proto/ai_grid/v1/subscription*.proto`, `grid_service.proto`) with the POC's metric contract (requests, errors, latency, gpu from Thanos with a `cluster` label), and validate every subscription write itself ("The BFF is thin") | Steps 5, 8, 10 |

@@ -150,16 +150,12 @@ func toTenant(t *aigridv1.Tenant) Tenant {
 	if attributes == nil {
 		attributes = map[string]string{}
 	}
-	alias := t.GetAlias()
-	if alias == "" {
-		alias = t.GetName() // Keycloak defaults the alias to the name; today's backend does not send it
-	}
 	// A backend that does not fill `enabled` (today's, fields 1-3 only) is
 	// read as enabled: Keycloak's default, and the only value under which
 	// every organization is usable.
 	enabled := t.Enabled == nil || t.GetEnabled()
 	out := Tenant{
-		ID: t.GetId(), Name: t.GetName(), Alias: alias, Enabled: enabled, Description: t.GetDescription(),
+		ID: t.GetId(), Name: t.GetName(), Alias: t.GetAlias(), Enabled: enabled, Description: t.GetDescription(),
 		Domains: domains, DomainDetails: details, Attributes: attributes, ResourceVersion: t.GetResourceVersion(),
 		IdentityProvider: toIdentityProvider(t.GetIdentityProvider()),
 	}
@@ -265,9 +261,7 @@ func pagedOrFiltered(offset, limit *int, filtered bool) bool {
 	return filtered || limit != nil || (offset != nil && *offset > 0)
 }
 
-// getTenant answers GET /api/v1/tenants/{id}. Unlike GET /clusters/{name} it
-// has no list fallback: the shipped backend has no GetTenant RPC, so against
-// it this is 501 (Unimplemented), like every tenant write.
+// getTenant answers GET /api/v1/tenants/{id}.
 func (a *App) getTenant(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := a.backend.Context(r.Context())
 	defer cancel()
@@ -324,8 +318,8 @@ func (a *App) createTenant(w http.ResponseWriter, r *http.Request) {
 // TenantPatch is the body of PATCH /api/v1/tenants/{id}. Every field is
 // optional and an absent field is left alone; a present field replaces the
 // stored one as a whole (`domains: []` removes every domain, `attributes: {}`
-// every attribute). `alias` may be sent, but the backend refuses a value
-// other than the stored alias.
+// every attribute). The fake backend accepts `alias` only with the stored
+// value; the real backend's Tenants API refuses any `alias` (501).
 type TenantPatch struct {
 	Name        *string            `json:"name"`
 	Alias       *string            `json:"alias"`

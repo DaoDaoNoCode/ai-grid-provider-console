@@ -178,10 +178,11 @@ func TestListTenantsPagesAndFilters(t *testing.T) {
 }
 
 func TestTenantFromTodaysBackend(t *testing.T) {
-	// Fields 1-3 only: alias falls back to the name, details are derived and an
+	// Fields 1-3 only: alias stays empty (after a rename Keycloak keeps the
+	// old one, so the name would be wrong), details are derived and an
 	// absent `enabled` reads as enabled (Keycloak's default), never as disabled.
 	tn := toTenant(&aigridv1.Tenant{Id: "x", Name: "tenant-a", Domains: []string{"a.example.com"}})
-	if tn.Alias != "tenant-a" || len(tn.DomainDetails) != 1 || tn.DomainDetails[0].Name != "a.example.com" || tn.Attributes == nil || !tn.Enabled {
+	if tn.Alias != "" || len(tn.DomainDetails) != 1 || tn.DomainDetails[0].Name != "a.example.com" || tn.Attributes == nil || !tn.Enabled {
 		t.Errorf("tenant = %+v", tn)
 	}
 	if toTenant(&aigridv1.Tenant{Id: "x", Name: "off", Enabled: proto.Bool(false)}).Enabled {
