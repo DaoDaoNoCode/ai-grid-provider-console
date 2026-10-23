@@ -135,21 +135,45 @@ describe('monitoringLinkFor', () => {
         '/monitoring/v2/dashboards/view?dashboard=dashboard-2-usage&project=ai-grid&var-cluster=site-a&start=6h&x=1',
         tabs,
         'ai-grid',
+        'ai-grid',
       ),
     ).toBe('/monitoring?dashboard=dashboard-2-usage&var-cluster=site-a&start=6h');
-    expect(monitoringLinkFor('/projects/other/dashboards/dashboard-1-fleet?var-a=b', tabs, '')).toBe(
+    expect(monitoringLinkFor('/projects/other/dashboards/dashboard-1-fleet?var-a=b', tabs, '', 'ai-grid')).toBe(
       '/monitoring?dashboard=other%2Fdashboard-1-fleet&var-a=b',
     );
   });
 
   it('answers undefined for a dashboard that is not a tab, another project, or another page', () => {
-    expect(monitoringLinkFor('/monitoring/v2/dashboards/view?dashboard=acm-clusters-overview', tabs, 'ai-grid')).toBe(
-      undefined,
-    );
     expect(
-      monitoringLinkFor('/monitoring/v2/dashboards/view?dashboard=dashboard-2-usage&project=other', tabs, 'ai-grid'),
+      monitoringLinkFor('/monitoring/v2/dashboards/view?dashboard=acm-clusters-overview', tabs, 'ai-grid', 'ai-grid'),
     ).toBe(undefined);
-    expect(monitoringLinkFor('/multicloud/infrastructure/clusters', tabs, 'ai-grid')).toBe(undefined);
+    expect(
+      monitoringLinkFor(
+        '/monitoring/v2/dashboards/view?dashboard=dashboard-2-usage&project=other',
+        tabs,
+        'ai-grid',
+        'ai-grid',
+      ),
+    ).toBe(undefined);
+    expect(monitoringLinkFor('/multicloud/infrastructure/clusters', tabs, 'ai-grid', 'ai-grid')).toBe(undefined);
+    expect(monitoringLinkFor('/projects/%/dashboards/dashboard-1-fleet', tabs, '', 'ai-grid')).toBe(undefined);
+    expect(monitoringLinkFor('/projects/ai-grid/dashboards/%', tabs, '', 'ai-grid')).toBe(undefined);
+  });
+
+  it('reads a link without a project as one to the same project, else to the one tab of that name', () => {
+    const view = (name: string) => `/monitoring/v2/dashboards/view?dashboard=${name}`;
+    // dashboard-1-fleet is in ai-grid and in other.
+    expect(monitoringLinkFor(view('dashboard-1-fleet'), tabs, '', 'other')).toBe(
+      '/monitoring?dashboard=other%2Fdashboard-1-fleet',
+    );
+    expect(monitoringLinkFor(view('dashboard-1-fleet'), tabs, '', 'ai-grid')).toBe(
+      '/monitoring?dashboard=ai-grid%2Fdashboard-1-fleet',
+    );
+    expect(monitoringLinkFor(view('dashboard-1-fleet'), tabs, '', 'elsewhere')).toBe(undefined);
+    // dashboard-2-usage is only in ai-grid.
+    expect(monitoringLinkFor(view('dashboard-2-usage'), tabs, '', 'other')).toBe(
+      '/monitoring?dashboard=ai-grid%2Fdashboard-2-usage',
+    );
   });
 });
 

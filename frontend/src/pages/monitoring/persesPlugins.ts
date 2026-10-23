@@ -2,9 +2,12 @@
 // load plugins from its server at runtime (remotePluginLoader, module federation), but that loader
 // doesn't work under Vite and runs CommonJS require(), so every plugin a dashboard may use is
 // listed here. A panel whose plugin is missing shows Perses's own "plugin not found" error.
+//
+// Not the bar chart (@perses-dev/bar-chart-plugin 0.13): its tooltip is HTML built from the series
+// name, a label value from the query, without escaping, so a label could put markup on the console's
+// page. Add it back once Perses escapes it.
 import { dynamicImportPluginLoader, getPluginModuleCompoundKey } from '@perses-dev/plugin-system';
 import type { PluginModuleResource } from '@perses-dev/plugin-system';
-import * as bar from '@perses-dev/bar-chart-plugin';
 import * as prometheus from '@perses-dev/prometheus-plugin';
 import * as stat from '@perses-dev/stat-chart-plugin';
 import * as table from '@perses-dev/table-plugin';
@@ -42,5 +45,4 @@ export const pluginLoader = dynamicImportPluginLoader([
   bundled(timeseries),
   bundled(stat),
   bundled(table),
-  bundled(bar),
 ]);
