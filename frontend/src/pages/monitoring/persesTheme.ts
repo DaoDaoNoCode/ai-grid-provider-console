@@ -46,6 +46,7 @@ import {
   t_color_white,
   t_global_color_brand_default,
   t_global_color_brand_hover,
+  t_global_font_family_body,
   t_global_spacer_md,
 } from '@patternfly/react-tokens';
 
@@ -255,6 +256,16 @@ const mapPatterflyThemeToMUI = (theme: PatternFlyTheme, currentYear: number): Th
           },
           input: {
             padding: 'var(--pf-t--global--spacer--sm) var(--pf-t--global--spacer--md)',
+          },
+        },
+      },
+      // Not in odh-dashboard: a time series' bottom legend is a 40px scroll box sized for two rows,
+      // and dense list text's default 4px margins made each row 26px, half hiding the second.
+      MuiListItemText: {
+        styleOverrides: {
+          dense: {
+            marginTop: 1,
+            marginBottom: 1,
           },
         },
       },
@@ -548,6 +559,13 @@ export const patternFlyTheme = (
   const chartsTheme: PersesChartsTheme = generateChartsTheme(muiTheme, {
     echartsTheme: {
       color: patternflyChartsMultiUnorderedPalette,
+      // Not in odh-dashboard: ECharts draws text on a <canvas>, which can't resolve the CSS variable
+      // the MUI theme's fontFamily is; the canvas then falls back to 10px sans-serif (axis labels,
+      // in-chart text). PatternFly's body font as a literal stack, at its 12px minimum.
+      textStyle: {
+        fontFamily: t_global_font_family_body.value,
+        fontSize: 12,
+      },
       tooltip: {
         backgroundColor: 'var(--pf-t--global--background--color--inverse--default)',
       },

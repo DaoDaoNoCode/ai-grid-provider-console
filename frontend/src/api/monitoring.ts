@@ -28,3 +28,40 @@ export const dashboardTitle = (d: DashboardResource): string => d.spec.display?.
 /** The `?dashboard=` value that selects a tab: the name, with the project when it isn't the configured one. */
 export const dashboardKey = (d: DashboardResource, project: string): string =>
   project ? d.metadata.name : `${d.metadata.project}/${d.metadata.name}`;
+
+/** URL parameters a dashboard link may carry over to the tab it opens: Perses's time range and variables. */
+const carriedParam = (name: string) => name.startsWith('var-') || ['start', 'end', 'refresh'].includes(name);
+
+/**
+ * Where a link inside a dashboard goes in this console. Dashboards written for the OpenShift console
+ * link to its Perses viewer (`/monitoring/v2/dashboards/view?dashboard=<name>&project=<project>`), and
+ * those written for Perses's own app to `/projects/<project>/dashboards/<name>`; neither page exists
+ * here. When the target is one of the Monitoring tabs, the answer is that tab, with the link's time
+ * range and `var-*` values; otherwise undefined, as for any other path of another app.
+ */
+export const monitoringLinkFor = (href: string, tabs: DashboardResource[], project: string): string | undefined => {
+  let url: URL;
+  try {
+    url = new URL(href, 'http://console.invalid');
+  } catch {
+    return undefined;
+  }
+  let name = url.searchParams.get('dashboard') ?? undefined;
+  let linkProject = url.searchParams.get('project') ?? undefined;
+  const persesApp = url.pathname.match(/^\/projects\/([^/]+)\/dashboards\/([^/]+)\/?$/);
+  if (persesApp) {
+    linkProject = decodeURIComponent(persesApp[1]);
+    name = decodeURIComponent(persesApp[2]);
+  } else if (!url.pathname.endsWith('/dashboards/view')) {
+    return undefined;
+  }
+  const tab = tabs.find((d) => d.metadata.name === name && (!linkProject || d.metadata.project === linkProject));
+  if (!tab) {
+    return undefined;
+  }
+  const params = new URLSearchParams({ dashboard: dashboardKey(tab, project) });
+  url.searchParams.forEach((value, key) => {
+    if (carriedParam(key)) params.append(key, value);
+  });
+  return `/monitoring?${params.toString()}`;
+};
