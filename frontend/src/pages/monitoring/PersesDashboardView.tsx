@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { Flex } from '@patternfly/react-core';
 import { ThemeProvider } from '@mui/material';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ChartsProvider, SnackbarProvider, generateChartsTheme, getTheme } from '@perses-dev/components';
+import { ChartsProvider, SnackbarProvider } from '@perses-dev/components';
 import type { DashboardResource } from '@perses-dev/client';
 import {
   DataQueriesProvider,
@@ -25,9 +25,10 @@ import { QueryParamProvider } from 'use-query-params';
 import { ReactRouter6Adapter } from 'use-query-params/adapters/react-router-6';
 import { RelayDatasourceApi } from './persesDatasourceApi';
 import { pluginLoader } from './persesPlugins';
+import { patternFlyTheme } from './persesTheme';
 
-const muiTheme = getTheme('light');
-const chartsTheme = generateChartsTheme(muiTheme, {});
+// PatternFly's look for Perses, as odh-dashboard and the OpenShift console's monitoring plugin do.
+const { muiTheme, chartsTheme } = patternFlyTheme();
 const datasourceApi = new RelayDatasourceApi();
 // One cache for the page: switching tabs back reuses the answers until they're refetched.
 const queryClient = new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false, retry: 0 } } });

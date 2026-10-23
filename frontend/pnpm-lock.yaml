@@ -32,6 +32,9 @@ importers:
       '@patternfly/react-table':
         specifier: ~6.6.1
         version: 6.6.1(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@patternfly/react-tokens':
+        specifier: ~6.6.1
+        version: 6.6.1
       '@perses-dev/bar-chart-plugin':
         specifier: 0.13.0
         version: 0.13.0(@emotion/react@11.14.0(@types/react@18.3.31)(react@18.3.1))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@18.3.31)(react@18.3.1))(@types/react@18.3.31)(react@18.3.1))(@hookform/resolvers@3.9.1(react-hook-form@7.52.2(react@18.3.1)))(@perses-dev/components@0.54.0(b9adf96eb3459224231bff1b05d4c3ad))(@perses-dev/plugin-system@0.54.0(1ebfaedd8e052bd8440f24b2f56993a9))(@perses-dev/spec@0.2.0)(date-fns-tz@3.2.0(date-fns@4.1.0))(date-fns@4.1.0)(echarts@5.5.0)(immer@10.1.1)(lodash@4.18.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(use-resize-observer@9.1.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1))
