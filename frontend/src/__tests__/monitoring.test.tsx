@@ -1,0 +1,123 @@
+import { screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import type { DashboardResource } from '@perses-dev/client';
+import { vi } from 'vitest';
+import { ServiceError } from '../api/ConsoleService';
+import { HttpConsoleService } from '../api/HttpConsoleService';
+import { MockConsoleService } from '../api/MockConsoleService';
+import { dashboardKey, monitoringTabs } from '../api/monitoring';
+import { renderAt } from './render';
+
+// Perses's charts don't render in jsdom; the page is tested up to the dashboard it hands over.
+vi.mock('../pages/monitoring/PersesDashboardView', () => ({
+  default: ({ dashboard }: { dashboard: DashboardResource }) => (
+    <div data-testid="perses-dashboard">
+      {dashboard.metadata.project}/{dashboard.metadata.name}
+    </div>
+  ),
+}));
+
+const dashboard = (project: string, name: string, title?: string) =>
+  ({
+    kind: 'Dashboard',
+    metadata: { project, name },
+    spec: { display: title ? { name: title } : undefined, duration: '1h', variables: [], panels: {}, layouts: [] },
+  }) as unknown as DashboardResource;
+
+const withMonitoring = (persesProject: string, dashboards: DashboardResource[]) => {
+  const service = new MockConsoleService();
+  service.config = { ...service.config, monitoring: { enabled: true, persesProject } };
+  service.monitoringDashboards = dashboards;
+  return service;
+};
+
+const hub = [
+  dashboard('ai-grid', 'dashboard-2-usage', 'Token usage'),
+  dashboard('ai-grid', 'dashboard-1-fleet', 'Fleet health'),
+  dashboard('ai-grid', 'acm-clusters-overview', 'ACM Clusters Overview'),
+  dashboard('other', 'dashboard-1-fleet', 'Someone else'),
+];
+
+it("shows the configured project's dashboard-* dashboards as tabs, the first one open", async () => {
+  renderAt('/monitoring', withMonitoring('ai-grid', hub));
+  const tabs = within(await screen.findByTestId('monitoring-tabs')).getByRole('tablist');
+  expect(
+    within(tabs)
+      .getAllByRole('tab')
+      .map((t) => t.textContent),
+  ).toEqual(['Fleet health', 'Token usage']);
+  expect(within(tabs).getByRole('tab', { name: 'Fleet health' })).toHaveAttribute('aria-selected', 'true');
+  expect(await screen.findByTestId('perses-dashboard')).toHaveTextContent('ai-grid/dashboard-1-fleet');
+});
+
+it('opens the tab ?dashboard= names, and another one on click', async () => {
+  const user = userEvent.setup();
+  renderAt('/monitoring?dashboard=dashboard-2-usage', withMonitoring('ai-grid', hub));
+  expect(await screen.findByTestId('perses-dashboard')).toHaveTextContent('ai-grid/dashboard-2-usage');
+  await user.click(screen.getByRole('tab', { name: 'Fleet health' }));
+  expect(await screen.findByTestId('perses-dashboard')).toHaveTextContent('ai-grid/dashboard-1-fleet');
+  expect(screen.getByRole('tab', { name: 'Fleet health' })).toHaveAttribute('aria-selected', 'true');
+});
+
+it('says when the hub has no such dashboards yet', async () => {
+  renderAt('/monitoring', withMonitoring('ai-grid', [dashboard('ai-grid', 'acm-clusters-overview')]));
+  expect(await screen.findByRole('heading', { name: 'No dashboards yet' })).toBeVisible();
+  expect(screen.getByText(/in project ai-grid whose names start with/)).toBeVisible();
+  expect(screen.queryByTestId('perses-dashboard')).not.toBeInTheDocument();
+});
+
+it("says when the caller can't read the dashboards", async () => {
+  const service = withMonitoring('ai-grid', []);
+  service.listMonitoringDashboards = () => Promise.reject(new ServiceError(403, 'forbidden: project ai-grid'));
+  renderAt('/monitoring', service);
+  expect(await screen.findByText("You can't read these dashboards")).toBeVisible();
+  expect(screen.getByText('forbidden: project ai-grid')).toBeVisible();
+});
+
+it("keeps the AI Grid overview's metrics when the console relays to no Perses", async () => {
+  renderAt('/monitoring', new MockConsoleService());
+  expect(
+    await screen.findByText('Cluster availability, gateway performance and resource use across AI Grid.'),
+  ).toBeVisible();
+  expect(screen.queryByTestId('monitoring-tabs')).not.toBeInTheDocument();
+});
+
+describe('monitoringTabs', () => {
+  it('keeps dashboard-* across projects, by name then project, and keys them with their project', () => {
+    const tabs = monitoringTabs(hub);
+    expect(tabs.map((d) => dashboardKey(d, ''))).toEqual([
+      'ai-grid/dashboard-1-fleet',
+      'other/dashboard-1-fleet',
+      'ai-grid/dashboard-2-usage',
+    ]);
+    expect(dashboardKey(tabs[0], 'ai-grid')).toBe('dashboard-1-fleet');
+  });
+});
+
+describe('HttpConsoleService.listMonitoringDashboards', () => {
+  // A fresh Response per call: a body can be read once.
+  const answer = (status: number, body: unknown) =>
+    vi.fn<typeof fetch>(() => Promise.resolve(new Response(JSON.stringify(body), { status })));
+
+  it("reads one project's dashboards, or every readable project's, through the relay", async () => {
+    const fetchFn = answer(200, [hub[0]]);
+    const service = new HttpConsoleService(fetchFn);
+    expect(await service.listMonitoringDashboards('ai-grid')).toEqual([hub[0]]);
+    await service.listMonitoringDashboards('');
+    expect(fetchFn.mock.calls.map(([url]) => url)).toEqual([
+      '/perses/api/api/v1/projects/ai-grid/dashboards',
+      '/perses/api/api/v1/dashboards',
+    ]);
+  });
+
+  it("keeps Perses's message, and the BFF's for the relay's own refusals", async () => {
+    await expect(
+      new HttpConsoleService(answer(403, { message: 'not allowed to read project' })).listMonitoringDashboards('x'),
+    ).rejects.toMatchObject({ status: 403, message: 'not allowed to read project' });
+    await expect(
+      new HttpConsoleService(
+        answer(404, { error: { message: 'monitoring is not configured on this console' } }),
+      ).listMonitoringDashboards(''),
+    ).rejects.toMatchObject({ status: 404, message: 'monitoring is not configured on this console' });
+  });
+});
