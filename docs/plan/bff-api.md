@@ -535,6 +535,14 @@ the operator's Perses has a service-CA certificate, so without the CA file the r
 `manifests/base` sets neither yet, so a deployed console has Monitoring off. `make start` forwards
 that Service when your login may (`hack/forward-perses.sh`).
 
+The page (`frontend/src/pages/monitoring`): with `monitoring.enabled`, `/monitoring` lists the
+dashboards of `monitoring.persesProject` (or every project the caller may read) through the relay
+and shows each `dashboard-*` one as a tab, ordered by name and selected with `?dashboard=` (the
+name, or `<project>/<name>` without a configured project). It renders the selected one with
+Perses's own React components and the plugins bundled in `persesPlugins.ts` (Prometheus
+queries; time series, stat, table and bar panels), loaded with the page only. Without
+`monitoring.enabled`, `/monitoring` keeps the AI Grid overview's metrics (`Grid/GetOverview`).
+
 ### Waiting on backend RPCs
 
 Each row is a request to the backend repository. The BFF mapping is small once the RPC
