@@ -28,13 +28,17 @@ test('adds an enrollable cluster to the AI Grid and keeps it after a reload', as
   } else {
     await page.keyboard.press('Escape');
   }
-  // A member's name links to its AI Grid drawer.
-  await expect(row.getByRole('link', { name: ENROLLABLE, exact: true })).toBeVisible();
-
   await page.reload();
   const reloaded = page.getByRole('row').filter({ has: page.getByRole('gridcell', { name: ENROLLABLE, exact: true }) });
-  await expect(reloaded.getByRole('link', { name: ENROLLABLE, exact: true })).toHaveAttribute(
-    'href',
-    `/ai-grid?cluster=${ENROLLABLE}`,
-  );
+  await expect(reloaded).toContainText(/Provisioning|Provisioned/);
+
+  // The name opens the cluster's details page, with what the hub reports about it.
+  await reloaded.getByRole('link', { name: ENROLLABLE, exact: true }).click();
+  await expect(page).toHaveURL(`/clusters/${ENROLLABLE}`);
+  await expect(page.getByRole('heading', { level: 1, name: ENROLLABLE })).toBeVisible();
+  await expect(page.getByTestId('cluster-membership')).toContainText(/Provisioning|Provisioned/);
+  await expect(page.getByLabel('Cluster', { exact: true })).toContainText('v1.35.6');
+  await expect(page.getByTestId('cluster-gpus')).toHaveText('16');
+  await expect(page.getByTestId('cluster-conditions')).toContainText('ManagedClusterConditionAvailable');
+  await expect(page.getByRole('link', { name: 'OpenShift console' })).toHaveAttribute('target', '_blank');
 });

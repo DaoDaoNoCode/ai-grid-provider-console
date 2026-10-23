@@ -58,8 +58,29 @@ export type ApiCluster = {
    */
   status?: string;
   statusMessage?: string;
+  consoleUrl?: string;
+  kubernetesVersion?: string;
+  platform?: string;
+  product?: string;
+  /** `status.capacity` and `status.allocatable`: Kubernetes quantities by resource name. */
+  capacity?: Record<string, string>;
+  allocatable?: Record<string, string>;
+  creationTimestamp?: string;
+  /** Add-on name to available, unhealthy or unreachable. */
+  addons?: Record<string, string>;
+  conditions?: ClusterCondition[];
   resourceVersion?: string;
   labels?: Record<string, string>;
+};
+
+/** One of the hub's `status.conditions` on a ManagedCluster. */
+export type ClusterCondition = {
+  type: string;
+  /** True, False or Unknown. */
+  status: string;
+  reason?: string;
+  message?: string;
+  lastTransitionTime?: string;
 };
 
 /** A ManagedCluster as the console shows it; the PoC's GridCluster plus the hub fields. */
@@ -82,6 +103,19 @@ export type GridCluster = {
   latitude?: number;
   longitude?: number;
   openshiftVersion?: string;
+  /** The cluster's OpenShift web console, from its claims. */
+  consoleUrl?: string;
+  kubernetesVersion?: string;
+  /** The infrastructure, such as AWS or BareMetal, and the product, such as OpenShift or ROSA. */
+  platform?: string;
+  product?: string;
+  /** Absent when the backend doesn't report the cluster's resources. */
+  capacity?: Record<string, string>;
+  allocatable?: Record<string, string>;
+  /** When the hub created the ManagedCluster. */
+  creationTimestamp?: string;
+  addons: Record<string, string>;
+  conditions: ClusterCondition[];
   resourceVersion?: string;
   labels: Record<string, string>;
 };

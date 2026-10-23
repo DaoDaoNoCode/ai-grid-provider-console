@@ -198,6 +198,9 @@ also works against a backend that only returns `name`, `labels`, `hubAcceptsClie
   "platform": "BareMetal",
   "product": "OpenShift",
   "gpuCapacity": 16,
+  "capacity": {"cpu": "192", "memory": "1572864Mi", "nvidia.com/gpu": "16", "...": "..."},
+  "allocatable": {"cpu": "186", "memory": "1540000Mi", "nvidia.com/gpu": "16", "...": "..."},
+  "creationTimestamp": "2026-10-01T09:00:00Z",
   "siteName": "Paris DC1",
   "latitude": 48.8566,
   "longitude": 2.3522,
@@ -220,6 +223,10 @@ also works against a backend that only returns `name`, `labels`, `hubAcceptsClie
   `consoleurl.cluster.open-cluster-management.io`, `platform.open-cluster-management.io`,
   `product.open-cluster-management.io`; `gpuCapacity` from `status.capacity["nvidia.com/gpu"]`
   (0 when absent); `addons` from the `feature.open-cluster-management.io/addon-*` labels.
+- `capacity` and `allocatable` are `status.capacity` and `status.allocatable` as the backend
+  sends them (Kubernetes quantity strings by resource name), and `creationTimestamp` is the
+  hub object's; each is omitted when the backend sends none. The real backend sends the
+  creation time but no capacity yet.
 - `siteName`, `latitude`, `longitude` come from the `ai-grid/site-name`, `ai-grid/latitude`,
   `ai-grid/longitude` annotations; coordinates are omitted when absent or not a finite number
   in range (`NaN` and `Inf` parse but cannot be encoded, so they count as absent).

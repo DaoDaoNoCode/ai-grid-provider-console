@@ -40,6 +40,9 @@ const tones: Record<string, StatusTone> = {
   Degraded: 'warning',
   // A subscription's model that the hub doesn't have.
   'Not found': 'danger',
+  // ACM add-ons (feature.open-cluster-management.io/addon-* labels).
+  Available: 'success',
+  Unreachable: 'danger',
   // Organizations.
   Enabled: 'success',
   Disabled: 'neutral',

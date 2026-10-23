@@ -94,6 +94,13 @@ type GridCluster struct {
 	// Device plugins advertise GPUs as plain integers; other Kubernetes
 	// quantity spellings ("8k", "1e1") are not parsed and read as zero.
 	GPUCapacity int `json:"gpuCapacity"`
+	// Capacity and Allocatable are `status.capacity` and `status.allocatable`
+	// as the backend sends them, Kubernetes quantity strings keyed by resource
+	// name; omitted when the backend reports none.
+	Capacity    map[string]string `json:"capacity,omitempty"`
+	Allocatable map[string]string `json:"allocatable,omitempty"`
+	// CreationTimestamp is when the hub created the ManagedCluster.
+	CreationTimestamp *time.Time `json:"creationTimestamp,omitempty"`
 	// SiteName, Latitude and Longitude come from the `ai-grid/*` annotations.
 	SiteName  string   `json:"siteName,omitempty"`
 	Latitude  *float64 `json:"latitude,omitempty"`
@@ -158,6 +165,11 @@ func toGridCluster(mc *aigridv1.ManagedCluster) GridCluster {
 	}
 	gpu, _ := strconv.Atoi(st.GetCapacity()[CapacityGPU])
 	provisioned := labels[LabelProvisioned] == "true"
+	var created *time.Time
+	if ts := mc.GetCreationTimestamp(); ts != nil {
+		t := ts.AsTime().UTC()
+		created = &t
+	}
 	if st != nil && st.Provisioning != nil {
 		provisioned = st.GetProvisioning() == "Compliant"
 	}
@@ -177,6 +189,9 @@ func toGridCluster(mc *aigridv1.ManagedCluster) GridCluster {
 		Platform:          claims[ClaimPlatform],
 		Product:           claims[ClaimProduct],
 		GPUCapacity:       gpu,
+		Capacity:          st.GetCapacity(),
+		Allocatable:       st.GetAllocatable(),
+		CreationTimestamp: created,
 		SiteName:          annotations[AnnotationSiteName],
 		Latitude:          parseCoordinate(annotations[AnnotationLatitude], 90),
 		Longitude:         parseCoordinate(annotations[AnnotationLongitude], 180),

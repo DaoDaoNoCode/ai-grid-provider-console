@@ -18,6 +18,27 @@
         "platform": "BareMetal",
         "product": "OpenShift",
         "gpuCapacity": 2,
+        "capacity": {
+          "core_worker": "12",
+          "cpu": "16",
+          "ephemeral-storage": "3600Gi",
+          "hugepages-1Gi": "0",
+          "hugepages-2Mi": "0",
+          "memory": "65536Mi",
+          "nvidia.com/gpu": "2",
+          "pods": "250",
+          "socket_worker": "1"
+        },
+        "allocatable": {
+          "cpu": "15",
+          "ephemeral-storage": "3300Gi",
+          "hugepages-1Gi": "0",
+          "hugepages-2Mi": "0",
+          "memory": "62000Mi",
+          "nvidia.com/gpu": "2",
+          "pods": "250"
+        },
+        "creationTimestamp": "2026-10-10T11:20:00Z",
         "addons": {
           "application-manager": "available",
           "cert-policy-controller": "available",
@@ -107,6 +128,25 @@
         "platform": "AWS",
         "product": "ROSA",
         "gpuCapacity": 0,
+        "capacity": {
+          "core_worker": "36",
+          "cpu": "48",
+          "ephemeral-storage": "3600Gi",
+          "hugepages-1Gi": "0",
+          "hugepages-2Mi": "0",
+          "memory": "196608Mi",
+          "pods": "750",
+          "socket_worker": "6"
+        },
+        "allocatable": {
+          "cpu": "45",
+          "ephemeral-storage": "3300Gi",
+          "hugepages-1Gi": "0",
+          "hugepages-2Mi": "0",
+          "memory": "190000Mi",
+          "pods": "750"
+        },
+        "creationTimestamp": "2026-09-01T07:30:00Z",
         "addons": {
           "application-manager": "available",
           "cert-policy-controller": "available",
@@ -201,6 +241,27 @@
         "platform": "AWS",
         "product": "OpenShift",
         "gpuCapacity": 8,
+        "capacity": {
+          "core_worker": "48",
+          "cpu": "64",
+          "ephemeral-storage": "3600Gi",
+          "hugepages-1Gi": "0",
+          "hugepages-2Mi": "0",
+          "memory": "524288Mi",
+          "nvidia.com/gpu": "8",
+          "pods": "750",
+          "socket_worker": "2"
+        },
+        "allocatable": {
+          "cpu": "61",
+          "ephemeral-storage": "3300Gi",
+          "hugepages-1Gi": "0",
+          "hugepages-2Mi": "0",
+          "memory": "515000Mi",
+          "nvidia.com/gpu": "8",
+          "pods": "750"
+        },
+        "creationTimestamp": "2026-09-28T16:45:00Z",
         "siteName": "Ashburn DC1",
         "latitude": 39.0438,
         "longitude": -77.4874,
@@ -290,6 +351,7 @@
         "status": "importing",
         "statusMessage": "Importing resources are applied, wait for resources be available",
         "gpuCapacity": 0,
+        "creationTimestamp": "2026-10-15T10:00:00Z",
         "addons": {},
         "conditions": [
           {
@@ -326,6 +388,7 @@
         "status": "importfailed",
         "statusMessage": "Try to import managed cluster, error: Get \"https://api.site-dublin-1.example.com:6443/api?timeout=32s\": dial tcp 192.0.2.10:6443: i/o timeout",
         "gpuCapacity": 0,
+        "creationTimestamp": "2026-10-14T09:15:00Z",
         "addons": {},
         "conditions": [
           {
@@ -367,6 +430,27 @@
         "platform": "BareMetal",
         "product": "OpenShift",
         "gpuCapacity": 8,
+        "capacity": {
+          "core_worker": "64",
+          "cpu": "96",
+          "ephemeral-storage": "3600Gi",
+          "hugepages-1Gi": "0",
+          "hugepages-2Mi": "0",
+          "memory": "786432Mi",
+          "nvidia.com/gpu": "8",
+          "pods": "750",
+          "socket_worker": "4"
+        },
+        "allocatable": {
+          "cpu": "92",
+          "ephemeral-storage": "3300Gi",
+          "hugepages-1Gi": "0",
+          "hugepages-2Mi": "0",
+          "memory": "770000Mi",
+          "nvidia.com/gpu": "8",
+          "pods": "750"
+        },
+        "creationTimestamp": "2026-10-03T14:12:00Z",
         "addons": {
           "application-manager": "unhealthy",
           "cert-policy-controller": "available",
@@ -449,6 +533,27 @@
         "platform": "Azure",
         "product": "OpenShift",
         "gpuCapacity": 4,
+        "capacity": {
+          "core_worker": "24",
+          "cpu": "32",
+          "ephemeral-storage": "1200Gi",
+          "hugepages-1Gi": "0",
+          "hugepages-2Mi": "0",
+          "memory": "131072Mi",
+          "nvidia.com/gpu": "4",
+          "pods": "500",
+          "socket_worker": "2"
+        },
+        "allocatable": {
+          "cpu": "30",
+          "ephemeral-storage": "1100Gi",
+          "hugepages-1Gi": "0",
+          "hugepages-2Mi": "0",
+          "memory": "126000Mi",
+          "nvidia.com/gpu": "4",
+          "pods": "500"
+        },
+        "creationTimestamp": "2026-09-12T10:00:00Z",
         "addons": {
           "application-manager": "unreachable",
           "cert-policy-controller": "unreachable",
@@ -534,6 +639,27 @@
         "platform": "AWS",
         "product": "OpenShift",
         "gpuCapacity": 4,
+        "capacity": {
+          "core_worker": "32",
+          "cpu": "48",
+          "ephemeral-storage": "3600Gi",
+          "hugepages-1Gi": "0",
+          "hugepages-2Mi": "0",
+          "memory": "196608Mi",
+          "nvidia.com/gpu": "4",
+          "pods": "750",
+          "socket_worker": "2"
+        },
+        "allocatable": {
+          "cpu": "45",
+          "ephemeral-storage": "3300Gi",
+          "hugepages-1Gi": "0",
+          "hugepages-2Mi": "0",
+          "memory": "190000Mi",
+          "nvidia.com/gpu": "4",
+          "pods": "750"
+        },
+        "creationTimestamp": "2026-09-20T08:00:00Z",
         "siteName": "Madrid DC1",
         "latitude": 40.4168,
         "longitude": -3.7038,
@@ -624,6 +750,7 @@
         "status": "pendingimport",
         "statusMessage": "Wait for importing",
         "gpuCapacity": 0,
+        "creationTimestamp": "2026-10-15T12:30:00Z",
         "addons": {},
         "conditions": [
           {
@@ -668,6 +795,27 @@
         "platform": "BareMetal",
         "product": "OpenShift",
         "gpuCapacity": 16,
+        "capacity": {
+          "core_worker": "128",
+          "cpu": "192",
+          "ephemeral-storage": "3600Gi",
+          "hugepages-1Gi": "0",
+          "hugepages-2Mi": "0",
+          "memory": "1572864Mi",
+          "nvidia.com/gpu": "16",
+          "pods": "1000",
+          "socket_worker": "8"
+        },
+        "allocatable": {
+          "cpu": "186",
+          "ephemeral-storage": "3300Gi",
+          "hugepages-1Gi": "0",
+          "hugepages-2Mi": "0",
+          "memory": "1540000Mi",
+          "nvidia.com/gpu": "16",
+          "pods": "1000"
+        },
+        "creationTimestamp": "2026-10-01T09:00:00Z",
         "siteName": "Paris DC1",
         "latitude": 48.8566,
         "longitude": 2.3522,

@@ -44,15 +44,18 @@ sends them in one Update RPC, with the present fields as the mask and
 is 428); it does not read the cluster first and neither merges, compares nor validates the maps
 (a body that names no field is 422); `GridCluster` exposes
 `status`, `statusMessage`, `consoleUrl`, `kubernetesVersion`, `platform`, `product`,
-`gpuCapacity`, `siteName`, `latitude`, `longitude`, `addons`, `conditions`, `resourceVersion`.
+`gpuCapacity`, `capacity`, `allocatable`, `creationTimestamp`, `siteName`, `latitude`,
+`longitude`, `addons`, `conditions`, `resourceVersion`.
 
-UI: main already has a basic, read-only Clusters page (`frontend/src/pages/ClustersPage.tsx`:
-name, site, region, location, enrolment, provisioned, hub acceptance, OpenShift version), which
-keeps working because the new fields are additive. Porting the fuller UI for this area (status,
-GPUs, console link, enrol and location editing) is out of scope here; it builds on the HTTP
-contract in `docs/plan/bff-api.md`. The map belongs to the grid overview area, not started
-here; Placement recomputation and ManifestWorkReplicaSet belong to the models area
-(`mock/areas/models.md`).
+UI: the Clusters page (`frontend/src/pages/clusters/ClustersPage.tsx`) lists every
+ManagedCluster with its location, connection, AI Grid membership, role, GPUs and OpenShift
+version, adds a cluster to AI Grid or removes it, and links each name to the cluster's details
+page (`ClusterDetailsPage.tsx`, `/clusters/:name`). That page shows the membership (status,
+role, location), what the hub knows about the cluster (versions, platform, product, creation
+time, console link), its capacity, its add-ons and its conditions, with the same Add and Remove
+actions. The real backend sends no claims, capacity or conditions yet, so against it those parts
+say so instead of showing zeros. The map belongs to the grid overview area; Placement
+recomputation and ManifestWorkReplicaSet belong to the models area (`mock/areas/models.md`).
 
 Backend ask: ship the draft's `GetManagedCluster`, `UpdateManagedCluster` and richer
 message (`mock/proto/ai_grid/v1/managed_cluster*.proto`), with the state derived server-side.

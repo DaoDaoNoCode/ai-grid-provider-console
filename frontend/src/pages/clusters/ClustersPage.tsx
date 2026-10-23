@@ -34,11 +34,12 @@ import type { MembershipChange } from './MembershipModal';
 import { ClusterChangedError } from './ClusterChangedError';
 import { MembershipModal } from './MembershipModal';
 import { MissingLabel } from './MissingLabel';
+import { gpuCount, membershipAction, statusReason } from './clusterInfo';
 import { clusterRoles, roleOf } from './roles';
 
 // Ported from krisv/ai-grid-cloud-provider-poc src/app/pages/clusters/ClustersPage.tsx at 62319b8.
-// The PoC's columns, labels, and enroll flow, plus the console's Role and OpenShift columns,
-// removal from AI Grid, and a confirmation both ways. No Hub column: a cluster the hub hasn't
+// The PoC's columns, labels, and enroll flow, plus the console's Role, GPUs and OpenShift columns,
+// removal from AI Grid, and a confirmation both ways. Each name opens the cluster's details page. No Hub column: a cluster the hub hasn't
 // accepted shows Not accepted in the Connection tooltip, and Add says why it's disabled (on the
 // real backend the BFF derives that state from spec.hub_accepts_client, bff/internal/backend/v1.go).
 // Site and Region (ai-grid/site and ai-grid/region) are left out: geography is after the MVP, and
@@ -76,6 +77,11 @@ const columns: Column[] = [
       popoverProps: { headerContent: 'What a member runs' },
     },
   },
+  {
+    label: 'GPUs',
+    sort: (a, b) => (gpuCount(a) ?? -1) - (gpuCount(b) ?? -1),
+    info: { tooltip: "NVIDIA GPUs in the cluster's capacity, as the hub reports it." },
+  },
   { label: 'OpenShift' },
 ];
 
@@ -84,17 +90,6 @@ const membership = (c: GridCluster) => (c.aiGridEnabled ? c.provisioningStatus :
 
 /** A member's role label, '-' for a member without one, nothing outside AI Grid (sorts first). */
 const memberRole = (c: GridCluster) => (c.aiGridEnabled ? (roleOf(c.labels)?.label ?? '-') : '');
-
-/** The Connection tooltip: the ACM state behind Unknown, then the backend's message. */
-const statusReason = (c: GridCluster) => [c.state, c.statusMessage].filter(Boolean).join(': ') || undefined;
-
-/** Why a cluster can't be added: the hub hasn't accepted it, hasn't finished importing it, or is detaching it. */
-const cannotAddReason = (c: GridCluster) => {
-  if (c.state === 'Not accepted') {
-    return "The hub hasn't accepted this cluster yet. Accept it in ACM, then add it to AI Grid.";
-  }
-  return c.state ? `The hub can add this cluster to AI Grid once it has imported it (now: ${c.state}).` : undefined;
-};
 
 export const ClustersPage: React.FC<Props> = ({ service }) => {
   const navigate = useNavigate();
@@ -233,11 +228,7 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
                   pageRows.map((c) => (
                     <Tr key={c.name}>
                       <Td dataLabel="Cluster">
-                        {c.aiGridEnabled ? (
-                          <Link to={`/ai-grid?cluster=${encodeURIComponent(c.name)}`}>{c.name}</Link>
-                        ) : (
-                          c.name
-                        )}
+                        <Link to={`/clusters/${encodeURIComponent(c.name)}`}>{c.name}</Link>
                       </Td>
                       <Td dataLabel="Location">
                         {c.location ??
@@ -274,31 +265,14 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
                               </MissingLabel>
                             ))}
                       </Td>
+                      <Td dataLabel="GPUs">{gpuCount(c) ?? EMPTY_VALUE}</Td>
                       <Td dataLabel="OpenShift">{c.openshiftVersion ?? EMPTY_VALUE}</Td>
                       {isProviderAdmin && (
                         <Td isActionCell>
                           <SimpleMenuActions
                             testId={`cluster-actions-${c.name}`}
                             ariaLabel={`Actions for ${c.name}`}
-                            dropdownItems={
-                              c.aiGridEnabled
-                                ? [
-                                    {
-                                      key: 'remove',
-                                      label: 'Remove from AI Grid',
-                                      isDanger: true,
-                                      onClick: () => setChange({ cluster: c, join: false }),
-                                    },
-                                  ]
-                                : [
-                                    {
-                                      key: 'add',
-                                      label: 'Add to AI Grid',
-                                      disabledReason: cannotAddReason(c),
-                                      onClick: () => setChange({ cluster: c, join: true }),
-                                    },
-                                  ]
-                            }
+                            dropdownItems={[membershipAction(c, setChange)]}
                           />
                         </Td>
                       )}

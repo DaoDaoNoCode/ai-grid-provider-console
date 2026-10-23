@@ -23,6 +23,27 @@
       "platform": "BareMetal",
       "product": "OpenShift",
       "gpuCapacity": 16,
+      "capacity": {
+        "core_worker": "128",
+        "cpu": "192",
+        "ephemeral-storage": "3600Gi",
+        "hugepages-1Gi": "0",
+        "hugepages-2Mi": "0",
+        "memory": "1572864Mi",
+        "nvidia.com/gpu": "16",
+        "pods": "1000",
+        "socket_worker": "8"
+      },
+      "allocatable": {
+        "cpu": "186",
+        "ephemeral-storage": "3300Gi",
+        "hugepages-1Gi": "0",
+        "hugepages-2Mi": "0",
+        "memory": "1540000Mi",
+        "nvidia.com/gpu": "16",
+        "pods": "1000"
+      },
+      "creationTimestamp": "2026-10-01T09:00:00Z",
       "siteName": "Paris DC1",
       "latitude": 48.8566,
       "longitude": 2.3522,

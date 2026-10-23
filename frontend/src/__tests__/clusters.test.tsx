@@ -19,6 +19,8 @@ const cluster = (name: string, status: GridCluster['status'], labels: Record<str
     provisioned,
     provisioningStatus: provisioned ? 'Provisioned' : aiGridEnabled ? 'Provisioning' : 'Not provisioned',
     ...(labels.location ? { location: labels.location } : {}),
+    addons: {},
+    conditions: [],
     labels,
   };
 };
@@ -60,13 +62,13 @@ it('lists live Hub states, includes AI Grid navigation and enrolls with a label-
       .getAllByRole('link')
       .map((link) => link.textContent),
   ).toEqual(['AI Grid', 'Monitoring', 'Clusters', 'Organizations', 'Models', 'Subscriptions']);
-  // A member links to its AI Grid drawer and shows its provisioning; one status line each.
+  // Every name links to the cluster's details page; a member shows its provisioning, one status line each.
   const member = within(table).getByRole('link', { name: 'cluster-a' }).closest('tr')!;
-  expect(within(table).getByRole('link', { name: 'cluster-a' })).toHaveAttribute('href', '/ai-grid?cluster=cluster-a');
+  expect(within(table).getByRole('link', { name: 'cluster-a' })).toHaveAttribute('href', '/clusters/cluster-a');
   expect(within(member).getByText('Provisioned')).toBeInTheDocument();
-  const offline = within(table).getByText('cluster-c').closest('tr')!;
+  const offline = within(table).getByRole('link', { name: 'cluster-c' }).closest('tr')!;
+  expect(within(table).getByRole('link', { name: 'cluster-c' })).toHaveAttribute('href', '/clusters/cluster-c');
   expect(offline).toHaveTextContent('Offline');
-  expect(within(offline).queryByRole('link')).not.toBeInTheDocument();
   expect(within(offline).getAllByText('—').length).toBeGreaterThan(0);
   await add(user, 'cluster-b');
   expect(await screen.findByText('cluster-b added to AI Grid')).toBeVisible();
@@ -96,9 +98,8 @@ it('removes a member from AI Grid after a confirmation', async () => {
   expect(await screen.findByText('cluster-a removed from AI Grid')).toBeVisible();
   const removed = service.clusters.find((c) => c.name === 'cluster-a')!;
   expect(removed.labels).toEqual({ 'ai-grid/provisioned': 'true', location: 'site1' });
-  expect(
-    within(screen.getByTestId('clusters-table')).queryByRole('link', { name: 'cluster-a' }),
-  ).not.toBeInTheDocument();
+  const row = within(screen.getByTestId('clusters-table')).getByRole('link', { name: 'cluster-a' }).closest('tr')!;
+  expect(within(row).getByText('Not added')).toBeInTheDocument();
 });
 
 it('does not say the hub is disconnected when removing local-cluster', async () => {
@@ -187,10 +188,11 @@ it('refresh reflects external membership changes on the Hub', async () => {
   renderAt('/clusters', service);
   await add(user, 'cluster-b');
   expect(await screen.findByText('cluster-b added to AI Grid')).toBeVisible();
-  expect(await screen.findByRole('link', { name: 'cluster-b' })).toBeInTheDocument();
+  const row = () => within(screen.getByTestId('clusters-table')).getByRole('row', { name: /^cluster-b / });
+  await waitFor(() => expect(row()).toHaveTextContent('Provisioning'));
   service.clusters[1] = cluster('cluster-b', 'Ready', { location: 'site2' });
   await user.click(screen.getByRole('button', { name: 'Refresh' }));
-  await waitFor(() => expect(screen.queryByRole('link', { name: 'cluster-b' })).not.toBeInTheDocument());
+  await waitFor(() => expect(within(row()).getByText('Not added')).toBeInTheDocument());
 });
 
 it('shows the role and location Add wrote while the list reloads', async () => {
@@ -517,6 +519,7 @@ it('wraps the headers, shows Role, and has no Hub, Site or Region column', async
     expect(within(table).queryByRole('columnheader', { name })).not.toBeInTheDocument();
   }
   expect(within(table).getByRole('columnheader', { name: 'OpenShift' })).not.toHaveClass('pf-m-hidden');
+  expect(within(table).getByRole('columnheader', { name: /^GPUs/ })).toBeInTheDocument();
   // The hub's connection to the cluster, not its AI Grid provisioning, which has its own column.
   expect(within(table).getByRole('columnheader', { name: /^Connection/ })).toBeInTheDocument();
 });

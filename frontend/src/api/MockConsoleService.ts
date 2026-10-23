@@ -78,6 +78,14 @@ export class MockConsoleService implements ConsoleService {
 
   listClusters = async (): Promise<GridCluster[]> => [...this.clusters];
 
+  getCluster = async (name: string): Promise<GridCluster> => {
+    const cluster = this.clusters.find((c) => c.name === name);
+    if (!cluster) {
+      throw new ServiceError(404, `object with identifier '${name}' not found`);
+    }
+    return cluster;
+  };
+
   /**
    * Sets `ai-grid/enabled`, `ai-grid/role` and `location` on the labels the caller read, as
    * HttpConsoleService sends them: the BFF's PATCH replaces the labels map as a whole, at the
@@ -527,6 +535,23 @@ export const seedClusters = (): GridCluster[] =>
       latitude,
       longitude,
       openshiftVersion: '4.22.15',
+      consoleUrl: `https://console-openshift-console.apps.${name}.example.com`,
+      kubernetesVersion: 'v1.35.6',
+      platform: 'BareMetal',
+      product: 'OpenShift',
+      capacity: { cpu: '192', memory: '1572864Mi', 'nvidia.com/gpu': member ? '16' : '0' },
+      allocatable: { cpu: '186', memory: '1540000Mi', 'nvidia.com/gpu': member ? '16' : '0' },
+      creationTimestamp: '2026-10-01T09:00:00Z',
+      addons: { 'work-manager': 'available', 'cluster-proxy': 'available' },
+      conditions: [
+        {
+          type: 'ManagedClusterConditionAvailable',
+          status: 'True',
+          reason: 'ManagedClusterAvailable',
+          message: 'Managed cluster is available',
+          lastTransitionTime: '2026-10-01T09:00:08Z',
+        },
+      ],
       resourceVersion: '1',
       labels: {
         name,
