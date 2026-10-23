@@ -20,7 +20,30 @@ const get = async <T>(url: string): Promise<T> => {
 
 const kindQuery = (pluginKind?: string) => (pluginKind ? `?kind=${encodeURIComponent(pluginKind)}` : '');
 
+/** How long a datasource list is reused, as odh-dashboard's CachedDatasourceAPI does. */
+const CACHE_MS = 5 * 60 * 1000;
+
 export class RelayDatasourceApi implements DatasourceApi {
+  // Every panel looks its datasource up before each query, so without a cache a dashboard's
+  // refresh lists the same datasources once per panel, one after another (seconds on a dashboard
+  // with a few dozen panels). A pending list is shared; a failed one is dropped, not reused.
+  private readonly cache = new Map<string, { at: number; list: Promise<unknown> }>();
+
+  constructor(private readonly now: () => number = Date.now) {}
+
+  private cached<T>(url: string): Promise<T> {
+    const hit = this.cache.get(url);
+    if (hit && this.now() - hit.at < CACHE_MS) {
+      return hit.list as Promise<T>;
+    }
+    const list = get<T>(url).catch((err: unknown) => {
+      this.cache.delete(url);
+      throw err;
+    });
+    this.cache.set(url, { at: this.now(), list });
+    return list;
+  }
+
   buildProxyUrl = ({ project, dashboard, name }: { project?: string; dashboard?: string; name: string }): string => {
     let path = `${project || dashboard ? 'datasources' : 'globaldatasources'}/${encodeURIComponent(name)}`;
     if (dashboard) path = `dashboards/${encodeURIComponent(dashboard)}/${path}`;
@@ -29,10 +52,10 @@ export class RelayDatasourceApi implements DatasourceApi {
   };
 
   listDatasources = (project: string, pluginKind?: string): Promise<DatasourceResource[]> =>
-    get(`${PERSES_API}/api/v1/projects/${encodeURIComponent(project)}/datasources${kindQuery(pluginKind)}`);
+    this.cached(`${PERSES_API}/api/v1/projects/${encodeURIComponent(project)}/datasources${kindQuery(pluginKind)}`);
 
   listGlobalDatasources = (pluginKind?: string): Promise<GlobalDatasourceResource[]> =>
-    get(`${PERSES_API}/api/v1/globaldatasources${kindQuery(pluginKind)}`);
+    this.cached(`${PERSES_API}/api/v1/globaldatasources${kindQuery(pluginKind)}`);
 
   /** The named datasource, or the project's default one of the kind when the selector names none. */
   getDatasource = async (project: string, selector: DatasourceSelector): Promise<DatasourceResource | undefined> =>
