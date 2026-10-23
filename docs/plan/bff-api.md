@@ -48,14 +48,13 @@ cluster state is derived from `spec.hub_accepts_client`, `status.joined` and
 `status.available_condition` only. The tenant list forwards `offset`, `limit` and `filter`; the
 backend pages but doesn't evaluate `filter` yet, so a filtered list answers 501. A tenant write
 sends `name` as `metadata.name` and `domains` as `spec.domains` (mask paths likewise), and the
-`If-Match` version as `metadata.version`, with `lock: true` unless it is 0 (a tenant the backend
-never wrote). A write that sets a field the backend's `Tenant` lacks (`alias` other than the name,
+`If-Match` version as `metadata.version` with `lock: true`. Backend PR 16 requires a version:
+every tenant reads as version 1 or more, and an update or delete at version 0 is `InvalidArgument`
+(422, with the backend's message). A write that sets a field the backend's `Tenant` lacks (`alias` other than the name,
 `description`, `enabled: false`, `attributes`, `identityProvider`) answers 501 before any call. A
 PATCH that leaves only no-op fields sends the mask `id`, which backend PR 16 answers with the
-stored tenant after checking the version, writing nothing; at version 0 (every tenant on a backend
-without versions, which would PUT the stored tenant back for that mask) it's a read instead. DELETE sends the `If-Match` version as
-`TenantsDeleteRequest.version` (backend PR 16); a backend without that field ignores it, and 0
-skips the check. The backend refuses a change to a label or annotation
+stored tenant after checking the version, writing nothing. DELETE sends the `If-Match` version as
+`TenantsDeleteRequest.version` (backend PR 16). The backend refuses a change to a label or annotation
 outside `ai-grid/*` and the `location` label, and a bad coordinate, with `InvalidArgument` (422),
 after it checks the version: a stale one is `Aborted` (409) whatever the labels.
 

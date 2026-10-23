@@ -146,14 +146,15 @@ func TestV1TenantWrites(t *testing.T) {
 		t.Fatalf("UpdateTenant sent %s %v, want %v", conn.method, conn.req, wantUpdate)
 	}
 
-	// Version 0 is a tenant the backend never wrote: sent without lock.
+	// Version 0 is sent as it is, with lock: the backend, not the BFF,
+	// refuses it.
 	if _, err := (v1Tenants{conn}).UpdateTenant(ctx, &aigridv1.UpdateTenantRequest{
 		Object: &aigridv1.Tenant{Id: "t1", ResourceVersion: "0"}, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"domains"}},
-	}); err != nil || conn.req.(*backendv1.TenantsUpdateRequest).GetLock() {
+	}); err != nil || !conn.req.(*backendv1.TenantsUpdateRequest).GetLock() {
 		t.Fatalf("version 0: lock %v, err %v", conn.req.(*backendv1.TenantsUpdateRequest).GetLock(), err)
 	}
 
-	// Delete sends the If-Match version; 0 is the backend's "don't check".
+	// Delete sends the If-Match version, 0 included: the backend refuses it.
 	for _, v := range []struct {
 		rv   string
 		want int32
@@ -265,12 +266,10 @@ func TestV1UpdateTenantReadBackValues(t *testing.T) {
 	if !proto.Equal(conn.reqs[0].(proto.Message), wantNoop) {
 		t.Fatalf("no-op update at 4 sent %v, want %v", conn.reqs[0], wantNoop)
 	}
-	// At version 0 there is nothing to check, and a backend without versions
-	// (main) would write the stored tenant back for mask id: a read instead.
+	// At version 0 too: one locked Update, never a plain read.
 	conn = newConn()
-	got, err = update(conn, "0", &aigridv1.Tenant{}, "description")
-	if err != nil || got.GetObject().GetName() != "org1" || !slices.Equal(conn.called, []string{methodTenantsGet}) {
-		t.Fatalf("no-op update at 0: %v, %v after %v", got.GetObject(), err, conn.called)
+	if _, err := update(conn, "0", &aigridv1.Tenant{}, "description"); err != nil || !slices.Equal(conn.called, []string{methodTenantsUpdate}) || !conn.reqs[0].(*backendv1.TenantsUpdateRequest).GetLock() {
+		t.Fatalf("no-op update at 0: %v after %v", err, conn.called)
 	}
 
 	// Other values, and any alias, are refused before any call.

@@ -188,16 +188,15 @@ func (c v1Tenants) CreateTenant(ctx context.Context, in *aigridv1.CreateTenantRe
 var tenantPaths = map[string]string{"name": "metadata.name", "domains": "spec.domains"}
 
 // UpdateTenant sends the draft's name and domains paths as the backend's, and
-// the If-Match version as metadata.version, with lock when it is not 0 (the
-// version of a tenant the backend never wrote). Description, enabled and
-// attributes pass when they hold what a read gives back (empty, true, none),
-// as on create; other values, and any alias (the backend can't say which one
-// Keycloak keeps after a rename), are Unimplemented. When only those no-op
-// fields are left (an empty mask would make the backend update the name and
-// domains), the mask names only id, which a versioned backend (PR 16)
-// answers with the stored tenant after checking the version, writing
-// nothing. At version 0 there is nothing to check and the answer is a read:
-// a backend without versions (main) would PUT the stored tenant back.
+// the If-Match version as metadata.version with lock. The backend (PR 16)
+// requires a version: every tenant reads as 1 or more, and 0 is
+// InvalidArgument (422). Description, enabled and attributes pass when they
+// hold what a read gives back (empty, true, none), as on create; other values,
+// and any alias (the backend can't say which one Keycloak keeps after a
+// rename), are Unimplemented. When only those no-op fields are left (an empty
+// mask would make the backend update the name and domains), the mask names
+// only id, which the backend answers with the stored tenant after checking
+// the version, writing nothing.
 func (c v1Tenants) UpdateTenant(ctx context.Context, in *aigridv1.UpdateTenantRequest, opts ...grpc.CallOption) (*aigridv1.UpdateTenantResponse, error) {
 	obj := in.GetObject()
 	version, err := tenantVersion(obj.GetResourceVersion())
@@ -216,13 +215,6 @@ func (c v1Tenants) UpdateTenant(ctx context.Context, in *aigridv1.UpdateTenantRe
 		return nil, err
 	}
 	if len(paths) == 0 {
-		if version == 0 {
-			got, err := c.GetTenant(ctx, &aigridv1.GetTenantRequest{Id: obj.GetId()}, opts...)
-			if err != nil {
-				return nil, err
-			}
-			return &aigridv1.UpdateTenantResponse{Object: got.GetObject()}, nil
-		}
 		paths = []string{"id"}
 	}
 	req := &backendv1.TenantsUpdateRequest{
@@ -232,7 +224,7 @@ func (c v1Tenants) UpdateTenant(ctx context.Context, in *aigridv1.UpdateTenantRe
 			Spec:     &backendv1.TenantSpec{Domains: obj.GetDomains()},
 		},
 		UpdateMask: &fieldmaskpb.FieldMask{Paths: paths},
-		Lock:       version != 0,
+		Lock:       true,
 	}
 	resp := &backendv1.TenantsUpdateResponse{}
 	if err := c.conn.Invoke(ctx, methodTenantsUpdate, req, resp, opts...); err != nil {
@@ -241,9 +233,8 @@ func (c v1Tenants) UpdateTenant(ctx context.Context, in *aigridv1.UpdateTenantRe
 	return &aigridv1.UpdateTenantResponse{Object: FromV1Tenant(resp.GetObject())}, nil
 }
 
-// DeleteTenant sends the If-Match version, which the backend checks unless it
-// is 0. A backend without TenantsDeleteRequest.version (main before PR 16)
-// ignores it.
+// DeleteTenant sends the If-Match version, which the backend (PR 16) checks;
+// it answers 0 with InvalidArgument (422).
 func (c v1Tenants) DeleteTenant(ctx context.Context, in *aigridv1.DeleteTenantRequest, opts ...grpc.CallOption) (*aigridv1.DeleteTenantResponse, error) {
 	version, err := tenantVersion(in.GetResourceVersion())
 	if err != nil {

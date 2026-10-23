@@ -521,6 +521,18 @@ func TestTenantVersions(t *testing.T) {
 	if rec := serve(app, asUser(http.MethodDelete, "/api/v1/tenants/t-2")); rec.Code != http.StatusPreconditionRequired || len(fake.Calls) != 0 || len(fake.Tenants) != 2 {
 		t.Errorf("DELETE without If-Match = %d, calls %v", rec.Code, fake.Calls)
 	}
+	// The backend requires a version (PR 16): its InvalidArgument for version
+	// 0 is 422 with its message, on PATCH and on DELETE.
+	fake.Err = backendtest.Status(codes.InvalidArgument, "lock requires metadata.version")
+	for _, req := range []*http.Request{
+		patchTenant("t-2", "0", `{"description": "x"}`),
+		withIfMatch(asUser(http.MethodDelete, "/api/v1/tenants/t-2"), `"0"`),
+	} {
+		if rec := serve(app, req); rec.Code != http.StatusUnprocessableEntity || decodeError(t, rec).Error.Message != "lock requires metadata.version" {
+			t.Errorf("%s at version 0 = %d %s, want 422 with the backend's message", req.Method, rec.Code, rec.Body.String())
+		}
+	}
+	fake.Err = nil
 	// A created tenant comes back with its first version.
 	rec = serve(app, jsonRequest(http.MethodPost, "/api/v1/tenants", `{"name": "new-org"}`))
 	if rec.Code != http.StatusCreated || rec.Header().Get("ETag") != `"1"` {
