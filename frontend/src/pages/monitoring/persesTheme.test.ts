@@ -23,6 +23,11 @@ describe('patternFlyTheme', () => {
     expect(textStyle.fontSize).toBe(12);
   });
 
+  it("leaves room above the plot for the y axis's top label, keeping Perses's other grid values", () => {
+    const { chartsTheme } = patternFlyTheme('light', 2026);
+    expect(chartsTheme.echartsTheme.grid).toMatchObject({ top: 10, right: 20, left: 20, containLabel: true });
+  });
+
   it('fits two legend rows in the 40px legend box', () => {
     const { muiTheme } = patternFlyTheme('light', 2026);
     expect(muiTheme.components?.MuiListItemText?.styleOverrides?.dense).toEqual({ marginTop: 1, marginBottom: 1 });

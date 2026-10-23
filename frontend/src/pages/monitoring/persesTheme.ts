@@ -569,6 +569,12 @@ export const patternFlyTheme = (
       tooltip: {
         backgroundColor: 'var(--pf-t--global--background--color--inverse--default)',
       },
+      // Not in odh-dashboard: Perses leaves 5px above the plot (theme-gen's grid.top, which the time
+      // series panel doesn't override), and the y axis's top label, centred on that edge, then loses
+      // its top to the canvas edge. Room for half a 12px label.
+      grid: {
+        top: 10,
+      },
     },
     thresholds: {
       defaultColor: defaultTextColor,
