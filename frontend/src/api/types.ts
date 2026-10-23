@@ -137,7 +137,8 @@ export type OidcConfig = {
 
 export type IdentityProvider = { title: string; description: string; enabled: true; config: OidcConfig };
 
-export type OrganizationInput = { name: string; domains: string[]; identityProvider: IdentityProvider };
+/** `identityProvider` is optional: the backend's Tenants API has none yet. */
+export type OrganizationInput = { name: string; domains: string[]; identityProvider?: IdentityProvider };
 
 /**
  * An organization as the pages read it. `identityProvider` is absent for an organization
