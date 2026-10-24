@@ -26,9 +26,11 @@ import { NoticeToast } from './components/NoticeToast';
 import { AboutConsoleModal } from './components/AboutConsoleModal';
 import { ProviderAdminsOnly } from './components/ProviderAdminsOnly';
 import { SessionEnded, type SessionEnd } from './components/SessionEnded';
+import { ThemeToggle } from './components/ThemeToggle';
 import { UserMenu } from './components/UserMenu';
 import { watchSession } from './api/watchSession';
 import { ConsoleSessionContext } from './context/useConsoleSession';
+import { ThemeProvider } from './context/ThemeContext';
 import { useServiceData } from './hooks/useServiceData';
 import {
   browserNavigation,
@@ -145,7 +147,11 @@ export const App: React.FC<Props> = ({ service: given, navigation = browserNavig
       <MastheadContent>
         <Toolbar isFullHeight isStatic>
           <ToolbarContent>
-            <ToolbarItem align={{ default: 'alignEnd' }}>
+            {/* A phone has no room for it beside the user menu, which offers the theme there instead. */}
+            <ToolbarItem align={{ default: 'alignEnd' }} visibility={{ default: 'hidden', md: 'visible' }}>
+              <ThemeToggle />
+            </ToolbarItem>
+            <ToolbarItem align={{ default: 'alignEnd', md: 'alignStart' }}>
               <UserMenu
                 user={user}
                 loaded={userLoaded}
@@ -192,26 +198,28 @@ export const App: React.FC<Props> = ({ service: given, navigation = browserNavig
   );
 
   return (
-    <ConsoleSessionContext.Provider value={session}>
-      <Page
-        isContentFilled
-        masthead={header}
-        sidebar={fullPage ? undefined : sidebar}
-        banner={<FakeBackendBanner />}
-        mainContainerId={MAIN_ID}
-        skipToContent={<SkipToContent href={`#${MAIN_ID}`}>Skip to content</SkipToContent>}
-      >
-        <NoticeToast />
-        {content}
-        <AboutConsoleModal
-          isOpen={aboutOpen}
-          onClose={() => setAboutOpen(false)}
-          config={config}
-          configError={configError}
-          user={user}
-          userError={userError}
-        />
-      </Page>
-    </ConsoleSessionContext.Provider>
+    <ThemeProvider>
+      <ConsoleSessionContext.Provider value={session}>
+        <Page
+          isContentFilled
+          masthead={header}
+          sidebar={fullPage ? undefined : sidebar}
+          banner={<FakeBackendBanner />}
+          mainContainerId={MAIN_ID}
+          skipToContent={<SkipToContent href={`#${MAIN_ID}`}>Skip to content</SkipToContent>}
+        >
+          <NoticeToast />
+          {content}
+          <AboutConsoleModal
+            isOpen={aboutOpen}
+            onClose={() => setAboutOpen(false)}
+            config={config}
+            configError={configError}
+            user={user}
+            userError={userError}
+          />
+        </Page>
+      </ConsoleSessionContext.Provider>
+    </ThemeProvider>
   );
 };
