@@ -1,8 +1,8 @@
 // Ported from opendatahub-io/odh-dashboard packages/observability/src/perses/theme.ts at 261acf1
 // (Apache-2.0), the PatternFly look odh-dashboard's Observability page and the OpenShift console's
 // monitoring plugin give Perses: its MUI components and ECharts styled with PatternFly tokens.
-// Changed here: light only (the console has no dark mode), and the chart palette taken from the
-// PatternFly chart tokens directly instead of through @patternfly/react-charts.
+// Changed here: the chart palette taken from the PatternFly chart tokens directly instead of
+// through @patternfly/react-charts.
 import type { Theme, ThemeOptions } from '@mui/material';
 import { generateChartsTheme, getTheme, typography } from '@perses-dev/components';
 import type { PersesChartsTheme } from '@perses-dev/components';
@@ -42,6 +42,8 @@ import {
   chart_theme_multi_color_unordered_ColorScale_3300,
   chart_theme_multi_color_unordered_ColorScale_3400,
   chart_theme_multi_color_unordered_ColorScale_3500,
+  t_color_blue_20,
+  t_color_blue_30,
   t_color_gray_95,
   t_color_white,
   t_global_color_brand_default,
@@ -137,6 +139,11 @@ const mapPatterflyThemeToMUI = (theme: PatternFlyTheme, currentYear: number): Th
   const isDark = theme === 'dark';
   const primaryTextColor = isDark ? t_color_white.value : t_color_gray_95.value;
   const primaryBackgroundColor = 'var(--pf-t--global--background--color--primary--default)';
+  // MUI needs literal colours here (it computes shades from them). @patternfly/react-tokens has only
+  // the light values; the dark theme's brand colours are blue 30 and 20 (tokens-dark.scss,
+  // --pf-t--global--dark--color--brand--100 and --200).
+  const brandColor = isDark ? t_color_blue_30.value : t_global_color_brand_default.value;
+  const brandHoverColor = isDark ? t_color_blue_20.value : t_global_color_brand_hover.value;
   const { minDate, maxDate } = getCustomTimeRangeDateBounds(currentYear);
 
   return {
@@ -160,12 +167,15 @@ const mapPatterflyThemeToMUI = (theme: PatternFlyTheme, currentYear: number): Th
       },
     },
     palette: {
+      // Not in odh-dashboard: Perses's getTheme spreads these options over its own, so this palette
+      // replaces the one it built for the mode, and MUI would make it a light one without this.
+      mode: theme,
       primary: {
         // Maps to PatternFly brand tokens: default, hover, clicked
-        light: t_global_color_brand_default.value,
-        main: t_global_color_brand_default.value,
-        dark: t_global_color_brand_hover.value, // MUI uses 'dark' for hover
-        contrastText: t_color_white.value,
+        light: brandColor,
+        main: brandColor,
+        dark: brandHoverColor, // MUI uses 'dark' for hover
+        contrastText: isDark ? t_color_gray_95.value : t_color_white.value,
       },
       secondary: {
         main: primaryTextColor,

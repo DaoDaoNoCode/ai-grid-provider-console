@@ -28,6 +28,15 @@ describe('patternFlyTheme', () => {
     expect(chartsTheme.echartsTheme.grid).toMatchObject({ top: 10, right: 20, left: 20, containLabel: true });
   });
 
+  it("has a dark variant for PatternFly's dark theme, with light text on the canvas", () => {
+    const { muiTheme, chartsTheme } = patternFlyTheme('dark', 2026);
+    expect(muiTheme.palette.mode).toBe('dark');
+    expect(muiTheme.palette.text.primary).toBe('#ffffff');
+    expect(chartsTheme.thresholds.defaultColor).toBe('#ffffff');
+    // Links and selected items: PatternFly's dark brand blue, not the light one (#004d99).
+    expect(muiTheme.palette.primary.main).toBe('#92c5f9');
+  });
+
   it('fits two legend rows in the 40px legend box', () => {
     const { muiTheme } = patternFlyTheme('light', 2026);
     expect(muiTheme.components?.MuiListItemText?.styleOverrides?.dense).toEqual({ marginTop: 1, marginBottom: 1 });

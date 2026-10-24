@@ -26,12 +26,15 @@ import {
 } from '@perses-dev/dashboards';
 import { QueryParamProvider } from 'use-query-params';
 import { ReactRouter6Adapter } from 'use-query-params/adapters/react-router-6';
+import { type PageTheme, usePageTheme } from './pageTheme';
 import { RelayDatasourceApi } from './persesDatasourceApi';
 import { pluginLoader } from './persesPlugins';
 import { patternFlyTheme } from './persesTheme';
 
-// PatternFly's look for Perses, as odh-dashboard and the OpenShift console's monitoring plugin do.
-const { muiTheme, chartsTheme } = patternFlyTheme();
+// PatternFly's look for Perses, as odh-dashboard and the OpenShift console's monitoring plugin do:
+// one for each of PatternFly's themes, built the first time the page shows in it.
+const themes: Partial<Record<PageTheme, ReturnType<typeof patternFlyTheme>>> = {};
+const themeFor = (mode: PageTheme) => (themes[mode] ??= patternFlyTheme(mode));
 const datasourceApi = new RelayDatasourceApi();
 // One cache for the page: switching tabs back reuses the answers until they're refetched.
 const queryClient = new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false, retry: 0 } } });
@@ -131,23 +134,26 @@ const DashboardBody: React.FC<Props> = ({ dashboard }) => {
   );
 };
 
-/** The dashboard's time range, refresh, variables and panels. */
-const PersesDashboardView: React.FC<Props> = ({ dashboard }) => (
-  <QueryClientProvider client={queryClient}>
-    <QueryParamProvider adapter={ReactRouter6Adapter}>
-      <ThemeProvider theme={muiTheme}>
-        <ChartsProvider chartsTheme={chartsTheme}>
-          <SnackbarProvider anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} variant="default">
-            <PluginRegistry pluginLoader={pluginLoader}>
-              <PanelFocusProvider>
-                <DashboardBody dashboard={dashboard} />
-              </PanelFocusProvider>
-            </PluginRegistry>
-          </SnackbarProvider>
-        </ChartsProvider>
-      </ThemeProvider>
-    </QueryParamProvider>
-  </QueryClientProvider>
-);
+/** The dashboard's time range, refresh, variables and panels, in the page's light or dark theme. */
+const PersesDashboardView: React.FC<Props> = ({ dashboard }) => {
+  const { muiTheme, chartsTheme } = themeFor(usePageTheme());
+  return (
+    <QueryClientProvider client={queryClient}>
+      <QueryParamProvider adapter={ReactRouter6Adapter}>
+        <ThemeProvider theme={muiTheme}>
+          <ChartsProvider chartsTheme={chartsTheme}>
+            <SnackbarProvider anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} variant="default">
+              <PluginRegistry pluginLoader={pluginLoader}>
+                <PanelFocusProvider>
+                  <DashboardBody dashboard={dashboard} />
+                </PanelFocusProvider>
+              </PluginRegistry>
+            </SnackbarProvider>
+          </ChartsProvider>
+        </ThemeProvider>
+      </QueryParamProvider>
+    </QueryClientProvider>
+  );
+};
 
 export default PersesDashboardView;
