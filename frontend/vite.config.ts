@@ -84,15 +84,6 @@ const toBff: ProxyOptions = {
 
 export default defineConfig({
   plugins: [react()],
-  resolve: {
-    alias: [
-      // The Perses pie chart plugin imports `format` from 'echarts', whose index registers every
-      // chart and component ECharts has, so the Monitoring chunk carried all of them (about 120 kB
-      // gzipped); the other plugins import only what they draw, from 'echarts/core'. 'echarts/core'
-      // exports the same `format`. It is the only bare 'echarts' import in the bundled plugins.
-      { find: /^echarts$/, replacement: 'echarts/core' },
-    ],
-  },
   server: {
     port: Number(process.env.FRONTEND_PORT ?? 9000),
     strictPort: true,
