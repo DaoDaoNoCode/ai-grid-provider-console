@@ -13,7 +13,7 @@ export type ConsoleSession = {
   userError?: Error;
   config?: ConsoleConfig;
   configError?: Error;
-  /** A call has answered 401: the console says so above every page, and pages stop polling. */
+  /** A call has answered 401: the console goes through the login again instead of the pages, which stop polling. */
   sessionEnded?: boolean;
 };
 

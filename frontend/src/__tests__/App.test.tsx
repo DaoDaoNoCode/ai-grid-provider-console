@@ -4,6 +4,9 @@ import { MemoryRouter } from 'react-router-dom';
 import { App } from '../App';
 import { MockConsoleService } from '../api/MockConsoleService';
 import { ServiceError } from '../api/ConsoleService';
+import type { ConsoleConfig, User } from '../api/types';
+import { deferred } from './render';
+import { SIGN_IN_AGAIN_KEY, SIGN_IN_AGAIN_WINDOW_MS, type Navigation } from '../utilities/signInAgain';
 
 describe('App', () => {
   it('shows the signed-in user and the clusters from the service', async () => {
@@ -74,7 +77,7 @@ describe('App', () => {
     expect(screen.getByRole('menuitem', { name: 'Log out' })).toHaveAttribute('href', '/oauth2/sign_out');
     await user.click(screen.getByRole('menuitem', { name: 'About' }));
     expect(await screen.findByRole('dialog')).toHaveTextContent('Console version');
-    expect(screen.queryByTestId('session-ended-alert')).not.toBeInTheDocument();
+    expect(screen.queryByText('Your session has ended')).not.toBeInTheDocument();
   });
 
   it('opens About and offers Log out while the user is still loading', async () => {
@@ -237,12 +240,9 @@ describe('user menu', () => {
 
 describe('an ended session', () => {
   const expired = () => new ServiceError(401, 'missing x-forwarded-access-token');
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it('shows one alert with Log in again instead of each page failing, and still offers Log out', async () => {
+  const signOut = '/oauth2/sign_out?rd=%2Fclusters%3Fview%3Dall%23top';
+  /** A service whose user and clusters both answer 401, as an expired token gets. */
+  const expiredService = () => {
     const service = new MockConsoleService();
     service.getUser = async () => {
       throw expired();
@@ -250,61 +250,182 @@ describe('an ended session', () => {
     service.listClusters = async () => {
       throw expired();
     };
-    const reload = vi.fn();
-    const assign = vi.fn();
-    vi.stubGlobal('location', { ...window.location, reload, assign });
-    const user = userEvent.setup();
+    return service;
+  };
+  const fakeNavigation = () => ({ assign: vi.fn<(url: string) => void>(), reload: vi.fn<() => void>() });
+  const renderEnded = (service: MockConsoleService, navigation: Navigation, storage?: () => Storage) =>
     render(
       <MemoryRouter initialEntries={['/clusters?view=all#top']}>
-        <App service={service} />
+        <App service={service} navigation={navigation} storage={storage} />
       </MemoryRouter>,
     );
-    const alert = await screen.findByTestId('session-ended-alert');
-    expect(alert).toHaveTextContent('Your session has ended');
-    await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument());
-    expect(screen.getAllByTestId('session-ended-alert')).toHaveLength(1);
+  /** The page with nothing of the console's pages: no nav, no nav toggle, no page heading. */
+  const expectFullPage = (h1s = 1) => {
+    expect(screen.queryByRole('navigation', { name: 'Console sections' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /navigation/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Clusters' })).not.toBeInTheDocument();
     expect(screen.queryByText('Error loading clusters')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+    expect(screen.queryAllByRole('heading', { level: 1 })).toHaveLength(h1s);
+    expect(screen.getByText('Cloud Provider Admin Console')).toBeVisible();
+  };
 
-    await user.click(screen.getByRole('button', { name: 'User menu: Not signed in' }));
-    expect(screen.getByRole('menuitem', { name: 'Log out' })).toHaveAttribute('href', '/oauth2/sign_out');
-
-    // A reload would keep the login proxy's session cookie, with the token the hub rejected; signing
-    // out clears it and comes back here, through a new login.
-    await user.click(within(alert).getByRole('button', { name: 'Log in again' }));
-    expect(assign).toHaveBeenCalledWith('/oauth2/sign_out?rd=%2Fclusters%3Fview%3Dall%23top');
-    expect(reload).not.toHaveBeenCalled();
+  beforeEach(() => {
+    window.sessionStorage.clear();
   });
 
-  it('reloads on Log in again against the fake backend, where no login proxy runs', async () => {
-    const service = new MockConsoleService();
-    service.getConfig = async () => ({ ...(await new MockConsoleService().getConfig()), fakeBackend: true });
-    service.listClusters = async () => {
-      throw expired();
-    };
-    const reload = vi.fn();
-    const assign = vi.fn();
-    vi.stubGlobal('location', { ...window.location, reload, assign });
+  it('sends the first 401 through the login, back to the same page, once', async () => {
+    const navigation = fakeNavigation();
     const user = userEvent.setup();
-    render(
-      <MemoryRouter initialEntries={['/clusters']}>
-        <App service={service} />
-      </MemoryRouter>,
-    );
-    const alert = await screen.findByTestId('session-ended-alert');
+    renderEnded(expiredService(), navigation);
+    // A reload would keep the login proxy's session cookie, with the token the hub rejected; signing
+    // out clears it and comes back here, through a new login.
+    await waitFor(() => expect(navigation.assign).toHaveBeenCalledWith(signOut));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Signing you in again…' })).toBeInTheDocument();
+    expectFullPage();
+    expect(window.sessionStorage.getItem(SIGN_IN_AGAIN_KEY)).toMatch(/^\d+$/);
+
+    // The masthead stays, with its user menu and Log out.
+    await user.click(screen.getByRole('button', { name: 'User menu: Not signed in' }));
+    expect(screen.getByRole('menuitem', { name: 'Log out' })).toHaveAttribute('href', '/oauth2/sign_out');
+    expect(navigation.assign).toHaveBeenCalledTimes(1);
+    expect(navigation.reload).not.toHaveBeenCalled();
+  });
+
+  it('stops at the ended session when the login sent it back refused again, and offers Try again', async () => {
+    window.sessionStorage.setItem(SIGN_IN_AGAIN_KEY, String(Date.now() - 5000));
+    const navigation = fakeNavigation();
+    const user = userEvent.setup();
+    renderEnded(expiredService(), navigation);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Your session has ended' })).toBeInTheDocument();
+    expectFullPage();
+    expect(navigation.assign).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(navigation.assign).toHaveBeenCalledWith(signOut);
+    expect(navigation.assign).toHaveBeenCalledTimes(1);
+  });
+
+  it('redirects again when the last redirect is older than the window', async () => {
+    window.sessionStorage.setItem(SIGN_IN_AGAIN_KEY, String(Date.now() - 2 * SIGN_IN_AGAIN_WINDOW_MS));
+    const navigation = fakeNavigation();
+    renderEnded(expiredService(), navigation);
+    await waitFor(() => expect(navigation.assign).toHaveBeenCalledWith(signOut));
+  });
+
+  it('keeps the last redirect when the user loads: the hub accepting the token is not the backend', async () => {
+    const last = String(Date.now() - 5000);
+    window.sessionStorage.setItem(SIGN_IN_AGAIN_KEY, last);
+    const navigation = fakeNavigation();
+    renderEnded(new MockConsoleService(), navigation);
+    await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('dev-user'));
+    expect(await screen.findByRole('row', { name: /^site1 / })).toBeInTheDocument();
+    expect(window.sessionStorage.getItem(SIGN_IN_AGAIN_KEY)).toBe(last);
+    expect(navigation.assign).not.toHaveBeenCalled();
+  });
+
+  it('stops at the ended session when, back from the login, the user loads and then a page call answers 401', async () => {
+    const navigation = fakeNavigation();
+    // The first page load: a 401 sends the tab through the login.
+    const first = renderEnded(expiredService(), navigation);
+    await waitFor(() => expect(navigation.assign).toHaveBeenCalledWith(signOut));
+    first.unmount();
+
+    // Back from the login: the hub accepts the token, so the user loads, but the backend refuses it.
+    const service = new MockConsoleService();
+    const clusters = deferred<never>();
+    service.listClusters = () => clusters.promise;
+    renderEnded(service, navigation);
+    await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('dev-user'));
+    await act(async () => clusters.reject(expired()));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Your session has ended' })).toBeInTheDocument();
+    expectFullPage();
+    expect(navigation.assign).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops again on the next load when, back from the login, a 401 came before the user loaded', async () => {
+    window.sessionStorage.setItem(SIGN_IN_AGAIN_KEY, String(Date.now() - 5000));
+    const navigation = fakeNavigation();
+    const service = expiredService();
+    const user = deferred<User>();
+    service.getUser = () => user.promise;
+    const first = renderEnded(service, navigation);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Your session has ended' })).toBeInTheDocument();
+    await act(async () => user.resolve(await new MockConsoleService().getUser()));
+    await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('dev-user'));
+    first.unmount();
+
+    // A reload within the window answers 401 again: still the ended session, not another redirect.
+    renderEnded(expiredService(), navigation);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Your session has ended' })).toBeInTheDocument();
+    expectFullPage();
+    expect(navigation.assign).not.toHaveBeenCalled();
+  });
+
+  it('shows the ended session rather than risk a loop when the session storage is refused', async () => {
+    const navigation = fakeNavigation();
+    renderEnded(expiredService(), navigation, () => {
+      throw new DOMException('The operation is insecure.', 'SecurityError');
+    });
+    expect(await screen.findByRole('heading', { level: 1, name: 'Your session has ended' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeVisible();
+    expectFullPage();
+    expect(navigation.assign).not.toHaveBeenCalled();
+  });
+
+  it('offers Reload, and never redirects, against the fake backend, where no login proxy runs', async () => {
+    const service = expiredService();
+    service.getConfig = async () => ({ ...(await new MockConsoleService().getConfig()), fakeBackend: true });
+    const navigation = fakeNavigation();
+    const user = userEvent.setup();
+    renderEnded(service, navigation);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Your session has ended' })).toBeInTheDocument();
+    expect(screen.getByText(/The fake backend has no login/)).toBeVisible();
     await screen.findByText(/^Fake backend:/);
-    await user.click(within(alert).getByRole('button', { name: 'Log in again' }));
-    expect(reload).toHaveBeenCalled();
-    expect(assign).not.toHaveBeenCalled();
+    expectFullPage();
+    await user.click(screen.getByRole('button', { name: 'Reload' }));
+    expect(navigation.reload).toHaveBeenCalled();
+    expect(navigation.assign).not.toHaveBeenCalled();
+  });
+
+  it('waits for the config to say there is a login proxy before redirecting', async () => {
+    const service = expiredService();
+    const config = deferred<ConsoleConfig>();
+    service.getConfig = () => config.promise;
+    const navigation = fakeNavigation();
+    renderEnded(service, navigation);
+    expect(await screen.findByRole('progressbar', { name: 'Signing you in again' })).toBeInTheDocument();
+    expectFullPage(0);
+    expect(navigation.assign).not.toHaveBeenCalled();
+    await act(async () => config.resolve(await new MockConsoleService().getConfig()));
+    await waitFor(() => expect(navigation.assign).toHaveBeenCalledWith(signOut));
+  });
+
+  it('does not redirect when the config could not be loaded, and offers Try again and Reload', async () => {
+    const service = expiredService();
+    service.getConfig = async () => {
+      throw new ServiceError(503, 'unavailable');
+    };
+    const navigation = fakeNavigation();
+    const user = userEvent.setup();
+    renderEnded(service, navigation);
+    // Without the config the console can't tell a login proxy from the fake backend, which has none.
+    expect(await screen.findByRole('heading', { level: 1, name: 'Your session has ended' })).toBeInTheDocument();
+    expectFullPage();
+    expect(navigation.assign).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Reload' }));
+    expect(navigation.reload).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(navigation.assign).toHaveBeenCalledWith(signOut);
+    expect(navigation.assign).toHaveBeenCalledTimes(1);
   });
 
   it('stops polling once the session has ended', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     try {
       const service = new MockConsoleService();
+      const navigation = fakeNavigation();
       render(
         <MemoryRouter initialEntries={['/clusters']}>
-          <App service={service} />
+          <App service={service} navigation={navigation} />
         </MemoryRouter>,
       );
       expect(await screen.findByRole('row', { name: /^site1 / })).toBeInTheDocument();
@@ -312,24 +433,26 @@ describe('an ended session', () => {
       await act(async () => {
         vi.advanceTimersByTime(30000);
       });
-      expect(await screen.findByTestId('session-ended-alert')).toBeVisible();
+      expect(await screen.findByRole('heading', { level: 1, name: 'Signing you in again…' })).toBeVisible();
       expect(poll).toHaveBeenCalledTimes(1);
       // Each further poll would only be another 401.
       await act(async () => {
         vi.advanceTimersByTime(120000);
       });
       expect(poll).toHaveBeenCalledTimes(1);
+      expect(navigation.assign).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it('keeps a loaded page when a later call answers 401, and adds the alert', async () => {
+  it('replaces a loaded page when a later call answers 401, and sends it through the login', async () => {
     const service = new MockConsoleService();
+    const navigation = fakeNavigation();
     const user = userEvent.setup();
     render(
       <MemoryRouter initialEntries={['/clusters']}>
-        <App service={service} />
+        <App service={service} navigation={navigation} />
       </MemoryRouter>,
     );
     expect(await screen.findByRole('row', { name: /^site1 / })).toBeInTheDocument();
@@ -337,9 +460,8 @@ describe('an ended session', () => {
       throw expired();
     };
     await user.click(screen.getByRole('button', { name: 'Refresh' }));
-    expect(await screen.findByTestId('session-ended-alert')).toBeVisible();
-    expect(screen.getByRole('row', { name: /^site1 / })).toBeInTheDocument();
-    expect(screen.queryByText('Error loading clusters')).not.toBeInTheDocument();
-    expect(screen.getByTestId('masthead-user')).toHaveTextContent('dev-user');
+    await waitFor(() => expect(navigation.assign).toHaveBeenCalledWith('/oauth2/sign_out?rd=%2Fclusters'));
+    expect(screen.queryByRole('row', { name: /^site1 / })).not.toBeInTheDocument();
+    expectFullPage();
   });
 });

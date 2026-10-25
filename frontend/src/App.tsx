@@ -17,7 +17,7 @@ import {
   ToolbarContent,
   ToolbarItem,
 } from '@patternfly/react-core';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import type { ConsoleService } from './api/ConsoleService';
 import { AppRoutes } from './AppRoutes';
@@ -25,13 +25,28 @@ import { FakeBackendBanner } from './components/FakeBackendBanner';
 import { NoticeToast } from './components/NoticeToast';
 import { AboutConsoleModal } from './components/AboutConsoleModal';
 import { ProviderAdminsOnly } from './components/ProviderAdminsOnly';
-import { SessionEndedAlert } from './components/SessionEndedAlert';
+import { SessionEnded, type SessionEnd } from './components/SessionEnded';
 import { UserMenu } from './components/UserMenu';
 import { watchSession } from './api/watchSession';
 import { ConsoleSessionContext } from './context/useConsoleSession';
 import { useServiceData } from './hooks/useServiceData';
+import {
+  browserNavigation,
+  browserStorage,
+  claimSignInAgain,
+  once,
+  recordSignInAgain,
+  signInAgainUrl,
+  type GetStorage,
+  type Navigation,
+} from './utilities/signInAgain';
 
-type Props = { service: ConsoleService };
+type Props = {
+  service: ConsoleService;
+  /** The browser's location and session storage; a test gives its own. */
+  navigation?: Navigation;
+  storage?: GetStorage;
+};
 
 /** The page's main region, where Skip to content goes. */
 const MAIN_ID = 'console-main';
@@ -47,33 +62,75 @@ const sections: { path: string; label: string; exact?: boolean }[] = [
   { path: '/subscriptions', label: 'Subscriptions' },
 ];
 
-export const App: React.FC<Props> = ({ service: given }) => {
-  // Any call answered 401 means the session has ended; the console then says so once, for every page.
-  const [sessionEnded, setSessionEnded] = useState(false);
-  const service = useMemo(() => watchSession(given, () => setSessionEnded(true)), [given]);
+export const App: React.FC<Props> = ({ service: given, navigation = browserNavigation, storage = browserStorage }) => {
+  // Any call answered 401 means the session has ended. As the OpenShift console does (handle401 in
+  // openshift/console frontend/public/module/auth.ts), the console then goes through the login
+  // again, once per page load, unless it has just come back from the login and been refused again.
+  // Decided at the first 401 only; every later one is the same answer.
+  const [ended, setEnded] = useState<'redirecting' | 'refused'>();
+  const service = useMemo(
+    () =>
+      watchSession(
+        given,
+        // Recorded even on the fake backend, which never redirects. A user that loads doesn't clear
+        // it: that only says the hub accepts the token, and the backend may still refuse it, so
+        // clearing it would loop through the login. Only the window running out forgets it.
+        once(() => setEnded(claimSignInAgain(storage) ? 'redirecting' : 'refused')),
+      ),
+    [given, storage],
+  );
+  const sessionEnded = ended !== undefined;
   // Loaded once here and given to every page through the session context.
   const [user, userLoaded, userError] = useServiceData(() => service.getUser(), undefined, 0);
   const [config, , configError] = useServiceData(() => service.getConfig(), undefined, 0);
+  // Only the config says whether a login proxy runs: the fake backend has none. Without it (it
+  // failed to load, for whatever reason) the console can't tell, so it doesn't redirect on its own
+  // and offers both Try again and Reload.
+  const sessionEnd: SessionEnd | undefined = !ended
+    ? undefined
+    : config
+      ? config.fakeBackend
+        ? 'fake'
+        : ended
+      : configError
+        ? 'unknown'
+        : 'checking';
   const session = useMemo(
     () => ({ user, userLoaded, userError, config, configError, sessionEnded }),
     [user, userLoaded, userError, config, configError, sessionEnded],
   );
-  const { pathname } = useLocation();
+  const { pathname, search, hash } = useLocation();
+  const signInAgain = signInAgainUrl(pathname + search + hash);
+  const navigatedRef = useRef(false);
+  useEffect(() => {
+    if (sessionEnd === 'redirecting' && !navigatedRef.current) {
+      navigatedRef.current = true;
+      navigation.assign(signInAgain);
+    }
+  }, [sessionEnd, navigation, signInAgain]);
+  // Once the session has ended no page is left to show, nor a nav that leads to one.
+  const fullPage = sessionEnd !== undefined;
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [aboutOpen, setAboutOpen] = useState(false);
 
   const header = (
     <Masthead display={{ default: 'inline' }}>
-      <MastheadMain>
-        <MastheadToggle>
-          <PageToggleButton
-            isHamburgerButton
-            isSidebarOpen={sidebarOpen}
-            onSidebarToggle={() => setSidebarOpen((open) => !open)}
-            aria-label={sidebarOpen ? 'Collapse navigation' : 'Expand navigation'}
-            aria-controls="console-sidebar"
-          />
-        </MastheadToggle>
+      {/* Centred on the user menu's line. PatternFly's masthead puts this at the top of its row,
+          which the nav toggle fills; the full pages have no toggle, and the name alone is shorter
+          than the menu. There the name starts at the masthead's edge, as in PatternFly's masthead
+          without a toggle. */}
+      <MastheadMain className="pf-v6-u-align-self-center">
+        {!fullPage && (
+          <MastheadToggle>
+            <PageToggleButton
+              isHamburgerButton
+              isSidebarOpen={sidebarOpen}
+              onSidebarToggle={() => setSidebarOpen((open) => !open)}
+              aria-label={sidebarOpen ? 'Collapse navigation' : 'Expand navigation'}
+              aria-controls="console-sidebar"
+            />
+          </MastheadToggle>
+        )}
         <MastheadBrand>
           <MastheadLogo component="span" className="pf-v6-u-display-flex pf-v6-u-align-items-center">
             {/* The product name, not a heading: each page's h1 is the first heading. */}
@@ -115,24 +172,34 @@ export const App: React.FC<Props> = ({ service: given }) => {
     </PageSidebar>
   );
 
+  const content = sessionEnd ? (
+    <SessionEnded
+      state={sessionEnd}
+      onTryAgain={() => {
+        recordSignInAgain(storage);
+        navigation.assign(signInAgain);
+      }}
+      onReload={navigation.reload}
+    />
+  ) : user?.isProviderAdmin === false ? (
+    // Only an answer that says so, never a user still loading or failing to load.
+    <ProviderAdminsOnly username={user.username} />
+  ) : (
+    <AppRoutes service={service} />
+  );
+
   return (
     <ConsoleSessionContext.Provider value={session}>
       <Page
         isContentFilled
         masthead={header}
-        sidebar={sidebar}
+        sidebar={fullPage ? undefined : sidebar}
         banner={<FakeBackendBanner />}
         mainContainerId={MAIN_ID}
         skipToContent={<SkipToContent href={`#${MAIN_ID}`}>Skip to content</SkipToContent>}
       >
-        {sessionEnded && <SessionEndedAlert />}
         <NoticeToast />
-        {/* Only an answer that says so, never a user still loading or failing to load. */}
-        {user?.isProviderAdmin === false ? (
-          <ProviderAdminsOnly username={user.username} />
-        ) : (
-          <AppRoutes service={service} />
-        )}
+        {content}
         <AboutConsoleModal isOpen={aboutOpen} onClose={() => setAboutOpen(false)} config={config} user={user} />
       </Page>
     </ConsoleSessionContext.Provider>
