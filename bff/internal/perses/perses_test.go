@@ -1,6 +1,8 @@
 package perses
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"encoding/pem"
 	"io"
@@ -236,6 +238,70 @@ func TestRelayAnswersCannotRunAsAPage(t *testing.T) {
 	}
 	if got := rec.Header().Values("Content-Security-Policy"); len(got) != 1 || got[0] != "sandbox; default-src 'none'" {
 		t.Errorf("Content-Security-Policy = %q, want only the relay's sandbox", got)
+	}
+}
+
+// The console reads the relay from its own origin, so a CORS grant from Perses or a datasource
+// would only open the answers to other sites; and a datasource's Basic challenge would make the
+// browser ask for a password on the console's origin.
+func TestRelayDropsCORSAndAuthenticationChallenges(t *testing.T) {
+	relay := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		w.Header().Set("Access-Control-Expose-Headers", "X-Thanos")
+		w.Header().Set("WWW-Authenticate", `Basic realm="thanos"`)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"status":"error"}`))
+	}, nil, 0)
+	rec := serve(relay, httptest.NewRequest(http.MethodGet, Prefix+"/proxy/globaldatasources/thanos/api/v1/query", nil), "t")
+	if rec.Code != http.StatusUnauthorized || rec.Body.String() != `{"status":"error"}` {
+		t.Fatalf("got %d %q, want the datasource's 401 as it sent it", rec.Code, rec.Body)
+	}
+	for _, h := range []string{"Access-Control-Allow-Origin", "Access-Control-Allow-Credentials", "Access-Control-Expose-Headers", "WWW-Authenticate"} {
+		if v := rec.Header().Values(h); len(v) != 0 {
+			t.Errorf("%s reached the browser: %q", h, v)
+		}
+	}
+}
+
+// A browser that accepts gzip gets Perses's compressed answer as it was sent; a client that
+// doesn't gets it uncompressed.
+func TestRelayPassesCompressedAnswersThrough(t *testing.T) {
+	const plain = `{"status":"success","data":{"resultType":"matrix","result":[]}}`
+	var compressed bytes.Buffer
+	zw := gzip.NewWriter(&compressed)
+	_, _ = zw.Write([]byte(plain))
+	_ = zw.Close()
+
+	calls := make(chan upstreamCall, 2)
+	relay := tlsUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			w.Header().Set("Content-Encoding", "gzip")
+			_, _ = w.Write(compressed.Bytes())
+			return
+		}
+		_, _ = w.Write([]byte(plain))
+	}, calls, 0)
+	path := Prefix + "/proxy/projects/ai-grid-monitoring/datasources/thanos/api/v1/query_range"
+
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
+	rec := serve(relay, req, "t")
+	if got := (<-calls).header.Get("Accept-Encoding"); got != "gzip, deflate, br" {
+		t.Errorf("Perses got Accept-Encoding %q, want the browser's", got)
+	}
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Encoding") != "gzip" || !bytes.Equal(rec.Body.Bytes(), compressed.Bytes()) {
+		t.Errorf("gzip: got %d, Content-Encoding %q, %d bytes; want Perses's %d gzip bytes unchanged",
+			rec.Code, rec.Header().Get("Content-Encoding"), rec.Body.Len(), compressed.Len())
+	}
+
+	rec = serve(relay, httptest.NewRequest(http.MethodGet, path, nil), "t")
+	<-calls
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Encoding") != "" || rec.Body.String() != plain {
+		t.Errorf("no Accept-Encoding: got %d, Content-Encoding %q, %q; want the plain answer",
+			rec.Code, rec.Header().Get("Content-Encoding"), rec.Body)
 	}
 }
 

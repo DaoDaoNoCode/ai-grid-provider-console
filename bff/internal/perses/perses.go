@@ -159,8 +159,10 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 // forwardedHeaders are the only request headers that reach Perses besides Authorization. Cookies,
-// the proxy's identity headers and any client-sent Authorization stay behind.
-var forwardedHeaders = []string{"Accept", "Accept-Language", "Content-Type"}
+// the proxy's identity headers and any client-sent Authorization stay behind. With the browser's
+// Accept-Encoding set, Go's transport leaves a compressed answer compressed, so it passes through
+// as Perses sent it; without one, the transport asks for gzip itself and decompresses.
+var forwardedHeaders = []string{"Accept", "Accept-Encoding", "Accept-Language", "Content-Type"}
 
 func (r *Relay) rewrite(pr *httputil.ProxyRequest) {
 	apiPath := strings.TrimPrefix(pr.In.URL.Path, Prefix)
@@ -187,9 +189,18 @@ func (r *Relay) rewrite(pr *httputil.ProxyRequest) {
 const relayedCSP = "sandbox; default-src 'none'"
 
 // modifyResponse keeps Perses from setting cookies on the console's origin, and keeps whatever it
-// answers (a datasource's error page, a label value) from running there as HTML or script.
+// answers (a datasource's error page, a label value) from running there as HTML or script. The
+// console reads these answers from its own origin, so a CORS grant would only open them to other
+// sites; and a datasource's WWW-Authenticate challenge would make the browser ask for a password
+// on the console's origin.
 func modifyResponse(resp *http.Response) error {
 	resp.Header.Del("Set-Cookie")
+	resp.Header.Del("WWW-Authenticate")
+	for k := range resp.Header {
+		if strings.HasPrefix(k, "Access-Control-") {
+			resp.Header.Del(k)
+		}
+	}
 	resp.Header.Set("X-Content-Type-Options", "nosniff")
 	resp.Header.Set("Content-Security-Policy", relayedCSP)
 	return nil
