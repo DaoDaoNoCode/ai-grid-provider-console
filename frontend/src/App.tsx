@@ -203,7 +203,14 @@ export const App: React.FC<Props> = ({ service: given, navigation = browserNavig
       >
         <NoticeToast />
         {content}
-        <AboutConsoleModal isOpen={aboutOpen} onClose={() => setAboutOpen(false)} config={config} user={user} />
+        <AboutConsoleModal
+          isOpen={aboutOpen}
+          onClose={() => setAboutOpen(false)}
+          config={config}
+          configError={configError}
+          user={user}
+          userError={userError}
+        />
       </Page>
     </ConsoleSessionContext.Provider>
   );

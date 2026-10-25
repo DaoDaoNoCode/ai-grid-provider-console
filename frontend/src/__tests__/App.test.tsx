@@ -76,7 +76,7 @@ describe('App', () => {
     await user.click(await screen.findByRole('button', { name: 'User menu: User could not be loaded' }));
     expect(screen.getByRole('menuitem', { name: 'Log out' })).toHaveAttribute('href', '/oauth2/sign_out');
     await user.click(screen.getByRole('menuitem', { name: 'About' }));
-    expect(await screen.findByRole('dialog')).toHaveTextContent('Console version');
+    expect(await screen.findByRole('dialog')).toHaveTextContent("Signed in asCouldn't load");
     expect(screen.queryByText('Your session has ended')).not.toBeInTheDocument();
   });
 
@@ -234,7 +234,7 @@ describe('user menu', () => {
     expect(screen.queryByRole('menuitem', { name: 'Log out' })).not.toBeInTheDocument();
   });
 
-  it('shows the console version, the backend and the user in About', async () => {
+  it('shows the console build, the data source and the user in About', async () => {
     const service = new MockConsoleService();
     const config = await service.getConfig();
     service.getConfig = async () => ({ ...config, version: '1a2b3c4', fakeBackend: true });
@@ -248,11 +248,12 @@ describe('user menu', () => {
     await user.click(screen.getByRole('button', { name: /dev-user/ }));
     await user.click(screen.getByRole('menuitem', { name: 'About' }));
     const about = await screen.findByRole('dialog', { name: 'Cloud Provider Admin Console' });
-    expect(about).toHaveTextContent('Console version1a2b3c4');
-    expect(about).toHaveTextContent('BackendFake backend (fixture data)');
-    // The backend has no version RPC yet.
-    expect(about).toHaveTextContent('Backend versionNot reported');
-    expect(about).toHaveTextContent('Signed in asdev-user (provider admin)');
+    expect(about).toHaveTextContent('Console build1a2b3c4');
+    expect(about).toHaveTextContent('DataFake backend: fixture data; nothing you change reaches a cluster');
+    // The backend has no version RPC yet, so About has no row for it.
+    expect(about).not.toHaveTextContent('Backend version');
+    expect(about).toHaveTextContent('Signed in asdev-user');
+    expect(about).toHaveTextContent('AccessProvider admin (may change managed clusters on this hub)');
     await user.click(within(about).getByRole('button', { name: /close/i }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
