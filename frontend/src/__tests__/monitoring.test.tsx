@@ -5,7 +5,7 @@ import { vi } from 'vitest';
 import { ServiceError } from '../api/ConsoleService';
 import { HttpConsoleService } from '../api/HttpConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
-import { dashboardKey, monitoringLinkFor, monitoringTabs } from '../api/monitoring';
+import { monitoringLinkFor, monitoringTabs } from '../api/monitoring';
 import { renderAt } from './render';
 
 // Perses's charts don't render in jsdom; the page is tested up to the dashboard it hands over.
@@ -128,64 +128,47 @@ it("opens a dashboard's link to another tab here, and says when a link goes else
 });
 
 describe('monitoringLinkFor', () => {
-  const tabs = monitoringTabs(hub);
+  // The page's tabs: the configured project's only.
+  const tabs = monitoringTabs(hub.filter((d) => d.metadata.project === 'ai-grid'));
   it("maps the OpenShift console's and Perses's dashboard links to a tab, keeping time and variables", () => {
     expect(
       monitoringLinkFor(
         '/monitoring/v2/dashboards/view?dashboard=dashboard-2-usage&project=ai-grid&var-cluster=site-a&start=6h&x=1',
         tabs,
         'ai-grid',
-        'ai-grid',
       ),
     ).toBe('/monitoring?dashboard=dashboard-2-usage&var-cluster=site-a&start=6h');
-    expect(monitoringLinkFor('/projects/other/dashboards/dashboard-1-fleet?var-a=b', tabs, '', 'ai-grid')).toBe(
-      '/monitoring?dashboard=other%2Fdashboard-1-fleet&var-a=b',
+    expect(monitoringLinkFor('/projects/ai-grid/dashboards/dashboard-1-fleet?var-a=b', tabs, 'ai-grid')).toBe(
+      '/monitoring?dashboard=dashboard-1-fleet&var-a=b',
+    );
+  });
+
+  it('reads a link without a project as one to the same project', () => {
+    expect(monitoringLinkFor('/monitoring/v2/dashboards/view?dashboard=dashboard-1-fleet', tabs, 'ai-grid')).toBe(
+      '/monitoring?dashboard=dashboard-1-fleet',
     );
   });
 
   it('answers undefined for a dashboard that is not a tab, another project, or another page', () => {
+    expect(monitoringLinkFor('/monitoring/v2/dashboards/view?dashboard=acm-clusters-overview', tabs, 'ai-grid')).toBe(
+      undefined,
+    );
     expect(
-      monitoringLinkFor('/monitoring/v2/dashboards/view?dashboard=acm-clusters-overview', tabs, 'ai-grid', 'ai-grid'),
+      monitoringLinkFor('/monitoring/v2/dashboards/view?dashboard=dashboard-2-usage&project=other', tabs, 'ai-grid'),
     ).toBe(undefined);
-    expect(
-      monitoringLinkFor(
-        '/monitoring/v2/dashboards/view?dashboard=dashboard-2-usage&project=other',
-        tabs,
-        'ai-grid',
-        'ai-grid',
-      ),
-    ).toBe(undefined);
-    expect(monitoringLinkFor('/multicloud/infrastructure/clusters', tabs, 'ai-grid', 'ai-grid')).toBe(undefined);
-    expect(monitoringLinkFor('/projects/%/dashboards/dashboard-1-fleet', tabs, '', 'ai-grid')).toBe(undefined);
-    expect(monitoringLinkFor('/projects/ai-grid/dashboards/%', tabs, '', 'ai-grid')).toBe(undefined);
-  });
-
-  it('reads a link without a project as one to the same project, else to the one tab of that name', () => {
-    const view = (name: string) => `/monitoring/v2/dashboards/view?dashboard=${name}`;
-    // dashboard-1-fleet is in ai-grid and in other.
-    expect(monitoringLinkFor(view('dashboard-1-fleet'), tabs, '', 'other')).toBe(
-      '/monitoring?dashboard=other%2Fdashboard-1-fleet',
-    );
-    expect(monitoringLinkFor(view('dashboard-1-fleet'), tabs, '', 'ai-grid')).toBe(
-      '/monitoring?dashboard=ai-grid%2Fdashboard-1-fleet',
-    );
-    expect(monitoringLinkFor(view('dashboard-1-fleet'), tabs, '', 'elsewhere')).toBe(undefined);
-    // dashboard-2-usage is only in ai-grid.
-    expect(monitoringLinkFor(view('dashboard-2-usage'), tabs, '', 'other')).toBe(
-      '/monitoring?dashboard=ai-grid%2Fdashboard-2-usage',
-    );
+    expect(monitoringLinkFor('/projects/other/dashboards/dashboard-1-fleet', tabs, 'ai-grid')).toBe(undefined);
+    expect(monitoringLinkFor('/multicloud/infrastructure/clusters', tabs, 'ai-grid')).toBe(undefined);
+    expect(monitoringLinkFor('/projects/%/dashboards/dashboard-1-fleet', tabs, 'ai-grid')).toBe(undefined);
+    expect(monitoringLinkFor('/projects/ai-grid/dashboards/%', tabs, 'ai-grid')).toBe(undefined);
   });
 });
 
 describe('monitoringTabs', () => {
-  it('keeps dashboard-* across projects, by name then project, and keys them with their project', () => {
-    const tabs = monitoringTabs(hub);
-    expect(tabs.map((d) => dashboardKey(d, ''))).toEqual([
-      'ai-grid/dashboard-1-fleet',
-      'other/dashboard-1-fleet',
-      'ai-grid/dashboard-2-usage',
+  it('keeps the dashboard-* dashboards, ordered by name', () => {
+    expect(monitoringTabs(hub.slice(0, 3)).map((d) => d.metadata.name)).toEqual([
+      'dashboard-1-fleet',
+      'dashboard-2-usage',
     ]);
-    expect(dashboardKey(tabs[0], 'ai-grid')).toBe('dashboard-1-fleet');
   });
 });
 
@@ -194,15 +177,11 @@ describe('HttpConsoleService.listMonitoringDashboards', () => {
   const answer = (status: number, body: unknown) =>
     vi.fn<typeof fetch>(() => Promise.resolve(new Response(JSON.stringify(body), { status })));
 
-  it("reads one project's dashboards, or every readable project's, through the relay", async () => {
+  it("reads the configured project's dashboards through the relay, and no other project's", async () => {
     const fetchFn = answer(200, [hub[0]]);
     const service = new HttpConsoleService(fetchFn);
     expect(await service.listMonitoringDashboards('ai-grid')).toEqual([hub[0]]);
-    await service.listMonitoringDashboards('');
-    expect(fetchFn.mock.calls.map(([url]) => url)).toEqual([
-      '/perses/api/api/v1/projects/ai-grid/dashboards',
-      '/perses/api/api/v1/dashboards',
-    ]);
+    expect(fetchFn.mock.calls.map(([url]) => url)).toEqual(['/perses/api/api/v1/projects/ai-grid/dashboards']);
   });
 
   it("keeps Perses's message, and the BFF's for the relay's own refusals", async () => {
@@ -212,7 +191,7 @@ describe('HttpConsoleService.listMonitoringDashboards', () => {
     await expect(
       new HttpConsoleService(
         answer(404, { error: { message: 'monitoring is not configured on this console' } }),
-      ).listMonitoringDashboards(''),
+      ).listMonitoringDashboards('ai-grid'),
     ).rejects.toMatchObject({ status: 404, message: 'monitoring is not configured on this console' });
   });
 });

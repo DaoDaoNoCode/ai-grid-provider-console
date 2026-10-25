@@ -84,10 +84,9 @@ export class HttpConsoleService implements ConsoleService {
    * relay's checks (401, 403, 404 when monitoring isn't configured).
    */
   async listMonitoringDashboards(project: string): Promise<DashboardResource[]> {
-    const path = project ? `/api/v1/projects/${encodeURIComponent(project)}/dashboards` : '/api/v1/dashboards';
     let response: Response;
     try {
-      response = await this.fetchFn(`${PERSES_API}${path}`, {
+      response = await this.fetchFn(`${PERSES_API}/api/v1/projects/${encodeURIComponent(project)}/dashboards`, {
         headers: { Accept: 'application/json' },
         credentials: 'same-origin',
       });

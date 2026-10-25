@@ -14,7 +14,7 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { ConsoleService } from '../../api/ConsoleService';
 import { ServiceError } from '../../api/ConsoleService';
-import { dashboardKey, dashboardTitle, monitoringLinkFor, monitoringTabs } from '../../api/monitoring';
+import { dashboardTitle, monitoringLinkFor, monitoringTabs } from '../../api/monitoring';
 import type { ConsoleConfig } from '../../api/types';
 import { PageHeader } from '../../components/PageHeader';
 import { PageLoading } from '../../components/PageLoading';
@@ -46,8 +46,7 @@ const PersesMonitoring: React.FC<{ service: ConsoleService; project: string }> =
   const [unreachableLink, setUnreachableLink] = useState<string>();
   const tabs = monitoringTabs(dashboards);
   const asked = params.get('dashboard');
-  const selected = tabs.find((d) => dashboardKey(d, project) === asked) ?? tabs[0];
-  const where = project ? `project ${project}` : 'any project you can read';
+  const selected = tabs.find((d) => d.metadata.name === asked) ?? tabs[0];
 
   const body = () => {
     if (error) {
@@ -67,8 +66,8 @@ const PersesMonitoring: React.FC<{ service: ConsoleService; project: string }> =
       return (
         <EmptyState titleText="No dashboards yet" headingLevel="h2">
           <EmptyStateBody>
-            Monitoring shows the Perses dashboards in {where} whose names start with <code>dashboard-</code>. The hub
-            has none yet.
+            Monitoring shows the Perses dashboards in project {project} whose names start with <code>dashboard-</code>.
+            The hub has none yet.
           </EmptyStateBody>
         </EmptyState>
       );
@@ -76,7 +75,7 @@ const PersesMonitoring: React.FC<{ service: ConsoleService; project: string }> =
     return (
       <Stack hasGutter>
         <Tabs
-          activeKey={dashboardKey(selected, project)}
+          activeKey={selected.metadata.name}
           // A new tab starts from its own time range and variables: Perses's query parameters go.
           onSelect={(_event, key) => setParams({ dashboard: String(key) })}
           aria-label="Dashboards"
@@ -84,8 +83,8 @@ const PersesMonitoring: React.FC<{ service: ConsoleService; project: string }> =
         >
           {tabs.map((d) => (
             <Tab
-              key={dashboardKey(d, project)}
-              eventKey={dashboardKey(d, project)}
+              key={d.metadata.name}
+              eventKey={d.metadata.name}
               title={<TabTitleText>{dashboardTitle(d)}</TabTitleText>}
             />
           ))}
@@ -120,13 +119,13 @@ const PersesMonitoring: React.FC<{ service: ConsoleService; project: string }> =
               return;
             }
             event.preventDefault();
-            const to = monitoringLinkFor(href, tabs, project, selected.metadata.project);
+            const to = monitoringLinkFor(href, tabs, project);
             setUnreachableLink(to ? undefined : href);
             if (to) navigate(to);
           }}
         >
           <Suspense fallback={<PageLoading label="Loading dashboard" />}>
-            <PersesDashboardView key={dashboardKey(selected, project)} dashboard={selected} />
+            <PersesDashboardView key={selected.metadata.name} dashboard={selected} />
           </Suspense>
         </div>
       </Stack>

@@ -70,7 +70,7 @@ export class MockConsoleService implements ConsoleService {
   monitoringDashboards: DashboardResource[] = [];
 
   listMonitoringDashboards = async (project: string): Promise<DashboardResource[]> =>
-    this.monitoringDashboards.filter((d) => !project || d.metadata.project === project);
+    this.monitoringDashboards.filter((d) => d.metadata.project === project);
 
   getUser = async (): Promise<User> => this.user;
 
