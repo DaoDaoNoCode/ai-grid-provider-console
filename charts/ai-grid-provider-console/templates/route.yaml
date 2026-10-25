@@ -6,6 +6,9 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "console.labels" . | nindent 4 }}
+  annotations:
+    # Browsers that have seen the console keep to HTTPS for a year.
+    haproxy.router.openshift.io/hsts_header: max-age=31536000
 spec:
   {{- with .Values.route.host }}
   host: {{ . }}

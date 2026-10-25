@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Checks the Helm chart (charts/ai-grid-provider-console):
 #   - helm lint --strict, with the default values and with every option turned on;
+#   - values.schema.json refuses a misspelled value instead of letting Helm drop it;
 #   - the Deployment's strategy is Recreate (one backend at a time);
 #   - with its default values, it renders the same objects as manifests/base, apart from the
 #     Namespace (Helm installs into one: --create-namespace) and Helm's own labels. ai-grid-env-setup
@@ -16,6 +17,16 @@ ALL=(--set backend.clusterWrites=true --set route.host=console.apps.example.com 
 helm lint --strict "${CHART}" >/dev/null
 helm lint --strict "${CHART}" "${ALL[@]}" >/dev/null
 helm template console "${CHART}" -n ai-grid "${ALL[@]}" >/dev/null
+if helm template console "${CHART}" -n ai-grid --set backend.clusterwrites=true >/dev/null 2>&1; then
+  echo "check-chart: a misspelled value (backend.clusterwrites) renders; values.schema.json must refuse it" >&2
+  exit 1
+fi
+# The BFF reads the log level case-insensitively (slog.Level), so the schema takes both spellings.
+helm template console "${CHART}" -n ai-grid --set console.logLevel=INFO >/dev/null
+if helm template console "${CHART}" -n ai-grid --set console.logLevel=verbose >/dev/null 2>&1; then
+  echo "check-chart: console.logLevel=verbose renders; values.schema.json must refuse it" >&2
+  exit 1
+fi
 
 # One line per object, keys sorted, Helm's labels dropped, in a stable order.
 canonical() {
