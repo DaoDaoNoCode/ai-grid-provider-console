@@ -58,6 +58,7 @@ func run() error {
 	if cfg.PersesURL != "" {
 		relay, err := perses.New(perses.Config{
 			URL:        cfg.PersesURL,
+			Project:    cfg.PersesProject,
 			CAFile:     cfg.PersesCAFile,
 			ServerName: cfg.PersesServerName,
 			Insecure:   cfg.PersesInsecure,

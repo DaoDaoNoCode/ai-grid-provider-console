@@ -13,48 +13,79 @@ import (
 	"time"
 )
 
+// project is the Perses project the test relays read.
+const project = "ai-grid-monitoring"
+
 func TestAllowed(t *testing.T) {
+	relay, err := New(Config{URL: "https://perses.example.svc:8080", Project: project})
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, tc := range []struct {
 		method, path, raw string
 		want              int
 	}{
-		// What the dashboard components read.
-		{"GET", "/api/v1/dashboards", "", 0},
+		// What the dashboard components read: the configured project's, and the global datasources.
 		{"GET", "/api/v1/projects/ai-grid-monitoring/dashboards", "", 0},
 		{"GET", "/api/v1/projects/ai-grid-monitoring/dashboards/dashboard-0-fleet", "", 0},
 		{"GET", "/api/v1/projects/ai-grid-monitoring/datasources", "", 0},
-		{"GET", "/api/v1/projects/p/datasources/thanos", "", 0},
+		{"GET", "/api/v1/projects/ai-grid-monitoring/datasources/thanos", "", 0},
 		{"GET", "/api/v1/globaldatasources", "", 0},
 		{"GET", "/api/v1/globaldatasources/thanos", "", 0},
 		// Queries through a datasource's proxy, GET or the Prometheus plugin's POST form.
-		{"GET", "/proxy/projects/p/datasources/thanos/api/v1/query", "", 0},
-		{"POST", "/proxy/projects/p/datasources/thanos/api/v1/query_range", "", 0},
-		{"POST", "/proxy/projects/p/dashboards/d/datasources/thanos/api/v1/series", "", 0},
+		{"GET", "/proxy/projects/ai-grid-monitoring/datasources/thanos/api/v1/query", "", 0},
+		{"POST", "/proxy/projects/ai-grid-monitoring/datasources/thanos/api/v1/query_range", "", 0},
 		{"GET", "/proxy/globaldatasources/thanos/api/v1/label/namespace/values", "", 0},
-		{"GET", "/proxy/projects/p/datasources/loki/loki/api/v1/query_range", "", 0},
+		{"GET", "/proxy/projects/ai-grid-monitoring/datasources/loki/loki/api/v1/query_range", "", 0},
+		// Every project's list, another project, and a datasource a dashboard defines: Perses would
+		// send the caller's token on to a server that whoever writes there chose.
+		{"GET", "/api/v1/dashboards", "", http.StatusNotFound},
+		{"POST", "/api/v1/dashboards", "", http.StatusNotFound},
+		{"GET", "/api/v1/projects/other/dashboards", "", http.StatusNotFound},
+		{"GET", "/api/v1/projects/other/datasources/thanos", "", http.StatusNotFound},
+		{"GET", "/api/v1/projects/ai-grid-monitoring-2/dashboards", "", http.StatusNotFound},
+		{"GET", "/proxy/projects/other/datasources/thanos/api/v1/query", "", http.StatusNotFound},
+		{"GET", "/proxy/projects/ai-grid-monitoring/dashboards/d/datasources/thanos/api/v1/query", "", http.StatusNotFound},
+		{"POST", "/proxy/projects/ai-grid-monitoring/dashboards/d/datasources/thanos/api/v1/series", "", http.StatusNotFound},
+		{"POST", "/proxy/unsaved/projects/ai-grid-monitoring/datasources/api/v1/query", "", http.StatusNotFound},
 		// Writes and anything else Perses serves are refused.
-		{"POST", "/api/v1/projects/p/dashboards", "", http.StatusMethodNotAllowed},
-		{"PUT", "/api/v1/projects/p/dashboards/d", "", http.StatusMethodNotAllowed},
+		{"POST", "/api/v1/projects/ai-grid-monitoring/dashboards", "", http.StatusMethodNotAllowed},
+		{"PUT", "/api/v1/projects/ai-grid-monitoring/dashboards/d", "", http.StatusMethodNotAllowed},
 		{"DELETE", "/api/v1/globaldatasources/thanos", "", http.StatusMethodNotAllowed},
-		{"POST", "/api/v1/dashboards", "", http.StatusMethodNotAllowed},
 		{"GET", "/api/v1/users", "", http.StatusNotFound},
 		{"GET", "/api/v1/projects", "", http.StatusNotFound},
-		{"GET", "/api/v1/projects/p/secrets", "", http.StatusNotFound},
+		{"GET", "/api/v1/projects/ai-grid-monitoring", "", http.StatusNotFound},
+		{"GET", "/api/v1/projects/ai-grid-monitoring/secrets", "", http.StatusNotFound},
 		{"GET", "/api/auth/providers", "", http.StatusNotFound},
-		{"GET", "/proxy/projects/p/datasources/thanos/api/v1/admin/tsdb/delete_series", "", http.StatusNotFound},
-		{"GET", "/proxy/projects/p/datasources/thanos/federate", "", http.StatusNotFound},
+		{"GET", "/proxy/projects/ai-grid-monitoring/datasources/thanos/api/v1/admin/tsdb/delete_series", "", http.StatusNotFound},
+		{"GET", "/proxy/projects/ai-grid-monitoring/datasources/thanos/federate", "", http.StatusNotFound},
 		{"GET", "/plugins/Prometheus/mf-manifest.json", "", http.StatusNotFound},
 		// Paths that could resolve to something else upstream.
-		{"GET", "/api/v1/projects/p/dashboards/../../users", "", http.StatusNotFound},
+		{"GET", "/api/v1/projects/ai-grid-monitoring/dashboards/../../users", "", http.StatusNotFound},
+		{"GET", "/api/v1/projects/ai-grid-monitoring/dashboards/../../other/dashboards", "", http.StatusNotFound},
 		{"GET", "/api/v1//dashboards", "", http.StatusNotFound},
-		{"GET", "/api/v1/dashboards/", "", http.StatusNotFound},
-		{"GET", "/api/v1/projects/p/dashboards/a/b", "/api/v1/projects/p/dashboards/a%2Fb", http.StatusNotFound},
+		{"GET", "/api/v1/projects/ai-grid-monitoring/dashboards/", "", http.StatusNotFound},
+		{"GET", "/api/v1/projects/ai-grid-monitoring/dashboards/a/b", "/api/v1/projects/ai-grid-monitoring/dashboards/a%2Fb", http.StatusNotFound},
 		{"GET", "", "", http.StatusNotFound},
 	} {
-		got, _ := Allowed(tc.method, tc.path, tc.raw)
+		got, _ := relay.Allowed(tc.method, tc.path, tc.raw)
 		if got != tc.want {
 			t.Errorf("Allowed(%s %q) = %d, want %d", tc.method, tc.path, got, tc.want)
 		}
+	}
+}
+
+// The project is matched as written: a dot in its name is a dot, not any character.
+func TestAllowedMatchesTheProjectAsWritten(t *testing.T) {
+	relay, err := New(Config{URL: "https://perses.example.svc:8080", Project: "ai.grid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := relay.Allowed(http.MethodGet, "/api/v1/projects/ai.grid/dashboards", ""); got != 0 {
+		t.Errorf("the configured project: got %d, want it allowed", got)
+	}
+	if got, _ := relay.Allowed(http.MethodGet, "/api/v1/projects/aiXgrid/dashboards", ""); got != http.StatusNotFound {
+		t.Errorf("a project the dot matches as a pattern: got %d, want 404", got)
 	}
 }
 
@@ -69,15 +100,21 @@ func TestNewValidates(t *testing.T) {
 		cfg  Config
 		ok   bool
 	}{
-		{"https", Config{URL: "https://perses.example.svc:8080"}, true},
-		{"loopback plaintext", Config{URL: "http://127.0.0.1:9005"}, true},
-		{"localhost plaintext", Config{URL: "http://localhost:9005"}, true},
-		{"remote plaintext", Config{URL: "http://perses.example.svc:8080"}, false},
-		{"remote plaintext, insecure allowed", Config{URL: "http://perses.example.svc:8080", Insecure: true}, true},
-		{"no scheme", Config{URL: "perses.example.svc:8080"}, false},
-		{"other scheme", Config{URL: "ftp://perses.example.svc"}, false},
-		{"missing CA file", Config{URL: "https://perses.example.svc", CAFile: filepath.Join(dir, "missing.crt")}, false},
-		{"CA file without a certificate", Config{URL: "https://perses.example.svc", CAFile: notPEM}, false},
+		{"https", Config{URL: "https://perses.example.svc:8080", Project: project}, true},
+		{"loopback plaintext", Config{URL: "http://127.0.0.1:9005", Project: project}, true},
+		{"localhost plaintext", Config{URL: "http://localhost:9005", Project: project}, true},
+		{"remote plaintext", Config{URL: "http://perses.example.svc:8080", Project: project}, false},
+		{"remote plaintext, insecure allowed", Config{URL: "http://perses.example.svc:8080", Project: project, Insecure: true}, true},
+		{"no scheme", Config{URL: "perses.example.svc:8080", Project: project}, false},
+		{"other scheme", Config{URL: "ftp://perses.example.svc", Project: project}, false},
+		{"missing CA file", Config{URL: "https://perses.example.svc", Project: project, CAFile: filepath.Join(dir, "missing.crt")}, false},
+		{"CA file without a certificate", Config{URL: "https://perses.example.svc", Project: project, CAFile: notPEM}, false},
+		{"no project", Config{URL: "https://perses.example.svc"}, false},
+		{"a project of letters, digits, dots, dashes and underscores", Config{URL: "https://perses.example.svc", Project: "Team_1.ai-grid"}, true},
+		{"a project of two segments", Config{URL: "https://perses.example.svc", Project: "a/b"}, false},
+		{"a dot segment for a project", Config{URL: "https://perses.example.svc", Project: ".."}, false},
+		{"a project with a space", Config{URL: "https://perses.example.svc", Project: "ai grid"}, false},
+		{"a project with a pattern character", Config{URL: "https://perses.example.svc", Project: "ai-grid|other"}, false},
 	} {
 		_, err := New(tc.cfg)
 		if (err == nil) != tc.ok {
@@ -107,7 +144,7 @@ func tlsUpstream(t *testing.T, handler func(http.ResponseWriter, *http.Request),
 	if err := os.WriteFile(ca, pemBytes, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	relay, err := New(Config{URL: srv.URL, CAFile: ca, Timeout: timeout})
+	relay, err := New(Config{URL: srv.URL, CAFile: ca, Project: project, Timeout: timeout})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +216,7 @@ func TestRelayPassesPersesErrorsThrough(t *testing.T) {
 		w.WriteHeader(http.StatusForbidden)
 		_, _ = w.Write([]byte(`{"message":"forbidden"}`))
 	}, nil, 0)
-	rec := serve(relay, httptest.NewRequest(http.MethodGet, Prefix+"/api/v1/projects/other/dashboards", nil), "t")
+	rec := serve(relay, httptest.NewRequest(http.MethodGet, Prefix+"/api/v1/projects/ai-grid-monitoring/dashboards", nil), "t")
 	if rec.Code != http.StatusForbidden || rec.Body.String() != `{"message":"forbidden"}` {
 		t.Fatalf("got %d %q, want Perses's 403 as it sent it", rec.Code, rec.Body)
 	}
@@ -193,7 +230,7 @@ func TestRelayAnswersCannotRunAsAPage(t *testing.T) {
 		w.Header().Set("Content-Security-Policy", "script-src *")
 		_, _ = w.Write([]byte(`<script>alert(document.cookie)</script>`))
 	}, nil, 0)
-	rec := serve(relay, httptest.NewRequest(http.MethodGet, Prefix+"/api/v1/projects/p/dashboards/d", nil), "t")
+	rec := serve(relay, httptest.NewRequest(http.MethodGet, Prefix+"/api/v1/projects/ai-grid-monitoring/dashboards/d", nil), "t")
 	if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
 		t.Errorf("X-Content-Type-Options = %q, want nosniff", got)
 	}
@@ -207,7 +244,7 @@ func TestRelayQueriesWithTheFormThePrometheusPluginSends(t *testing.T) {
 	relay := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"status":"success"}`))
 	}, calls, 0)
-	path := Prefix + "/proxy/projects/p/datasources/thanos/api/v1/query_range"
+	path := Prefix + "/proxy/projects/ai-grid-monitoring/datasources/thanos/api/v1/query_range"
 	form := "query=up&start=1&end=2&step=15"
 
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form))
@@ -242,8 +279,11 @@ func TestRelayRefuses(t *testing.T) {
 		token string
 		want  int
 	}{
-		{"no token", httptest.NewRequest(http.MethodGet, Prefix+"/api/v1/dashboards", nil), "", http.StatusUnauthorized},
-		{"a write", httptest.NewRequest(http.MethodDelete, Prefix+"/api/v1/projects/p/dashboards/d", nil), "t", http.StatusMethodNotAllowed},
+		{"no token", httptest.NewRequest(http.MethodGet, Prefix+"/api/v1/projects/ai-grid-monitoring/dashboards", nil), "", http.StatusUnauthorized},
+		{"a write", httptest.NewRequest(http.MethodDelete, Prefix+"/api/v1/projects/ai-grid-monitoring/dashboards/d", nil), "t", http.StatusMethodNotAllowed},
+		{"another project", httptest.NewRequest(http.MethodGet, Prefix+"/api/v1/projects/other/dashboards", nil), "t", http.StatusNotFound},
+		{"every project's dashboards", httptest.NewRequest(http.MethodGet, Prefix+"/api/v1/dashboards", nil), "t", http.StatusNotFound},
+		{"a dashboard's own datasource", httptest.NewRequest(http.MethodGet, Prefix+"/proxy/projects/ai-grid-monitoring/dashboards/d/datasources/x/api/v1/query", nil), "t", http.StatusNotFound},
 		{"a path outside the allowlist", httptest.NewRequest(http.MethodGet, Prefix+"/api/v1/users", nil), "t", http.StatusNotFound},
 		{"outside the prefix", httptest.NewRequest(http.MethodGet, "/other/api/v1/dashboards", nil), "t", http.StatusNotFound},
 	} {
@@ -262,11 +302,11 @@ func TestRelayRefuses(t *testing.T) {
 
 func TestRelayWhenPersesFails(t *testing.T) {
 	// Down: nothing listens at the address.
-	relay, err := New(Config{URL: "http://127.0.0.1:1"})
+	relay, err := New(Config{URL: "http://127.0.0.1:1", Project: project})
 	if err != nil {
 		t.Fatal(err)
 	}
-	rec := serve(relay, httptest.NewRequest(http.MethodGet, Prefix+"/api/v1/dashboards", nil), "t")
+	rec := serve(relay, httptest.NewRequest(http.MethodGet, Prefix+"/api/v1/projects/ai-grid-monitoring/dashboards", nil), "t")
 	if rec.Code != http.StatusBadGateway {
 		t.Errorf("down: got %d, want 502", rec.Code)
 	}
@@ -278,7 +318,7 @@ func TestRelayWhenPersesFails(t *testing.T) {
 	release := make(chan struct{})
 	slow := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) { <-release }, nil, 50*time.Millisecond)
 	defer close(release)
-	rec = serve(slow, httptest.NewRequest(http.MethodGet, Prefix+"/api/v1/dashboards", nil), "t")
+	rec = serve(slow, httptest.NewRequest(http.MethodGet, Prefix+"/api/v1/projects/ai-grid-monitoring/dashboards", nil), "t")
 	if rec.Code != http.StatusGatewayTimeout {
 		t.Errorf("slow: got %d %q, want 504", rec.Code, rec.Body)
 	}
@@ -294,7 +334,7 @@ func TestRelayWhenPersesFails(t *testing.T) {
 	}, nil, 50*time.Millisecond)
 	done := make(chan *httptest.ResponseRecorder, 1)
 	go func() {
-		done <- serve(stalls, httptest.NewRequest(http.MethodGet, Prefix+"/api/v1/dashboards", nil), "t")
+		done <- serve(stalls, httptest.NewRequest(http.MethodGet, Prefix+"/api/v1/projects/ai-grid-monitoring/dashboards", nil), "t")
 	}()
 	select {
 	case rec = <-done:
@@ -308,11 +348,11 @@ func TestRelayWhenPersesFails(t *testing.T) {
 	// Untrusted: the certificate isn't signed by the configured CA.
 	other := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	defer other.Close()
-	untrusted, err := New(Config{URL: other.URL})
+	untrusted, err := New(Config{URL: other.URL, Project: project})
 	if err != nil {
 		t.Fatal(err)
 	}
-	rec = serve(untrusted, httptest.NewRequest(http.MethodGet, Prefix+"/api/v1/dashboards", nil), "t")
+	rec = serve(untrusted, httptest.NewRequest(http.MethodGet, Prefix+"/api/v1/projects/ai-grid-monitoring/dashboards", nil), "t")
 	if rec.Code != http.StatusBadGateway {
 		t.Errorf("untrusted certificate: got %d, want 502", rec.Code)
 	}

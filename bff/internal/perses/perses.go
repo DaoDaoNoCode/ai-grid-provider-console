@@ -5,8 +5,18 @@
 // The relay decides nothing about the data: Perses authenticates the caller's token and authorizes
 // each project, and its datasource proxy runs the PromQL. What the relay owns is the boundary: only
 // the read-only dashboard, datasource and query paths the Perses React components call pass, only
-// with GET (and POST for queries, which the Prometheus plugin sends as a form), with the caller's
-// own token and nothing else of theirs.
+// with GET (and POST for queries, which the Prometheus plugin sends as a form), and of the
+// caller's request only their token goes on.
+//
+// That token does not stop at Perses. With Kubernetes authorization, as the Cluster Observability
+// Operator runs it, Perses's datasource proxy sends the caller's Authorization header unchanged to
+// the datasource's URL (perses internal/api/impl/proxy, forwardCallerAuthorization). So whoever
+// can write a datasource the relay queries, or a dashboard whose own datasources it would query,
+// would receive a provider admin's hub token. The relay therefore passes one configured project
+// (its dashboards and datasources) and the global datasources only, and never a datasource a
+// dashboard defines. The operator must make sure that only provider admins can write that
+// project's dashboards and datasources, and that the global datasources point only at the hub's
+// own Thanos and Loki.
 package perses
 
 import (
@@ -38,6 +48,9 @@ type Config struct {
 	// URL is the Perses server, for example
 	// https://perses.openshift-cluster-observability-operator.svc:8080.
 	URL string
+	// Project is the one Perses project the relay reads, its dashboards and datasources (with the
+	// global datasources). Required: see the package comment for why no other project passes.
+	Project string
 	// CAFile verifies its certificate; empty uses the system roots.
 	CAFile string
 	// ServerName overrides the name its certificate must carry, for a port-forward to 127.0.0.1.
@@ -53,12 +66,15 @@ type Config struct {
 
 // Relay is an http.Handler for the paths under Prefix.
 type Relay struct {
-	target  *neturl.URL
-	timeout time.Duration
-	proxy   *httputil.ReverseProxy
+	target     *neturl.URL
+	timeout    time.Duration
+	proxy      *httputil.ReverseProxy
+	readPaths  *regexp.Regexp
+	queryPaths *regexp.Regexp
 }
 
-// New builds a relay. It fails when the URL is not usable or the CA file cannot be read.
+// New builds a relay. It fails when the URL or the project is not usable or the CA file cannot be
+// read.
 func New(cfg Config) (*Relay, error) {
 	raw := strings.TrimRight(strings.TrimSpace(cfg.URL), "/")
 	target, err := neturl.Parse(raw)
@@ -67,6 +83,12 @@ func New(cfg Config) (*Relay, error) {
 	}
 	if target.Scheme == "http" && !cfg.Insecure && !isLoopbackHost(target.Hostname()) {
 		return nil, fmt.Errorf("perses URL %q is plaintext; the caller's token travels with every request, so only https:// is accepted for non-loopback hosts (or allow insecure explicitly)", raw)
+	}
+	if cfg.Project == "" {
+		return nil, errors.New("a Perses project is required: the relay reads one project's dashboards and datasources, and no other")
+	}
+	if !projectName.MatchString(cfg.Project) || cfg.Project == "." || cfg.Project == ".." {
+		return nil, fmt.Errorf("perses project %q must be one path segment of letters, digits, '-', '_' and '.'", cfg.Project)
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	timeout := cfg.Timeout
@@ -88,6 +110,7 @@ func New(cfg Config) (*Relay, error) {
 	transport.TLSClientConfig = tlsCfg
 
 	r := &Relay{target: target, timeout: timeout}
+	r.readPaths, r.queryPaths = allowlist(cfg.Project)
 	r.proxy = &httputil.ReverseProxy{
 		Rewrite:        r.rewrite,
 		Transport:      transport,
@@ -114,7 +137,7 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		writeError(w, http.StatusNotFound, "the requested resource could not be found")
 		return
 	}
-	if status, msg := Allowed(req.Method, apiPath, req.URL.RawPath); status != 0 {
+	if status, msg := r.Allowed(req.Method, apiPath, req.URL.RawPath); status != 0 {
 		writeError(w, status, msg)
 		return
 	}
@@ -188,36 +211,45 @@ func errorHandler(w http.ResponseWriter, req *http.Request, err error) {
 	}
 }
 
-var (
-	name = `[^/]+`
-	// readPaths are the Perses API reads the dashboard components make.
+// name is one path segment.
+const name = `[^/]+`
+
+// projectName is the shape of Project: one path segment of letters, digits, '-', '_' and '.',
+// which Kubernetes namespace names (the Cluster Observability Operator's Perses projects) fit.
+var projectName = regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
+
+// allowlist returns the paths the relay passes for one project: readPaths, the Perses API reads
+// the dashboard components make, and queryPaths, reads through a datasource's proxy (the
+// Prometheus and Loki query APIs only). Both name the project's own dashboards and datasources and
+// the global datasources; a datasource a dashboard defines is not among them.
+func allowlist(project string) (readPaths, queryPaths *regexp.Regexp) {
+	p := regexp.QuoteMeta(project)
 	readPaths = regexp.MustCompile(`^/api/v1/(` +
-		`dashboards` +
-		`|projects/` + name + `/dashboards(/` + name + `)?` +
-		`|projects/` + name + `/datasources(/` + name + `)?` +
+		`projects/` + p + `/dashboards(/` + name + `)?` +
+		`|projects/` + p + `/datasources(/` + name + `)?` +
 		`|globaldatasources(/` + name + `)?` +
 		`)$`)
-	// queryPaths are reads through a datasource's proxy: the Prometheus and Loki query APIs only.
 	queryPaths = regexp.MustCompile(`^/proxy/(` +
-		`projects/` + name + `/(dashboards/` + name + `/)?datasources/` + name +
+		`projects/` + p + `/datasources/` + name +
 		`|globaldatasources/` + name +
 		`)/(` +
 		`api/v1/(query|query_range|query_exemplars|series|labels|label/` + name + `/values|metadata|parse_query|format_query)` +
 		`|loki/api/v1/(query|query_range|labels|label/` + name + `/values|series|index/stats|index/volume|index/volume_range|detected_labels|detected_fields|patterns)` +
 		`)$`)
-)
+	return readPaths, queryPaths
+}
 
 // Allowed reports whether a request may be relayed: zero when it may, otherwise the status and
 // message to answer with. apiPath is the decoded path after Prefix; rawPath is the request's
 // escaped path when it differs from the decoded one.
-func Allowed(method, apiPath, rawPath string) (int, string) {
+func (r *Relay) Allowed(method, apiPath, rawPath string) (int, string) {
 	// An encoded slash, a dot segment or a doubled slash could make Perses see another path than
 	// the one checked here.
 	if strings.Contains(strings.ToLower(rawPath), "%2f") || apiPath == "" || path.Clean(apiPath) != apiPath {
 		return http.StatusNotFound, "the requested resource could not be found"
 	}
-	isQuery := queryPaths.MatchString(apiPath)
-	if !isQuery && !readPaths.MatchString(apiPath) {
+	isQuery := r.queryPaths.MatchString(apiPath)
+	if !isQuery && !r.readPaths.MatchString(apiPath) {
 		return http.StatusNotFound, "the requested resource could not be found"
 	}
 	switch {

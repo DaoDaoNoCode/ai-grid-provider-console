@@ -98,8 +98,9 @@ type Config struct {
 	PersesServerName string
 	PersesInsecure   bool
 	PersesTimeout    time.Duration
-	// PersesProject narrows the Monitoring tabs to one Perses project; empty
-	// lists the dashboard- objects of every project the caller may read.
+	// PersesProject is the one Perses project the relay reads (with the global
+	// datasources); its dashboard- objects are the Monitoring tabs. Required
+	// with PersesURL (bff/internal/perses says why).
 	PersesProject string
 
 	LogLevel slog.Level
@@ -141,7 +142,7 @@ func Parse(args []string, lookupEnv func(string) (string, bool)) (Config, error)
 	fs.StringVar(&cfg.PersesServerName, "perses-server-name", env.str("PERSES_SERVER_NAME", ""), "Expected TLS server name of the Perses server (for a port-forward)")
 	fs.BoolVar(&cfg.PersesInsecure, "perses-insecure", env.boolean("perses-insecure", "PERSES_INSECURE", false), "Allow plaintext to a non-loopback Perses server (development only)")
 	fs.DurationVar(&cfg.PersesTimeout, "perses-timeout", env.duration("perses-timeout", "PERSES_TIMEOUT", 30*time.Second), "Bound on the exchange with the Perses server, from connecting to the last byte of its answer; at most 50s")
-	fs.StringVar(&cfg.PersesProject, "perses-project", env.str("PERSES_PROJECT", ""), "Perses project whose dashboard- objects are the Monitoring tabs; empty for every project the caller may read")
+	fs.StringVar(&cfg.PersesProject, "perses-project", env.str("PERSES_PROJECT", ""), "Perses project the Monitoring page reads, whose dashboard- objects are its tabs; required with perses-url")
 	fs.StringVar(&logLevel, "log-level", env.str("LOG_LEVEL", "info"), "Log level: debug, info, warn, error")
 
 	if err := fs.Parse(args); err != nil {
@@ -173,6 +174,9 @@ func Parse(args []string, lookupEnv func(string) (string, bool)) (Config, error)
 		if strings.TrimSpace(v) == "" {
 			return Config{}, fmt.Errorf("%s must not be empty", name)
 		}
+	}
+	if cfg.PersesURL != "" && strings.TrimSpace(cfg.PersesProject) == "" {
+		return Config{}, fmt.Errorf("perses-project must be set with perses-url: Perses sends the caller's token on to the datasources it queries, so the relay reads one project, whose dashboards and datasources only provider admins may write")
 	}
 	if cfg.PersesTimeout <= 0 || cfg.PersesTimeout > MaxPersesTimeout {
 		return Config{}, fmt.Errorf("perses-timeout must be positive and at most %s, to stay inside the server's %s write timeout", MaxPersesTimeout, WriteTimeout)

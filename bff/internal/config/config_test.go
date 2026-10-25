@@ -105,6 +105,15 @@ func TestParsePerses(t *testing.T) {
 	if _, err := Parse([]string{hub}, lookup(map[string]string{"PERSES_TIMEOUT": "2m"})); err == nil {
 		t.Fatal("PERSES_TIMEOUT past the write timeout should fail")
 	}
+	// The relay reads one project: a Perses server without one is a configuration error.
+	for _, env := range []map[string]string{
+		{"PERSES_URL": "https://perses.example:8080"},
+		{"PERSES_URL": "https://perses.example:8080", "PERSES_PROJECT": " "},
+	} {
+		if _, err := Parse([]string{hub}, lookup(env)); err == nil || !strings.Contains(err.Error(), "perses-project") {
+			t.Errorf("Parse(%v) = %v, want an error naming perses-project", env, err)
+		}
+	}
 }
 
 // An environment value that doesn't parse fails like the same flag value,
