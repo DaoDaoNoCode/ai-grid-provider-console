@@ -488,6 +488,37 @@ decides.
   `filter`): Clusters, Organizations and Models fetch the whole list and filter, sort and page
   in the browser. The subscriptions list takes no query parameters.
 
+### Headers, caching and compression
+
+- **The SPA** (every path outside `/api`, `/perses/api`, `/healthcheck` and `/readyz`:
+  `index.html`, the client routes that fall back to it, and the files under `/assets/`) is
+  sent with `Content-Security-Policy: frame-ancestors 'none'`, `X-Frame-Options: DENY`,
+  `X-Content-Type-Options: nosniff` and `Referrer-Policy: same-origin`. The console must not
+  be framed by any page, including another app under the cluster's `*.apps` domain: that is
+  same-site, so `SameSite=Lax` on the proxy's cookie does not stop it.
+- **Caching.** Every file under `/assets/` is `Cache-Control: public, max-age=31536000,
+  immutable`: Vite writes only content-hashed names there (`index-BPyNsiKc.css`, with
+  base64url hashes), so a new build has new URLs. `index.html`, the client routes and the
+  other root files (the favicon) are `no-cache`, so a browser revalidates them and picks up a
+  new bundle at once.
+- **The JSON API** answers carry `Content-Type: application/json`, `X-Content-Type-Options:
+  nosniff` and `Cache-Control: no-store`, but no CSP: they are not pages. `/perses/api` answers
+  keep the headers the relay sets.
+- **Compression.** Every answer, the API, the SPA and the relay alike, is gzipped
+  (`Content-Encoding: gzip`, no `Content-Length`) when the request's `Accept-Encoding` accepts
+  gzip (RFC 9110 12.5.3: a `gzip` entry decides with its q, `*` counts only when `gzip` is
+  not listed, a q of 0 or one that does not parse refuses), its type is `text/html`, `text/css`,
+  `application/javascript`, `text/javascript`, `application/json` or `image/svg+xml`, and the
+  body is 1 KiB or more. It is sent as it is for a `HEAD`, a request with `Range` (the ranges
+  are of the uncompressed file), a 204 or 304, and an answer that already has a
+  `Content-Encoding` (Perses's own gzip passes through the relay unchanged). Answers of those
+  types carry `Vary: Accept-Encoding`. A handler that flushes (the relay streaming an answer)
+  sends each part as it flushes, compressed, without waiting for the end.
+- **A panic** in a handler is logged with its stack (`panic serving request`). Before anything
+  was sent it answers a plain JSON 500. Once the status was sent (a gzip stream started, a part
+  flushed), the connection is cut instead, without a gzip trailer: a 500 written into an answer
+  under way would leave the client a body it cannot decode, or one that looks complete.
+
 ### The BFF is thin
 
 The BFF does transport only (the root `AGENTS.md`), and the port's handlers follow it.

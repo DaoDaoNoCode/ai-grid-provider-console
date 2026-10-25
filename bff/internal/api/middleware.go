@@ -54,26 +54,41 @@ func (a *App) requireProviderAdmin(next http.Handler) http.Handler {
 	})
 }
 
-// recoverPanic turns a panic into a 500 and logs the stack.
+// recoverPanic turns a panic into a 500 and logs the stack. A panic after the
+// answer was under way (committedPanic, from compress) is logged the same way,
+// but the connection is cut instead: the 500 can no longer be sent.
 func (a *App) recoverPanic(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
-			if rec := recover(); rec != nil {
-				if err, ok := rec.(error); ok && errors.Is(err, http.ErrAbortHandler) {
-					// A handler aborting an answer it already started (the Perses relay when
-					// the browser goes away or Perses stops mid-answer): net/http closes the
-					// connection without logging it, and a 500 can no longer be sent.
-					// logRequests has logged the request as aborted.
-					panic(http.ErrAbortHandler)
-				}
-				a.logger.Error("panic serving request", "method", r.Method, "path", r.URL.Path, "panic", fmt.Sprint(rec), "stack", string(debug.Stack()))
-				w.Header().Set("Connection", "close")
-				writeError(w, http.StatusInternalServerError, "internal server error")
+			rec := recover()
+			if rec == nil {
+				return
 			}
+			if err, ok := rec.(error); ok && errors.Is(err, http.ErrAbortHandler) {
+				// A handler aborting an answer it already started (the Perses relay when
+				// the browser goes away or Perses stops mid-answer): net/http closes the
+				// connection without logging it, and a 500 can no longer be sent.
+				// logRequests has logged the request as aborted.
+				panic(http.ErrAbortHandler)
+			}
+			committed, isCommitted := rec.(committedPanic)
+			if isCommitted {
+				rec = committed.value
+			}
+			a.logger.Error("panic serving request", "method", r.Method, "path", r.URL.Path, "panic", fmt.Sprint(rec), "stack", string(debug.Stack()))
+			if isCommitted {
+				panic(http.ErrAbortHandler)
+			}
+			w.Header().Set("Connection", "close")
+			writeError(w, http.StatusInternalServerError, "internal server error")
 		}()
 		next.ServeHTTP(w, r)
 	})
 }
+
+// committedPanic is a panic after the answer's status reached the connection,
+// as compress passes it on: value is what the handler panicked with.
+type committedPanic struct{ value any }
 
 type statusRecorder struct {
 	http.ResponseWriter
@@ -84,6 +99,10 @@ func (s *statusRecorder) WriteHeader(code int) {
 	s.status = code
 	s.ResponseWriter.WriteHeader(code)
 }
+
+// Unwrap lets http.ResponseController (the relay's flushes, gzipWriter's)
+// reach the connection's writer.
+func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
 
 // logRequests emits one line per request with a request id the client also gets. A handler
 // that panics (an aborted answer, or a bug recoverPanic turns into a 500) still gets its line,

@@ -430,8 +430,17 @@ func TestSPAHandler(t *testing.T) {
 		}
 	}
 	must(os.WriteFile(filepath.Join(dir, "index.html"), []byte("<html>index</html>"), 0o644))
+	must(os.WriteFile(filepath.Join(dir, "favicon.svg"), []byte("<svg/>"), 0o644))
 	must(os.MkdirAll(filepath.Join(dir, "assets"), 0o755))
-	must(os.WriteFile(filepath.Join(dir, "assets", "app-0123abcdef.js"), []byte("js"), 0o644))
+	// Names from a real `vite build`: the hash is base64url, so it may hold
+	// upper case, `-` and `_`, and a name may have a double `-`.
+	assets := []string{
+		"index-yimuxjpv.js", "index-BPyNsiKc.css", "index--abzHtFK.js",
+		"RedHatDisplayVF-D7m-OdR-.woff2", "ne_110m_land-BX_3ioGi.js", "ne_110m_land-BX_3ioGi.js.map",
+	}
+	for _, name := range assets {
+		must(os.WriteFile(filepath.Join(dir, "assets", name), []byte("asset"), 0o644))
+	}
 
 	cfg := testConfig(t)
 	cfg.StaticAssetsDir = dir
@@ -442,24 +451,50 @@ func TestSPAHandler(t *testing.T) {
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, p, nil))
 		return rec
 	}
-	if rec := get("/"); rec.Code != 200 || rec.Body.String() != "<html>index</html>" {
-		t.Fatalf("/ -> %d %q", rec.Code, rec.Body.String())
+	secure := func(what string, rec *httptest.ResponseRecorder) {
+		t.Helper()
+		for header, want := range map[string]string{
+			"Content-Security-Policy": "frame-ancestors 'none'",
+			"X-Frame-Options":         "DENY",
+			"X-Content-Type-Options":  "nosniff",
+			"Referrer-Policy":         "same-origin",
+		} {
+			if got := rec.Header().Get(header); got != want {
+				t.Errorf("%s: %s = %q, want %q", what, header, got, want)
+			}
+		}
 	}
-	if rec := get("/clusters/local-cluster"); rec.Code != 200 || rec.Body.String() != "<html>index</html>" {
-		t.Fatalf("client route -> %d %q", rec.Code, rec.Body.String())
+	for _, route := range []string{"/", "/clusters/local-cluster", "/subscriptions/view/engineering"} {
+		rec := get(route)
+		if rec.Code != 200 || rec.Body.String() != "<html>index</html>" {
+			t.Fatalf("%s -> %d %q", route, rec.Code, rec.Body.String())
+		}
+		if got := rec.Header().Get("Cache-Control"); got != "no-cache" {
+			t.Errorf("%s: Cache-Control = %q, want no-cache: index.html names the current bundle", route, got)
+		}
+		secure(route, rec)
 	}
-	if rec := get("/subscriptions/view/engineering"); rec.Code != 200 || rec.Body.String() != "<html>index</html>" {
-		t.Fatalf("deep client route -> %d %q", rec.Code, rec.Body.String())
+	for _, name := range assets {
+		rec := get("/assets/" + name)
+		if rec.Code != 200 || rec.Header().Get("Cache-Control") != "public, max-age=31536000, immutable" {
+			t.Errorf("asset %s -> %d %q, want immutable", name, rec.Code, rec.Header().Get("Cache-Control"))
+		}
+		secure(name, rec)
 	}
-	if rec := get("/assets/app-0123abcdef.js"); rec.Code != 200 || rec.Header().Get("Cache-Control") != "public, max-age=31536000, immutable" {
-		t.Fatalf("hashed asset -> %d %q", rec.Code, rec.Header().Get("Cache-Control"))
+	if rec := get("/favicon.svg"); rec.Code != 200 || rec.Header().Get("Cache-Control") != "no-cache" {
+		t.Errorf("a root file -> %d %q, want no-cache: its name has no hash", rec.Code, rec.Header().Get("Cache-Control"))
 	}
 	if rec := get("/assets/missing.js"); rec.Code != 404 {
 		t.Fatalf("missing asset -> %d", rec.Code)
 	}
+	// The JSON API is not a page: nosniff, but no frame or referrer policy of the SPA.
+	rec := serve(newTestApp(t, cfg, nil), asUser(http.MethodGet, "/api/v1/config"))
+	if rec.Header().Get("X-Content-Type-Options") != "nosniff" || rec.Header().Get("Content-Security-Policy") != "" {
+		t.Errorf("API headers = %v", rec.Header())
+	}
 	raw := httptest.NewRequest(http.MethodGet, "/", nil)
 	raw.URL.Path = "/../../etc/passwd"
-	rec := httptest.NewRecorder()
+	rec = httptest.NewRecorder()
 	newSPAHandler(dir).ServeHTTP(rec, raw)
 	if rec.Code != 200 || rec.Body.String() != "<html>index</html>" {
 		t.Fatalf("traversal should be cleaned to a client route, got %d %q", rec.Code, rec.Body.String())
