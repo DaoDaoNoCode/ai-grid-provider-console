@@ -592,3 +592,26 @@ it('shows Not found for a referenced model the hub no longer has, even with a na
   renderAt(`/subscriptions/view/${seed.name}`, service);
   expect(await screen.findByTestId('subscription-models-table')).toHaveTextContent('Not found');
 });
+
+it('reloads a subscription after a stale delete, keeping the typed name, so a retry succeeds', async () => {
+  const service = new MockConsoleService();
+  const user = userEvent.setup();
+  renderAt('/subscriptions/view/engineering', service);
+  await screen.findByTestId('subscription-details-section');
+  await user.click(screen.getByTestId('subscription-actions-toggle'));
+  await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
+  const modal = await screen.findByTestId('delete-subscription-modal');
+  await user.type(within(modal).getByTestId('delete-modal-input'), 'Engineering');
+  // Someone else saves the subscription while the dialog is open.
+  service.subscriptions = service.subscriptions.map((s) =>
+    s.name === 'engineering' ? { ...s, resourceVersion: String(Number(s.resourceVersion) + 1) } : s,
+  );
+  await user.click(within(modal).getByRole('button', { name: 'Delete' }));
+  expect(
+    await within(modal).findByText('This subscription changed since you opened this dialog. Check it and try again.'),
+  ).toBeVisible();
+  expect(within(modal).getByTestId('delete-modal-input')).toHaveValue('Engineering');
+  await user.click(within(modal).getByRole('button', { name: 'Delete' }));
+  expect(await screen.findByText('Subscription deleted')).toBeVisible();
+  expect(service.subscriptions.some((s) => s.name === 'engineering')).toBe(false);
+});

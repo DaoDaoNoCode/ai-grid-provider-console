@@ -71,20 +71,32 @@ export class MockConsoleService implements ConsoleService {
 
   listClusters = async (): Promise<GridCluster[]> => [...this.clusters];
 
-  /** Sets `ai-grid/enabled`, `ai-grid/role` and `location`, as the BFF's PATCH does. */
-  enrollCluster = async ({ name }: GridCluster, membership: GridMembership): Promise<GridCluster> =>
-    this.setMembership(name, membership);
+  /**
+   * Sets `ai-grid/enabled`, `ai-grid/role` and `location` on the labels the caller read, as
+   * HttpConsoleService sends them: the BFF's PATCH replaces the labels map as a whole, at the
+   * version the caller read.
+   */
+  enrollCluster = async (cluster: GridCluster, membership: GridMembership): Promise<GridCluster> =>
+    this.setMembership(cluster, membership);
 
-  removeClusterFromGrid = async ({ name }: GridCluster): Promise<GridCluster> => this.setMembership(name);
+  removeClusterFromGrid = async (cluster: GridCluster): Promise<GridCluster> => this.setMembership(cluster);
 
   /** Writes a membership's labels, or drops `ai-grid/enabled` without one; provisioning follows toGridCluster. */
-  private setMembership(name: string, membership?: GridMembership): GridCluster {
+  private setMembership(cluster: GridCluster, membership?: GridMembership): GridCluster {
+    const { name } = cluster;
     const index = this.clusters.findIndex((c) => c.name === name);
     if (index < 0) {
       throw new ServiceError(404, `object with identifier '${name}' not found`);
     }
     const current = this.clusters[index];
-    const labels = { ...current.labels };
+    // The fake backend's precondition (bff/internal/fakebackend/clusters.go), answered 409 by the BFF.
+    if ((cluster.resourceVersion ?? '') !== (current.resourceVersion ?? '')) {
+      throw new ServiceError(
+        409,
+        `object with identifier '${name}' has resource version ${current.resourceVersion}, the request carries "${cluster.resourceVersion ?? ''}"; fetch it again and retry`,
+      );
+    }
+    const labels = { ...cluster.labels };
     const member = !!membership;
     if (membership) {
       Object.assign(labels, {

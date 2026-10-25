@@ -1,15 +1,4 @@
-import {
-  Alert,
-  Breadcrumb,
-  BreadcrumbItem,
-  EmptyState,
-  EmptyStateBody,
-  Flex,
-  List,
-  ListItem,
-  PageSection,
-  Stack,
-} from '@patternfly/react-core';
+import { Alert, Breadcrumb, BreadcrumbItem, Flex, List, ListItem, PageSection, Stack } from '@patternfly/react-core';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { ClustersService } from '../../api/clusters';
 import { ServiceError } from '../../api/ConsoleService';
@@ -23,7 +12,7 @@ import { SimpleMenuActions } from '../../components/SimpleMenuActions';
 import { useConsoleSession } from '../../context/useConsoleSession';
 import { useServiceData } from '../../hooks/useServiceData';
 import { formatDateTime } from '../../utilities/format';
-import { locationLabel, modelPath, siteNamesOf } from './modelUtils';
+import { locationLabel, modelNotFound, modelPath, siteNamesOf } from './modelUtils';
 import { ModelStatusDetails, ModelStatusLabel } from './ModelStatus';
 import { hasModelStatusDetails, modelPhase, modelStatusTitle } from './modelStatusInfo';
 import type { ModelDeleteService } from './useDeleteModel';
@@ -53,17 +42,8 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
   const siteNames = siteNamesOf(clusters);
 
   const body = () => {
-    if (error && !model && !notFound) {
-      return <LoadError subject="Models" error={error} />;
-    }
     if (!model) {
-      return (
-        <EmptyState titleText="Model deployment not found" headingLevel="h2">
-          <EmptyStateBody>
-            There is no model deployment {name} in {namespace}. <Link to="/models">Go to Models</Link>
-          </EmptyStateBody>
-        </EmptyState>
-      );
+      return error && <LoadError subject="Models" error={error} notFound={modelNotFound(namespace, name)} />;
     }
     const phase = modelPhase(model);
     return (

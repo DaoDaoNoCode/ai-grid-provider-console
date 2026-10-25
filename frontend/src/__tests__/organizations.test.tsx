@@ -538,3 +538,24 @@ it('moves an edit refused for a field to that field, once, and lets the user ret
   expect(screen.getByRole('button', { name: 'Save changes' })).toBeVisible();
   expect(screen.queryByRole('textbox', { name: 'Issuer' })).not.toBeInTheDocument();
 });
+
+it('reloads an organization after a stale delete from its page, keeping the typed name, so a retry succeeds', async () => {
+  const service = new MockConsoleService();
+  const [organization] = service.organizations;
+  const user = userEvent.setup();
+  renderAt(`/organizations/${organization.id}`, service);
+  await user.click(await screen.findByTestId('organization-actions'));
+  await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
+  const modal = await screen.findByTestId('delete-tenant-modal');
+  await user.type(within(modal).getByTestId('delete-modal-input'), organization.name);
+  // Someone else saves the organization while the dialog is open.
+  service.organizations[0] = { ...organization, resourceVersion: String(Number(organization.resourceVersion) + 1) };
+  await user.click(within(modal).getByRole('button', { name: 'Delete' }));
+  expect(
+    await within(modal).findByText('This organization changed since you opened this dialog. Check it and try again.'),
+  ).toBeVisible();
+  expect(within(modal).getByTestId('delete-modal-input')).toHaveValue(organization.name);
+  await user.click(within(modal).getByRole('button', { name: 'Delete' }));
+  expect(await screen.findByText('Organization deleted')).toBeVisible();
+  expect(service.organizations.some((o) => o.id === organization.id)).toBe(false);
+});

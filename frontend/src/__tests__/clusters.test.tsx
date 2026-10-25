@@ -532,3 +532,44 @@ it('says when the search matches no cluster, and clears it from the table', asyn
   expect(await screen.findByRole('row', { name: /^site1 / })).toBeVisible();
   expect(screen.getByRole('textbox', { name: 'Search clusters' })).toHaveValue('');
 });
+
+it('reloads the cluster in the open dialog after a conflict, keeping the choices, so the next Add works', async () => {
+  const user = userEvent.setup();
+  const service = new MockConsoleService();
+  renderAt('/clusters', service);
+  await pick(user, 'site4', 'Add to AI Grid');
+  const modal = await screen.findByTestId('cluster-membership-modal');
+  const location = within(modal).getByRole('textbox', { name: 'Location' });
+  await user.clear(location);
+  await user.type(location, 'us-east');
+  await user.click(within(modal).getByRole('combobox', { name: 'Role' }));
+  await user.click(await screen.findByRole('option', { name: /Inference/ }));
+  // Someone else changes the cluster while the dialog is open.
+  const index = service.clusters.findIndex((c) => c.name === 'site4');
+  const before = service.clusters[index];
+  service.clusters[index] = {
+    ...before,
+    labels: { ...before.labels, team: 'blue' },
+    resourceVersion: String(Number(before.resourceVersion) + 5),
+  };
+  const enroll = vi.spyOn(service, 'enrollCluster');
+
+  await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
+  expect(
+    await within(modal).findByText('This cluster changed since you opened this dialog. Check it and try again.'),
+  ).toBeVisible();
+  expect(within(modal).queryByText(/resource version/)).not.toBeInTheDocument();
+  expect(within(modal).getByRole('textbox', { name: 'Location' })).toHaveValue('us-east');
+  expect(within(modal).getByRole('combobox', { name: 'Role' })).toHaveValue('Inference');
+
+  await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
+  expect(await screen.findByText('site4 added to AI Grid')).toBeVisible();
+  expect(enroll).toHaveBeenCalledTimes(2);
+  // The second try carried the version and the labels the backend had then, so team stays.
+  expect(enroll.mock.calls[1][0].resourceVersion).toBe(String(Number(before.resourceVersion) + 5));
+  expect(service.clusters[index].labels).toMatchObject({
+    team: 'blue',
+    'ai-grid/enabled': 'true',
+    location: 'us-east',
+  });
+});

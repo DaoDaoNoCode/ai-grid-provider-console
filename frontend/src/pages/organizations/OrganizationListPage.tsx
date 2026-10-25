@@ -50,7 +50,11 @@ export const OrganizationListPage: React.FC<Props> = ({ service }) => {
   const canWrite = !!user?.isProviderAdmin;
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<{ index: number; direction: 'asc' | 'desc' }>({ index: 0, direction: 'asc' });
-  const [confirmDelete, deleteModal] = useDeleteOrganization(service, () => void refresh());
+  const [confirmDelete, deleteModal] = useDeleteOrganization(service, {
+    organizations,
+    refresh: () => void refresh(),
+    onDeleted: () => void refresh(),
+  });
 
   const rows = useMemo(() => {
     const term = search.toLowerCase();

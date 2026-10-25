@@ -18,15 +18,17 @@ type Props = { service: OrganizationsService };
 export const OrganizationDetailsPage: React.FC<Props> = ({ service }) => {
   const { id = '' } = useParams();
   const navigate = useNavigate();
-  const [organization, loaded, error] = useServiceData<Organization | undefined>(
+  const [organization, loaded, error, refresh] = useServiceData<Organization | undefined>(
     () => service.getOrganization(id),
     undefined,
     0,
   );
   const { user } = useConsoleSession();
-  const [confirmDelete, deleteModal] = useDeleteOrganization(service, () =>
-    navigate('/organizations', { state: { notice: 'Organization deleted' } }),
-  );
+  const [confirmDelete, deleteModal] = useDeleteOrganization(service, {
+    organizations: organization ? [organization] : [],
+    refresh: () => void refresh(),
+    onDeleted: () => navigate('/organizations', { state: { notice: 'Organization deleted' } }),
+  });
 
   const actions = organization && user?.isProviderAdmin && (
     <SimpleMenuActions
@@ -65,7 +67,7 @@ export const OrganizationDetailsPage: React.FC<Props> = ({ service }) => {
       ) : (
         <PageSection isFilled>
           {error ? (
-            <OrganizationLoadError error={error} />
+            <OrganizationLoadError error={error} id={id} />
           ) : (
             organization && <OrganizationConfigurationDetails organization={organization} variant="details" />
           )}

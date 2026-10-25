@@ -1,5 +1,26 @@
-import { Alert, AlertActionLink, EmptyState, EmptyStateBody } from '@patternfly/react-core';
+import {
+  Alert,
+  AlertActionLink,
+  Button,
+  EmptyState,
+  EmptyStateActions,
+  EmptyStateBody,
+  EmptyStateFooter,
+} from '@patternfly/react-core';
+import { SearchIcon } from '@patternfly/react-icons';
+import { Link } from 'react-router-dom';
 import { ServiceError } from '../api/ConsoleService';
+
+/** How a page for one object says the object doesn't exist. */
+export type NotFound = {
+  /** The object type, e.g. "Model deployment"; the title is "<what> not found". */
+  what: string;
+  /** Which one was asked for, e.g. "There is no organization acme." */
+  body: React.ReactNode;
+  /** Its list, and the list's name for the way back ("Go to Models"). */
+  listPath: string;
+  listLabel: string;
+};
 
 type Props = {
   /** What was being loaded, e.g. "Clusters". */
@@ -11,6 +32,8 @@ type Props = {
   title?: string;
   /** Offers Retry on the error. */
   onRetry?: () => void;
+  /** For a page of one object: a 404 says it doesn't exist and links back to its list, with no Retry. */
+  notFound?: NotFound;
 };
 
 /**
@@ -19,12 +42,16 @@ type Props = {
  * backend and the console are developed in parallel, so it is shown as an
  * informational empty state rather than an error. A 401 shows nothing: the
  * console says once, above every page, that the session has ended, and a retry
- * would send the same rejected token. Everything else is an error with the
- * BFF's message.
+ * would send the same rejected token. A 404 on a page for one object is an
+ * empty state naming it, with a link back to its list: retrying would not
+ * bring it back. Everything else is an error with the BFF's message.
  */
-export const LoadError: React.FC<Props> = ({ subject, error, notAvailableTitle, title, onRetry }) => {
+export const LoadError: React.FC<Props> = ({ subject, error, notAvailableTitle, title, onRetry, notFound }) => {
   if (error instanceof ServiceError && error.isUnauthenticated) {
     return null;
+  }
+  if (notFound && error instanceof ServiceError && error.status === 404) {
+    return <NotFoundState {...notFound} />;
   }
   if (error instanceof ServiceError && error.isNotImplemented) {
     return (
@@ -51,3 +78,17 @@ export const LoadError: React.FC<Props> = ({ subject, error, notAvailableTitle, 
     </Alert>
   );
 };
+
+/** A page's object that doesn't exist (or no longer does). */
+export const NotFoundState: React.FC<NotFound> = ({ what, body, listPath, listLabel }) => (
+  <EmptyState titleText={`${what} not found`} headingLevel="h2" icon={SearchIcon} data-testid="not-found-state">
+    <EmptyStateBody>{body}</EmptyStateBody>
+    <EmptyStateFooter>
+      <EmptyStateActions>
+        <Button variant="primary" component={(props) => <Link {...props} to={listPath} />}>
+          Go to {listLabel}
+        </Button>
+      </EmptyStateActions>
+    </EmptyStateFooter>
+  </EmptyState>
+);

@@ -16,6 +16,7 @@ import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { ThProps } from '@patternfly/react-table';
 import { Link, useNavigate } from 'react-router-dom';
 import type { ClustersService, GridMembership } from '../../api/clusters';
+import { ServiceError } from '../../api/ConsoleService';
 import type { GridCluster } from '../../api/types';
 import { LoadError } from '../../components/LoadError';
 import { PageHeader } from '../../components/PageHeader';
@@ -127,9 +128,24 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
 
   /** Adds the cluster to AI Grid or removes it; throws for the modal to show. */
   const applyChange = async ({ cluster, join }: MembershipChange, membership?: GridMembership) => {
-    const updated = membership
-      ? await service.enrollCluster(cluster, membership)
-      : await service.removeClusterFromGrid(cluster);
+    let updated: GridCluster;
+    try {
+      updated = membership
+        ? await service.enrollCluster(cluster, membership)
+        : await service.removeClusterFromGrid(cluster);
+    } catch (err) {
+      if (err instanceof ServiceError && err.isConflict) {
+        // The cluster changed since the dialog opened, so the PATCH carried old labels and an old
+        // version. Load it again and give the open dialog the new one (the dialog keeps the
+        // location and role the user chose), so the next try sends what the backend has now.
+        const fresh = (await service.listClusters().catch(() => [])).find((c) => c.name === cluster.name);
+        if (fresh) {
+          setChange((open) => (open?.cluster.name === fresh.name ? { ...open, cluster: fresh } : open));
+        }
+        reload();
+      }
+      throw err;
+    }
     if (updated.aiGridEnabled !== join) {
       throw new Error('The Hub did not confirm the change. Refresh and try again.');
     }

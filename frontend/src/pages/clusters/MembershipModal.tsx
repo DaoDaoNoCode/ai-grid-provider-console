@@ -48,6 +48,10 @@ const errorMessage = (err: unknown, join: boolean) => {
   if (err instanceof ServiceError && err.isNotImplemented) {
     return `${join ? 'Adding clusters to' : 'Removing clusters from'} AI Grid is not available on this backend yet.`;
   }
+  // The page has loaded the cluster again by now, so a second try sends its current version.
+  if (err instanceof ServiceError && err.isConflict) {
+    return 'This cluster changed since you opened this dialog. Check it and try again.';
+  }
   return err instanceof Error ? err.message : 'The cluster could not be changed.';
 };
 

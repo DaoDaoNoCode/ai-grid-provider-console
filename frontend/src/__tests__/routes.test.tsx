@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import type { InitialEntry } from 'react-router-dom';
@@ -106,6 +106,23 @@ describe('routes', () => {
     expect(await screen.findByText(text)).toBeInTheDocument();
     expect(screen.queryByText(/could not be loaded/)).not.toBeInTheDocument();
     expect(screen.queryByText('the AI Grid backend does not support this operation yet')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['/models/ai-grid-models/nope', 'Model deployment not found', 'Go to Models', '/models'],
+    ['/models/ai-grid-models/nope/edit', 'Model deployment not found', 'Go to Models', '/models'],
+    ['/organizations/does-not-exist', 'Organization not found', 'Go to Organizations', '/organizations'],
+    ['/organizations/does-not-exist/edit', 'Organization not found', 'Go to Organizations', '/organizations'],
+    ['/subscriptions/view/nope', 'Subscription not found', 'Go to Subscriptions', '/subscriptions'],
+    ['/subscriptions/edit/nope', 'Subscription not found', 'Go to Subscriptions', '/subscriptions'],
+  ])('says a missing object is not found, the same way: %s', async (path, title, back, href) => {
+    at(path);
+    const state = await screen.findByTestId('not-found-state');
+    expect(within(state).getByRole('heading', { name: title })).toBeVisible();
+    expect(within(state).getByRole('link', { name: back })).toHaveAttribute('href', href);
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+    expect(document.querySelector('.pf-v6-c-alert.pf-m-danger')).toBeNull();
+    expect(screen.queryByText(/object with identifier/)).not.toBeInTheDocument();
   });
 
   it('shows the not-found page with a way back', async () => {

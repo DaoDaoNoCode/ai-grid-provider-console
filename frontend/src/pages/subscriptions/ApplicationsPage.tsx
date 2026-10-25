@@ -6,6 +6,7 @@
 // the governance data polls, and a failed poll must not unmount a form with the user's input.
 import { useState } from 'react';
 import { PageSection } from '@patternfly/react-core';
+import type { NotFound } from '../../components/LoadError';
 import { LoadError } from '../../components/LoadError';
 import { PageHeader } from '../../components/PageHeader';
 import { PageLoading } from '../../components/PageLoading';
@@ -19,6 +20,8 @@ type Props = {
   loadError?: Error;
   errorMessage?: string;
   onRetry: () => void;
+  /** For a page of one subscription: what a 404 says. */
+  notFound?: NotFound;
   children?: React.ReactNode;
 };
 
@@ -32,6 +35,7 @@ export const ApplicationsPage: React.FC<Props> = ({
   loadError,
   errorMessage,
   onRetry,
+  notFound,
   children,
 }) => {
   const [contentShown, setContentShown] = useState(false);
@@ -49,6 +53,7 @@ export const ApplicationsPage: React.FC<Props> = ({
           error={loadError}
           title={errorMessage ?? 'Unable to load subscriptions'}
           onRetry={onRetry}
+          notFound={notFound}
         />
       </PageSection>
     );
