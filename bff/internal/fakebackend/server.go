@@ -33,7 +33,6 @@ import (
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
 )
@@ -218,7 +217,7 @@ func New(fx *Fixtures, logger *slog.Logger) (*Server, error) {
 			sub.ResourceVersion = "1"
 		}
 		if sub.GetCreateTime() == nil {
-			sub.CreateTime = timestamppb.New(s.start)
+			sub.CreateTime = k8sTime(s.start)
 			s.liveSubscriptions[sub.GetName()] = true
 		}
 		s.subscriptions[sub.GetName()] = sub
@@ -265,7 +264,7 @@ func (s *Server) SetClock(clock func() time.Time) {
 	s.reconcileModels(s.start)
 	for name := range s.liveSubscriptions {
 		if sub, ok := s.subscriptions[name]; ok {
-			sub.CreateTime = timestamppb.New(s.start)
+			sub.CreateTime = k8sTime(s.start)
 		}
 	}
 }

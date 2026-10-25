@@ -170,6 +170,76 @@ func TestUnknownAPIPathIsJSON404(t *testing.T) {
 	}
 }
 
+// A known path asked with a method it has no route for is 405 with Allow and
+// the JSON error shape, not the unknown-path 404.
+func TestWrongMethodIsJSON405(t *testing.T) {
+	app := newTestApp(t, testConfig(t), nil)
+	cases := map[string]string{
+		"POST /api/v1/clusters":                 "GET, HEAD",
+		"DELETE /api/v1/clusters/site-1":        "GET, HEAD, PATCH",
+		"PUT /api/v1/tenants/t-1":               "GET, HEAD, PATCH, DELETE",
+		"PATCH /api/v1/subscriptions/s":         "GET, HEAD, PUT, DELETE",
+		"DELETE /api/v1/models":                 "GET, HEAD, POST",
+		"POST /api/v1/models/ai-grid-models/m1": "GET, HEAD, PATCH, DELETE",
+	}
+	for req, allow := range cases {
+		method, path, _ := strings.Cut(req, " ")
+		rec := serve(app, asUser(method, path))
+		if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != allow {
+			t.Errorf("%s: %d Allow=%q, want 405 Allow=%q", req, rec.Code, rec.Header().Get("Allow"), allow)
+			continue
+		}
+		if body := decodeError(t, rec); body.Error.Code != "405" || !strings.Contains(body.Error.Message, allow) {
+			t.Errorf("%s: body %+v", req, body)
+		}
+	}
+	if rec := serve(app, asUser(http.MethodPost, "/api/v1/nope")); rec.Code != http.StatusNotFound || rec.Header().Get("Allow") != "" {
+		t.Errorf("unknown path: %d %v", rec.Code, rec.Header())
+	}
+}
+
+// HEAD is GET without the body: open on /user and /config like GET, so the
+// provider-admin check doesn't refuse a viewer's HEAD that its GET passes.
+func TestHeadUserAndConfigAreOpenLikeGet(t *testing.T) {
+	denied := newTestAppWithHub(t, testConfig(t), nil, &fakeHub{allowed: false})
+	if rec := serve(denied, asUser(http.MethodHead, "/api/v1/config")); rec.Code != http.StatusOK {
+		t.Errorf("HEAD /config by a non-admin: %d", rec.Code)
+	}
+	if rec := serve(denied, asUser(http.MethodHead, "/api/v1/user")); rec.Code != http.StatusOK {
+		t.Errorf("HEAD /user by a non-admin: %d", rec.Code)
+	}
+	if rec := serve(denied, asUser(http.MethodHead, "/api/v1/clusters")); rec.Code != http.StatusForbidden {
+		t.Errorf("HEAD /clusters by a non-admin: %d, want 403", rec.Code)
+	}
+}
+
+// Lists that take no query parameters refuse them instead of answering the
+// whole list as if it were filtered or paged; tenants and models refuse a
+// repeated offset or limit as they refuse a repeated filter.
+func TestListQueryParameters(t *testing.T) {
+	fake := &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{{Name: "site-1", ResourceVersion: "1"}}}
+	app := newTestApp(t, testConfig(t), fake)
+	for _, path := range []string{
+		"/api/v1/clusters?filter=false",
+		"/api/v1/clusters?limit=1",
+		"/api/v1/subscriptions?filter=false&limit=1",
+		"/api/v1/subscriptions?offset=0",
+		"/api/v1/tenants?offset=1&offset=2",
+		"/api/v1/tenants?limit=1&limit=1",
+		"/api/v1/models?limit=5&limit=10",
+	} {
+		rec := serve(app, asUser(http.MethodGet, path))
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("GET %s: %d %s, want 422", path, rec.Code, rec.Body.String())
+		}
+	}
+	for _, path := range []string{"/api/v1/clusters", "/api/v1/subscriptions", "/api/v1/tenants?offset=0&limit=10"} {
+		if rec := serve(app, asUser(http.MethodGet, path)); rec.Code != http.StatusOK {
+			t.Errorf("GET %s: %d %s", path, rec.Code, rec.Body.String())
+		}
+	}
+}
+
 func TestUserFromProxyHeaders(t *testing.T) {
 	cfg := testConfig(t)
 	h := &fakeHub{allowed: true}
@@ -228,8 +298,14 @@ func TestOnlyProviderAdminsReachTheAPI(t *testing.T) {
 	fake := &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{{Name: "site-1", ResourceVersion: "7"}}}
 	denied := newTestAppWithHub(t, cfg, fake, &fakeHub{allowed: false})
 	for _, req := range []*http.Request{patch(), asUser(http.MethodGet, "/api/v1/clusters"), asUser(http.MethodGet, "/api/v1/tenants")} {
-		if rec := serve(denied, req); rec.Code != http.StatusForbidden {
+		rec := serve(denied, req)
+		if rec.Code != http.StatusForbidden {
 			t.Fatalf("%s %s by a non-admin: got %d %s, want 403", req.Method, req.URL.Path, rec.Code, rec.Body.String())
+		}
+		// The same words for a read and a write: who the console is for, not
+		// the one verb the check asks about.
+		if got := decodeError(t, rec).Error.Message; got != "this console is only for provider admins, users who may patch ManagedClusters on the hub, and the hub says you are not one" {
+			t.Fatalf("%s %s by a non-admin: message %q", req.Method, req.URL.Path, got)
 		}
 	}
 	if fake.Metadata != nil {

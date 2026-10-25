@@ -67,8 +67,10 @@ when the RPCs allow it.
   that do not parse or are out of range left out; `consoleUrl`, `platform` and `product` from
   cluster claims; `gpuCapacity` from `status.capacity["nvidia.com/gpu"]`; `addons` from the
   `feature.open-cluster-management.io/addon-*` labels; the list sorted by name.
-- `fetchCluster`: against a backend without `GetManagedCluster` (the shipped one), the BFF
-  filters `ListManagedClusters` by name and writes its own NotFound message.
+- `fetchCluster`: when `GetManagedCluster` answers `Unimplemented`, the BFF filters
+  `ListManagedClusters` by name and writes its own NotFound message. Neither the fake nor the
+  shipped backend (`mock/proto/upstream/COMMIT`, whose `Clusters/Get` `v1.go` calls) answers
+  that any more, so this only serves an older backend; remove it once none is deployed.
 - The stopgap clients for the backend's current `ai_grid.v1` (`bff/internal/backend/v1.go`),
   until the console moves to Connect and the backend's contract: `FromV1Cluster` derives the
   draft's cluster state from `spec.hub_accepts_client`, `status.joined`,
@@ -87,7 +89,12 @@ when the RPCs allow it.
   `progressing` and `degraded` from its conditions and `feedback` from the manifest feedback
   values; `rollout.strategy` shown as `All` when unset.
 - `fromRolloutSpec`: parses the rollout strategy name into the enum and answers 422 for an
-  unknown one.
+  unknown one; an empty strategy is sent as `ROLLOUT_STRATEGY_ALL`, a default the backend
+  should apply to `ROLLOUT_STRATEGY_UNSPECIFIED`.
+- `toGridOverview` (`bff/internal/api/grid.go`): drops metric points whose value is NaN or
+  ±Inf (JSON cannot carry them), always sends `demo: false`, and writes `updatedAt` as
+  `2006-01-02T15:04:05.000Z` (the PoC's millisecond format) whatever precision the backend
+  sends.
 - The model create (`createModel`): `cpu`, `memory` and `gpuCount` become the main container's
   requests (the GPU also its limit, a negative `gpuCount` is 422); `scaling` becomes a KEDA
   block; the gateway defaults to `openshift-ingress/openshift-ai-inference`; the managed route
@@ -97,5 +104,5 @@ when the RPCs allow it.
   when the caller sent any of them; without them `listMeta` falls back to a total it can prove.
   This is compatibility with the shipped backend, not filtering.
 - `requireProviderAdmin` (`bff/internal/api/middleware.go`), the BFF's one authorization
-  decision: every `/api/v1` call except `GET /user` and `GET /config` needs the caller's
+  decision: every `/api/v1` call except `GET` (or `HEAD`) `/user` and `/config` needs the caller's
   `isProviderAdmin` review to pass (403 otherwise), until the backend authorizes the caller.

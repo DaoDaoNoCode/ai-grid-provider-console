@@ -330,3 +330,10 @@ Backend ask: the `Models` service and `Model` message as drafted in
 `mock/proto/ai_grid/v1/model*.proto`, with the phase derived server-side;
 `AiGrid/GetHubCapabilities`; the ManifestWorkReplicaSet feature gate on the hub
 (`mock/research/acm.md` open question 1).
+
+Open question for the backend team: a model in a namespace that does not exist. The fake creates
+it anyway (any namespace the request names is fine), while a real API server answers the
+LLMInferenceService create with NotFound (`namespaces "<ns>" not found`). Whether the backend
+creates the namespace first, refuses with NotFound (404 through the BFF) or something else is
+not decided; the console creates models in `MODELS_NAMESPACE` (`ai-grid-models`), which the
+deployment has to provide meanwhile. The fake is left as it is until the backend decides.

@@ -103,12 +103,12 @@ under `/perses/api`.
 
 | Method | Path | Returns | Backend RPC |
 |---|---|---|---|
-| GET | `/healthcheck` | `{status, version}` | none; liveness, no auth |
-| GET | `/readyz` | `{status, version, backend}` | `AiGrid/Ping`; readiness, 503 when the backend does not answer |
+| GET | `/healthcheck` | `{status, version}` | none; no identity and no backend call: a check, by a person or a script on the pod, that the BFF process serves HTTP and which build it is (`version`). No probe uses it: the kubelet probes only `/readyz` (below), and there is deliberately no liveness probe, which would restart the BFF whenever the proxy in front of it is down. Through the route it is behind the login like any page (the proxy skips auth for `/readyz` only) |
+| GET | `/readyz` | `{status, version, backend}` | `AiGrid/Ping`; readiness, 503 when the backend does not answer. The pod is then unready, and with the one replica the chart runs, the Service has no endpoint left: the OpenShift router answers every request with its own 503 page (HTML, not this API's JSON error), until the backend answers again |
 | GET | `/api/v1/user` | `{username, email?, groups, isProviderAdmin}` (`email` omitted when the proxy sends none) | none; the identity from the proxy headers, `isProviderAdmin` from a hub `SelfSubjectAccessReview` |
 | GET | `/api/v1/config` | `{gridEndpoint, mapTileUrl, mapTileAttribution, billingUrl, version, modelsNamespace, fakeBackend, monitoring: {enabled, persesProject}}`: `modelsNamespace` is the namespace the console creates models in (default `ai-grid-models`), `fakeBackend` makes the UI show its fake-backend banner, `monitoring.enabled` says the BFF relays `/perses/api` (it has a `PERSES_URL`) and `monitoring.persesProject` names the Perses project whose `dashboard-*` objects are the Monitoring tabs (empty: every project the caller may read) | none; env `GRID_CONSUMER_URL`, `MAP_TILE_URL`, `MAP_TILE_ATTRIBUTION` (the attribution shown with `MAP_TILE_URL`'s tiles; with no `MAP_TILE_URL` the map draws a bundled land outline), `BILLING_URL`, `MODELS_NAMESPACE`, `FAKE_BACKEND`, `PERSES_URL`, `PERSES_PROJECT` |
-| GET | `/api/v1/clusters` | `GridCluster[]` sorted by name | `ManagedClusters/ListManagedClusters` |
-| GET | `/api/v1/clusters/{name}` | `GridCluster`, `ETag: "<resourceVersion>"` | `ManagedClusters/GetManagedCluster`; 404 with the backend's message when absent. Against a backend without that RPC (the shipped one answers `Unimplemented`) the BFF filters `ListManagedClusters` by name instead, so the detail works either way |
+| GET | `/api/v1/clusters` | `GridCluster[]` sorted by name; takes no query parameters yet (any is 422 `the clusters list takes no query parameters; filter, sort and page it in the client`) | `ManagedClusters/ListManagedClusters` |
+| GET | `/api/v1/clusters/{name}` | `GridCluster`, `ETag: "<resourceVersion>"` | `ManagedClusters/GetManagedCluster` (on the shipped backend, its `Clusters/Get`); 404 with the backend's message when absent. Against an older backend that answers `Unimplemented` the BFF filters `ListManagedClusters` by name instead, so the detail works either way; neither the fake nor the shipped backend needs that any more |
 | PATCH | `/api/v1/clusters/{name}` | `GridCluster` after the write, with its `ETag` | `UpdateManagedCluster` (no read first) with the present body fields as the object and the mask (`labels`, `annotations`) and `lock: true` on the `If-Match` version; an empty body is 422; 409 when the hub object is not at that version, 428 without `If-Match`, 422 on a bad body or `If-Match`, a coordinate annotation the backend refuses or a change to a key outside the console's (`ai-grid/*`, `location`), 413 over 1 MiB, 415 when the body is not `application/json` |
 | GET | `/api/v1/tenants?offset=&limit=&filter=` | `Tenant[]` in Keycloak's order (by name, the realm database's collation) plus `meta`; `filter` is a CEL expression the client writes, over `this` (a Tenant), see "Writes, versions and lists"; `limit` omitted returns everything; the removed `search` is 422 | `Tenants/ListTenants` with `offset`, `limit` and `filter` exactly as sent |
 | GET | `/api/v1/tenants/{id}` | `Tenant`, `ETag: "<resourceVersion>"` | `Tenants/GetTenant`; 404 with the backend's message when absent |
@@ -123,8 +123,8 @@ under `/perses/api`.
 | GET | `/api/v1/capabilities` | `{manifestWorkReplicaSetEnabled, observabilityInstalled, acmVersion}` | `AiGrid/GetHubCapabilities`; 501 against a backend without the RPC, which a client reads as "unknown" |
 | GET, POST | `/perses/api/<Perses API path>` | Perses's own answer, status and body unchanged, without `Set-Cookie` | none; the Monitoring page's relay to the hub's Perses (`PERSES_URL`), see "The Perses relay" |
 | GET | `/api/v1/locations` | `string[]`: the `location` labels a model can be placed on, in the backend's order | `Models/ListLocations` (proposal P7, `mock/proto/README.md`) |
-| GET | `/api/v1/subscriptions` | `Subscription[]` in the backend's order | `Subscriptions/ListSubscriptions` |
-| GET | `/api/v1/subscriptions/{name}` | `ETag: "<resourceVersion>"`, `{subscription, authPolicies, modelRegistrations, modelRefs}`: the subscription, the authorization policies that cover its models, the status of each referenced model's registration, and the referenced models in the `Model` JSON | `Subscriptions/GetSubscription`; 404 with the backend's message when absent |
+| GET | `/api/v1/subscriptions` | `Subscription[]` in the backend's order; takes no query parameters (any is 422, as for clusters) | `Subscriptions/ListSubscriptions` |
+| GET | `/api/v1/subscriptions/{name}` | `ETag: "<resourceVersion>"`, `{subscription, authPolicies, meteringMetadata?, modelRegistrations, modelRefs}`: the subscription, the authorization policies that cover its models, `meteringMetadata`, the subscription's `tokenMetadata` again, as the PoC's SubscriptionInfoResponse has it (omitted when the subscription has none), the status of each referenced model's registration, and the referenced models in the `Model` JSON | `Subscriptions/GetSubscription`; 404 with the backend's message when absent |
 | POST | `/api/v1/subscriptions` | 201, `{subscription, authPolicy?}`, `Location: /api/v1/subscriptions/{name}` | `Subscriptions/CreateSubscription` with `createAuthPolicy` from the body; 422 with `fieldErrors` on a bad body (a new subscription without `tokenMetadata.organizationId` is "Select an organization"), 409 on a taken name |
 | PUT | `/api/v1/subscriptions/{name}` | `{subscription}` after the write, with its `ETag` | `Subscriptions/UpdateSubscription`; the `If-Match` version is `object.resource_version` with `lock: true` (below), 409 when stale, 428 without `If-Match`, 422 with `fieldErrors` |
 | DELETE | `/api/v1/subscriptions/{name}` | 204 | `Subscriptions/DeleteSubscription` with the `If-Match` version as `resource_version`; 404 when absent, 409 when stale, 428 without `If-Match` |
@@ -366,7 +366,7 @@ a `spec.scaling.keda` block and is refused with the CRD's own messages when it c
 the scheduler are always managed; `rollout` without `placement` is 422. The display name and
 description go in `annotations` (`openshift.io/display-name`, `openshift.io/description`), as on
 PATCH; `displayName` and `description` are not body fields (422 unknown field). The same body
-rules as the other POSTs apply (unknown fields 422, over 1 MiB 413).
+rules as the other POSTs apply (unknown fields 422, over 1 MiB 413). Open question: a `namespace` that does not exist. The fake creates the model anyway, a real API server answers NotFound, and the backend has not decided whether it creates the namespace (`mock/areas/models.md`, "Remaining").
 
 `PATCH /api/v1/models/{namespace}/{name}` body, every field optional: `{"replicas", "runtimeImage",
 "env": [...], "placement": {...} | null, "rollout": {...}, "labels", "annotations"}`. A present
@@ -462,7 +462,7 @@ decides.
   Values are CEL string literals (escape `"` and `\`), and the whole expression is URL-encoded
   in the query. The field names are the proto's (`this.metadata.labels`, `this.domains`), so
   they are part of this HTTP contract: renaming a proto field breaks the filters clients have
-  written. `GET /clusters` takes no `filter` yet. CEL is strict: `contains` is a literal
+  written. `GET /clusters` and `GET /subscriptions` take no `filter` (nor any other parameter: 422). CEL is strict: `contains` is a literal
   substring (`%` and `_` match themselves), and indexing a missing map key is a `no such key`
   error, not false, so a label term without the `in` guard fails on the first model that lacks
   the label. A filter that does not compile, is not a bool or fails on an object is the
@@ -491,7 +491,7 @@ decides.
   code carries `fieldErrors`, whatever details the backend attached.
 - **Lists.** The console's pages send none of the list parameters (`offset`, `limit`,
   `filter`): Clusters, Organizations and Models fetch the whole list and filter, sort and page
-  in the browser. The subscriptions list takes no query parameters.
+  in the browser. The clusters and subscriptions lists take no query parameters: any is 422, so a client that sends `filter` or `limit` there gets an error, not the whole list. A repeated `offset` or `limit` is 422, like a repeated `filter`.
 
 ### Headers, caching and compression
 
@@ -589,7 +589,7 @@ exists; the frontend uses the mock service meanwhile.
 |---|---|---|---|
 | GET | `/api/v1/user` (`isProviderAdmin`) | Optional: `AiGrid/GetCurrentUser` returning roles, once the backend acts as the caller; today the BFF asks the hub directly | Step 1 |
 | GET/PATCH | `/api/v1/clusters[/{name}]` (implemented against the draft) | The backend has to ship the draft's `GetManagedCluster`, `UpdateManagedCluster` and the richer `ManagedCluster` (`mock/proto/ai_grid/v1/managed_cluster*.proto`), with `status.state` derived server-side; `patch` on managedclusters in its ClusterRole | Steps 2, 10 |
-| GET/POST/PATCH/DELETE | `/api/v1/tenants[/{id}]` (on the backend's `Tenants` RPCs) | A version on `TenantsDeleteRequest`; the draft `Tenant`'s `alias`, `enabled`, `description`, `attributes`, `domain_details` and `identity_provider`, if the console keeps them; `filter` evaluated on `List`; mutations gated on the provider-admin check | Step 6 |
+| GET/POST/PATCH/DELETE | `/api/v1/tenants[/{id}]` (on the backend's `Tenants` RPCs) | the draft `Tenant`'s `alias`, `enabled`, `description`, `attributes`, `domain_details` and `identity_provider`, if the console keeps them; `filter` evaluated on `List`; mutations gated on the provider-admin check | Step 6 |
 | GET/POST/PATCH/DELETE | `/api/v1/models[/{namespace}/{name}]`, GET `/api/v1/capabilities` (implemented against the draft) | The backend has to ship the draft's `Models` service and `Model` message (`mock/proto/ai_grid/v1/model*.proto`) over LLMInferenceService, Placement and ManifestWorkReplicaSet with the status derived server-side, and `AiGrid/GetHubCapabilities`; the `ManifestWorkReplicaSet` feature gate on the hub for multi-site models (`FailedPrecondition` otherwise) | Steps 3, 4 |
 | GET/POST/PUT/DELETE | `/api/v1/catalog[/{name}]` | `Catalog/*` on ConfigMaps | Step 9 |
 | GET/POST/PUT/DELETE | `/api/v1/subscriptions[/{name}]`, GET `/api/v1/grid/overview` (implemented against the draft) | The backend has to ship the draft's `Subscriptions` service and `Grid/GetOverview` (`mock/proto/ai_grid/v1/subscription*.proto`, `grid_service.proto`) with the POC's metric contract (requests, errors, latency, gpu from Thanos with a `cluster` label), and validate every subscription write itself ("The BFF is thin") | Steps 5, 8, 10 |
@@ -600,14 +600,16 @@ exists; the frontend uses the mock service meanwhile.
 
 | Situation | Status |
 |---|---|
+| A path under `/api/v1` that no route has | 404, `the requested resource could not be found` |
+| A known `/api/v1` path with a method it has no route for (`POST /clusters`) | 405 with `Allow` (`GET, HEAD`; a GET route also answers HEAD) and the JSON error shape, `POST is not allowed on /api/v1/clusters; use GET, HEAD`. It is checked after the identity and provider-admin checks, so a non-admin gets 403 |
 | Missing or malformed token header | 401 |
 | Hub rejects the token in the access review | 401 |
 | Hub unreachable, failing or slower than 5 s during the access review | 502, `the hub could not confirm the caller's permissions; try again`, detail in the BFF log (a slow hub is not the backend's 504) |
-| The access review says the caller may not patch ManagedClusters: every `/api/v1` request but `GET /user` and `GET /config` (the provider-admin check, until the backend authorizes the caller) | 403, `the console is for provider admins: the hub says you may not patch ManagedClusters` |
+| The access review says the caller is not a provider admin (may not patch ManagedClusters): every `/api/v1` request but `GET` (or `HEAD`) `/user` and `/config` (the provider-admin check, until the backend authorizes the caller) | 403, `this console is only for provider admins, users who may patch ManagedClusters on the hub, and the hub says you are not one` |
 | Backend `Unauthenticated` | 401 |
 | Backend `PermissionDenied` (the hub's RBAC denies the caller) | 403, backend message kept |
 | Backend `NotFound` | 404, backend message kept (`object with identifier '<name>' not found`) |
-| Invalid POST, PATCH or PUT body (unknown field, wrong type, trailing content), bad `offset`/`limit` query, a removed list parameter (`search`, `namespace`, `label`), malformed `If-Match` | 422, BFF message |
+| Invalid POST, PATCH or PUT body (unknown field, wrong type, trailing content), bad or repeated `offset`/`limit` query (`query parameter "offset" must be sent once`), any query parameter on `GET /clusters` or `GET /subscriptions`, a removed list parameter (`search`, `namespace`, `label`), malformed `If-Match` | 422, BFF message |
 | POST, PATCH or PUT body not declared `application/json` | 415, BFF message |
 | PATCH, PUT or DELETE without `If-Match`, or with `If-Match: *` | 428, BFF message |
 | `filter`, `limit` or `offset` against a backend whose list answer has no `total` | 501, BFF message |

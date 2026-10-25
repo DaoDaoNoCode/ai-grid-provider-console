@@ -14,8 +14,10 @@ type healthStatus struct {
 	Backend string `json:"backend,omitempty"`
 }
 
-// healthcheck is the liveness probe: the process serves HTTP. It needs no
-// identity and does not depend on the backend.
+// healthcheck says the process serves HTTP, and which build it is. It needs
+// no identity and does not depend on the backend. No probe uses it (the
+// deployment has no liveness probe, which would restart the BFF whenever the
+// proxy is down); it is for a person or a script checking the BFF itself.
 func (a *App) healthcheck(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, healthStatus{Status: "ok", Version: Version})
 }

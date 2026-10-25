@@ -168,8 +168,12 @@ func toTenant(t *aigridv1.Tenant) Tenant {
 
 // queryInt reads an optional non-negative integer query parameter. The
 // request fields are int32, so the value is parsed as one: a larger number
-// is 422 instead of wrapping on its way into the proto.
+// is 422 instead of wrapping on its way into the proto. A repeated one is
+// 422 too, like a repeated `filter`: there is no telling which one was meant.
 func queryInt(r *http.Request, name string) (*int, error) {
+	if len(r.URL.Query()[name]) > 1 {
+		return nil, Errorf(http.StatusUnprocessableEntity, fmt.Sprintf("query parameter %q must be sent once", name))
+	}
 	raw := strings.TrimSpace(r.URL.Query().Get(name))
 	if raw == "" {
 		return nil, nil
@@ -204,6 +208,16 @@ func listFilter(r *http.Request, removed ...string) (*string, error) {
 		return proto.String(f), nil
 	}
 	return nil, nil
+}
+
+// noQuery refuses query parameters on a list that takes none (clusters and
+// subscriptions: their requests carry no filter or page the BFF forwards), so
+// `?filter=false` is 422 rather than the whole list read as a filtered one.
+func noQuery(r *http.Request, what string) error {
+	if r.URL.RawQuery == "" {
+		return nil
+	}
+	return Errorf(http.StatusUnprocessableEntity, fmt.Sprintf("the %s list takes no query parameters; filter, sort and page it in the client", what))
 }
 
 // listTenants answers GET /api/v1/tenants?offset=&limit=&filter=. The

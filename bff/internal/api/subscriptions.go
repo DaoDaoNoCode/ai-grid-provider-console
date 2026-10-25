@@ -14,7 +14,12 @@ import (
 // subscription.
 
 // listSubscriptions answers GET /api/v1/subscriptions in the backend's order.
+// ListSubscriptionsRequest is empty, so any query parameter is 422 (noQuery).
 func (a *App) listSubscriptions(w http.ResponseWriter, r *http.Request) {
+	if err := noQuery(r, "subscriptions"); err != nil {
+		a.respondError(w, r, err)
+		return
+	}
 	ctx, cancel := a.backend.Context(r.Context())
 	defer cancel()
 	resp, err := a.backend.Subscriptions.ListSubscriptions(ctx, &aigridv1.ListSubscriptionsRequest{})

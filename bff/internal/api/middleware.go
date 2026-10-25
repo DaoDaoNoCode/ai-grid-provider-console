@@ -37,10 +37,11 @@ func (a *App) requireIdentity(next http.Handler) http.Handler {
 // ServiceAccount and authorizes nothing yet, and kube-auth-proxy admits any
 // OpenShift login, so without this any signed-in user could read every
 // cluster and tenant and write through the backend's rights. GET /user and
-// GET /config stay open: the UI needs them to say who the caller is.
+// GET /config stay open (and HEAD, which net/http routes to the same
+// handlers): the UI needs them to say who the caller is.
 func (a *App) requireProviderAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet && (r.URL.Path == APIPrefix+"/user" || r.URL.Path == APIPrefix+"/config") {
+		if (r.Method == http.MethodGet || r.Method == http.MethodHead) && (r.URL.Path == APIPrefix+"/user" || r.URL.Path == APIPrefix+"/config") {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -52,7 +53,7 @@ func (a *App) requireProviderAdmin(next http.Handler) http.Handler {
 		case err != nil:
 			a.respondError(w, r, fmt.Errorf("%w: provider-admin check for %s: %w", errHub, id.Username, err))
 		case !allowed:
-			a.respondError(w, r, Errorf(http.StatusForbidden, "the console is for provider admins: the hub says you may not patch ManagedClusters"))
+			a.respondError(w, r, Errorf(http.StatusForbidden, "this console is only for provider admins, users who may patch ManagedClusters on the hub, and the hub says you are not one"))
 		default:
 			next.ServeHTTP(w, r)
 		}

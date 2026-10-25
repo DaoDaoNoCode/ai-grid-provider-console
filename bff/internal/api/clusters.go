@@ -217,8 +217,13 @@ func (a *App) fetchClusters(r *http.Request) ([]GridCluster, error) {
 	return out, nil
 }
 
-// listClusters answers GET /api/v1/clusters.
+// listClusters answers GET /api/v1/clusters. It takes no query parameters
+// yet (noQuery).
 func (a *App) listClusters(w http.ResponseWriter, r *http.Request) {
+	if err := noQuery(r, "clusters"); err != nil {
+		a.respondError(w, r, err)
+		return
+	}
 	out, err := a.fetchClusters(r)
 	if err != nil {
 		a.respondError(w, r, err)
@@ -240,10 +245,11 @@ func (a *App) getCluster(w http.ResponseWriter, r *http.Request) {
 	writeData(w, http.StatusOK, toGridCluster(mc))
 }
 
-// fetchCluster reads one cluster with GetManagedCluster. The shipped backend
-// has only ListManagedClusters and answers Unimplemented; then the list is
-// filtered by name instead, so the detail endpoint keeps working until the
-// backend ships the RPC (the result is the same object either way).
+// fetchCluster reads one cluster with GetManagedCluster (the shipped
+// backend's Clusters/Get, v1.go). An older backend that has only the list
+// answers Unimplemented; then the list is filtered by name instead, so the
+// detail endpoint keeps working there too (the result is the same object
+// either way). Remove the fallback once no such backend is deployed.
 func (a *App) fetchCluster(ctx context.Context, name string) (*aigridv1.ManagedCluster, error) {
 	resp, err := a.backend.Clusters.GetManagedCluster(ctx, &aigridv1.GetManagedClusterRequest{Name: name})
 	if err == nil {
