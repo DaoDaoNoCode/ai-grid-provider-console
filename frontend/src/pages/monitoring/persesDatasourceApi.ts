@@ -1,7 +1,8 @@
 // The Perses DatasourceApi over the BFF's relay, after odh-dashboard's OdhDatasourceApi
 // (packages/observability). The dashboard components look datasources up here and send their
 // queries to the URLs buildProxyUrl returns; the relay forwards both to the hub's Perses with the
-// caller's own token, so Perses decides what the caller may read.
+// caller's own token, so Perses decides what the caller may read, within the one project the relay
+// passes and the global datasources.
 import type {
   DatasourceApi,
   DatasourceResource,
@@ -44,10 +45,21 @@ export class RelayDatasourceApi implements DatasourceApi {
     return list;
   }
 
+  /**
+   * The relay path of a project's or a global datasource's proxy. A datasource a dashboard defines
+   * has none: Perses would send the caller's token on to whatever server its author chose, so the
+   * relay refuses it (docs/plan/bff-api.md, "The Perses relay"). Perses calls this inside its async
+   * datasource lookup, so the throw becomes the panel's query error, shown in the panel.
+   */
   buildProxyUrl = ({ project, dashboard, name }: { project?: string; dashboard?: string; name: string }): string => {
-    let path = `${project || dashboard ? 'datasources' : 'globaldatasources'}/${encodeURIComponent(name)}`;
-    if (dashboard) path = `dashboards/${encodeURIComponent(dashboard)}/${path}`;
-    if (project) path = `projects/${encodeURIComponent(project)}/${path}`;
+    if (dashboard) {
+      throw new Error(
+        `The datasource ${name} is defined in the dashboard itself; the console queries only its project's and the global datasources.`,
+      );
+    }
+    const path = project
+      ? `projects/${encodeURIComponent(project)}/datasources/${encodeURIComponent(name)}`
+      : `globaldatasources/${encodeURIComponent(name)}`;
     return `${PERSES_API}/proxy/${path}`;
   };
 

@@ -27,10 +27,14 @@ describe('RelayDatasourceApi', () => {
     expect(api.buildProxyUrl({ project: 'open-cluster-management-observability', name: 'thanos' })).toBe(
       '/perses/api/proxy/projects/open-cluster-management-observability/datasources/thanos',
     );
-    expect(api.buildProxyUrl({ project: 'p', dashboard: 'd 1', name: 'a/b' })).toBe(
-      '/perses/api/proxy/projects/p/dashboards/d%201/datasources/a%2Fb',
-    );
+    expect(api.buildProxyUrl({ project: 'p', name: 'a/b' })).toBe('/perses/api/proxy/projects/p/datasources/a%2Fb');
     expect(api.buildProxyUrl({ name: 'global' })).toBe('/perses/api/proxy/globaldatasources/global');
+  });
+
+  it("refuses a datasource a dashboard defines, which the relay doesn't query", () => {
+    expect(() => api.buildProxyUrl({ project: 'p', dashboard: 'd', name: 'thanos' })).toThrow(
+      /defined in the dashboard/,
+    );
   });
 
   it("finds a named datasource, or the project's default one of the kind", async () => {
