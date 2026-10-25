@@ -47,8 +47,13 @@ the PoC; the browser tests use it. Run the pieces separately with `make dev-fake
 `make dev-frontend-fake`.
 
 The fake backend (`bff/cmd/fake-backend`) serves the backend's gRPC services from
-`fixtures/` and answers the BFF's access review like a hub would. Its gRPC services need
-`authorization` metadata like the real backend; the BFF forwards it from the proxy headers.
+`fixtures/` and answers the BFF's access review like a hub would. The fake hub answers one
+question only, the provider-admin check (`patch` on `managedclusters` in
+`cluster.open-cluster-management.io`); any other access review is a 400 that names both and is
+logged, so a BFF that asks the wrong question fails instead of being answered by token. Its gRPC services need
+`authorization` metadata like the real backend; the BFF forwards it from the proxy headers, with
+the user, email and groups percent-encoded (`docs/plan/bff-api.md`, Identity), and the fake
+decodes the user it logs and names in its 403 messages.
 Edit the fixtures and restart to change the fleet, the tenants or the models: `tenants.json`
 can reproduce a Keycloak that is unreachable or has no `ai-grid` realm, and
 `manifestWorkReplicaSetEnabled: false` in `settings.json` mirrors the dev hub: creating a

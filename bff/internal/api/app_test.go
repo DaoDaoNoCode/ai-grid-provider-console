@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"math"
@@ -198,6 +199,26 @@ func TestUserFromProxyHeaders(t *testing.T) {
 	}
 }
 
+// A proxy header with a name outside ASCII (an OpenShift group `équipe-ops`)
+// used to make every backend call 502: grpc-go refuses such metadata values.
+func TestNonASCIIIdentityReachesTheBackend(t *testing.T) {
+	fake := &backendtest.Fake{Tenants: []*aigridv1.Tenant{{Id: "t-1", Name: "acme"}}}
+	app := newTestApp(t, testConfig(t), fake)
+	req := asUser(http.MethodGet, "/api/v1/tenants")
+	req.Header.Set(config.DefaultAuthUserHeader, "rené")
+	req.Header.Set(config.DefaultAuthGroupsHeader, "équipe-ops,cluster-admins")
+	rec := serve(app, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /tenants as rené in équipe-ops: %d %s", rec.Code, rec.Body.String())
+	}
+	if got := fake.Metadata.Get("x-forwarded-user"); len(got) != 1 || got[0] != "ren%C3%A9" {
+		t.Fatalf("x-forwarded-user = %q, want it percent-encoded", got)
+	}
+	if got := fake.Metadata.Get("x-forwarded-groups"); len(got) != 1 || got[0] != "%C3%A9quipe-ops,cluster-admins" {
+		t.Fatalf("x-forwarded-groups = %q", got)
+	}
+}
+
 func TestOnlyProviderAdminsReachTheAPI(t *testing.T) {
 	cfg := testConfig(t)
 	patch := func() *http.Request {
@@ -319,6 +340,40 @@ func TestBackendErrorsMapToHTTP(t *testing.T) {
 	}
 }
 
+// A hub slower than the access review's timeout is the hub's failure (502
+// with the hub message), not the backend's 504; a slow backend stays 504.
+func TestSlowHubIs502AndSlowBackendIs504(t *testing.T) {
+	release := make(chan struct{})
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	defer slow.Close()
+	defer close(release) // before Close, which waits for the handler
+	hubClient, err := hub.New(hub.Config{URL: slow.URL, Timeout: 50 * time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := NewApp(testConfig(t), slog.New(slog.DiscardHandler), backendtest.Start(t, &backendtest.Fake{}), hubClient)
+	for _, path := range []string{"/api/v1/user", "/api/v1/tenants"} {
+		rec := serve(app, asUser(http.MethodGet, path))
+		if rec.Code != http.StatusBadGateway {
+			t.Fatalf("GET %s with a slow hub: %d %s, want 502", path, rec.Code, rec.Body.String())
+		}
+		if got := decodeError(t, rec).Error.Message; got != "the hub could not confirm the caller's permissions; try again" {
+			t.Fatalf("GET %s with a slow hub: message %q", path, got)
+		}
+	}
+
+	fake := &backendtest.Fake{Err: backendtest.Status(codes.DeadlineExceeded, "slow")}
+	rec := serve(newTestApp(t, testConfig(t), fake), asUser(http.MethodGet, "/api/v1/tenants"))
+	if rec.Code != http.StatusGatewayTimeout {
+		t.Fatalf("slow backend: %d %s, want 504", rec.Code, rec.Body.String())
+	}
+}
+
 func TestPanicBecomes500(t *testing.T) {
 	app := newTestApp(t, testConfig(t), nil)
 	h := app.recoverPanic(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic("boom") }))
@@ -352,6 +407,7 @@ func TestClassify(t *testing.T) {
 	}{
 		{Errorf(http.StatusTeapot, "x"), http.StatusTeapot},
 		{context.DeadlineExceeded, http.StatusGatewayTimeout},
+		{fmt.Errorf("%w: provider-admin check: %w", errHub, context.DeadlineExceeded), http.StatusBadGateway},
 		{backendtest.Status(codes.InvalidArgument, "x"), http.StatusUnprocessableEntity},
 		{backendtest.Status(codes.AlreadyExists, "x"), http.StatusConflict},
 		{backendtest.Status(codes.FailedPrecondition, "x"), http.StatusPreconditionFailed},

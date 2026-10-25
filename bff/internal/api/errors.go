@@ -69,11 +69,13 @@ func classify(err error) (int, string) {
 	if errors.As(err, &se) {
 		return se.status, se.message
 	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		return http.StatusGatewayTimeout, "the AI Grid backend did not answer in time"
-	}
+	// Before the deadline: a hub that is too slow (hub.Config's timeout) is a
+	// hub failure, not the backend's.
 	if errors.Is(err, errHub) {
 		return http.StatusBadGateway, "the hub could not confirm the caller's permissions; try again"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return http.StatusGatewayTimeout, "the AI Grid backend did not answer in time"
 	}
 	if st, ok := status.FromError(err); ok {
 		msg := st.Message()
