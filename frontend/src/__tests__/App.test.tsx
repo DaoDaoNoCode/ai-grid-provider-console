@@ -106,7 +106,7 @@ describe('App', () => {
     expect(screen.getByTestId('masthead-user')).not.toHaveTextContent('provider admin');
   });
 
-  it('shows a viewer one empty state instead of the pages, which then load nothing', async () => {
+  it('shows a viewer one empty state instead of the pages and their nav, which then load nothing', async () => {
     const service = new MockConsoleService({ username: 'viewer', groups: [], isProviderAdmin: false });
     const listClusters = vi.spyOn(service, 'listClusters');
     const user = userEvent.setup();
@@ -118,13 +118,33 @@ describe('App', () => {
     expect(
       await screen.findByRole('heading', { level: 1, name: 'This console is for provider admins' }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/You are signed in as viewer/)).toBeInTheDocument();
+    expect(screen.getByText(/You are signed in as viewer/)).toHaveTextContent(
+      'log out from the user menu and sign in as someone else',
+    );
     expect(screen.queryByTestId('clusters-table')).not.toBeInTheDocument();
+    // Every page would only answer 403, so there is no nav to them, nor a toggle for it.
+    expect(screen.queryByRole('navigation', { name: 'Console sections' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /navigation/ })).not.toBeInTheDocument();
     const calls = listClusters.mock.calls.length;
-    await user.click(screen.getByRole('link', { name: 'Organizations' }));
-    expect(screen.getByRole('heading', { level: 1, name: 'This console is for provider admins' })).toBeInTheDocument();
-    expect(screen.queryByText('Error loading organizations')).not.toBeInTheDocument();
+    // The masthead stays, with the user menu.
+    await user.click(screen.getByRole('button', { name: 'User menu: viewer' }));
+    expect(screen.getByRole('menuitem', { name: 'Log out' })).toBeVisible();
     expect(listClusters).toHaveBeenCalledTimes(calls);
+  });
+
+  it('does not tell a viewer on the fake backend to log out, where there is no Log out', async () => {
+    const service = new MockConsoleService({ username: 'viewer', groups: [], isProviderAdmin: false });
+    const config = await service.getConfig();
+    service.getConfig = async () => ({ ...config, fakeBackend: true });
+    render(
+      <MemoryRouter initialEntries={['/clusters']}>
+        <App service={service} />
+      </MemoryRouter>,
+    );
+    await screen.findByText(/^Fake backend:/);
+    const body = await screen.findByText(/You are signed in as viewer/);
+    expect(body).not.toHaveTextContent('log out');
+    expect(body).toHaveTextContent('The fake backend has no login');
   });
 
   it('shows the pages when the user could not be loaded, without admin actions', async () => {

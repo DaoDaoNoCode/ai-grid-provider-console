@@ -108,8 +108,12 @@ export const App: React.FC<Props> = ({ service: given, navigation = browserNavig
       navigation.assign(signInAgain);
     }
   }, [sessionEnd, navigation, signInAgain]);
-  // Once the session has ended no page is left to show, nor a nav that leads to one.
-  const fullPage = sessionEnd !== undefined;
+  // Once the session has ended no page is left to show, nor a nav that leads to one; nor for a
+  // user the hub says is no provider admin (only an answer that says so, never a user still
+  // loading or failing to load), to whom every page would answer 403.
+  const notAdmin = user?.isProviderAdmin === false;
+  const fullPage = sessionEnd !== undefined || notAdmin;
+  const canSignOut = config?.fakeBackend !== true;
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [aboutOpen, setAboutOpen] = useState(false);
 
@@ -146,7 +150,7 @@ export const App: React.FC<Props> = ({ service: given, navigation = browserNavig
                 user={user}
                 loaded={userLoaded}
                 error={userError}
-                canSignOut={config?.fakeBackend !== true}
+                canSignOut={canSignOut}
                 onAbout={() => setAboutOpen(true)}
               />
             </ToolbarItem>
@@ -181,9 +185,8 @@ export const App: React.FC<Props> = ({ service: given, navigation = browserNavig
       }}
       onReload={navigation.reload}
     />
-  ) : user?.isProviderAdmin === false ? (
-    // Only an answer that says so, never a user still loading or failing to load.
-    <ProviderAdminsOnly username={user.username} />
+  ) : notAdmin ? (
+    <ProviderAdminsOnly username={user.username} canSignOut={canSignOut} />
   ) : (
     <AppRoutes service={service} />
   );
