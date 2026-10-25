@@ -47,7 +47,9 @@ and a free local port. The forward listens on one loopback address only, reconne
 replaces the pod, and creates nothing on the cluster. Pages whose RPCs the backend doesn't serve
 yet say "not available on this backend yet".
 
-For the Monitoring page, `make start` also forwards the hub's Perses
+For the Monitoring page, set `PERSES_PROJECT` to the Perses project whose `dashboard-*` objects are
+the tabs (the relay reads only that project; without it Monitoring stays off). `make start` then
+also forwards the hub's Perses
 (`openshift-cluster-observability-operator/perses`, `PERSES_NAMESPACE`, `PERSES_SERVICE`) to
 `127.0.0.1:9445` (`PERSES_ADDRESS`, `hack/forward-perses.sh`) and points the BFF at it, verifying
 its certificate with the hub's service CA (`hack/service-ca.sh`). That forward grants nothing:

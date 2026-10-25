@@ -24,10 +24,12 @@ help: ## Show targets
 
 start: dev-cluster ## Same as dev-cluster: oc login, then make start
 
-dev-cluster: ## The console as the hub serves it: its deployed backend (port-forwarded to :9090), the hub's Perses (to :9445, when you may forward it), the BFF on :8080 and the frontend on :9000
+dev-cluster: ## The console as the hub serves it: its deployed backend (port-forwarded to :9090), the hub's Perses (to :9445, with PERSES_PROJECT set and when you may forward it), the BFF on :8080 and the frontend on :9000
 	@BACKEND_ADDRESS=$(BACKEND_ADDRESS) hack/forward-backend.sh --check
 	@trap 'kill 0' INT TERM; \
-	if [ -z "$$PERSES_URL" ] && PERSES_ADDRESS=$(PERSES_ADDRESS) PERSES_NAMESPACE=$(PERSES_NAMESPACE) PERSES_SERVICE=$(PERSES_SERVICE) hack/forward-perses.sh --check && \
+	if [ -z "$$PERSES_URL" ] && [ -z "$$PERSES_PROJECT" ]; then \
+		echo "==> Monitoring off: set PERSES_PROJECT to the Perses project whose dashboard- objects are the tabs"; \
+	elif [ -z "$$PERSES_URL" ] && PERSES_ADDRESS=$(PERSES_ADDRESS) PERSES_NAMESPACE=$(PERSES_NAMESPACE) PERSES_SERVICE=$(PERSES_SERVICE) hack/forward-perses.sh --check && \
 		ca=$${PERSES_CA_FILE:-$$(hack/service-ca.sh $(PERSES_NAMESPACE))}; then \
 		$(MAKE) -s dev-forward-perses & \
 		export PERSES_URL=https://$(PERSES_ADDRESS) PERSES_SERVER_NAME=$(PERSES_SERVICE).$(PERSES_NAMESPACE).svc PERSES_CA_FILE="$$ca"; \
