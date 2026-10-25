@@ -147,8 +147,10 @@ spec:
             # The Monitoring page: the BFF relays /perses/api to this Perses with the caller's token.
             - name: PERSES_URL
               value: {{ .url | quote }}
+            # Required: Perses sends the caller's token on to the datasources it queries, so the relay
+            # reads one project, whose dashboards and datasources only provider admins may write.
             - name: PERSES_PROJECT
-              value: {{ .project | quote }}
+              value: {{ required "console.perses.project must be set with console.perses.url: the one Perses project Monitoring reads, whose dashboards and datasources only provider admins may write" .project | quote }}
             {{- with .caFile }}
             - name: PERSES_CA_FILE
               value: {{ . | quote }}
