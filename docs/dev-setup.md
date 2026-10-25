@@ -12,6 +12,8 @@ sends your name and token the way kube-auth-proxy would, and the BFF forwards th
 - Go 1.26 or newer, `golangci-lint`
 - Node 22 and pnpm 11 (`npm install -g pnpm@11.22.0`)
 - `oc`, `kustomize`, `jq`
+- For the chart and the image: `helm` and `yq` (mikefarah v4) for `make chart-check`; docker or
+  podman for `make image`; docker, `kind`, `kubectl` and `openssl` for `make chart-test`
 - To run against a real hub or deploy (not for `make dev-fake`): `oc login` to an ACM hub. The
   BFF asks that hub whether you may patch `ManagedClusters` (`isProviderAdmin`), using your token.
 
@@ -33,10 +35,13 @@ Open http://127.0.0.1:9000. `make start` needs the console deployed on the hub (
 container of `ai-grid/ai-grid-provider-console` (`NAMESPACE`, `DEPLOYMENT`) with `oc port-forward`,
 so you see what the deployed console shows, from the same backend build, ServiceAccount, RBAC and
 Keycloak. Writes are real and go through the deployed backend's ServiceAccount, so they work
-exactly where the deployed console's do. On a hub set up by ai-grid-env-setup, which grants that
-ServiceAccount `patch` on ManagedClusters, Add to AI Grid and Remove change the hub's clusters. With
-`make deploy` alone, the chart grants only `get`, `list` and `watch` (unless
-`HELM_ARGS="--set backend.clusterWrites=true"`), so they are refused (403). Organization writes answer 501 until the backend serves them. Before it starts
+exactly where the deployed console's do. On a hub set up by ai-grid-env-setup, which deploys the
+chart with `backend.clusterWrites: true` (`patch` on ManagedClusters for that ServiceAccount),
+Add to AI Grid and Remove change the hub's clusters. With `make deploy` alone, the chart grants
+only `get`, `list` and `watch` (unless `HELM_ARGS="--set backend.clusterWrites=true"`), so they
+are refused (403). Organization create, update and delete go to the backend's Tenants RPCs and
+change the hub's Keycloak; one that sets a field the backend's tenant doesn't have answers 501.
+Before it starts
 anything, `make start` checks your login, `pods/portforward` in the namespace, an available pod
 and a free local port. The forward listens on one loopback address only, reconnects when a rollout
 replaces the pod, and creates nothing on the cluster. Pages whose RPCs the backend doesn't serve
@@ -53,9 +58,9 @@ yourself wins, and no forward starts.
 
 Treat `pods/portforward` in the console's namespace as provider-admin access. Until the backend
 authorizes the caller, anyone who can port-forward there reaches the backend directly, here or with
-a plain `oc port-forward`, and acts with its ServiceAccount's rights: those of
-the chart's (`templates/rbac.yaml`), or what the deployment adds (ai-grid-env-setup's
-`apps/console/manifests` grants `patch` on ManagedClusters). The local BFF's `isProviderAdmin`
+a plain `oc port-forward`, and acts with its ServiceAccount's rights: those the chart grants
+(`templates/rbac.yaml`), which include `patch` on ManagedClusters when the chart value
+`backend.clusterWrites` is on, as ai-grid-env-setup deploys it. The local BFF's `isProviderAdmin`
 check is a convenience, not a boundary: whoever runs the forward can call the backend without it.
 
 To run your own backend instead, start it in a checkout of the backend repository, then run
@@ -127,7 +132,8 @@ defaults to the in-cluster API server), `HUB_CA_FILE`, `BIND_ADDRESS` (default `
 `PERSES_PROJECT` (the Perses relay, `docs/plan/bff-api.md`),
 `AUTH_TOKEN_HEADER`, `AUTH_USER_HEADER`, `AUTH_EMAIL_HEADER`, `AUTH_GROUPS_HEADER`,
 `GRID_CONSUMER_URL`, `MAP_TILE_URL`, `MAP_TILE_ATTRIBUTION`, `BILLING_URL`, `LOG_LEVEL`, `AUTH_TOKEN_PREFIX`,
-`CERT_FILE`, `KEY_FILE`, `STATIC_ASSETS_DIR`. Run `go run ./cmd --help`
+`MODELS_NAMESPACE` (the namespace the console creates models in), `FAKE_BACKEND` (the backend is
+the fake; the UI shows a banner), `CERT_FILE`, `KEY_FILE`, `STATIC_ASSETS_DIR`. Run `go run ./cmd --help`
 in `bff/` for the flags.
 
 ## Checks
@@ -139,8 +145,11 @@ make build   # BFF binary and frontend bundle
 ```
 
 CI runs the same plus `make -C bff check-generated` (a fresh generation in a temporary
-directory must match `bff/gen`, file for file), `kustomize build` and a container image
-build. A separate nightly workflow (`.github/workflows/drift.yaml`, also runnable by hand)
+directory must match `bff/gen`, file for file), the browser tests, `kustomize build`,
+`make chart-check`, `make chart-test` and, after a merge, the container image build. Its last
+job, `CI passed`, fails unless every job a pull request runs succeeded; that is the check the
+`main` ruleset should require, since GitHub counts a skipped job as passing. A separate
+nightly workflow (`.github/workflows/drift.yaml`, also runnable by hand)
 refreshes the vendored backend proto from the backend's `main` in the runner's checkout and
 runs the drift test, so a backend change to a message or RPC the BFF uses is reported the day
 after it merges.
@@ -190,6 +199,10 @@ as `pr-<number>` (deleted when it closes). Deploy a published image with
 `IMAGE=ghcr.io/ai-grid-cloud/ai-grid-provider-console TAG=sha-<full commit>`, or build your own.
 A new ghcr package starts private: when CI first publishes a new image, an organization owner
 sets the package's visibility to Public, or clusters need a pull secret.
+
+`make deploy` needs `TAG`: `:dev` is never published, and the Recreate rollout stops the running
+pod before the new one pulls, so a tag the registry lacks takes the console down. `make image`
+builds for `PLATFORM`, `linux/amd64` by default, so a build on an arm64 Mac runs on the hub.
 
 ```sh
 make image IMAGE=quay.io/<you>/ai-grid-provider-console TAG=dev
@@ -241,9 +254,17 @@ The chart doesn't create the `OAuthClient`, the proxy's Secret or the backend's 
 need Helm's `lookup`, which returns nothing under `helm template` and Argo CD, so every render
 would make new ones.
 
-`manifests/base` stays until ai-grid-env-setup deploys the chart. `make chart-check` (in CI) lints
-the chart and fails when its defaults render anything but `manifests/base`, Helm's own labels
-aside. The chart keeps the Deployment's selector of `manifests/base`, so a hub moves in place.
+`values.schema.json` lists every value: an unknown or misspelled key (`--set
+backend.clusterwrites=true`) fails the install instead of being ignored, so a new value goes in the
+schema too. `helm install` and `helm upgrade` print what the chart expects to exist
+(`templates/NOTES.txt`).
+
+The chart is the install path: ai-grid-env-setup deploys it (`apps/console`) and `hack/deploy.sh`
+installs it. `manifests/base` is not one any more; it is kept for `hack/undeploy.sh`'s fallback,
+which removes a console deployed before the chart, and for `make chart-test`'s takeover test.
+`make chart-check` (in CI) lints the chart and fails when its defaults render anything but
+`manifests/base`, Helm's own labels aside. The chart keeps the Deployment's selector of
+`manifests/base`, so a hub moves in place.
 
 `make chart-test` (in CI too) checks the chart on a throwaway kind cluster, without OpenShift: it
 installs the Route and ManagedCluster CRDs, a self-signed certificate and placeholder Secrets, then

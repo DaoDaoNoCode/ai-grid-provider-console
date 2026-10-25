@@ -2,8 +2,8 @@
 # Installs the Helm chart into a throwaway kind cluster and checks that the console works, without
 # OpenShift or a hub. kind gets the Route and ManagedCluster CRDs, a self-signed certificate in place
 # of the service CA's and placeholder secrets. Then:
-#   1. manifests/base is applied, then the chart's `helm template` output over it, as Argo CD would
-#      when ai-grid-env-setup moves to the chart: the Deployment's selector can't change, so this
+#   1. manifests/base is applied, then the chart's `helm template` output over it, as Argo CD did
+#      when ai-grid-env-setup moved to the chart: the Deployment's selector can't change, so this
 #      must apply in place. Then manifests/base again, taken over by a Helm release the way
 #      hack/deploy.sh does it (hack/chart-takeover.sh);
 #   2. helm install: the pod is ready, the proxy refuses a caller without a token, accepts a

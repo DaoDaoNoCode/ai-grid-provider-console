@@ -4,8 +4,9 @@
 #   - values.schema.json refuses a misspelled value instead of letting Helm drop it;
 #   - the Deployment's strategy is Recreate (one backend at a time);
 #   - with its default values, it renders the same objects as manifests/base, apart from the
-#     Namespace (Helm installs into one: --create-namespace) and Helm's own labels. ai-grid-env-setup
-#     still deploys manifests/base, so the two must not drift until it moves to the chart.
+#     Namespace (Helm installs into one: --create-namespace) and Helm's own labels. The chart is the
+#     install path; manifests/base is kept for hack/undeploy.sh's fallback and the takeover test
+#     (hack/test-chart-kind.sh), which only mean something while the two render the same.
 # Needs helm, kubectl (kustomize) and yq (mikefarah).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

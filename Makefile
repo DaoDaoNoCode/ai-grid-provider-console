@@ -106,7 +106,7 @@ image: ## Build the container image for PLATFORM (default linux/amd64)
 push: ## Push the container image
 	$(CONTAINER_ENGINE) push $(IMAGE):$(TAG)
 
-manifests: ## Render the kustomize manifests (ai-grid-env-setup's source until it moves to the chart)
+manifests: ## Render manifests/base (not an install path: the chart is; kept for undeploy's fallback and the takeover test)
 	kustomize build manifests/base
 
 chart-check: ## Lint the Helm chart and check its defaults render manifests/base
