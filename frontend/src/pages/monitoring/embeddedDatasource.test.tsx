@@ -33,28 +33,32 @@ const dashboard = {
  * Looks the datasource up as the store does for a panel's query (getDatasourceClient runs the same
  * lookup, then loads the plugin), and shows what it got.
  */
-const Lookup: React.FC = () => {
+const Lookup: React.FC<{ name?: string }> = ({ name }) => {
   const { getDatasource } = useDatasourceStore();
   const [outcome, setOutcome] = useState('looking up');
   useEffect(() => {
-    getDatasource({ kind: 'PrometheusDatasource', name: 'theirs' }).then(
+    getDatasource({ kind: 'PrometheusDatasource', name }).then(
       () => setOutcome("the dashboard's datasource"),
       (err: Error) => setOutcome(`error: ${err.message}`),
     );
-  }, [getDatasource]);
+  }, [getDatasource, name]);
   return <div data-testid="outcome">{outcome}</div>;
 };
 
 // Perses looks datasources up inside its async datasource store, so the refusal reaches the panel's
 // query as an error, which the panel shows in its own error boundary (dashboards PanelContent), and
 // nothing is sent to the relay.
-it("fails a panel's lookup of a datasource the dashboard defines, without a request", async () => {
+// By name, and as the default a panel gets when its query names no datasource.
+it.each([
+  ['by name', 'theirs'],
+  ['as the default', undefined],
+])("fails a panel's lookup of a datasource the dashboard defines (%s), without a request", async (_, name) => {
   const fetchFn = vi.fn<typeof fetch>();
   vi.stubGlobal('fetch', fetchFn);
   render(
     <PluginRegistry pluginLoader={pluginLoader}>
       <DatasourceStoreProvider dashboardResource={dashboard} datasourceApi={new RelayDatasourceApi()}>
-        <Lookup />
+        <Lookup name={name} />
       </DatasourceStoreProvider>
     </PluginRegistry>,
   );

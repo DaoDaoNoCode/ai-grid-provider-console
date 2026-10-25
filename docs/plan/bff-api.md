@@ -602,8 +602,9 @@ operator's Perses has a service-CA certificate, so without the CA file the relay
 The chart sets them from `console.perses` (`url`, `project`, and `caFile`, which defaults to that
 service CA), and fails to render with a `url` and no `project`; its default `url` is empty, as
 `manifests/base` sets neither, so a deployed console has Monitoring off until its values set
-`url`. `make start` forwards that Service when your login may (`hack/forward-perses.sh`); set
-`PERSES_PROJECT` for it, or the BFF doesn't start.
+`url`. `make start` forwards that Service when `PERSES_PROJECT` is set and your login may
+(`hack/forward-perses.sh`); without `PERSES_PROJECT` it runs with Monitoring off. A `PERSES_URL`
+you set yourself without `PERSES_PROJECT` stops the BFF at startup.
 
 The page (`frontend/src/pages/monitoring`): with `monitoring.enabled`, `/monitoring` lists the
 dashboards of `monitoring.persesProject` through the relay and shows each `dashboard-*` one as a
