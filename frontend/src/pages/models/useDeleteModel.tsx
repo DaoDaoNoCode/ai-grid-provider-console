@@ -9,8 +9,6 @@ import { ReferencingSubscriptions } from './ModelReferences';
 
 export type ModelDeleteService = ModelsService & Pick<SubscriptionsService, 'listSubscriptions'>;
 
-const keyOf = (model: ManagedModel) => `${model.namespace}/${model.name}`;
-
 const deleteErrorOf = (err: unknown) =>
   err instanceof ServiceError && err.isNotImplemented
     ? new Error('Deleting models is not available on this backend yet.')
@@ -20,36 +18,43 @@ const deleteErrorOf = (err: unknown) =>
 
 /**
  * Deleting a model deployment, the same from its list row and its page: returns `confirmDelete`
- * and the modal to render. `models` is the latest list, so a retry after a failed delete sends
- * the version the backend has now; `refresh` reloads it.
+ * and the modal to render. `refresh` reloads the page after a failed delete.
  */
 export const useDeleteModel = (
   service: ModelDeleteService,
-  { models, refresh, onDeleted }: { models: ManagedModel[]; refresh: () => void; onDeleted: () => void },
+  { refresh, onDeleted }: { refresh: () => void; onDeleted: () => void },
 ): [(model: ManagedModel) => void, React.ReactNode] => {
   const [selected, setSelected] = useState<ManagedModel>();
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<Error>();
+  const [reloadError, setReloadError] = useState<Error>();
 
   const confirmDelete = (model: ManagedModel) => {
     setSelected(model);
     setError(undefined);
+    setReloadError(undefined);
   };
 
   const remove = async () => {
     if (!selected || deleting) return;
     setDeleting(true);
     setError(undefined);
-    // The first attempt sends the version the user confirmed. After a failed delete the list
-    // reloads, so a retry sends the version the backend has now.
-    const current = error ? (models.find((m) => keyOf(m) === keyOf(selected)) ?? selected) : selected;
+    setReloadError(undefined);
+    // The first attempt sends the version the user confirmed. After a failed delete the dialog
+    // loads the model again and stays busy until it has, so a retry sends the version the backend
+    // has now.
     try {
-      await service.deleteModel(current.namespace, current.name, current.resourceVersion);
+      await service.deleteModel(selected.namespace, selected.name, selected.resourceVersion);
       setSelected(undefined);
       onDeleted();
     } catch (err) {
       setError(deleteErrorOf(err));
       refresh();
+      try {
+        setSelected(await service.getModel(selected.namespace, selected.name));
+      } catch (reloadErr) {
+        setReloadError(reloadErr instanceof Error ? reloadErr : new Error(String(reloadErr)));
+      }
     } finally {
       setDeleting(false);
     }
@@ -68,6 +73,7 @@ export const useDeleteModel = (
       onDelete={() => void remove()}
       deleting={deleting}
       error={error}
+      reloadError={reloadError}
       testId="delete-deployment-modal"
     >
       <Stack hasGutter>

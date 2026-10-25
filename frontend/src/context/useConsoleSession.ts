@@ -13,6 +13,8 @@ export type ConsoleSession = {
   userError?: Error;
   config?: ConsoleConfig;
   configError?: Error;
+  /** A call has answered 401: the console says so above every page, and pages stop polling. */
+  sessionEnded?: boolean;
 };
 
 export const ConsoleSessionContext = createContext<ConsoleSession>({ userLoaded: false });

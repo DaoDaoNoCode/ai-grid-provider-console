@@ -11,8 +11,8 @@ import { App } from '../App';
 import { ServiceError } from '../api/ConsoleService';
 import { HttpConsoleService } from '../api/HttpConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
-import type { OrganizationInput } from '../api/types';
-import { renderAt } from './render';
+import type { Organization, OrganizationInput } from '../api/types';
+import { deferred, renderAt } from './render';
 
 const input: Required<OrganizationInput> = {
   name: 'tenant1',
@@ -411,6 +411,28 @@ it('edit: clearing an existing identity provider is not a valid save', async () 
   expect(screen.getByRole('button', { name: 'Review' })).toBeDisabled();
 });
 
+it('leaves the create form out of history once the organization is created, so Back skips it', async () => {
+  let navigate: NavigateFunction = () => undefined;
+  const CaptureNavigate = () => {
+    navigate = useNavigate();
+    return null;
+  };
+  const user = userEvent.setup();
+  render(
+    <MemoryRouter initialEntries={['/clusters', '/organizations/create']} initialIndex={1}>
+      <CaptureNavigate />
+      <App service={new MockConsoleService()} />
+    </MemoryRouter>,
+  );
+  await user.type(await screen.findByRole('textbox', { name: 'Name' }), 'frontfix-1');
+  await user.click(screen.getByRole('button', { name: 'Next' }));
+  await user.click(screen.getByRole('button', { name: 'Next' }));
+  await user.click(screen.getByRole('button', { name: 'Create organization' }));
+  expect(await screen.findByText('Organization saved')).toBeVisible();
+  await act(async () => navigate(-1));
+  expect(await screen.findByRole('heading', { level: 1, name: 'Clusters' })).toBeVisible();
+});
+
 it('create without an identity provider sends none, and Review says so', async () => {
   const fetchFn = vi.fn(async (url: string, init?: RequestInit) =>
     init?.method === 'POST'
@@ -558,6 +580,61 @@ it('reloads an organization after a stale delete from its page, keeping the type
   await user.click(within(modal).getByRole('button', { name: 'Delete' }));
   expect(await screen.findByText('Organization deleted')).toBeVisible();
   expect(service.organizations.some((o) => o.id === organization.id)).toBe(false);
+});
+
+it('keeps the delete dialog busy until the reloaded organization is in, and says when the reload fails', async () => {
+  const service = new MockConsoleService();
+  const [organization] = service.organizations;
+  const user = userEvent.setup();
+  renderAt('/organizations', service);
+  await user.click(await screen.findByRole('button', { name: `Actions for ${organization.name}` }));
+  await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
+  const modal = await screen.findByTestId('delete-tenant-modal');
+  await user.type(within(modal).getByTestId('delete-modal-input'), organization.name);
+  service.organizations[0] = { ...organization, resourceVersion: String(Number(organization.resourceVersion) + 1) };
+  const deleteSpy = vi.spyOn(service, 'deleteOrganization');
+  const reload = deferred<Organization>();
+  const reloadSpy = vi.spyOn(service, 'getOrganization').mockReturnValueOnce(reload.promise);
+  await user.click(within(modal).getByRole('button', { name: 'Delete' }));
+  await waitFor(() => expect(reloadSpy).toHaveBeenCalledTimes(1));
+  // The reload is still out: Delete stays busy, so no retry with the stale version.
+  expect(within(modal).getByRole('button', { name: /Delete/ })).toBeDisabled();
+  await user.type(within(modal).getByTestId('delete-modal-input'), '{Enter}');
+  expect(deleteSpy).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    reload.resolve(service.organizations[0]);
+  });
+  expect(within(modal).getByRole('button', { name: 'Delete' })).toBeEnabled();
+
+  // A second stale delete whose reload fails says so.
+  service.organizations[0] = {
+    ...service.organizations[0],
+    resourceVersion: String(Number(service.organizations[0].resourceVersion) + 1),
+  };
+  reloadSpy.mockRejectedValueOnce(new ServiceError(503, 'Service unavailable.'));
+  await user.click(within(modal).getByRole('button', { name: 'Delete' }));
+  expect(await within(modal).findByText(/could not be loaded again: Service unavailable\./)).toBeVisible();
+  expect(within(modal).getByRole('button', { name: 'Delete' })).toBeEnabled();
+});
+
+it('moves focus to the previous domain on Remove domain, or to Add domain when none is left', async () => {
+  const user = userEvent.setup();
+  renderAt('/organizations/create', new MockConsoleService());
+  const add = await screen.findByRole('button', { name: 'Add domain' });
+  await user.click(add);
+  await user.type(screen.getByRole('textbox', { name: /^Domain 1/ }), 'one.example.com');
+  await user.click(add);
+  await user.type(screen.getByRole('textbox', { name: /^Domain 2/ }), 'two.example.com');
+  await user.click(add);
+  await user.click(screen.getByRole('button', { name: 'Remove domain 3' }));
+  expect(screen.getByRole('textbox', { name: /^Domain 2/ })).toHaveFocus();
+  // The first has no previous one: focus goes to the domain that takes its place.
+  await user.click(screen.getByRole('button', { name: 'Remove domain 1' }));
+  expect(screen.getByRole('textbox', { name: /^Domain 1/ })).toHaveFocus();
+  expect(screen.getByRole('textbox', { name: /^Domain 1/ })).toHaveValue('two.example.com');
+  await user.click(screen.getByRole('button', { name: 'Remove domain 1' }));
+  expect(screen.queryByRole('textbox', { name: /^Domain/ })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Add domain' })).toHaveFocus();
 });
 
 it('heads the wizard sections at h2, moves focus to an added domain, and names the delete field by its prompt', async () => {

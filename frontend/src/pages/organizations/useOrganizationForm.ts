@@ -73,7 +73,9 @@ export const useOrganizationForm = (service: OrganizationsService, initial?: Org
       } else {
         await service.createOrganization(input.data);
       }
+      // A created organization replaces its create form in history, so Back doesn't land on it, empty.
       navigate(initial ? `/organizations/${encodeURIComponent(initial.id)}` : '/organizations', {
+        replace: !initial,
         state: {
           notice: initial
             ? 'Organization configuration saved'

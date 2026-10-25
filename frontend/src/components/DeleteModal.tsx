@@ -26,6 +26,8 @@ type Props = {
   deleteName: string;
   submitButtonLabel?: string;
   error?: Error;
+  /** Loading the object again after a failed delete failed too, so a retry sends the old version. */
+  reloadError?: Error;
   children: React.ReactNode;
   testId?: string;
   genericLabel?: boolean;
@@ -40,6 +42,7 @@ export const DeleteModal: React.FC<Props> = ({
   onDelete,
   deleteName,
   error,
+  reloadError,
   submitButtonLabel = 'Delete',
   testId,
   genericLabel,
@@ -84,6 +87,7 @@ export const DeleteModal: React.FC<Props> = ({
                 variant="danger"
               >
                 {error.message}
+                {reloadError && <p>The latest version could not be loaded again: {reloadError.message}</p>}
               </Alert>
             </StackItem>
           )}

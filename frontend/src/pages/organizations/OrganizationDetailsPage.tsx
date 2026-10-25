@@ -25,7 +25,6 @@ export const OrganizationDetailsPage: React.FC<Props> = ({ service }) => {
   );
   const { user } = useConsoleSession();
   const [confirmDelete, deleteModal] = useDeleteOrganization(service, {
-    organizations: organization ? [organization] : [],
     refresh: () => void refresh(),
     onDeleted: () => navigate('/organizations', { state: { notice: 'Organization deleted' } }),
   });
@@ -50,7 +49,7 @@ export const OrganizationDetailsPage: React.FC<Props> = ({ service }) => {
   return (
     <>
       <PageHeader
-        title={organization?.name ?? 'Organization'}
+        title={organization?.name ?? id}
         status={organization && <StatusLabel status={organization.status} />}
         headerAction={actions}
         breadcrumb={

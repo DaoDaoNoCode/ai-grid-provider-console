@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { App } from '../App';
@@ -251,10 +251,11 @@ describe('an ended session', () => {
       throw expired();
     };
     const reload = vi.fn();
-    vi.stubGlobal('location', { ...window.location, reload });
+    const assign = vi.fn();
+    vi.stubGlobal('location', { ...window.location, reload, assign });
     const user = userEvent.setup();
     render(
-      <MemoryRouter initialEntries={['/clusters']}>
+      <MemoryRouter initialEntries={['/clusters?view=all#top']}>
         <App service={service} />
       </MemoryRouter>,
     );
@@ -268,8 +269,59 @@ describe('an ended session', () => {
     await user.click(screen.getByRole('button', { name: 'User menu: Not signed in' }));
     expect(screen.getByRole('menuitem', { name: 'Log out' })).toHaveAttribute('href', '/oauth2/sign_out');
 
+    // A reload would keep the login proxy's session cookie, with the token the hub rejected; signing
+    // out clears it and comes back here, through a new login.
+    await user.click(within(alert).getByRole('button', { name: 'Log in again' }));
+    expect(assign).toHaveBeenCalledWith('/oauth2/sign_out?rd=%2Fclusters%3Fview%3Dall%23top');
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('reloads on Log in again against the fake backend, where no login proxy runs', async () => {
+    const service = new MockConsoleService();
+    service.getConfig = async () => ({ ...(await new MockConsoleService().getConfig()), fakeBackend: true });
+    service.listClusters = async () => {
+      throw expired();
+    };
+    const reload = vi.fn();
+    const assign = vi.fn();
+    vi.stubGlobal('location', { ...window.location, reload, assign });
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/clusters']}>
+        <App service={service} />
+      </MemoryRouter>,
+    );
+    const alert = await screen.findByTestId('session-ended-alert');
+    await screen.findByText(/^Fake backend:/);
     await user.click(within(alert).getByRole('button', { name: 'Log in again' }));
     expect(reload).toHaveBeenCalled();
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it('stops polling once the session has ended', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      const service = new MockConsoleService();
+      render(
+        <MemoryRouter initialEntries={['/clusters']}>
+          <App service={service} />
+        </MemoryRouter>,
+      );
+      expect(await screen.findByRole('row', { name: /^site1 / })).toBeInTheDocument();
+      const poll = vi.spyOn(service, 'listClusters').mockRejectedValue(expired());
+      await act(async () => {
+        vi.advanceTimersByTime(30000);
+      });
+      expect(await screen.findByTestId('session-ended-alert')).toBeVisible();
+      expect(poll).toHaveBeenCalledTimes(1);
+      // Each further poll would only be another 401.
+      await act(async () => {
+        vi.advanceTimersByTime(120000);
+      });
+      expect(poll).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('keeps a loaded page when a later call answers 401, and adds the alert', async () => {

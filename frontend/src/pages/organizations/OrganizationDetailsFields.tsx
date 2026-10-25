@@ -37,6 +37,8 @@ const Help: React.FC<{ error?: string; children?: React.ReactNode }> = ({ error,
     </FormHelperText>
   ) : null;
 
+const ADD_DOMAIN_ID = 'tenant-add-domain';
+
 /** An organization's name and domains, with each error under its own field. */
 export const OrganizationDetailsFields: React.FC<Props> = ({
   value,
@@ -51,11 +53,20 @@ export const OrganizationDetailsFields: React.FC<Props> = ({
   const error = (path: string) => serverErrors[path] ?? (touched.has(path) ? errors[path] : undefined);
   const setDomain = (index: number, text: string) =>
     onChange({ ...value, domains: value.domains.map((old, i) => (i === index ? text : old)) });
-  const removeDomain = (index: number) => onChange({ ...value, domains: value.domains.filter((_, i) => i !== index) });
-  // "Add domain" moves focus to the field it adds, once that field has rendered.
-  const focusDomain = useRef<number | undefined>(undefined);
+  // The domain field (or "add", the Add domain button) to focus once the domains have rendered.
+  // "Add domain" moves focus to the field it adds.
+  const focusDomain = useRef<number | 'add' | undefined>(undefined);
+  // "Remove domain" takes its button away, so focus moves to the previous domain (the next one for
+  // the first), or to "Add domain" when none is left, rather than to the page's body.
+  const removeDomain = (index: number) => {
+    focusDomain.current = value.domains.length > 1 ? Math.max(index - 1, 0) : 'add';
+    onChange({ ...value, domains: value.domains.filter((_, i) => i !== index) });
+  };
   useEffect(() => {
-    if (focusDomain.current !== undefined && focusDomain.current < value.domains.length) {
+    if (focusDomain.current === 'add') {
+      document.getElementById(ADD_DOMAIN_ID)?.focus();
+      focusDomain.current = undefined;
+    } else if (focusDomain.current !== undefined && focusDomain.current < value.domains.length) {
       document.getElementById(`tenant-domain-${focusDomain.current}`)?.focus();
       focusDomain.current = undefined;
     }
@@ -118,6 +129,7 @@ export const OrganizationDetailsFields: React.FC<Props> = ({
         <Help error={listError} />
         <div>
           <Button
+            id={ADD_DOMAIN_ID}
             variant="link"
             isInline
             icon={<PlusCircleIcon />}

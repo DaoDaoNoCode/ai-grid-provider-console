@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ServiceError } from '../api/ConsoleService';
+import { useConsoleSession } from '../context/useConsoleSession';
 
 /**
- * Loads data from the service and optionally re-polls it.
+ * Loads data from the service and optionally re-polls it, until the session has ended.
  * Returns [data, loaded, error, refresh].
  */
 export const useServiceData = <T>(
@@ -13,6 +14,8 @@ export const useServiceData = <T>(
   const [data, setData] = useState<T>(initial);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<Error | undefined>();
+  // Once a call has answered 401, every poll would send the same rejected token.
+  const { sessionEnded } = useConsoleSession();
   const requestRef = useRef(request);
   // Numbers each request, so a response that arrives after a newer request was started is dropped.
   const latestRef = useRef(0);
@@ -51,34 +54,28 @@ export const useServiceData = <T>(
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    const run = async () => {
-      if (!cancelled) {
-        await refresh();
-      }
-    };
-    void run();
-    if (pollIntervalMs <= 0) {
-      return () => {
-        cancelled = true;
-      };
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    if (pollIntervalMs <= 0 || sessionEnded) {
+      return;
     }
     // A hidden tab skips its polls; shown again, it asks at once if the last answer is older than a poll.
     const timer = window.setInterval(() => {
-      if (!pendingRef.current && !document.hidden) void run();
+      if (!pendingRef.current && !document.hidden) void refresh();
     }, pollIntervalMs);
     const onVisibilityChange = () => {
       if (!document.hidden && !pendingRef.current && Date.now() - answeredAtRef.current >= pollIntervalMs) {
-        void run();
+        void refresh();
       }
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
-      cancelled = true;
       window.clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [refresh, pollIntervalMs]);
+  }, [refresh, pollIntervalMs, sessionEnded]);
 
   return [data, loaded, error, refresh];
 };

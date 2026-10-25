@@ -51,7 +51,6 @@ export const OrganizationListPage: React.FC<Props> = ({ service }) => {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<{ index: number; direction: 'asc' | 'desc' }>({ index: 0, direction: 'asc' });
   const [confirmDelete, deleteModal] = useDeleteOrganization(service, {
-    organizations,
     refresh: () => void refresh(),
     onDeleted: () => void refresh(),
   });

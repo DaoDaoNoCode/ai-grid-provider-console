@@ -34,7 +34,6 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
   const notFound = error instanceof ServiceError && error.status === 404;
   const model = notFound ? undefined : loadedModel;
   const [confirmDelete, deleteModal] = useDeleteModel(service, {
-    models: model ? [model] : [],
     refresh: () => void refresh(),
     onDeleted: () => navigate('/models', { state: { notice: 'Model deployment deleted' } }),
   });

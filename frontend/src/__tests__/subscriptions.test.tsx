@@ -15,7 +15,7 @@ import { MockConsoleService, seedSubscriptions } from '../api/MockConsoleService
 import type { ConditionStatus, MaaSSubscription } from '../api/types';
 import { isSameModel } from '../utilities/authpolicies';
 import { serviceOnPr12Json } from './pr12Json';
-import { renderAt } from './render';
+import { deferred, renderAt } from './render';
 
 /** A user the console couldn't load: the pages show, but without write actions. A viewer
  * (isProviderAdmin false) sees no pages at all (App.test.tsx). */
@@ -520,6 +520,27 @@ it('sends a re-added unlimited model with its new limits only', async () => {
   await screen.findByTestId('subscriptions-table');
 });
 
+it('leaves the create form out of history once the subscription is created, so Back skips it', async () => {
+  let navigate: NavigateFunction = () => undefined;
+  const Navigator = () => {
+    navigate = useNavigate();
+    return null;
+  };
+  const user = userEvent.setup();
+  render(
+    <MemoryRouter initialEntries={['/clusters', '/subscriptions/create']} initialIndex={1}>
+      <Navigator />
+      <App service={new MockConsoleService()} />
+    </MemoryRouter>,
+  );
+  await pickOrganization(user, 'acme-robotics');
+  await fillNewSubscription(user);
+  await user.click(screen.getByTestId('create-subscription-button'));
+  expect(await screen.findByText('Subscription created')).toBeVisible();
+  await act(async () => navigate(-1));
+  expect(await screen.findByRole('heading', { level: 1, name: 'Clusters' })).toBeVisible();
+});
+
 it.each(['view', 'edit'])('loads the other subscription when the name in /subscriptions/%s changes', async (page) => {
   let navigate: NavigateFunction = () => undefined;
   const Navigator = () => {
@@ -616,6 +637,43 @@ it('reloads a subscription after a stale delete, keeping the typed name, so a re
   await user.click(within(modal).getByRole('button', { name: 'Delete' }));
   expect(await screen.findByText('Subscription deleted')).toBeVisible();
   expect(service.subscriptions.some((s) => s.name === 'engineering')).toBe(false);
+});
+
+it('keeps the delete dialog busy until the reloaded version is in, and says when the reload fails', async () => {
+  const service = new MockConsoleService();
+  const user = userEvent.setup();
+  renderAt('/subscriptions/view/engineering', service);
+  await screen.findByTestId('subscription-details-section');
+  await user.click(screen.getByTestId('subscription-actions-toggle'));
+  await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
+  const modal = await screen.findByTestId('delete-subscription-modal');
+  await user.type(within(modal).getByTestId('delete-modal-input'), 'Engineering');
+  service.subscriptions = service.subscriptions.map((s) =>
+    s.name === 'engineering' ? { ...s, resourceVersion: String(Number(s.resourceVersion) + 1) } : s,
+  );
+  const deleteSpy = vi.spyOn(service, 'deleteSubscription');
+  const getInfo = service.getSubscriptionInfo.bind(service);
+  const reload = deferred<Awaited<ReturnType<typeof service.getSubscriptionInfo>>>();
+  const reloadSpy = vi.spyOn(service, 'getSubscriptionInfo').mockReturnValueOnce(reload.promise);
+  await user.click(within(modal).getByRole('button', { name: 'Delete' }));
+  await waitFor(() => expect(reloadSpy).toHaveBeenCalledTimes(1));
+  // The reload is still out: Delete stays busy, so no retry with the stale version.
+  expect(within(modal).getByRole('button', { name: /Delete/ })).toBeDisabled();
+  await user.type(within(modal).getByTestId('delete-modal-input'), '{Enter}');
+  expect(deleteSpy).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    reload.resolve(await getInfo('engineering'));
+  });
+  expect(within(modal).getByRole('button', { name: 'Delete' })).toBeEnabled();
+
+  // A second stale delete whose reload fails says so.
+  service.subscriptions = service.subscriptions.map((s) =>
+    s.name === 'engineering' ? { ...s, resourceVersion: String(Number(s.resourceVersion) + 1) } : s,
+  );
+  reloadSpy.mockRejectedValueOnce(new ServiceError(503, 'Service unavailable.'));
+  await user.click(within(modal).getByRole('button', { name: 'Delete' }));
+  expect(await within(modal).findByText(/could not be loaded again: Service unavailable\./)).toBeVisible();
+  expect(within(modal).getByRole('button', { name: 'Delete' })).toBeEnabled();
 });
 
 it('asks before Cancel discards the subscription form’s input', async () => {

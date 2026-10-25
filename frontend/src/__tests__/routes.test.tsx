@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
-import type { InitialEntry } from 'react-router-dom';
+import { MemoryRouter, useNavigate } from 'react-router-dom';
+import type { InitialEntry, NavigateFunction } from 'react-router-dom';
 import { App } from '../App';
 import { ServiceError } from '../api/ConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
@@ -109,15 +109,35 @@ describe('routes', () => {
   });
 
   it.each([
-    ['/models/ai-grid-models/nope', 'Model deployment not found', 'Go to Models', '/models'],
-    ['/models/ai-grid-models/nope/edit', 'Model deployment not found', 'Go to Models', '/models'],
-    ['/organizations/does-not-exist', 'Organization not found', 'Go to Organizations', '/organizations'],
-    ['/organizations/does-not-exist/edit', 'Organization not found', 'Go to Organizations', '/organizations'],
-    ['/subscriptions/view/nope', 'Subscription not found', 'Go to Subscriptions', '/subscriptions'],
-    ['/subscriptions/edit/nope', 'Subscription not found', 'Go to Subscriptions', '/subscriptions'],
-  ])('says a missing object is not found, the same way: %s', async (path, title, back, href) => {
+    ['/models/ai-grid-models/nope', 'nope', 'Model deployment not found', 'Go to Models', '/models'],
+    ['/models/ai-grid-models/nope/edit', 'Edit nope', 'Model deployment not found', 'Go to Models', '/models'],
+    [
+      '/organizations/does-not-exist',
+      'does-not-exist',
+      'Organization not found',
+      'Go to Organizations',
+      '/organizations',
+    ],
+    [
+      '/organizations/does-not-exist/edit',
+      'Edit does-not-exist',
+      'Organization not found',
+      'Go to Organizations',
+      '/organizations',
+    ],
+    ['/subscriptions/view/nope', 'nope', 'Subscription not found', 'Go to Subscriptions', '/subscriptions'],
+    [
+      '/subscriptions/edit/nope',
+      'Edit subscription',
+      'Subscription not found',
+      'Go to Subscriptions',
+      '/subscriptions',
+    ],
+  ])('says a missing object is not found, the same way: %s', async (path, h1, title, back, href) => {
     at(path);
     const state = await screen.findByTestId('not-found-state');
+    // The page's heading names the object that was asked for.
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(h1);
     expect(within(state).getByRole('heading', { name: title })).toBeVisible();
     expect(within(state).getByRole('link', { name: back })).toHaveAttribute('href', href);
     expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
@@ -192,6 +212,32 @@ describe('routes', () => {
     expect(await screen.findByText('Organization saved')).toBeInTheDocument();
     await user.click(screen.getByRole('link', { name: 'Models' }));
     await screen.findByRole('heading', { level: 1, name: 'Models' });
+    expect(screen.queryByText('Organization saved')).not.toBeInTheDocument();
+  });
+
+  it('does not show a notice again when Back returns to its page', async () => {
+    let navigate!: NavigateFunction;
+    const CaptureNavigate = () => {
+      navigate = useNavigate();
+      return null;
+    };
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={[{ pathname: '/clusters', state: { notice: 'Organization saved' } }]}>
+        <CaptureNavigate />
+        <App service={new MockConsoleService()} />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText('Organization saved')).toBeInTheDocument();
+    // Taking the notice out of the history entry doesn't close the toast.
+    await act(async () => {});
+    expect(screen.getByText('Organization saved')).toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: 'Models' }));
+    await screen.findByRole('heading', { level: 1, name: 'Models' });
+    await act(async () => {
+      await navigate(-1);
+    });
+    await screen.findByRole('heading', { level: 1, name: 'Clusters' });
     expect(screen.queryByText('Organization saved')).not.toBeInTheDocument();
   });
 

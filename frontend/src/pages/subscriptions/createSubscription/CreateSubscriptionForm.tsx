@@ -254,7 +254,9 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ service, modelRefs, su
         await service.createSubscription(request);
       }
       refresh();
+      // A created subscription replaces its create form in history, so Back doesn't land on it, empty.
       navigate(returnTo ?? getSectionUrl('subscriptions'), {
+        replace: !isEditing,
         state: { notice: isEditing ? 'Subscription updated' : 'Subscription created' },
       });
     } catch (e) {

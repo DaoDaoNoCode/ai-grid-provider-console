@@ -60,7 +60,6 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
   const [filter, setFilter] = useState('');
   const [sortBy, setSortBy] = useState<{ index: number; direction: 'asc' | 'desc' }>({ index: 0, direction: 'asc' });
   const [confirmDelete, deleteModal] = useDeleteModel(service, {
-    models: deployments,
     refresh: () => void refresh(),
     onDeleted: () => void refresh(),
   });

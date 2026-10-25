@@ -55,8 +55,8 @@ export const App: React.FC<Props> = ({ service: given }) => {
   const [user, userLoaded, userError] = useServiceData(() => service.getUser(), undefined, 0);
   const [config, , configError] = useServiceData(() => service.getConfig(), undefined, 0);
   const session = useMemo(
-    () => ({ user, userLoaded, userError, config, configError }),
-    [user, userLoaded, userError, config, configError],
+    () => ({ user, userLoaded, userError, config, configError, sessionEnded }),
+    [user, userLoaded, userError, config, configError, sessionEnded],
   );
   const { pathname } = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);

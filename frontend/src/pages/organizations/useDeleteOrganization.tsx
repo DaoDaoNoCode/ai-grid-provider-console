@@ -16,36 +16,43 @@ const deleteError = (err: unknown) =>
 /**
  * Deleting an organization, the same from its list row and its page: returns `confirmDelete`,
  * which opens the typed-name confirmation for an organization, and the modal to render.
- * `organizations` is the latest the page loaded, so a retry after a failed delete sends the
- * version the backend has now (as useDeleteModel does); `refresh` reloads them.
+ * `refresh` reloads the page after a failed delete.
  */
 export const useDeleteOrganization = (
   service: OrganizationsService,
-  { organizations, refresh, onDeleted }: { organizations: Organization[]; refresh: () => void; onDeleted: () => void },
+  { refresh, onDeleted }: { refresh: () => void; onDeleted: () => void },
 ): [(organization: Organization) => void, React.ReactNode] => {
   const [selected, setSelected] = useState<Organization>();
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<Error>();
+  const [reloadError, setReloadError] = useState<Error>();
 
   const confirmDelete = (organization: Organization) => {
     setSelected(organization);
     setError(undefined);
+    setReloadError(undefined);
   };
 
   const remove = async () => {
     if (!selected || deleting) return;
     setDeleting(true);
     setError(undefined);
-    // The first attempt sends the version the user confirmed. After a failed delete the page
-    // reloads, so a retry sends the version the backend has now; the typed name stays.
-    const current = error ? (organizations.find((o) => o.id === selected.id) ?? selected) : selected;
+    setReloadError(undefined);
+    // The first attempt sends the version the user confirmed. After a failed delete the dialog
+    // loads the organization again and stays busy until it has, so a retry sends the version the
+    // backend has now; the typed name stays.
     try {
-      await service.deleteOrganization(current.id, current.resourceVersion);
+      await service.deleteOrganization(selected.id, selected.resourceVersion);
       setSelected(undefined);
       onDeleted();
     } catch (err) {
       setError(deleteError(err));
       refresh();
+      try {
+        setSelected(await service.getOrganization(selected.id));
+      } catch (reloadErr) {
+        setReloadError(reloadErr instanceof Error ? reloadErr : new Error(String(reloadErr)));
+      }
     } finally {
       setDeleting(false);
     }
@@ -57,6 +64,7 @@ export const useDeleteOrganization = (
       deleteName={selected.name}
       deleting={deleting}
       error={error}
+      reloadError={reloadError}
       onClose={() => {
         if (!deleting) {
           setSelected(undefined);
