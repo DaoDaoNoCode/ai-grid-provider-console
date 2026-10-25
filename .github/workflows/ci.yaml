@@ -84,8 +84,16 @@ jobs:
           cache-dependency-path: frontend/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
         working-directory: frontend
-      - run: pnpm exec playwright install --with-deps chromium
+      # The browser download and apt fail now and then on a mirror; three tries before the job does.
+      - name: playwright install --with-deps chromium
         working-directory: frontend
+        run: |
+          for try in 1 2 3; do
+            pnpm exec playwright install --with-deps chromium && exit 0
+            echo "playwright install failed (try ${try} of 3)"
+            sleep $((try * 15))
+          done
+          exit 1
       - run: make e2e
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: failure()
@@ -114,6 +122,23 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       # kind, helm and kubectl come with the runner image.
       - run: hack/test-chart-kind.sh
+
+  # The one check the main ruleset needs to require. GitHub counts a skipped job as passing, and
+  # a job skipped because one it needs failed counts too, so requiring each job by name lets a PR
+  # merge with Browser tests or Helm chart on kind red. This job always runs and fails unless every
+  # job a pull request runs succeeded. Add a job a pull request runs to its needs.
+  passed:
+    name: CI passed
+    if: always()
+    needs: [bff, frontend, e2e, manifests, chart]
+    runs-on: ubuntu-latest
+    steps:
+      - name: every job succeeded
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<<"${NEEDS}"
+          jq -e 'all(.[]; .result == "success")' <<<"${NEEDS}" >/dev/null
 
   # Publishes ghcr.io/ai-grid-cloud/ai-grid-provider-console after every check passes, so a commit
   # whose checks failed never ships sha-*, latest or a version. Deploy the sha-<full sha> tag, not
