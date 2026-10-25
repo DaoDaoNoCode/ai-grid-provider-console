@@ -17,14 +17,18 @@ import {
   ToolbarContent,
   ToolbarItem,
 } from '@patternfly/react-core';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import type { ConsoleService } from './api/ConsoleService';
 import { AppRoutes } from './AppRoutes';
 import { FakeBackendBanner } from './components/FakeBackendBanner';
 import { NoticeToast } from './components/NoticeToast';
 import { AboutConsoleModal } from './components/AboutConsoleModal';
+import { ProviderAdminsOnly } from './components/ProviderAdminsOnly';
+import { SessionEndedAlert } from './components/SessionEndedAlert';
 import { UserMenu } from './components/UserMenu';
+import { watchSession } from './api/watchSession';
+import { ConsoleSessionContext } from './context/useConsoleSession';
 import { useServiceData } from './hooks/useServiceData';
 
 type Props = { service: ConsoleService };
@@ -40,9 +44,17 @@ const sections: { path: string; label: string; exact?: boolean }[] = [
   { path: '/subscriptions', label: 'Subscriptions' },
 ];
 
-export const App: React.FC<Props> = ({ service }) => {
+export const App: React.FC<Props> = ({ service: given }) => {
+  // Any call answered 401 means the session has ended; the console then says so once, for every page.
+  const [sessionEnded, setSessionEnded] = useState(false);
+  const service = useMemo(() => watchSession(given, () => setSessionEnded(true)), [given]);
+  // Loaded once here and given to every page through the session context.
   const [user, userLoaded, userError] = useServiceData(() => service.getUser(), undefined, 0);
-  const [config] = useServiceData(() => service.getConfig(), undefined, 0);
+  const [config, , configError] = useServiceData(() => service.getConfig(), undefined, 0);
+  const session = useMemo(
+    () => ({ user, userLoaded, userError, config, configError }),
+    [user, userLoaded, userError, config, configError],
+  );
   const { pathname } = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [aboutOpen, setAboutOpen] = useState(false);
@@ -102,10 +114,18 @@ export const App: React.FC<Props> = ({ service }) => {
   );
 
   return (
-    <Page isContentFilled masthead={header} sidebar={sidebar} banner={<FakeBackendBanner service={service} />}>
-      <NoticeToast />
-      <AppRoutes service={service} />
-      <AboutConsoleModal isOpen={aboutOpen} onClose={() => setAboutOpen(false)} config={config} user={user} />
-    </Page>
+    <ConsoleSessionContext.Provider value={session}>
+      <Page isContentFilled masthead={header} sidebar={sidebar} banner={<FakeBackendBanner />}>
+        {sessionEnded && <SessionEndedAlert />}
+        <NoticeToast />
+        {/* Only an answer that says so, never a user still loading or failing to load. */}
+        {user?.isProviderAdmin === false ? (
+          <ProviderAdminsOnly username={user.username} />
+        ) : (
+          <AppRoutes service={service} />
+        )}
+        <AboutConsoleModal isOpen={aboutOpen} onClose={() => setAboutOpen(false)} config={config} user={user} />
+      </Page>
+    </ConsoleSessionContext.Provider>
   );
 };

@@ -42,6 +42,28 @@ describe('routes', () => {
     }
   });
 
+  // Each /user is a hub access review: the shell loads the user and the config, and pages read them.
+  it.each([
+    '/ai-grid',
+    '/clusters',
+    '/organizations',
+    '/organizations/org-1',
+    '/models',
+    '/models/ai-grid-models/granite-3-8b',
+    '/subscriptions',
+    '/subscriptions/view/engineering',
+  ])('asks for the user and the config once: %s', async (path) => {
+    const service = new MockConsoleService();
+    const getUser = vi.spyOn(service, 'getUser');
+    const getConfig = vi.spyOn(service, 'getConfig');
+    at(path, service);
+    await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('dev-user'));
+    await screen.findByRole('heading', { level: 1 });
+    await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument());
+    expect(getUser).toHaveBeenCalledTimes(1);
+    expect(getConfig).toHaveBeenCalledTimes(1);
+  });
+
   // Review focus 1 (A33/C10): on the real backend, which has only Ping, ListManagedClusters and
   // ListTenants, every page that needs a missing RPC says so instead of showing an error.
   const orgs = 'Organizations are not available on this backend yet';

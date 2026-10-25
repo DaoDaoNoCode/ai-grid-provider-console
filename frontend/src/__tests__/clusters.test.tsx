@@ -371,10 +371,18 @@ it('sorts by role: clusters outside AI Grid, then members without a role, then b
   expect(names()).toEqual(['e-ingress', 'c-inference', 'd-combined', 'a-no-role', 'b-outside']);
 });
 
-it('hides write actions from a viewer', async () => {
-  const service = new MockConsoleService({ username: 'viewer', groups: [], isProviderAdmin: false });
+/** A user the console couldn't load: the pages show, but without write actions. A viewer
+ * (isProviderAdmin false) sees no pages at all (App.test.tsx). */
+const unknownUser = () => {
+  const service = new MockConsoleService();
+  service.getUser = () => Promise.reject(new ServiceError(500, 'unavailable'));
+  return service;
+};
+
+it('hides write actions until it knows the user is a provider admin', async () => {
+  const service = unknownUser();
   renderAt('/clusters', service);
-  await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('viewer'));
+  await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('User could not be loaded'));
   // site4 is both the name and the location, so find its row rather than the text.
   expect(await screen.findByRole('row', { name: /^site4 / })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /^Actions for / })).not.toBeInTheDocument();

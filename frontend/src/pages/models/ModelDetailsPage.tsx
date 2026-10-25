@@ -11,8 +11,8 @@ import {
   Stack,
 } from '@patternfly/react-core';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import type { UserService } from '../../api/ConsoleService';
 import type { ClustersService } from '../../api/clusters';
+import { ServiceError } from '../../api/ConsoleService';
 import type { ManagedModel } from '../../api/types';
 import { DetailsList } from '../../components/DetailsList';
 import { DetailsSection } from '../../components/DetailsSection';
@@ -20,6 +20,7 @@ import { LoadError } from '../../components/LoadError';
 import { PageHeader } from '../../components/PageHeader';
 import { PageLoading } from '../../components/PageLoading';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
+import { useConsoleSession } from '../../context/useConsoleSession';
 import { useServiceData } from '../../hooks/useServiceData';
 import { formatDateTime } from '../../utilities/format';
 import { locationLabel, modelPath, siteNamesOf } from './modelUtils';
@@ -28,18 +29,23 @@ import { hasModelStatusDetails, modelPhase, modelStatusTitle } from './modelStat
 import type { ModelDeleteService } from './useDeleteModel';
 import { useDeleteModel } from './useDeleteModel';
 
-type Props = { service: ModelDeleteService & UserService & Pick<ClustersService, 'listClusters'> };
+type Props = { service: ModelDeleteService & Pick<ClustersService, 'listClusters'> };
 
 /** A model deployment at /models/:namespace/:name: its status explained, its configuration and its locations. */
 export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
   const { namespace = '', name = '' } = useParams();
   const navigate = useNavigate();
-  const [models, loaded, error, refresh] = useServiceData<ManagedModel[]>(() => service.listModels(), []);
+  const [loadedModel, loaded, error, refresh] = useServiceData<ManagedModel | undefined>(
+    () => service.getModel(namespace, name),
+    undefined,
+  );
   const [clusters] = useServiceData(() => service.listClusters(), [], 0);
-  const [user] = useServiceData(() => service.getUser(), undefined, 0);
-  const model = models.find((m) => m.namespace === namespace && m.name === name);
+  const { user } = useConsoleSession();
+  // A 404 means the deployment is gone, even when an earlier answer is still held.
+  const notFound = error instanceof ServiceError && error.status === 404;
+  const model = notFound ? undefined : loadedModel;
   const [confirmDelete, deleteModal] = useDeleteModel(service, {
-    models,
+    models: model ? [model] : [],
     refresh: () => void refresh(),
     onDeleted: () => navigate('/models', { state: { notice: 'Model deployment deleted' } }),
   });
@@ -47,7 +53,7 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
   const siteNames = siteNamesOf(clusters);
 
   const body = () => {
-    if (error && !model) {
+    if (error && !model && !notFound) {
       return <LoadError subject="Models" error={error} />;
     }
     if (!model) {
@@ -140,11 +146,7 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
           </Breadcrumb>
         }
       />
-      {!(error && !model) && !loaded ? (
-        <PageLoading label="Loading model" />
-      ) : (
-        <PageSection isFilled>{body()}</PageSection>
-      )}
+      {!error && !loaded ? <PageLoading label="Loading model" /> : <PageSection isFilled>{body()}</PageSection>}
       {deleteModal}
     </>
   );

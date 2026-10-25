@@ -34,7 +34,13 @@ const input: CreateModelRequest = {
   runtimeArgs: [],
 };
 
-const viewer = { username: 'viewer', groups: [], isProviderAdmin: false };
+/** A user the console couldn't load: the pages show, but without write actions. A viewer
+ * (isProviderAdmin false) sees no pages at all (App.test.tsx). */
+const unknownUser = () => {
+  const service = new MockConsoleService();
+  service.getUser = () => Promise.reject(new ServiceError(500, 'unavailable'));
+  return service;
+};
 
 type User = ReturnType<typeof userEvent.setup>;
 
@@ -293,10 +299,10 @@ it('keeps input when saving fails', async () => {
   expect((await service.listModels()).find((m) => m.name === 'widget')?.locations).toEqual(['site1', 'site2']);
 });
 
-it('hides write actions from a viewer', async () => {
-  const service = new MockConsoleService(viewer);
+it('hides write actions until it knows the user is a provider admin', async () => {
+  const service = unknownUser();
   renderAt('/models', service);
-  await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('viewer'));
+  await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('User could not be loaded'));
   const table = await screen.findByTestId('model-deployments-table');
   expect(table).toHaveTextContent('Granite 3.3 8B Instruct');
   expect(screen.queryByRole('link', { name: 'Deploy model' })).not.toBeInTheDocument();
@@ -330,6 +336,7 @@ const serviceOnModelJson = (fetchFn: ReturnType<typeof vi.fn>) => {
   const service = new MockConsoleService();
   const http = new HttpConsoleService(fetchFn as unknown as typeof fetch);
   service.listModels = () => http.listModels();
+  service.getModel = (namespace, name) => http.getModel(namespace, name);
   service.listLocations = () => http.listLocations();
   service.createModel = (value) => http.createModel(value);
   service.deleteModel = (namespace, name, version) => http.deleteModel(namespace, name, version);
@@ -337,10 +344,26 @@ const serviceOnModelJson = (fetchFn: ReturnType<typeof vi.fn>) => {
   return service;
 };
 
+/** The BFF's GET /models/{namespace}/{name}: that model from the list, or a 404. */
+const oneModelJson = (url: string) => {
+  const [namespace, name] = url
+    .replace(/^.*\/models\//, '')
+    .split('/')
+    .map(decodeURIComponent);
+  const model = getModels.body.data.find((m) => m.namespace === namespace && m.name === name);
+  return model
+    ? jsonResponse(200, { data: model })
+    : jsonResponse(404, { error: { code: '404', message: `object with identifier '${namespace}/${name}' not found` } });
+};
+
+const isOneModel = (url: string, init?: RequestInit) =>
+  (init?.method ?? 'GET') === 'GET' && /\/models\/[^/]+\/[^/]+$/.test(url);
+
 const modelJsonFetch = () =>
   vi.fn(async (url: string, init?: RequestInit) => {
     if (init?.method === 'DELETE') return new Response(null, { status: 204 });
     if (url.endsWith('/locations')) return jsonResponse(200, { data: ['paris'] });
+    if (isOneModel(url, init)) return oneModelJson(url);
     return jsonResponse(200, { data: getModels.body.data });
   });
 
@@ -632,6 +655,20 @@ it('deletes a model from its page and returns to the list', async () => {
 it('says when a model page has no model', async () => {
   renderAt('/models/ai-grid-models/nope', new MockConsoleService());
   expect(await screen.findByText('Model deployment not found')).toBeVisible();
+});
+
+it('loads only the one model on its page and its edit page', async () => {
+  const service = new MockConsoleService();
+  const listModels = vi.spyOn(service, 'listModels');
+  const getModel = vi.spyOn(service, 'getModel');
+  const { name } = service.models[0];
+  const page = renderAt(`/models/ai-grid-models/${name}`, service);
+  expect(await screen.findByRole('heading', { level: 1, name: service.models[0].displayName })).toBeVisible();
+  page.unmount();
+  renderAt(`/models/ai-grid-models/${name}/edit`, service);
+  expect(await screen.findByRole('navigation', { name: 'Wizard steps' })).toBeVisible();
+  expect(getModel).toHaveBeenCalledWith('ai-grid-models', name);
+  expect(listModels).not.toHaveBeenCalled();
 });
 
 it('takes only whole numbers in the number fields, so the shown and sent counts agree', async () => {
@@ -938,6 +975,7 @@ describe('editing a model deployment', () => {
         return jsonResponse(422, { error: { code: '422', message: 'spec.main.image: Invalid value' } });
       }
       if (url.endsWith('/locations')) return jsonResponse(200, { data: ['paris'] });
+      if (isOneModel(url, init)) return oneModelJson(url);
       return jsonResponse(200, { data: getModels.body.data });
     });
     const user = userEvent.setup();

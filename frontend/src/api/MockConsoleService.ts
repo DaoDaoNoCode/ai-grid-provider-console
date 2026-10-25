@@ -190,6 +190,14 @@ export class MockConsoleService implements ConsoleService {
   listModels = async (): Promise<ManagedModel[]> =>
     structuredClone(this.models).sort((a, b) => a.name.localeCompare(b.name));
 
+  getModel = async (namespace: string, name: string): Promise<ManagedModel> => {
+    const model = this.models.find((m) => m.namespace === namespace && m.name === name);
+    if (!model) {
+      throw new ServiceError(404, `object with identifier '${namespace}/${name}' not found`);
+    }
+    return structuredClone(model);
+  };
+
   /** The PoC's eligibleLocations: Ready, provisioned AI Grid members' location labels. */
   listLocations = async (): Promise<string[]> =>
     [

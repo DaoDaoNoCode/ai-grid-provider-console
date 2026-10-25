@@ -17,7 +17,13 @@ import { isSameModel } from '../utilities/authpolicies';
 import { serviceOnPr12Json } from './pr12Json';
 import { renderAt } from './render';
 
-const viewer = { username: 'viewer', groups: [], isProviderAdmin: false };
+/** A user the console couldn't load: the pages show, but without write actions. A viewer
+ * (isProviderAdmin false) sees no pages at all (App.test.tsx). */
+const unknownUser = () => {
+  const service = new MockConsoleService();
+  service.getUser = () => Promise.reject(new ServiceError(500, 'unavailable'));
+  return service;
+};
 
 type User = ReturnType<typeof userEvent.setup>;
 
@@ -248,11 +254,11 @@ it('requires an organization and shows it in the table', async () => {
   expect(saved.tokenMetadata?.organizationId).toBe('8d2e7b31-0c4f-4a9d-b5e6-7f8a9b0c1d2e');
 }, 20000);
 
-it('hides write actions from a viewer', async () => {
-  const service = new MockConsoleService(viewer);
+it('hides write actions until it knows the user is a provider admin', async () => {
+  const service = unknownUser();
   const user = userEvent.setup();
   const { unmount } = renderAt('/subscriptions', service);
-  await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('viewer'));
+  await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('User could not be loaded'));
   const table = await screen.findByTestId('subscriptions-table');
   expect(within(table).getByRole('link', { name: 'Engineering' })).toBeVisible();
   expect(screen.queryByRole('link', { name: 'Create subscription' })).not.toBeInTheDocument();
@@ -265,7 +271,7 @@ it('hides write actions from a viewer', async () => {
 
   renderAt('/subscriptions/view/engineering', service);
   await screen.findByTestId('subscription-details-section');
-  await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('viewer'));
+  await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('User could not be loaded'));
   expect(screen.queryByTestId('subscription-actions-toggle')).not.toBeInTheDocument();
 });
 

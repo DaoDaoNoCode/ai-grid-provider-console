@@ -17,6 +17,7 @@ import { PageLoading } from '../../components/PageLoading';
 import { RefreshButton } from '../../components/RefreshButton';
 import { RelativeTime } from '../../components/RelativeTime';
 import { SubtleText } from '../../components/SubtleText';
+import { useConsoleSession } from '../../context/useConsoleSession';
 import { useServiceData } from '../../hooks/useServiceData';
 import { GridFleetView } from './GridFleetView';
 import { ObservabilityPanel } from './ObservabilityPanel';
@@ -47,7 +48,7 @@ export const GridPage: React.FC<Props> = ({ service, monitoring = false }) => {
     undefined,
   );
   const [models, , modelsLoadError, refreshModels] = useServiceData<ManagedModel[]>(() => service.listModels(), []);
-  const [config, , configError] = useServiceData(() => service.getConfig(), undefined, 0);
+  const { config, configError } = useConsoleSession();
   const [organizations, , organizationsLoadError, refreshOrganizations] = useServiceData<Organization[]>(
     () => (monitoring ? service.listOrganizations() : Promise.resolve([])),
     [],

@@ -1,6 +1,7 @@
 import { Breadcrumb, BreadcrumbItem, EmptyState, EmptyStateBody, PageSection } from '@patternfly/react-core';
 import { Link, useParams } from 'react-router-dom';
 import type { UserService } from '../../api/ConsoleService';
+import { ServiceError } from '../../api/ConsoleService';
 import type { ClustersService } from '../../api/clusters';
 import type { ModelsService } from '../../api/models';
 import type { ManagedModel } from '../../api/types';
@@ -19,8 +20,12 @@ type Props = { service: ModelsService & UserService & Pick<ClustersService, 'lis
  */
 export const ModelEditPage: React.FC<Props> = ({ service }) => {
   const { namespace = '', name = '' } = useParams();
-  const [models, loaded, error] = useServiceData<ManagedModel[]>(() => service.listModels(), [], 0);
-  const model = models.find((m) => m.namespace === namespace && m.name === name);
+  const [model, loaded, error] = useServiceData<ManagedModel | undefined>(
+    () => service.getModel(namespace, name),
+    undefined,
+    0,
+  );
+  const notFound = error instanceof ServiceError && error.status === 404;
   if (model) {
     return <ModelWizard key={`${namespace}/${name}`} service={service} model={model} />;
   }
@@ -45,7 +50,7 @@ export const ModelEditPage: React.FC<Props> = ({ service }) => {
         <PageLoading label="Loading model" />
       ) : (
         <PageSection isFilled>
-          {error ? (
+          {error && !notFound ? (
             <LoadError subject="Models" error={error} />
           ) : (
             <EmptyState titleText="Model deployment not found" headingLevel="h2">

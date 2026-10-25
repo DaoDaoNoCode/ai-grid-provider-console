@@ -49,7 +49,13 @@ const saveEdit = async (user: User) => {
   await openStep(user, 'Review');
   await user.click(screen.getByRole('button', { name: 'Save changes' }));
 };
-const viewer = { username: 'viewer', groups: [], isProviderAdmin: false };
+/** A user the console couldn't load: the pages show, but without write actions. A viewer
+ * (isProviderAdmin false) sees no pages at all (App.test.tsx). */
+const unknownUser = () => {
+  const service = new MockConsoleService();
+  service.getUser = () => Promise.reject(new ServiceError(500, 'unavailable'));
+  return service;
+};
 
 const fillRequiredIdp = async (user: ReturnType<typeof userEvent.setup>, values: [string, string][]) => {
   for (const [label, value] of values) {
@@ -277,10 +283,10 @@ it('keeps input on conflict', async () => {
   expect(service.organizations[0].resourceVersion).toBe('2');
 });
 
-it('hides write actions from a viewer', async () => {
-  const service = new MockConsoleService(viewer);
+it('hides write actions until it knows the user is a provider admin', async () => {
+  const service = unknownUser();
   const list = renderAt('/organizations', service);
-  await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('viewer'));
+  await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('User could not be loaded'));
   const table = await screen.findByTestId('tenants-table');
   expect(within(table).getByRole('link', { name: 'acme-robotics' })).toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Create organization' })).not.toBeInTheDocument();
@@ -289,7 +295,7 @@ it('hides write actions from a viewer', async () => {
   list.unmount();
 
   renderAt(`/organizations/${service.organizations[0].id}`, service);
-  await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('viewer'));
+  await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('User could not be loaded'));
   expect(await screen.findByRole('heading', { name: 'acme-robotics' })).toBeInTheDocument();
   expect(screen.queryByTestId('organization-actions')).not.toBeInTheDocument();
 });

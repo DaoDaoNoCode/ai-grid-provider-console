@@ -74,7 +74,7 @@ export const SubscriptionsTab: React.FC<Props> = ({ service }) => {
     return <PageLoading label="Loading subscriptions" />;
   }
 
-  if (error instanceof ServiceError && error.isNotImplemented) {
+  if (error instanceof ServiceError && (error.isNotImplemented || error.isUnauthenticated)) {
     return (
       <PageSection isFilled>
         <LoadError subject="Subscriptions" error={error} />

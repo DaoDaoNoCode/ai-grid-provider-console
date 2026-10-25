@@ -1,7 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
 import {
-  Alert,
-  AlertActionLink,
   Button,
   DescriptionList,
   DescriptionListDescription,
@@ -18,8 +16,6 @@ import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { ThProps } from '@patternfly/react-table';
 import { Link, useNavigate } from 'react-router-dom';
 import type { ClustersService, GridMembership } from '../../api/clusters';
-import type { UserService } from '../../api/ConsoleService';
-import { ServiceError } from '../../api/ConsoleService';
 import type { GridCluster } from '../../api/types';
 import { LoadError } from '../../components/LoadError';
 import { PageHeader } from '../../components/PageHeader';
@@ -30,6 +26,7 @@ import { SimpleMenuActions } from '../../components/SimpleMenuActions';
 import { StatusLabel } from '../../components/StatusLabel';
 import { ToolbarSearch } from '../../components/ToolbarSearch';
 import { TableEmptyRow } from '../../components/TableEmptyRow';
+import { useConsoleSession } from '../../context/useConsoleSession';
 import { useServiceData } from '../../hooks/useServiceData';
 import { EMPTY_VALUE } from '../../utilities/format';
 import type { MembershipChange } from './MembershipModal';
@@ -46,7 +43,7 @@ import { clusterRoles, roleOf } from './roles';
 // the console doesn't write either label. The Connection tooltip adds the ACM state behind Unknown (such as
 // Importing) and the backend's message, which the PoC's three states don't have.
 
-type Props = { service: ClustersService & UserService };
+type Props = { service: ClustersService };
 
 type Column = {
   label: string;
@@ -100,7 +97,7 @@ const cannotAddReason = (c: GridCluster) => {
 export const ClustersPage: React.FC<Props> = ({ service }) => {
   const navigate = useNavigate();
   const [clusters, loaded, error, refresh] = useServiceData<GridCluster[]>(() => service.listClusters(), []);
-  const [user] = useServiceData(() => service.getUser(), undefined, 0);
+  const { user } = useConsoleSession();
   const isProviderAdmin = !!user?.isProviderAdmin;
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<{ index: number; direction: 'asc' | 'desc' }>({ index: 0, direction: 'asc' });
@@ -153,19 +150,7 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
 
   const body = () => {
     if (error) {
-      if (error instanceof ServiceError && error.isNotImplemented) {
-        return <LoadError subject="Clusters" error={error} />;
-      }
-      return (
-        <Alert
-          isInline
-          variant="danger"
-          title="Error loading clusters"
-          actionLinks={<AlertActionLink onClick={reload}>Retry</AlertActionLink>}
-        >
-          {error.message}
-        </Alert>
-      );
+      return <LoadError subject="Clusters" error={error} title="Error loading clusters" onRetry={reload} />;
     }
     if (clusters.length === 0) {
       return (

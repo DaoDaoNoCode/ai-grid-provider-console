@@ -43,22 +43,24 @@ describe('App', () => {
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
   });
 
-  it('opens About from the user menu even when the user could not be loaded', async () => {
+  it('opens About and offers Log out from the user menu even when the user could not be loaded', async () => {
     const service = new MockConsoleService();
-    service.getUser = () => Promise.reject(new Error('unavailable'));
+    service.getUser = () => Promise.reject(new ServiceError(500, 'unavailable'));
     const user = userEvent.setup();
     render(
       <MemoryRouter>
         <App service={service} />
       </MemoryRouter>,
     );
-    await user.click(await screen.findByRole('button', { name: 'User menu: Not signed in' }));
-    expect(screen.queryByRole('menuitem', { name: 'Log out' })).not.toBeInTheDocument();
+    // Not a 401: somebody is signed in, the console just can't say who.
+    await user.click(await screen.findByRole('button', { name: 'User menu: User could not be loaded' }));
+    expect(screen.getByRole('menuitem', { name: 'Log out' })).toHaveAttribute('href', '/oauth2/sign_out');
     await user.click(screen.getByRole('menuitem', { name: 'About' }));
     expect(await screen.findByRole('dialog')).toHaveTextContent('Console version');
+    expect(screen.queryByTestId('session-ended-alert')).not.toBeInTheDocument();
   });
 
-  it('opens About while the user is still loading, without Log out', async () => {
+  it('opens About and offers Log out while the user is still loading', async () => {
     const service = new MockConsoleService();
     service.getUser = () => new Promise(() => {});
     const user = userEvent.setup();
@@ -69,7 +71,7 @@ describe('App', () => {
     );
     await user.click(await screen.findByRole('button', { name: 'User menu: Signing in...' }));
     expect(screen.getByRole('menuitem', { name: 'About' })).toBeVisible();
-    expect(screen.queryByRole('menuitem', { name: 'Log out' })).not.toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Log out' })).toBeVisible();
   });
 
   it('does not call a viewer a provider admin', async () => {
@@ -82,6 +84,40 @@ describe('App', () => {
 
     await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('viewer'));
     expect(screen.getByTestId('masthead-user')).not.toHaveTextContent('provider admin');
+  });
+
+  it('shows a viewer one empty state instead of the pages, which then load nothing', async () => {
+    const service = new MockConsoleService({ username: 'viewer', groups: [], isProviderAdmin: false });
+    const listClusters = vi.spyOn(service, 'listClusters');
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/clusters']}>
+        <App service={service} />
+      </MemoryRouter>,
+    );
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'This console is for provider admins' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/You are signed in as viewer/)).toBeInTheDocument();
+    expect(screen.queryByTestId('clusters-table')).not.toBeInTheDocument();
+    const calls = listClusters.mock.calls.length;
+    await user.click(screen.getByRole('link', { name: 'Organizations' }));
+    expect(screen.getByRole('heading', { level: 1, name: 'This console is for provider admins' })).toBeInTheDocument();
+    expect(screen.queryByText('Error loading organizations')).not.toBeInTheDocument();
+    expect(listClusters).toHaveBeenCalledTimes(calls);
+  });
+
+  it('shows the pages when the user could not be loaded, without admin actions', async () => {
+    const service = new MockConsoleService();
+    service.getUser = () => Promise.reject(new ServiceError(500, 'unavailable'));
+    render(
+      <MemoryRouter initialEntries={['/clusters']}>
+        <App service={service} />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByRole('row', { name: /^site1 / })).toBeInTheDocument();
+    expect(screen.queryByText('This console is for provider admins')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Actions for / })).not.toBeInTheDocument();
   });
 
   it('navigates to organizations and shows them', async () => {
@@ -179,5 +215,62 @@ describe('user menu', () => {
     expect(about).toHaveTextContent('Signed in asdev-user (provider admin)');
     await user.click(within(about).getByRole('button', { name: /close/i }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+});
+
+describe('an ended session', () => {
+  const expired = () => new ServiceError(401, 'missing x-forwarded-access-token');
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('shows one alert with Log in again instead of each page failing, and still offers Log out', async () => {
+    const service = new MockConsoleService();
+    service.getUser = async () => {
+      throw expired();
+    };
+    service.listClusters = async () => {
+      throw expired();
+    };
+    const reload = vi.fn();
+    vi.stubGlobal('location', { ...window.location, reload });
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/clusters']}>
+        <App service={service} />
+      </MemoryRouter>,
+    );
+    const alert = await screen.findByTestId('session-ended-alert');
+    expect(alert).toHaveTextContent('Your session has ended');
+    await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument());
+    expect(screen.getAllByTestId('session-ended-alert')).toHaveLength(1);
+    expect(screen.queryByText('Error loading clusters')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'User menu: Not signed in' }));
+    expect(screen.getByRole('menuitem', { name: 'Log out' })).toHaveAttribute('href', '/oauth2/sign_out');
+
+    await user.click(within(alert).getByRole('button', { name: 'Log in again' }));
+    expect(reload).toHaveBeenCalled();
+  });
+
+  it('keeps a loaded page when a later call answers 401, and adds the alert', async () => {
+    const service = new MockConsoleService();
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/clusters']}>
+        <App service={service} />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByRole('row', { name: /^site1 / })).toBeInTheDocument();
+    service.listClusters = async () => {
+      throw expired();
+    };
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(await screen.findByTestId('session-ended-alert')).toBeVisible();
+    expect(screen.getByRole('row', { name: /^site1 / })).toBeInTheDocument();
+    expect(screen.queryByText('Error loading clusters')).not.toBeInTheDocument();
+    expect(screen.getByTestId('masthead-user')).toHaveTextContent('dev-user');
   });
 });
