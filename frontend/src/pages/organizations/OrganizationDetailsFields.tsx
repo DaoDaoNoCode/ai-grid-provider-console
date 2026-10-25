@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Button,
   FormGroup,
@@ -52,6 +52,14 @@ export const OrganizationDetailsFields: React.FC<Props> = ({
   const setDomain = (index: number, text: string) =>
     onChange({ ...value, domains: value.domains.map((old, i) => (i === index ? text : old)) });
   const removeDomain = (index: number) => onChange({ ...value, domains: value.domains.filter((_, i) => i !== index) });
+  // "Add domain" moves focus to the field it adds, once that field has rendered.
+  const focusDomain = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (focusDomain.current !== undefined && focusDomain.current < value.domains.length) {
+      document.getElementById(`tenant-domain-${focusDomain.current}`)?.focus();
+      focusDomain.current = undefined;
+    }
+  });
   // A rule over all domains (they must be unique) shows once any domain was left.
   const listError =
     serverErrors.domains ?? ([...touched].some((path) => path.startsWith('domains.')) ? errors.domains : undefined);
@@ -79,7 +87,7 @@ export const OrganizationDetailsFields: React.FC<Props> = ({
           reason="The name can't be changed once the organization exists."
         />
       )}
-      <FormSection title="Domains" titleElement="h3">
+      <FormSection title="Domains" titleElement="h2">
         {value.domains.map((domain, index) => (
           <FormGroup key={index} label={`Domain ${index + 1}`} fieldId={`tenant-domain-${index}`} isRequired>
             <InputGroup>
@@ -114,7 +122,10 @@ export const OrganizationDetailsFields: React.FC<Props> = ({
             isInline
             icon={<PlusCircleIcon />}
             isDisabled={isDisabled}
-            onClick={() => onChange({ ...value, domains: [...value.domains, ''] })}
+            onClick={() => {
+              focusDomain.current = value.domains.length;
+              onChange({ ...value, domains: [...value.domains, ''] });
+            }}
           >
             Add domain
           </Button>

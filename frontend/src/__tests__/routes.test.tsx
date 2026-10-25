@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import type { InitialEntry } from 'react-router-dom';
@@ -184,5 +184,32 @@ describe('routes', () => {
   it('shows a success toast for a notice passed through navigation state', async () => {
     at({ pathname: '/clusters', state: { notice: 'Organization saved' } });
     expect(await screen.findByText('Organization saved')).toBeInTheDocument();
+  });
+
+  it('clears a success toast when the user moves on to another page', async () => {
+    const user = userEvent.setup();
+    at({ pathname: '/clusters', state: { notice: 'Organization saved' } });
+    expect(await screen.findByText('Organization saved')).toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: 'Models' }));
+    await screen.findByRole('heading', { level: 1, name: 'Models' });
+    expect(screen.queryByText('Organization saved')).not.toBeInTheDocument();
+  });
+
+  it('times a success toast out', async () => {
+    vi.useFakeTimers();
+    try {
+      at({ pathname: '/clusters', state: { notice: 'Organization saved' } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(screen.getByText('Organization saved')).toBeInTheDocument();
+      // PatternFly's 8 seconds, then its 3-second fade.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(11500);
+      });
+      expect(screen.queryByText('Organization saved')).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

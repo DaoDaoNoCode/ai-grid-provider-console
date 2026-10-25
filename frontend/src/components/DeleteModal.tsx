@@ -56,14 +56,15 @@ export const DeleteModal: React.FC<Props> = ({
           <StackItem>{children}</StackItem>
           <StackItem>
             <Flex direction={{ default: 'column' }} spaceItems={{ default: 'spaceItemsSm' }}>
-              <FlexItem>
+              <FlexItem id="delete-modal-prompt">
                 Type <strong>{deleteNameSanitized}</strong> to confirm
                 {genericLabel ? '' : ' deletion'}:
               </FlexItem>
               <TextInput
                 id="delete-modal-input"
                 data-testid="delete-modal-input"
-                aria-label="Delete modal input"
+                // Named by the prompt above it, so a screen reader says what to type.
+                aria-labelledby="delete-modal-prompt"
                 value={value}
                 onChange={(_event, newValue) => setValue(newValue)}
                 onKeyDown={(event) => {

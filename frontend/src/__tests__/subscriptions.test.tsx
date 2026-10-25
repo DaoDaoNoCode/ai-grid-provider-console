@@ -487,6 +487,8 @@ describe("model references on PR 12's models", () => {
     expect(within(row('Team granite')).getByRole('checkbox', { name: 'Select Team granite' })).toBeChecked();
     expect(within(row('Shared granite')).getByRole('checkbox', { name: 'Select Shared granite' })).not.toBeChecked();
     await user.keyboard('{Escape}');
+    // An unchanged edit can't be saved; change something besides the models.
+    await user.type(screen.getByTestId('subscription-name-desc-description'), ' (edited)');
     await user.click(screen.getByTestId('update-subscription-button'));
     await waitFor(() => expect(update).toHaveBeenCalled());
     expect(update.mock.calls[0][1].modelRefs).toEqual([
@@ -614,4 +616,46 @@ it('reloads a subscription after a stale delete, keeping the typed name, so a re
   await user.click(within(modal).getByRole('button', { name: 'Delete' }));
   expect(await screen.findByText('Subscription deleted')).toBeVisible();
   expect(service.subscriptions.some((s) => s.name === 'engineering')).toBe(false);
+});
+
+it('asks before Cancel discards the subscription form’s input', async () => {
+  const user = userEvent.setup();
+  renderAt('/subscriptions/create', new MockConsoleService());
+  // Nothing typed yet: Cancel leaves at once.
+  await user.click(await screen.findByTestId('cancel-subscription-button'));
+  expect(await screen.findByTestId('subscriptions-table')).toBeVisible();
+  await user.click(screen.getByRole('link', { name: 'Create subscription' }));
+  await user.type(await screen.findByTestId('subscription-name-desc-name'), 'Test team');
+  await user.click(screen.getByTestId('cancel-subscription-button'));
+  const discard = await screen.findByTestId('discard-changes-modal');
+  await user.click(within(discard).getByRole('button', { name: 'Keep editing' }));
+  expect(screen.getByTestId('subscription-name-desc-name')).toHaveValue('Test team');
+  await user.click(screen.getByTestId('cancel-subscription-button'));
+  await user.click(within(await screen.findByTestId('discard-changes-modal')).getByRole('button', { name: 'Discard' }));
+  expect(await screen.findByTestId('subscriptions-table')).toBeVisible();
+});
+
+it('keeps Save disabled on an edit until something changes', async () => {
+  const user = userEvent.setup();
+  renderAt('/subscriptions/edit/engineering', new MockConsoleService());
+  const description = await screen.findByTestId('subscription-name-desc-description');
+  const save = screen.getByTestId('update-subscription-button');
+  expect(save).toBeDisabled();
+  // An unchanged form leaves without asking.
+  await user.type(description, ' more');
+  expect(save).toBeEnabled();
+  await user.type(description, '{Backspace>5}');
+  expect(save).toBeDisabled();
+  await user.click(screen.getByTestId('cancel-subscription-button'));
+  expect(screen.queryByTestId('discard-changes-modal')).not.toBeInTheDocument();
+});
+
+it('names the priority buttons and the groups menu for what they change', async () => {
+  renderAt('/subscriptions/create', new MockConsoleService());
+  await screen.findByTestId('subscription-name-desc-name');
+  expect(screen.getByRole('button', { name: 'Decrease priority' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Increase priority' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Groups options' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Organization options' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Menu toggle' })).not.toBeInTheDocument();
 });

@@ -22,7 +22,7 @@ describe('App', () => {
     expect(screen.getAllByText('Provisioned')).toHaveLength(3);
   });
 
-  it('has one h1, the page heading, with the masthead title as an h2', async () => {
+  it('has one h1, the page heading, first: the masthead title is not a heading', async () => {
     render(
       <MemoryRouter>
         <App service={new MockConsoleService()} />
@@ -30,7 +30,24 @@ describe('App', () => {
     );
     await screen.findByRole('row', { name: /^site1 / });
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
-    expect(screen.getByRole('heading', { level: 2, name: 'Cloud Provider Admin Console' })).toBeVisible();
+    expect(screen.getAllByRole('heading')[0]).toHaveTextContent('Clusters');
+    expect(screen.getByText('Cloud Provider Admin Console')).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Cloud Provider Admin Console' })).not.toBeInTheDocument();
+  });
+
+  it('starts with a Skip to content link to the main region', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <App service={new MockConsoleService()} />
+      </MemoryRouter>,
+    );
+    await screen.findByRole('row', { name: /^site1 / });
+    await user.tab();
+    const skip = screen.getByRole('link', { name: 'Skip to content' });
+    expect(skip).toHaveFocus();
+    expect(skip).toHaveAttribute('href', '#console-main');
+    expect(screen.getByRole('main')).toHaveAttribute('id', 'console-main');
   });
 
   it('has one h1 on the AI Grid map, which has no visible page heading', async () => {

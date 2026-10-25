@@ -151,7 +151,11 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
     }
     setConfirmed((prev) => new Map(prev).set(updated.name, updated));
     setChange(undefined);
-    navigate('.', { state: { notice: `${updated.name} ${join ? 'added to' : 'removed from'} AI Grid` } });
+    // Replace, so the notice doesn't add a second Clusters entry to the browser's history.
+    navigate('.', {
+      replace: true,
+      state: { notice: `${updated.name} ${join ? 'added to' : 'removed from'} AI Grid` },
+    });
     reload();
   };
 

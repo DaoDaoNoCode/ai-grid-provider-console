@@ -12,7 +12,7 @@ import {
   PageSidebar,
   PageSidebarBody,
   PageToggleButton,
-  Title,
+  SkipToContent,
   Toolbar,
   ToolbarContent,
   ToolbarItem,
@@ -32,6 +32,9 @@ import { ConsoleSessionContext } from './context/useConsoleSession';
 import { useServiceData } from './hooks/useServiceData';
 
 type Props = { service: ConsoleService };
+
+/** The page's main region, where Skip to content goes. */
+const MAIN_ID = 'console-main';
 
 // Section order and active-state matching follow the PoC (src/app/App.tsx at 62319b8):
 // AI Grid and Monitoring match exactly, the others match by prefix.
@@ -73,9 +76,8 @@ export const App: React.FC<Props> = ({ service: given }) => {
         </MastheadToggle>
         <MastheadBrand>
           <MastheadLogo component="span" className="pf-v6-u-display-flex pf-v6-u-align-items-center">
-            <Title headingLevel="h2" size="lg">
-              Cloud Provider Admin Console
-            </Title>
+            {/* The product name, not a heading: each page's h1 is the first heading. */}
+            <span className="pf-v6-c-title pf-m-lg">Cloud Provider Admin Console</span>
           </MastheadLogo>
         </MastheadBrand>
       </MastheadMain>
@@ -115,7 +117,14 @@ export const App: React.FC<Props> = ({ service: given }) => {
 
   return (
     <ConsoleSessionContext.Provider value={session}>
-      <Page isContentFilled masthead={header} sidebar={sidebar} banner={<FakeBackendBanner />}>
+      <Page
+        isContentFilled
+        masthead={header}
+        sidebar={sidebar}
+        banner={<FakeBackendBanner />}
+        mainContainerId={MAIN_ID}
+        skipToContent={<SkipToContent href={`#${MAIN_ID}`}>Skip to content</SkipToContent>}
+      >
         {sessionEnded && <SessionEndedAlert />}
         <NoticeToast />
         {/* Only an answer that says so, never a user still loading or failing to load. */}

@@ -559,3 +559,21 @@ it('reloads an organization after a stale delete from its page, keeping the type
   expect(await screen.findByText('Organization deleted')).toBeVisible();
   expect(service.organizations.some((o) => o.id === organization.id)).toBe(false);
 });
+
+it('heads the wizard sections at h2, moves focus to an added domain, and names the delete field by its prompt', async () => {
+  const service = new MockConsoleService();
+  const user = userEvent.setup();
+  const wizard = renderAt('/organizations/create', service);
+  expect(await screen.findByRole('heading', { level: 2, name: 'Domains' })).toBeVisible();
+  await user.click(screen.getByRole('button', { name: 'Add domain' }));
+  const domains = screen.getAllByRole('textbox', { name: /^Domain \d/ });
+  expect(domains[domains.length - 1]).toHaveFocus();
+  wizard.unmount();
+
+  const [organization] = service.organizations;
+  renderAt(`/organizations/${organization.id}`, service);
+  await user.click(await screen.findByTestId('organization-actions'));
+  await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
+  const modal = await screen.findByTestId('delete-tenant-modal');
+  expect(within(modal).getByRole('textbox', { name: `Type ${organization.name} to confirm deletion:` })).toBeVisible();
+});

@@ -573,3 +573,13 @@ it('reloads the cluster in the open dialog after a conflict, keeping the choices
     location: 'us-east',
   });
 });
+
+it('returns focus to the row’s menu button when the dialog it opened closes', async () => {
+  const user = userEvent.setup();
+  renderAt('/clusters', new MockConsoleService());
+  await pick(user, 'site4', 'Add to AI Grid');
+  const modal = await screen.findByTestId('cluster-membership-modal');
+  await user.click(within(modal).getByRole('button', { name: 'Cancel' }));
+  await waitFor(() => expect(screen.queryByTestId('cluster-membership-modal')).not.toBeInTheDocument());
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Actions for site4' })).toHaveFocus());
+});
