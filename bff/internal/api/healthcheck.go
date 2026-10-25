@@ -26,7 +26,7 @@ func (a *App) readyz(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
 	if _, err := a.backend.Health.Ping(ctx, &aigridv1.PingRequest{Name: "bff"}); err != nil {
-		a.logger.Warn("backend not ready", "error", err)
+		a.log(r).Warn("backend not ready", "error", err)
 		writeJSON(w, http.StatusServiceUnavailable, healthStatus{Status: "unavailable", Version: Version, Backend: "unavailable"})
 		return
 	}

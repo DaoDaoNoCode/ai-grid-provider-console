@@ -83,6 +83,11 @@ bff/
   internal/api          App, routes, middleware, gRPC-to-HTTP error mapping, handlers, SPA
 ```
 
+Each setting is a flag with an environment variable as its fallback (`--port`, `PORT`); a flag
+given on the command line wins. A variable whose value does not parse (`PORT=8o80`) stops the
+BFF at startup with an error naming it, unless its flag was given (`PORT=8o80 bff --port=9000`
+listens on 9000).
+
 Adding an endpoint: draft the RPC in `mock/proto/ai_grid/v1` (and propose it to the backend),
 `make -C bff generate`, implement or stub it in the fake, map it in a handler under `internal/api`, add it to the table below and to
 `frontend/src/api/ConsoleService.ts`.
@@ -518,6 +523,15 @@ decides.
   was sent it answers a plain JSON 500. Once the status was sent (a gzip stream started, a part
   flushed), the connection is cut instead, without a gzip trailer: a 500 written into an answer
   under way would leave the client a body it cannot decode, or one that looks complete.
+
+### Logs
+
+One `request` line per request (method, path, status, duration) with `id`, the `X-Request-Id`
+the client also gets, and `user`, the forwarded user name, once the proxy headers have been
+read (never the token). The lines a handler writes about a change (`cluster updated`,
+`tenant created`, `model deleted`, `subscription updated`, ...) and `request failed` carry the
+same `id` and `user`, so the log says which admin changed what. A successful `/readyz` or
+`/healthcheck` logs at Debug; a failed one stays at Info (and `backend not ready` at Warn).
 
 ### The BFF is thin
 

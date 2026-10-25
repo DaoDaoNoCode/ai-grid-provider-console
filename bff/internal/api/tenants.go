@@ -309,7 +309,7 @@ func (a *App) createTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t := toTenant(resp.GetObject())
-	a.logger.Info("tenant created", "id", t.ID, "name", t.Name)
+	a.log(r).Info("tenant created", "tenant", t.ID, "name", t.Name)
 	w.Header().Set("Location", APIPrefix+"/tenants/"+url.PathEscape(t.ID))
 	setETag(w, t.ResourceVersion)
 	writeData(w, http.StatusCreated, t)
@@ -401,7 +401,7 @@ func (a *App) patchTenant(w http.ResponseWriter, r *http.Request) {
 		a.respondError(w, r, err)
 		return
 	}
-	a.logger.Info("tenant updated", "id", id, "paths", paths)
+	a.log(r).Info("tenant updated", "tenant", id, "paths", paths)
 	setETag(w, resp.GetObject().GetResourceVersion())
 	writeData(w, http.StatusOK, toTenant(resp.GetObject()))
 }
@@ -422,7 +422,7 @@ func (a *App) deleteTenant(w http.ResponseWriter, r *http.Request) {
 		a.respondError(w, r, err)
 		return
 	}
-	a.logger.Info("tenant deleted", "id", id)
+	a.log(r).Info("tenant deleted", "tenant", id)
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusNoContent)
 }

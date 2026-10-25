@@ -1,10 +1,12 @@
 package api
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"runtime/debug"
 	"time"
@@ -21,6 +23,9 @@ func (a *App) requireIdentity(next http.Handler) http.Handler {
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, err.Error())
 			return
+		}
+		if info, ok := r.Context().Value(requestInfoKey{}).(*requestInfo); ok {
+			info.user = id.Username
 		}
 		next.ServeHTTP(w, r.WithContext(identity.WithIdentity(r.Context(), id)))
 	})
@@ -104,25 +109,59 @@ func (s *statusRecorder) WriteHeader(code int) {
 // reach the connection's writer.
 func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
 
-// logRequests emits one line per request with a request id the client also gets. A handler
-// that panics (an aborted answer, or a bug recoverPanic turns into a 500) still gets its line,
-// as "request aborted" with the status sent so far.
+// requestInfo is who and which request a log line is about. logRequests puts
+// it on the context with the request id; requireIdentity, which runs later,
+// fills in the user once the proxy headers are read.
+type requestInfo struct {
+	id   string
+	user string
+}
+
+type requestInfoKey struct{}
+
+// log is the logger for lines about r: with the request id the client got in
+// X-Request-Id and the forwarded user name (never the token), so a line such
+// as "tenant updated" says which admin changed what.
+func (a *App) log(r *http.Request) *slog.Logger {
+	info, ok := r.Context().Value(requestInfoKey{}).(*requestInfo)
+	if !ok {
+		return a.logger
+	}
+	if info.user == "" {
+		return a.logger.With("id", info.id)
+	}
+	return a.logger.With("id", info.id, "user", info.user)
+}
+
+// isProbe reports whether the path is one the kubelet or a load balancer polls.
+func isProbe(path string) bool { return path == "/readyz" || path == "/healthcheck" }
+
+// logRequests emits one line per request with a request id the client also gets, and the
+// user once requireIdentity knows it. A successful probe logs at Debug: the kubelet asks
+// every few seconds, thousands of lines a day that say nothing. A handler that panics (an
+// aborted answer, or a bug recoverPanic turns into a 500) still gets its line, as "request
+// aborted" with the status sent so far.
 func (a *App) logRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		reqID := newRequestID()
-		w.Header().Set("X-Request-Id", reqID)
+		info := &requestInfo{id: newRequestID()}
+		w.Header().Set("X-Request-Id", info.id)
+		r = r.WithContext(context.WithValue(r.Context(), requestInfoKey{}, info))
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		completed := false
 		defer func() {
 			// No recover here: the panic goes on to recoverPanic with its stack intact.
 			if !completed {
-				a.logger.Warn("request aborted", "id", reqID, "method", r.Method, "path", r.URL.Path, "status", rec.status, "duration", time.Since(start).Round(time.Millisecond))
+				a.log(r).Warn("request aborted", "method", r.Method, "path", r.URL.Path, "status", rec.status, "duration", time.Since(start).Round(time.Millisecond))
 			}
 		}()
 		next.ServeHTTP(rec, r)
 		completed = true
-		a.logger.Info("request", "id", reqID, "method", r.Method, "path", r.URL.Path, "status", rec.status, "duration", time.Since(start).Round(time.Millisecond))
+		level := slog.LevelInfo
+		if isProbe(r.URL.Path) && rec.status < http.StatusBadRequest {
+			level = slog.LevelDebug
+		}
+		a.log(r).Log(r.Context(), level, "request", "method", r.Method, "path", r.URL.Path, "status", rec.status, "duration", time.Since(start).Round(time.Millisecond))
 	})
 }
 

@@ -30,9 +30,9 @@ func Errorf(status int, message string) error {
 func (a *App) respondError(w http.ResponseWriter, r *http.Request, err error) {
 	code, message := classify(err)
 	if code >= http.StatusInternalServerError {
-		a.logger.Error("request failed", "method", r.Method, "path", r.URL.Path, "status", code, "error", err)
+		a.log(r).Error("request failed", "method", r.Method, "path", r.URL.Path, "status", code, "error", err)
 	} else {
-		a.logger.Debug("request rejected", "method", r.Method, "path", r.URL.Path, "status", code, "error", err)
+		a.log(r).Debug("request rejected", "method", r.Method, "path", r.URL.Path, "status", code, "error", err)
 	}
 	writeErrorFields(w, code, message, fieldErrors(err))
 }

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -103,6 +104,72 @@ func TestParsePerses(t *testing.T) {
 	}
 	if _, err := Parse([]string{hub}, lookup(map[string]string{"PERSES_TIMEOUT": "2m"})); err == nil {
 		t.Fatal("PERSES_TIMEOUT past the write timeout should fail")
+	}
+}
+
+// An environment value that doesn't parse fails like the same flag value,
+// instead of leaving the default in place (PORT=8o80 used to serve on 8080).
+func TestParseRejectsBadEnvValues(t *testing.T) {
+	hub := "--hub-api-url=https://hub.example"
+	cases := []struct {
+		key, value string
+	}{
+		{"PORT", "8o80"},
+		{"PORT", "80.5"},
+		{"BACKEND_INSECURE", "yes"},
+		{"FAKE_BACKEND", "on"},
+		{"PERSES_INSECURE", "maybe"},
+		{"BACKEND_TIMEOUT", "10"},
+		{"PERSES_TIMEOUT", "90"},
+		{"PERSES_TIMEOUT", "thirty seconds"},
+	}
+	for _, tc := range cases {
+		_, err := Parse([]string{hub}, lookup(map[string]string{tc.key: tc.value}))
+		if err == nil || !strings.Contains(err.Error(), tc.key) || !strings.Contains(err.Error(), tc.value) {
+			t.Errorf("%s=%q: err = %v, want an error naming the variable and its value", tc.key, tc.value, err)
+		}
+	}
+	// Good values of each type still parse.
+	cfg, err := Parse([]string{hub}, lookup(map[string]string{"PORT": "9000", "FAKE_BACKEND": "true", "BACKEND_INSECURE": "0", "PERSES_TIMEOUT": "45s"}))
+	if err != nil || cfg.Port != 9000 || !cfg.FakeBackend || cfg.BackendInsecure || cfg.PersesTimeout != 45*time.Second {
+		t.Fatalf("good env values: %+v, %v", cfg, err)
+	}
+	// Every bad value is reported, not only the first.
+	_, err = Parse([]string{hub}, lookup(map[string]string{"PORT": "x", "FAKE_BACKEND": "y"}))
+	if err == nil || !strings.Contains(err.Error(), "PORT") || !strings.Contains(err.Error(), "FAKE_BACKEND") {
+		t.Errorf("two bad values: %v", err)
+	}
+}
+
+// A flag on the command line wins over its environment variable, even one that
+// does not parse: only a bad value that would be used is an error.
+func TestParseFlagOverridesBadEnvValue(t *testing.T) {
+	hub := "--hub-api-url=https://hub.example"
+	cases := []struct {
+		key, value, flag string
+		check            func(Config) bool
+	}{
+		{"PORT", "invalid", "--port=9000", func(c Config) bool { return c.Port == 9000 }},
+		{"BACKEND_INSECURE", "yes", "--backend-insecure=true", func(c Config) bool { return c.BackendInsecure }},
+		{"FAKE_BACKEND", "on", "--fake-backend", func(c Config) bool { return c.FakeBackend }},
+		{"PERSES_INSECURE", "maybe", "--perses-insecure=false", func(c Config) bool { return !c.PersesInsecure }},
+		{"BACKEND_TIMEOUT", "10", "--backend-timeout=3s", func(c Config) bool { return c.BackendTimeout == 3*time.Second }},
+		{"PERSES_TIMEOUT", "soon", "--perses-timeout=20s", func(c Config) bool { return c.PersesTimeout == 20*time.Second }},
+	}
+	for _, tc := range cases {
+		env := lookup(map[string]string{tc.key: tc.value})
+		cfg, err := Parse([]string{hub, tc.flag}, env)
+		if err != nil || !tc.check(cfg) {
+			t.Errorf("%s=%q with %s: %+v, %v; want the flag's value", tc.key, tc.value, tc.flag, cfg, err)
+		}
+		if _, err := Parse([]string{hub}, env); err == nil || !strings.Contains(err.Error(), tc.key) {
+			t.Errorf("%s=%q alone: err = %v, want an error naming the variable", tc.key, tc.value, err)
+		}
+	}
+	// A flag hides only its own variable's error.
+	_, err := Parse([]string{hub, "--port=9000"}, lookup(map[string]string{"PORT": "x", "FAKE_BACKEND": "y"}))
+	if err == nil || strings.Contains(err.Error(), "PORT") || !strings.Contains(err.Error(), "FAKE_BACKEND") {
+		t.Errorf("--port with bad PORT and FAKE_BACKEND: %v, want only FAKE_BACKEND's error", err)
 	}
 }
 

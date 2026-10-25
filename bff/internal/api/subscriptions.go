@@ -77,6 +77,7 @@ func (a *App) createSubscription(w http.ResponseWriter, r *http.Request) {
 		policy := subscription.FromAuthPolicy(p)
 		out.AuthPolicy = &policy
 	}
+	a.log(r).Info("subscription created", "name", out.Subscription.Name, "authPolicy", out.AuthPolicy != nil)
 	w.Header().Set("Location", APIPrefix+"/subscriptions/"+url.PathEscape(out.Subscription.Name))
 	writeData(w, http.StatusCreated, out)
 }
@@ -109,6 +110,7 @@ func (a *App) updateSubscription(w http.ResponseWriter, r *http.Request) {
 		a.respondError(w, r, err)
 		return
 	}
+	a.log(r).Info("subscription updated", "name", obj.GetName())
 	setETag(w, resp.GetSubscription().GetResourceVersion())
 	writeData(w, http.StatusOK, subscription.Mutation{Subscription: subscription.FromSubscription(resp.GetSubscription())})
 }
@@ -128,6 +130,7 @@ func (a *App) deleteSubscription(w http.ResponseWriter, r *http.Request) {
 		a.respondError(w, r, err)
 		return
 	}
+	a.log(r).Info("subscription deleted", "name", r.PathValue("name"))
 	w.WriteHeader(http.StatusNoContent)
 }
 

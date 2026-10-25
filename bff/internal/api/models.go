@@ -643,7 +643,7 @@ func (a *App) createModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m := toModel(resp.GetObject())
-	a.logger.Info("model created", "namespace", m.Namespace, "name", m.Name, "placed", m.Placement != nil)
+	a.log(r).Info("model created", "namespace", m.Namespace, "name", m.Name, "placed", m.Placement != nil)
 	w.Header().Set("Location", APIPrefix+"/models/"+url.PathEscape(m.Namespace)+"/"+url.PathEscape(m.Name))
 	setETag(w, m.ResourceVersion)
 	writeData(w, http.StatusCreated, m)
@@ -759,7 +759,7 @@ func (a *App) patchModel(w http.ResponseWriter, r *http.Request) {
 		a.respondError(w, r, err)
 		return
 	}
-	a.logger.Info("model updated", "namespace", namespace, "name", name, "paths", paths)
+	a.log(r).Info("model updated", "namespace", namespace, "name", name, "paths", paths)
 	setETag(w, updated.GetObject().GetMetadata().GetResourceVersion())
 	writeData(w, http.StatusOK, toModel(updated.GetObject()))
 }
@@ -781,7 +781,7 @@ func (a *App) deleteModel(w http.ResponseWriter, r *http.Request) {
 		a.respondError(w, r, err)
 		return
 	}
-	a.logger.Info("model deleted", "namespace", namespace, "name", name)
+	a.log(r).Info("model deleted", "namespace", namespace, "name", name)
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusNoContent)
 }

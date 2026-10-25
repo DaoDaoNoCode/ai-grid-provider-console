@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -371,6 +372,66 @@ func TestSlowHubIs502AndSlowBackendIs504(t *testing.T) {
 	rec := serve(newTestApp(t, testConfig(t), fake), asUser(http.MethodGet, "/api/v1/tenants"))
 	if rec.Code != http.StatusGatewayTimeout {
 		t.Fatalf("slow backend: %d %s, want 504", rec.Code, rec.Body.String())
+	}
+}
+
+// The request line and the handler's own line ("cluster updated") say which
+// request and which admin, so an audit can tell who changed what; the token
+// never reaches the log.
+func TestLogsNameTheRequestAndTheUser(t *testing.T) {
+	var logs bytes.Buffer
+	fake := &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{{Name: "site-1", ResourceVersion: "7"}}}
+	app := NewApp(testConfig(t), slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo})), backendtest.Start(t, fake), startHub(t, &fakeHub{allowed: true}))
+
+	rec := serve(app, withIfMatch(patchRequest("site-1", `{"labels":{"ai-grid/enabled":"true"}}`), `"7"`))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PATCH: %d %s", rec.Code, rec.Body.String())
+	}
+	id := rec.Header().Get("X-Request-Id")
+	var request, updated string
+	for line := range strings.SplitSeq(logs.String(), "\n") {
+		switch {
+		case strings.Contains(line, "msg=request "):
+			request = line
+		case strings.Contains(line, `msg="cluster updated"`):
+			updated = line
+		}
+	}
+	for what, line := range map[string]string{"request line": request, "handler line": updated} {
+		if !strings.Contains(line, "id="+id) || !strings.Contains(line, "user=alice") {
+			t.Errorf("%s = %q, want id=%s and user=alice", what, line, id)
+		}
+	}
+	if strings.Contains(logs.String(), "sha256~token") {
+		t.Fatalf("the token reached the log:\n%s", logs.String())
+	}
+
+	// A request refused before the identity is known has no user.
+	logs.Reset()
+	serve(app, httptest.NewRequest(http.MethodGet, "/api/v1/clusters", nil))
+	if !strings.Contains(logs.String(), "msg=request ") || strings.Contains(logs.String(), "user=") {
+		t.Errorf("anonymous request: %q", logs.String())
+	}
+}
+
+// The kubelet's probes log at Debug when they succeed (thousands of lines a
+// day); a failed probe is still a request line at Info.
+func TestSuccessfulProbesLogAtDebug(t *testing.T) {
+	var logs bytes.Buffer
+	fake := &backendtest.Fake{}
+	app := NewApp(testConfig(t), slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo})), backendtest.Start(t, fake), startHub(t, &fakeHub{allowed: true}))
+	for _, path := range []string{"/readyz", "/healthcheck"} {
+		if rec := serve(app, httptest.NewRequest(http.MethodGet, path, nil)); rec.Code != http.StatusOK {
+			t.Fatalf("%s: %d", path, rec.Code)
+		}
+	}
+	if logs.Len() != 0 {
+		t.Fatalf("successful probes logged at Info:\n%s", logs.String())
+	}
+	fake.Err = backendtest.Status(codes.Unavailable, "down")
+	serve(app, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if !strings.Contains(logs.String(), "msg=request ") || !strings.Contains(logs.String(), "status=503") || !strings.Contains(logs.String(), `"backend not ready"`) {
+		t.Fatalf("a failed probe must still log:\n%s", logs.String())
 	}
 }
 

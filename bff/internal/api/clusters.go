@@ -403,7 +403,7 @@ func (a *App) patchCluster(w http.ResponseWriter, r *http.Request) {
 		a.respondError(w, r, err)
 		return
 	}
-	a.logger.Info("cluster updated", "name", name, "paths", paths)
+	a.log(r).Info("cluster updated", "name", name, "paths", paths)
 	setETag(w, updated.GetObject().GetResourceVersion())
 	writeData(w, http.StatusOK, toGridCluster(updated.GetObject()))
 }
