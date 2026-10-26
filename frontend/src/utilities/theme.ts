@@ -4,6 +4,8 @@
 // operating system's setting.
 
 export type Theme = 'light' | 'dark';
+/** What the user chose: a theme, or the operating system's setting (nothing saved). */
+export type ThemeChoice = Theme | 'system';
 
 export const THEME_STORAGE_KEY = 'console.theme';
 export const DARK_THEME_CLASS = 'pf-v6-theme-dark';
@@ -19,10 +21,17 @@ export const readSavedTheme = (): Theme | undefined => {
   }
 };
 
-/** Keeps the choice for the next visit; without storage it lasts until the page reloads. */
-export const saveTheme = (theme: Theme) => {
+/**
+ * Keeps the choice for the next visit: a theme is saved, System removes the saved one. Without
+ * storage the choice lasts until the page reloads.
+ */
+export const saveTheme = (choice: ThemeChoice) => {
   try {
-    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    if (choice === 'system') {
+      window.localStorage.removeItem(THEME_STORAGE_KEY);
+    } else {
+      window.localStorage.setItem(THEME_STORAGE_KEY, choice);
+    }
   } catch {
     // Storage is blocked: the choice still applies to this page.
   }

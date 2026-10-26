@@ -27,6 +27,16 @@ const stubSystemScheme = (dark: boolean) => {
 
 const isDark = () => document.documentElement.classList.contains(DARK_THEME_CLASS);
 const toggle = () => screen.getByRole('group', { name: 'Theme' });
+const choices = ['Light theme', 'Dark theme', 'System theme'];
+/** Exactly this choice is pressed in the masthead's toggle. */
+const expectChoice = (name: string) => {
+  for (const choice of choices) {
+    expect(within(toggle()).getByRole('button', { name: choice })).toHaveAttribute(
+      'aria-pressed',
+      String(choice === name),
+    );
+  }
+};
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -40,10 +50,32 @@ it("follows the operating system's setting until a theme is chosen", async () =>
   renderAt('/clusters', new MockConsoleService());
   await screen.findByRole('row', { name: /^site1 / });
   expect(isDark()).toBe(true);
-  expect(within(toggle()).getByRole('button', { name: 'Dark theme' })).toHaveAttribute('aria-pressed', 'true');
+  expectChoice('System theme');
   act(() => setSystemDark(false));
   expect(isDark()).toBe(false);
-  expect(within(toggle()).getByRole('button', { name: 'Light theme' })).toHaveAttribute('aria-pressed', 'true');
+  expectChoice('System theme');
+});
+
+it('follows the operating system again, live, after System is chosen', async () => {
+  const setSystemDark = stubSystemScheme(false);
+  localStorage.setItem(THEME_STORAGE_KEY, 'dark');
+  const user = userEvent.setup();
+  renderAt('/clusters', new MockConsoleService());
+  await screen.findByRole('row', { name: /^site1 / });
+  expect(isDark()).toBe(true);
+  expectChoice('Dark theme');
+
+  await user.click(within(toggle()).getByRole('button', { name: 'System theme' }));
+  expect(localStorage.getItem(THEME_STORAGE_KEY)).toBeNull();
+  expect(isDark()).toBe(false);
+  expectChoice('System theme');
+  act(() => setSystemDark(true));
+  expect(isDark()).toBe(true);
+
+  await user.click(within(toggle()).getByRole('button', { name: 'Light theme' }));
+  expect(isDark()).toBe(false);
+  expectChoice('Light theme');
+  expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('light');
 });
 
 it('keeps a chosen theme for the next visit, whatever the operating system says', async () => {
@@ -62,7 +94,7 @@ it('keeps a chosen theme for the next visit, whatever the operating system says'
   renderAt('/clusters', new MockConsoleService());
   expect(isDark()).toBe(true);
   await screen.findByRole('row', { name: /^site1 / });
-  expect(within(toggle()).getByRole('button', { name: 'Dark theme' })).toHaveAttribute('aria-pressed', 'true');
+  expectChoice('Dark theme');
 });
 
 it('takes a theme chosen in another tab', async () => {
@@ -74,6 +106,7 @@ it('takes a theme chosen in another tab', async () => {
     window.dispatchEvent(new StorageEvent('storage', { key: THEME_STORAGE_KEY }));
   });
   expect(isDark()).toBe(true);
+  expectChoice('Dark theme');
 });
 
 it('follows the operating system again when another tab clears the site data', async () => {
@@ -87,6 +120,33 @@ it('follows the operating system again when another tab clears the site data', a
     window.dispatchEvent(new StorageEvent('storage', { key: null }));
   });
   expect(isDark()).toBe(false);
+  expectChoice('System theme');
+});
+
+it('follows the operating system after System even when the browser refuses to clear the choice', async () => {
+  const setSystemDark = stubSystemScheme(false);
+  localStorage.setItem(THEME_STORAGE_KEY, 'dark');
+  vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+    throw new Error('blocked');
+  });
+  const user = userEvent.setup();
+  renderAt('/clusters', new MockConsoleService());
+  await screen.findByRole('row', { name: /^site1 / });
+  await user.click(within(toggle()).getByRole('button', { name: 'System theme' }));
+  expect(isDark()).toBe(false);
+  act(() => setSystemDark(true));
+  expect(isDark()).toBe(true);
+  expectChoice('System theme');
+});
+
+it('shows each choice’s tooltip on keyboard focus', async () => {
+  stubSystemScheme(false);
+  const user = userEvent.setup();
+  renderAt('/clusters', new MockConsoleService());
+  await screen.findByRole('row', { name: /^site1 / });
+  within(toggle()).getByRole('button', { name: 'System theme' }).focus();
+  expect(await screen.findByText("System: the operating system's setting")).toBeInTheDocument();
+  await user.keyboard('{Escape}');
 });
 
 it("still switches when the browser won't store the choice", async () => {
@@ -115,8 +175,15 @@ it("offers the theme in the user menu, for a phone's masthead", async () => {
   const user = userEvent.setup();
   renderAt('/clusters', new MockConsoleService());
   await user.click(await screen.findByRole('button', { name: /^User menu/ }));
-  expect(screen.getByRole('menuitem', { name: 'Light' })).toHaveClass('pf-m-selected');
+  expect(screen.getByRole('menuitem', { name: 'System' })).toHaveClass('pf-m-selected');
+  expect(screen.getByRole('menuitem', { name: 'Light' })).not.toHaveClass('pf-m-selected');
   await user.click(screen.getByRole('menuitem', { name: 'Dark' }));
   expect(isDark()).toBe(true);
   expect(screen.queryByRole('menuitem', { name: 'Dark' })).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole('button', { name: /^User menu/ }));
+  expect(screen.getByRole('menuitem', { name: 'Dark' })).toHaveClass('pf-m-selected');
+  await user.click(screen.getByRole('menuitem', { name: 'System' }));
+  expect(isDark()).toBe(false);
+  expect(localStorage.getItem(THEME_STORAGE_KEY)).toBeNull();
 });

@@ -4,11 +4,12 @@ import { UserIcon } from '@patternfly/react-icons';
 import { ServiceError } from '../api/ConsoleService';
 import type { User } from '../api/types';
 import { useTheme } from '../context/useTheme';
-import type { Theme } from '../utilities/theme';
+import type { ThemeChoice } from '../utilities/theme';
 
-const themes: { theme: Theme; label: string }[] = [
-  { theme: 'light', label: 'Light' },
-  { theme: 'dark', label: 'Dark' },
+const themes: { choice: ThemeChoice; label: string }[] = [
+  { choice: 'light', label: 'Light' },
+  { choice: 'dark', label: 'Dark' },
+  { choice: 'system', label: 'System' },
 ];
 
 /** Where kube-auth-proxy (oauth2-proxy) ends the session and starts a new login. */
@@ -31,7 +32,7 @@ type Props = {
  */
 export const UserMenu: React.FC<Props> = ({ user, loaded, error, canSignOut, onAbout }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const { theme, setTheme } = useTheme();
+  const { choice, setChoice } = useTheme();
   // Only a 401 means nobody is signed in; any other failure is the console failing to say who is.
   const who = error
     ? error instanceof ServiceError && error.isUnauthenticated
@@ -69,11 +70,11 @@ export const UserMenu: React.FC<Props> = ({ user, loaded, error, canSignOut, onA
         <DropdownList>
           {themes.map((t) => (
             <DropdownItem
-              key={t.theme}
-              isSelected={theme === t.theme}
+              key={t.choice}
+              isSelected={choice === t.choice}
               onClick={() => {
                 setIsOpen(false);
-                setTheme(t.theme);
+                setChoice(t.choice);
               }}
             >
               {t.label}

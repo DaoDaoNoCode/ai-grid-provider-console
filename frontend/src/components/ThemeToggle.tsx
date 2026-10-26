@@ -1,24 +1,36 @@
-import { ToggleGroup, ToggleGroupItem } from '@patternfly/react-core';
-import { MoonIcon, SunIcon } from '@patternfly/react-icons';
+import { Fragment } from 'react';
+import { ToggleGroup, ToggleGroupItem, Tooltip } from '@patternfly/react-core';
+import { DesktopIcon, MoonIcon, SunIcon } from '@patternfly/react-icons';
 import { useTheme } from '../context/useTheme';
+import type { ThemeChoice } from '../utilities/theme';
 
-/** The masthead's light and dark switch, as odh-dashboard's masthead has (HeaderTools.tsx). */
+const choices: { choice: ThemeChoice; label: string; tooltip: string; icon: React.ReactNode }[] = [
+  { choice: 'light', label: 'Light theme', tooltip: 'Light', icon: <SunIcon /> },
+  { choice: 'dark', label: 'Dark theme', tooltip: 'Dark', icon: <MoonIcon /> },
+  { choice: 'system', label: 'System theme', tooltip: "System: the operating system's setting", icon: <DesktopIcon /> },
+];
+
+/**
+ * The masthead's theme switch, as odh-dashboard's masthead has (HeaderTools.tsx), with a third
+ * choice, System, that drops a saved theme and follows the operating system again.
+ */
 export const ThemeToggle: React.FC = () => {
-  const { theme, setTheme } = useTheme();
+  const { choice, setChoice } = useTheme();
   return (
     <ToggleGroup aria-label="Theme">
-      <ToggleGroupItem
-        icon={<SunIcon />}
-        aria-label="Light theme"
-        isSelected={theme === 'light'}
-        onChange={() => setTheme('light')}
-      />
-      <ToggleGroupItem
-        icon={<MoonIcon />}
-        aria-label="Dark theme"
-        isSelected={theme === 'dark'}
-        onChange={() => setTheme('dark')}
-      />
+      {choices.map((c) => (
+        <Fragment key={c.choice}>
+          <ToggleGroupItem
+            buttonId={`theme-${c.choice}`}
+            icon={c.icon}
+            aria-label={c.label}
+            isSelected={choice === c.choice}
+            onChange={() => setChoice(c.choice)}
+          />
+          {/* On the button itself, not the item's wrapper, so keyboard focus shows it too. */}
+          <Tooltip content={c.tooltip} triggerRef={() => document.getElementById(`theme-${c.choice}`)!} />
+        </Fragment>
+      ))}
     </ToggleGroup>
   );
 };

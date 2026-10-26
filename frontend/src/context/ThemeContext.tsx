@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import {
-  type Theme,
+  type ThemeChoice,
   DARK_SCHEME_QUERY,
   THEME_STORAGE_KEY,
   applyTheme,
@@ -8,11 +8,11 @@ import {
   saveTheme,
   systemTheme,
 } from '../utilities/theme';
-import { ThemeContext } from './useTheme';
+import { type ThemeContextValue, ThemeContext } from './useTheme';
 
 /**
  * Applies the console's theme to the page (utilities/theme.ts) and keeps it current: a choice made
- * here or in another tab, or, without a choice, a change of the operating system's setting.
+ * here or in another tab, or, without a choice (System), a change of the operating system's setting.
  */
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [saved, setSaved] = useState(readSavedTheme);
@@ -40,15 +40,16 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // page before the bundle loads is the browser's own.)
   useLayoutEffect(() => applyTheme(theme), [theme]);
 
-  const value = useMemo(
+  const value = useMemo<ThemeContextValue>(
     () => ({
       theme,
-      setTheme: (next: Theme) => {
+      choice: saved ?? 'system',
+      setChoice: (next: ThemeChoice) => {
         saveTheme(next);
-        setSaved(next);
+        setSaved(next === 'system' ? undefined : next);
       },
     }),
-    [theme],
+    [theme, saved],
   );
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 };
