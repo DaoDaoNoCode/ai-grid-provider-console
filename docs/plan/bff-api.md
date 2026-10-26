@@ -197,9 +197,14 @@ also works against a backend that only returns `name`, `labels`, `hubAcceptsClie
   "kubernetesVersion": "v1.35.6",
   "platform": "BareMetal",
   "product": "OpenShift",
-  "gpuCapacity": 16,
-  "capacity": {"cpu": "192", "memory": "1572864Mi", "nvidia.com/gpu": "16", "...": "..."},
-  "allocatable": {"cpu": "186", "memory": "1540000Mi", "nvidia.com/gpu": "16", "...": "..."},
+  "gpuCapacity": 32,
+  "capacity": {"cpu": "192", "memory": "1572864Mi", "nvidia.com/gpu": "32", "...": "..."},
+  "allocatable": {"cpu": "186", "memory": "1540000Mi", "nvidia.com/gpu": "32", "...": "..."},
+  "gpus": {
+    "total": 32, "nodeCount": 4,
+    "configurations": [{"vendor": "NVIDIA", "product": "NVIDIA-H200", "memoryMib": 143771, "gpusPerNode": 8, "nodeCount": 4, "sharing": {"strategy": "none", "replicas": 1, "migCapable": true}}],
+    "nodes": [{"name": "gpu-h200-0.paris.example", "vendor": "NVIDIA", "product": "NVIDIA-H200", "count": 8, "memoryMib": 143771, "family": "hopper", "computeCapability": "9.0", "driverVersion": "580.105.08", "cudaRuntimeVersion": "13.0", "sharing": {"strategy": "none", "replicas": 1, "migCapable": true}, "instanceType": "p5en.48xlarge", "ready": true}, "..."]
+  },
   "creationTimestamp": "2026-10-01T09:00:00Z",
   "siteName": "Paris DC1",
   "latitude": 48.8566,
@@ -228,6 +233,17 @@ also works against a backend that only returns `name`, `labels`, `hubAcceptsClie
   hub object's; each is omitted when the backend sends none. A real backend without its
   cluster status details (conditions, Kubernetes version, capacity, allocatable, claims)
   sends the creation time only, so the page shows those as not reported.
+- `gpus` is the backend's `status.gpus`, the cluster's GPU inventory, passed through: `total`
+  physical GPUs and `nodeCount` GPU nodes; `configurations`, the distinct node configurations
+  (vendor, product, memory in MiB per GPU, GPUs per node, sharing) with how many nodes have
+  each, most nodes first; and every GPU `node` (product, count, memory, architecture `family`,
+  `computeCapability`, `driverVersion`, `cudaRuntimeVersion`, `sharing`, `instanceType`,
+  `ready`). `sharing.strategy` is `none`, `time-slicing`, `mps` or `mig` (with `migStrategy`
+  `single` or `mixed`), and `replicas` the schedulable units per GPU. The backend reads it from
+  ACM Search's index of the spoke's nodes and their NVIDIA GPU Feature Discovery labels
+  (`ManagedClusterInfo` carries none); the BFF derives nothing. Omitted when the backend has no
+  inventory for the cluster (no GPU nodes, or Search unavailable or not yet indexed);
+  `gpuCapacity` still counts the schedulable GPUs then. The shipped backend doesn't send it yet.
 - `siteName`, `latitude`, `longitude` come from the `ai-grid/site-name`, `ai-grid/latitude`,
   `ai-grid/longitude` annotations; coordinates are omitted when absent or not a finite number
   in range (`NaN` and `Inf` parse but cannot be encoded, so they count as absent).

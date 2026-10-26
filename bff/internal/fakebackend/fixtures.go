@@ -16,6 +16,9 @@ import (
 // Fixtures is the content of a fixtures directory (mock/fixtures by default).
 //
 //	managedclusters.json  {"clusters": [ManagedCluster...]} in protojson
+//	gpunodes.json         {"nodes": [SearchNode...]}: the spokes' GPU nodes as ACM
+//	                      Search returns them, from which each cluster's
+//	                      status.gpus is derived (see gpus.go)
 //	tenants.json          {"tenants": [Tenant...]} in protojson, or
 //	                      {"unavailable": "<error text>"} to simulate a backend
 //	                      whose Keycloak cannot be reached, or
@@ -39,7 +42,9 @@ import (
 // Proto messages are decoded with protojson so the files use the same field
 // names (lowerCamelCase) that grpcurl and the real backend's JSON logs show.
 type Fixtures struct {
-	Clusters            []*aigridv1.ManagedCluster
+	Clusters []*aigridv1.ManagedCluster
+	// GPUNodes are the spokes' Node objects as ACM Search returns them.
+	GPUNodes            []SearchNode
 	Tenants             []*aigridv1.Tenant
 	TenantsUnavailable  string
 	TenantsRealmMissing bool
@@ -124,6 +129,18 @@ func Load(dir string) (*Fixtures, error) {
 			}
 			fx.Clusters = append(fx.Clusters, c)
 		}
+	}
+
+	if raw, ok, err := readFile(filepath.Join(dir, "gpunodes.json")); err != nil {
+		return nil, err
+	} else if ok {
+		var doc struct {
+			Nodes []SearchNode `json:"nodes"`
+		}
+		if err := json.Unmarshal(raw, &doc); err != nil {
+			return nil, fmt.Errorf("gpunodes.json: %w", err)
+		}
+		fx.GPUNodes = doc.Nodes
 	}
 
 	if raw, ok, err := readFile(filepath.Join(dir, "tenants.json")); err != nil {

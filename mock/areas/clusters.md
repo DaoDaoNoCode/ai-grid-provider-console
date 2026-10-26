@@ -44,8 +44,19 @@ sends them in one Update RPC, with the present fields as the mask and
 is 428); it does not read the cluster first and neither merges, compares nor validates the maps
 (a body that names no field is 422); `GridCluster` exposes
 `status`, `statusMessage`, `consoleUrl`, `kubernetesVersion`, `platform`, `product`,
-`gpuCapacity`, `capacity`, `allocatable`, `creationTimestamp`, `siteName`, `latitude`,
+`gpuCapacity`, `capacity`, `allocatable`, `gpus`, `creationTimestamp`, `siteName`, `latitude`,
 `longitude`, `addons`, `conditions`, `resourceVersion`.
+
+GPUs: the draft's `ManagedClusterStatus.gpus` (`ClusterGPUs`, the backend's field 10) is each
+cluster's GPU inventory. The real backend reads it from ACM Search (search-v2's `search` query for
+`kind=Node` with `nvidia.com/gpu.present=true`), because `ManagedClusterInfo` keeps only instance
+type, region, zone and node-role labels (dev hub hf299, 2026-10-26); the fake derives the same from
+`mock/fixtures/gpunodes.json` (`bff/internal/fakebackend/gpus.go`): each node from GPU Feature
+Discovery's labels (`gpu.product`, `gpu.count`, `gpu.memory` MiB, `gpu.family`,
+`gpu.compute.major/minor`, `cuda.driver-version.full`, `cuda.runtime-version.full`, `gpu.machine`,
+`gpu.replicas`, `gpu.sharing-strategy`, `mig.capable`, `mig.strategy`), sharing `mig` when a MIG
+strategy other than `none` is set, then the totals and the distinct configurations, most nodes
+first, then by product. A cluster without GPU nodes has no `gpus`.
 
 UI: the Clusters page (`frontend/src/pages/clusters/ClustersPage.tsx`) lists every
 ManagedCluster with its location, connection, AI Grid membership, role, GPUs and OpenShift

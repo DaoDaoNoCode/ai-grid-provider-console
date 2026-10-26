@@ -482,7 +482,14 @@ type ManagedClusterStatus struct {
 	// result yet), or empty when the Policy doesn't cover the cluster. Unset
 	// when the backend doesn't report it; the console then reads the
 	// ai-grid/provisioned label.
-	Provisioning  *string `protobuf:"bytes,8,opt,name=provisioning,proto3,oneof" json:"provisioning,omitempty"`
+	Provisioning *string `protobuf:"bytes,8,opt,name=provisioning,proto3,oneof" json:"provisioning,omitempty"`
+	// The cluster's GPUs, from ACM Search's index of its nodes and the labels
+	// NVIDIA GPU Feature Discovery puts on them (`ManagedClusterInfo` keeps no
+	// GPU labels). Unset when Search isn't available or hasn't indexed the
+	// cluster; `capacity["nvidia.com/gpu"]` still counts its schedulable GPUs
+	// then. The backend's `ManagedClusterStatus.gpus` (field 10 there) has the
+	// same shape.
+	Gpus          *ClusterGPUs `protobuf:"bytes,9,opt,name=gpus,proto3" json:"gpus,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -573,6 +580,394 @@ func (x *ManagedClusterStatus) GetProvisioning() string {
 	return ""
 }
 
+func (x *ManagedClusterStatus) GetGpus() *ClusterGPUs {
+	if x != nil {
+		return x.Gpus
+	}
+	return nil
+}
+
+// GPU inventory of one cluster.
+type ClusterGPUs struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Physical GPUs on the cluster's GPU nodes: the sum of each node's `count`.
+	Total int32 `protobuf:"varint,1,opt,name=total,proto3" json:"total,omitempty"`
+	// Nodes with at least one GPU.
+	NodeCount int32 `protobuf:"varint,2,opt,name=node_count,json=nodeCount,proto3" json:"node_count,omitempty"`
+	// The distinct node configurations (vendor, product, memory, GPUs per node,
+	// sharing), each with how many nodes have it, most nodes first, then by
+	// product. One entry is the usual case, for example NVIDIA-L4 with 1 GPU per
+	// node on 2 nodes.
+	Configurations []*GPUConfiguration `protobuf:"bytes,3,rep,name=configurations,proto3" json:"configurations,omitempty"`
+	// Every GPU node, by name.
+	Nodes         []*GPUNode `protobuf:"bytes,4,rep,name=nodes,proto3" json:"nodes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClusterGPUs) Reset() {
+	*x = ClusterGPUs{}
+	mi := &file_ai_grid_v1_managed_cluster_type_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClusterGPUs) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClusterGPUs) ProtoMessage() {}
+
+func (x *ClusterGPUs) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_v1_managed_cluster_type_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClusterGPUs.ProtoReflect.Descriptor instead.
+func (*ClusterGPUs) Descriptor() ([]byte, []int) {
+	return file_ai_grid_v1_managed_cluster_type_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ClusterGPUs) GetTotal() int32 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+func (x *ClusterGPUs) GetNodeCount() int32 {
+	if x != nil {
+		return x.NodeCount
+	}
+	return 0
+}
+
+func (x *ClusterGPUs) GetConfigurations() []*GPUConfiguration {
+	if x != nil {
+		return x.Configurations
+	}
+	return nil
+}
+
+func (x *ClusterGPUs) GetNodes() []*GPUNode {
+	if x != nil {
+		return x.Nodes
+	}
+	return nil
+}
+
+// Nodes that share one GPU configuration.
+type GPUConfiguration struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// "NVIDIA" for the nvidia.com labels.
+	Vendor string `protobuf:"bytes,1,opt,name=vendor,proto3" json:"vendor,omitempty"`
+	// `nvidia.com/gpu.product` as GFD writes it, for example "NVIDIA-L4" or
+	// "NVIDIA-H200"; MIG and time-slicing suffixes kept.
+	Product string `protobuf:"bytes,2,opt,name=product,proto3" json:"product,omitempty"`
+	// `nvidia.com/gpu.memory`, MiB per GPU.
+	MemoryMib int64 `protobuf:"varint,3,opt,name=memory_mib,json=memoryMib,proto3" json:"memory_mib,omitempty"`
+	// `nvidia.com/gpu.count`.
+	GpusPerNode int32 `protobuf:"varint,4,opt,name=gpus_per_node,json=gpusPerNode,proto3" json:"gpus_per_node,omitempty"`
+	// Nodes with this configuration.
+	NodeCount     int32       `protobuf:"varint,5,opt,name=node_count,json=nodeCount,proto3" json:"node_count,omitempty"`
+	Sharing       *GPUSharing `protobuf:"bytes,6,opt,name=sharing,proto3" json:"sharing,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GPUConfiguration) Reset() {
+	*x = GPUConfiguration{}
+	mi := &file_ai_grid_v1_managed_cluster_type_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GPUConfiguration) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GPUConfiguration) ProtoMessage() {}
+
+func (x *GPUConfiguration) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_v1_managed_cluster_type_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GPUConfiguration.ProtoReflect.Descriptor instead.
+func (*GPUConfiguration) Descriptor() ([]byte, []int) {
+	return file_ai_grid_v1_managed_cluster_type_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *GPUConfiguration) GetVendor() string {
+	if x != nil {
+		return x.Vendor
+	}
+	return ""
+}
+
+func (x *GPUConfiguration) GetProduct() string {
+	if x != nil {
+		return x.Product
+	}
+	return ""
+}
+
+func (x *GPUConfiguration) GetMemoryMib() int64 {
+	if x != nil {
+		return x.MemoryMib
+	}
+	return 0
+}
+
+func (x *GPUConfiguration) GetGpusPerNode() int32 {
+	if x != nil {
+		return x.GpusPerNode
+	}
+	return 0
+}
+
+func (x *GPUConfiguration) GetNodeCount() int32 {
+	if x != nil {
+		return x.NodeCount
+	}
+	return 0
+}
+
+func (x *GPUConfiguration) GetSharing() *GPUSharing {
+	if x != nil {
+		return x.Sharing
+	}
+	return nil
+}
+
+// How a node's GPUs are shared or sliced.
+type GPUSharing struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// `nvidia.com/gpu.sharing-strategy`: "none", "time-slicing" or "mps";
+	// "mig" when `nvidia.com/mig.strategy` is set. Empty when GFD reports none.
+	Strategy string `protobuf:"bytes,1,opt,name=strategy,proto3" json:"strategy,omitempty"`
+	// `nvidia.com/gpu.replicas`: schedulable units per GPU; 1 without sharing.
+	Replicas int32 `protobuf:"varint,2,opt,name=replicas,proto3" json:"replicas,omitempty"`
+	// `nvidia.com/mig.capable`.
+	MigCapable bool `protobuf:"varint,3,opt,name=mig_capable,json=migCapable,proto3" json:"mig_capable,omitempty"`
+	// `nvidia.com/mig.strategy`: "single" or "mixed"; empty without MIG.
+	MigStrategy   string `protobuf:"bytes,4,opt,name=mig_strategy,json=migStrategy,proto3" json:"mig_strategy,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GPUSharing) Reset() {
+	*x = GPUSharing{}
+	mi := &file_ai_grid_v1_managed_cluster_type_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GPUSharing) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GPUSharing) ProtoMessage() {}
+
+func (x *GPUSharing) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_v1_managed_cluster_type_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GPUSharing.ProtoReflect.Descriptor instead.
+func (*GPUSharing) Descriptor() ([]byte, []int) {
+	return file_ai_grid_v1_managed_cluster_type_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *GPUSharing) GetStrategy() string {
+	if x != nil {
+		return x.Strategy
+	}
+	return ""
+}
+
+func (x *GPUSharing) GetReplicas() int32 {
+	if x != nil {
+		return x.Replicas
+	}
+	return 0
+}
+
+func (x *GPUSharing) GetMigCapable() bool {
+	if x != nil {
+		return x.MigCapable
+	}
+	return false
+}
+
+func (x *GPUSharing) GetMigStrategy() string {
+	if x != nil {
+		return x.MigStrategy
+	}
+	return ""
+}
+
+// One node with GPUs.
+type GPUNode struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Name    string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Vendor  string                 `protobuf:"bytes,2,opt,name=vendor,proto3" json:"vendor,omitempty"`
+	Product string                 `protobuf:"bytes,3,opt,name=product,proto3" json:"product,omitempty"`
+	// `nvidia.com/gpu.count`: physical GPUs (MIG "single": MIG devices).
+	Count     int32 `protobuf:"varint,4,opt,name=count,proto3" json:"count,omitempty"`
+	MemoryMib int64 `protobuf:"varint,5,opt,name=memory_mib,json=memoryMib,proto3" json:"memory_mib,omitempty"`
+	// `nvidia.com/gpu.family`, the architecture, for example "ada-lovelace".
+	Family string `protobuf:"bytes,6,opt,name=family,proto3" json:"family,omitempty"`
+	// `nvidia.com/gpu.compute.major` "." `minor`, for example "8.9".
+	ComputeCapability string `protobuf:"bytes,7,opt,name=compute_capability,json=computeCapability,proto3" json:"compute_capability,omitempty"`
+	// `nvidia.com/cuda.driver-version.full`, for example "580.105.08".
+	DriverVersion string `protobuf:"bytes,8,opt,name=driver_version,json=driverVersion,proto3" json:"driver_version,omitempty"`
+	// `nvidia.com/cuda.runtime-version.full`, for example "13.0".
+	CudaRuntimeVersion string      `protobuf:"bytes,9,opt,name=cuda_runtime_version,json=cudaRuntimeVersion,proto3" json:"cuda_runtime_version,omitempty"`
+	Sharing            *GPUSharing `protobuf:"bytes,10,opt,name=sharing,proto3" json:"sharing,omitempty"`
+	// `nvidia.com/gpu.machine`, the instance type, for example "g6.xlarge".
+	InstanceType string `protobuf:"bytes,11,opt,name=instance_type,json=instanceType,proto3" json:"instance_type,omitempty"`
+	// The node's Ready condition is True.
+	Ready         bool `protobuf:"varint,12,opt,name=ready,proto3" json:"ready,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GPUNode) Reset() {
+	*x = GPUNode{}
+	mi := &file_ai_grid_v1_managed_cluster_type_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GPUNode) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GPUNode) ProtoMessage() {}
+
+func (x *GPUNode) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_v1_managed_cluster_type_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GPUNode.ProtoReflect.Descriptor instead.
+func (*GPUNode) Descriptor() ([]byte, []int) {
+	return file_ai_grid_v1_managed_cluster_type_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *GPUNode) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *GPUNode) GetVendor() string {
+	if x != nil {
+		return x.Vendor
+	}
+	return ""
+}
+
+func (x *GPUNode) GetProduct() string {
+	if x != nil {
+		return x.Product
+	}
+	return ""
+}
+
+func (x *GPUNode) GetCount() int32 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
+func (x *GPUNode) GetMemoryMib() int64 {
+	if x != nil {
+		return x.MemoryMib
+	}
+	return 0
+}
+
+func (x *GPUNode) GetFamily() string {
+	if x != nil {
+		return x.Family
+	}
+	return ""
+}
+
+func (x *GPUNode) GetComputeCapability() string {
+	if x != nil {
+		return x.ComputeCapability
+	}
+	return ""
+}
+
+func (x *GPUNode) GetDriverVersion() string {
+	if x != nil {
+		return x.DriverVersion
+	}
+	return ""
+}
+
+func (x *GPUNode) GetCudaRuntimeVersion() string {
+	if x != nil {
+		return x.CudaRuntimeVersion
+	}
+	return ""
+}
+
+func (x *GPUNode) GetSharing() *GPUSharing {
+	if x != nil {
+		return x.Sharing
+	}
+	return nil
+}
+
+func (x *GPUNode) GetInstanceType() string {
+	if x != nil {
+		return x.InstanceType
+	}
+	return ""
+}
+
+func (x *GPUNode) GetReady() bool {
+	if x != nil {
+		return x.Ready
+	}
+	return false
+}
+
 // `status.clusterClaims[]`.
 type ClusterClaim struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -586,7 +981,7 @@ type ClusterClaim struct {
 
 func (x *ClusterClaim) Reset() {
 	*x = ClusterClaim{}
-	mi := &file_ai_grid_v1_managed_cluster_type_proto_msgTypes[4]
+	mi := &file_ai_grid_v1_managed_cluster_type_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -598,7 +993,7 @@ func (x *ClusterClaim) String() string {
 func (*ClusterClaim) ProtoMessage() {}
 
 func (x *ClusterClaim) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_v1_managed_cluster_type_proto_msgTypes[4]
+	mi := &file_ai_grid_v1_managed_cluster_type_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -611,7 +1006,7 @@ func (x *ClusterClaim) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClusterClaim.ProtoReflect.Descriptor instead.
 func (*ClusterClaim) Descriptor() ([]byte, []int) {
-	return file_ai_grid_v1_managed_cluster_type_proto_rawDescGZIP(), []int{4}
+	return file_ai_grid_v1_managed_cluster_type_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ClusterClaim) GetName() string {
@@ -668,7 +1063,7 @@ const file_ai_grid_v1_managed_cluster_type_proto_rawDesc = "" +
 	"time_added\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\ttimeAdded\"=\n" +
 	"\fClientConfig\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\x12\x1b\n" +
-	"\tca_bundle\x18\x02 \x01(\fR\bcaBundle\"\xf1\x04\n" +
+	"\tca_bundle\x18\x02 \x01(\fR\bcaBundle\"\x9e\x05\n" +
 	"\x14ManagedClusterStatus\x125\n" +
 	"\x05state\x18\x01 \x01(\x0e2\x1f.ai_grid.v1.ManagedClusterStateR\x05state\x125\n" +
 	"\n" +
@@ -679,14 +1074,52 @@ const file_ai_grid_v1_managed_cluster_type_proto_rawDesc = "" +
 	"\vallocatable\x18\x05 \x03(\v21.ai_grid.v1.ManagedClusterStatus.AllocatableEntryR\vallocatable\x12?\n" +
 	"\x0ecluster_claims\x18\x06 \x03(\v2\x18.ai_grid.v1.ClusterClaimR\rclusterClaims\x12#\n" +
 	"\rstate_message\x18\a \x01(\tR\fstateMessage\x12'\n" +
-	"\fprovisioning\x18\b \x01(\tH\x00R\fprovisioning\x88\x01\x01\x1a;\n" +
+	"\fprovisioning\x18\b \x01(\tH\x00R\fprovisioning\x88\x01\x01\x12+\n" +
+	"\x04gpus\x18\t \x01(\v2\x17.ai_grid.v1.ClusterGPUsR\x04gpus\x1a;\n" +
 	"\rCapacityEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a>\n" +
 	"\x10AllocatableEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\x0f\n" +
-	"\r_provisioning\"8\n" +
+	"\r_provisioning\"\xb3\x01\n" +
+	"\vClusterGPUs\x12\x14\n" +
+	"\x05total\x18\x01 \x01(\x05R\x05total\x12\x1d\n" +
+	"\n" +
+	"node_count\x18\x02 \x01(\x05R\tnodeCount\x12D\n" +
+	"\x0econfigurations\x18\x03 \x03(\v2\x1c.ai_grid.v1.GPUConfigurationR\x0econfigurations\x12)\n" +
+	"\x05nodes\x18\x04 \x03(\v2\x13.ai_grid.v1.GPUNodeR\x05nodes\"\xd8\x01\n" +
+	"\x10GPUConfiguration\x12\x16\n" +
+	"\x06vendor\x18\x01 \x01(\tR\x06vendor\x12\x18\n" +
+	"\aproduct\x18\x02 \x01(\tR\aproduct\x12\x1d\n" +
+	"\n" +
+	"memory_mib\x18\x03 \x01(\x03R\tmemoryMib\x12\"\n" +
+	"\rgpus_per_node\x18\x04 \x01(\x05R\vgpusPerNode\x12\x1d\n" +
+	"\n" +
+	"node_count\x18\x05 \x01(\x05R\tnodeCount\x120\n" +
+	"\asharing\x18\x06 \x01(\v2\x16.ai_grid.v1.GPUSharingR\asharing\"\x88\x01\n" +
+	"\n" +
+	"GPUSharing\x12\x1a\n" +
+	"\bstrategy\x18\x01 \x01(\tR\bstrategy\x12\x1a\n" +
+	"\breplicas\x18\x02 \x01(\x05R\breplicas\x12\x1f\n" +
+	"\vmig_capable\x18\x03 \x01(\bR\n" +
+	"migCapable\x12!\n" +
+	"\fmig_strategy\x18\x04 \x01(\tR\vmigStrategy\"\x91\x03\n" +
+	"\aGPUNode\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
+	"\x06vendor\x18\x02 \x01(\tR\x06vendor\x12\x18\n" +
+	"\aproduct\x18\x03 \x01(\tR\aproduct\x12\x14\n" +
+	"\x05count\x18\x04 \x01(\x05R\x05count\x12\x1d\n" +
+	"\n" +
+	"memory_mib\x18\x05 \x01(\x03R\tmemoryMib\x12\x16\n" +
+	"\x06family\x18\x06 \x01(\tR\x06family\x12-\n" +
+	"\x12compute_capability\x18\a \x01(\tR\x11computeCapability\x12%\n" +
+	"\x0edriver_version\x18\b \x01(\tR\rdriverVersion\x120\n" +
+	"\x14cuda_runtime_version\x18\t \x01(\tR\x12cudaRuntimeVersion\x120\n" +
+	"\asharing\x18\n" +
+	" \x01(\v2\x16.ai_grid.v1.GPUSharingR\asharing\x12#\n" +
+	"\rinstance_type\x18\v \x01(\tR\finstanceType\x12\x14\n" +
+	"\x05ready\x18\f \x01(\bR\x05ready\"8\n" +
 	"\fClusterClaim\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value*\x93\x03\n" +
@@ -715,40 +1148,49 @@ func file_ai_grid_v1_managed_cluster_type_proto_rawDescGZIP() []byte {
 }
 
 var file_ai_grid_v1_managed_cluster_type_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_ai_grid_v1_managed_cluster_type_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_ai_grid_v1_managed_cluster_type_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_ai_grid_v1_managed_cluster_type_proto_goTypes = []any{
 	(ManagedClusterState)(0),      // 0: ai_grid.v1.ManagedClusterState
 	(*ManagedCluster)(nil),        // 1: ai_grid.v1.ManagedCluster
 	(*Taint)(nil),                 // 2: ai_grid.v1.Taint
 	(*ClientConfig)(nil),          // 3: ai_grid.v1.ClientConfig
 	(*ManagedClusterStatus)(nil),  // 4: ai_grid.v1.ManagedClusterStatus
-	(*ClusterClaim)(nil),          // 5: ai_grid.v1.ClusterClaim
-	nil,                           // 6: ai_grid.v1.ManagedCluster.LabelsEntry
-	nil,                           // 7: ai_grid.v1.ManagedCluster.AnnotationsEntry
-	nil,                           // 8: ai_grid.v1.ManagedClusterStatus.CapacityEntry
-	nil,                           // 9: ai_grid.v1.ManagedClusterStatus.AllocatableEntry
-	(*timestamppb.Timestamp)(nil), // 10: google.protobuf.Timestamp
-	(*Condition)(nil),             // 11: ai_grid.v1.Condition
+	(*ClusterGPUs)(nil),           // 5: ai_grid.v1.ClusterGPUs
+	(*GPUConfiguration)(nil),      // 6: ai_grid.v1.GPUConfiguration
+	(*GPUSharing)(nil),            // 7: ai_grid.v1.GPUSharing
+	(*GPUNode)(nil),               // 8: ai_grid.v1.GPUNode
+	(*ClusterClaim)(nil),          // 9: ai_grid.v1.ClusterClaim
+	nil,                           // 10: ai_grid.v1.ManagedCluster.LabelsEntry
+	nil,                           // 11: ai_grid.v1.ManagedCluster.AnnotationsEntry
+	nil,                           // 12: ai_grid.v1.ManagedClusterStatus.CapacityEntry
+	nil,                           // 13: ai_grid.v1.ManagedClusterStatus.AllocatableEntry
+	(*timestamppb.Timestamp)(nil), // 14: google.protobuf.Timestamp
+	(*Condition)(nil),             // 15: ai_grid.v1.Condition
 }
 var file_ai_grid_v1_managed_cluster_type_proto_depIdxs = []int32{
-	6,  // 0: ai_grid.v1.ManagedCluster.labels:type_name -> ai_grid.v1.ManagedCluster.LabelsEntry
-	7,  // 1: ai_grid.v1.ManagedCluster.annotations:type_name -> ai_grid.v1.ManagedCluster.AnnotationsEntry
-	10, // 2: ai_grid.v1.ManagedCluster.creation_timestamp:type_name -> google.protobuf.Timestamp
-	10, // 3: ai_grid.v1.ManagedCluster.deletion_timestamp:type_name -> google.protobuf.Timestamp
+	10, // 0: ai_grid.v1.ManagedCluster.labels:type_name -> ai_grid.v1.ManagedCluster.LabelsEntry
+	11, // 1: ai_grid.v1.ManagedCluster.annotations:type_name -> ai_grid.v1.ManagedCluster.AnnotationsEntry
+	14, // 2: ai_grid.v1.ManagedCluster.creation_timestamp:type_name -> google.protobuf.Timestamp
+	14, // 3: ai_grid.v1.ManagedCluster.deletion_timestamp:type_name -> google.protobuf.Timestamp
 	3,  // 4: ai_grid.v1.ManagedCluster.managed_cluster_client_configs:type_name -> ai_grid.v1.ClientConfig
 	4,  // 5: ai_grid.v1.ManagedCluster.status:type_name -> ai_grid.v1.ManagedClusterStatus
 	2,  // 6: ai_grid.v1.ManagedCluster.taints:type_name -> ai_grid.v1.Taint
-	10, // 7: ai_grid.v1.Taint.time_added:type_name -> google.protobuf.Timestamp
+	14, // 7: ai_grid.v1.Taint.time_added:type_name -> google.protobuf.Timestamp
 	0,  // 8: ai_grid.v1.ManagedClusterStatus.state:type_name -> ai_grid.v1.ManagedClusterState
-	11, // 9: ai_grid.v1.ManagedClusterStatus.conditions:type_name -> ai_grid.v1.Condition
-	8,  // 10: ai_grid.v1.ManagedClusterStatus.capacity:type_name -> ai_grid.v1.ManagedClusterStatus.CapacityEntry
-	9,  // 11: ai_grid.v1.ManagedClusterStatus.allocatable:type_name -> ai_grid.v1.ManagedClusterStatus.AllocatableEntry
-	5,  // 12: ai_grid.v1.ManagedClusterStatus.cluster_claims:type_name -> ai_grid.v1.ClusterClaim
-	13, // [13:13] is the sub-list for method output_type
-	13, // [13:13] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	15, // 9: ai_grid.v1.ManagedClusterStatus.conditions:type_name -> ai_grid.v1.Condition
+	12, // 10: ai_grid.v1.ManagedClusterStatus.capacity:type_name -> ai_grid.v1.ManagedClusterStatus.CapacityEntry
+	13, // 11: ai_grid.v1.ManagedClusterStatus.allocatable:type_name -> ai_grid.v1.ManagedClusterStatus.AllocatableEntry
+	9,  // 12: ai_grid.v1.ManagedClusterStatus.cluster_claims:type_name -> ai_grid.v1.ClusterClaim
+	5,  // 13: ai_grid.v1.ManagedClusterStatus.gpus:type_name -> ai_grid.v1.ClusterGPUs
+	6,  // 14: ai_grid.v1.ClusterGPUs.configurations:type_name -> ai_grid.v1.GPUConfiguration
+	8,  // 15: ai_grid.v1.ClusterGPUs.nodes:type_name -> ai_grid.v1.GPUNode
+	7,  // 16: ai_grid.v1.GPUConfiguration.sharing:type_name -> ai_grid.v1.GPUSharing
+	7,  // 17: ai_grid.v1.GPUNode.sharing:type_name -> ai_grid.v1.GPUSharing
+	18, // [18:18] is the sub-list for method output_type
+	18, // [18:18] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_ai_grid_v1_managed_cluster_type_proto_init() }
@@ -764,7 +1206,7 @@ func file_ai_grid_v1_managed_cluster_type_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ai_grid_v1_managed_cluster_type_proto_rawDesc), len(file_ai_grid_v1_managed_cluster_type_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   9,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

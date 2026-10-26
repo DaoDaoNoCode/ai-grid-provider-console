@@ -154,6 +154,10 @@ func FromV1Cluster(mc *backendv1.ManagedCluster) *aigridv1.ManagedCluster {
 			Capacity:          st.GetCapacity(),
 			Allocatable:       st.GetAllocatable(),
 			ClusterClaims:     fromV1Claims(st.GetClusterClaims()),
+			// TODO(clusters-v2): map the backend's status.gpus (ManagedClusterStatus field
+			// 10, ai-grid-provider-backend feat/cluster-gpus) onto the draft's Gpus once that
+			// proto is vendored here (hack/sync-upstream-proto.sh); until then the real
+			// backend's clusters have no GPU inventory and the console shows gpuCapacity.
 		},
 	}
 }

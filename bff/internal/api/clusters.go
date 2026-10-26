@@ -99,6 +99,11 @@ type GridCluster struct {
 	// name; omitted when the backend reports none.
 	Capacity    map[string]string `json:"capacity,omitempty"`
 	Allocatable map[string]string `json:"allocatable,omitempty"`
+	// GPUs is the backend's `status.gpus`, as it sends it: the cluster's GPU
+	// inventory from ACM Search. Omitted when the backend has none for the
+	// cluster (no GPU nodes, or Search unavailable); `gpuCapacity` still counts
+	// the schedulable GPUs then.
+	GPUs *ClusterGPUs `json:"gpus,omitempty"`
 	// CreationTimestamp is when the hub created the ManagedCluster.
 	CreationTimestamp *time.Time `json:"creationTimestamp,omitempty"`
 	// SiteName, Latitude and Longitude come from the `ai-grid/*` annotations.
@@ -111,6 +116,83 @@ type GridCluster struct {
 	ResourceVersion string             `json:"resourceVersion,omitempty"`
 	Labels          map[string]string  `json:"labels"`
 	Annotations     map[string]string  `json:"annotations"`
+}
+
+// ClusterGPUs is the backend's ClusterGPUs in the console's JSON: the
+// field names in lowerCamelCase, nothing derived here.
+type ClusterGPUs struct {
+	Total          int32              `json:"total"`
+	NodeCount      int32              `json:"nodeCount"`
+	Configurations []GPUConfiguration `json:"configurations"`
+	Nodes          []GPUNode          `json:"nodes"`
+}
+
+// GPUConfiguration is the backend's GPUConfiguration: nodes that share one.
+type GPUConfiguration struct {
+	Vendor      string     `json:"vendor"`
+	Product     string     `json:"product"`
+	MemoryMiB   int64      `json:"memoryMib"`
+	GPUsPerNode int32      `json:"gpusPerNode"`
+	NodeCount   int32      `json:"nodeCount"`
+	Sharing     GPUSharing `json:"sharing"`
+}
+
+// GPUSharing is the backend's GPUSharing: how a node's GPUs are shared or sliced.
+type GPUSharing struct {
+	Strategy    string `json:"strategy"`
+	Replicas    int32  `json:"replicas"`
+	MIGCapable  bool   `json:"migCapable"`
+	MIGStrategy string `json:"migStrategy,omitempty"`
+}
+
+// GPUNode is the backend's GPUNode: one node with GPUs.
+type GPUNode struct {
+	Name               string     `json:"name"`
+	Vendor             string     `json:"vendor"`
+	Product            string     `json:"product"`
+	Count              int32      `json:"count"`
+	MemoryMiB          int64      `json:"memoryMib"`
+	Family             string     `json:"family,omitempty"`
+	ComputeCapability  string     `json:"computeCapability,omitempty"`
+	DriverVersion      string     `json:"driverVersion,omitempty"`
+	CUDARuntimeVersion string     `json:"cudaRuntimeVersion,omitempty"`
+	Sharing            GPUSharing `json:"sharing"`
+	InstanceType       string     `json:"instanceType,omitempty"`
+	Ready              bool       `json:"ready"`
+}
+
+func toGPUSharing(s *aigridv1.GPUSharing) GPUSharing {
+	return GPUSharing{
+		Strategy: s.GetStrategy(), Replicas: s.GetReplicas(),
+		MIGCapable: s.GetMigCapable(), MIGStrategy: s.GetMigStrategy(),
+	}
+}
+
+// toClusterGPUs copies the backend's inventory into the JSON; nil stays nil.
+func toClusterGPUs(g *aigridv1.ClusterGPUs) *ClusterGPUs {
+	if g == nil {
+		return nil
+	}
+	out := &ClusterGPUs{
+		Total: g.GetTotal(), NodeCount: g.GetNodeCount(),
+		Configurations: make([]GPUConfiguration, 0, len(g.GetConfigurations())),
+		Nodes:          make([]GPUNode, 0, len(g.GetNodes())),
+	}
+	for _, c := range g.GetConfigurations() {
+		out.Configurations = append(out.Configurations, GPUConfiguration{
+			Vendor: c.GetVendor(), Product: c.GetProduct(), MemoryMiB: c.GetMemoryMib(),
+			GPUsPerNode: c.GetGpusPerNode(), NodeCount: c.GetNodeCount(), Sharing: toGPUSharing(c.GetSharing()),
+		})
+	}
+	for _, n := range g.GetNodes() {
+		out.Nodes = append(out.Nodes, GPUNode{
+			Name: n.GetName(), Vendor: n.GetVendor(), Product: n.GetProduct(), Count: n.GetCount(),
+			MemoryMiB: n.GetMemoryMib(), Family: n.GetFamily(), ComputeCapability: n.GetComputeCapability(),
+			DriverVersion: n.GetDriverVersion(), CUDARuntimeVersion: n.GetCudaRuntimeVersion(),
+			Sharing: toGPUSharing(n.GetSharing()), InstanceType: n.GetInstanceType(), Ready: n.GetReady(),
+		})
+	}
+	return out
 }
 
 // ClusterCondition is one `status.conditions[]` entry with the Kubernetes
@@ -191,6 +273,7 @@ func toGridCluster(mc *aigridv1.ManagedCluster) GridCluster {
 		GPUCapacity:       gpu,
 		Capacity:          st.GetCapacity(),
 		Allocatable:       st.GetAllocatable(),
+		GPUs:              toClusterGPUs(st.GetGpus()),
 		CreationTimestamp: created,
 		SiteName:          annotations[AnnotationSiteName],
 		Latitude:          parseCoordinate(annotations[AnnotationLatitude], 90),

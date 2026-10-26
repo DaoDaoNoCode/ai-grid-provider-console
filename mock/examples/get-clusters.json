@@ -127,7 +127,7 @@
         "kubernetesVersion": "v1.35.6",
         "platform": "AWS",
         "product": "ROSA",
-        "gpuCapacity": 0,
+        "gpuCapacity": 1,
         "capacity": {
           "core_worker": "36",
           "cpu": "48",
@@ -135,6 +135,7 @@
           "hugepages-1Gi": "0",
           "hugepages-2Mi": "0",
           "memory": "196608Mi",
+          "nvidia.com/gpu": "1",
           "pods": "750",
           "socket_worker": "6"
         },
@@ -144,7 +145,46 @@
           "hugepages-1Gi": "0",
           "hugepages-2Mi": "0",
           "memory": "190000Mi",
+          "nvidia.com/gpu": "1",
           "pods": "750"
+        },
+        "gpus": {
+          "total": 1,
+          "nodeCount": 1,
+          "configurations": [
+            {
+              "vendor": "NVIDIA",
+              "product": "NVIDIA-L4",
+              "memoryMib": 23034,
+              "gpusPerNode": 1,
+              "nodeCount": 1,
+              "sharing": {
+                "strategy": "none",
+                "replicas": 1,
+                "migCapable": false
+              }
+            }
+          ],
+          "nodes": [
+            {
+              "name": "gpu-l4-0.hub.example",
+              "vendor": "NVIDIA",
+              "product": "NVIDIA-L4",
+              "count": 1,
+              "memoryMib": 23034,
+              "family": "ada-lovelace",
+              "computeCapability": "8.9",
+              "driverVersion": "580.105.08",
+              "cudaRuntimeVersion": "13.0",
+              "sharing": {
+                "strategy": "none",
+                "replicas": 1,
+                "migCapable": false
+              },
+              "instanceType": "g6.xlarge",
+              "ready": true
+            }
+          ]
         },
         "creationTimestamp": "2026-09-01T07:30:00Z",
         "addons": {
@@ -260,6 +300,62 @@
           "memory": "515000Mi",
           "nvidia.com/gpu": "8",
           "pods": "750"
+        },
+        "gpus": {
+          "total": 2,
+          "nodeCount": 2,
+          "configurations": [
+            {
+              "vendor": "NVIDIA",
+              "product": "NVIDIA-L4-SHARED",
+              "memoryMib": 23034,
+              "gpusPerNode": 1,
+              "nodeCount": 2,
+              "sharing": {
+                "strategy": "time-slicing",
+                "replicas": 4,
+                "migCapable": false
+              }
+            }
+          ],
+          "nodes": [
+            {
+              "name": "gpu-l4-0.ashburn.example",
+              "vendor": "NVIDIA",
+              "product": "NVIDIA-L4-SHARED",
+              "count": 1,
+              "memoryMib": 23034,
+              "family": "ada-lovelace",
+              "computeCapability": "8.9",
+              "driverVersion": "580.105.08",
+              "cudaRuntimeVersion": "13.0",
+              "sharing": {
+                "strategy": "time-slicing",
+                "replicas": 4,
+                "migCapable": false
+              },
+              "instanceType": "g6.xlarge",
+              "ready": true
+            },
+            {
+              "name": "gpu-l4-1.ashburn.example",
+              "vendor": "NVIDIA",
+              "product": "NVIDIA-L4-SHARED",
+              "count": 1,
+              "memoryMib": 23034,
+              "family": "ada-lovelace",
+              "computeCapability": "8.9",
+              "driverVersion": "580.105.08",
+              "cudaRuntimeVersion": "13.0",
+              "sharing": {
+                "strategy": "time-slicing",
+                "replicas": 4,
+                "migCapable": false
+              },
+              "instanceType": "g6.xlarge",
+              "ready": true
+            }
+          ]
         },
         "creationTimestamp": "2026-09-28T16:45:00Z",
         "siteName": "Ashburn DC1",
@@ -449,6 +545,92 @@
           "memory": "770000Mi",
           "nvidia.com/gpu": "8",
           "pods": "750"
+        },
+        "gpus": {
+          "total": 8,
+          "nodeCount": 3,
+          "configurations": [
+            {
+              "vendor": "NVIDIA",
+              "product": "NVIDIA-L40S",
+              "memoryMib": 46068,
+              "gpusPerNode": 2,
+              "nodeCount": 2,
+              "sharing": {
+                "strategy": "none",
+                "replicas": 1,
+                "migCapable": false
+              }
+            },
+            {
+              "vendor": "NVIDIA",
+              "product": "NVIDIA-H100-80GB-HBM3",
+              "memoryMib": 81559,
+              "gpusPerNode": 4,
+              "nodeCount": 1,
+              "sharing": {
+                "strategy": "none",
+                "replicas": 1,
+                "migCapable": true
+              }
+            }
+          ],
+          "nodes": [
+            {
+              "name": "gpu-h100-0.frankfurt.example",
+              "vendor": "NVIDIA",
+              "product": "NVIDIA-H100-80GB-HBM3",
+              "count": 4,
+              "memoryMib": 81559,
+              "family": "hopper",
+              "computeCapability": "9.0",
+              "driverVersion": "580.105.08",
+              "cudaRuntimeVersion": "13.0",
+              "sharing": {
+                "strategy": "none",
+                "replicas": 1,
+                "migCapable": true
+              },
+              "instanceType": "p5.48xlarge",
+              "ready": true
+            },
+            {
+              "name": "gpu-l40s-0.frankfurt.example",
+              "vendor": "NVIDIA",
+              "product": "NVIDIA-L40S",
+              "count": 2,
+              "memoryMib": 46068,
+              "family": "ada-lovelace",
+              "computeCapability": "8.9",
+              "driverVersion": "580.105.08",
+              "cudaRuntimeVersion": "13.0",
+              "sharing": {
+                "strategy": "none",
+                "replicas": 1,
+                "migCapable": false
+              },
+              "instanceType": "g6e.12xlarge",
+              "ready": true
+            },
+            {
+              "name": "gpu-l40s-1.frankfurt.example",
+              "vendor": "NVIDIA",
+              "product": "NVIDIA-L40S",
+              "count": 2,
+              "memoryMib": 46068,
+              "family": "ada-lovelace",
+              "computeCapability": "8.9",
+              "driverVersion": "580.105.08",
+              "cudaRuntimeVersion": "13.0",
+              "sharing": {
+                "strategy": "none",
+                "replicas": 1,
+                "migCapable": false
+              },
+              "instanceType": "g6e.12xlarge",
+              "ready": false
+            }
+          ]
         },
         "creationTimestamp": "2026-10-03T14:12:00Z",
         "addons": {
@@ -659,6 +841,46 @@
           "nvidia.com/gpu": "4",
           "pods": "750"
         },
+        "gpus": {
+          "total": 4,
+          "nodeCount": 1,
+          "configurations": [
+            {
+              "vendor": "NVIDIA",
+              "product": "NVIDIA-A100-SXM4-40GB-MIG-3g.20gb",
+              "memoryMib": 19968,
+              "gpusPerNode": 4,
+              "nodeCount": 1,
+              "sharing": {
+                "strategy": "mig",
+                "replicas": 1,
+                "migCapable": true,
+                "migStrategy": "single"
+              }
+            }
+          ],
+          "nodes": [
+            {
+              "name": "gpu-a100-0.madrid.example",
+              "vendor": "NVIDIA",
+              "product": "NVIDIA-A100-SXM4-40GB-MIG-3g.20gb",
+              "count": 4,
+              "memoryMib": 19968,
+              "family": "ampere",
+              "computeCapability": "8.0",
+              "driverVersion": "580.105.08",
+              "cudaRuntimeVersion": "13.0",
+              "sharing": {
+                "strategy": "mig",
+                "replicas": 1,
+                "migCapable": true,
+                "migStrategy": "single"
+              },
+              "instanceType": "p4d.24xlarge",
+              "ready": true
+            }
+          ]
+        },
         "creationTimestamp": "2026-09-20T08:00:00Z",
         "siteName": "Madrid DC1",
         "latitude": 40.4168,
@@ -794,7 +1016,7 @@
         "kubernetesVersion": "v1.35.6",
         "platform": "BareMetal",
         "product": "OpenShift",
-        "gpuCapacity": 16,
+        "gpuCapacity": 32,
         "capacity": {
           "core_worker": "128",
           "cpu": "192",
@@ -802,7 +1024,7 @@
           "hugepages-1Gi": "0",
           "hugepages-2Mi": "0",
           "memory": "1572864Mi",
-          "nvidia.com/gpu": "16",
+          "nvidia.com/gpu": "32",
           "pods": "1000",
           "socket_worker": "8"
         },
@@ -812,8 +1034,100 @@
           "hugepages-1Gi": "0",
           "hugepages-2Mi": "0",
           "memory": "1540000Mi",
-          "nvidia.com/gpu": "16",
+          "nvidia.com/gpu": "32",
           "pods": "1000"
+        },
+        "gpus": {
+          "total": 32,
+          "nodeCount": 4,
+          "configurations": [
+            {
+              "vendor": "NVIDIA",
+              "product": "NVIDIA-H200",
+              "memoryMib": 143771,
+              "gpusPerNode": 8,
+              "nodeCount": 4,
+              "sharing": {
+                "strategy": "none",
+                "replicas": 1,
+                "migCapable": true
+              }
+            }
+          ],
+          "nodes": [
+            {
+              "name": "gpu-h200-0.paris.example",
+              "vendor": "NVIDIA",
+              "product": "NVIDIA-H200",
+              "count": 8,
+              "memoryMib": 143771,
+              "family": "hopper",
+              "computeCapability": "9.0",
+              "driverVersion": "580.105.08",
+              "cudaRuntimeVersion": "13.0",
+              "sharing": {
+                "strategy": "none",
+                "replicas": 1,
+                "migCapable": true
+              },
+              "instanceType": "p5en.48xlarge",
+              "ready": true
+            },
+            {
+              "name": "gpu-h200-1.paris.example",
+              "vendor": "NVIDIA",
+              "product": "NVIDIA-H200",
+              "count": 8,
+              "memoryMib": 143771,
+              "family": "hopper",
+              "computeCapability": "9.0",
+              "driverVersion": "580.105.08",
+              "cudaRuntimeVersion": "13.0",
+              "sharing": {
+                "strategy": "none",
+                "replicas": 1,
+                "migCapable": true
+              },
+              "instanceType": "p5en.48xlarge",
+              "ready": true
+            },
+            {
+              "name": "gpu-h200-2.paris.example",
+              "vendor": "NVIDIA",
+              "product": "NVIDIA-H200",
+              "count": 8,
+              "memoryMib": 143771,
+              "family": "hopper",
+              "computeCapability": "9.0",
+              "driverVersion": "580.105.08",
+              "cudaRuntimeVersion": "13.0",
+              "sharing": {
+                "strategy": "none",
+                "replicas": 1,
+                "migCapable": true
+              },
+              "instanceType": "p5en.48xlarge",
+              "ready": true
+            },
+            {
+              "name": "gpu-h200-3.paris.example",
+              "vendor": "NVIDIA",
+              "product": "NVIDIA-H200",
+              "count": 8,
+              "memoryMib": 143771,
+              "family": "hopper",
+              "computeCapability": "9.0",
+              "driverVersion": "580.105.08",
+              "cudaRuntimeVersion": "13.0",
+              "sharing": {
+                "strategy": "none",
+                "replicas": 1,
+                "migCapable": true
+              },
+              "instanceType": "p5en.48xlarge",
+              "ready": true
+            }
+          ]
         },
         "creationTimestamp": "2026-10-01T09:00:00Z",
         "siteName": "Paris DC1",
