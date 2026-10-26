@@ -49,7 +49,20 @@ without one could never be updated or deleted.
 
 ## Adding a feature
 
-Follow `mock/proto/README.md`, "Working with the backend team":
+New API work goes to the backend's own `ai_grid.v1`, and the page uses it through the generated
+Connect client; [`docs/connect.md`](docs/connect.md) is the guide:
+
+1. Add the field or RPC to `proto/ai_grid/v1` in ai-grid-cloud/ai-grid-provider-backend, with its
+   implementation, following that repository's `docs/API_CONTRACT.md` (never a breaking change in
+   one step).
+2. Move `.backend-api-version` to a backend commit that has it and run `make generate-api`; commit
+   `frontend/src/gen` with the change. Never edit `frontend/src/gen` or write TypeScript types that
+   repeat a generated message.
+3. Build the page on `frontend/src/api/connect` (typed clients, `describeError`), test it with
+   `fakeClients`, and try it with `make dev-fake-infra`. The BFF needs no change.
+
+Don't add new RPCs or fields to `mock/proto`. An area that still runs on the draft (until it moves
+to `ai_grid.v1`) keeps the old steps, in `mock/proto/README.md`, "Working with the backend team":
 
 1. Draft the RPC or field in `mock/proto/ai_grid/v1`, then run `make -C bff generate`.
 2. Implement it in the fake, with the source of each behaviour cited next to the code, and test it
