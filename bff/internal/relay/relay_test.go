@@ -252,6 +252,7 @@ func TestIdentityEncodingAndMissingFields(t *testing.T) {
 	r := relayTo(t, srv)
 
 	req := httptest.NewRequest(http.MethodPost, list, strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(headers.Token, "sha256~caller")
 	req.Header.Set(headers.User, "équipe-admin")
 	req.Header.Set(headers.Groups, "équipe-ops,100%")
@@ -268,6 +269,7 @@ func TestIdentityEncodingAndMissingFields(t *testing.T) {
 	}
 
 	bare := httptest.NewRequest(http.MethodPost, list, strings.NewReader(`{}`))
+	bare.Header.Set("Content-Type", "application/json")
 	bare.Header.Set(headers.Token, "sha256~caller")
 	id, err = headers.Extract(bare.Header)
 	if err != nil {
@@ -385,21 +387,41 @@ func TestBodyLimit(t *testing.T) {
 	}
 }
 
-// A unary call is cut at the backend timeout with 504; a streaming one isn't.
-func TestUnaryTimeout(t *testing.T) {
+// stallingBackend answers after 300ms: a unary call (and a stream sent with X-Stall-Headers)
+// with nothing before then, a stream with its headers at once and its body after.
+func stallingBackend(t *testing.T) *httptest.Server {
+	t.Helper()
 	release := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		select {
-		case <-release:
-		case <-r.Context().Done():
-			return
-		case <-time.After(300 * time.Millisecond):
+		wait := func() bool {
+			select {
+			case <-release:
+			case <-r.Context().Done():
+				return false
+			case <-time.After(300 * time.Millisecond):
+			}
+			return true
 		}
-		w.Header().Set("Content-Type", r.Header.Get("Content-Type"))
+		ct := r.Header.Get("Content-Type")
+		if strings.HasPrefix(ct, "application/connect+") && r.Header.Get("X-Stall-Headers") == "" {
+			w.Header().Set("Content-Type", ct)
+			w.WriteHeader(http.StatusOK)
+			w.(http.Flusher).Flush()
+		}
+		if !wait() {
+			return
+		}
+		w.Header().Set("Content-Type", ct)
 		_, _ = w.Write([]byte(`{}`))
 	}))
-	defer srv.Close()
-	defer close(release)
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(release) })
+	return srv
+}
+
+// A unary call is cut at the backend timeout with 504; a stream whose headers came isn't.
+func TestUnaryTimeout(t *testing.T) {
+	srv := stallingBackend(t)
 	r := newRelay(t, backend.Config{Address: strings.TrimPrefix(srv.URL, "http://"), Timeout: 100 * time.Millisecond})
 
 	for _, method := range []string{http.MethodPost, http.MethodGet} {
@@ -413,10 +435,120 @@ func TestUnaryTimeout(t *testing.T) {
 		}
 	}
 
-	for _, ct := range []string{"application/connect+json", "application/grpc-web+proto"} {
+	for _, ct := range []string{"application/connect+json", "application/connect+proto"} {
 		rec := serve(r, asCaller(t, http.MethodPost, list, strings.NewReader(`{}`), http.Header{"Content-Type": {ct}}))
-		if rec.Code != http.StatusOK {
-			t.Errorf("%s: got %d %q, want the stream's answer after the unary timeout", ct, rec.Code, rec.Body)
+		if rec.Code != http.StatusOK || rec.Body.String() != `{}` {
+			t.Errorf("%s: got %d %q, want the stream's whole answer after the unary timeout", ct, rec.Code, rec.Body)
+		}
+	}
+}
+
+// A backend that sends no headers can't hold a call, a stream included: past the backend timeout
+// the relay answers 504 (the transport's ResponseHeaderTimeout).
+func TestResponseHeaderTimeout(t *testing.T) {
+	srv := stallingBackend(t)
+	r := newRelay(t, backend.Config{Address: strings.TrimPrefix(srv.URL, "http://"), Timeout: 100 * time.Millisecond})
+	start := time.Now()
+	rec := serve(r, asCaller(t, http.MethodPost, list, strings.NewReader(`{}`), http.Header{
+		"Content-Type":    {"application/connect+json"},
+		"X-Stall-Headers": {"1"},
+	}))
+	if code, _ := connectError(t, rec); rec.Code != http.StatusGatewayTimeout || code != "deadline_exceeded" {
+		t.Fatalf("stream without headers: got %d %s %q, want 504 deadline_exceeded", rec.Code, code, rec.Body)
+	}
+	if d := time.Since(start); d > 250*time.Millisecond {
+		t.Errorf("answered after %s, want about the 100ms timeout", d)
+	}
+}
+
+// Only the Connect protocol passes: gRPC, gRPC-Web (which the backend serves on the same port)
+// and any other body are 415 before the backend is called.
+func TestOnlyConnectContentTypes(t *testing.T) {
+	srv, got := connectBackend(t)
+	r := relayTo(t, srv)
+	for _, ct := range []string{
+		"application/grpc",
+		"application/grpc+proto",
+		"application/grpc-web+proto",
+		"application/grpc-web-text",
+		"text/plain",
+		"application/x-www-form-urlencoded",
+		"application/connect+thrift",
+		"",
+	} {
+		rec := serve(r, asCaller(t, http.MethodPost, list, strings.NewReader(`{}`), http.Header{"Content-Type": {ct}}))
+		if code, _ := connectError(t, rec); rec.Code != http.StatusUnsupportedMediaType || code != "unimplemented" {
+			t.Errorf("%q: got %d %s, want 415 unimplemented", ct, rec.Code, code)
+		}
+	}
+	if got.count() != 0 {
+		t.Fatalf("%d refused call(s) reached the backend", got.count())
+	}
+	for _, ct := range []string{"application/json; charset=utf-8", "APPLICATION/PROTO", "application/connect+json", "application/connect+proto"} {
+		if rec := serve(r, asCaller(t, http.MethodPost, list, strings.NewReader(`{}`), http.Header{"Content-Type": {ct}})); rec.Code != http.StatusOK {
+			t.Errorf("%q: got %d %q", ct, rec.Code, rec.Body)
+		}
+	}
+}
+
+// Of the backend's answer only what a Connect client and the browser need comes back; the backend
+// can't set a cookie for the console's origin, open it to other sites or speak for its security
+// headers.
+func TestRelaysOnlyTheResponseHeadersAClientNeeds(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		h := w.Header()
+		for k, v := range map[string]string{
+			"Content-Type":                     "application/json",
+			"Accept-Encoding":                  "gzip",
+			"Connect-Content-Encoding":         "identity",
+			"Trailer-X-Backend-Trace":          "abc",
+			"Grpc-Status":                      "0",
+			"Vary":                             "Accept-Encoding",
+			"Cache-Control":                    "private, max-age=5",
+			"Set-Cookie":                       "_oauth_proxy=stolen; Path=/",
+			"Access-Control-Allow-Origin":      "*",
+			"Access-Control-Allow-Credentials": "true",
+			"Www-Authenticate":                 `Basic realm="backend"`,
+			"Location":                         "https://attacker.example/",
+			"Refresh":                          "0; url=https://attacker.example/",
+			"Content-Security-Policy":          "default-src *",
+			"X-Content-Type-Options":           "sniff",
+			"X-Frame-Options":                  "ALLOWALL",
+			"Strict-Transport-Security":        "max-age=0",
+			"X-Backend-Internal":               "node-7",
+		} {
+			h.Set(k, v)
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+	rec := serve(relayTo(t, srv), asCaller(t, http.MethodPost, list, strings.NewReader(`{}`), nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("got %d %q", rec.Code, rec.Body)
+	}
+	want := map[string]string{
+		"Content-Type":             "application/json",
+		"Content-Length":           "2",
+		"Accept-Encoding":          "gzip",
+		"Connect-Content-Encoding": "identity",
+		"Trailer-X-Backend-Trace":  "abc",
+		"Grpc-Status":              "0",
+		"Vary":                     "Accept-Encoding",
+		"Cache-Control":            "private, max-age=5",
+		"Date":                     rec.Header().Get("Date"),
+		"X-Content-Type-Options":   "nosniff",
+	}
+	if rec.Header().Get("Date") == "" {
+		t.Error("the backend's Date did not pass")
+	}
+	for k, v := range want {
+		if got := rec.Header().Get(k); got != v {
+			t.Errorf("%s = %q, want %q", k, got, v)
+		}
+	}
+	for k := range rec.Header() {
+		if _, ok := want[k]; !ok {
+			t.Errorf("the backend's %s reached the browser: %q", k, rec.Header().Values(k))
 		}
 	}
 }

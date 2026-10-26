@@ -35,9 +35,10 @@ What the BFF does:
   `bff/internal/relay`) behind the same caller checks as `/api/v1`: a reverse proxy that drops
   whatever the browser sent about who it is (`Authorization`, cookies, `Forwarded`, every
   `X-Forwarded-*`) and sets the caller exactly as `forwardIdentity` does for gRPC, passes only
-  POST and GET with at most 1 MiB, bounds a unary call by `BACKEND_TIMEOUT`, and never reads a
-  body or compiles against the contract. A new RPC needs no change in the BFF; don't add
-  per-RPC code there (`docs/plan/bff-api.md`, "The Connect relay").
+  the Connect protocol (POST with a Connect content type, GET) with at most 1 MiB, bounds a unary
+  call and every call's wait for headers by `BACKEND_TIMEOUT`, passes back only the response
+  headers a Connect client needs, and never reads a body or compiles against the contract. A
+  new RPC needs no change in the BFF; don't add per-RPC code there (`docs/plan/bff-api.md`, "The Connect relay").
 
 What belongs in the backend, and so in the fake (`bff/internal/fakebackend`) until the backend
 ships it: validation of values, normalization and defaults, resource versions and the

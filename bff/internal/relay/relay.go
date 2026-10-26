@@ -11,9 +11,11 @@
 // Authorization: Bearer, and the user, email and groups percent-encoded in
 // x-forwarded-user, x-forwarded-email and x-forwarded-groups. Anything the
 // browser sent under those names, cookies and every other proxy header stay
-// behind. Only POST (Connect unary and streaming calls) and GET (Connect's GET
-// for methods without side effects) pass, with a body of at most MaxBodyBytes;
-// a unary call is bounded by the backend timeout.
+// behind. Only the Connect protocol passes: POST with a Connect content type
+// (unary and streaming calls) and GET (for methods without side effects), with
+// a body of at most MaxBodyBytes. A unary call is bounded by the backend
+// timeout, and any call waits at most that long for the backend's headers. Of
+// the answer, only the headers a Connect client and the browser need pass.
 package relay
 
 import (
@@ -22,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"mime"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -82,17 +85,20 @@ func New(cfg Config) (*Relay, error) {
 	if err != nil {
 		return nil, err
 	}
+	timeout := cfg.Backend.Timeout
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
 	scheme := "http"
 	transport := http.DefaultTransport.(*http.Transport).Clone()
+	// A backend that sends no headers within the timeout can't hold a call, a stream
+	// included; a stream whose headers came runs on uncut.
+	transport.ResponseHeaderTimeout = timeout
 	if tlsCfg != nil {
 		scheme = "https"
 		transport.TLSClientConfig = tlsCfg
 	}
 	target := &neturl.URL{Scheme: scheme, Host: cfg.Backend.Address}
-	timeout := cfg.Backend.Timeout
-	if timeout <= 0 {
-		timeout = 10 * time.Second
-	}
 	logger := cfg.Logger
 	if logger == nil {
 		logger = slog.Default()
@@ -105,9 +111,10 @@ func New(cfg Config) (*Relay, error) {
 	}
 	r := &Relay{target: target, timeout: timeout, strip: strip, logger: logger}
 	r.proxy = &httputil.ReverseProxy{
-		Rewrite:      r.rewrite,
-		Transport:    transport,
-		ErrorHandler: r.errorHandler,
+		Rewrite:        r.rewrite,
+		Transport:      transport,
+		ModifyResponse: modifyResponse,
+		ErrorHandler:   r.errorHandler,
 	}
 	return r, nil
 }
@@ -130,12 +137,21 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		WriteError(w, http.StatusUnauthorized, "missing caller identity")
 		return
 	}
+	streaming := false
+	if req.Method == http.MethodPost {
+		kind, ok := connectContentTypes[mediaType(req.Header.Get("Content-Type"))]
+		if !ok {
+			WriteError(w, http.StatusUnsupportedMediaType, "the console relays the Connect protocol only: send application/json, application/proto, application/connect+json or application/connect+proto")
+			return
+		}
+		streaming = kind == connectStream
+	}
 	if req.ContentLength > MaxBodyBytes {
 		WriteError(w, http.StatusRequestEntityTooLarge, tooLarge)
 		return
 	}
 	req.Body = http.MaxBytesReader(w, req.Body, MaxBodyBytes)
-	if unary(req) {
+	if !streaming {
 		ctx, cancel := context.WithTimeout(req.Context(), r.timeout)
 		defer cancel()
 		req = req.WithContext(ctx)
@@ -145,16 +161,66 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 var tooLarge = fmt.Sprintf("a request body must be at most %d bytes", MaxBodyBytes)
 
-// unary reports whether a call is a Connect unary one: every GET, and a POST
-// whose body is a plain message (application/json, application/proto). The
-// streaming protocols (application/connect+..., gRPC and gRPC-Web) run as long
-// as the stream does, up to the server's write timeout.
-func unary(req *http.Request) bool {
-	if req.Method == http.MethodGet {
-		return true
+type callKind int
+
+const (
+	connectUnary callKind = iota
+	connectStream
+)
+
+// connectContentTypes are the POST bodies of the Connect protocol, the only one
+// the browser's client speaks: a unary call's message, bounded by the backend
+// timeout, and a stream's envelopes, which run as long as the stream does (up
+// to the server's write timeout). gRPC and gRPC-Web, which the backend serves
+// on the same port, are refused (415), as is anything else. A Connect GET has
+// no body and is unary.
+var connectContentTypes = map[string]callKind{
+	"application/json":          connectUnary,
+	"application/proto":         connectUnary,
+	"application/connect+json":  connectStream,
+	"application/connect+proto": connectStream,
+}
+
+// mediaType is a Content-Type without its parameters (charset), lower-cased;
+// empty when it doesn't parse.
+func mediaType(contentType string) string {
+	mt, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return ""
 	}
-	ct := strings.ToLower(strings.TrimSpace(req.Header.Get("Content-Type")))
-	return !strings.HasPrefix(ct, "application/connect+") && !strings.HasPrefix(ct, "application/grpc")
+	return mt
+}
+
+// relayedHeaders, and every header starting with relayedPrefixes, are the only
+// response headers that reach the browser: what a Connect client reads
+// (Content-Type; Connect-* such as Connect-Content-Encoding; a unary call's
+// trailers, sent as Trailer-* headers; Grpc-*), what decoding and caching the
+// answer need, and the compressions the backend accepts. Anything else the
+// backend sends stays behind: a Set-Cookie for the console's origin, a CORS
+// grant, a WWW-Authenticate challenge, a Location, or its own say on the
+// security headers, which the BFF sets itself.
+var (
+	relayedHeaders  = []string{"Content-Type", "Content-Encoding", "Content-Length", "Accept-Encoding", "Vary", "Cache-Control", "Date"}
+	relayedPrefixes = []string{"Connect-", "Grpc-", "Trailer-"}
+)
+
+func modifyResponse(resp *http.Response) error {
+	h := http.Header{}
+	for _, k := range relayedHeaders {
+		if v := resp.Header.Values(k); len(v) > 0 {
+			h[k] = v
+		}
+	}
+	for k, v := range resp.Header {
+		for _, p := range relayedPrefixes {
+			if strings.HasPrefix(k, p) {
+				h[k] = v
+			}
+		}
+	}
+	h.Set("X-Content-Type-Options", "nosniff")
+	resp.Header = h
+	return nil
 }
 
 // rewrite points the call at the backend and replaces whatever the browser
@@ -217,6 +283,7 @@ var connectCodes = map[int]string{
 	http.StatusNotFound:              "unimplemented",
 	http.StatusMethodNotAllowed:      "unimplemented",
 	http.StatusRequestEntityTooLarge: "resource_exhausted",
+	http.StatusUnsupportedMediaType:  "unimplemented",
 	http.StatusInternalServerError:   "internal",
 	http.StatusBadGateway:            "unavailable",
 	http.StatusServiceUnavailable:    "unavailable",

@@ -710,16 +710,31 @@ What the relay owns is the boundary:
   never its REST gateway, health or reflection on the same port: any other path under the
   prefix is 404 (`unimplemented`). Only `POST` (Connect unary and streaming calls) and `GET`
   (Connect's GET, for methods the proto marks free of side effects): any other method is 405
-  (`unimplemented`) with `Allow: GET, POST`, after the caller checks, as on `/api/v1`.
+  (`unimplemented`) with `Allow: GET, POST`, after the caller checks, as on `/api/v1`. Only the
+  Connect protocol, the one the browser's client speaks: a POST's `Content-Type` must be
+  `application/json` or `application/proto` (unary) or `application/connect+json` or
+  `application/connect+proto` (streaming), parameters such as `charset` allowed; gRPC, gRPC-Web
+  (which the backend also serves on that port) and anything else are 415 (`unimplemented`)
+  before the backend is called. A GET needs none.
 - **How much.** A body of at most 1 MiB, as for the JSON API: a declared larger one is 413
   (`resource_exhausted`) before the backend is called, an undeclared one is cut at 1 MiB with
   the same answer.
-- **How long.** A unary call (every GET, and a POST whose `Content-Type` is not
-  `application/connect+...`, `application/grpc...`) is bounded by `BACKEND_TIMEOUT` (10s), as an
-  RPC from the BFF is: past it the relay answers 504 (`deadline_exceeded`). A stream runs until
-  it ends or the server's 60s write timeout cuts it, and reaches the browser as the backend
-  flushes it. A backend that can't be reached, or whose certificate isn't trusted, is 502
-  (`unavailable`), with the detail in the BFF's log.
+- **How long.** A unary call (every GET, and a unary POST) is bounded by `BACKEND_TIMEOUT` (10s,
+  at most 50s so that the 504 fits in the server's 60s write timeout), as an RPC from the BFF
+  is: past it the relay answers 504 (`deadline_exceeded`). Every call, a stream included, waits
+  at most `BACKEND_TIMEOUT` for the backend's headers (504 likewise). A stream whose headers came
+  runs until it ends or the server's 60s write timeout cuts it, and reaches the browser as the
+  backend flushes it; when the browser goes away, the backend's call is canceled. A backend that
+  can't be reached, or whose certificate isn't trusted, is 502 (`unavailable`), with the detail
+  in the BFF's log.
+- **What comes back.** The backend's status and body as it sent them, and of its headers only
+  `Content-Type`, `Content-Encoding`, `Content-Length`, `Accept-Encoding`, `Vary`,
+  `Cache-Control`, `Date` and those starting with `Connect-`, `Grpc-` or `Trailer-` (a Connect
+  unary call's trailers), plus the relay's own `X-Content-Type-Options: nosniff`. Anything else
+  stays behind: a `Set-Cookie` for the console's origin, a CORS grant, a `WWW-Authenticate`
+  challenge, a `Location` or `Refresh`, and the backend's say on the security headers. The BFF's
+  gzip applies as to any answer: a unary JSON answer of 1 KiB or more is compressed, a stream
+  isn't.
 - **Where to.** The gRPC client's rules (`backend.Config.TLS`): plaintext to a loopback address
   (the pod's `127.0.0.1:9090`) or with `BACKEND_INSECURE=true`; HTTPS verified against
   `BACKEND_CA_FILE` (with `BACKEND_SERVER_NAME`) when it is set; no plaintext across the network
@@ -781,8 +796,9 @@ exists; the frontend uses the mock service meanwhile.
 | `/ai_grid.v1.*` without a token, with one the hub rejects, from a caller who isn't a provider admin, or with the hub unreachable | 401, 401, 403, 502 as on `/api/v1`, as a Connect error (`unauthenticated`, `permission_denied`, `unavailable`) |
 | `/ai_grid.v1.*` path that is not `/ai_grid.v1.<Service>/<Method>`; a method other than `POST` and `GET` | 404, 405 with `Allow: GET, POST`; Connect error `unimplemented` |
 | `/ai_grid.v1.*` body over 1 MiB | 413, Connect error `resource_exhausted` |
-| `/ai_grid.v1.*` backend unreachable or untrusted; a unary call slower than `BACKEND_TIMEOUT` | 502 `unavailable`; 504 `deadline_exceeded` |
-| Any answer from the backend on `/ai_grid.v1.*` (its Connect errors included) | the backend's status and body unchanged |
+| `/ai_grid.v1.*` POST that is not the Connect protocol (gRPC, gRPC-Web, any other `Content-Type`) | 415, Connect error `unimplemented` |
+| `/ai_grid.v1.*` backend unreachable or untrusted; a unary call slower than `BACKEND_TIMEOUT`, or any call whose headers take longer | 502 `unavailable`; 504 `deadline_exceeded` |
+| Any answer from the backend on `/ai_grid.v1.*` (its Connect errors included) | the backend's status and body unchanged, with only the headers a Connect client needs |
 | Backend `InvalidArgument`, `OutOfRange`: Keycloak's validation messages ("Name can not be null", "Invalid domain format: x", "Cannot change the alias", "Domain x is already linked to organization y in realm ai-grid"), the API server's and the CRD's for a model (the DNS-1123 name message, the schema's "spec.replicas: Invalid value: -1: spec.replicas in body should be greater than or equal to 0" and "spec.scaling.maxReplicas: Required value", "replicas and scaling are mutually exclusive; ...", "at least one trigger is required when using direct KEDA scaling", "minReplicas cannot exceed maxReplicas"), and the backend's own checks with the console's proposed wording (URI scheme, Placement operators, rollout fields, `spec.rollout requires spec.placement`, the reserved tenant version attribute, an `ai-grid/latitude` or `ai-grid/longitude` annotation that is not a number in range, a list `filter` that does not compile, is not a bool or fails on an object) | 422, backend message kept; with `fieldErrors` for `InvalidArgument` only |
 | Backend `AlreadyExists` (Keycloak: "A organization with the same name already exists.", also for a blank name on update), `Aborted` (the object is not at the `If-Match` version) | 409, backend message kept |
 | Backend `FailedPrecondition` (hub feature gate missing, e.g. "ManifestWorkReplicaSet feature gate disabled on hub"; a model still referenced by a catalog entry or subscription; Keycloak realm missing or organizations disabled) | 412, backend message kept |
