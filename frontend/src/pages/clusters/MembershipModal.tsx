@@ -18,6 +18,7 @@ import type { ClusterRole, GridMembership } from '../../api/clusters';
 import { ServiceError } from '../../api/ConsoleService';
 import type { GridCluster } from '../../api/types';
 import { TypeaheadSelect } from '../../components/TypeaheadSelect';
+import { ClusterChangedError } from './ClusterChangedError';
 import { clusterRoles, roleOf } from './roles';
 
 export type MembershipChange = { cluster: GridCluster; join: boolean };
@@ -48,9 +49,11 @@ const errorMessage = (err: unknown, join: boolean) => {
   if (err instanceof ServiceError && err.isNotImplemented) {
     return `${join ? 'Adding clusters to' : 'Removing clusters from'} AI Grid is not available on this backend yet.`;
   }
-  // The page has loaded the cluster again by now, so a second try sends its current version.
-  if (err instanceof ServiceError && err.isConflict) {
-    return 'This cluster changed since you opened this dialog. Check it and try again.';
+  if (err instanceof ClusterChangedError) {
+    // With `current`, the page has given the dialog that version, so a second try sends it.
+    return err.current
+      ? 'This cluster changed since you opened this dialog. Check it and try again.'
+      : "This cluster changed since you opened this dialog, and the console couldn't load it again. Cancel, refresh the list, and try again.";
   }
   return err instanceof Error ? err.message : 'The cluster could not be changed.';
 };
@@ -77,7 +80,23 @@ export const MembershipModal: React.FC<Props> = ({ cluster, join, onConfirm, onC
     try {
       await onConfirm(join && role ? { location: location.trim(), role } : undefined);
     } catch (err) {
-      setError(errorMessage(err, join));
+      const current = err instanceof ClusterChangedError ? err.current : undefined;
+      if (
+        join &&
+        current &&
+        ((current.location ?? '') !== (cluster.location ?? '') || defaultRole(current) !== defaultRole(cluster))
+      ) {
+        // Someone else set the location or role meanwhile: show theirs rather than send this
+        // dialog's choices over them without the user seeing what changed.
+        setLocation(current.location ?? '');
+        setRole(defaultRole(current));
+        setTouched({ location: false, role: false });
+        setError(
+          'Someone else changed the location or role of this cluster since you opened this dialog. The dialog now shows theirs; check them and try again.',
+        );
+      } else {
+        setError(errorMessage(err, join));
+      }
       setBusy(false);
     }
   };

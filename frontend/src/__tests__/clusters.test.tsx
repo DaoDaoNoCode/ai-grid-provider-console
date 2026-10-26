@@ -574,6 +574,67 @@ it('reloads the cluster in the open dialog after a conflict, keeping the choices
   });
 });
 
+it('shows the location and role someone else set meanwhile instead of sending the dialog’s over them', async () => {
+  const user = userEvent.setup();
+  const service = new MockConsoleService();
+  renderAt('/clusters', service);
+  await pick(user, 'site4', 'Add to AI Grid');
+  const modal = await screen.findByTestId('cluster-membership-modal');
+  const location = within(modal).getByRole('textbox', { name: 'Location' });
+  await user.clear(location);
+  await user.type(location, 'us-east');
+  await user.click(within(modal).getByRole('combobox', { name: 'Role' }));
+  await user.click(await screen.findByRole('option', { name: /Inference/ }));
+  // Another admin sets a location and role while the dialog is open.
+  const index = service.clusters.findIndex((c) => c.name === 'site4');
+  const before = service.clusters[index];
+  service.clusters[index] = {
+    ...before,
+    location: 'eu-west',
+    labels: { ...before.labels, location: 'eu-west', 'ai-grid/role': 'ingress' },
+    resourceVersion: String(Number(before.resourceVersion) + 1),
+  };
+  const enroll = vi.spyOn(service, 'enrollCluster');
+
+  await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
+  expect(
+    await within(modal).findByText(
+      'Someone else changed the location or role of this cluster since you opened this dialog. The dialog now shows theirs; check them and try again.',
+    ),
+  ).toBeVisible();
+  expect(within(modal).getByRole('textbox', { name: 'Location' })).toHaveValue('eu-west');
+  expect(within(modal).getByRole('combobox', { name: 'Role' })).toHaveValue('Ingress');
+
+  await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
+  expect(await screen.findByText('site4 added to AI Grid')).toBeVisible();
+  expect(enroll).toHaveBeenCalledTimes(2);
+  expect(enroll.mock.calls[1][1]).toEqual({ location: 'eu-west', role: 'ingress' });
+});
+
+it('says so when the cluster changed and could not be loaded again', async () => {
+  const user = userEvent.setup();
+  const service = new MockConsoleService();
+  renderAt('/clusters', service);
+  await pick(user, 'site4', 'Add to AI Grid');
+  const modal = await screen.findByTestId('cluster-membership-modal');
+  const location = within(modal).getByRole('textbox', { name: 'Location' });
+  await user.clear(location);
+  await user.type(location, 'us-east');
+  await user.click(within(modal).getByRole('combobox', { name: 'Role' }));
+  await user.click(await screen.findByRole('option', { name: /Inference/ }));
+  const index = service.clusters.findIndex((c) => c.name === 'site4');
+  const before = service.clusters[index];
+  service.clusters[index] = { ...before, resourceVersion: String(Number(before.resourceVersion) + 1) };
+  vi.spyOn(service, 'listClusters').mockRejectedValueOnce(new Error('network down'));
+
+  await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
+  expect(
+    await within(modal).findByText(
+      "This cluster changed since you opened this dialog, and the console couldn't load it again. Cancel, refresh the list, and try again.",
+    ),
+  ).toBeVisible();
+});
+
 it('returns focus to the row’s menu button when the dialog it opened closes', async () => {
   const user = userEvent.setup();
   renderAt('/clusters', new MockConsoleService());

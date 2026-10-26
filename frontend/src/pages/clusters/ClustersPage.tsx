@@ -31,6 +31,7 @@ import { useConsoleSession } from '../../context/useConsoleSession';
 import { useServiceData } from '../../hooks/useServiceData';
 import { EMPTY_VALUE } from '../../utilities/format';
 import type { MembershipChange } from './MembershipModal';
+import { ClusterChangedError } from './ClusterChangedError';
 import { MembershipModal } from './MembershipModal';
 import { MissingLabel } from './MissingLabel';
 import { clusterRoles, roleOf } from './roles';
@@ -136,13 +137,18 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
     } catch (err) {
       if (err instanceof ServiceError && err.isConflict) {
         // The cluster changed since the dialog opened, so the PATCH carried old labels and an old
-        // version. Load it again and give the open dialog the new one (the dialog keeps the
-        // location and role the user chose), so the next try sends what the backend has now.
-        const fresh = (await service.listClusters().catch(() => [])).find((c) => c.name === cluster.name);
-        if (fresh) {
-          setChange((open) => (open?.cluster.name === fresh.name ? { ...open, cluster: fresh } : open));
+        // version. Load it again and give the open dialog the new one, so the next try sends what
+        // the backend has now; the dialog decides whether the user's location and role still
+        // stand (ClusterChangedError).
+        const current = await service.listClusters().then(
+          (list) => list.find((c) => c.name === cluster.name),
+          () => undefined,
+        );
+        if (current) {
+          setChange((open) => (open?.cluster.name === current.name ? { ...open, cluster: current } : open));
         }
         reload();
+        throw new ClusterChangedError(current);
       }
       throw err;
     }
