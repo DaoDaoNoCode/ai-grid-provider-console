@@ -15,9 +15,15 @@ import { MockConsoleService, seedSubscriptions } from '../api/MockConsoleService
 import type { ConditionStatus, MaaSSubscription } from '../api/types';
 import { isSameModel } from '../utilities/authpolicies';
 import { serviceOnPr12Json } from './pr12Json';
-import { renderAt } from './render';
+import { deferred, renderAt } from './render';
 
-const viewer = { username: 'viewer', groups: [], isProviderAdmin: false };
+/** A user the console couldn't load: the pages show, but without write actions. A viewer
+ * (isProviderAdmin false) sees no pages at all (App.test.tsx). */
+const unknownUser = () => {
+  const service = new MockConsoleService();
+  service.getUser = () => Promise.reject(new ServiceError(500, 'unavailable'));
+  return service;
+};
 
 type User = ReturnType<typeof userEvent.setup>;
 
@@ -248,11 +254,11 @@ it('requires an organization and shows it in the table', async () => {
   expect(saved.tokenMetadata?.organizationId).toBe('8d2e7b31-0c4f-4a9d-b5e6-7f8a9b0c1d2e');
 }, 20000);
 
-it('hides write actions from a viewer', async () => {
-  const service = new MockConsoleService(viewer);
+it('hides write actions until it knows the user is a provider admin', async () => {
+  const service = unknownUser();
   const user = userEvent.setup();
   const { unmount } = renderAt('/subscriptions', service);
-  await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('viewer'));
+  await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('User could not be loaded'));
   const table = await screen.findByTestId('subscriptions-table');
   expect(within(table).getByRole('link', { name: 'Engineering' })).toBeVisible();
   expect(screen.queryByRole('link', { name: 'Create subscription' })).not.toBeInTheDocument();
@@ -265,7 +271,7 @@ it('hides write actions from a viewer', async () => {
 
   renderAt('/subscriptions/view/engineering', service);
   await screen.findByTestId('subscription-details-section');
-  await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('viewer'));
+  await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('User could not be loaded'));
   expect(screen.queryByTestId('subscription-actions-toggle')).not.toBeInTheDocument();
 });
 
@@ -481,6 +487,8 @@ describe("model references on PR 12's models", () => {
     expect(within(row('Team granite')).getByRole('checkbox', { name: 'Select Team granite' })).toBeChecked();
     expect(within(row('Shared granite')).getByRole('checkbox', { name: 'Select Shared granite' })).not.toBeChecked();
     await user.keyboard('{Escape}');
+    // An unchanged edit can't be saved; change something besides the models.
+    await user.type(screen.getByTestId('subscription-name-desc-description'), ' (edited)');
     await user.click(screen.getByTestId('update-subscription-button'));
     await waitFor(() => expect(update).toHaveBeenCalled());
     expect(update.mock.calls[0][1].modelRefs).toEqual([
@@ -510,6 +518,27 @@ it('sends a re-added unlimited model with its new limits only', async () => {
   expect(update.mock.calls[0][1].modelRefs[0]).toMatchObject({ tokenRateLimits: [{ limit: 1000, window: '1h' }] });
   expect(update.mock.calls[0][1].modelRefs[0].unlimited).toBeFalsy();
   await screen.findByTestId('subscriptions-table');
+});
+
+it('leaves the create form out of history once the subscription is created, so Back skips it', async () => {
+  let navigate: NavigateFunction = () => undefined;
+  const Navigator = () => {
+    navigate = useNavigate();
+    return null;
+  };
+  const user = userEvent.setup();
+  render(
+    <MemoryRouter initialEntries={['/clusters', '/subscriptions/create']} initialIndex={1}>
+      <Navigator />
+      <App service={new MockConsoleService()} />
+    </MemoryRouter>,
+  );
+  await pickOrganization(user, 'acme-robotics');
+  await fillNewSubscription(user);
+  await user.click(screen.getByTestId('create-subscription-button'));
+  expect(await screen.findByText('Subscription created')).toBeVisible();
+  await act(async () => navigate(-1));
+  expect(await screen.findByRole('heading', { level: 1, name: 'Clusters' })).toBeVisible();
 });
 
 it.each(['view', 'edit'])('loads the other subscription when the name in /subscriptions/%s changes', async (page) => {
@@ -585,4 +614,106 @@ it('shows Not found for a referenced model the hub no longer has, even with a na
   service.subscriptions = [seed];
   renderAt(`/subscriptions/view/${seed.name}`, service);
   expect(await screen.findByTestId('subscription-models-table')).toHaveTextContent('Not found');
+});
+
+it('reloads a subscription after a stale delete, keeping the typed name, so a retry succeeds', async () => {
+  const service = new MockConsoleService();
+  const user = userEvent.setup();
+  renderAt('/subscriptions/view/engineering', service);
+  await screen.findByTestId('subscription-details-section');
+  await user.click(screen.getByTestId('subscription-actions-toggle'));
+  await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
+  const modal = await screen.findByTestId('delete-subscription-modal');
+  await user.type(within(modal).getByTestId('delete-modal-input'), 'Engineering');
+  // Someone else saves the subscription while the dialog is open.
+  service.subscriptions = service.subscriptions.map((s) =>
+    s.name === 'engineering' ? { ...s, resourceVersion: String(Number(s.resourceVersion) + 1) } : s,
+  );
+  await user.click(within(modal).getByRole('button', { name: 'Delete' }));
+  expect(
+    await within(modal).findByText('This subscription changed since you opened this dialog. Check it and try again.'),
+  ).toBeVisible();
+  expect(within(modal).getByTestId('delete-modal-input')).toHaveValue('Engineering');
+  await user.click(within(modal).getByRole('button', { name: 'Delete' }));
+  expect(await screen.findByText('Subscription deleted')).toBeVisible();
+  expect(service.subscriptions.some((s) => s.name === 'engineering')).toBe(false);
+});
+
+it('keeps the delete dialog busy until the reloaded version is in, and says when the reload fails', async () => {
+  const service = new MockConsoleService();
+  const user = userEvent.setup();
+  renderAt('/subscriptions/view/engineering', service);
+  await screen.findByTestId('subscription-details-section');
+  await user.click(screen.getByTestId('subscription-actions-toggle'));
+  await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
+  const modal = await screen.findByTestId('delete-subscription-modal');
+  await user.type(within(modal).getByTestId('delete-modal-input'), 'Engineering');
+  service.subscriptions = service.subscriptions.map((s) =>
+    s.name === 'engineering' ? { ...s, resourceVersion: String(Number(s.resourceVersion) + 1) } : s,
+  );
+  const deleteSpy = vi.spyOn(service, 'deleteSubscription');
+  const getInfo = service.getSubscriptionInfo.bind(service);
+  const reload = deferred<Awaited<ReturnType<typeof service.getSubscriptionInfo>>>();
+  const reloadSpy = vi.spyOn(service, 'getSubscriptionInfo').mockReturnValueOnce(reload.promise);
+  await user.click(within(modal).getByRole('button', { name: 'Delete' }));
+  await waitFor(() => expect(reloadSpy).toHaveBeenCalledTimes(1));
+  // The reload is still out: Delete stays busy, so no retry with the stale version.
+  expect(within(modal).getByRole('button', { name: /Delete/ })).toBeDisabled();
+  await user.type(within(modal).getByTestId('delete-modal-input'), '{Enter}');
+  expect(deleteSpy).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    reload.resolve(await getInfo('engineering'));
+  });
+  expect(within(modal).getByRole('button', { name: 'Delete' })).toBeEnabled();
+
+  // A second stale delete whose reload fails says so.
+  service.subscriptions = service.subscriptions.map((s) =>
+    s.name === 'engineering' ? { ...s, resourceVersion: String(Number(s.resourceVersion) + 1) } : s,
+  );
+  reloadSpy.mockRejectedValueOnce(new ServiceError(503, 'Service unavailable.'));
+  await user.click(within(modal).getByRole('button', { name: 'Delete' }));
+  expect(await within(modal).findByText(/could not be loaded again: Service unavailable\./)).toBeVisible();
+  expect(within(modal).getByRole('button', { name: 'Delete' })).toBeEnabled();
+});
+
+it('asks before Cancel discards the subscription form’s input', async () => {
+  const user = userEvent.setup();
+  renderAt('/subscriptions/create', new MockConsoleService());
+  // Nothing typed yet: Cancel leaves at once.
+  await user.click(await screen.findByTestId('cancel-subscription-button'));
+  expect(await screen.findByTestId('subscriptions-table')).toBeVisible();
+  await user.click(screen.getByRole('link', { name: 'Create subscription' }));
+  await user.type(await screen.findByTestId('subscription-name-desc-name'), 'Test team');
+  await user.click(screen.getByTestId('cancel-subscription-button'));
+  const discard = await screen.findByTestId('discard-changes-modal');
+  await user.click(within(discard).getByRole('button', { name: 'Keep editing' }));
+  expect(screen.getByTestId('subscription-name-desc-name')).toHaveValue('Test team');
+  await user.click(screen.getByTestId('cancel-subscription-button'));
+  await user.click(within(await screen.findByTestId('discard-changes-modal')).getByRole('button', { name: 'Discard' }));
+  expect(await screen.findByTestId('subscriptions-table')).toBeVisible();
+});
+
+it('keeps Save disabled on an edit until something changes', async () => {
+  const user = userEvent.setup();
+  renderAt('/subscriptions/edit/engineering', new MockConsoleService());
+  const description = await screen.findByTestId('subscription-name-desc-description');
+  const save = screen.getByTestId('update-subscription-button');
+  expect(save).toBeDisabled();
+  // An unchanged form leaves without asking.
+  await user.type(description, ' more');
+  expect(save).toBeEnabled();
+  await user.type(description, '{Backspace>5}');
+  expect(save).toBeDisabled();
+  await user.click(screen.getByTestId('cancel-subscription-button'));
+  expect(screen.queryByTestId('discard-changes-modal')).not.toBeInTheDocument();
+});
+
+it('names the priority buttons and the groups menu for what they change', async () => {
+  renderAt('/subscriptions/create', new MockConsoleService());
+  await screen.findByTestId('subscription-name-desc-name');
+  expect(screen.getByRole('button', { name: 'Decrease priority' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Increase priority' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Groups options' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Organization options' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Menu toggle' })).not.toBeInTheDocument();
 });

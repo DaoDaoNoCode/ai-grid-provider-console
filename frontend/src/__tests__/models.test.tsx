@@ -10,15 +10,18 @@
 //   assertions (A5, D3); a referenced model is the blocked-delete case.
 // - "explains a 200 response from an outdated backend" tests a PoC-only legacy payload and is
 //   not ported.
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter, useNavigate } from 'react-router-dom';
+import type { NavigateFunction } from 'react-router-dom';
 import getModels from '../../../mock/examples/get-models.json';
+import { App } from '../App';
 import { ServiceError } from '../api/ConsoleService';
 import { consolePlacement } from '../api/adapters';
 import { HttpConsoleService } from '../api/HttpConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
-import type { CreateModelRequest } from '../api/types';
-import { renderAt } from './render';
+import type { CreateModelRequest, ManagedModel } from '../api/types';
+import { deferred, renderAt } from './render';
 
 const input: CreateModelRequest = {
   name: 'widget',
@@ -34,7 +37,13 @@ const input: CreateModelRequest = {
   runtimeArgs: [],
 };
 
-const viewer = { username: 'viewer', groups: [], isProviderAdmin: false };
+/** A user the console couldn't load: the pages show, but without write actions. A viewer
+ * (isProviderAdmin false) sees no pages at all (App.test.tsx). */
+const unknownUser = () => {
+  const service = new MockConsoleService();
+  service.getUser = () => Promise.reject(new ServiceError(500, 'unavailable'));
+  return service;
+};
 
 type User = ReturnType<typeof userEvent.setup>;
 
@@ -116,6 +125,30 @@ it('walks the deployment wizard, selects locations, saves the model and removes 
   await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
   await waitFor(() => expect(screen.queryByTestId('model-actions-widget')).not.toBeInTheDocument());
   expect((await service.listModels()).some((m) => m.name === 'widget')).toBe(false);
+}, 20000);
+
+it('leaves the deploy form out of history once the model is deployed, so Back skips it', async () => {
+  let navigate: NavigateFunction = () => undefined;
+  const CaptureNavigate = () => {
+    navigate = useNavigate();
+    return null;
+  };
+  const user = userEvent.setup();
+  render(
+    <MemoryRouter initialEntries={['/clusters', '/models/deploy']} initialIndex={1}>
+      <CaptureNavigate />
+      <App service={new MockConsoleService()} />
+    </MemoryRouter>,
+  );
+  await fillModel(user);
+  await user.click(await screen.findByRole('combobox', { name: 'Locations' }));
+  await user.click(screen.getByRole('option', { name: site1 }));
+  await user.keyboard('{Escape}');
+  await user.click(screen.getByRole('button', { name: 'Next' }));
+  await user.click(await screen.findByRole('button', { name: 'Deploy' }));
+  expect(await screen.findByText('Model deployed')).toBeVisible();
+  await act(async () => navigate(-1));
+  expect(await screen.findByRole('heading', { level: 1, name: 'Clusters' })).toBeVisible();
 }, 20000);
 
 it('keeps the confirmation dialog and model when a subscription blocks deletion', async () => {
@@ -293,10 +326,10 @@ it('keeps input when saving fails', async () => {
   expect((await service.listModels()).find((m) => m.name === 'widget')?.locations).toEqual(['site1', 'site2']);
 });
 
-it('hides write actions from a viewer', async () => {
-  const service = new MockConsoleService(viewer);
+it('hides write actions until it knows the user is a provider admin', async () => {
+  const service = unknownUser();
   renderAt('/models', service);
-  await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('viewer'));
+  await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('User could not be loaded'));
   const table = await screen.findByTestId('model-deployments-table');
   expect(table).toHaveTextContent('Granite 3.3 8B Instruct');
   expect(screen.queryByRole('link', { name: 'Deploy model' })).not.toBeInTheDocument();
@@ -330,6 +363,7 @@ const serviceOnModelJson = (fetchFn: ReturnType<typeof vi.fn>) => {
   const service = new MockConsoleService();
   const http = new HttpConsoleService(fetchFn as unknown as typeof fetch);
   service.listModels = () => http.listModels();
+  service.getModel = (namespace, name) => http.getModel(namespace, name);
   service.listLocations = () => http.listLocations();
   service.createModel = (value) => http.createModel(value);
   service.deleteModel = (namespace, name, version) => http.deleteModel(namespace, name, version);
@@ -337,10 +371,26 @@ const serviceOnModelJson = (fetchFn: ReturnType<typeof vi.fn>) => {
   return service;
 };
 
+/** The BFF's GET /models/{namespace}/{name}: that model from the list, or a 404. */
+const oneModelJson = (url: string) => {
+  const [namespace, name] = url
+    .replace(/^.*\/models\//, '')
+    .split('/')
+    .map(decodeURIComponent);
+  const model = getModels.body.data.find((m) => m.namespace === namespace && m.name === name);
+  return model
+    ? jsonResponse(200, { data: model })
+    : jsonResponse(404, { error: { code: '404', message: `object with identifier '${namespace}/${name}' not found` } });
+};
+
+const isOneModel = (url: string, init?: RequestInit) =>
+  (init?.method ?? 'GET') === 'GET' && /\/models\/[^/]+\/[^/]+$/.test(url);
+
 const modelJsonFetch = () =>
   vi.fn(async (url: string, init?: RequestInit) => {
     if (init?.method === 'DELETE') return new Response(null, { status: 204 });
     if (url.endsWith('/locations')) return jsonResponse(200, { data: ['paris'] });
+    if (isOneModel(url, init)) return oneModelJson(url);
     return jsonResponse(200, { data: getModels.body.data });
   });
 
@@ -547,6 +597,37 @@ it('reloads the model after a stale delete, so a retry succeeds', async () => {
   expect(service.models.some((m) => m.name === 'granite-research')).toBe(false);
 });
 
+it('keeps the delete dialog busy until the reloaded model is in, and says when the reload fails', async () => {
+  const service = new MockConsoleService();
+  const user = userEvent.setup();
+  renderAt('/models', service);
+  await user.click(await screen.findByTestId('model-actions-granite-research'));
+  await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
+  const dialog = await screen.findByTestId('delete-deployment-modal');
+  await user.type(within(dialog).getByTestId('delete-modal-input'), 'Granite research endpoint');
+  service.models[2] = { ...service.models[2], resourceVersion: `${service.models[2].resourceVersion}1` };
+  const deleteSpy = vi.spyOn(service, 'deleteModel');
+  const reload = deferred<ManagedModel>();
+  const reloadSpy = vi.spyOn(service, 'getModel').mockReturnValueOnce(reload.promise);
+  await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+  await waitFor(() => expect(reloadSpy).toHaveBeenCalledTimes(1));
+  // The reload is still out: Delete stays busy, so no retry with the stale version.
+  expect(within(dialog).getByRole('button', { name: /Delete/ })).toBeDisabled();
+  await user.type(within(dialog).getByTestId('delete-modal-input'), '{Enter}');
+  expect(deleteSpy).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    reload.resolve(service.models[2]);
+  });
+  expect(within(dialog).getByRole('button', { name: 'Delete' })).toBeEnabled();
+
+  // A second stale delete whose reload fails says so.
+  service.models[2] = { ...service.models[2], resourceVersion: `${service.models[2].resourceVersion}1` };
+  reloadSpy.mockRejectedValueOnce(new ServiceError(503, 'Service unavailable.'));
+  await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+  expect(await within(dialog).findByText(/could not be loaded again: Service unavailable\./)).toBeVisible();
+  expect(within(dialog).getByRole('button', { name: 'Delete' })).toBeEnabled();
+});
+
 it('takes a display name longer than a resource name', async () => {
   const user = userEvent.setup();
   renderAt('/models/deploy', new MockConsoleService());
@@ -632,6 +713,20 @@ it('deletes a model from its page and returns to the list', async () => {
 it('says when a model page has no model', async () => {
   renderAt('/models/ai-grid-models/nope', new MockConsoleService());
   expect(await screen.findByText('Model deployment not found')).toBeVisible();
+});
+
+it('loads only the one model on its page and its edit page', async () => {
+  const service = new MockConsoleService();
+  const listModels = vi.spyOn(service, 'listModels');
+  const getModel = vi.spyOn(service, 'getModel');
+  const { name } = service.models[0];
+  const page = renderAt(`/models/ai-grid-models/${name}`, service);
+  expect(await screen.findByRole('heading', { level: 1, name: service.models[0].displayName })).toBeVisible();
+  page.unmount();
+  renderAt(`/models/ai-grid-models/${name}/edit`, service);
+  expect(await screen.findByRole('navigation', { name: 'Wizard steps' })).toBeVisible();
+  expect(getModel).toHaveBeenCalledWith('ai-grid-models', name);
+  expect(listModels).not.toHaveBeenCalled();
 });
 
 it('takes only whole numbers in the number fields, so the shown and sent counts agree', async () => {
@@ -938,6 +1033,7 @@ describe('editing a model deployment', () => {
         return jsonResponse(422, { error: { code: '422', message: 'spec.main.image: Invalid value' } });
       }
       if (url.endsWith('/locations')) return jsonResponse(200, { data: ['paris'] });
+      if (isOneModel(url, init)) return oneModelJson(url);
       return jsonResponse(200, { data: getModels.body.data });
     });
     const user = userEvent.setup();

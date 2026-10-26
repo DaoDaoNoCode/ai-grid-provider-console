@@ -1,5 +1,7 @@
 # Values for the AI Grid provider console. One release per ACM hub: the names below are fixed (other
 # tooling, such as ai-grid-env-setup, refers to them), and some objects are cluster-scoped.
+# values.schema.json lists every key: one it doesn't know, such as a misspelled --set, fails the
+# install instead of being ignored. Add a new key there too.
 
 # Name of every object, and of the ServiceAccount the backend acts as.
 fullnameOverride: ai-grid-provider-console

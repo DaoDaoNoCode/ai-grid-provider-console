@@ -2,12 +2,12 @@
 # Installs the Helm chart into a throwaway kind cluster and checks that the console works, without
 # OpenShift or a hub. kind gets the Route and ManagedCluster CRDs, a self-signed certificate in place
 # of the service CA's and placeholder secrets. Then:
-#   1. manifests/base is applied, then the chart's `helm template` output over it, as Argo CD would
-#      when ai-grid-env-setup moves to the chart: the Deployment's selector can't change, so this
+#   1. manifests/base is applied, then the chart's `helm template` output over it, as Argo CD did
+#      when ai-grid-env-setup moved to the chart: the Deployment's selector can't change, so this
 #      must apply in place. Then manifests/base again, taken over by a Helm release the way
 #      hack/deploy.sh does it (hack/chart-takeover.sh);
 #   2. helm install: the pod is ready, the proxy refuses a caller without a token, accepts a
-#      ServiceAccount token (TokenReview), the BFF answers isProviderAdmin from the cluster's access
+#      ServiceAccount token (TokenReview) and drops the identity headers a caller forges, the BFF answers isProviderAdmin from the cluster's access
 #      review and lists ManagedClusters through the backend; only the proxy listens off loopback;
 #   3. helm upgrade with backend.clusterWrites: the backend may label ManagedClusters ai-grid/*, and
 #      the admission policy refuses its other changes;
@@ -38,6 +38,18 @@ k() { kubectl --context "${CTX}" "$@"; }
 step() { echo "==> $*"; }
 pass() { echo "    ok: $*"; }
 fail() { echo "test-chart-kind: FAIL: $*" >&2; exit 1; }
+# retry <command...>: three tries, 10s then 20s apart, for the steps that reach a registry or
+# GitHub, which answer 503 now and then (registry.access.redhat.com has failed whole CI runs).
+retry() {
+  local try
+  for try in 1 2 3; do
+    "$@" && return 0
+    [[ ${try} == 3 ]] && break
+    echo "    try ${try} of 3 failed, again in $((try * 10))s: $*" >&2
+    sleep $((try * 10))
+  done
+  return 1
+}
 
 TMP="$(mktemp -d)"
 created=
@@ -51,24 +63,31 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# kind pulls its node image from a registry too. A failed try can leave a half-made cluster
+# behind: delete it before the next one.
+kind_create() {
+  kind create cluster --name "${CLUSTER}" --wait 180s && return 0
+  kind delete cluster --name "${CLUSTER}" >/dev/null 2>&1 || true
+  return 1
+}
 if ! kind get clusters 2>/dev/null | grep -qx "${CLUSTER}"; then
   step "creating kind cluster ${CLUSTER}"
   prev="$(kubectl config current-context 2>/dev/null || true)"
-  kind create cluster --name "${CLUSTER}" --wait 180s
+  retry kind_create
   created=1
   # kind switches kubectl's current context; put it back, so oc and make start keep their hub.
   [[ -n "${prev}" ]] && kubectl config use-context "${prev}" >/dev/null
 fi
 
 step "CRDs: Route (openshift/api), ManagedCluster (open-cluster-management-io/api)"
-k apply -f "${ROUTE_CRD}" -f "${CLUSTER_CRD}" >/dev/null
+retry k apply -f "${ROUTE_CRD}" -f "${CLUSTER_CRD}" >/dev/null
 k wait --for=condition=Established --timeout=60s \
   crd/routes.route.openshift.io crd/managedclusters.cluster.open-cluster-management.io >/dev/null
 
 step "images: the console from this checkout, ${BACKEND_IMAGE}, ${PROXY_IMAGE}"
-docker build -q -t localhost/ai-grid-provider-console:kind --build-arg CONSOLE_VERSION=kind "${ROOT}" >/dev/null
-docker pull -q --platform linux/amd64 "${BACKEND_IMAGE}" >/dev/null
-docker pull -q --platform linux/amd64 "${PROXY_IMAGE}" >/dev/null
+retry docker build -q -t localhost/ai-grid-provider-console:kind --build-arg CONSOLE_VERSION=kind "${ROOT}" >/dev/null
+retry docker pull -q --platform linux/amd64 "${BACKEND_IMAGE}" >/dev/null
+retry docker pull -q --platform linux/amd64 "${PROXY_IMAGE}" >/dev/null
 docker tag "${BACKEND_IMAGE}" localhost/ai-grid-backend:kind
 docker tag "${PROXY_IMAGE}" localhost/kube-auth-proxy:kind
 kind load docker-image --name "${CLUSTER}" localhost/ai-grid-provider-console:kind \
@@ -167,6 +186,13 @@ TOKEN="$(k -n default create token tester)"
 auth=(-H "Authorization: Bearer ${TOKEN}")
 expect 200 "a ServiceAccount token signs in" "${auth[@]}" "${u}/api/v1/user"
 grep -q '"isProviderAdmin":false' "${TMP}/body" || fail "isProviderAdmin should be false: $(cat "${TMP}/body")"
+# The BFF trusts the proxy's identity headers, so the proxy must drop the ones a caller sends.
+# A forged access token that got through would reach the hub's access review and fail it.
+expect 200 "identity headers a caller sends are dropped" "${auth[@]}" \
+  -H "X-Forwarded-User: forged-admin" -H "X-Forwarded-Email: forged@example.com" \
+  -H "X-Forwarded-Groups: forged-group" -H "X-Forwarded-Preferred-Username: forged-admin" \
+  -H "X-Forwarded-Access-Token: forged-token" "${u}/api/v1/user"
+! grep -q forged "${TMP}/body" || fail "a forged identity header reached the BFF: $(cat "${TMP}/body")"
 expect 403 "a non-admin may not list clusters" "${auth[@]}" "${u}/api/v1/clusters"
 k create clusterrole tester-managedclusters --verb=patch \
   --resource=managedclusters.cluster.open-cluster-management.io --dry-run=client -o yaml | k apply -f - >/dev/null

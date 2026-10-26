@@ -1,7 +1,10 @@
 # Root developer targets. See docs/dev-setup.md.
 IMAGE ?= ghcr.io/ai-grid-cloud/ai-grid-provider-console
 BACKEND_IMAGE ?= ghcr.io/ai-grid-cloud/ai-grid-provider-backend:latest
+# make image and make push default to :dev; make deploy needs TAG given (see deploy).
 TAG ?= dev
+# The hub's architecture, not the build machine's: an Apple-silicon Mac builds linux/amd64 too.
+PLATFORM ?= linux/amd64
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 CONTAINER_ENGINE ?= $(shell command -v podman 2>/dev/null || command -v docker)
 
@@ -12,7 +15,7 @@ PERSES_ADDRESS ?= 127.0.0.1:9445
 PERSES_NAMESPACE ?= openshift-cluster-observability-operator
 PERSES_SERVICE ?= perses
 
-.PHONY: help start dev dev-cluster dev-fake dev-fake-poc dev-forward-backend dev-forward-perses dev-fake-backend dev-bff dev-bff-fake dev-frontend dev-frontend-fake install lint test build e2e image manifests deploy undeploy chart-check chart-test
+.PHONY: help start dev dev-cluster dev-fake dev-fake-poc dev-forward-backend dev-forward-perses dev-fake-backend dev-bff dev-bff-fake dev-frontend dev-frontend-fake install lint test build e2e image push manifests deploy undeploy chart-check chart-test
 
 help: ## Show targets
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -97,13 +100,13 @@ e2e: ## Browser tests against make dev-fake-poc (Playwright; first run: cd front
 
 ##@ Packaging and deployment
 
-image: ## Build the container image
-	$(CONTAINER_ENGINE) build --build-arg CONSOLE_VERSION=$(VERSION) -t $(IMAGE):$(TAG) .
+image: ## Build the container image for PLATFORM (default linux/amd64)
+	$(CONTAINER_ENGINE) build --platform $(PLATFORM) --build-arg CONSOLE_VERSION=$(VERSION) -t $(IMAGE):$(TAG) .
 
 push: ## Push the container image
 	$(CONTAINER_ENGINE) push $(IMAGE):$(TAG)
 
-manifests: ## Render the kustomize manifests (ai-grid-env-setup's source until it moves to the chart)
+manifests: ## Render manifests/base (not an install path: the chart is; kept for undeploy's fallback and the takeover test)
 	kustomize build manifests/base
 
 chart-check: ## Lint the Helm chart and check its defaults render manifests/base
@@ -112,7 +115,12 @@ chart-check: ## Lint the Helm chart and check its defaults render manifests/base
 chart-test: ## Install the Helm chart into a throwaway kind cluster and check it works (docker, kind)
 	hack/test-chart-kind.sh
 
-deploy: ## Deploy to the current cluster with the Helm chart (needs cluster-admin for the OAuthClient)
+deploy: ## Deploy IMAGE:TAG to the current cluster with the Helm chart (needs cluster-admin for the OAuthClient)
+# TAG must be given: the default :dev is never published, and the Recreate rollout stops the
+# running pod before the new one pulls, so a missing tag takes the hub's console down.
+ifeq ($(origin TAG),file)
+	$(error make deploy needs TAG, a tag the registry has: TAG=sha-<full commit> for CI's, or the one you pushed with make push)
+endif
 	BACKEND_IMAGE=$(BACKEND_IMAGE) hack/deploy.sh $(IMAGE):$(TAG)
 
 undeploy: ## Remove the release, its secrets and its OAuthClient

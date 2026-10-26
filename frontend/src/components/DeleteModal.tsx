@@ -26,6 +26,8 @@ type Props = {
   deleteName: string;
   submitButtonLabel?: string;
   error?: Error;
+  /** Loading the object again after a failed delete failed too, so a retry sends the old version. */
+  reloadError?: Error;
   children: React.ReactNode;
   testId?: string;
   genericLabel?: boolean;
@@ -40,6 +42,7 @@ export const DeleteModal: React.FC<Props> = ({
   onDelete,
   deleteName,
   error,
+  reloadError,
   submitButtonLabel = 'Delete',
   testId,
   genericLabel,
@@ -56,14 +59,15 @@ export const DeleteModal: React.FC<Props> = ({
           <StackItem>{children}</StackItem>
           <StackItem>
             <Flex direction={{ default: 'column' }} spaceItems={{ default: 'spaceItemsSm' }}>
-              <FlexItem>
+              <FlexItem id="delete-modal-prompt">
                 Type <strong>{deleteNameSanitized}</strong> to confirm
                 {genericLabel ? '' : ' deletion'}:
               </FlexItem>
               <TextInput
                 id="delete-modal-input"
                 data-testid="delete-modal-input"
-                aria-label="Delete modal input"
+                // Named by the prompt above it, so a screen reader says what to type.
+                aria-labelledby="delete-modal-prompt"
                 value={value}
                 onChange={(_event, newValue) => setValue(newValue)}
                 onKeyDown={(event) => {
@@ -83,6 +87,7 @@ export const DeleteModal: React.FC<Props> = ({
                 variant="danger"
               >
                 {error.message}
+                {reloadError && <p>The latest version could not be loaded again: {reloadError.message}</p>}
               </Alert>
             </StackItem>
           )}

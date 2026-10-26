@@ -68,7 +68,7 @@ func (a *App) Handler() http.Handler {
 		root.Handle("/", newSPAHandler(a.cfg.StaticAssetsDir))
 	}
 
-	return a.recoverPanic(a.logRequests(root))
+	return a.recoverPanic(a.logRequests(compress(root)))
 }
 
 // relayPerses forwards an allowed Perses call with the caller's own token (perses.Relay decides

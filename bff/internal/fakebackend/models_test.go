@@ -583,6 +583,31 @@ func TestLLMISvcFailureModes(t *testing.T) {
 	}
 }
 
+// The API server serves metav1.Time in whole seconds; the fake's clock has
+// fractions, which it must not show.
+func TestKubernetesTimesAreWholeSeconds(t *testing.T) {
+	s, advance := modelServer(t, &Fixtures{})
+	advance(1500 * time.Millisecond)
+	createModel(t, s, hubModel("frac"))
+	advance(30*time.Second + 250*time.Millisecond)
+	m := getModel(t, s, "frac")
+	times := []*timestamppb.Timestamp{m.GetMetadata().GetCreationTimestamp()}
+	for _, c := range m.GetStatus().GetConditions() {
+		times = append(times, c.GetLastTransitionTime())
+	}
+	if len(times) < 2 {
+		t.Fatalf("no conditions yet: %v", m.GetStatus())
+	}
+	for _, ts := range times {
+		if ts != nil && ts.GetNanos() != 0 {
+			t.Errorf("time %s has a fraction of a second", ts.AsTime().Format(time.RFC3339Nano))
+		}
+	}
+	if got := m.GetMetadata().GetCreationTimestamp().AsTime(); !got.Equal(testStart.Add(time.Second)) {
+		t.Errorf("creationTimestamp = %s, want start + 1.5s truncated to 1s", got)
+	}
+}
+
 func TestSpeedScalesTheModelLifecycle(t *testing.T) {
 	s, advance := modelServer(t, &Fixtures{Speed: 10})
 	createModel(t, s, hubModel("fast"))
@@ -591,8 +616,10 @@ func TestSpeedScalesTheModelLifecycle(t *testing.T) {
 	advance(5 * time.Second) // 50 scenario seconds
 	m := getModel(t, s, "fast")
 	wantPhase(t, m, aigridv1.ModelPhase_MODEL_PHASE_READY, "")
-	if lt := condition(m.GetStatus().GetConditions(), CondReady).GetLastTransitionTime().AsTime(); !lt.Equal(testStart.Add(4500 * time.Millisecond)) {
-		t.Errorf("Ready at wall %s, want start + 4.5s", lt)
+	// Ready at scenario 45 s is wall 4.5 s, served in whole seconds as the API
+	// server does (metav1.Time): 4 s.
+	if lt := condition(m.GetStatus().GetConditions(), CondReady).GetLastTransitionTime().AsTime(); !lt.Equal(testStart.Add(4 * time.Second)) {
+		t.Errorf("Ready at wall %s, want start + 4.5s truncated to 4s", lt)
 	}
 }
 

@@ -5,8 +5,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  Alert,
-  AlertActionLink,
   Button,
   EmptyState,
   EmptyStateActions,
@@ -18,8 +16,6 @@ import {
 } from '@patternfly/react-core';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { ThProps } from '@patternfly/react-table';
-import type { UserService } from '../../api/ConsoleService';
-import { ServiceError } from '../../api/ConsoleService';
 import type { ClustersService } from '../../api/clusters';
 import type { ManagedModel } from '../../api/types';
 import { LoadError } from '../../components/LoadError';
@@ -31,6 +27,7 @@ import { RelativeTime } from '../../components/RelativeTime';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
 import { ToolbarSearch } from '../../components/ToolbarSearch';
 import { TableEmptyRow } from '../../components/TableEmptyRow';
+import { useConsoleSession } from '../../context/useConsoleSession';
 import { useServiceData } from '../../hooks/useServiceData';
 import { EMPTY_VALUE } from '../../utilities/format';
 import { locationLabel, modelPath, siteNamesOf } from './modelUtils';
@@ -38,7 +35,7 @@ import { ModelStatusLabel } from './ModelStatus';
 import type { ModelDeleteService } from './useDeleteModel';
 import { useDeleteModel } from './useDeleteModel';
 
-type Props = { service: ModelDeleteService & UserService & Pick<ClustersService, 'listClusters'> };
+type Props = { service: ModelDeleteService & Pick<ClustersService, 'listClusters'> };
 
 type Column = { label: string; sort: (a: ManagedModel, b: ManagedModel) => number };
 
@@ -57,13 +54,12 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
   const navigate = useNavigate();
   const [deployments, loaded, error, refresh] = useServiceData<ManagedModel[]>(() => service.listModels(), []);
   const [clusters] = useServiceData(() => service.listClusters(), [], 0);
-  const [user] = useServiceData(() => service.getUser(), undefined, 0);
+  const { user } = useConsoleSession();
   const siteNames = useMemo(() => siteNamesOf(clusters), [clusters]);
   const canWrite = !!user?.isProviderAdmin;
   const [filter, setFilter] = useState('');
   const [sortBy, setSortBy] = useState<{ index: number; direction: 'asc' | 'desc' }>({ index: 0, direction: 'asc' });
   const [confirmDelete, deleteModal] = useDeleteModel(service, {
-    models: deployments,
     refresh: () => void refresh(),
     onDeleted: () => void refresh(),
   });
@@ -88,20 +84,9 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
     columnIndex: index,
   });
 
-  const errorAlert =
-    error &&
-    (error instanceof ServiceError && error.isNotImplemented ? (
-      <LoadError subject="Models" error={error} />
-    ) : (
-      <Alert
-        isInline
-        variant="danger"
-        title="Error loading models"
-        actionLinks={<AlertActionLink onClick={() => void refresh()}>Retry</AlertActionLink>}
-      >
-        {error.message}
-      </Alert>
-    ));
+  const errorAlert = error && (
+    <LoadError subject="Models" error={error} title="Error loading models" onRetry={() => void refresh()} />
+  );
 
   const body = () => {
     // A failed refresh keeps the last list and shows the error above it.

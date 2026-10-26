@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -643,7 +644,7 @@ func (a *App) createModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m := toModel(resp.GetObject())
-	a.logger.Info("model created", "namespace", m.Namespace, "name", m.Name, "placed", m.Placement != nil)
+	a.log(r).Info("model created", "namespace", m.Namespace, "name", m.Name, "placed", m.Placement != nil)
 	w.Header().Set("Location", APIPrefix+"/models/"+url.PathEscape(m.Namespace)+"/"+url.PathEscape(m.Name))
 	setETag(w, m.ResourceVersion)
 	writeData(w, http.StatusCreated, m)
@@ -664,6 +665,15 @@ func (o *optionalPlacement) UnmarshalJSON(b []byte) error {
 	dec := json.NewDecoder(strings.NewReader(string(b)))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&v); err != nil {
+		// This decoder starts at the placement, so its paths do too; name the
+		// field from the body's root, as the POST body's errors do. Wrapped, so
+		// the outer decoder doesn't add "placement." again: Go 1.26 prefixes an
+		// UnmarshalTypeError an UnmarshalJSON returns, Go 1.27 doesn't.
+		var typ *json.UnmarshalTypeError
+		if errors.As(err, &typ) {
+			typ.Field = "placement." + typ.Field
+			return fmt.Errorf("placement: %w", err)
+		}
 		return err
 	}
 	o.Value = &v
@@ -759,7 +769,7 @@ func (a *App) patchModel(w http.ResponseWriter, r *http.Request) {
 		a.respondError(w, r, err)
 		return
 	}
-	a.logger.Info("model updated", "namespace", namespace, "name", name, "paths", paths)
+	a.log(r).Info("model updated", "namespace", namespace, "name", name, "paths", paths)
 	setETag(w, updated.GetObject().GetMetadata().GetResourceVersion())
 	writeData(w, http.StatusOK, toModel(updated.GetObject()))
 }
@@ -781,7 +791,7 @@ func (a *App) deleteModel(w http.ResponseWriter, r *http.Request) {
 		a.respondError(w, r, err)
 		return
 	}
-	a.logger.Info("model deleted", "namespace", namespace, "name", name)
+	a.log(r).Info("model deleted", "namespace", namespace, "name", name)
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusNoContent)
 }

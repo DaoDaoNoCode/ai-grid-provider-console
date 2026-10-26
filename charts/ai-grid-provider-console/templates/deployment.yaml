@@ -56,10 +56,16 @@ spec:
             - --pass-access-token=true
             - --pass-user-headers=true
             - --set-xauthrequest=true
+            # Drop the X-Forwarded-* identity headers (user, email, groups, preferred
+            # username, access token) a client sends before setting its own: the BFF
+            # trusts them. The proxy's default, stated so that a change of default can't
+            # let a caller name itself; hack/test-chart-kind.sh sends forged ones.
+            # (--set-xauthrequest sets X-Auth-Request-* on responses, not requests.)
+            - --skip-auth-strip-headers=true
             - --skip-jwt-bearer-tokens=true
             - --enable-k8s-token-validation=true
             - --use-system-trust-store=true
-            - --cookie-name={{ .Values.oauth.cookieName }}
+            - --cookie-name={{ required "oauth.cookieName is required" .Values.oauth.cookieName }}
             - --cookie-secure=true
             - --cookie-httponly=true
             - --cookie-samesite=lax
@@ -180,7 +186,7 @@ spec:
             # one environment. Every key is required: without the secret the
             # container does not start, which is the point, because the
             # backend would otherwise fall back to its built-in admin/admin.
-            {{- $kc := .Values.backend.keycloakSecretName }}
+            {{- $kc := include "console.keycloakSecretName" . }}
             {{- range list (list "KEYCLOAK_URL" "url") (list "KEYCLOAK_ADMIN_REALM" "admin-realm") (list "KEYCLOAK_REALM" "realm") (list "KEYCLOAK_ADMIN_USERNAME" "username") (list "KEYCLOAK_ADMIN_PASSWORD" "password") }}
             - name: {{ index . 0 }}
               valueFrom:

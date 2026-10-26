@@ -45,7 +45,9 @@ types, so the handlers and the JSON above are unchanged (`bff/internal/backend/v
 keeps the draft clients. `If-Match` maps to `metadata.version` with `lock: true`, and the
 `labels` and `annotations` mask paths to `metadata.labels` and `metadata.annotations`. The
 cluster state is derived from `spec.hub_accepts_client`, `status.joined` and
-`status.available_condition` only. The tenant list forwards `offset`, `limit` and `filter`; the
+`status.available_condition` only. The cluster list forwards `offset` and `limit`, which the
+backend pages by; it doesn't evaluate `filter` yet and counts every cluster in `total`, so a
+filtered cluster list answers 501 without calling it. The tenant list forwards `offset`, `limit` and `filter`; the
 backend pages but doesn't evaluate `filter` yet, so a filtered list answers 501. A tenant write
 sends `name` as `metadata.name` and `domains` as `spec.domains` (mask paths likewise), and the
 `If-Match` version as `metadata.version` with `lock: true`. Backend PR 16 requires a version:
@@ -64,7 +66,7 @@ after it checks the version: a stale one is `Aborted` (409) whatever the labels.
 | Topic | Decision | Why |
 |---|---|---|
 | Language | Go, standard library `net/http` router, `google.golang.org/grpc` client against the draft `ai_grid.v1` package generated in `bff/gen` from `mock/proto`. No `client-go`, no backend module dependency. | The BFF reads nothing from the hub; its one Kubernetes call is a `SelfSubjectAccessReview` over plain HTTPS (`internal/hub`). One dependency less to keep in step with the hub. Compiling against the draft lets the BFF, the fake and the UI move ahead of the backend; the drift test keeps the draft honest against the vendored backend proto. |
-| Identity | kube-auth-proxy authenticates the browser and sets `x-forwarded-user`, `x-forwarded-email`, `x-forwarded-groups` and `x-forwarded-access-token`. The BFF reads them (`internal/identity`) and forwards the token as `authorization: Bearer` plus the user, email and groups as gRPC metadata on every RPC (`internal/backend`). The draft proto's `AiGrid/GetCurrentUser` is the RPC that will return the backend's view of the caller. | The backend decides what the caller may do, and the BFF has no credential of its own. Until the backend authorizes the caller, the BFF makes one decision itself: only a provider admin (see `isProviderAdmin`) reaches `/api/v1` beyond `GET /user` and `GET /config`, and others get 403 (`AGENTS.md`, known exceptions). The proxy's provider can change (OpenShift OAuth today, a Keycloak realm later) without touching the BFF. |
+| Identity | kube-auth-proxy authenticates the browser and sets `x-forwarded-user`, `x-forwarded-email`, `x-forwarded-groups` and `x-forwarded-access-token`. The BFF reads them (`internal/identity`) and forwards the token as `authorization: Bearer` plus the user, email and groups as gRPC metadata on every RPC (`internal/backend`): `x-forwarded-user`, `x-forwarded-email` and `x-forwarded-groups` (the groups joined with `,`). gRPC metadata values must be printable ASCII, and an OpenShift user or group name need not be, so the BFF percent-encodes each value (each group on its own, before the join): `%` and every byte outside 0x20–0x7E become `%XX` with upper-case hex, and nothing else changes, so an ASCII value without `%` is sent byte for byte (`équipe-ops` is sent as `%C3%A9quipe-ops`, `100%` as `100%25`). The proposed decoding, not yet agreed with the backend team: split the groups on `,`, then percent-decode each value (Go: `url.PathUnescape`, which leaves `+` alone) to get the UTF-8 name back. The fake does so where it reads the user; the shipped backend doesn't decode yet, so it sees a non-ASCII name still encoded (an ASCII name without `%`, the usual case, is unchanged either way). These values are advisory: the backend authorizes with `authorization` only. The draft proto's `AiGrid/GetCurrentUser` is the RPC that will return the backend's view of the caller. | The backend decides what the caller may do, and the BFF has no credential of its own. Until the backend authorizes the caller, the BFF makes one decision itself: only a provider admin (see `isProviderAdmin`) reaches `/api/v1` beyond `GET /user` and `GET /config`, and others get 403 (`AGENTS.md`, known exceptions). The proxy's provider can change (OpenShift OAuth today, a Keycloak realm later) without touching the BFF. |
 | `isProviderAdmin` | The hub's answer to a `SelfSubjectAccessReview` for `patch` on `managedclusters`, asked with the caller's own token (`HUB_API_URL`, in-cluster by default). | The user's RBAC decides, not a console setting, as PR 1 did (review of 2026-10-15). The UI uses it to show or hide actions, and until the backend authorizes the caller the BFF also refuses non-admins on `/api/v1` with it (see Identity). A `GetCurrentUser` RPC can take this over once the backend acts as the caller. |
 | Login in development | The Vite dev server and `hack/api.sh` set the same headers from `oc whoami` and `oc whoami -t`. `make start` forwards the backend of the console deployed on the hub (`hack/forward-backend.sh`); `make dev` uses one run from the backend repository with `--kubeconfig`. | Any developer who has run `oc login` works against a real hub. |
 | Deployment | One pod: kube-auth-proxy (:8443), bff on `127.0.0.1:8080`, ai-grid-backend on `127.0.0.1:9090`. The BFF dials the backend in plaintext over loopback; plaintext to any other address is refused unless `BACKEND_INSECURE=true`. The kubelet probes `/readyz` through the proxy (`--skip-auth-route=^/readyz$`); neither the BFF nor the backend has a probe of its own. The rollout strategy is `Recreate`: the backend serializes each organization's writes with in-process locks (ai-grid-cloud/ai-grid-provider-backend#16), which hold only with one backend, so an upgrade stops the pod before the new one starts and the console is unavailable until it's ready. That covers rollouts only, not a pod deleted by hand or evicted. Client-side `kubectl apply` and `helm upgrade` switch an existing Deployment to `Recreate`; server-side apply refuses it while the defaulted `rollingUpdate` is there. | Nothing on the pod network can reach the BFF with forged identity headers or the backend at all. When the backend gets its own Deployment, set `BACKEND_ADDRESS` to its Service and `BACKEND_CA_FILE` to its serving CA. |
@@ -83,6 +85,11 @@ bff/
   internal/api          App, routes, middleware, gRPC-to-HTTP error mapping, handlers, SPA
 ```
 
+Each setting is a flag with an environment variable as its fallback (`--port`, `PORT`); a flag
+given on the command line wins. A variable whose value does not parse (`PORT=8o80`) stops the
+BFF at startup with an error naming it, unless its flag was given (`PORT=8o80 bff --port=9000`
+listens on 9000).
+
 Adding an endpoint: draft the RPC in `mock/proto/ai_grid/v1` (and propose it to the backend),
 `make -C bff generate`, implement or stub it in the fake, map it in a handler under `internal/api`, add it to the table below and to
 `frontend/src/api/ConsoleService.ts`.
@@ -98,12 +105,12 @@ under `/perses/api`.
 
 | Method | Path | Returns | Backend RPC |
 |---|---|---|---|
-| GET | `/healthcheck` | `{status, version}` | none; liveness, no auth |
-| GET | `/readyz` | `{status, version, backend}` | `AiGrid/Ping`; readiness, 503 when the backend does not answer |
+| GET | `/healthcheck` | `{status, version}` | none; no identity and no backend call: a check, by a person or a script on the pod, that the BFF process serves HTTP and which build it is (`version`). No probe uses it: the kubelet probes only `/readyz` (below), and there is deliberately no liveness probe, which would restart the BFF whenever the proxy in front of it is down. Through the route it is behind the login like any page (the proxy skips auth for `/readyz` only) |
+| GET | `/readyz` | `{status, version, backend}` | `AiGrid/Ping`; readiness, 503 when the backend does not answer. The pod is then unready, and with the one replica the chart runs, the Service has no endpoint left: the OpenShift router answers every request with its own 503 page (HTML, not this API's JSON error), until the backend answers again |
 | GET | `/api/v1/user` | `{username, email?, groups, isProviderAdmin}` (`email` omitted when the proxy sends none) | none; the identity from the proxy headers, `isProviderAdmin` from a hub `SelfSubjectAccessReview` |
 | GET | `/api/v1/config` | `{gridEndpoint, mapTileUrl, mapTileAttribution, billingUrl, version, modelsNamespace, fakeBackend, monitoring: {enabled, persesProject}}`: `modelsNamespace` is the namespace the console creates models in (default `ai-grid-models`), `fakeBackend` makes the UI show its fake-backend banner, `monitoring.enabled` says the BFF relays `/perses/api` (it has a `PERSES_URL`) and `monitoring.persesProject` names the Perses project whose `dashboard-*` objects are the Monitoring tabs (empty: every project the caller may read) | none; env `GRID_CONSUMER_URL`, `MAP_TILE_URL`, `MAP_TILE_ATTRIBUTION` (the attribution shown with `MAP_TILE_URL`'s tiles; with no `MAP_TILE_URL` the map draws a bundled land outline), `BILLING_URL`, `MODELS_NAMESPACE`, `FAKE_BACKEND`, `PERSES_URL`, `PERSES_PROJECT` |
-| GET | `/api/v1/clusters` | `GridCluster[]` sorted by name | `ManagedClusters/ListManagedClusters` |
-| GET | `/api/v1/clusters/{name}` | `GridCluster`, `ETag: "<resourceVersion>"` | `ManagedClusters/GetManagedCluster`; 404 with the backend's message when absent. Against a backend without that RPC (the shipped one answers `Unimplemented`) the BFF filters `ListManagedClusters` by name instead, so the detail works either way |
+| GET | `/api/v1/clusters?offset=&limit=&filter=` | `GridCluster[]` sorted by name, with `meta` (`size`, `total`, `offset`, `limit`) as for tenants; `filter` is the client's CEL over `this` (a `ManagedCluster`), forwarded as sent. Neither backend evaluates it yet: the fake answers 422, and against the shipped backend, which would ignore it, the BFF answers 501 | `ManagedClusters/ListManagedClusters` |
+| GET | `/api/v1/clusters/{name}` | `GridCluster`, `ETag: "<resourceVersion>"` | `ManagedClusters/GetManagedCluster` (on the shipped backend, its `Clusters/Get`); 404 with the backend's message when absent. Against an older backend that answers `Unimplemented` the BFF filters `ListManagedClusters` by name instead, so the detail works either way; neither the fake nor the shipped backend needs that any more |
 | PATCH | `/api/v1/clusters/{name}` | `GridCluster` after the write, with its `ETag` | `UpdateManagedCluster` (no read first) with the present body fields as the object and the mask (`labels`, `annotations`) and `lock: true` on the `If-Match` version; an empty body is 422; 409 when the hub object is not at that version, 428 without `If-Match`, 422 on a bad body or `If-Match`, a coordinate annotation the backend refuses or a change to a key outside the console's (`ai-grid/*`, `location`), 413 over 1 MiB, 415 when the body is not `application/json` |
 | GET | `/api/v1/tenants?offset=&limit=&filter=` | `Tenant[]` in Keycloak's order (by name, the realm database's collation) plus `meta`; `filter` is a CEL expression the client writes, over `this` (a Tenant), see "Writes, versions and lists"; `limit` omitted returns everything; the removed `search` is 422 | `Tenants/ListTenants` with `offset`, `limit` and `filter` exactly as sent |
 | GET | `/api/v1/tenants/{id}` | `Tenant`, `ETag: "<resourceVersion>"` | `Tenants/GetTenant`; 404 with the backend's message when absent |
@@ -118,8 +125,8 @@ under `/perses/api`.
 | GET | `/api/v1/capabilities` | `{manifestWorkReplicaSetEnabled, observabilityInstalled, acmVersion}` | `AiGrid/GetHubCapabilities`; 501 against a backend without the RPC, which a client reads as "unknown" |
 | GET, POST | `/perses/api/<Perses API path>` | Perses's own answer, status and body unchanged, without `Set-Cookie` | none; the Monitoring page's relay to the hub's Perses (`PERSES_URL`), see "The Perses relay" |
 | GET | `/api/v1/locations` | `string[]`: the `location` labels a model can be placed on, in the backend's order | `Models/ListLocations` (proposal P7, `mock/proto/README.md`) |
-| GET | `/api/v1/subscriptions` | `Subscription[]` in the backend's order | `Subscriptions/ListSubscriptions` |
-| GET | `/api/v1/subscriptions/{name}` | `ETag: "<resourceVersion>"`, `{subscription, authPolicies, modelRegistrations, modelRefs}`: the subscription, the authorization policies that cover its models, the status of each referenced model's registration, and the referenced models in the `Model` JSON | `Subscriptions/GetSubscription`; 404 with the backend's message when absent |
+| GET | `/api/v1/subscriptions` | `Subscription[]` in the backend's order; takes no query parameters (any is 422 `the subscriptions list takes no query parameters; filter, sort and page it in the client`) | `Subscriptions/ListSubscriptions` |
+| GET | `/api/v1/subscriptions/{name}` | `ETag: "<resourceVersion>"`, `{subscription, authPolicies, meteringMetadata?, modelRegistrations, modelRefs}`: the subscription, the authorization policies that cover its models, `meteringMetadata`, the subscription's `tokenMetadata` again, as the PoC's SubscriptionInfoResponse has it (omitted when the subscription has none), the status of each referenced model's registration, and the referenced models in the `Model` JSON | `Subscriptions/GetSubscription`; 404 with the backend's message when absent |
 | POST | `/api/v1/subscriptions` | 201, `{subscription, authPolicy?}`, `Location: /api/v1/subscriptions/{name}` | `Subscriptions/CreateSubscription` with `createAuthPolicy` from the body; 422 with `fieldErrors` on a bad body (a new subscription without `tokenMetadata.organizationId` is "Select an organization"), 409 on a taken name |
 | PUT | `/api/v1/subscriptions/{name}` | `{subscription}` after the write, with its `ETag` | `Subscriptions/UpdateSubscription`; the `If-Match` version is `object.resource_version` with `lock: true` (below), 409 when stale, 428 without `If-Match`, 422 with `fieldErrors` |
 | DELETE | `/api/v1/subscriptions/{name}` | 204 | `Subscriptions/DeleteSubscription` with the `If-Match` version as `resource_version`; 404 when absent, 409 when stale, 428 without `If-Match` |
@@ -361,7 +368,7 @@ a `spec.scaling.keda` block and is refused with the CRD's own messages when it c
 the scheduler are always managed; `rollout` without `placement` is 422. The display name and
 description go in `annotations` (`openshift.io/display-name`, `openshift.io/description`), as on
 PATCH; `displayName` and `description` are not body fields (422 unknown field). The same body
-rules as the other POSTs apply (unknown fields 422, over 1 MiB 413).
+rules as the other POSTs apply (unknown fields 422, over 1 MiB 413). Open question: a `namespace` that does not exist. The fake creates the model anyway, a real API server answers NotFound, and the backend has not decided whether it creates the namespace (`mock/areas/models.md`, "Remaining").
 
 `PATCH /api/v1/models/{namespace}/{name}` body, every field optional: `{"replicas", "runtimeImage",
 "env": [...], "placement": {...} | null, "rollout": {...}, "labels", "annotations"}`. A present
@@ -457,7 +464,7 @@ decides.
   Values are CEL string literals (escape `"` and `\`), and the whole expression is URL-encoded
   in the query. The field names are the proto's (`this.metadata.labels`, `this.domains`), so
   they are part of this HTTP contract: renaming a proto field breaks the filters clients have
-  written. `GET /clusters` takes no `filter` yet. CEL is strict: `contains` is a literal
+  written. `GET /subscriptions` takes no `filter` (nor any other parameter: 422), and no backend evaluates a cluster `filter` yet. CEL is strict: `contains` is a literal
   substring (`%` and `_` match themselves), and indexing a missing map key is a `no such key`
   error, not false, so a label term without the `in` guard fails on the first model that lacks
   the label. A filter that does not compile, is not a bool or fails on an object is the
@@ -486,7 +493,47 @@ decides.
   code carries `fieldErrors`, whatever details the backend attached.
 - **Lists.** The console's pages send none of the list parameters (`offset`, `limit`,
   `filter`): Clusters, Organizations and Models fetch the whole list and filter, sort and page
-  in the browser. The subscriptions list takes no query parameters.
+  in the browser. The subscriptions list takes no query parameters: any is 422, so a client that sends `filter` or `limit` there gets an error, not the whole list. A repeated `offset` or `limit` is 422, like a repeated `filter`.
+
+### Headers, caching and compression
+
+- **The SPA** (every path outside `/api`, `/perses/api`, `/healthcheck` and `/readyz`:
+  `index.html`, the client routes that fall back to it, and the files under `/assets/`) is
+  sent with `Content-Security-Policy: frame-ancestors 'none'`, `X-Frame-Options: DENY`,
+  `X-Content-Type-Options: nosniff` and `Referrer-Policy: same-origin`. The console must not
+  be framed by any page, including another app under the cluster's `*.apps` domain: that is
+  same-site, so `SameSite=Lax` on the proxy's cookie does not stop it.
+- **Caching.** Every file under `/assets/` is `Cache-Control: public, max-age=31536000,
+  immutable`: Vite writes only content-hashed names there (`index-BPyNsiKc.css`, with
+  base64url hashes), so a new build has new URLs. `index.html`, the client routes and the
+  other root files (the favicon) are `no-cache`, so a browser revalidates them and picks up a
+  new bundle at once.
+- **The JSON API** answers carry `Content-Type: application/json`, `X-Content-Type-Options:
+  nosniff` and `Cache-Control: no-store`, but no CSP: they are not pages. `/perses/api` answers
+  keep the headers the relay sets.
+- **Compression.** Every answer, the API, the SPA and the relay alike, is gzipped
+  (`Content-Encoding: gzip`, no `Content-Length`) when the request's `Accept-Encoding` accepts
+  gzip (RFC 9110 12.5.3: a `gzip` entry decides with its q, `*` counts only when `gzip` is
+  not listed, a q of 0 or one that does not parse refuses), its type is `text/html`, `text/css`,
+  `application/javascript`, `text/javascript`, `application/json` or `image/svg+xml`, and the
+  body is 1 KiB or more. It is sent as it is for a `HEAD`, a request with `Range` (the ranges
+  are of the uncompressed file), a 204 or 304, and an answer that already has a
+  `Content-Encoding` (Perses's own gzip passes through the relay unchanged). Answers of those
+  types carry `Vary: Accept-Encoding`. A handler that flushes (the relay streaming an answer)
+  sends each part as it flushes, compressed, without waiting for the end.
+- **A panic** in a handler is logged with its stack (`panic serving request`). Before anything
+  was sent it answers a plain JSON 500. Once the status was sent (a gzip stream started, a part
+  flushed), the connection is cut instead, without a gzip trailer: a 500 written into an answer
+  under way would leave the client a body it cannot decode, or one that looks complete.
+
+### Logs
+
+One `request` line per request (method, path, status, duration) with `id`, the `X-Request-Id`
+the client also gets, and `user`, the forwarded user name, once the proxy headers have been
+read (never the token). The lines a handler writes about a change (`cluster updated`,
+`tenant created`, `model deleted`, `subscription updated`, ...) and `request failed` carry the
+same `id` and `user`, so the log says which admin changed what. A successful `/readyz` or
+`/healthcheck` logs at Debug; a failed one stays at Info (and `backend not ready` at Warn).
 
 ### The BFF is thin
 
@@ -544,7 +591,7 @@ exists; the frontend uses the mock service meanwhile.
 |---|---|---|---|
 | GET | `/api/v1/user` (`isProviderAdmin`) | Optional: `AiGrid/GetCurrentUser` returning roles, once the backend acts as the caller; today the BFF asks the hub directly | Step 1 |
 | GET/PATCH | `/api/v1/clusters[/{name}]` (implemented against the draft) | The backend has to ship the draft's `GetManagedCluster`, `UpdateManagedCluster` and the richer `ManagedCluster` (`mock/proto/ai_grid/v1/managed_cluster*.proto`), with `status.state` derived server-side; `patch` on managedclusters in its ClusterRole | Steps 2, 10 |
-| GET/POST/PATCH/DELETE | `/api/v1/tenants[/{id}]` (on the backend's `Tenants` RPCs) | A version on `TenantsDeleteRequest`; the draft `Tenant`'s `alias`, `enabled`, `description`, `attributes`, `domain_details` and `identity_provider`, if the console keeps them; `filter` evaluated on `List`; mutations gated on the provider-admin check | Step 6 |
+| GET/POST/PATCH/DELETE | `/api/v1/tenants[/{id}]` (on the backend's `Tenants` RPCs) | the draft `Tenant`'s `alias`, `enabled`, `description`, `attributes`, `domain_details` and `identity_provider`, if the console keeps them; `filter` evaluated on `List`; mutations gated on the provider-admin check | Step 6 |
 | GET/POST/PATCH/DELETE | `/api/v1/models[/{namespace}/{name}]`, GET `/api/v1/capabilities` (implemented against the draft) | The backend has to ship the draft's `Models` service and `Model` message (`mock/proto/ai_grid/v1/model*.proto`) over LLMInferenceService, Placement and ManifestWorkReplicaSet with the status derived server-side, and `AiGrid/GetHubCapabilities`; the `ManifestWorkReplicaSet` feature gate on the hub for multi-site models (`FailedPrecondition` otherwise) | Steps 3, 4 |
 | GET/POST/PUT/DELETE | `/api/v1/catalog[/{name}]` | `Catalog/*` on ConfigMaps | Step 9 |
 | GET/POST/PUT/DELETE | `/api/v1/subscriptions[/{name}]`, GET `/api/v1/grid/overview` (implemented against the draft) | The backend has to ship the draft's `Subscriptions` service and `Grid/GetOverview` (`mock/proto/ai_grid/v1/subscription*.proto`, `grid_service.proto`) with the POC's metric contract (requests, errors, latency, gpu from Thanos with a `cluster` label), and validate every subscription write itself ("The BFF is thin") | Steps 5, 8, 10 |
@@ -555,14 +602,16 @@ exists; the frontend uses the mock service meanwhile.
 
 | Situation | Status |
 |---|---|
+| A path under `/api/v1` that no route has | 404, `the requested resource could not be found` |
+| A known `/api/v1` path with a method it has no route for (`POST /clusters`) | 405 with `Allow` (`GET, HEAD`; a GET route also answers HEAD) and the JSON error shape, `POST is not allowed on /api/v1/clusters; use GET, HEAD`. It is checked after the identity and provider-admin checks, so a non-admin gets 403 |
 | Missing or malformed token header | 401 |
 | Hub rejects the token in the access review | 401 |
-| Hub unreachable or failing during the access review | 502, generic message, detail in the BFF log |
-| The access review says the caller may not patch ManagedClusters: every `/api/v1` request but `GET /user` and `GET /config` (the provider-admin check, until the backend authorizes the caller) | 403, `the console is for provider admins: the hub says you may not patch ManagedClusters` |
+| Hub unreachable, failing or slower than 5 s during the access review | 502, `the hub could not confirm the caller's permissions; try again`, detail in the BFF log (a slow hub is not the backend's 504) |
+| The access review says the caller is not a provider admin (may not patch ManagedClusters): every `/api/v1` request but `GET` (or `HEAD`) `/user` and `/config` (the provider-admin check, until the backend authorizes the caller) | 403, `this console is only for provider admins, users who may patch ManagedClusters on the hub, and the hub says you are not one` |
 | Backend `Unauthenticated` | 401 |
 | Backend `PermissionDenied` (the hub's RBAC denies the caller) | 403, backend message kept |
 | Backend `NotFound` | 404, backend message kept (`object with identifier '<name>' not found`) |
-| Invalid POST, PATCH or PUT body (unknown field, wrong type, trailing content), bad `offset`/`limit` query, a removed list parameter (`search`, `namespace`, `label`), malformed `If-Match` | 422, BFF message |
+| Invalid POST, PATCH or PUT body (unknown field, wrong type, trailing content), bad or repeated `offset`/`limit` query (`query parameter "offset" must be sent once`), any query parameter on `GET /subscriptions`, a removed list parameter (`search`, `namespace`, `label`), malformed `If-Match` | 422, BFF message |
 | POST, PATCH or PUT body not declared `application/json` | 415, BFF message |
 | PATCH, PUT or DELETE without `If-Match`, or with `If-Match: *` | 428, BFF message |
 | `filter`, `limit` or `offset` against a backend whose list answer has no `total` | 501, BFF message |

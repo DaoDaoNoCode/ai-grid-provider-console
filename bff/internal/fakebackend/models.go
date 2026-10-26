@@ -14,7 +14,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/fakebackend/celfilter"
@@ -337,7 +336,7 @@ func (s *Server) seedModel(obj *aigridv1.Model) error {
 			return fmt.Errorf("fixture model %s: creationTimestamp %s is not in the past; omit it to create the model when the fake starts", key, ts.AsTime().Format(time.RFC3339))
 		}
 	}
-	m.Metadata.CreationTimestamp = timestamppb.New(s.wallTime(created))
+	m.Metadata.CreationTimestamp = k8sTime(s.wallTime(created))
 	if rv := obj.GetMetadata().GetResourceVersion(); rv != "" {
 		m.Metadata.ResourceVersion = rv
 		if n, err := strconv.ParseInt(rv, 10, 64); err == nil && n > s.resourceVersion {
@@ -363,7 +362,7 @@ func (s *Server) resetSeeded(m *model) {
 	} else {
 		m.created = s.scenarioTime(m.obj.GetMetadata().GetCreationTimestamp().AsTime())
 	}
-	m.obj.Metadata.CreationTimestamp = timestamppb.New(s.wallTime(m.created))
+	m.obj.Metadata.CreationTimestamp = k8sTime(s.wallTime(m.created))
 	m.works, m.epochs, m.placementConds, m.rolloutConds, m.decisions = nil, nil, nil, nil, nil
 	m.scheduleChangedAt = time.Time{}
 	m.baseSpec = cloneSpec(m.obj.GetSpec())
@@ -957,7 +956,7 @@ func (s *Server) CreateModel(ctx context.Context, req *aigridv1.CreateModelReque
 	m := normalizeModel(obj)
 	m.Metadata.Uid = s.newID()
 	m.Metadata.Generation = 1
-	m.Metadata.CreationTimestamp = timestamppb.New(s.wallTime(now))
+	m.Metadata.CreationTimestamp = k8sTime(s.wallTime(now))
 	s.bumpModelVersion(m)
 	stored := &model{obj: m, created: now, baseSpec: cloneSpec(m.GetSpec()), candidateSince: map[string]time.Time{}}
 	s.models[key] = stored

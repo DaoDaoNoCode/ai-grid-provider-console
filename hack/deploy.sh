@@ -39,6 +39,11 @@ NAME=ai-grid-provider-console
 RELEASE="${RELEASE:-ai-grid-provider-console}"
 SECRET="${NAME}-oauth"
 CHART="$(cd "$(dirname "$0")/.." && pwd)/charts/ai-grid-provider-console"
+# Secret values reach oc as files (--from-file), not --from-literal arguments, which every user
+# of this machine can read in the process list. printf is a shell builtin, so it starts no process.
+SECRETS="$(mktemp -d)"
+trap 'rm -rf "${SECRETS}"' EXIT
+secret_file() { printf '%s' "$2" >"${SECRETS}/$1"; }
 
 # The chart's image values for one image reference: repository[:tag][@digest].
 image_values() {
@@ -71,12 +76,14 @@ VALUES+=(${HELM_ARGS:-})
 oc create namespace "${NAMESPACE}" --dry-run=client -o yaml | oc apply -f - >/dev/null
 
 echo "==> creating secret ai-grid-backend-keycloak for ${KEYCLOAK_URL} (realm ${KEYCLOAK_REALM})"
+secret_file username "${KEYCLOAK_ADMIN_USERNAME}"
+secret_file password "${KEYCLOAK_ADMIN_PASSWORD}"
 oc create secret generic ai-grid-backend-keycloak -n "${NAMESPACE}" \
   --from-literal=url="${KEYCLOAK_URL}" \
   --from-literal=realm="${KEYCLOAK_REALM}" \
   --from-literal=admin-realm="${KEYCLOAK_ADMIN_REALM}" \
-  --from-literal=username="${KEYCLOAK_ADMIN_USERNAME}" \
-  --from-literal=password="${KEYCLOAK_ADMIN_PASSWORD}" \
+  --from-file=username="${SECRETS}/username" \
+  --from-file=password="${SECRETS}/password" \
   --dry-run=client -o yaml | oc apply -f -
 
 # A console deployed before the chart, from manifests/base, becomes this release in place.
@@ -114,10 +121,12 @@ secret: ${CLIENT_SECRET}
 YAML
 
 echo "==> creating secret ${SECRET}"
+secret_file client-secret "${CLIENT_SECRET}"
+secret_file cookie-secret "${COOKIE_SECRET}"
 oc create secret generic "${SECRET}" -n "${NAMESPACE}" \
   --from-literal=OAUTH2_PROXY_CLIENT_ID="${NAME}" \
-  --from-literal=OAUTH2_PROXY_CLIENT_SECRET="${CLIENT_SECRET}" \
-  --from-literal=OAUTH2_PROXY_COOKIE_SECRET="${COOKIE_SECRET}" \
+  --from-file=OAUTH2_PROXY_CLIENT_SECRET="${SECRETS}/client-secret" \
+  --from-file=OAUTH2_PROXY_COOKIE_SECRET="${SECRETS}/cookie-secret" \
   --from-literal=OAUTH2_PROXY_REDIRECT_URL="${REDIRECT_URL}" \
   --dry-run=client -o yaml | oc apply -f -
 

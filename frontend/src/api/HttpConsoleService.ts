@@ -110,6 +110,12 @@ export class HttpConsoleService implements ConsoleService {
     return (await this.request<ApiModel[]>('GET', '/models')).map(toManagedModel);
   }
 
+  async getModel(namespace: string, name: string): Promise<ManagedModel> {
+    return toManagedModel(
+      await this.request<ApiModel>('GET', `/models/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`),
+    );
+  }
+
   listLocations(): Promise<string[]> {
     return this.request<string[]>('GET', '/locations');
   }

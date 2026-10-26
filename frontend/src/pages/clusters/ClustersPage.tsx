@@ -1,7 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
 import {
-  Alert,
-  AlertActionLink,
   Button,
   DescriptionList,
   DescriptionListDescription,
@@ -18,7 +16,6 @@ import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { ThProps } from '@patternfly/react-table';
 import { Link, useNavigate } from 'react-router-dom';
 import type { ClustersService, GridMembership } from '../../api/clusters';
-import type { UserService } from '../../api/ConsoleService';
 import { ServiceError } from '../../api/ConsoleService';
 import type { GridCluster } from '../../api/types';
 import { LoadError } from '../../components/LoadError';
@@ -30,9 +27,11 @@ import { SimpleMenuActions } from '../../components/SimpleMenuActions';
 import { StatusLabel } from '../../components/StatusLabel';
 import { ToolbarSearch } from '../../components/ToolbarSearch';
 import { TableEmptyRow } from '../../components/TableEmptyRow';
+import { useConsoleSession } from '../../context/useConsoleSession';
 import { useServiceData } from '../../hooks/useServiceData';
 import { EMPTY_VALUE } from '../../utilities/format';
 import type { MembershipChange } from './MembershipModal';
+import { ClusterChangedError } from './ClusterChangedError';
 import { MembershipModal } from './MembershipModal';
 import { MissingLabel } from './MissingLabel';
 import { clusterRoles, roleOf } from './roles';
@@ -46,7 +45,7 @@ import { clusterRoles, roleOf } from './roles';
 // the console doesn't write either label. The Connection tooltip adds the ACM state behind Unknown (such as
 // Importing) and the backend's message, which the PoC's three states don't have.
 
-type Props = { service: ClustersService & UserService };
+type Props = { service: ClustersService };
 
 type Column = {
   label: string;
@@ -100,7 +99,7 @@ const cannotAddReason = (c: GridCluster) => {
 export const ClustersPage: React.FC<Props> = ({ service }) => {
   const navigate = useNavigate();
   const [clusters, loaded, error, refresh] = useServiceData<GridCluster[]>(() => service.listClusters(), []);
-  const [user] = useServiceData(() => service.getUser(), undefined, 0);
+  const { user } = useConsoleSession();
   const isProviderAdmin = !!user?.isProviderAdmin;
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<{ index: number; direction: 'asc' | 'desc' }>({ index: 0, direction: 'asc' });
@@ -130,15 +129,39 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
 
   /** Adds the cluster to AI Grid or removes it; throws for the modal to show. */
   const applyChange = async ({ cluster, join }: MembershipChange, membership?: GridMembership) => {
-    const updated = membership
-      ? await service.enrollCluster(cluster, membership)
-      : await service.removeClusterFromGrid(cluster);
+    let updated: GridCluster;
+    try {
+      updated = membership
+        ? await service.enrollCluster(cluster, membership)
+        : await service.removeClusterFromGrid(cluster);
+    } catch (err) {
+      if (err instanceof ServiceError && err.isConflict) {
+        // The cluster changed since the dialog opened, so the PATCH carried old labels and an old
+        // version. Load it again and give the open dialog the new one, so the next try sends what
+        // the backend has now; the dialog decides whether the user's location and role still
+        // stand (ClusterChangedError).
+        const current = await service.listClusters().then(
+          (list) => list.find((c) => c.name === cluster.name),
+          () => undefined,
+        );
+        if (current) {
+          setChange((open) => (open?.cluster.name === current.name ? { ...open, cluster: current } : open));
+        }
+        reload();
+        throw new ClusterChangedError(current);
+      }
+      throw err;
+    }
     if (updated.aiGridEnabled !== join) {
       throw new Error('The Hub did not confirm the change. Refresh and try again.');
     }
     setConfirmed((prev) => new Map(prev).set(updated.name, updated));
     setChange(undefined);
-    navigate('.', { state: { notice: `${updated.name} ${join ? 'added to' : 'removed from'} AI Grid` } });
+    // Replace, so the notice doesn't add a second Clusters entry to the browser's history.
+    navigate('.', {
+      replace: true,
+      state: { notice: `${updated.name} ${join ? 'added to' : 'removed from'} AI Grid` },
+    });
     reload();
   };
 
@@ -153,19 +176,7 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
 
   const body = () => {
     if (error) {
-      if (error instanceof ServiceError && error.isNotImplemented) {
-        return <LoadError subject="Clusters" error={error} />;
-      }
-      return (
-        <Alert
-          isInline
-          variant="danger"
-          title="Error loading clusters"
-          actionLinks={<AlertActionLink onClick={reload}>Retry</AlertActionLink>}
-        >
-          {error.message}
-        </Alert>
-      );
+      return <LoadError subject="Clusters" error={error} title="Error loading clusters" onRetry={reload} />;
     }
     if (clusters.length === 0) {
       return (

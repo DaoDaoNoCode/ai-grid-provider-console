@@ -748,6 +748,11 @@
           "open-cluster-management/created-via": "other"
         }
       }
-    ]
+    ],
+    "meta": {
+      "size": 10,
+      "total": 10,
+      "offset": 0
+    }
   }
 }

@@ -300,7 +300,8 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
         navigate(detailsPath, { state: { notice: 'Model deployment updated' } });
       } else {
         await service.createModel(input);
-        navigate('/models', { state: { notice: 'Model deployed' } });
+        // Replaces the deploy form in history, so Back doesn't land on it, empty.
+        navigate('/models', { replace: true, state: { notice: 'Model deployed' } });
       }
     } catch (err) {
       setError(

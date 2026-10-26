@@ -29,3 +29,5 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
 {{- define "console.serviceAccountName" -}}{{ include "console.fullname" . }}{{- end -}}
 {{- define "console.oauthSecretName" -}}{{ .Values.oauth.secretName | default (printf "%s-oauth" (include "console.fullname" .)) }}{{- end -}}
 {{- define "console.tlsSecretName" -}}{{ .Values.tls.secretName | default (printf "%s-tls" (include "console.fullname" .)) }}{{- end -}}
+{{/* Not defaulted when empty: an empty name would render `name: ""`, which no Secret has. */}}
+{{- define "console.keycloakSecretName" -}}{{ required "backend.keycloakSecretName is required: the Secret with the backend's Keycloak settings (hack/deploy.sh creates ai-grid-backend-keycloak)" .Values.backend.keycloakSecretName }}{{- end -}}
