@@ -276,14 +276,44 @@ export type ApiModel = {
   requests?: Record<string, string>;
   env?: EnvVar[];
   annotations?: Record<string, string>;
-  /** pending, ready or failed; absent before the backend reports one. */
+  /** pending, ready, failed or partiallyavailable (P13); absent before the backend reports one. */
   phase?: string;
   reason?: string;
   message?: string;
   /** Absent for a model served on the hub only. `locations` is proposal P8. */
   placement?: ModelPlacementSpec & { locations?: string[] };
+  /** The ManifestWorkReplicaSet's status: `works` is the model on each decided cluster. */
+  rollout?: { works?: ApiModelWork[] };
   resourceVersion?: string;
   creationTimestamp?: string;
+};
+
+/** One generated ManifestWork in GET /models: the model on one cluster (docs/plan/bff-api.md). */
+export type ApiModelWork = {
+  cluster: string;
+  applied?: ConditionStatus;
+  available?: ConditionStatus;
+  progressing?: ConditionStatus;
+  degraded?: ConditionStatus;
+  feedback?: { ready?: string; url?: string };
+  /** The backend's summary for this cluster (P13): pending, ready or failed, and why. */
+  phase?: string;
+  reason?: string;
+  message?: string;
+  conditions?: Condition[];
+};
+
+/** The model on one cluster, as the Models page lists it under the model. */
+export type ModelWork = {
+  cluster: string;
+  /** Pending, Ready or Failed, as the backend derived it. */
+  phase: string;
+  reason?: string;
+  message?: string;
+  /** The spoke's `ready` feedback: True, False, or absent until the agent scrapes it. */
+  ready?: string;
+  /** The work's Applied, Available, Progressing and Degraded conditions. */
+  conditions: Condition[];
 };
 
 /** A model deployment: its saved deployment and placement, and PR 12's phase. */
@@ -304,6 +334,8 @@ export type ManagedModel = {
   resourceVersion: string;
   /** The `location` labels of the clusters the placement decided on; empty without one. */
   locations: string[];
+  /** The model on each cluster it was sent to; absent for a model served on the hub only. */
+  works?: ModelWork[];
   modelUri?: string;
   modelName?: string;
   runtimeImage?: string;

@@ -13,8 +13,9 @@ import { useConsoleSession } from '../../context/useConsoleSession';
 import { useServiceData } from '../../hooks/useServiceData';
 import { formatDateTime } from '../../utilities/format';
 import { locationLabel, modelNotFound, modelPath, siteNamesOf } from './modelUtils';
+import { ModelLocationsTable } from './ModelLocationsTable';
 import { ModelStatusDetails, ModelStatusLabel } from './ModelStatus';
-import { hasModelStatusDetails, modelPhase, modelStatusTitle } from './modelStatusInfo';
+import { PARTIALLY_AVAILABLE, hasModelStatusDetails, modelPhase, modelStatusTitle } from './modelStatusInfo';
 import type { ModelDeleteService } from './useDeleteModel';
 import { useDeleteModel } from './useDeleteModel';
 
@@ -50,7 +51,7 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
         {phase !== 'Ready' && hasModelStatusDetails(model) && (
           <Alert
             isInline
-            variant={phase === 'Failed' ? 'danger' : 'info'}
+            variant={phase === 'Failed' ? 'danger' : phase === PARTIALLY_AVAILABLE ? 'warning' : 'info'}
             title={modelStatusTitle(model)}
             data-testid="model-status-alert"
           >
@@ -73,13 +74,26 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
           />
         </DetailsSection>
         <DetailsSection title="Locations">
-          {model.locations.length ? (
-            <Stack hasGutter>
-              <List data-testid="model-locations">
-                {model.locations.map((location) => (
-                  <ListItem key={location}>{locationLabel(location, siteNames)}</ListItem>
-                ))}
-              </List>
+          {model.locations.length || model.works?.length ? (
+            // model-locations names the section either way: the list until the clusters report,
+            // then their table.
+            <Stack hasGutter data-testid="model-locations">
+              {/* Each cluster's status, as the Models page shows it under the model's row. */}
+              {model.works?.length ? (
+                <ModelLocationsTable
+                  model={model}
+                  works={model.works}
+                  clusters={clusters}
+                  siteNames={siteNames}
+                  onEdit={user?.isProviderAdmin ? () => navigate(`${modelPath(model)}/edit`) : undefined}
+                />
+              ) : (
+                <List>
+                  {model.locations.map((location) => (
+                    <ListItem key={location}>{locationLabel(location, siteNames)}</ListItem>
+                  ))}
+                </List>
+              )}
               <Link to={`/ai-grid?model=${encodeURIComponent(`${model.namespace}/${model.name}`)}`}>
                 Show on the AI Grid map
               </Link>

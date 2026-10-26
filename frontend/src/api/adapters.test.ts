@@ -302,6 +302,41 @@ describe('toModelCreate', () => {
 });
 
 describe('toManagedModel', () => {
+  it("maps each cluster's phase and a partially available model (P13)", () => {
+    const json = {
+      ...(getModels.body.data.find((m) => m.name === 'granite-8b-instruct') as unknown as ApiModel),
+      phase: 'partiallyavailable',
+      rollout: {
+        works: [
+          { cluster: 'site-paris-1', phase: 'ready', feedback: { ready: 'True' }, conditions: [] },
+          {
+            cluster: 'site-madrid-1',
+            phase: 'failed',
+            reason: 'AppliedManifestWorkFailed',
+            message: 'Failed to apply manifest work',
+          },
+        ],
+      },
+    } as ApiModel;
+    const model = toManagedModel(json);
+    expect(model.phase).toBe('Partially available');
+    expect(model.works).toEqual([
+      { cluster: 'site-paris-1', phase: 'Ready', reason: undefined, message: undefined, ready: 'True', conditions: [] },
+      {
+        cluster: 'site-madrid-1',
+        phase: 'Failed',
+        reason: 'AppliedManifestWorkFailed',
+        message: 'Failed to apply manifest work',
+        ready: undefined,
+        conditions: [],
+      },
+    ]);
+    // A hub model has no works.
+    expect(
+      toManagedModel(getModels.body.data.find((m) => m.name === 'tiny-llm') as unknown as ApiModel).works,
+    ).toBeUndefined();
+  });
+
   // GET /api/v1/models under PR 12's fixtures (mock/examples/get-models.json).
   const models = getModels.body.data as unknown as ApiModel[];
   const byName = (name: string) => toManagedModel(models.find((m) => m.name === name)!);

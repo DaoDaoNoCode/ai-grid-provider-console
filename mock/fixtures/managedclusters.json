@@ -521,7 +521,8 @@
         "ai-grid/provisioned": "true",
         "location": "madrid",
         "ai-grid/site": "madrid-dc1",
-        "ai-grid/region": "europe-south"
+        "ai-grid/region": "europe-south",
+        "ai-grid-mock/fail-apply": "mistral-7b-instruct"
       },
       "annotations": {
         "installer.multicluster.openshift.io/release-version": "2.17.3",

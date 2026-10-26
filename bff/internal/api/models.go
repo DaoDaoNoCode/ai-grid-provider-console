@@ -50,6 +50,9 @@ const (
 	PhasePending = "pending"
 	PhaseReady   = "ready"
 	PhaseFailed  = "failed"
+	// PhasePartiallyAvailable is a placed model serving on some of its
+	// clusters but not all (proposal P13).
+	PhasePartiallyAvailable = "partiallyavailable"
 )
 
 // Rollout strategy names as the CRD spells them.
@@ -71,9 +74,10 @@ const (
 )
 
 var phaseStrings = map[aigridv1.ModelPhase]string{
-	aigridv1.ModelPhase_MODEL_PHASE_PENDING: PhasePending,
-	aigridv1.ModelPhase_MODEL_PHASE_READY:   PhaseReady,
-	aigridv1.ModelPhase_MODEL_PHASE_FAILED:  PhaseFailed,
+	aigridv1.ModelPhase_MODEL_PHASE_PENDING:             PhasePending,
+	aigridv1.ModelPhase_MODEL_PHASE_READY:               PhaseReady,
+	aigridv1.ModelPhase_MODEL_PHASE_FAILED:              PhaseFailed,
+	aigridv1.ModelPhase_MODEL_PHASE_PARTIALLY_AVAILABLE: PhasePartiallyAvailable,
 }
 
 var strategyStrings = map[aigridv1.RolloutStrategy]string{
@@ -259,7 +263,13 @@ type WorkStatus struct {
 	Progressing string `json:"progressing,omitempty"`
 	Degraded    string `json:"degraded,omitempty"`
 	// Feedback is the `ready` and `url` the agent scraped from the spoke object.
-	Feedback           WorkFeedback       `json:"feedback"`
+	Feedback WorkFeedback `json:"feedback"`
+	// Phase, Reason and Message are the backend's summary of the model on
+	// this cluster (proposal P13): pending, ready or failed, and the
+	// condition that decided it.
+	Phase              string             `json:"phase,omitempty"`
+	Reason             string             `json:"reason,omitempty"`
+	Message            string             `json:"message,omitempty"`
 	Conditions         []ClusterCondition `json:"conditions"`
 	Generation         int64              `json:"generation"`
 	ObservedGeneration int64              `json:"observedGeneration"`
@@ -429,7 +439,8 @@ func toModel(m *aigridv1.Model) Model {
 			ws := WorkStatus{Cluster: w.GetClusterName(), WorkName: w.GetWorkName(),
 				Applied: conditionString(w.GetConditions(), "Applied"), Available: conditionString(w.GetConditions(), "Available"),
 				Progressing: conditionString(w.GetConditions(), "Progressing"), Degraded: conditionString(w.GetConditions(), "Degraded"),
-				Conditions: toConditions(w.GetConditions()), Generation: w.GetGeneration(), ObservedGeneration: w.GetObservedGeneration()}
+				Conditions: toConditions(w.GetConditions()), Generation: w.GetGeneration(), ObservedGeneration: w.GetObservedGeneration(),
+				Phase: phaseStrings[w.GetPhase()], Reason: w.GetReason(), Message: w.GetMessage()}
 			for _, mf := range w.GetManifests() {
 				for _, fb := range mf.GetFeedback() {
 					switch fb.GetName() {
