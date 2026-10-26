@@ -75,7 +75,9 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
         </DetailsSection>
         <DetailsSection title="Locations">
           {model.locations.length || model.works?.length ? (
-            <Stack hasGutter>
+            // model-locations names the section either way: the list until the clusters report,
+            // then their table.
+            <Stack hasGutter data-testid="model-locations">
               {/* Each cluster's status, as the Models page shows it under the model's row. */}
               {model.works?.length ? (
                 <ModelLocationsTable
@@ -86,7 +88,7 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
                   onEdit={user?.isProviderAdmin ? () => navigate(`${modelPath(model)}/edit`) : undefined}
                 />
               ) : (
-                <List data-testid="model-locations">
+                <List>
                   {model.locations.map((location) => (
                     <ListItem key={location}>{locationLabel(location, siteNames)}</ListItem>
                   ))}

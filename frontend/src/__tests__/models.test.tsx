@@ -1271,8 +1271,11 @@ describe('each location of a placed model (proposal P13)', () => {
     const user = userEvent.setup();
     const service = serviceOnModelJson(partialFetch());
     renderAt('/models/ai-grid-models/mistral-7b-instruct', service);
-    // The details page lists the same locations.
+    // The details page lists the same locations, in its Locations section (model-locations, as
+    // before the clusters reported: e2e/models.spec.ts reads it there).
     const table = await screen.findByTestId('model-works-mistral-7b-instruct');
+    expect(screen.getByTestId('model-locations')).toContainElement(table);
+    expect(screen.getByTestId('model-locations')).toHaveTextContent('site1');
     await user.click(within(table).getByRole('button', { name: 'Ready at San Francisco (site1)' }));
     const modal = await screen.findByTestId('deployment-status-modal');
     for (const id of ['applied', 'available', 'workload', 'ready']) {
