@@ -123,7 +123,7 @@ under `/perses/api`.
 | PATCH | `/api/v1/models/{namespace}/{name}` | `Model` after the write, with its `ETag` | `UpdateModel` (no read first) with every present field as the mask (`spec.replicas`, `spec.main.image`, `spec.main.env`, `spec.placement`, `spec.rollout`, `metadata.labels`, `metadata.annotations`) and `lock: true` on the `If-Match` version; an empty body is 422; 409 when the object is not at that version, 428 without `If-Match`, 412 when a placement is added on a gated hub |
 | DELETE | `/api/v1/models/{namespace}/{name}` | 204; the model is gone at once (the MWRS cascades `Background`, its works drain out of sight) | `Models/DeleteModel` with the `If-Match` version as `resource_version`; 404 when absent, 409 on a stale `If-Match`, 428 without `If-Match`, 412 while a catalog entry, a subscription or an auth policy references the model (on the fake, subscriptions and auth policies block it; catalog entries don't exist yet) |
 | GET | `/api/v1/capabilities` | `{manifestWorkReplicaSetEnabled, observabilityInstalled, acmVersion}` | `AiGrid/GetHubCapabilities`; 501 against a backend without the RPC, which a client reads as "unknown" |
-| GET, POST | `/perses/api/<Perses API path>` | Perses's own answer, status and body unchanged, without `Set-Cookie`, `Access-Control-*` or `WWW-Authenticate` | none; the Monitoring page's relay to the hub's Perses (`PERSES_URL`), see "The Perses relay" |
+| GET, POST | `/perses/api/<Perses API path>` | Perses's own answer, status and body unchanged, with only its `Content-Type`, `Content-Encoding`, `Content-Length`, `Vary`, `Cache-Control`, `Date`, `Age` and `Expires` headers; a redirect from Perses is 502 | none; the Monitoring page's relay to the hub's Perses (`PERSES_URL`), see "The Perses relay" |
 | GET | `/api/v1/locations` | `string[]`: the `location` labels a model can be placed on, in the backend's order | `Models/ListLocations` (proposal P7, `mock/proto/README.md`) |
 | GET | `/api/v1/subscriptions` | `Subscription[]` in the backend's order; takes no query parameters (any is 422 `the subscriptions list takes no query parameters; filter, sort and page it in the client`) | `Subscriptions/ListSubscriptions` |
 | GET | `/api/v1/subscriptions/{name}` | `ETag: "<resourceVersion>"`, `{subscription, authPolicies, meteringMetadata?, modelRegistrations, modelRefs}`: the subscription, the authorization policies that cover its models, `meteringMetadata`, the subscription's `tokenMetadata` again, as the PoC's SubscriptionInfoResponse has it (omitted when the subscription has none), the status of each referenced model's registration, and the referenced models in the `Model` JSON | `Subscriptions/GetSubscription`; 404 with the backend's message when absent |
@@ -585,9 +585,17 @@ What the relay owns is the boundary:
   <the caller's token>` reach Perses: no cookies, no proxy identity headers, no client-sent
   `Authorization`. With the browser's `Accept-Encoding`, a compressed answer passes through as
   Perses sent it.
-- Perses's `Set-Cookie`, `Access-Control-*` and `WWW-Authenticate` are dropped: the console reads
-  these answers from its own origin, so a CORS grant would only open them to other sites, and a
-  datasource's Basic challenge would make the browser ask for a password on the console's origin.
+- Only Perses's `Content-Type`, `Content-Encoding`, `Content-Length`, `Vary`, `Cache-Control`,
+  and the `Date`, `Age` and `Expires` a cache needs to tell how fresh an answer is, reach the browser, plus the relay's own `X-Content-Type-Options: nosniff` and a sandbox
+  `Content-Security-Policy`. Everything else stays behind: a `Set-Cookie` for the console's origin,
+  a CORS grant (the console reads these answers from its own origin, so it would only open them to
+  other sites), a datasource's `WWW-Authenticate` challenge (the browser would ask for a password on
+  the console's origin), and a `Refresh` or `Link` that would send the browser elsewhere. A 3xx
+  from Perses is 502 "the hub's Perses answered with a redirect, which the console doesn't follow",
+  so its `Location` never reaches the browser either; the relay sends no conditional request, so
+  Perses has no reason to answer 304.
+  Nor do an informational answer (a `103 Early Hints` and its `Link`) or trailers, which Go's
+  reverse proxy forwards outside the final answer's headers.
 - Without `PERSES_URL`, every `/perses/api` path is 404 "monitoring is not configured on this
   console" and `GET /config` says `monitoring.enabled: false`.
 
@@ -605,6 +613,21 @@ service CA), and fails to render with a `url` and no `project`; its default `url
 `url`. `make start` forwards that Service when `PERSES_PROJECT` is set and your login may
 (`hack/forward-perses.sh`); without `PERSES_PROJECT` it runs with Monitoring off. A `PERSES_URL`
 you set yourself without `PERSES_PROJECT` stops the BFF at startup.
+
+What a dashboard needs to appear on the page, for the team that writes them:
+
+- It is a `PersesDashboard` in `PERSES_PROJECT` (the chart's `console.perses.project`) whose name
+  starts with `dashboard-`, such as `dashboard-usage`. The prefix is how the console tells the
+  dashboards meant as tabs from anything else kept in the project; the tab shows the dashboard's
+  display name, or its name, and tabs are ordered by name.
+- Its queries name a `PersesDatasource` in the same project or a `PersesGlobalDatasource` (by kind,
+  or kind and name; one marked `default: true` is used when a query names only the kind), which
+  reaches Prometheus or Loki through its `proxy`, not `directUrl`: the browser can't reach the
+  hub's services. A datasource defined inside the dashboard itself fails in its panel.
+- Its panels are among the bundled ones listed below.
+- Only provider admins may create or edit the `PersesDashboard`s and `PersesDatasource`s in that
+  project and the `PersesGlobalDatasource`s: Perses sends the signed-in admin's hub token to every
+  datasource it queries, so whoever can point a datasource somewhere can collect that token.
 
 The page (`frontend/src/pages/monitoring`): with `monitoring.enabled`, `/monitoring` lists the
 dashboards of `monitoring.persesProject` through the relay and shows each `dashboard-*` one as a

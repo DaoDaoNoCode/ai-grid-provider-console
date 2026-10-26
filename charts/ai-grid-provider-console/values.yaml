@@ -63,11 +63,13 @@ console:
     # The hub's Perses server, such as the Cluster Observability Operator's:
     # https://perses.openshift-cluster-observability-operator.svc:8080
     url: ""
-    # The one Perses project Monitoring reads (with the global datasources); its dashboard-*
-    # dashboards are the tabs. Required with url: the rendering fails without it. Perses sends the
-    # signed-in admin's token on to the datasources it queries, so only provider admins may write
-    # this project's dashboards and datasources, and the global datasources must point only at the
-    # hub's own Thanos and Loki.
+    # The one Perses project Monitoring reads (with the global datasources). Its PersesDashboards
+    # whose names start with dashboard- (such as dashboard-usage) are the tabs; any other dashboard
+    # in it is ignored. Required with url: the rendering fails without it. Perses sends the
+    # signed-in admin's hub token on to the datasources it queries, so only provider admins may
+    # create or edit this project's PersesDashboards and PersesDatasources and the
+    # PersesGlobalDatasources, and the global datasources must point only at the hub's own Thanos
+    # and Loki.
     project: ""
     # The CA that verifies the server's certificate. The default is OpenShift's service CA, which
     # every pod gets next to its ServiceAccount token and which issues the Cluster Observability
