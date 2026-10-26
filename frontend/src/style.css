@@ -38,6 +38,14 @@ dl.console-about-facts {
   --pf-v6-c-content--dl--GridTemplateColumns--dt: max-content;
 }
 
+/* A description under a table row's title: at most two lines, the rest cut with an ellipsis. */
+.console-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 /* A number in a table: right-aligned, with digits of one width so columns line up. */
 .console-number {
   text-align: end;

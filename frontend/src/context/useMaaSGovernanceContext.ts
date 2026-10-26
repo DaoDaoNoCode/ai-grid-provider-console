@@ -6,7 +6,7 @@ import { createContext, useContext } from 'react';
 import type { ModelsService } from '../api/models';
 import type { OrganizationsService } from '../api/organizations';
 import type { SubscriptionsService } from '../api/subscriptions';
-import type { MaaSModelRefSummary, MaaSSubscription, Organization } from '../api/types';
+import type { MaaSSubscription, ManagedModel, Organization } from '../api/types';
 import { useServiceData } from '../hooks/useServiceData';
 import { useConsoleSession } from './useConsoleSession';
 
@@ -18,7 +18,7 @@ export const useMaaSGovernanceData = (service: GovernanceService) => {
   const [subscriptions, subscriptionsLoaded, subscriptionsError, refreshSubscriptions] = useServiceData<
     MaaSSubscription[]
   >(() => service.listSubscriptions(), []);
-  const [modelRefs, modelRefsLoaded, modelRefsError, refreshModels] = useServiceData<MaaSModelRefSummary[]>(
+  const [modelRefs, modelRefsLoaded, modelRefsError, refreshModels] = useServiceData<ManagedModel[]>(
     () => service.listModels(),
     [],
   );
@@ -40,6 +40,8 @@ export const useMaaSGovernanceData = (service: GovernanceService) => {
     organizationsError,
     subscriptionsLoaded,
     subscriptionsError,
+    modelRefsLoaded,
+    modelRefsError,
     overviewLoaded,
     loaded: overviewLoaded,
     error: subscriptionsError ?? modelRefsError,
