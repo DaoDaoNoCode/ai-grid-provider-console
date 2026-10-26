@@ -23,7 +23,7 @@ backend service for cluster access and this BFF for the browser.
   (`hack/sync-upstream-proto.sh <ref>` refreshes both).
 - What the BFF compiles against: the console's draft proto in `mock/proto/ai_grid/v1`,
   generated into `bff/gen/ai_grid/v1` (`make -C bff generate`), which the fake backend serves;
-  and, for the real backend's Clusters, Tenants and Subscriptions RPCs, a copy of their messages in
+  and, for the real backend's Clusters, Tenants, Subscriptions and Models RPCs, a copy of their messages in
   `mock/proto/ai_grid/backend/v1` (see "Against a real backend" below).
   `bff/internal/protodrift` fails when that copy stops matching the vendored backend proto.
   When the console generates its types from the backend's proto, the copy, the draft and the
@@ -39,9 +39,10 @@ backend service for cluster access and this BFF for the browser.
 
 Until the console moves to Connect and the backend's generated contract (issues 20–27 and the
 ADRs in `docs/adr/`), the BFF calls a real backend's `ai_grid.v1.Clusters` `List`, `Get` and
-`Update`, `Tenants` `List`, `Get`, `Create`, `Update` and `Delete`, and `Subscriptions` `List`, `Get`, `Create`, `Update` and
-`Delete` for the clusters, tenants and subscriptions routes, and maps them onto the draft
-types, so the handlers and the JSON above are unchanged (`bff/internal/backend/v1.go`, messages in
+`Update`, `Tenants` `List`, `Get`, `Create`, `Update` and `Delete`, and `Subscriptions` and `Models`
+`List`, `Get`, `Create`, `Update` and `Delete` for the clusters, tenants, subscriptions, models and
+locations routes, and maps them onto the draft types, so the handlers and the JSON above are
+unchanged (`bff/internal/backend/v1.go` and `v1_models.go`, messages in
 `mock/proto/ai_grid/backend/v1`). The fake backend still serves the draft, so `--fake-backend`
 keeps the draft clients. `If-Match` maps to `metadata.version` with `lock: true`, and the
 `labels` and `annotations` mask paths to `metadata.labels` and `metadata.annotations`. The
@@ -73,6 +74,19 @@ description is sent as an empty value. The backend always creates `<name>-policy
 reports a MaaS registration for in `modelRefs`, with that registration's phase (Ready, Failed for
 Failed, Invalid or Unhealthy, else Pending); a model without one shows as not found. The backend's
 `Delete` takes no version, so DELETE still requires `If-Match` but nothing checks it.
+
+Models follow backend PR 27 too. The backend's models have an `id` and no namespace (it keeps them
+in one namespace of its own), so the BFF reports every model in its `--models-namespace` and
+answers 404 for a model in any other; against a real backend, set it to the backend's subscription
+namespace (`AI_GRID_SUBSCRIPTION_NAMESPACE`, default `models-as-a-service`), where the backend
+keeps the `MaaSModelRef` that subscriptions name, so a subscription's model references match the
+models. A location is one cluster: `GET /locations` lists the names of the clusters labelled
+`ai-grid/enabled: "true"` from `Clusters` `List`, and the console's placement (the member labels
+plus `location In [...]`) is sent as the ACM `name` label, `name In [...]`, which the backend's git
+mode places by; a read turns it back. Any other placement goes as it is, except claim expressions,
+tolerations and spread constraints, which the backend lacks (501). A list with a filter or an order
+answers 501, because the backend's filter uses its own field names. PATCH sends the draft's mask
+unchanged, with the `If-Match` version and `lock: true`, and DELETE sends the `If-Match` version.
 
 ## Decisions
 

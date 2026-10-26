@@ -36,12 +36,13 @@ func run() error {
 	slog.SetDefault(logger)
 
 	client, err := backend.Dial(backend.Config{
-		Address:    cfg.BackendAddress,
-		CAFile:     cfg.BackendCAFile,
-		ServerName: cfg.BackendServerName,
-		Insecure:   cfg.BackendInsecure,
-		Timeout:    cfg.BackendTimeout,
-		DraftAPI:   cfg.FakeBackend,
+		Address:         cfg.BackendAddress,
+		CAFile:          cfg.BackendCAFile,
+		ServerName:      cfg.BackendServerName,
+		Insecure:        cfg.BackendInsecure,
+		Timeout:         cfg.BackendTimeout,
+		DraftAPI:        cfg.FakeBackend,
+		ModelsNamespace: cfg.ModelsNamespace,
 	})
 	if err != nil {
 		return err

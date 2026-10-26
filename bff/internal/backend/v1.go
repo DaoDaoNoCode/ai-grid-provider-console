@@ -1,8 +1,9 @@
 package backend
 
 // Stopgap: clients for the backend's real ai_grid.v1
-// Clusters, Tenants and Subscriptions RPCs, behind the draft's
-// ManagedClustersClient, TenantsClient and SubscriptionsClient interfaces so the
+// Clusters, Tenants, Subscriptions and Models RPCs (Models in v1_models.go), behind
+// the draft's ManagedClustersClient, TenantsClient, SubscriptionsClient and
+// ModelsClient interfaces so the
 // API handlers are unchanged. The fake backend
 // serves the draft, so Dial uses these only for a real backend.
 
@@ -36,6 +37,12 @@ const (
 	methodSubscriptionsCreate = "/ai_grid.v1.Subscriptions/Create"
 	methodSubscriptionsUpdate = "/ai_grid.v1.Subscriptions/Update"
 	methodSubscriptionsDelete = "/ai_grid.v1.Subscriptions/Delete"
+
+	methodModelsList   = "/ai_grid.v1.Models/List"
+	methodModelsGet    = "/ai_grid.v1.Models/Get"
+	methodModelsCreate = "/ai_grid.v1.Models/Create"
+	methodModelsUpdate = "/ai_grid.v1.Models/Update"
+	methodModelsDelete = "/ai_grid.v1.Models/Delete"
 )
 
 // The annotations the backend keeps a subscription's and an auth policy's
