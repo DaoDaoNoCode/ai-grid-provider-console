@@ -271,8 +271,8 @@ which removes a console deployed before the chart, and for `make chart-test`'s t
 `make chart-test` (in CI too) checks the chart on a throwaway kind cluster, without OpenShift: it
 installs the Route and ManagedCluster CRDs, a self-signed certificate and placeholder Secrets, then
 checks that `manifests/base` moves to the chart in place (applied over it as Argo CD would, and
-taken over by a Helm release as `hack/deploy.sh` does), that the pod becomes ready, that the
-proxy refuses a caller without a token and accepts a ServiceAccount token, that `isProviderAdmin`
+taken over by a Helm release as `hack/deploy.sh` does), that the pod becomes ready, that only
+the proxy and the backend hold the ServiceAccount token, that the proxy refuses a caller without a token and accepts a ServiceAccount token, that `isProviderAdmin`
 and the cluster list work, that only the proxy listens off loopback, that the admission policy
 allows the backend's `ai-grid/*` labels and refuses its other changes, and that uninstalling
 leaves no cluster-scoped objects. OpenShift's browser login, the service CA and the router are

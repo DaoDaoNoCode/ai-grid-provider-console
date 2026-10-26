@@ -18,6 +18,11 @@ spec:
         app.kubernetes.io/name: ai-grid-provider-console
     spec:
       serviceAccountName: ai-grid-provider-console
+      # No automatic ServiceAccount token: only the containers that call the API server as the
+      # console get it (the sa-token volume: kube-auth-proxy's token reviews, and the backend, whose
+      # ServiceAccount may read every managed cluster's ACM Search index). The BFF calls the hub only
+      # with the caller's token, so it gets the CAs alone (cluster-ca).
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -115,6 +120,9 @@ spec:
               readOnly: true
             - name: tmp
               mountPath: /tmp
+            - name: sa-token
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
 
         # The console: a thin BFF plus the built frontend. It translates the
         # frontend's JSON calls into gRPC on the backend container over
@@ -166,6 +174,10 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
+          volumeMounts:
+            - name: cluster-ca
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
 
         # ai-grid-backend: owns every call to the hub API, Keycloak and
         # metrics using the pod's ServiceAccount. Its gRPC port and its REST
@@ -223,6 +235,10 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
+          volumeMounts:
+            - name: sa-token
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
       volumes:
         - name: tls
           secret:
@@ -231,3 +247,38 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 10Mi
+        # The files the kubelet's automatic mount would provide, at the path client-go reads them
+        # from: a bound token, the API server's CA, the namespace and, on OpenShift, the service CA
+        # (ACM Search's and Perses's certificates are signed by it).
+        - name: sa-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3607
+              - configMap:
+                  name: kube-root-ca.crt
+                  items: [{ key: ca.crt, path: ca.crt }]
+              - configMap:
+                  name: openshift-service-ca.crt
+                  optional: true
+                  items: [{ key: service-ca.crt, path: service-ca.crt }]
+              - downwardAPI:
+                  items:
+                    - path: namespace
+                      fieldRef: { apiVersion: v1, fieldPath: metadata.namespace }
+        # The same without the token, for the BFF.
+        - name: cluster-ca
+          projected:
+            sources:
+              - configMap:
+                  name: kube-root-ca.crt
+                  items: [{ key: ca.crt, path: ca.crt }]
+              - configMap:
+                  name: openshift-service-ca.crt
+                  optional: true
+                  items: [{ key: service-ca.crt, path: service-ca.crt }]
+              - downwardAPI:
+                  items:
+                    - path: namespace
+                      fieldRef: { apiVersion: v1, fieldPath: metadata.namespace }

@@ -179,6 +179,18 @@ forward
 u="https://127.0.0.1:${PORT}"
 expect 200 "readyz without a login, and the backend answers its ping" "${u}/readyz"
 grep -q '"backend":"ok"' "${TMP}/body" || fail "readyz: backend not ok: $(cat "${TMP}/body")"
+# Only kube-auth-proxy and the backend get the ServiceAccount token; the BFF gets the CAs alone.
+# The checks above and below show each still works: the proxy reviews tokens, the BFF's access
+# review reaches the hub, and the backend answers its ping.
+spec="$(k get pod -n "${NS}" -l app.kubernetes.io/name=ai-grid-provider-console -o json)"
+jq -e '.items[0].spec.automountServiceAccountToken == false' <<<"${spec}" >/dev/null \
+  || fail "the pod mounts the ServiceAccount token into every container"
+for c in kube-auth-proxy:sa-token bff:cluster-ca ai-grid-backend:sa-token; do
+  jq -e --arg c "${c%%:*}" --arg v "${c#*:}" '.items[0].spec.containers[] | select(.name == $c)
+    | [.volumeMounts[]? | select(.mountPath == "/var/run/secrets/kubernetes.io/serviceaccount") | .name] == [$v]' \
+    <<<"${spec}" >/dev/null || fail "${c%%:*} does not mount ${c#*:} at the ServiceAccount path"
+done
+pass "only kube-auth-proxy and the backend hold the ServiceAccount token"
 expect 302 "the API without a login goes to sign-in" "${u}/api/v1/user"
 expect 302 "a token the cluster rejects goes to sign-in" -H "Authorization: Bearer not-a-token" "${u}/api/v1/user"
 k -n default create serviceaccount tester --dry-run=client -o yaml | k apply -f - >/dev/null

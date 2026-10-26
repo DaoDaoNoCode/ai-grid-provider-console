@@ -72,8 +72,9 @@ console:
     # and Loki.
     project: ""
     # The CA that verifies the server's certificate. The default is OpenShift's service CA, which
-    # every pod gets next to its ServiceAccount token and which issues the Cluster Observability
-    # Operator's Perses certificate. Empty: the system roots.
+    # the chart mounts into every container at the ServiceAccount path (the BFF's without the
+    # token) and which issues the Cluster Observability Operator's Perses certificate. Empty: the
+    # system roots.
     caFile: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
   resources:
     requests: { cpu: 50m, memory: 64Mi }
