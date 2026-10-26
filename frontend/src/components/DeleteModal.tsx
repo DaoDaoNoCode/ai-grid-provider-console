@@ -15,6 +15,7 @@ import {
   Stack,
   StackItem,
   TextInput,
+  Tooltip,
 } from '@patternfly/react-core';
 
 type Props = {
@@ -31,6 +32,8 @@ type Props = {
   children: React.ReactNode;
   testId?: string;
   genericLabel?: boolean;
+  /** Why Delete can't be used now; set, it disables Delete and shows this in a tooltip. */
+  disabledReason?: string;
 };
 
 /** A delete confirmation that needs the resource's name typed in. */
@@ -46,6 +49,7 @@ export const DeleteModal: React.FC<Props> = ({
   submitButtonLabel = 'Delete',
   testId,
   genericLabel,
+  disabledReason,
 }) => {
   const [value, setValue] = useState('');
   const deleteNameSanitized = useMemo(() => deleteName.trim().replace(/\s+/g, ' '), [deleteName]);
@@ -71,7 +75,7 @@ export const DeleteModal: React.FC<Props> = ({
                 value={value}
                 onChange={(_event, newValue) => setValue(newValue)}
                 onKeyDown={(event) => {
-                  if (event.key === 'Enter' && confirmed && !deleting) {
+                  if (event.key === 'Enter' && confirmed && !deleting && !disabledReason) {
                     onDelete();
                   }
                 }}
@@ -94,9 +98,18 @@ export const DeleteModal: React.FC<Props> = ({
         </Stack>
       </ModalBody>
       <ModalFooter>
-        <Button variant="danger" isLoading={deleting} isDisabled={deleting || !confirmed} onClick={onDelete}>
-          {submitButtonLabel}
-        </Button>
+        {disabledReason ? (
+          // Aria-disabled, not disabled, so the button takes focus and shows why from the keyboard.
+          <Tooltip content={disabledReason}>
+            <Button variant="danger" isAriaDisabled>
+              {submitButtonLabel}
+            </Button>
+          </Tooltip>
+        ) : (
+          <Button variant="danger" isLoading={deleting} isDisabled={deleting || !confirmed} onClick={onDelete}>
+            {submitButtonLabel}
+          </Button>
+        )}
         <Button variant="link" onClick={onClose}>
           Cancel
         </Button>

@@ -149,8 +149,8 @@ it('leaves the deploy form out of history once the model is deployed, so Back sk
   expect(await screen.findByRole('heading', { level: 1, name: 'Clusters' })).toBeVisible();
 }, 20000);
 
-it('keeps the confirmation dialog and model when a subscription blocks deletion', async () => {
-  const service = new MockConsoleService();
+/** A model "widget" that subscription "widget-users" uses. */
+const referencedModel = async (service: MockConsoleService) => {
   const result = await service.createModel(input);
   await service.createSubscription({
     name: 'widget-users',
@@ -160,6 +160,13 @@ it('keeps the confirmation dialog and model when a subscription blocks deletion'
     tokenMetadata: { organizationId: '3f1c9a72-5b6e-4d2a-8c01-2d3e4f5a6b7c' },
     createAuthPolicy: true,
   });
+  return result;
+};
+
+it('disables Delete while subscriptions use the model, and says why', async () => {
+  const service = new MockConsoleService();
+  const remove = vi.spyOn(service, 'deleteModel');
+  await referencedModel(service);
   const user = userEvent.setup();
   renderAt('/models', service);
   await user.click(await screen.findByTestId('model-actions-widget'));
@@ -170,7 +177,24 @@ it('keeps the confirmation dialog and model when a subscription blocks deletion'
     'href',
     '/subscriptions/view/widget-users',
   );
-  await user.type(screen.getByTestId('delete-modal-input'), 'Widget');
+  await user.type(screen.getByTestId('delete-modal-input'), 'Widget{Enter}');
+  const button = within(screen.getByTestId('delete-deployment-modal')).getByRole('button', { name: 'Delete' });
+  expect(button).toHaveAttribute('aria-disabled', 'true');
+  await user.click(button);
+  await user.hover(button);
+  expect(await screen.findByText('Remove this model from its subscriptions first')).toBeInTheDocument();
+  expect(remove).not.toHaveBeenCalled();
+});
+
+it('leaves Delete to the backend when the subscriptions fail to load, and keeps the dialog when it refuses', async () => {
+  const service = new MockConsoleService();
+  const result = await referencedModel(service);
+  service.listSubscriptions = () => Promise.reject(new ServiceError(503, 'Service unavailable.'));
+  const user = userEvent.setup();
+  renderAt('/models', service);
+  await user.click(await screen.findByTestId('model-actions-widget'));
+  await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
+  await user.type(await screen.findByTestId('delete-modal-input'), 'Widget');
   await user.click(within(screen.getByTestId('delete-deployment-modal')).getByRole('button', { name: 'Delete' }));
   expect(await screen.findByTestId('delete-model-error-message-alert')).toHaveTextContent('Remove this model');
   expect(screen.getByTestId('delete-deployment-modal')).toBeVisible();

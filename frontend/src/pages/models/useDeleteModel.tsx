@@ -28,11 +28,13 @@ export const useDeleteModel = (
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<Error>();
   const [reloadError, setReloadError] = useState<Error>();
+  const [inUse, setInUse] = useState(false);
 
   const confirmDelete = (model: ManagedModel) => {
     setSelected(model);
     setError(undefined);
     setReloadError(undefined);
+    setInUse(false);
   };
 
   const remove = async () => {
@@ -75,13 +77,16 @@ export const useDeleteModel = (
       error={error}
       reloadError={reloadError}
       testId="delete-deployment-modal"
+      // Only a guide: while the subscriptions load, or if they fail to, Delete stays enabled. The
+      // backend refuses to delete a model a subscription uses, and stays the authority.
+      disabledReason={inUse ? 'Remove this model from its subscriptions first' : undefined}
     >
       <Stack hasGutter>
         <p>
           Delete this model, its saved deployment, and its location placement resources? Remove references from
           subscriptions and authorization policies first.
         </p>
-        <ReferencingSubscriptions service={service} model={selected} />
+        <ReferencingSubscriptions service={service} model={selected} onInUse={setInUse} />
       </Stack>
     </DeleteModal>
   );
