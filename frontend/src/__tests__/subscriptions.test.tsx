@@ -55,9 +55,12 @@ describe('administrator subscription flows', () => {
     const table = await screen.findByTestId('subscriptions-table');
     expect(within(table).getByRole('link', { name: 'Engineering' })).toBeVisible();
     const row = within(table).getByRole('link', { name: 'Engineering' }).closest('tr')!;
-    // Groups and models are short lists in their cells, not nested tables.
-    expect(within(row).getByTestId('subscription-groups')).toHaveTextContent('engineering');
-    expect(within(row).getByTestId('subscription-models')).toHaveTextContent('Granite');
+    // The description sits under the name; groups and models are counts that expand the row.
+    expect(within(row).getByTestId('subscription-description')).toHaveTextContent(
+      'Production models for the engineering team.',
+    );
+    expect(within(row).getByTestId('subscription-groups')).toHaveTextContent('1');
+    expect(within(row).getByTestId('subscription-models')).toHaveTextContent('1');
     await user.type(screen.getByTestId('subscriptions-filter-input').querySelector('input')!, 'production');
     expect(within(table).queryByRole('link', { name: 'Research' })).not.toBeInTheDocument();
     await user.click(within(table).getByRole('link', { name: 'Engineering' }));
@@ -76,6 +79,149 @@ describe('administrator subscription flows', () => {
     expect(within(details).getByText('Policies for its models')).toBeVisible();
     expect(screen.getByTestId('subscription-models-table')).toHaveTextContent('100,000 / 1 hour');
     expect(screen.getByTestId('subscription-models-table')).toHaveTextContent('Ready');
+  });
+
+  it("expands a row's models, with their locations and token limits, or its groups, one at a time", async () => {
+    const user = userEvent.setup();
+    renderAt('/subscriptions', new MockConsoleService());
+    const table = await screen.findByTestId('subscriptions-table');
+    const row = within(table).getByRole('link', { name: 'Engineering' }).closest('tr')!;
+    const modelsToggle = within(within(row).getByTestId('subscription-models')).getByRole('button', { name: '1' });
+    expect(modelsToggle).toHaveAttribute('aria-expanded', 'false');
+
+    await user.click(modelsToggle);
+    expect(modelsToggle).toHaveAttribute('aria-expanded', 'true');
+    const models = screen.getByTestId('subscription-models-expanded-panel');
+    const model = within(models).getByTestId('expanded-subscription-model-row');
+    expect(model).toHaveTextContent('Granite 3.3 8B Instruct');
+    expect(model).toHaveTextContent('granite-3-8b');
+    // Where the model's placement put it, and every limit on one line.
+    expect(within(model).getByTestId('expanded-subscription-model-locations')).toHaveTextContent('site1');
+    expect(within(model).getByTestId('expanded-subscription-model-token-limits')).toHaveTextContent(
+      '100,000 / 1 hour, 10,000 / 1 minute',
+    );
+    // The description is behind the help icon by the name.
+    await user.click(within(model).getByRole('button', { name: 'About Granite 3.3 8B Instruct' }));
+    expect(await screen.findByText('Enterprise language model')).toBeVisible();
+
+    // Opening Groups closes Models.
+    const groupsToggle = within(within(row).getByTestId('subscription-groups')).getByRole('button', { name: '1' });
+    await user.click(groupsToggle);
+    expect(groupsToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(modelsToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByTestId('subscription-models-expanded-panel')).not.toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('subscription-groups-expanded-panel')).getByRole('cell', { name: 'engineering' }),
+    ).toBeVisible();
+
+    await user.click(groupsToggle);
+    expect(screen.queryByTestId('subscription-groups-expanded-panel')).not.toBeInTheDocument();
+  });
+
+  it('shows a model the hub no longer has without locations, and an unlimited model as Unlimited', async () => {
+    const user = userEvent.setup();
+    const service = new MockConsoleService();
+    const engineering = service.subscriptions.find((sub) => sub.name === 'engineering')!;
+    engineering.modelRefs = [
+      { ...engineering.modelRefs[0], unlimited: true, tokenRateLimits: [] },
+      { name: 'retired-llm', namespace: 'ai-grid-models', tokenRateLimits: [{ limit: 50, window: '1m' }] },
+    ];
+    renderAt('/subscriptions', service);
+    const table = await screen.findByTestId('subscriptions-table');
+    const row = within(table).getByRole('link', { name: 'Engineering' }).closest('tr')!;
+    await user.click(within(within(row).getByTestId('subscription-models')).getByRole('button', { name: '2' }));
+    const [granite, retired] = within(screen.getByTestId('subscription-models-expanded-panel')).getAllByTestId(
+      'expanded-subscription-model-row',
+    );
+    expect(within(granite).getByTestId('expanded-subscription-model-token-limits')).toHaveTextContent('Unlimited');
+    expect(retired).toHaveTextContent('retired-llm');
+    expect(within(retired).getByTestId('expanded-subscription-model-locations')).toHaveTextContent('—');
+    expect(within(retired).queryByRole('button', { name: /^About/ })).not.toBeInTheDocument();
+  });
+
+  it('filters by model name, ID or description, and shows each filter as a label', async () => {
+    const user = userEvent.setup();
+    renderAt('/subscriptions', new MockConsoleService());
+    const table = await screen.findByTestId('subscriptions-table');
+    await user.click(screen.getByTestId('subscriptions-filter-attribute'));
+    await user.click(await screen.findByRole('option', { name: 'Model' }));
+    const input = screen.getByTestId('subscriptions-model-filter-input').querySelector('input')!;
+    expect(input).toHaveAttribute('placeholder', 'Filter by model name, ID, or description');
+
+    // By the hub model's description: only subscriptions with Llama remain.
+    await user.type(input, 'general purpose');
+    expect(within(table).getByRole('link', { name: 'Data science' })).toBeVisible();
+    expect(within(table).queryByRole('link', { name: 'Engineering' })).not.toBeInTheDocument();
+    // By the model's ID.
+    await user.clear(input);
+    await user.type(input, 'granite-3-8b');
+    expect(within(table).getByRole('link', { name: 'Engineering' })).toBeVisible();
+    expect(within(table).queryByRole('link', { name: 'Research' })).not.toBeInTheDocument();
+
+    // The model filter stays, as a label, while the search box filters by subscription.
+    await user.click(screen.getByTestId('subscriptions-filter-attribute'));
+    await user.click(await screen.findByRole('option', { name: 'Subscription' }));
+    await user.type(screen.getByTestId('subscriptions-filter-input').querySelector('input')!, 'shared');
+    expect(within(table).getByRole('link', { name: 'Data science' })).toBeVisible();
+    expect(within(table).queryByRole('link', { name: 'Engineering' })).not.toBeInTheDocument();
+    expect(screen.getByText('granite-3-8b')).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: 'Clear all filters' }));
+    expect(within(table).getByRole('link', { name: 'Research' })).toBeVisible();
+  });
+
+  it('names the row each count opens, for assistive technology', async () => {
+    const user = userEvent.setup();
+    renderAt('/subscriptions', new MockConsoleService());
+    const table = await screen.findByTestId('subscriptions-table');
+    const row = within(table).getByRole('link', { name: 'Engineering' }).closest('tr')!;
+    for (const panel of ['groups', 'models']) {
+      const toggle = within(within(row).getByTestId(`subscription-${panel}`)).getByRole('button');
+      await user.click(toggle);
+      const controlled = document.getElementById(toggle.getAttribute('aria-controls')!);
+      expect(controlled).toContainElement(screen.getByTestId(`subscription-${panel}-expanded-panel`));
+    }
+  });
+
+  it('keeps keyboard focus on the filter menu after choosing what to filter by', async () => {
+    const user = userEvent.setup();
+    renderAt('/subscriptions', new MockConsoleService());
+    await screen.findByTestId('subscriptions-table');
+    const menu = screen.getByTestId('subscriptions-filter-attribute');
+    menu.focus();
+    await user.keyboard('{Enter}');
+    await screen.findByRole('option', { name: 'Model' });
+    await user.keyboard('{ArrowDown}{ArrowDown}{Enter}');
+    expect(menu).toHaveTextContent('Model');
+    expect(menu).toHaveFocus();
+  });
+
+  it('says when the hub models are still loading, or could not be loaded', async () => {
+    const user = userEvent.setup();
+    const service = new MockConsoleService();
+    let fail: (e: Error) => void = () => {};
+    vi.spyOn(service, 'listModels').mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          fail = reject;
+        }),
+    );
+    renderAt('/subscriptions', service);
+    const table = await screen.findByTestId('subscriptions-table');
+    const row = within(table).getByRole('link', { name: 'Engineering' }).closest('tr')!;
+    await user.click(within(within(row).getByTestId('subscription-models')).getByRole('button'));
+    expect(screen.getByTestId('expanded-subscription-model-locations')).toHaveTextContent('Loading locations');
+
+    act(() => fail(new Error('backend down')));
+    expect(await screen.findByTestId('subscriptions-models-unavailable')).toHaveTextContent(
+      "The hub's models could not be loaded",
+    );
+    expect(screen.getByTestId('expanded-subscription-model-locations')).toHaveTextContent('Unavailable');
+    // The reference's own name still filters.
+    await user.click(screen.getByTestId('subscriptions-filter-attribute'));
+    await user.click(await screen.findByRole('option', { name: 'Model' }));
+    await user.type(screen.getByTestId('subscriptions-model-filter-input').querySelector('input')!, 'granite-3-8b');
+    expect(within(table).getByRole('link', { name: 'Engineering' })).toBeVisible();
   });
 
   it('creates a subscription using the group and model selectors and token-limit modal', async () => {

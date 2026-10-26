@@ -7,6 +7,7 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
   AlertActionCloseButton,
+  AlertActionLink,
   Button,
   EmptyState,
   EmptyStateActions,
@@ -22,8 +23,10 @@ import { LoadError } from '../../components/LoadError';
 import { PageLoading } from '../../components/PageLoading';
 import type { GovernanceService } from '../../context/useMaaSGovernanceContext';
 import { useMaaSGovernanceContext } from '../../context/useMaaSGovernanceContext';
+import { isSameModel } from '../../utilities/authpolicies';
 import type { SubscriptionsFilterDataType } from './allSubscriptions/const';
 import { initialSubscriptionsFilterData, SubscriptionsFilterOptions } from './allSubscriptions/const';
+import type { ModelsState } from './allSubscriptions/ExpandedModelsPanel';
 import { SubscriptionsTable } from './allSubscriptions/SubscriptionsTable';
 import { SubscriptionsToolbar } from './allSubscriptions/SubscriptionsToolbar';
 import { DeleteSubscriptionModal } from './DeleteSubscriptionModal';
@@ -37,6 +40,9 @@ export const SubscriptionsTab: React.FC<Props> = ({ service }) => {
     subscriptionsLoaded: loaded,
     subscriptionsError: error,
     organizations,
+    modelRefs: models,
+    modelRefsLoaded,
+    modelRefsError,
     refresh,
     canWrite,
   } = useMaaSGovernanceContext();
@@ -58,17 +64,30 @@ export const SubscriptionsTab: React.FC<Props> = ({ service }) => {
     [organizations],
   );
 
+  // The hub's models fill in the models' locations and let the model filter match their display
+  // name and description. When their last load failed, only what the subscriptions say is known.
+  let modelsState: ModelsState = 'loading';
+  if (modelRefsLoaded) {
+    modelsState = modelRefsError ? 'failed' : 'loaded';
+  }
+
   const filteredSubscriptions = useMemo(() => {
-    const keyword = filterData[SubscriptionsFilterOptions.keyword]?.toLowerCase();
-    return keyword
-      ? subscriptions.filter(
-          (sub) =>
-            sub.name.toLowerCase().includes(keyword) ||
-            sub.displayName?.toLowerCase().includes(keyword) ||
-            sub.description?.toLowerCase().includes(keyword),
-        )
-      : subscriptions;
-  }, [subscriptions, filterData]);
+    const keyword = filterData[SubscriptionsFilterOptions.keyword]?.trim().toLowerCase();
+    const model = filterData[SubscriptionsFilterOptions.model]?.trim().toLowerCase();
+    const matches = (term: string, ...values: (string | undefined)[]) =>
+      values.some((value) => value?.toLowerCase().includes(term));
+    return subscriptions.filter(
+      (sub) =>
+        (!keyword || matches(keyword, sub.name, sub.displayName, sub.description)) &&
+        // A model matches by its name (ID), display name or description, from the reference or the
+        // hub's model.
+        (!model ||
+          sub.modelRefs.some((ref) => {
+            const hub = models.find((m) => isSameModel(m, ref));
+            return matches(model, ref.name, ref.displayName, ref.description, hub?.displayName, hub?.description);
+          })),
+    );
+  }, [subscriptions, models, filterData]);
 
   if (!loaded && !error) {
     return <PageLoading label="Loading subscriptions" />;
@@ -127,9 +146,24 @@ export const SubscriptionsTab: React.FC<Props> = ({ service }) => {
         />
       )}
       <PageSection isFilled>
+        {modelsState === 'failed' && (
+          <Alert
+            isInline
+            variant="warning"
+            title="The hub's models could not be loaded"
+            actionLinks={<AlertActionLink onClick={refresh}>Retry</AlertActionLink>}
+            className="pf-v6-u-mb-md"
+            data-testid="subscriptions-models-unavailable"
+          >
+            The models' locations aren't shown, and the model filter matches only the names and descriptions the
+            subscriptions give their models.
+          </Alert>
+        )}
         <SubscriptionsTable
           subscriptions={filteredSubscriptions}
           organizationName={organizationName}
+          models={models}
+          modelsState={modelsState}
           onClearFilters={onClearFilters}
           toolbarContent={
             <SubscriptionsToolbar filterData={filterData} onFilterUpdate={onFilterUpdate} canWrite={canWrite} />
