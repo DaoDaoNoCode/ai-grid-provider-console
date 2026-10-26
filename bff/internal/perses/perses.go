@@ -155,8 +155,49 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(req.Context(), r.timeout)
 	defer cancel()
-	r.proxy.ServeHTTP(w, req.WithContext(ctx))
+	r.proxy.ServeHTTP(&relayWriter{ResponseWriter: w}, req.WithContext(ctx))
 }
+
+// relayWriter holds the line modifyResponse draws (only relayedHeaders reach the browser) where
+// ReverseProxy writes around ModifyResponse: an informational (1xx) answer, which it forwards with
+// Perses's headers (a 103's Link, say) before the final answer exists, and the trailers it copies
+// after the body. The console reads neither, so the first is dropped and the second goes nowhere.
+type relayWriter struct {
+	http.ResponseWriter
+	wrote    bool
+	trailers http.Header
+}
+
+// Header is the response's own until the final status is written, and a map nobody reads after:
+// ReverseProxy writes Perses's trailers there.
+func (w *relayWriter) Header() http.Header {
+	if !w.wrote {
+		return w.ResponseWriter.Header()
+	}
+	if w.trailers == nil {
+		w.trailers = http.Header{}
+	}
+	return w.trailers
+}
+
+// WriteHeader drops a 1xx (ReverseProxy clears the headers it set for one itself) and the Trailer
+// announcement ReverseProxy adds to the final answer.
+func (w *relayWriter) WriteHeader(code int) {
+	if code < http.StatusOK || w.wrote {
+		return
+	}
+	w.ResponseWriter.Header().Del("Trailer")
+	w.wrote = true
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *relayWriter) Write(b []byte) (int, error) {
+	w.WriteHeader(http.StatusOK)
+	return w.ResponseWriter.Write(b)
+}
+
+// Unwrap lets ReverseProxy flush the response it streams (http.ResponseController).
+func (w *relayWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 // forwardedHeaders are the only request headers that reach Perses besides Authorization. Cookies,
 // the proxy's identity headers and any client-sent Authorization stay behind. With the browser's
@@ -184,25 +225,49 @@ func (r *Relay) rewrite(pr *httputil.ProxyRequest) {
 	pr.Out.Header = h
 }
 
+// relayedHeaders are the only response headers that reach the browser; the relay adds its own two
+// (modifyResponse). Anything else Perses or a datasource behind it sends stays behind: a cookie for
+// the console's origin, a CORS grant (the console reads the relay from its own origin, so a grant
+// would only open the answers to other sites), a WWW-Authenticate challenge (the browser would ask
+// for a password on the console's origin), a Location or Refresh that would send the browser
+// elsewhere, a Link to preload, or a header nobody here reads.
+//
+//   - Content-Type: the Perses client parses an answer by it (client/util/fetch.js).
+//   - Content-Encoding and Content-Length: a gzip answer passes through as Perses sent it
+//     (forwardedHeaders), and the browser must know to inflate it and how long it is.
+//   - Vary: that encoding depends on Accept-Encoding, which the browser's cache must know.
+//   - Cache-Control: Perses's and the datasource's own say on caching an answer that holds data,
+//     with Date, Age and Expires, from which a cache works out how long that answer stays fresh
+//     (RFC 9111, section 4.2): without Age, an answer already a minute old would count as new.
+//
+// ETag and Last-Modified are left out: the relay forwards no If-None-Match or If-Modified-Since,
+// so they could never be used.
+var relayedHeaders = []string{"Content-Type", "Content-Encoding", "Content-Length", "Vary", "Cache-Control", "Date", "Age", "Expires"}
+
 // relayedCSP keeps a relayed answer inert if a browser opens it as a page: no script, no
 // subresources, a unique origin. The console reads these answers with fetch, which it doesn't affect.
 const relayedCSP = "sandbox; default-src 'none'"
 
-// modifyResponse keeps Perses from setting cookies on the console's origin, and keeps whatever it
-// answers (a datasource's error page, a label value) from running there as HTML or script. The
-// console reads these answers from its own origin, so a CORS grant would only open them to other
-// sites; and a datasource's WWW-Authenticate challenge would make the browser ask for a password
-// on the console's origin.
+// errRedirect is a 3xx from Perses. The relay never forwards one: a Location or Refresh would send
+// the browser to wherever Perses or a datasource behind it points, and nothing the console calls
+// redirects (the relay sends no conditional request, so not even 304 is expected).
+var errRedirect = errors.New("perses answered with a redirect")
+
+// modifyResponse passes only relayedHeaders, and keeps whatever Perses answers (a datasource's error
+// page, a label value) from running on the console's origin as HTML or script.
 func modifyResponse(resp *http.Response) error {
-	resp.Header.Del("Set-Cookie")
-	resp.Header.Del("WWW-Authenticate")
-	for k := range resp.Header {
-		if strings.HasPrefix(k, "Access-Control-") {
-			resp.Header.Del(k)
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		return errRedirect
+	}
+	h := http.Header{}
+	for _, k := range relayedHeaders {
+		if v := resp.Header.Values(k); len(v) > 0 {
+			h[k] = v
 		}
 	}
-	resp.Header.Set("X-Content-Type-Options", "nosniff")
-	resp.Header.Set("Content-Security-Policy", relayedCSP)
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Content-Security-Policy", relayedCSP)
+	resp.Header = h
 	return nil
 }
 
@@ -210,6 +275,8 @@ func errorHandler(w http.ResponseWriter, req *http.Request, err error) {
 	var maxBytes *http.MaxBytesError
 	var netErr net.Error
 	switch {
+	case errors.Is(err, errRedirect):
+		writeError(w, http.StatusBadGateway, "the hub's Perses answered with a redirect, which the console doesn't follow")
 	case errors.As(err, &maxBytes):
 		writeError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("a Perses query must be at most %d bytes", MaxBodyBytes))
 	case errors.Is(err, context.Canceled):

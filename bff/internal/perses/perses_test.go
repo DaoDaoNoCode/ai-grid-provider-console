@@ -3,11 +3,14 @@ package perses
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"encoding/pem"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httptrace"
+	"net/textproto"
 	"os"
 	"path/filepath"
 	"strings"
@@ -241,16 +244,21 @@ func TestRelayAnswersCannotRunAsAPage(t *testing.T) {
 	}
 }
 
-// The console reads the relay from its own origin, so a CORS grant from Perses or a datasource
-// would only open the answers to other sites; and a datasource's Basic challenge would make the
-// browser ask for a password on the console's origin.
-func TestRelayDropsCORSAndAuthenticationChallenges(t *testing.T) {
+// Only the headers the browser needs to read an answer reach it. A CORS grant from Perses or a
+// datasource would only open the answers to other sites, a Basic challenge would make the browser
+// ask for a password on the console's origin, and a Refresh or Link would send it elsewhere.
+func TestRelayPassesOnlyTheHeadersAnAnswerNeeds(t *testing.T) {
 	relay := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		w.Header().Set("Access-Control-Expose-Headers", "X-Thanos")
 		w.Header().Set("WWW-Authenticate", `Basic realm="thanos"`)
+		w.Header().Set("Refresh", "0; url=https://attacker.example/")
+		w.Header().Set("Link", "<https://attacker.example/x.js>; rel=preload; as=script")
+		w.Header().Set("Location", "https://attacker.example/")
+		w.Header().Set("X-Thanos-Partial", "true")
 		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"status":"error"}`))
 	}, nil, 0)
@@ -258,9 +266,105 @@ func TestRelayDropsCORSAndAuthenticationChallenges(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized || rec.Body.String() != `{"status":"error"}` {
 		t.Fatalf("got %d %q, want the datasource's 401 as it sent it", rec.Code, rec.Body)
 	}
-	for _, h := range []string{"Access-Control-Allow-Origin", "Access-Control-Allow-Credentials", "Access-Control-Expose-Headers", "WWW-Authenticate"} {
+	for _, h := range []string{
+		"Access-Control-Allow-Origin", "Access-Control-Allow-Credentials", "Access-Control-Expose-Headers",
+		"WWW-Authenticate", "Refresh", "Link", "Location", "X-Thanos-Partial",
+	} {
 		if v := rec.Header().Values(h); len(v) != 0 {
 			t.Errorf("%s reached the browser: %q", h, v)
+		}
+	}
+	if rec.Header().Get("Content-Type") != "application/json" || rec.Header().Get("Cache-Control") != "no-store" {
+		t.Errorf("Content-Type %q, Cache-Control %q: want Perses's", rec.Header().Get("Content-Type"), rec.Header().Get("Cache-Control"))
+	}
+}
+
+// A cacheable answer keeps what a cache needs to tell how old it already is.
+func TestRelayKeepsTheAgeOfACachedAnswer(t *testing.T) {
+	relay := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Cache-Control", "max-age=60")
+		w.Header().Set("Age", "59")
+		w.Header().Set("Date", "Mon, 26 Oct 2026 12:00:00 GMT")
+		w.Header().Set("Expires", "Mon, 26 Oct 2026 12:00:01 GMT")
+		_, _ = w.Write([]byte(`{}`))
+	}, nil, 0)
+	rec := serve(relay, httptest.NewRequest(http.MethodGet, Prefix+"/api/v1/projects/ai-grid-monitoring/dashboards", nil), "t")
+	for h, want := range map[string]string{"Age": "59", "Date": "Mon, 26 Oct 2026 12:00:00 GMT", "Expires": "Mon, 26 Oct 2026 12:00:01 GMT"} {
+		if got := rec.Header().Get(h); got != want {
+			t.Errorf("%s = %q, want %q", h, got, want)
+		}
+	}
+}
+
+// ReverseProxy forwards a 1xx and the trailers outside ModifyResponse; neither reaches the browser.
+// Over real connections, since a recorder sees neither the way a browser would.
+func TestRelayDropsInformationalAnswersAndTrailers(t *testing.T) {
+	relay := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Link", "<https://attacker.example/x.js>; rel=preload; as=script")
+		w.WriteHeader(http.StatusEarlyHints)
+		w.Header().Del("Link")
+		w.Header().Set("Trailer", "X-Declared")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"success"}`))
+		w.Header().Set("X-Declared", "x")
+		w.Header().Set(http.TrailerPrefix+"X-Undeclared", "y")
+	}, nil, 0)
+	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		relay.ServeHTTP(w, r.WithContext(WithToken(r.Context(), "t")))
+	}))
+	t.Cleanup(front.Close)
+
+	var informational []int
+	trace := &httptrace.ClientTrace{Got1xxResponse: func(code int, _ textproto.MIMEHeader) error {
+		informational = append(informational, code)
+		return nil
+	}}
+	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(context.Background(), trace),
+		http.MethodGet, front.URL+Prefix+"/api/v1/projects/ai-grid-monitoring/dashboards", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := front.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || string(body) != `{"status":"success"}` {
+		t.Fatalf("got %d %q, want Perses's answer", resp.StatusCode, body)
+	}
+	if len(informational) != 0 {
+		t.Errorf("informational answers reached the browser: %v", informational)
+	}
+	if v := resp.Header.Values("Link"); len(v) != 0 {
+		t.Errorf("Link reached the browser: %q", v)
+	}
+	if len(resp.Trailer) != 0 || resp.Header.Get("Trailer") != "" {
+		t.Errorf("trailers reached the browser: %v, announced %q", resp.Trailer, resp.Header.Get("Trailer"))
+	}
+}
+
+// A redirect from Perses never reaches the browser, whatever its status: it answers 502 instead,
+// without the Location.
+func TestRelayRefusesRedirects(t *testing.T) {
+	for _, code := range []int{http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther, http.StatusNotModified, http.StatusTemporaryRedirect, http.StatusPermanentRedirect} {
+		relay := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Location", "https://attacker.example/")
+			w.Header().Set("Refresh", "0; url=https://attacker.example/")
+			w.WriteHeader(code)
+		}, nil, 0)
+		rec := serve(relay, httptest.NewRequest(http.MethodGet, Prefix+"/proxy/globaldatasources/thanos/api/v1/query", nil), "t")
+		if rec.Code != http.StatusBadGateway {
+			t.Errorf("%d: got %d, want 502", code, rec.Code)
+		}
+		if msg := errorMessage(t, rec); !strings.Contains(msg, "redirect") {
+			t.Errorf("%d: message %q", code, msg)
+		}
+		for _, h := range []string{"Location", "Refresh"} {
+			if v := rec.Header().Get(h); v != "" {
+				t.Errorf("%d: %s reached the browser: %q", code, h, v)
+			}
 		}
 	}
 }
