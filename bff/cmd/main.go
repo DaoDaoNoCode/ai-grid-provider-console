@@ -18,6 +18,7 @@ import (
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/config"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/hub"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/perses"
+	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/relay"
 )
 
 func main() {
@@ -35,7 +36,7 @@ func run() error {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	slog.SetDefault(logger)
 
-	client, err := backend.Dial(backend.Config{
+	backendCfg := backend.Config{
 		Address:         cfg.BackendAddress,
 		CAFile:          cfg.BackendCAFile,
 		ServerName:      cfg.BackendServerName,
@@ -43,7 +44,8 @@ func run() error {
 		Timeout:         cfg.BackendTimeout,
 		DraftAPI:        cfg.FakeBackend,
 		ModelsNamespace: cfg.ModelsNamespace,
-	})
+	}
+	client, err := backend.Dial(backendCfg)
 	if err != nil {
 		return err
 	}
@@ -54,10 +56,20 @@ func run() error {
 		return err
 	}
 
-	app := api.NewApp(cfg, logger, client, hubClient)
+	// The browser's Connect calls to the backend's own RPCs, on the same address as the gRPC client.
+	connectRelay, err := relay.New(relay.Config{
+		Backend:         backendCfg,
+		IdentityHeaders: []string{cfg.AuthTokenHeader, cfg.AuthUserHeader, cfg.AuthEmailHeader, cfg.AuthGroupsHeader},
+		Logger:          logger,
+	})
+	if err != nil {
+		return err
+	}
+
+	app := api.NewApp(cfg, logger, client, hubClient).WithRelay(connectRelay)
 	persesURL := "off"
 	if cfg.PersesURL != "" {
-		relay, err := perses.New(perses.Config{
+		persesRelay, err := perses.New(perses.Config{
 			URL:        cfg.PersesURL,
 			Project:    cfg.PersesProject,
 			CAFile:     cfg.PersesCAFile,
@@ -68,8 +80,8 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		app.WithPerses(relay)
-		persesURL = relay.URL()
+		app.WithPerses(persesRelay)
+		persesURL = persesRelay.URL()
 	}
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr(),
@@ -83,7 +95,7 @@ func run() error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		logger.Info("starting server", "addr", srv.Addr, "tls", cfg.TLSEnabled(), "version", api.Version, "backend", cfg.BackendAddress, "backendTLS", cfg.BackendCAFile != "", "hub", hubClient.URL(), "perses", persesURL)
+		logger.Info("starting server", "addr", srv.Addr, "tls", cfg.TLSEnabled(), "version", api.Version, "backend", cfg.BackendAddress, "connectRelay", connectRelay.URL(), "backendTLS", cfg.BackendCAFile != "", "hub", hubClient.URL(), "perses", persesURL)
 		var serveErr error
 		if cfg.TLSEnabled() {
 			serveErr = srv.ListenAndServeTLS(cfg.CertFile, cfg.KeyFile)

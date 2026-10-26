@@ -7,8 +7,11 @@ package backend
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"time"
 
@@ -67,19 +70,13 @@ type Client struct {
 // Dial creates the connection. It does not connect until the first RPC, so a
 // backend that starts later than the BFF is fine. Extra options are for tests.
 func Dial(cfg Config, extra ...grpc.DialOption) (*Client, error) {
-	if strings.TrimSpace(cfg.Address) == "" {
-		return nil, fmt.Errorf("backend address must not be empty")
+	tlsCfg, err := cfg.TLS()
+	if err != nil {
+		return nil, err
 	}
 	creds := insecure.NewCredentials()
-	if cfg.CAFile == "" && !cfg.Insecure && !isLoopback(cfg.Address) {
-		return nil, fmt.Errorf("backend address %s is not loopback: set a CA file for TLS or allow insecure explicitly", cfg.Address)
-	}
-	if cfg.CAFile != "" {
-		tls, err := credentials.NewClientTLSFromFile(cfg.CAFile, cfg.ServerName)
-		if err != nil {
-			return nil, fmt.Errorf("load backend CA: %w", err)
-		}
-		creds = tls
+	if tlsCfg != nil {
+		creds = credentials.NewTLS(tlsCfg)
 	}
 	opts := append([]grpc.DialOption{
 		grpc.WithTransportCredentials(creds),
@@ -113,8 +110,34 @@ func Dial(cfg Config, extra ...grpc.DialOption) (*Client, error) {
 	}, nil
 }
 
-// isLoopback reports whether a host:port target names the local machine.
-func isLoopback(address string) bool {
+// TLS says how to reach the backend, for the gRPC client and the Connect relay
+// (internal/relay) alike: with TLS verified against CAFile (and ServerName,
+// when set) when a CA file is given; in plaintext, a nil config, for a
+// loopback address, or any address with Insecure; otherwise not at all, as
+// the caller's token would cross the network in the clear.
+func (cfg Config) TLS() (*tls.Config, error) {
+	if strings.TrimSpace(cfg.Address) == "" {
+		return nil, fmt.Errorf("backend address must not be empty")
+	}
+	if cfg.CAFile == "" {
+		if !cfg.Insecure && !IsLoopback(cfg.Address) {
+			return nil, fmt.Errorf("backend address %s is not loopback: set a CA file for TLS or allow insecure explicitly", cfg.Address)
+		}
+		return nil, nil
+	}
+	pem, err := os.ReadFile(cfg.CAFile)
+	if err != nil {
+		return nil, fmt.Errorf("load backend CA: %w", err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(pem) {
+		return nil, fmt.Errorf("load backend CA: %s holds no PEM certificate", cfg.CAFile)
+	}
+	return &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: pool, ServerName: cfg.ServerName}, nil
+}
+
+// IsLoopback reports whether a host:port target names the local machine.
+func IsLoopback(address string) bool {
 	host, _, err := net.SplitHostPort(address)
 	if err != nil {
 		host = address

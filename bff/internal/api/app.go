@@ -10,6 +10,7 @@ import (
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/hub"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/identity"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/perses"
+	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/relay"
 )
 
 // Version is set at build time with -ldflags "-X ...api.Version=<v>".
@@ -28,6 +29,8 @@ type App struct {
 	headers identity.Headers
 	// perses relays the Monitoring page to the hub's Perses; nil when it is off.
 	perses *perses.Relay
+	// connect relays the browser's Connect calls to the backend's own RPCs; nil when it is off.
+	connect *relay.Relay
 }
 
 // NewApp assembles the application.
@@ -48,8 +51,14 @@ func NewApp(cfg config.Config, logger *slog.Logger, client *backend.Client, hubC
 }
 
 // WithPerses turns on the Monitoring page's relay to the hub's Perses.
-func (a *App) WithPerses(relay *perses.Relay) *App {
-	a.perses = relay
+func (a *App) WithPerses(p *perses.Relay) *App {
+	a.perses = p
+	return a
+}
+
+// WithRelay turns on the relay of Connect calls (/ai_grid.v1.*) to the backend.
+func (a *App) WithRelay(r *relay.Relay) *App {
+	a.connect = r
 	return a
 }
 
@@ -68,7 +77,19 @@ func (a *App) Handler() http.Handler {
 		root.Handle("/", newSPAHandler(a.cfg.StaticAssetsDir))
 	}
 
-	return a.recoverPanic(a.logRequests(compress(root)))
+	// The backend's own RPCs over Connect: the same caller checks as the API, then the relay.
+	// Routed before the mux, which has no pattern for a path prefix without a slash
+	// (/ai_grid.v1.Clusters/List) and would redirect an unclean path instead of refusing it.
+	connect := a.requireIdentity(a.requireProviderAdmin(http.HandlerFunc(a.relayConnect)))
+	routes := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if relay.Handles(r.URL.Path) {
+			connect.ServeHTTP(w, r)
+			return
+		}
+		root.ServeHTTP(w, r)
+	})
+
+	return a.recoverPanic(a.logRequests(compress(routes)))
 }
 
 // relayPerses forwards an allowed Perses call with the caller's own token (perses.Relay decides
@@ -80,4 +101,14 @@ func (a *App) relayPerses(w http.ResponseWriter, r *http.Request) {
 	}
 	id, _ := identity.FromContext(r.Context())
 	a.perses.ServeHTTP(w, r.WithContext(perses.WithToken(r.Context(), id.Token())))
+}
+
+// relayConnect forwards a Connect call to the backend with the caller's identity (relay.Relay
+// decides which calls pass).
+func (a *App) relayConnect(w http.ResponseWriter, r *http.Request) {
+	if a.connect == nil {
+		relay.WriteError(w, http.StatusNotFound, "the Connect relay is not configured on this console")
+		return
+	}
+	a.connect.ServeHTTP(w, r)
 }
