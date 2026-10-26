@@ -29,6 +29,20 @@ if [[ -n "${BACKEND_DIR:-}" ]]; then
 fi
 
 dir="${ROOT}/.cache/backend/${SHA}"
+# A cached checkout is used only while it is still the pinned commit, with no tracked file
+# changed (the build's own output is untracked); otherwise it is fetched again.
+if [[ -d "${dir}" ]]; then
+  head=none changes=""
+  # Its own repository only: without .git, git would answer for the console's checkout around it.
+  if [[ -d "${dir}/.git" ]]; then
+    head="$(git -C "${dir}" rev-parse HEAD 2>/dev/null || echo none)"
+    changes="$(git -C "${dir}" status --porcelain --untracked-files=no 2>/dev/null || echo unreadable)"
+  fi
+  if [[ "${head}" != "${SHA}" || -n "${changes}" ]]; then
+    echo "backend-checkout: ${dir} is at ${head}$([[ -n "${changes}" ]] && echo ", with changes"), not a clean ${SHA}; fetching it again" >&2
+    rm -rf "${dir}"
+  fi
+fi
 if [[ ! -d "${dir}" ]]; then
   echo "backend-checkout: fetching ${REPO} at ${SHA} into ${dir}" >&2
   tmp="${dir}.partial"
