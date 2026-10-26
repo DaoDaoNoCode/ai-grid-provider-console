@@ -53,6 +53,24 @@ Follow `mock/proto/README.md`, "Working with the backend team":
 Afterwards run `make -C bff golden` when the BFF's JSON or a fixture changed, and update the
 docs (`docs/plan/bff-api.md`, `mock/AGENTS.md`, `mock/areas/*.md`) in the same change.
 
+## The backend has no authentication yet
+
+Authentication and authorization of API calls are out of the backend's MVP scope (decided
+2026-10-20; ai-grid-cloud/ai-grid-provider-backend#3): it answers anyone who reaches it, as its
+own ServiceAccount, which may label every ManagedCluster and read ACM Search's index of every
+managed cluster. So in the console's pod:
+
+- kube-auth-proxy is the only listener on the pod network (`:8443`), and the only port the
+  Service and Route expose. The BFF and the backend bind to loopback, and every call reaches the
+  backend through the BFF's caller checks (signed in, provider admin), on `/api/v1` and on the
+  Connect relay alike.
+- Only kube-auth-proxy and the backend hold the ServiceAccount token; the BFF gets the CAs alone.
+- Don't add a Service port, Route, NetworkPolicy exception or `0.0.0.0` bind for the backend, and
+  don't weaken the BFF's gates, until the backend authenticates callers itself (ADR-0004). The
+  chart's kind test (`hack/test-chart-kind.sh`: only `:8443` listens off loopback; the token
+  mounts) and ai-grid-env-setup's `verify/07-console.sh` (the backend's ports on loopback) check
+  this.
+
 ## Known exceptions, to move behind the RPCs later
 
 The BFF still derives or decides these itself. Do not add more; move these into the backend
