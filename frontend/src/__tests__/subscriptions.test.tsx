@@ -11,6 +11,7 @@ import { MemoryRouter, useNavigate } from 'react-router-dom';
 import type { NavigateFunction } from 'react-router-dom';
 import { App } from '../App';
 import { ServiceError } from '../api/ConsoleService';
+import { HttpConsoleService } from '../api/HttpConsoleService';
 import { MockConsoleService, seedSubscriptions } from '../api/MockConsoleService';
 import type { ConditionStatus, MaaSSubscription } from '../api/types';
 import { isSameModel } from '../utilities/authpolicies';
@@ -602,6 +603,27 @@ describe('MaaS subscription phases', () => {
     expect(modal).toHaveTextContent('Governed but backend is not ready');
     expect(modal).toHaveTextContent('Model not found. It may have been deleted.');
   });
+});
+
+it('shows Saved to Git, not Pending, for a model the backend saved to Git', async () => {
+  const service = new MockConsoleService();
+  const info = await service.getSubscriptionInfo('engineering');
+  const ref = info.subscription.modelRefs[0];
+  // The BFF's JSON for a registration in git mode: no phase, reason SavedToGit.
+  const body = {
+    ...info,
+    modelRefs: [{ name: ref.name, namespace: ref.namespace, reason: 'SavedToGit', message: 'Saved to Git' }],
+  };
+  const http = new HttpConsoleService(
+    vi.fn(
+      async () => new Response(JSON.stringify({ data: body }), { headers: { 'Content-Type': 'application/json' } }),
+    ) as unknown as typeof fetch,
+  );
+  service.getSubscriptionInfo = (name) => http.getSubscriptionInfo(name);
+  renderAt('/subscriptions/view/engineering', service);
+  const models = await screen.findByTestId('subscription-models-table');
+  expect(models).toHaveTextContent('Saved to Git');
+  expect(models).not.toHaveTextContent('Pending');
 });
 
 describe("model references on PR 12's models", () => {

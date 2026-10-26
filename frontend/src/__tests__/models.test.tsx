@@ -462,6 +462,28 @@ it('shows the phase', async () => {
   expect(raw).toHaveTextContent(/^ConfigNotFound: /);
 });
 
+it('shows Saved to Git, not Pending, for a model the backend saved to Git', async () => {
+  const saved = {
+    ...getModels.body.data.find((m) => m.name === 'granite-8b-instruct')!,
+    phase: undefined,
+    reason: 'SavedToGit',
+    message: 'Saved to Git; git mode doesn’t read the model’s status from the clusters',
+  };
+  const fetchFn = vi.fn(async (url: string) =>
+    /\/models\/[^/]+\/[^/]+$/.test(url) ? jsonResponse(200, { data: saved }) : jsonResponse(200, { data: [saved] }),
+  );
+  renderAt('/models', serviceOnModelJson(fetchFn));
+  const phase = within(
+    (await screen.findByTestId('model-locations-granite-8b-instruct')).closest('tr') as HTMLElement,
+  ).getByTestId('model-phase');
+  expect(phase).toHaveTextContent(/^Saved to Git$/);
+  // Neutral (grey, PatternFly's default), not Pending's in-progress info status.
+  expect(phase.querySelector('.pf-v6-c-label')).not.toHaveClass('pf-m-info');
+  renderAt(`/models/${saved.namespace}/granite-8b-instruct`, serviceOnModelJson(fetchFn));
+  expect(await screen.findByTestId('model-status-alert')).toHaveTextContent('Saved to Git');
+  expect(screen.queryByText('Pending')).not.toBeInTheDocument();
+});
+
 it('offers only eligible locations', async () => {
   const fetchFn = modelJsonFetch();
   const user = userEvent.setup();

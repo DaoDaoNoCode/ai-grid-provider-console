@@ -92,6 +92,11 @@ func TestV1SubscriptionReads(t *testing.T) {
 				Conditions: []*backendv1.Condition{{Type: "Ready", Status: backendv1.ConditionStatus_CONDITION_STATUS_TRUE}}},
 			{Name: "opt", Namespace: "models-as-a-service", Phase: "Unhealthy",
 				Conditions: []*backendv1.Condition{{Type: "Ready", Status: backendv1.ConditionStatus_CONDITION_STATUS_FALSE, Message: proto.String("no endpoints")}}},
+			// Git mode: no phase, and a Ready condition of unknown status, reason SavedToGit.
+			{Name: "llama", Namespace: "models-as-a-service",
+				Conditions: []*backendv1.Condition{{Type: "Ready", Status: backendv1.ConditionStatus_CONDITION_STATUS_UNSPECIFIED, Reason: proto.String("SavedToGit"), Message: proto.String("Saved to Git")}}},
+			// Not reconciled yet: no phase and no conditions.
+			{Name: "phi", Namespace: "models-as-a-service"},
 		},
 	}}
 	got, err := v1Subscriptions{conn}.GetSubscription(ctx, &aigridv1.GetSubscriptionRequest{Name: "gold"})
@@ -108,7 +113,7 @@ func TestV1SubscriptionReads(t *testing.T) {
 	if len(got.GetAuthPolicies()) != 1 || !proto.Equal(got.GetAuthPolicies()[0], wantPolicy) {
 		t.Fatalf("Get policies %v, want %v", got.GetAuthPolicies(), wantPolicy)
 	}
-	if len(got.GetModelRegistrations()) != 2 || got.GetModelRegistrations()[0].GetEndpoint() != "https://maas/granite" {
+	if len(got.GetModelRegistrations()) != 4 || got.GetModelRegistrations()[0].GetEndpoint() != "https://maas/granite" {
 		t.Fatalf("Get registrations %v", got.GetModelRegistrations())
 	}
 	// The view page reads each referenced model's state from model_refs: a
@@ -116,6 +121,9 @@ func TestV1SubscriptionReads(t *testing.T) {
 	wantModels := []*aigridv1.Model{
 		{Name: "granite", Metadata: &aigridv1.ObjectMeta{Namespace: "models-as-a-service"}, Status: &aigridv1.ModelStatus{Phase: aigridv1.ModelPhase_MODEL_PHASE_READY}},
 		{Name: "opt", Metadata: &aigridv1.ObjectMeta{Namespace: "models-as-a-service"}, Status: &aigridv1.ModelStatus{Phase: aigridv1.ModelPhase_MODEL_PHASE_FAILED, Reason: "Unhealthy", Message: "no endpoints"}},
+		// Saved to Git has no phase; the console shows it as Saved to Git, not Pending.
+		{Name: "llama", Metadata: &aigridv1.ObjectMeta{Namespace: "models-as-a-service"}, Status: &aigridv1.ModelStatus{Reason: "SavedToGit", Message: "Saved to Git"}},
+		{Name: "phi", Metadata: &aigridv1.ObjectMeta{Namespace: "models-as-a-service"}, Status: &aigridv1.ModelStatus{Phase: aigridv1.ModelPhase_MODEL_PHASE_PENDING}},
 	}
 	if len(got.GetModelRefs()) != len(wantModels) {
 		t.Fatalf("Get models %v, want %v", got.GetModelRefs(), wantModels)

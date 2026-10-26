@@ -507,12 +507,24 @@ func fromV1AuthPolicy(p *backendv1.AuthPolicy) *aigridv1.AuthPolicy {
 	return out
 }
 
+// reasonSavedToGit is the backend's reason for a status it doesn't read in git
+// mode: the change was saved to Git, and the clusters aren't asked.
+const reasonSavedToGit = "SavedToGit"
+
 // registeredModel is a model as its MaaS registration shows it: Ready, Failed
 // (Failed, Invalid or Unhealthy, with the phase as reason and the Ready
-// condition's message) or Pending.
+// condition's message) or Pending. A registration the backend saved to Git
+// (no phase, and a Ready condition with reason SavedToGit) has no phase, with
+// that reason and message, so the console doesn't show it as Pending.
 func registeredModel(r *backendv1.ModelRegistration) *aigridv1.Model {
 	st := &aigridv1.ModelStatus{Phase: aigridv1.ModelPhase_MODEL_PHASE_PENDING}
 	switch r.GetPhase() {
+	case "":
+		for _, c := range r.GetConditions() {
+			if c.GetType() == "Ready" && c.GetReason() == reasonSavedToGit {
+				st = &aigridv1.ModelStatus{Reason: reasonSavedToGit, Message: c.GetMessage()}
+			}
+		}
 	case "Ready":
 		st.Phase = aigridv1.ModelPhase_MODEL_PHASE_READY
 	case "Failed", "Invalid", "Unhealthy":
