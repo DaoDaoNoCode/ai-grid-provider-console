@@ -1,12 +1,17 @@
 package api
 
 import (
+	"bufio"
+	"compress/gzip"
+	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/backend"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/config"
@@ -149,5 +154,104 @@ func TestAPIErrorsKeepTheirEnvelopeWithTheRelay(t *testing.T) {
 	rec = serve(app, httptest.NewRequest(http.MethodGet, "/api/v1/clusters", nil))
 	if rec.Code != http.StatusUnauthorized || decodeError(t, rec).Error.Code != "401" {
 		t.Fatalf("got %d %q", rec.Code, rec.Body)
+	}
+}
+
+// relayToServer builds a relay to a test backend.
+func relayToServer(t *testing.T, srv *httptest.Server) *relay.Relay {
+	t.Helper()
+	r, err := relay.New(relay.Config{
+		Backend: backend.Config{Address: strings.TrimPrefix(srv.URL, "http://")},
+		Logger:  slog.New(slog.DiscardHandler),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+// browserCall is a Connect call to the whole BFF (App.Handler(), its gzip and logging
+// middleware included) as kube-auth-proxy passes it on, asking for gzip like a browser.
+func browserCall(t *testing.T, ctx context.Context, front *httptest.Server, path, contentType, body string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, front.URL+path, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("Accept-Encoding", "gzip")
+	req.Header.Set(config.DefaultAuthTokenHeader, "sha256~token")
+	resp, err := front.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp
+}
+
+// Through the whole handler, with the browser accepting gzip: a stream's messages arrive as the
+// backend flushes them, and the browser going away cancels the backend's call.
+func TestConnectStreamThroughTheBFFFlushesAndCancels(t *testing.T) {
+	canceled := make(chan struct{})
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/connect+json")
+		_, _ = w.Write([]byte("first\n"))
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+		close(canceled)
+	}))
+	defer upstream.Close()
+	front := httptest.NewServer(newTestApp(t, testConfig(t), nil).WithRelay(relayToServer(t, upstream)).Handler())
+	defer front.Close()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	resp := browserCall(t, ctx, front, "/ai_grid.v1.Clusters/Watch", "application/connect+json", `{}`)
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Encoding") != "" {
+		t.Fatalf("got %d, Content-Encoding %q: a stream passes as the backend sent it", resp.StatusCode, resp.Header.Get("Content-Encoding"))
+	}
+	first := make(chan string, 1)
+	go func() {
+		line, _ := bufio.NewReader(resp.Body).ReadString('\n')
+		first <- line
+	}()
+	select {
+	case line := <-first:
+		if line != "first\n" {
+			t.Fatalf("first message %q", line)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the first message did not arrive before the stream ended: not flushed")
+	}
+	cancel()
+	select {
+	case <-canceled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the backend's call was not canceled when the browser went away")
+	}
+}
+
+// A unary answer of 1 KiB or more is gzipped by the BFF's middleware, as any JSON answer.
+func TestConnectUnaryAnswerIsCompressed(t *testing.T) {
+	answer := `{"items":[` + strings.Repeat(`{"id":"site-paris-1"},`, 100) + `{"id":"x"}]}`
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(answer))
+	}))
+	defer upstream.Close()
+	front := httptest.NewServer(newTestApp(t, testConfig(t), nil).WithRelay(relayToServer(t, upstream)).Handler())
+	defer front.Close()
+
+	resp := browserCall(t, t.Context(), front, connectList, "application/json", `{}`)
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Encoding") != "gzip" {
+		t.Fatalf("got %d, Content-Encoding %q, want gzip", resp.StatusCode, resp.Header.Get("Content-Encoding"))
+	}
+	zr, err := gzip.NewReader(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body, err := io.ReadAll(zr); err != nil || string(body) != answer {
+		t.Fatalf("decompressed %d bytes, %v; want the backend's answer", len(body), err)
 	}
 }

@@ -2,6 +2,7 @@ import { create } from '@bufbuild/protobuf';
 import { Code, ConnectError, createClient, type Interceptor, type StreamResponse } from '@connectrpc/connect';
 import { Clusters } from '../../gen/ai_grid/v1/clusters_service_pb';
 import { ManagedClusterSchema } from '../../gen/ai_grid/v1/managed_cluster_type_pb';
+import { describeError } from './errors';
 import { fakeClients } from './testing';
 import { createConsoleTransport, sessionCheck } from './transport';
 
@@ -88,17 +89,25 @@ describe('createConsoleTransport', () => {
     expect(JSON.parse(new TextDecoder().decode(init?.body as Uint8Array))).toEqual({ limit: 5 });
   });
 
-  it("checks the session on the relay's 401, Connect error or not", async () => {
-    for (const body of [
-      { code: 'unauthenticated', message: 'missing x-forwarded-access-token header' },
-      // A 401 whose body is no Connect error (the login proxy's own) still reads as Unauthenticated.
-      'Unauthorized',
-    ]) {
-      const checkSession = vi.fn();
-      const client = createClient(Clusters, createConsoleTransport({ checkSession, fetch: answer(401, body) }));
-      await expect(client.list({})).rejects.toMatchObject({ code: Code.Unauthenticated });
-      expect(checkSession).toHaveBeenCalledTimes(1);
-    }
+  // The BFF's own 401 is a Connect error. kube-auth-proxy's, on an --api-route path without a
+  // valid session, is not: oauth2-proxy's errorJSON writes application/json `{}`, and its error
+  // page, or a proxy in front, plain text. Each still reads as Unauthenticated.
+  it.each([
+    ['the BFF', 'application/json', JSON.stringify({ code: 'unauthenticated', message: 'missing token' })],
+    ["kube-auth-proxy's JSON", 'application/json', '{}'],
+    ["kube-auth-proxy's JSON with an error", 'application/json', JSON.stringify({ error: 'Unauthorized' })],
+    ['a plain-text 401', 'text/plain; charset=utf-8', 'Unauthorized\n'],
+    ['an empty 401', '', ''],
+  ])('checks the session on a 401 from %s', async (_from, contentType, body) => {
+    const checkSession = vi.fn();
+    const fetchFn = vi.fn<typeof fetch>(
+      async () => new Response(body, { status: 401, headers: contentType ? { 'Content-Type': contentType } : {} }),
+    );
+    const client = createClient(Clusters, createConsoleTransport({ checkSession, fetch: fetchFn }));
+    const err = await client.list({}).catch((e: unknown) => e);
+    expect(err).toMatchObject({ code: Code.Unauthenticated });
+    expect(describeError(err)).toMatchObject({ kind: 'unauthenticated' });
+    expect(checkSession).toHaveBeenCalledTimes(1);
   });
 
   it('checks nothing without a session check', async () => {
