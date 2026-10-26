@@ -92,6 +92,26 @@ and 0004). The foundation is in place; no page uses it yet:
   and the frontend, so pages and the relay can be tried on the real backend without a cluster.
   `make dev-fake` (the console's own fake, serving the draft over gRPC only) is unchanged.
 
+## The backend has no authentication yet
+
+Authentication and authorization of API calls are out of the backend's MVP scope (decided
+2026-10-20; ai-grid-cloud/ai-grid-provider-backend#3): it answers anyone who reaches it, as its
+own ServiceAccount, which may label every ManagedCluster and, on the hub, read ACM Search's index
+of every managed cluster. So in the console's pod:
+
+- kube-auth-proxy is the only listener on the pod network (`:8443`), and the only port the
+  Service and Route expose. The BFF and the backend bind to loopback, and every call reaches the
+  backend through the BFF's caller checks (signed in, provider admin), on `/api/v1` and on the
+  Connect relay alike.
+- Don't add a Service port, Route, NetworkPolicy exception or `0.0.0.0` bind for the backend, and
+  don't weaken the BFF's gates, until the backend authenticates callers itself (ADR-0004). The
+  chart's kind test (`hack/test-chart-kind.sh`: only `:8443` listens off loopback) and
+  ai-grid-env-setup's `verify/07-console.sh` (the backend's ports on loopback, the Service's one
+  port) check this.
+- Every container in the pod mounts the ServiceAccount token today. Limiting it to
+  kube-auth-proxy and the backend was left out of the MVP; the planned end state is the backend
+  calling the hub with the caller's own token, then in a pod of its own.
+
 ## Known exceptions, to move behind the RPCs later
 
 The BFF still derives or decides these itself. Do not add more; move these into the backend
