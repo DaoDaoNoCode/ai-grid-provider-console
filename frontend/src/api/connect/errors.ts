@@ -21,7 +21,24 @@ export type ApiError = {
   fieldErrors?: Record<string, string>;
 };
 
-/** The console's words where the backend's message is about its infrastructure, as the BFF's. */
+/**
+ * The codes whose message is about the request, which the page shows as the backend wrote it, as
+ * the BFF does (bff/internal/api/errors.go, classify). Every other code gets the console's words:
+ * a message about the backend's own failure (Internal, Unknown, DataLoss, a dial error) can name
+ * its internals.
+ */
+const requestCodes = new Set<Code>([
+  Code.InvalidArgument,
+  Code.OutOfRange,
+  Code.PermissionDenied,
+  Code.NotFound,
+  Code.AlreadyExists,
+  Code.Aborted,
+  Code.FailedPrecondition,
+]);
+
+/** The console's words for the other codes, as the BFF's; the rest share genericMessage. */
+const genericMessage = 'the AI Grid backend failed to process the request';
 const consoleMessages: Partial<Record<Code, string>> = {
   [Code.Unauthenticated]: 'the AI Grid backend rejected the credentials; log in again',
   [Code.Unimplemented]: 'the AI Grid backend does not support this operation yet',
@@ -63,7 +80,9 @@ const fieldErrorsOf = (err: ConnectError): Record<string, string> | undefined =>
 export const describeError = (reason: unknown): ApiError => {
   const err = ConnectError.from(reason);
   const kind = kinds[err.code] ?? 'error';
-  const message = consoleMessages[err.code] ?? (err.rawMessage || 'the AI Grid backend failed to process the request');
+  const message = requestCodes.has(err.code)
+    ? err.rawMessage || genericMessage
+    : (consoleMessages[err.code] ?? genericMessage);
   const fieldErrors = err.code === Code.InvalidArgument ? fieldErrorsOf(err) : undefined;
   return fieldErrors ? { kind, code: err.code, message, fieldErrors } : { kind, code: err.code, message };
 };

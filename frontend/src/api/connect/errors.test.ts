@@ -37,10 +37,15 @@ describe('describeError', () => {
       [Code.Unimplemented, 'notAvailable', 'the AI Grid backend does not support this operation yet'],
       [Code.Unavailable, 'unavailable', 'the AI Grid backend is unavailable; try again'],
       [Code.DeadlineExceeded, 'unavailable', 'the AI Grid backend did not answer in time'],
-      [Code.Internal, 'error', 'dial tcp 10.0.0.1:443: connection refused'],
+      [Code.ResourceExhausted, 'unavailable', 'the AI Grid backend is rate limiting requests; try again shortly'],
+      [Code.Canceled, 'unavailable', 'the AI Grid backend is unavailable; try again'],
+      // Never the backend's own words about its failure: they can name its internals.
+      [Code.Internal, 'error', 'the AI Grid backend failed to process the request'],
+      [Code.Unknown, 'error', 'the AI Grid backend failed to process the request'],
+      [Code.DataLoss, 'error', 'the AI Grid backend failed to process the request'],
     ]),
   )("%s (%i) is %s with the console's message where the backend's is about itself", (_name, code, kind, message) => {
-    const got = describeError(new ConnectError('dial tcp 10.0.0.1:443: connection refused', code));
+    const got = describeError(new ConnectError('dial tcp 192.0.2.1:443: connection refused', code));
     expect(got).toEqual({ kind, code, message });
   });
 
@@ -77,7 +82,11 @@ describe('describeError', () => {
   });
 
   it('describes what is not a ConnectError as an error', () => {
-    expect(describeError(new TypeError('Failed to fetch'))).toMatchObject({ kind: 'error', code: Code.Unknown });
+    expect(describeError(new TypeError('Failed to fetch'))).toEqual({
+      kind: 'error',
+      code: Code.Unknown,
+      message: 'the AI Grid backend failed to process the request',
+    });
   });
 });
 
