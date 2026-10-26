@@ -192,6 +192,9 @@ expect 200 "readyz without a login, and the backend answers its ping" "${u}/read
 grep -q '"backend":"ok"' "${TMP}/body" || fail "readyz: backend not ok: $(cat "${TMP}/body")"
 expect 302 "the API without a login goes to sign-in" "${u}/api/v1/user"
 expect 302 "a token the cluster rejects goes to sign-in" -H "Authorization: Bearer not-a-token" "${u}/api/v1/user"
+# --api-route: the browser's Connect client can't follow a redirect to the login page.
+connect=(-X POST -H "Content-Type: application/json" -H "Connect-Protocol-Version: 1" -d '{"name":"kind"}')
+expect 401 "a Connect call without a login is 401, not a redirect" "${connect[@]}" "${u}/ai_grid.v1.AiGrid/Ping"
 k -n default create serviceaccount tester --dry-run=client -o yaml | k apply -f - >/dev/null
 TOKEN="$(k -n default create token tester)"
 auth=(-H "Authorization: Bearer ${TOKEN}")
@@ -205,6 +208,8 @@ expect 200 "identity headers a caller sends are dropped" "${auth[@]}" \
   -H "X-Forwarded-Access-Token: forged-token" "${u}/api/v1/user"
 ! grep -q forged "${TMP}/body" || fail "a forged identity header reached the BFF: $(cat "${TMP}/body")"
 expect 403 "a non-admin may not list clusters" "${auth[@]}" "${u}/api/v1/clusters"
+expect 403 "a non-admin's Connect call stops at the BFF" "${auth[@]}" "${connect[@]}" "${u}/ai_grid.v1.AiGrid/Ping"
+grep -q '"code":"permission_denied"' "${TMP}/body" || fail "the relay's 403 is no Connect error: $(cat "${TMP}/body")"
 k create clusterrole tester-managedclusters --verb=patch \
   --resource=managedclusters.cluster.open-cluster-management.io --dry-run=client -o yaml | k apply -f - >/dev/null
 k create clusterrolebinding tester-managedclusters --clusterrole=tester-managedclusters \
@@ -220,6 +225,7 @@ grep -q '"isProviderAdmin":true' "${TMP}/body" || fail "isProviderAdmin should b
 expect 200 "the backend lists ManagedClusters with its ServiceAccount" "${auth[@]}" "${u}/api/v1/clusters"
 grep -q '"name":"site-a"' "${TMP}/body" || fail "site-a missing: $(cat "${TMP}/body")"
 expect 503 "Models wait for the Git clone, which can't reach git.invalid" "${auth[@]}" "${u}/api/v1/models"
+expect 200 "a provider admin's Connect call reaches the backend through the relay" "${auth[@]}" "${connect[@]}" "${u}/ai_grid.v1.AiGrid/Ping"
 expect 200 "the frontend is served" "${auth[@]}" "${u}/"
 
 # Only the proxy may listen off loopback: the BFF trusts identity headers, and the backend's gRPC
