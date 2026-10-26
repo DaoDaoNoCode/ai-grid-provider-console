@@ -27,6 +27,7 @@ import { SimpleMenuActions } from '../../components/SimpleMenuActions';
 import { StatusLabel } from '../../components/StatusLabel';
 import { ToolbarSearch } from '../../components/ToolbarSearch';
 import { TableEmptyRow } from '../../components/TableEmptyRow';
+import { OverflowList } from '../../components/OverflowList';
 import { useConsoleSession } from '../../context/useConsoleSession';
 import { useServiceData } from '../../hooks/useServiceData';
 import { EMPTY_VALUE } from '../../utilities/format';
@@ -35,10 +36,13 @@ import { ClusterChangedError } from './ClusterChangedError';
 import { MembershipModal } from './MembershipModal';
 import { MissingLabel } from './MissingLabel';
 import { gpuCount, membershipAction, statusReason } from './clusterInfo';
+import { capacityText, configurationText, gpuCountText, gpuSharing } from './gpuText';
 import { clusterRoles, roleOf } from './roles';
 
 // Ported from krisv/ai-grid-cloud-provider-poc src/app/pages/clusters/ClustersPage.tsx at 62319b8.
-// The PoC's columns, labels, and enroll flow, plus the console's Role, GPUs and OpenShift columns,
+// The PoC's columns, labels, and enroll flow, plus the console's Role, GPUs and Capacity columns
+// (GPUs and Capacity as Jenny Yi's provider-admin feedback asks: "H200, 8 GPUs/node" and "4 nodes,
+// 32 GPUs"; the OpenShift version moved to the details page to make room),
 // removal from AI Grid, and a confirmation both ways. Each name opens the cluster's details page. No Hub column: a cluster the hub hasn't
 // accepted shows Not accepted in the Connection tooltip, and Add says why it's disabled (on the
 // real backend the BFF derives that state from spec.hub_accepts_client, bff/internal/backend/v1.go).
@@ -79,11 +83,37 @@ const columns: Column[] = [
   },
   {
     label: 'GPUs',
-    sort: (a, b) => (gpuCount(a) ?? -1) - (gpuCount(b) ?? -1),
-    info: { tooltip: "NVIDIA GPUs in the cluster's capacity, as the hub reports it." },
+    sort: (a, b) => (gpuConfigurations(a)[0] ?? '').localeCompare(gpuConfigurations(b)[0] ?? ''),
+    info: {
+      tooltip:
+        "The GPU model and GPUs per node on the cluster's GPU nodes, and how they are shared, from the nodes' GPU Feature Discovery labels.",
+    },
   },
-  { label: 'OpenShift' },
+  {
+    label: 'Capacity',
+    sort: (a, b) => gpuTotal(a) - gpuTotal(b),
+    info: {
+      tooltip:
+        "The cluster's GPU nodes and GPUs. Without node details, the GPUs in the cluster's capacity as the hub reports it.",
+    },
+  },
 ];
+
+/** Each GPU configuration as one line: "NVIDIA L4, 1 GPU/node", with how it is shared. */
+const gpuConfigurations = (c: GridCluster) =>
+  (c.gpus?.configurations ?? []).map((g) =>
+    [configurationText(g), gpuSharing(g.sharing, g.product)].filter(Boolean).join(' · '),
+  );
+
+/** The GPUs to sort by: the inventory's, else the capacity's, -1 when the hub reports neither. */
+const gpuTotal = (c: GridCluster) => c.gpus?.total ?? gpuCount(c) ?? -1;
+
+/** "4 nodes, 32 GPUs" from the inventory; without one, the capacity's count; nothing without GPUs. */
+const gpuCapacity = (c: GridCluster) => {
+  if (c.gpus) return capacityText(c.gpus);
+  const n = gpuCount(c);
+  return n ? gpuCountText(n) : EMPTY_VALUE;
+};
 
 /** A member's provisioning, or nothing for a cluster outside AI Grid (sorts first). */
 const membership = (c: GridCluster) => (c.aiGridEnabled ? c.provisioningStatus : '');
@@ -265,8 +295,12 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
                               </MissingLabel>
                             ))}
                       </Td>
-                      <Td dataLabel="GPUs">{gpuCount(c) ?? EMPTY_VALUE}</Td>
-                      <Td dataLabel="OpenShift">{c.openshiftVersion ?? EMPTY_VALUE}</Td>
+                      <Td dataLabel="GPUs" data-testid={`cluster-gpu-models-${c.name}`}>
+                        <OverflowList items={gpuConfigurations(c)} noun="GPU configurations" />
+                      </Td>
+                      <Td dataLabel="Capacity" data-testid={`cluster-gpu-capacity-${c.name}`}>
+                        {gpuCapacity(c)}
+                      </Td>
                       {isProviderAdmin && (
                         <Td isActionCell>
                           <SimpleMenuActions

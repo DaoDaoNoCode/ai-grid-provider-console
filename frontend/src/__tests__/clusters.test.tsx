@@ -5,7 +5,7 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ServiceError } from '../api/ConsoleService';
 import { HttpConsoleService } from '../api/HttpConsoleService';
-import { MockConsoleService } from '../api/MockConsoleService';
+import { MockConsoleService, seedClusters } from '../api/MockConsoleService';
 import type { GridCluster } from '../api/types';
 import { renderAt } from './render';
 
@@ -504,6 +504,52 @@ it('offers Add to AI Grid only for ready, offline or unknown clusters', async ()
   ).toBeInTheDocument();
 });
 
+it("lists each cluster's GPU configuration and capacity, as provider admins asked", async () => {
+  const user = userEvent.setup();
+  const clusters = seedClusters();
+  // Two configurations on one cluster: the list shows the first and the rest behind "+1 more".
+  const site1 = clusters[0].gpus!;
+  clusters[0].gpus = {
+    ...site1,
+    total: site1.total + 4,
+    nodeCount: site1.nodeCount + 1,
+    configurations: [
+      ...site1.configurations,
+      { ...site1.configurations[0], product: 'NVIDIA-H100-80GB-HBM3', gpusPerNode: 4, nodeCount: 1 },
+    ],
+  };
+  // The hub counts site4's GPUs, but Search has nothing for them: no model.
+  clusters[3].capacity = { ...clusters[3].capacity, 'nvidia.com/gpu': '8' };
+  renderAt('/clusters', new MockConsoleService(undefined, clusters));
+  await screen.findByRole('row', { name: /^site1 / });
+
+  expect(screen.getByTestId('cluster-gpu-models-site1')).toHaveTextContent('NVIDIA H200, 8 GPUs/node');
+  expect(screen.getByTestId('cluster-gpu-capacity-site1')).toHaveTextContent('3 nodes, 20 GPUs');
+  await user.click(within(screen.getByTestId('cluster-gpu-models-site1')).getByText('+1 more'));
+  expect(await screen.findByText('NVIDIA H100-80GB-HBM3, 4 GPUs/node')).toBeVisible();
+
+  expect(screen.getByTestId('cluster-gpu-models-site2')).toHaveTextContent('NVIDIA L4, 1 GPU/node · Time-sliced ×4');
+  expect(screen.getByTestId('cluster-gpu-capacity-site2')).toHaveTextContent('4 nodes, 4 GPUs');
+  expect(screen.getByTestId('cluster-gpu-models-site3')).toHaveTextContent(
+    'NVIDIA A100-SXM4-40GB, 8 GPUs/node · MIG 3g.20gb',
+  );
+  expect(screen.getByTestId('cluster-gpu-models-site4')).toHaveTextContent('—');
+  expect(screen.getByTestId('cluster-gpu-capacity-site4')).toHaveTextContent('8 GPUs');
+});
+
+it('shows no GPUs for a cluster whose capacity has none, and sorts by GPU count', async () => {
+  const user = userEvent.setup();
+  renderAt('/clusters', new MockConsoleService());
+  await screen.findByRole('row', { name: /^site1 / });
+  expect(screen.getByTestId('cluster-gpu-capacity-site4')).toHaveTextContent('—');
+  await user.click(screen.getByRole('button', { name: 'Capacity' }));
+  const names = screen
+    .getAllByRole('row')
+    .slice(1)
+    .map((r) => r.textContent?.split(' ')[0]);
+  expect(names[0]).toMatch(/^site4/);
+});
+
 it('wraps the headers, shows Role, and has no Hub, Site or Region column', async () => {
   renderAt('/clusters', serviceWith(hubClusters()));
   const table = await screen.findByTestId('clusters-table');
@@ -518,8 +564,10 @@ it('wraps the headers, shows Role, and has no Hub, Site or Region column', async
   for (const name of ['Hub', 'Site', 'Region']) {
     expect(within(table).queryByRole('columnheader', { name })).not.toBeInTheDocument();
   }
-  expect(within(table).getByRole('columnheader', { name: 'OpenShift' })).not.toHaveClass('pf-m-hidden');
+  // The OpenShift version is on the details page, leaving room for GPUs and Capacity.
+  expect(within(table).queryByRole('columnheader', { name: 'OpenShift' })).not.toBeInTheDocument();
   expect(within(table).getByRole('columnheader', { name: /^GPUs/ })).toBeInTheDocument();
+  expect(within(table).getByRole('columnheader', { name: /^Capacity/ })).toBeInTheDocument();
   // The hub's connection to the cluster, not its AI Grid provisioning, which has its own column.
   expect(within(table).getByRole('columnheader', { name: /^Connection/ })).toBeInTheDocument();
 });

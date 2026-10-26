@@ -12,10 +12,9 @@ import {
   Flex,
   Grid,
   GridItem,
-  Label,
-  LabelGroup,
+  List,
+  ListItem,
   PageSection,
-  Tooltip,
 } from '@patternfly/react-core';
 import { ExternalLinkAltIcon } from '@patternfly/react-icons';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
@@ -23,9 +22,10 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { ClustersService, GridMembership } from '../../api/clusters';
 import type { UserService } from '../../api/ConsoleService';
 import { ServiceError } from '../../api/ConsoleService';
-import type { GridCluster } from '../../api/types';
+import type { ClusterGPUs, GPUNode, GridCluster } from '../../api/types';
 import { DetailsList } from '../../components/DetailsList';
 import { DetailsSection } from '../../components/DetailsSection';
+import { TableRowTitleDescription } from '../../components/TableRowTitleDescription';
 import { LoadError } from '../../components/LoadError';
 import { PageHeader } from '../../components/PageHeader';
 import { PageLoading } from '../../components/PageLoading';
@@ -33,22 +33,24 @@ import { RelativeTime } from '../../components/RelativeTime';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
 import { StatusLabel } from '../../components/StatusLabel';
 import { useServiceData } from '../../hooks/useServiceData';
+import { EMPTY_VALUE } from '../../utilities/format';
 import { formatCores, formatGiB } from '../../utilities/quantity';
-import { statusLabelProps } from '../../utilities/status';
 import { gpuCount, membershipAction, statusReason } from './clusterInfo';
+import {
+  capacityText,
+  configurationText,
+  gpuArchitecture,
+  gpuCountText,
+  gpuMemory,
+  gpuModel,
+  gpuSharing,
+} from './gpuText';
 import type { MembershipChange } from './MembershipModal';
 import { MembershipModal } from './MembershipModal';
 import { MissingLabel } from './MissingLabel';
 import { roleOf } from './roles';
 
 type Props = { service: ClustersService & UserService };
-
-/** The add-on states ACM writes in its `feature.open-cluster-management.io/addon-*` labels, as words. */
-const addonStatus: Record<string, string> = {
-  available: 'Available',
-  unhealthy: 'Unhealthy',
-  unreachable: 'Unreachable',
-};
 
 /** "68 cores, 65 allocatable", or only the capacity when the hub reports no allocatable value. */
 const withAllocatable = (capacity?: string, allocatable?: string) =>
@@ -112,6 +114,102 @@ const capacityItems = (c: GridCluster) => {
     { term: 'NVIDIA GPUs', value: gpuCount(c), 'data-testid': 'cluster-gpus' },
   ];
 };
+
+/** Each distinct value once, in order. */
+const distinct = (values: (string | undefined)[]) => [...new Set(values.filter((v): v is string => !!v))];
+
+const gpuItems = (g: ClusterGPUs) => [
+  { term: 'Capacity', value: capacityText(g), 'data-testid': 'cluster-gpu-capacity' },
+  {
+    term: g.configurations.length === 1 ? 'Configuration' : 'Configurations',
+    value: (
+      <List isPlain data-testid="cluster-gpu-configurations">
+        {g.configurations.map((c) => (
+          <ListItem key={`${c.product}-${c.gpusPerNode}-${c.sharing.strategy}-${c.sharing.replicas}`}>
+            {[
+              configurationText(c),
+              gpuMemory(c.memoryMib) && `${gpuMemory(c.memoryMib)} each`,
+              gpuSharing(c.sharing, c.product),
+              `${c.nodeCount} ${c.nodeCount === 1 ? 'node' : 'nodes'}`,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </ListItem>
+        ))}
+      </List>
+    ),
+  },
+  { term: 'Manufacturer', value: distinct(g.nodes.map((n) => n.vendor)).join(', ') },
+  {
+    term: 'Architecture',
+    value: distinct(g.nodes.map((n) => gpuArchitecture(n.family))).join(', ') || undefined,
+  },
+  {
+    term: 'Driver',
+    value: distinct(g.nodes.map((n) => driverText(n.driverVersion, n.cudaRuntimeVersion))).join(', ') || undefined,
+  },
+];
+
+/** "580.105.08 (CUDA 13.0)", or whichever of the two the node reports. */
+const driverText = (driver?: string, cuda?: string) =>
+  driver && cuda ? `${driver} (CUDA ${cuda})` : driver || (cuda && `CUDA ${cuda}`) || undefined;
+
+/** "Hopper (9.0)": the architecture with its compute capability, or whichever the node reports. */
+const architectureText = (family?: string, compute?: string) => {
+  const name = gpuArchitecture(family);
+  if (name && compute) return `${name} (${compute})`;
+  return name ?? compute;
+};
+
+/**
+ * One row per GPU node: its name with the instance type under it, the model and its count,
+ * memory, architecture, driver, sharing and readiness.
+ */
+const GPUNodesTable: React.FC<{ nodes: GPUNode[] }> = ({ nodes }) => (
+  <Table aria-label="GPU nodes" variant="compact" data-testid="cluster-gpu-nodes">
+    <Thead>
+      <Tr>
+        <Th width={25} modifier="wrap">
+          Node
+        </Th>
+        <Th modifier="wrap">Model</Th>
+        <Th modifier="wrap">GPUs</Th>
+        <Th modifier="wrap">Memory</Th>
+        <Th modifier="wrap">Architecture</Th>
+        <Th modifier="wrap">Driver</Th>
+        <Th modifier="wrap">Sharing</Th>
+        <Th modifier="wrap">Status</Th>
+      </Tr>
+    </Thead>
+    <Tbody>
+      {nodes.map((n) => (
+        <Tr key={n.name}>
+          <Td dataLabel="Node" modifier="breakWord">
+            <TableRowTitleDescription
+              title={n.name}
+              subtitle={
+                n.instanceType && (
+                  <Content component="small" className="pf-v6-u-text-color-subtle">
+                    {n.instanceType}
+                  </Content>
+                )
+              }
+            />
+          </Td>
+          <Td dataLabel="Model">{gpuModel(n.product)}</Td>
+          <Td dataLabel="GPUs">{n.count}</Td>
+          <Td dataLabel="Memory">{gpuMemory(n.memoryMib) ?? EMPTY_VALUE}</Td>
+          <Td dataLabel="Architecture">{architectureText(n.family, n.computeCapability) ?? EMPTY_VALUE}</Td>
+          <Td dataLabel="Driver">{driverText(n.driverVersion, n.cudaRuntimeVersion) ?? EMPTY_VALUE}</Td>
+          <Td dataLabel="Sharing">{gpuSharing(n.sharing, n.product) ?? 'None'}</Td>
+          <Td dataLabel="Status">
+            <StatusLabel isCompact status={n.ready ? 'Ready' : 'Not ready'} />
+          </Td>
+        </Tr>
+      ))}
+    </Tbody>
+  </Table>
+);
 
 const NotReported: React.FC<{ what: string }> = ({ what }) => (
   <Content component="p" className="pf-v6-u-text-color-subtle">
@@ -248,28 +346,29 @@ export const ClusterDetailsPage: React.FC<Props> = ({ service }) => {
         </GridItem>
         <GridItem md={6}>
           <Section
-            title="Add-ons"
-            help="The ACM add-ons on this cluster, colored by their health as the hub reports it: green when available, red when unhealthy or unreachable. Hover over one for its state."
+            title="GPUs"
+            help="What the cluster's GPU nodes report through their NVIDIA GPU Feature Discovery labels, which the hub's ACM Search indexes."
           >
-            {Object.keys(cluster.addons).length ? (
-              <LabelGroup aria-label="Add-ons" numLabels={20} data-testid="cluster-addons">
-                {Object.entries(cluster.addons)
-                  .sort(([a], [b]) => a.localeCompare(b))
-                  .map(([addon, state]) => (
-                    <Tooltip key={addon} content={addonStatus[state] ?? state}>
-                      <Label {...statusLabelProps(addonStatus[state] ?? state)} variant="outline" tabIndex={0}>
-                        {addon}
-                      </Label>
-                    </Tooltip>
-                  ))}
-              </LabelGroup>
+            {cluster.gpus ? (
+              <DetailsList items={gpuItems(cluster.gpus)} aria-label="GPUs" />
+            ) : !cluster.capacity ? (
+              <NotReported what="this cluster's GPUs" />
             ) : (
-              <Content component="p" className="pf-v6-u-text-color-subtle">
-                The hub reports no add-ons on this cluster.
+              <Content component="p" className="pf-v6-u-text-color-subtle" data-testid="cluster-gpus-not-reported">
+                {gpuCount(cluster)
+                  ? `The hub reports ${gpuCountText(gpuCount(cluster) ?? 0)} in this cluster's capacity, but no details for its GPU nodes: ACM Search hasn't indexed them, or the backend doesn't report them yet.`
+                  : 'The hub reports no GPUs on this cluster.'}
               </Content>
             )}
           </Section>
         </GridItem>
+        {cluster.gpus && (
+          <GridItem>
+            <Section title="GPU nodes">
+              <GPUNodesTable nodes={cluster.gpus.nodes} />
+            </Section>
+          </GridItem>
+        )}
         <GridItem>
           <Section
             title="Conditions"

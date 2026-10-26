@@ -24,10 +24,16 @@ type Props = {
 /**
  * Name-value details, laid out the same on every page: PatternFly's horizontal description list
  * with left-aligned values and one term width, so terms stay on one line and values line up.
- * A missing value reads as EMPTY_VALUE.
+ * A missing value reads as EMPTY_VALUE. On a phone the term column narrows to 9rem, so the values
+ * keep room inside a card instead of overflowing it.
  */
 export const DetailsList: React.FC<Props> = ({ items, hideEmpty, termWidth = '14rem', 'aria-label': ariaLabel }) => (
-  <DescriptionList isHorizontal isCompact horizontalTermWidthModifier={{ default: termWidth }} aria-label={ariaLabel}>
+  <DescriptionList
+    isHorizontal
+    isCompact
+    horizontalTermWidthModifier={{ default: `min(${termWidth}, 9rem)`, sm: termWidth }}
+    aria-label={ariaLabel}
+  >
     {items
       .filter((item) => !hideEmpty || hasValue(item.value))
       .map((item) => (

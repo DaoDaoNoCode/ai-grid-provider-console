@@ -36,6 +36,39 @@ export type ClusterState = 'Pending import' | 'Importing' | 'Import failed' | 'D
 
 export type ProvisioningStatus = 'Provisioned' | 'Provisioning' | 'Not provisioned';
 
+/** How a node's GPUs are shared: none, time-slicing, mps, or mig (with migStrategy single or mixed). */
+export type GPUSharing = { strategy: string; replicas: number; migCapable: boolean; migStrategy?: string };
+
+/** Nodes that share one GPU configuration (bff/internal/api/clusters.go GPUConfiguration). */
+export type GPUConfiguration = {
+  vendor: string;
+  /** GPU Feature Discovery's product, for example NVIDIA-L4; MIG and time-slicing suffixes kept. */
+  product: string;
+  memoryMib: number;
+  gpusPerNode: number;
+  nodeCount: number;
+  sharing: GPUSharing;
+};
+
+/** One node with GPUs, from its GPU Feature Discovery labels. */
+export type GPUNode = {
+  name: string;
+  vendor: string;
+  product: string;
+  count: number;
+  memoryMib: number;
+  family?: string;
+  computeCapability?: string;
+  driverVersion?: string;
+  cudaRuntimeVersion?: string;
+  sharing: GPUSharing;
+  instanceType?: string;
+  ready: boolean;
+};
+
+/** A cluster's GPU inventory, as the backend reads it from ACM Search. */
+export type ClusterGPUs = { total: number; nodeCount: number; configurations: GPUConfiguration[]; nodes: GPUNode[] };
+
 /**
  * A cluster as the BFF sends it (PR 12's `GridCluster` in bff/internal/api/clusters.go),
  * limited to the fields the console reads. `toGridCluster` in adapters.ts maps it.
@@ -65,6 +98,8 @@ export type ApiCluster = {
   /** `status.capacity` and `status.allocatable`: Kubernetes quantities by resource name. */
   capacity?: Record<string, string>;
   allocatable?: Record<string, string>;
+  /** The backend's `status.gpus`: the GPU inventory from ACM Search; absent without one. */
+  gpus?: ClusterGPUs;
   creationTimestamp?: string;
   /** Add-on name to available, unhealthy or unreachable. */
   addons?: Record<string, string>;
@@ -112,6 +147,8 @@ export type GridCluster = {
   /** Absent when the backend doesn't report the cluster's resources. */
   capacity?: Record<string, string>;
   allocatable?: Record<string, string>;
+  /** The backend's `status.gpus`: the GPU inventory from ACM Search; absent without one. */
+  gpus?: ClusterGPUs;
   /** When the hub created the ManagedCluster. */
   creationTimestamp?: string;
   addons: Record<string, string>;

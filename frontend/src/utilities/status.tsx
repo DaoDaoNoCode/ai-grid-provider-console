@@ -23,6 +23,8 @@ const tones: Record<string, StatusTone> = {
   Ready: 'success',
   Offline: 'danger',
   Unknown: 'neutral',
+  // A cluster's GPU node (its Ready condition, through ACM Search).
+  'Not ready': 'danger',
   Provisioned: 'success',
   Provisioning: 'info',
   'Not provisioned': 'neutral',

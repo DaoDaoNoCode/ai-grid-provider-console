@@ -59,12 +59,19 @@ strategy other than `none` is set, then the totals and the distinct configuratio
 first, then by product. A cluster without GPU nodes has no `gpus`.
 
 UI: the Clusters page (`frontend/src/pages/clusters/ClustersPage.tsx`) lists every
-ManagedCluster with its location, connection, AI Grid membership, role, GPUs and OpenShift
-version, adds a cluster to AI Grid or removes it, and links each name to the cluster's details
-page (`ClusterDetailsPage.tsx`, `/clusters/:name`). That page shows the membership (status,
-role, location), what the hub knows about the cluster (versions, platform, product, creation
-time, console link), its capacity, its add-ons and its conditions, with the same Add and Remove
-actions. The real backend's cluster status details (conditions, Kubernetes version, capacity,
+ManagedCluster with its location, connection, AI Grid membership, role, GPUs (the configuration:
+"NVIDIA H200, 8 GPUs/node", with "Time-sliced ×4", "MPS ×2" or "MIG 3g.20gb" when shared, and
+"+N more" for more configurations), capacity ("4 nodes, 32 GPUs"; "8 GPUs" from
+`capacity["nvidia.com/gpu"]` when the backend has no inventory), as Jenny Yi's provider-admin
+feedback asks (the OpenShift version is on the details page, to leave the list room); adds a cluster to AI Grid or removes it, and links each name to
+the cluster's details page (`ClusterDetailsPage.tsx`, `/clusters/:name`). That page shows the
+membership (status, role, location), what the hub knows about the cluster (versions, platform,
+product, creation time, console link), its capacity, its GPUs (capacity, configurations with
+memory and sharing, manufacturer, architecture, driver and CUDA) and a table of its GPU nodes
+(model, GPUs, memory, architecture and compute capability, driver, sharing, instance type,
+status), and its conditions, with the same Add and Remove actions. Add-ons are left out: UX found
+them not needed there. The wording of products, memory, architecture and sharing is
+presentation only (`pages/clusters/gpuText.ts`). The real backend's cluster status details (conditions, Kubernetes version, capacity,
 allocatable and claims) fill the same sections; against a backend without them those parts say
 so instead of showing zeros. The map belongs to the grid overview area; Placement
 recomputation and ManifestWorkReplicaSet belong to the models area (`mock/areas/models.md`).

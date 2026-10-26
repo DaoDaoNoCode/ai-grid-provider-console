@@ -59,6 +59,7 @@ export const toGridCluster = (json: ApiCluster): GridCluster => ({
   product: json.product,
   capacity: json.capacity,
   allocatable: json.allocatable,
+  gpus: json.gpus,
   creationTimestamp: json.creationTimestamp,
   addons: json.addons ?? {},
   conditions: json.conditions ?? [],

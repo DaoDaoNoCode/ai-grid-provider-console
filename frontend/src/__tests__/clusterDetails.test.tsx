@@ -31,7 +31,7 @@ it('opens from the Clusters list', async () => {
   expect(within(breadcrumb).getByRole('link', { name: 'Clusters' })).toHaveAttribute('href', '/clusters');
 });
 
-it('shows a member: AI Grid, the cluster, its capacity, add-ons and conditions', async () => {
+it('shows a member: AI Grid, the cluster, its capacity, GPUs and conditions', async () => {
   renderAt('/clusters/site1', new MockConsoleService());
   expect(await screen.findByRole('heading', { level: 1, name: 'site1' })).toBeVisible();
 
@@ -50,9 +50,32 @@ it('shows a member: AI Grid, the cluster, its capacity, add-ons and conditions',
   expect(capacity).toHaveTextContent('1536 GiB, 1504 GiB allocatable');
   expect(screen.getByTestId('cluster-gpus')).toHaveTextContent('16');
 
-  const addons = screen.getByTestId('cluster-addons');
-  expect(addons).toHaveTextContent('cluster-proxy');
-  expect(addons).toHaveTextContent('work-manager');
+  // No Add-ons: the provider admin doesn't need them (UX review).
+  expect(screen.queryByRole('heading', { name: 'Add-ons' })).not.toBeInTheDocument();
+
+  // The GPUs: what GPU Feature Discovery reports on the nodes, through ACM Search.
+  const gpus = details('GPUs');
+  expect(screen.getByTestId('cluster-gpu-capacity')).toHaveTextContent('2 nodes, 16 GPUs');
+  expect(screen.getByTestId('cluster-gpu-configurations')).toHaveTextContent(
+    'NVIDIA H200, 8 GPUs/node · 140.4 GiB each · 2 nodes',
+  );
+  expect(gpus).toHaveTextContent('ManufacturerNVIDIA');
+  expect(gpus).toHaveTextContent('ArchitectureHopper');
+  expect(gpus).toHaveTextContent('Driver580.105.08 (CUDA 13.0)');
+  const nodes = screen.getByRole('grid', { name: 'GPU nodes' });
+  const row = within(nodes).getByRole('row', { name: /gpu-h200-0/ });
+  for (const text of [
+    'NVIDIA H200',
+    '140.4 GiB',
+    'Hopper (9.0)',
+    '580.105.08 (CUDA 13.0)',
+    'None',
+    'p5en.48xlarge',
+    'Ready',
+  ]) {
+    expect(row).toHaveTextContent(text);
+  }
+  expect(within(row).getByRole('cell', { name: '8' })).toBeInTheDocument();
 
   const conditions = screen.getByTestId('cluster-conditions');
   expect(within(conditions).getByRole('row', { name: /ManagedClusterConditionAvailable True/ })).toHaveTextContent(
@@ -76,18 +99,51 @@ it("says what the backend doesn't report yet instead of showing zeros", async ()
   expect(screen.getByText("The backend doesn't report this cluster's capacity yet.")).toBeVisible();
   expect(screen.getByText("The backend doesn't report this cluster's conditions yet.")).toBeVisible();
   expect(screen.queryByTestId('cluster-gpus')).not.toBeInTheDocument();
-  // An unreachable add-on is red, and says so on hover.
-  const submariner = within(screen.getByTestId('cluster-addons')).getByText('submariner').closest('.pf-v6-c-label')!;
-  expect(submariner).toHaveClass('pf-m-danger');
-  await userEvent.setup().hover(submariner);
-  expect(await screen.findByRole('tooltip')).toHaveTextContent('Unreachable');
+  expect(screen.getByText("The backend doesn't report this cluster's GPUs yet.")).toBeVisible();
   expect(screen.queryByRole('link', { name: 'OpenShift console' })).not.toBeInTheDocument();
+});
+
+it('words shared and sliced GPUs: time-slicing and MIG', async () => {
+  renderAt('/clusters/site2', new MockConsoleService());
+  expect(await screen.findByTestId('cluster-gpu-configurations')).toHaveTextContent(
+    'NVIDIA L4, 1 GPU/node · 22.5 GiB each · Time-sliced ×4 · 4 nodes',
+  );
+  expect(within(screen.getByRole('grid', { name: 'GPU nodes' })).getAllByRole('row')[1]).toHaveTextContent(
+    /NVIDIA L4.*Time-sliced ×4/,
+  );
+});
+
+it('words a MIG configuration by its profile', async () => {
+  renderAt('/clusters/site3', new MockConsoleService());
+  expect(await screen.findByTestId('cluster-gpu-configurations')).toHaveTextContent(
+    'NVIDIA A100-SXM4-40GB, 8 GPUs/node · 19.5 GiB each · MIG 3g.20gb · 2 nodes',
+  );
+  expect(screen.getByTestId('cluster-gpu-capacity')).toHaveTextContent('2 nodes, 16 GPUs');
+});
+
+it('says when the hub counts GPUs but has no details for them', async () => {
+  const clusters = seedClusters();
+  delete clusters[0].gpus;
+  renderAt('/clusters/site1', new MockConsoleService(undefined, clusters));
+  expect(await screen.findByTestId('cluster-gpus-not-reported')).toHaveTextContent(
+    "The hub reports 16 GPUs in this cluster's capacity, but no details for its GPU nodes",
+  );
+  expect(screen.queryByRole('grid', { name: 'GPU nodes' })).not.toBeInTheDocument();
+});
+
+it('marks a GPU node that is not ready', async () => {
+  const clusters = seedClusters();
+  clusters[0].gpus!.nodes[1] = { ...clusters[0].gpus!.nodes[1], ready: false };
+  renderAt('/clusters/site1', new MockConsoleService(undefined, clusters));
+  const row = within(await screen.findByRole('grid', { name: 'GPU nodes' })).getByRole('row', { name: /gpu-h200-1/ });
+  expect(row).toHaveTextContent('Not ready');
 });
 
 it('shows 0 GPUs when the hub reports capacity without any', async () => {
   const clusters = seedClusters();
   renderAt('/clusters/site4', new MockConsoleService(undefined, clusters));
   expect(await screen.findByTestId('cluster-gpus')).toHaveTextContent('0');
+  expect(screen.getByTestId('cluster-gpus-not-reported')).toHaveTextContent('The hub reports no GPUs on this cluster.');
   expect(screen.getByTestId('cluster-membership')).toHaveTextContent('Not added');
   // A cluster outside AI Grid has no role to miss.
   expect(screen.queryByTestId('missing-role')).not.toBeInTheDocument();
