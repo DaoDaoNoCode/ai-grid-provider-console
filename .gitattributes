@@ -1,2 +1,4 @@
 # Generated from mock/proto by make -C bff generate; collapsed in GitHub diffs.
 bff/gen/** linguist-generated=true
+# Generated from the backend proto at .backend-api-version by make generate-api.
+frontend/src/gen/** linguist-generated=true

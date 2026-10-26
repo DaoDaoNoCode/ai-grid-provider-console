@@ -15,7 +15,22 @@ PERSES_ADDRESS ?= 127.0.0.1:9445
 PERSES_NAMESPACE ?= openshift-cluster-observability-operator
 PERSES_SERVICE ?= perses
 
-.PHONY: help start dev dev-cluster dev-fake dev-fake-poc dev-forward-backend dev-forward-perses dev-fake-backend dev-bff dev-bff-fake dev-frontend dev-frontend-fake install lint test build e2e image push manifests deploy undeploy chart-check chart-test
+# The ai-grid-provider-backend commit whose API the console is generated from (make generate-api):
+# one full commit SHA in .backend-api-version.
+BACKEND_API_VERSION := $(strip $(shell cat .backend-api-version))
+BACKEND_REPO ?= https://github.com/ai-grid-cloud/ai-grid-provider-backend.git
+BUF := go run github.com/bufbuild/buf/cmd/buf@v1.57.2
+# The backend's real API at the pin, without its draft (ai_grid.draft.v1), and the googleapis
+# commit the backend's proto/buf.lock pins, for google.rpc.BadRequest in its errors.
+API_INPUT := $(BACKEND_REPO)\#ref=$(BACKEND_API_VERSION),subdir=proto
+GOOGLEAPIS := buf.build/googleapis/googleapis:8ac61b9e502343289c8c42b17aa5b245
+# Generates the TypeScript into $(1)/src/gen, from frontend/ (buf.gen.yaml runs the protoc-gen-es
+# in frontend/node_modules: make install first).
+generate-api-into = cd frontend && \
+	$(BUF) generate '$(API_INPUT)' --exclude-path ai_grid/draft --template buf.gen.yaml -o "$(1)" && \
+	$(BUF) generate '$(GOOGLEAPIS)' --path google/rpc/error_details.proto --template buf.gen.yaml -o "$(1)"
+
+.PHONY: help start dev dev-cluster dev-fake dev-fake-poc dev-forward-backend dev-forward-perses dev-fake-backend dev-bff dev-bff-fake dev-frontend dev-frontend-fake install lint test build e2e image push manifests deploy undeploy chart-check chart-test generate-api check-generated-api
 
 help: ## Show targets
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -83,11 +98,23 @@ dev-frontend: ## Run the Vite dev server, which injects `oc whoami -t`
 install: ## Install frontend dependencies
 	cd frontend && pnpm install
 
+##@ The backend's API (generated TypeScript in frontend/src/gen)
+
+generate-api: ## Regenerate frontend/src/gen from the backend's proto at .backend-api-version (buf through go run; make install first)
+	rm -rf frontend/src/gen
+	$(call generate-api-into,.)
+
+check-generated-api: ## Fail when frontend/src/gen differs from what make generate-api writes: stale, hand-edited, missing or left-over files
+	tmp="$$(mktemp -d)" && trap 'rm -rf "$$tmp"' EXIT && \
+	($(call generate-api-into,$$tmp)) && \
+	diff -r "$$tmp/src/gen" frontend/src/gen
+
 ##@ Quality
 
-lint: ## Lint the BFF (vet, golangci-lint, buf lint on mock/proto) and the frontend (ESLint, Prettier, tsc)
+lint: ## Lint the BFF (vet, golangci-lint, buf lint on mock/proto) and the frontend (ESLint, Prettier, tsc, generated API current)
 	$(MAKE) -C bff vet lint lint-proto
 	cd frontend && pnpm lint && pnpm format:check && pnpm typecheck
+	$(MAKE) --no-print-directory check-generated-api
 
 test: ## Run all tests
 	$(MAKE) -C bff test
