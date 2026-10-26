@@ -376,3 +376,41 @@ func TestV1TenantNegativeVersion(t *testing.T) {
 		t.Fatalf("delete at -1: %v, sent %q", err, conn.method)
 	}
 }
+
+// Every GPU field the backend sends reaches the draft, and none is dropped or renumbered.
+func TestFromV1GPUs(t *testing.T) {
+	sharing := &backendv1.GPUSharing{Strategy: "time-slicing", Replicas: 4, MigCapable: true, MigStrategy: "single"}
+	in := &backendv1.ClusterGPUs{
+		Total:     2,
+		NodeCount: 1,
+		Configurations: []*backendv1.GPUConfiguration{{
+			Vendor: "NVIDIA", Product: "NVIDIA-L4-SHARED", MemoryMib: 23034, GpusPerNode: 2, NodeCount: 1, Sharing: sharing,
+		}},
+		Nodes: []*backendv1.GPUNode{{
+			Name: "gpu-0", Vendor: "NVIDIA", Product: "NVIDIA-L4-SHARED", Count: 2, MemoryMib: 23034, Family: "ada-lovelace",
+			ComputeCapability: "8.9", DriverVersion: "580.105.08", CudaRuntimeVersion: "13.0", Sharing: sharing,
+			InstanceType: "g6.xlarge", Ready: true,
+		}},
+	}
+	got := FromV1Cluster(&backendv1.ManagedCluster{Id: "site-a", Status: &backendv1.ManagedClusterStatus{Gpus: in}}).GetStatus().GetGpus()
+	want := &aigridv1.ClusterGPUs{
+		Total:     2,
+		NodeCount: 1,
+		Configurations: []*aigridv1.GPUConfiguration{{
+			Vendor: "NVIDIA", Product: "NVIDIA-L4-SHARED", MemoryMib: 23034, GpusPerNode: 2, NodeCount: 1,
+			Sharing: &aigridv1.GPUSharing{Strategy: "time-slicing", Replicas: 4, MigCapable: true, MigStrategy: "single"},
+		}},
+		Nodes: []*aigridv1.GPUNode{{
+			Name: "gpu-0", Vendor: "NVIDIA", Product: "NVIDIA-L4-SHARED", Count: 2, MemoryMib: 23034, Family: "ada-lovelace",
+			ComputeCapability: "8.9", DriverVersion: "580.105.08", CudaRuntimeVersion: "13.0",
+			Sharing:      &aigridv1.GPUSharing{Strategy: "time-slicing", Replicas: 4, MigCapable: true, MigStrategy: "single"},
+			InstanceType: "g6.xlarge", Ready: true,
+		}},
+	}
+	if !proto.Equal(got, want) {
+		t.Fatalf("gpus = %v, want %v", got, want)
+	}
+	if FromV1Cluster(&backendv1.ManagedCluster{Id: "site-b", Status: &backendv1.ManagedClusterStatus{}}).GetStatus().Gpus != nil {
+		t.Fatal("no inventory from the backend must stay unset")
+	}
+}

@@ -243,7 +243,7 @@ also works against a backend that only returns `name`, `labels`, `hubAcceptsClie
   ACM Search's index of the spoke's nodes and their NVIDIA GPU Feature Discovery labels
   (`ManagedClusterInfo` carries none); the BFF derives nothing. Omitted when the backend has no
   inventory for the cluster (no GPU nodes, or Search unavailable or not yet indexed);
-  `gpuCapacity` still counts the schedulable GPUs then. The shipped backend doesn't send it yet.
+  `gpuCapacity` still counts the schedulable GPUs then. A real backend sends it from ai-grid-provider-backend's `feat/cluster-gpus` on (`status.gpus`, field 10), and `bff/internal/backend/v1.go` copies it onto the draft field for field (`fromV1GPUs`); an older one sends none.
 - `siteName`, `latitude`, `longitude` come from the `ai-grid/site-name`, `ai-grid/latitude`,
   `ai-grid/longitude` annotations; coordinates are omitted when absent or not a finite number
   in range (`NaN` and `Inf` parse but cannot be encoded, so they count as absent).

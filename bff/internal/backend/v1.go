@@ -122,6 +122,25 @@ func (c v1Clusters) UpdateManagedCluster(ctx context.Context, in *aigridv1.Updat
 // backend sends them (a condition status other than True or False reads as
 // Unknown). Provisioning is always set, so the console reads it instead of the
 // ai-grid/provisioned label.
+// fromV1GPUs copies the backend's GPU inventory onto the draft's. The two declare the same
+// messages with the same field numbers (ClusterGPUs, GPUConfiguration, GPUSharing, GPUNode), so
+// the copy goes through the wire format; TestFromV1GPUs sets every field and fails if the draft
+// ever stops matching. Unset stays unset: the backend sends none when ACM Search has nothing.
+func fromV1GPUs(in *backendv1.ClusterGPUs) *aigridv1.ClusterGPUs {
+	if in == nil {
+		return nil
+	}
+	raw, err := proto.Marshal(in)
+	if err != nil {
+		return nil
+	}
+	out := &aigridv1.ClusterGPUs{}
+	if err := proto.Unmarshal(raw, out); err != nil {
+		return nil
+	}
+	return out
+}
+
 func FromV1Cluster(mc *backendv1.ManagedCluster) *aigridv1.ManagedCluster {
 	meta := mc.GetMetadata()
 	st := mc.GetStatus()
@@ -154,10 +173,7 @@ func FromV1Cluster(mc *backendv1.ManagedCluster) *aigridv1.ManagedCluster {
 			Capacity:          st.GetCapacity(),
 			Allocatable:       st.GetAllocatable(),
 			ClusterClaims:     fromV1Claims(st.GetClusterClaims()),
-			// TODO(clusters-v2): map the backend's status.gpus (ManagedClusterStatus field
-			// 10, ai-grid-provider-backend feat/cluster-gpus) onto the draft's Gpus once that
-			// proto is vendored here (hack/sync-upstream-proto.sh); until then the real
-			// backend's clusters have no GPU inventory and the console shows gpuCapacity.
+			Gpus:              fromV1GPUs(st.GetGpus()),
 		},
 	}
 }
