@@ -306,6 +306,37 @@ it('keeps chosen locations visible when the reload offers none', async () => {
   expect(await screen.findByText('No locations available')).toBeVisible();
 });
 
+describe('the hint about AI Grid clusters the Locations step leaves out', () => {
+  const hint = /AI Grid clusters? (isn’t|aren’t) listed/;
+
+  it('counts members whose location label is not offered, when locations are labels (fake backend)', async () => {
+    const service = new MockConsoleService();
+    service.clusters[2] = { ...service.clusters[2], status: 'Offline' };
+    const user = userEvent.setup();
+    renderAt('/models/deploy', service);
+    await fillModel(user);
+    await screen.findByRole('combobox', { name: 'Locations' });
+    expect(await screen.findByText(hint)).toHaveTextContent('1 AI Grid cluster isn’t listed');
+  });
+
+  it('counts members whose name is not offered, when locations are cluster names (real backend)', async () => {
+    const service = new MockConsoleService();
+    // The real backend offers the enabled clusters' names; their location labels are regions.
+    service.clusters = service.clusters.map((c) => ({ ...c, location: c.region }));
+    service.listLocations = async () => ['site1', 'site2'];
+    const user = userEvent.setup();
+    renderAt('/models/deploy', service);
+    await fillModel(user);
+    await screen.findByRole('combobox', { name: 'Locations' });
+    expect(await screen.findByText(hint)).toHaveTextContent('1 AI Grid cluster isn’t listed');
+    service.listLocations = async () => ['site1', 'site2', 'site3'];
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    await screen.findByRole('combobox', { name: 'Locations' });
+    await waitFor(() => expect(screen.queryByText(hint)).not.toBeInTheDocument());
+  });
+});
+
 it('keeps input when saving fails', async () => {
   const service = new MockConsoleService();
   await service.createModel(input);
