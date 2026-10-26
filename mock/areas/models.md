@@ -164,7 +164,8 @@ out of the summary, and its cluster is to apply again like a new one.
   `ready=False`, so the MWRS reads `ManifestworkApplied=False/Processing` and the model
   PENDING/`Processing` indefinitely (no MWRS condition shows the progress-deadline timeout, which
   only frees the slot in a `Progressive` rollout).
-- A cluster labelled `ai-grid-mock/fail-apply=true` (a console mock label) behaves like a spoke
+- A cluster labelled `ai-grid-mock/fail-apply=true` (a console mock label; any other value is a
+  comma-separated list of the model names it fails) behaves, for those models, like a spoke
   without the KServe CRD: `Applied=False/AppliedManifestWorkFailed`, the manifest
   `AppliedManifestFailed` "Failed to apply manifest: the server doesn't have a resource type
   "LLMInferenceService"" with an empty `resource` in its meta, the manifest

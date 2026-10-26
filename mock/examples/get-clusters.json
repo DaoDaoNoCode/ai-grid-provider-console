@@ -585,6 +585,7 @@
         ],
         "resourceVersion": "48812499",
         "labels": {
+          "ai-grid-mock/fail-apply": "mistral-7b-instruct",
           "ai-grid/enabled": "true",
           "ai-grid/provisioned": "true",
           "ai-grid/region": "europe-south",

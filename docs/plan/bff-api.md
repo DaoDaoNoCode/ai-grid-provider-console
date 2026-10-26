@@ -310,6 +310,7 @@ no `revision`, `status: Saved`, `hasDeployment`; collections are always present)
       "cluster": "site-paris-1", "workName": "model-granite-8b-instructx7k2p",
       "applied": "True", "available": "True", "progressing": "False", "degraded": "False",
       "feedback": {"ready": "True", "url": "https://openshift-ai-inference.apps.site-paris-1.example.com/ai-grid-models/granite-8b-instruct"},
+      "phase": "ready",
       "conditions": [{"type": "Applied", "status": "True", "reason": "AppliedManifestWorkComplete", "message": "Apply manifest work complete"}],
       "generation": 1, "observedGeneration": 1
     }]
@@ -324,9 +325,10 @@ no `revision`, `status: Saved`, `hasDeployment`; collections are always present)
   not recover on its own, `ConfigNotFound`, `RefsInvalid` or `GatewaysNotReady`, `failed` with
   its reason and message; False with any other reason, absent or Unknown `pending` with the
   condition's reason); for a placed model from the ManifestWorkReplicaSet conditions
-  (`PlacementRolledOut` and `ManifestworkApplied` True `ready`; `ManifestworkApplied`
-  False/`NotAsExpected` with a degraded or unapplied work `failed`; otherwise `pending` with the
-  deciding reason). KServe reports `Ready=False` with `WaitingForGateway`, `Progressing` or
+  (`PlacementRolledOut` and `ManifestworkApplied` True `ready`; some works `ready` and others
+  not `partiallyavailable`, reason `PartiallyAvailable`, message "<n> of <m> clusters are
+  serving the model." (proposal P13); `ManifestworkApplied` False/`NotAsExpected` with a
+  degraded or unapplied work `failed`; otherwise `pending` with the deciding reason). KServe reports `Ready=False` with `WaitingForGateway`, `Progressing` or
   `MinimumReplicasUnavailable` while a healthy model starts, so those read `pending`. A
   workload that never becomes available keeps `MinimumReplicasUnavailable`, which no condition
   tells apart from a slow start, so it stays `pending` with that reason, as a stuck spoke does.
@@ -336,7 +338,12 @@ no `revision`, `status: Saved`, `hasDeployment`; collections are always present)
   exist), whose per-site state is in `rollout.works[]`:
   `applied`, `available`, `progressing`, `degraded` are the work's condition statuses
   (`True|False|Unknown`, absent until the agent writes them) and `feedback` the `ready` and
-  `url` values the agent scraped from the spoke object. `workName` is `model-<name>` plus five
+  `url` values the agent scraped from the spoke object. `phase`, `reason` and `message` are the
+  backend's summary of the model on that cluster (proposal P13, `ManifestWorkStatus.phase`):
+  `ready` when the `ready` feedback is True; `failed` when `Applied` is False or `Degraded` is
+  True, with that condition's reason and message; otherwise `pending`, with no reason before the
+  agent reports, else `Available`'s while it is not True, else `Progressing`'s. The Models page
+  lists them per cluster. `workName` is `model-<name>` plus five
   random characters, no separator (the API server's `generateName` on the MWRS name, cut to 58
   characters).
 - `placement.locations` are the `location` labels of the decided clusters, unique and sorted
@@ -592,7 +599,7 @@ exists; the frontend uses the mock service meanwhile.
 | GET | `/api/v1/user` (`isProviderAdmin`) | Optional: `AiGrid/GetCurrentUser` returning roles, once the backend acts as the caller; today the BFF asks the hub directly | Step 1 |
 | GET/PATCH | `/api/v1/clusters[/{name}]` (implemented against the draft) | The backend has to ship the draft's `GetManagedCluster`, `UpdateManagedCluster` and the richer `ManagedCluster` (`mock/proto/ai_grid/v1/managed_cluster*.proto`), with `status.state` derived server-side; `patch` on managedclusters in its ClusterRole | Steps 2, 10 |
 | GET/POST/PATCH/DELETE | `/api/v1/tenants[/{id}]` (on the backend's `Tenants` RPCs) | the draft `Tenant`'s `alias`, `enabled`, `description`, `attributes`, `domain_details` and `identity_provider`, if the console keeps them; `filter` evaluated on `List`; mutations gated on the provider-admin check | Step 6 |
-| GET/POST/PATCH/DELETE | `/api/v1/models[/{namespace}/{name}]`, GET `/api/v1/capabilities` (implemented against the draft) | The backend has to ship the draft's `Models` service and `Model` message (`mock/proto/ai_grid/v1/model*.proto`) over LLMInferenceService, Placement and ManifestWorkReplicaSet with the status derived server-side, and `AiGrid/GetHubCapabilities`; the `ManifestWorkReplicaSet` feature gate on the hub for multi-site models (`FailedPrecondition` otherwise) | Steps 3, 4 |
+| GET/POST/PATCH/DELETE | `/api/v1/models[/{namespace}/{name}]`, GET `/api/v1/capabilities` (implemented against the draft) | The backend has to ship the draft's `Models` service and `Model` message (`mock/proto/ai_grid/v1/model*.proto`) over LLMInferenceService, Placement and ManifestWorkReplicaSet with the status derived server-side (including proposal P13: each work's `phase`, `reason` and `message`, and `MODEL_PHASE_PARTIALLY_AVAILABLE`), and `AiGrid/GetHubCapabilities`; the `ManifestWorkReplicaSet` feature gate on the hub for multi-site models (`FailedPrecondition` otherwise) | Steps 3, 4 |
 | GET/POST/PUT/DELETE | `/api/v1/catalog[/{name}]` | `Catalog/*` on ConfigMaps | Step 9 |
 | GET/POST/PUT/DELETE | `/api/v1/subscriptions[/{name}]`, GET `/api/v1/grid/overview` (implemented against the draft) | The backend has to ship the draft's `Subscriptions` service and `Grid/GetOverview` (`mock/proto/ai_grid/v1/subscription*.proto`, `grid_service.proto`) with the POC's metric contract (requests, errors, latency, gpu from Thanos with a `cluster` label), and validate every subscription write itself ("The BFF is thin") | Steps 5, 8, 10 |
 | GET/POST/DELETE | `/api/v1/tenants/{id}/members[/{userId}]` | Member RPCs on `Tenants` (not drafted yet; `mock/research/keycloak.md` open question 3) | Step 6 |
