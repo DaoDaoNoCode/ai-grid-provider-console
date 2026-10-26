@@ -15,6 +15,12 @@ export type ConsoleSession = {
   configError?: Error;
   /** A call has answered 401: the console goes through the login again instead of the pages, which stop polling. */
   sessionEnded?: boolean;
+  /**
+   * Asks whether the session has ended, for an answer of 401 that may not mean it: one from the
+   * hub's Perses through the Monitoring relay can be Perses's or a datasource's own refusal. The
+   * console loads the user again, and only a 401 there ends the session.
+   */
+  checkSession?: () => void;
 };
 
 export const ConsoleSessionContext = createContext<ConsoleSession>({ userLoaded: false });

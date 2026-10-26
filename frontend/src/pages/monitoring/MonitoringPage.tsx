@@ -1,4 +1,4 @@
-import { Suspense, lazy, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import {
   Alert,
   AlertActionLink,
@@ -17,6 +17,7 @@ import { ServiceError } from '../../api/ConsoleService';
 import { dashboardTitle, monitoringLinkFor, monitoringTabs } from '../../api/monitoring';
 import type { ConsoleConfig } from '../../api/types';
 import { PageHeader } from '../../components/PageHeader';
+import { useConsoleSession } from '../../context/useConsoleSession';
 import { PageLoading } from '../../components/PageLoading';
 import { useServiceData } from '../../hooks/useServiceData';
 import { GridPage } from '../grid/GridPage';
@@ -39,6 +40,13 @@ const failureOf = (error: Error) => {
  */
 const PersesMonitoring: React.FC<{ service: ConsoleService; project: string }> = ({ service, project }) => {
   const [dashboards, loaded, error, refresh] = useServiceData(() => service.listMonitoringDashboards(project), [], 0);
+  // The relay's 401 may be Perses's own refusal (RelayedError), so it asks the console to check.
+  const { checkSession } = useConsoleSession();
+  useEffect(() => {
+    if (error instanceof ServiceError && error.status === 401) {
+      checkSession?.();
+    }
+  }, [error, checkSession]);
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   // A link inside a dashboard to a page of another app (such as the OpenShift console's Perses

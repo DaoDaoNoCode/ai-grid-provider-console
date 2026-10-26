@@ -54,3 +54,14 @@ export class ServiceError extends Error {
     return this.status === 401;
   }
 }
+
+/**
+ * An answer the BFF relayed from the hub's Perses (the Monitoring page). Its 401 can be Perses's or
+ * a datasource's own refusal, so it doesn't say the console's session has ended by itself: the
+ * page asks the console to check (checkSession) instead.
+ */
+export class RelayedError extends ServiceError {
+  override get isUnauthenticated(): boolean {
+    return false;
+  }
+}

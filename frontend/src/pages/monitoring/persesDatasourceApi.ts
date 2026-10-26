@@ -14,7 +14,9 @@ import { PERSES_API } from '../../api/monitoring';
 const get = async <T>(url: string): Promise<T> => {
   const res = await fetch(url, { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
   if (!res.ok) {
-    throw new Error(`Perses answered ${res.status} for ${url}`);
+    // With the status, as Perses's own fetch errors have it, so a 401 can ask after the session
+    // (watchUnauthorized).
+    throw Object.assign(new Error(`Perses answered ${res.status} for ${url}`), { status: res.status });
   }
   return (await res.json()) as T;
 };

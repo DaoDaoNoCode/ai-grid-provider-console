@@ -1,8 +1,10 @@
-import { screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import type { DashboardResource } from '@perses-dev/client';
 import { vi } from 'vitest';
-import { ServiceError } from '../api/ConsoleService';
+import { App } from '../App';
+import { RelayedError, ServiceError } from '../api/ConsoleService';
 import { HttpConsoleService } from '../api/HttpConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
 import { monitoringLinkFor, monitoringTabs } from '../api/monitoring';
@@ -10,19 +12,32 @@ import { renderAt } from './render';
 
 // Perses's charts don't render in jsdom; the page is tested up to the dashboard it hands over.
 // It also renders links as a dashboard's panels would.
-vi.mock('../pages/monitoring/PersesDashboardView', () => ({
-  default: ({ dashboard }: { dashboard: DashboardResource }) => (
-    <div>
-      <div data-testid="perses-dashboard">
-        {dashboard.metadata.project}/{dashboard.metadata.name}
+// Its button stands for a burst of relay 401s, from a dashboard whose panels all fail at once.
+vi.mock('../pages/monitoring/PersesDashboardView', async () => {
+  const { useConsoleSession } = await import('../context/useConsoleSession');
+  const RelayUnauthorized = () => {
+    const { checkSession } = useConsoleSession();
+    return (
+      <button type="button" onClick={() => [1, 2, 3].forEach(() => checkSession?.())}>
+        panels answered 401
+      </button>
+    );
+  };
+  return {
+    default: ({ dashboard }: { dashboard: DashboardResource }) => (
+      <div>
+        <RelayUnauthorized />
+        <div data-testid="perses-dashboard">
+          {dashboard.metadata.project}/{dashboard.metadata.name}
+        </div>
+        <a href="/monitoring/v2/dashboards/view?dashboard=dashboard-2-usage&project=ai-grid&var-cluster=site-a">
+          usage of site-a
+        </a>
+        <a href="/monitoring/v2/dashboards/view?dashboard=acm-optimization-overview&project=ai-grid">optimization</a>
       </div>
-      <a href="/monitoring/v2/dashboards/view?dashboard=dashboard-2-usage&project=ai-grid&var-cluster=site-a">
-        usage of site-a
-      </a>
-      <a href="/monitoring/v2/dashboards/view?dashboard=acm-optimization-overview&project=ai-grid">optimization</a>
-    </div>
-  ),
-}));
+    ),
+  };
+});
 
 const dashboard = (project: string, name: string, title?: string) =>
   ({
@@ -193,5 +208,48 @@ describe('HttpConsoleService.listMonitoringDashboards', () => {
         answer(404, { error: { message: 'monitoring is not configured on this console' } }),
       ).listMonitoringDashboards('ai-grid'),
     ).rejects.toMatchObject({ status: 404, message: 'monitoring is not configured on this console' });
+  });
+});
+
+describe('a 401 from the relay', () => {
+  it('asks for the user once and keeps the page while the session is live', async () => {
+    const user = userEvent.setup();
+    const service = withMonitoring('ai-grid', hub);
+    renderAt('/monitoring', service);
+    await screen.findByTestId('perses-dashboard');
+    const getUser = vi.spyOn(service, 'getUser');
+    await user.click(screen.getByRole('button', { name: 'panels answered 401' }));
+    await waitFor(() => expect(getUser).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId('perses-dashboard')).toBeVisible();
+    expect(screen.queryByText(/Your session has ended|Signing you in again/)).not.toBeInTheDocument();
+  });
+
+  it('checks the session, and keeps it, when Perses answers the dashboards list with 401', async () => {
+    const service = withMonitoring('ai-grid', hub);
+    service.listMonitoringDashboards = () => Promise.reject(new RelayedError(401, 'Perses refused the token'));
+    const getUser = vi.spyOn(service, 'getUser');
+    renderAt('/monitoring', service);
+    expect(await screen.findByText('Perses refused the token')).toBeVisible();
+    // Once on load, once for the check.
+    await waitFor(() => expect(getUser).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText(/Your session has ended|Signing you in again/)).not.toBeInTheDocument();
+  });
+
+  it('ends the session when the user answers 401 too', async () => {
+    window.sessionStorage.clear();
+    const user = userEvent.setup();
+    const service = withMonitoring('ai-grid', hub);
+    const navigation = { assign: vi.fn<(url: string) => void>(), reload: vi.fn<() => void>() };
+    render(
+      <MemoryRouter initialEntries={['/monitoring']}>
+        <App service={service} navigation={navigation} />
+      </MemoryRouter>,
+    );
+    await screen.findByTestId('perses-dashboard');
+    service.getUser = () => Promise.reject(new ServiceError(401, 'missing x-forwarded-access-token'));
+    await user.click(screen.getByRole('button', { name: 'panels answered 401' }));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Signing you in again…' })).toBeInTheDocument();
+    expect(navigation.assign).toHaveBeenCalledWith('/oauth2/sign_out?rd=%2Fmonitoring');
+    expect(screen.queryByTestId('perses-dashboard')).not.toBeInTheDocument();
   });
 });

@@ -9,7 +9,7 @@ import {
 } from './adapters';
 import type { GridMembership } from './clusters';
 import type { ConsoleService } from './ConsoleService';
-import { ServiceError } from './ConsoleService';
+import { RelayedError, ServiceError } from './ConsoleService';
 import { PERSES_API } from './monitoring';
 import type {
   ApiCluster,
@@ -101,7 +101,7 @@ export class HttpConsoleService implements ConsoleService {
       } catch {
         // keep the generic message
       }
-      throw new ServiceError(response.status, message);
+      throw new RelayedError(response.status, message);
     }
     return (await response.json()) as DashboardResource[];
   }

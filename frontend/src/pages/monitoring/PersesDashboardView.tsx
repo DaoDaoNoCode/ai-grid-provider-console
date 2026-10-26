@@ -30,6 +30,7 @@ import { type PageTheme, usePageTheme } from './pageTheme';
 import { RelayDatasourceApi } from './persesDatasourceApi';
 import { pluginLoader } from './persesPlugins';
 import { patternFlyTheme } from './persesTheme';
+import { useRelaySessionCheck } from './relaySession';
 
 // PatternFly's look for Perses, as odh-dashboard and the OpenShift console's monitoring plugin do:
 // one for each of PatternFly's themes, built the first time the page shows in it.
@@ -137,6 +138,8 @@ const DashboardBody: React.FC<Props> = ({ dashboard }) => {
 /** The dashboard's time range, refresh, variables and panels, in the page's light or dark theme. */
 const PersesDashboardView: React.FC<Props> = ({ dashboard }) => {
   const { muiTheme, chartsTheme } = themeFor(usePageTheme());
+  // A 401 from the relay may be Perses's or a datasource's, not the session's: the console checks.
+  useRelaySessionCheck(queryClient);
   return (
     <QueryClientProvider client={queryClient}>
       <QueryParamProvider adapter={ReactRouter6Adapter}>
