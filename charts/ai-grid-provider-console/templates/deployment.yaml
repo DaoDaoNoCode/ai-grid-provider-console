@@ -240,38 +240,19 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 10Mi
-        # The files the kubelet's automatic mount would provide, at the path client-go reads them
-        # from: a bound token, the API server's CA, the namespace and, on OpenShift, the service CA
-        # (ACM Search's and Perses's certificates are signed by it).
+        # The files the kubelet's automatic mount (kube-api-access-*) provides, in its order and at the
+        # path client-go reads them from: a bound token, the API server's CA, the namespace and, on
+        # OpenShift, the service CA (ACM Search's and Perses's certificates are signed by it). The
+        # service CA is optional so the chart also runs on plain Kubernetes.
         - name: sa-token
           projected:
             sources:
               - serviceAccountToken:
                   path: token
                   expirationSeconds: 3607
-              - configMap:
-                  name: kube-root-ca.crt
-                  items: [{ key: ca.crt, path: ca.crt }]
-              - configMap:
-                  name: openshift-service-ca.crt
-                  optional: true
-                  items: [{ key: service-ca.crt, path: service-ca.crt }]
-              - downwardAPI:
-                  items:
-                    - path: namespace
-                      fieldRef: { apiVersion: v1, fieldPath: metadata.namespace }
+              {{- include "console.clusterCASources" . | nindent 14 }}
         # The same without the token, for the BFF.
         - name: cluster-ca
           projected:
             sources:
-              - configMap:
-                  name: kube-root-ca.crt
-                  items: [{ key: ca.crt, path: ca.crt }]
-              - configMap:
-                  name: openshift-service-ca.crt
-                  optional: true
-                  items: [{ key: service-ca.crt, path: service-ca.crt }]
-              - downwardAPI:
-                  items:
-                    - path: namespace
-                      fieldRef: { apiVersion: v1, fieldPath: metadata.namespace }
+              {{- include "console.clusterCASources" . | nindent 14 }}

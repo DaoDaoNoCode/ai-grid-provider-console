@@ -31,3 +31,22 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
 {{- define "console.tlsSecretName" -}}{{ .Values.tls.secretName | default (printf "%s-tls" (include "console.fullname" .)) }}{{- end -}}
 {{/* Not defaulted when empty: an empty name would render `name: ""`, which no Secret has. */}}
 {{- define "console.keycloakSecretName" -}}{{ required "backend.keycloakSecretName is required: the Secret with the backend's Keycloak settings (hack/deploy.sh creates ai-grid-backend-keycloak)" .Values.backend.keycloakSecretName }}{{- end -}}
+
+{{/*
+The non-secret files of the kubelet's automatic ServiceAccount mount, as projected volume sources:
+the API server's CA, the namespace, and OpenShift's service CA. The deployment's sa-token volume adds
+the token to them; its cluster-ca volume is these alone.
+*/}}
+{{- define "console.clusterCASources" -}}
+- configMap:
+    name: kube-root-ca.crt
+    items: [{ key: ca.crt, path: ca.crt }]
+- downwardAPI:
+    items:
+      - path: namespace
+        fieldRef: { apiVersion: v1, fieldPath: metadata.namespace }
+- configMap:
+    name: openshift-service-ca.crt
+    optional: true
+    items: [{ key: service-ca.crt, path: service-ca.crt }]
+{{- end -}}
