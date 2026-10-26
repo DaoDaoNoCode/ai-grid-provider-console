@@ -13,8 +13,8 @@ type ConsoleConfig struct {
 	ModelsNamespace string `json:"modelsNamespace"`
 	// FakeBackend tells the UI to show its fake-backend banner.
 	FakeBackend bool `json:"fakeBackend"`
-	// Monitoring says whether /perses/api reaches a Perses server, and which project's
-	// dashboard- objects are the Monitoring tabs (empty: every project the caller may read).
+	// Monitoring says whether /perses/api reaches a Perses server, and the one project it
+	// reads, whose dashboard- objects are the Monitoring tabs (always set when enabled).
 	Monitoring MonitoringConfig `json:"monitoring"`
 }
 

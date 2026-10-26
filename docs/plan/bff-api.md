@@ -108,7 +108,7 @@ under `/perses/api`.
 | GET | `/healthcheck` | `{status, version}` | none; no identity and no backend call: a check, by a person or a script on the pod, that the BFF process serves HTTP and which build it is (`version`). No probe uses it: the kubelet probes only `/readyz` (below), and there is deliberately no liveness probe, which would restart the BFF whenever the proxy in front of it is down. Through the route it is behind the login like any page (the proxy skips auth for `/readyz` only) |
 | GET | `/readyz` | `{status, version, backend}` | `AiGrid/Ping`; readiness, 503 when the backend does not answer. The pod is then unready, and with the one replica the chart runs, the Service has no endpoint left: the OpenShift router answers every request with its own 503 page (HTML, not this API's JSON error), until the backend answers again |
 | GET | `/api/v1/user` | `{username, email?, groups, isProviderAdmin}` (`email` omitted when the proxy sends none) | none; the identity from the proxy headers, `isProviderAdmin` from a hub `SelfSubjectAccessReview` |
-| GET | `/api/v1/config` | `{gridEndpoint, mapTileUrl, mapTileAttribution, billingUrl, version, modelsNamespace, fakeBackend, monitoring: {enabled, persesProject}}`: `modelsNamespace` is the namespace the console creates models in (default `ai-grid-models`), `fakeBackend` makes the UI show its fake-backend banner, `monitoring.enabled` says the BFF relays `/perses/api` (it has a `PERSES_URL`) and `monitoring.persesProject` names the Perses project whose `dashboard-*` objects are the Monitoring tabs (empty: every project the caller may read) | none; env `GRID_CONSUMER_URL`, `MAP_TILE_URL`, `MAP_TILE_ATTRIBUTION` (the attribution shown with `MAP_TILE_URL`'s tiles; with no `MAP_TILE_URL` the map draws a bundled land outline), `BILLING_URL`, `MODELS_NAMESPACE`, `FAKE_BACKEND`, `PERSES_URL`, `PERSES_PROJECT` |
+| GET | `/api/v1/config` | `{gridEndpoint, mapTileUrl, mapTileAttribution, billingUrl, version, modelsNamespace, fakeBackend, monitoring: {enabled, persesProject}}`: `modelsNamespace` is the namespace the console creates models in (default `ai-grid-models`), `fakeBackend` makes the UI show its fake-backend banner, `monitoring.enabled` says the BFF relays `/perses/api` (it has a `PERSES_URL`) and `monitoring.persesProject` names the one Perses project the relay reads, whose `dashboard-*` objects are the Monitoring tabs (always set when `monitoring.enabled`) | none; env `GRID_CONSUMER_URL`, `MAP_TILE_URL`, `MAP_TILE_ATTRIBUTION` (the attribution shown with `MAP_TILE_URL`'s tiles; with no `MAP_TILE_URL` the map draws a bundled land outline), `BILLING_URL`, `MODELS_NAMESPACE`, `FAKE_BACKEND`, `PERSES_URL`, `PERSES_PROJECT` |
 | GET | `/api/v1/clusters?offset=&limit=&filter=` | `GridCluster[]` sorted by name, with `meta` (`size`, `total`, `offset`, `limit`) as for tenants; `filter` is the client's CEL over `this` (a `ManagedCluster`), forwarded as sent. Neither backend evaluates it yet: the fake answers 422, and against the shipped backend, which would ignore it, the BFF answers 501 | `ManagedClusters/ListManagedClusters` |
 | GET | `/api/v1/clusters/{name}` | `GridCluster`, `ETag: "<resourceVersion>"` | `ManagedClusters/GetManagedCluster` (on the shipped backend, its `Clusters/Get`); 404 with the backend's message when absent. Against an older backend that answers `Unimplemented` the BFF filters `ListManagedClusters` by name instead, so the detail works either way; neither the fake nor the shipped backend needs that any more |
 | PATCH | `/api/v1/clusters/{name}` | `GridCluster` after the write, with its `ETag` | `UpdateManagedCluster` (no read first) with the present body fields as the object and the mask (`labels`, `annotations`) and `lock: true` on the `If-Match` version; an empty body is 422; 409 when the hub object is not at that version, 428 without `If-Match`, 422 on a bad body or `If-Match`, a coordinate annotation the backend refuses or a change to a key outside the console's (`ai-grid/*`, `location`), 413 over 1 MiB, 415 when the body is not `application/json` |
@@ -123,7 +123,7 @@ under `/perses/api`.
 | PATCH | `/api/v1/models/{namespace}/{name}` | `Model` after the write, with its `ETag` | `UpdateModel` (no read first) with every present field as the mask (`spec.replicas`, `spec.main.image`, `spec.main.env`, `spec.placement`, `spec.rollout`, `metadata.labels`, `metadata.annotations`) and `lock: true` on the `If-Match` version; an empty body is 422; 409 when the object is not at that version, 428 without `If-Match`, 412 when a placement is added on a gated hub |
 | DELETE | `/api/v1/models/{namespace}/{name}` | 204; the model is gone at once (the MWRS cascades `Background`, its works drain out of sight) | `Models/DeleteModel` with the `If-Match` version as `resource_version`; 404 when absent, 409 on a stale `If-Match`, 428 without `If-Match`, 412 while a catalog entry, a subscription or an auth policy references the model (on the fake, subscriptions and auth policies block it; catalog entries don't exist yet) |
 | GET | `/api/v1/capabilities` | `{manifestWorkReplicaSetEnabled, observabilityInstalled, acmVersion}` | `AiGrid/GetHubCapabilities`; 501 against a backend without the RPC, which a client reads as "unknown" |
-| GET, POST | `/perses/api/<Perses API path>` | Perses's own answer, status and body unchanged, without `Set-Cookie` | none; the Monitoring page's relay to the hub's Perses (`PERSES_URL`), see "The Perses relay" |
+| GET, POST | `/perses/api/<Perses API path>` | Perses's own answer, status and body unchanged, with only its `Content-Type`, `Content-Encoding`, `Content-Length`, `Vary`, `Cache-Control`, `Date`, `Age` and `Expires` headers; a redirect from Perses is 502 | none; the Monitoring page's relay to the hub's Perses (`PERSES_URL`), see "The Perses relay" |
 | GET | `/api/v1/locations` | `string[]`: the `location` labels a model can be placed on, in the backend's order | `Models/ListLocations` (proposal P7, `mock/proto/README.md`) |
 | GET | `/api/v1/subscriptions` | `Subscription[]` in the backend's order; takes no query parameters (any is 422 `the subscriptions list takes no query parameters; filter, sort and page it in the client`) | `Subscriptions/ListSubscriptions` |
 | GET | `/api/v1/subscriptions/{name}` | `ETag: "<resourceVersion>"`, `{subscription, authPolicies, meteringMetadata?, modelRegistrations, modelRefs}`: the subscription, the authorization policies that cover its models, `meteringMetadata`, the subscription's `tokenMetadata` again, as the PoC's SubscriptionInfoResponse has it (omitted when the subscription has none), the status of each referenced model's registration, and the referenced models in the `Model` JSON | `Subscriptions/GetSubscription`; 404 with the backend's message when absent |
@@ -551,36 +551,94 @@ Observability page does (odh-dashboard `packages/observability`): the browser ca
 `/perses/api`, and the server forwards the call with the user's own token
 (`bff/internal/perses`). It is transport like the rest of the BFF. Perses authenticates the token
 and authorizes each project (the Cluster Observability Operator's Perses uses Kubernetes authn
-and authz: projects are namespaces), and its datasource proxy runs the queries. What the relay
-owns is the boundary:
+and authz: projects are namespaces), and its datasource proxy runs the queries.
+
+**Where the caller's token goes.** The token reaches Perses, and does not stop there. With
+Kubernetes authorization, Perses's datasource proxy sends the caller's `Authorization` header
+unchanged to the datasource's URL (perses `internal/api/impl/proxy`,
+`forwardCallerAuthorization`). So a query through a datasource hands a provider admin's hub token
+to whatever server that datasource names, and whoever can write the datasource chooses that
+server. That is why the relay reads one project, `PERSES_PROJECT` (required with `PERSES_URL`),
+and the global datasources, and nothing else: not every project's dashboard list, not another
+project, and not a datasource that a dashboard defines inside itself. The relay can't check
+where a datasource points, so the operator must make sure that only provider admins can write
+that project's dashboards and datasources, and that the global datasources point only at the
+hub's own Thanos and Loki.
+
+What the relay owns is the boundary:
 
 - Only the provider-admin check's callers pass, as on `/api/v1` (401 without a token, 403 for a
   non-admin), until Perses or the backend can tell provider views from tenant ones: an
   organization admin must never reach the provider dashboards.
-- Only the reads the Perses React components make: `GET /api/v1/dashboards`,
-  `/api/v1/projects/{p}/dashboards[/{d}]`, `/api/v1/projects/{p}/datasources[/{d}]`,
-  `/api/v1/globaldatasources[/{d}]`, and the Prometheus and Loki query APIs behind a datasource's
-  proxy (`/proxy/projects/{p}/[dashboards/{d}/]datasources/{d}/api/v1/query…`,
-  `/proxy/globaldatasources/{d}/…`). Any other path is 404; a method other than `GET` is 405,
-  except `POST` on a query path, which the Prometheus plugin sends as a form
+- Only the reads the Perses React components make, in the configured project `{P}`:
+  `GET /api/v1/projects/{P}/dashboards[/{d}]`, `/api/v1/projects/{P}/datasources[/{d}]`,
+  `/api/v1/globaldatasources[/{d}]`, and the Prometheus and Loki query APIs behind those
+  datasources' proxies (`/proxy/projects/{P}/datasources/{d}/api/v1/query…`,
+  `/proxy/globaldatasources/{d}/…`). Any other path is 404, `/api/v1/dashboards`, another
+  project and `/proxy/projects/{P}/dashboards/{d}/datasources/…` included; a method other than
+  `GET` is 405, except `POST` on a query path, which the Prometheus plugin sends as a form
   (`application/x-www-form-urlencoded`, else 415; at most 1 MiB, else 413). A path with an
   encoded slash, a dot segment or a doubled slash is 404, so Perses never sees another path than
-  the one checked.
-- Only `Accept`, `Accept-Language`, `Content-Type` and `Authorization: Bearer <the caller's
-  token>` reach Perses: no cookies, no proxy identity headers, no client-sent `Authorization`.
-  Perses's `Set-Cookie` is dropped.
+  the one checked. `PERSES_PROJECT` must itself be one path segment of letters, digits, `-`, `_`
+  and `.`, or the BFF doesn't start.
+- Only `Accept`, `Accept-Encoding`, `Accept-Language`, `Content-Type` and `Authorization: Bearer
+  <the caller's token>` reach Perses: no cookies, no proxy identity headers, no client-sent
+  `Authorization`. With the browser's `Accept-Encoding`, a compressed answer passes through as
+  Perses sent it.
+- Only Perses's `Content-Type`, `Content-Encoding`, `Content-Length`, `Vary`, `Cache-Control`,
+  and the `Date`, `Age` and `Expires` a cache needs to tell how fresh an answer is, reach the browser, plus the relay's own `X-Content-Type-Options: nosniff` and a sandbox
+  `Content-Security-Policy`. Everything else stays behind: a `Set-Cookie` for the console's origin,
+  a CORS grant (the console reads these answers from its own origin, so it would only open them to
+  other sites), a datasource's `WWW-Authenticate` challenge (the browser would ask for a password on
+  the console's origin), and a `Refresh` or `Link` that would send the browser elsewhere. A 3xx
+  from Perses is 502 "the hub's Perses answered with a redirect, which the console doesn't follow",
+  so its `Location` never reaches the browser either; the relay sends no conditional request, so
+  Perses has no reason to answer 304.
+  Nor do an informational answer (a `103 Early Hints` and its `Link`) or trailers, which Go's
+  reverse proxy forwards outside the final answer's headers.
 - Without `PERSES_URL`, every `/perses/api` path is 404 "monitoring is not configured on this
   console" and `GET /config` says `monitoring.enabled: false`.
 
 Settings: `PERSES_URL` (https; `http://` only for loopback unless `PERSES_INSECURE=true`),
 `PERSES_CA_FILE` (the hub's service CA for the operator's Perses), `PERSES_SERVER_NAME` (for a
 port-forward to `127.0.0.1`), `PERSES_TIMEOUT` (30s, at most 50s, for the exchange with Perses from connecting to the last byte of its answer: past it the relay answers 504, or cuts an answer already started; the ceiling keeps it, with the provider-admin check before it, inside the server's 60s write timeout, which also cuts a browser that stops reading),
-`PERSES_PROJECT`. To turn Monitoring on in the hub pod, set `PERSES_URL` to
-`https://perses.openshift-cluster-observability-operator.svc:8080` and `PERSES_CA_FILE` to the
-service CA (`/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt` in an OpenShift pod):
-the operator's Perses has a service-CA certificate, so without the CA file the relay answers 502.
-`manifests/base` sets neither yet, so a deployed console has Monitoring off. `make start` forwards
-that Service when your login may (`hack/forward-perses.sh`).
+`PERSES_PROJECT` (required with `PERSES_URL`). To turn Monitoring on in the hub pod, set
+`PERSES_URL` to `https://perses.openshift-cluster-observability-operator.svc:8080`,
+`PERSES_PROJECT`, and `PERSES_CA_FILE` to the service CA
+(`/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt` in an OpenShift pod): the
+operator's Perses has a service-CA certificate, so without the CA file the relay answers 502.
+The chart sets them from `console.perses` (`url`, `project`, and `caFile`, which defaults to that
+service CA), and fails to render with a `url` and no `project`; its default `url` is empty, as
+`manifests/base` sets neither, so a deployed console has Monitoring off until its values set
+`url`. `make start` forwards that Service when `PERSES_PROJECT` is set and your login may
+(`hack/forward-perses.sh`); without `PERSES_PROJECT` it runs with Monitoring off. A `PERSES_URL`
+you set yourself without `PERSES_PROJECT` stops the BFF at startup.
+
+What a dashboard needs to appear on the page, for the team that writes them:
+
+- It is a `PersesDashboard` in `PERSES_PROJECT` (the chart's `console.perses.project`) whose name
+  starts with `dashboard-`, such as `dashboard-usage`. The prefix is how the console tells the
+  dashboards meant as tabs from anything else kept in the project; the tab shows the dashboard's
+  display name, or its name, and tabs are ordered by name.
+- Its queries name a `PersesDatasource` in the same project or a `PersesGlobalDatasource` (by kind,
+  or kind and name; one marked `default: true` is used when a query names only the kind), which
+  reaches Prometheus or Loki through its `proxy`, not `directUrl`: the browser can't reach the
+  hub's services. A datasource defined inside the dashboard itself fails in its panel.
+- Its panels are among the bundled ones listed below.
+- Only provider admins may create or edit the `PersesDashboard`s and `PersesDatasource`s in that
+  project and the `PersesGlobalDatasource`s: Perses sends the signed-in admin's hub token to every
+  datasource it queries, so whoever can point a datasource somewhere can collect that token.
+
+The page (`frontend/src/pages/monitoring`): with `monitoring.enabled`, `/monitoring` lists the
+dashboards of `monitoring.persesProject` through the relay and shows each `dashboard-*` one as a
+tab, ordered by name and selected with `?dashboard=<name>`. A panel whose datasource the dashboard
+defines itself shows an error in the panel instead of querying it. It renders the selected one with
+Perses's own React components and the plugins bundled in `persesPlugins.ts` (Prometheus and
+Loki datasources and queries; time series, stat, table, gauge, pie and markdown panels), loaded
+with the page only. Not the bar chart: its tooltip is HTML built from unescaped series names, which
+are label values. Not the logs table either: its 0.54-compatible package imports a stylesheet it
+doesn't ship. Without
+`monitoring.enabled`, `/monitoring` keeps the AI Grid overview's metrics (`Grid/GetOverview`).
 
 ### Waiting on backend RPCs
 

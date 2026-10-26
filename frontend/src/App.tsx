@@ -17,7 +17,7 @@ import {
   ToolbarContent,
   ToolbarItem,
 } from '@patternfly/react-core';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import type { ConsoleService } from './api/ConsoleService';
 import { AppRoutes } from './AppRoutes';
@@ -95,9 +95,24 @@ export const App: React.FC<Props> = ({ service: given, navigation = browserNavig
       : configError
         ? 'unknown'
         : 'checking';
+  // One check at a time, so a dashboard whose panels all answer 401 asks once. The user's 401
+  // goes through watchSession like any other; any other answer leaves the session as it is.
+  const checking = useRef(false);
+  const checkSession = useCallback(() => {
+    if (checking.current || sessionEnded) {
+      return;
+    }
+    checking.current = true;
+    void service
+      .getUser()
+      .catch(() => undefined)
+      .finally(() => {
+        checking.current = false;
+      });
+  }, [service, sessionEnded]);
   const session = useMemo(
-    () => ({ user, userLoaded, userError, config, configError, sessionEnded }),
-    [user, userLoaded, userError, config, configError, sessionEnded],
+    () => ({ user, userLoaded, userError, config, configError, sessionEnded, checkSession }),
+    [user, userLoaded, userError, config, configError, sessionEnded, checkSession],
   );
   const { pathname, search, hash } = useLocation();
   const signInAgain = signInAgainUrl(pathname + search + hash);

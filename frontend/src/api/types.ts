@@ -25,7 +25,7 @@ export type ConsoleConfig = {
 export type MonitoringConfig = {
   /** The BFF relays /perses/api to the hub's Perses; off when it has no PERSES_URL. */
   enabled: boolean;
-  /** The Perses project whose `dashboard-*` objects are the Monitoring tabs; empty for every project. */
+  /** The one Perses project the relay reads, whose `dashboard-*` objects are the Monitoring tabs; set whenever Monitoring is on. */
   persesProject: string;
 };
 

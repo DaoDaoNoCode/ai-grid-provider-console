@@ -17,6 +17,12 @@ import (
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/perses"
 )
 
+// persesProject is the Perses project the test relays read, and persesDashboards its list.
+const (
+	persesProject    = "ai-grid-monitoring"
+	persesDashboards = "/perses/api/api/v1/projects/" + persesProject + "/dashboards"
+)
+
 // persesUpstream stands in for the hub's Perses and records the Authorization it got.
 func persesUpstream(t *testing.T) (*perses.Relay, *[]string) {
 	t.Helper()
@@ -28,7 +34,7 @@ func persesUpstream(t *testing.T) (*perses.Relay, *[]string) {
 	}))
 	t.Cleanup(srv.Close)
 	// A loopback http:// target, as for a port-forward in development.
-	relay, err := perses.New(perses.Config{URL: srv.URL})
+	relay, err := perses.New(perses.Config{URL: srv.URL, Project: persesProject})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +44,7 @@ func persesUpstream(t *testing.T) (*perses.Relay, *[]string) {
 func TestPersesRelayCarriesTheCallersToken(t *testing.T) {
 	relay, auth := persesUpstream(t)
 	app := newTestApp(t, testConfig(t), nil).WithPerses(relay)
-	rec := serve(app, asUser(http.MethodGet, "/perses/api/api/v1/dashboards"))
+	rec := serve(app, asUser(http.MethodGet, persesDashboards))
 	if rec.Code != http.StatusOK || rec.Body.String() != `[]` {
 		t.Fatalf("got %d %q, want Perses's answer", rec.Code, rec.Body)
 	}
@@ -53,18 +59,18 @@ func TestPersesRelayIsForProviderAdminsOnly(t *testing.T) {
 	relay, auth := persesUpstream(t)
 
 	app := newTestApp(t, testConfig(t), nil).WithPerses(relay)
-	if rec := serve(app, httptest.NewRequest(http.MethodGet, "/perses/api/api/v1/dashboards", nil)); rec.Code != http.StatusUnauthorized {
+	if rec := serve(app, httptest.NewRequest(http.MethodGet, persesDashboards, nil)); rec.Code != http.StatusUnauthorized {
 		t.Errorf("no token: got %d, want 401", rec.Code)
 	}
 
 	viewer := newTestAppWithHub(t, testConfig(t), nil, &fakeHub{allowed: false}).WithPerses(relay)
-	rec := serve(viewer, asUser(http.MethodGet, "/perses/api/api/v1/dashboards"))
+	rec := serve(viewer, asUser(http.MethodGet, persesDashboards))
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("not a provider admin: got %d, want 403", rec.Code)
 	}
 
 	expired := newTestAppWithHub(t, testConfig(t), nil, &fakeHub{status: http.StatusUnauthorized}).WithPerses(relay)
-	if rec := serve(expired, asUser(http.MethodGet, "/perses/api/api/v1/dashboards")); rec.Code != http.StatusUnauthorized {
+	if rec := serve(expired, asUser(http.MethodGet, persesDashboards)); rec.Code != http.StatusUnauthorized {
 		t.Errorf("token the hub rejects: got %d, want 401", rec.Code)
 	}
 
@@ -76,7 +82,7 @@ func TestPersesRelayIsForProviderAdminsOnly(t *testing.T) {
 func TestPersesRelayRefusesWrites(t *testing.T) {
 	relay, auth := persesUpstream(t)
 	app := newTestApp(t, testConfig(t), nil).WithPerses(relay)
-	rec := serve(app, asUser(http.MethodDelete, "/perses/api/api/v1/projects/p/dashboards/d"))
+	rec := serve(app, asUser(http.MethodDelete, persesDashboards+"/d"))
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("got %d, want 405", rec.Code)
 	}
@@ -87,7 +93,7 @@ func TestPersesRelayRefusesWrites(t *testing.T) {
 
 func TestMonitoringOffWithoutPerses(t *testing.T) {
 	app := newTestApp(t, testConfig(t), nil)
-	rec := serve(app, asUser(http.MethodGet, "/perses/api/api/v1/dashboards"))
+	rec := serve(app, asUser(http.MethodGet, persesDashboards))
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("got %d, want 404", rec.Code)
 	}
@@ -104,11 +110,11 @@ func TestMonitoringOffWithoutPerses(t *testing.T) {
 func TestConfigReportsMonitoring(t *testing.T) {
 	relay, _ := persesUpstream(t)
 	cfg := testConfig(t)
-	cfg.PersesProject = "ai-grid-monitoring"
+	cfg.PersesProject = persesProject
 	app := newTestApp(t, cfg, nil).WithPerses(relay)
 	var got ConsoleConfig
 	decodeData(t, serve(app, asUser(http.MethodGet, "/api/v1/config")), &got)
-	if !got.Monitoring.Enabled || got.Monitoring.PersesProject != "ai-grid-monitoring" {
+	if !got.Monitoring.Enabled || got.Monitoring.PersesProject != persesProject {
 		t.Errorf("monitoring = %+v, want enabled with project ai-grid-monitoring", got.Monitoring)
 	}
 }
@@ -144,7 +150,7 @@ func TestPersesAnswerCutAtTheTimeout(t *testing.T) {
 	}))
 	defer upstream.Close()
 	defer close(stall)
-	relay, err := perses.New(perses.Config{URL: upstream.URL, Timeout: 100 * time.Millisecond})
+	relay, err := perses.New(perses.Config{URL: upstream.URL, Project: persesProject, Timeout: 100 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +158,7 @@ func TestPersesAnswerCutAtTheTimeout(t *testing.T) {
 	app := NewApp(testConfig(t), slog.New(slog.NewTextHandler(logs, nil)), backendtest.Start(t, &backendtest.Fake{}), startHub(t, &fakeHub{allowed: true})).WithPerses(relay)
 	srv := httptest.NewServer(app.Handler())
 
-	in := asUser(http.MethodGet, "/perses/api/api/v1/dashboards")
+	in := asUser(http.MethodGet, persesDashboards)
 	// Far past the relay's timeout: if the relay stops cutting the exchange, fail rather than hang.
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
