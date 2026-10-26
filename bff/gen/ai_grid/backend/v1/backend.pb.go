@@ -1,7 +1,9 @@
-// Stopgap: the messages of the backend's real ai_grid.v1 Clusters and
-// Tenants services, copied from ai-grid-provider-backend proto/ai_grid/v1 at 8c1a1bc (PR 16)
-// (clusters_service, managed_cluster_type, metadata_type, tenant_type, tenants_service), so the
-// BFF can call those RPCs. Field numbers, names and types are unchanged; the validation and HTTP
+// Stopgap: the messages of the backend's real ai_grid.v1 Clusters, Tenants and
+// Subscriptions services, copied from ai-grid-provider-backend proto/ai_grid/v1 (clusters and
+// tenants at 8c1a1bc, PR 16; subscriptions at PR 27's merge ref 3428d8d) (clusters_service,
+// condition_type, managed_cluster_type, metadata_type, subscription_type, subscriptions_service,
+// tenant_type, tenants_service), so the BFF can call those RPCs. Fields the BFF doesn't use are
+// left out. Field numbers, names and types are unchanged; the validation and HTTP
 // options are dropped. The package is renamed because the draft in ../../v1 declares the same
 // message names in ai_grid.v1: protobuf is wire-compatible across package names, and the BFF
 // calls the real method paths (/ai_grid.v1.Clusters/List ...) itself (bff/internal/backend/v1.go).
@@ -30,6 +32,55 @@ const (
 	// Verify that runtime/protoimpl is sufficiently up-to-date.
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
+
+type ConditionStatus int32
+
+const (
+	ConditionStatus_CONDITION_STATUS_UNSPECIFIED ConditionStatus = 0
+	ConditionStatus_CONDITION_STATUS_TRUE        ConditionStatus = 1
+	ConditionStatus_CONDITION_STATUS_FALSE       ConditionStatus = 2
+)
+
+// Enum value maps for ConditionStatus.
+var (
+	ConditionStatus_name = map[int32]string{
+		0: "CONDITION_STATUS_UNSPECIFIED",
+		1: "CONDITION_STATUS_TRUE",
+		2: "CONDITION_STATUS_FALSE",
+	}
+	ConditionStatus_value = map[string]int32{
+		"CONDITION_STATUS_UNSPECIFIED": 0,
+		"CONDITION_STATUS_TRUE":        1,
+		"CONDITION_STATUS_FALSE":       2,
+	}
+)
+
+func (x ConditionStatus) Enum() *ConditionStatus {
+	p := new(ConditionStatus)
+	*p = x
+	return p
+}
+
+func (x ConditionStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ConditionStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_ai_grid_backend_v1_backend_proto_enumTypes[0].Descriptor()
+}
+
+func (ConditionStatus) Type() protoreflect.EnumType {
+	return &file_ai_grid_backend_v1_backend_proto_enumTypes[0]
+}
+
+func (x ConditionStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ConditionStatus.Descriptor instead.
+func (ConditionStatus) EnumDescriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{0}
+}
 
 type Metadata struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
@@ -1275,6 +1326,1510 @@ func (*TenantsDeleteResponse) Descriptor() ([]byte, []int) {
 	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{22}
 }
 
+type Condition struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Type               string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
+	Status             ConditionStatus        `protobuf:"varint,2,opt,name=status,proto3,enum=ai_grid.backend.v1.ConditionStatus" json:"status,omitempty"`
+	LastTransitionTime *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=last_transition_time,json=lastTransitionTime,proto3" json:"last_transition_time,omitempty"`
+	Reason             *string                `protobuf:"bytes,4,opt,name=reason,proto3,oneof" json:"reason,omitempty"`
+	Message            *string                `protobuf:"bytes,5,opt,name=message,proto3,oneof" json:"message,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *Condition) Reset() {
+	*x = Condition{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Condition) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Condition) ProtoMessage() {}
+
+func (x *Condition) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Condition.ProtoReflect.Descriptor instead.
+func (*Condition) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *Condition) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *Condition) GetStatus() ConditionStatus {
+	if x != nil {
+		return x.Status
+	}
+	return ConditionStatus_CONDITION_STATUS_UNSPECIFIED
+}
+
+func (x *Condition) GetLastTransitionTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastTransitionTime
+	}
+	return nil
+}
+
+func (x *Condition) GetReason() string {
+	if x != nil && x.Reason != nil {
+		return *x.Reason
+	}
+	return ""
+}
+
+func (x *Condition) GetMessage() string {
+	if x != nil && x.Message != nil {
+		return *x.Message
+	}
+	return ""
+}
+
+type Subscription struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Metadata      *Metadata              `protobuf:"bytes,2,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	Spec          *SubscriptionSpec      `protobuf:"bytes,3,opt,name=spec,proto3" json:"spec,omitempty"`
+	Status        *SubscriptionStatus    `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Subscription) Reset() {
+	*x = Subscription{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Subscription) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Subscription) ProtoMessage() {}
+
+func (x *Subscription) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Subscription.ProtoReflect.Descriptor instead.
+func (*Subscription) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *Subscription) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Subscription) GetMetadata() *Metadata {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+func (x *Subscription) GetSpec() *SubscriptionSpec {
+	if x != nil {
+		return x.Spec
+	}
+	return nil
+}
+
+func (x *Subscription) GetStatus() *SubscriptionStatus {
+	if x != nil {
+		return x.Status
+	}
+	return nil
+}
+
+type SubscriptionSpec struct {
+	state             protoimpl.MessageState    `protogen:"open.v1"`
+	Owner             *SubscriptionOwner        `protobuf:"bytes,1,opt,name=owner,proto3" json:"owner,omitempty"`
+	ModelRefs         []*SubscriptionModelRef   `protobuf:"bytes,2,rep,name=model_refs,json=modelRefs,proto3" json:"model_refs,omitempty"`
+	Priority          int32                     `protobuf:"varint,3,opt,name=priority,proto3" json:"priority,omitempty"`
+	Organization      *SubscriptionOrganization `protobuf:"bytes,4,opt,name=organization,proto3" json:"organization,omitempty"`
+	TokenMetadata     *TokenMetadata            `protobuf:"bytes,5,opt,name=token_metadata,json=tokenMetadata,proto3" json:"token_metadata,omitempty"`
+	InferencePriority *int32                    `protobuf:"varint,6,opt,name=inference_priority,json=inferencePriority,proto3,oneof" json:"inference_priority,omitempty"`
+	Guardrails        []*GuardrailAttachment    `protobuf:"bytes,7,rep,name=guardrails,proto3" json:"guardrails,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *SubscriptionSpec) Reset() {
+	*x = SubscriptionSpec{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubscriptionSpec) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubscriptionSpec) ProtoMessage() {}
+
+func (x *SubscriptionSpec) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubscriptionSpec.ProtoReflect.Descriptor instead.
+func (*SubscriptionSpec) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *SubscriptionSpec) GetOwner() *SubscriptionOwner {
+	if x != nil {
+		return x.Owner
+	}
+	return nil
+}
+
+func (x *SubscriptionSpec) GetModelRefs() []*SubscriptionModelRef {
+	if x != nil {
+		return x.ModelRefs
+	}
+	return nil
+}
+
+func (x *SubscriptionSpec) GetPriority() int32 {
+	if x != nil {
+		return x.Priority
+	}
+	return 0
+}
+
+func (x *SubscriptionSpec) GetOrganization() *SubscriptionOrganization {
+	if x != nil {
+		return x.Organization
+	}
+	return nil
+}
+
+func (x *SubscriptionSpec) GetTokenMetadata() *TokenMetadata {
+	if x != nil {
+		return x.TokenMetadata
+	}
+	return nil
+}
+
+func (x *SubscriptionSpec) GetInferencePriority() int32 {
+	if x != nil && x.InferencePriority != nil {
+		return *x.InferencePriority
+	}
+	return 0
+}
+
+func (x *SubscriptionSpec) GetGuardrails() []*GuardrailAttachment {
+	if x != nil {
+		return x.Guardrails
+	}
+	return nil
+}
+
+type SubscriptionOrganization struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubscriptionOrganization) Reset() {
+	*x = SubscriptionOrganization{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubscriptionOrganization) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubscriptionOrganization) ProtoMessage() {}
+
+func (x *SubscriptionOrganization) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubscriptionOrganization.ProtoReflect.Descriptor instead.
+func (*SubscriptionOrganization) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *SubscriptionOrganization) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type SubscriptionOwner struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Groups        []string               `protobuf:"bytes,1,rep,name=groups,proto3" json:"groups,omitempty"`
+	Users         []string               `protobuf:"bytes,2,rep,name=users,proto3" json:"users,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubscriptionOwner) Reset() {
+	*x = SubscriptionOwner{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubscriptionOwner) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubscriptionOwner) ProtoMessage() {}
+
+func (x *SubscriptionOwner) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubscriptionOwner.ProtoReflect.Descriptor instead.
+func (*SubscriptionOwner) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *SubscriptionOwner) GetGroups() []string {
+	if x != nil {
+		return x.Groups
+	}
+	return nil
+}
+
+func (x *SubscriptionOwner) GetUsers() []string {
+	if x != nil {
+		return x.Users
+	}
+	return nil
+}
+
+type SubscriptionModelRef struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Name            string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Namespace       string                 `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	TokenRateLimits []*TokenRateLimit      `protobuf:"bytes,3,rep,name=token_rate_limits,json=tokenRateLimits,proto3" json:"token_rate_limits,omitempty"`
+	Unlimited       bool                   `protobuf:"varint,4,opt,name=unlimited,proto3" json:"unlimited,omitempty"`
+	BillingRate     *BillingRate           `protobuf:"bytes,5,opt,name=billing_rate,json=billingRate,proto3" json:"billing_rate,omitempty"`
+	Guardrails      []*GuardrailAttachment `protobuf:"bytes,6,rep,name=guardrails,proto3" json:"guardrails,omitempty"`
+	DisplayName     string                 `protobuf:"bytes,7,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Description     string                 `protobuf:"bytes,8,opt,name=description,proto3" json:"description,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *SubscriptionModelRef) Reset() {
+	*x = SubscriptionModelRef{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubscriptionModelRef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubscriptionModelRef) ProtoMessage() {}
+
+func (x *SubscriptionModelRef) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubscriptionModelRef.ProtoReflect.Descriptor instead.
+func (*SubscriptionModelRef) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *SubscriptionModelRef) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *SubscriptionModelRef) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *SubscriptionModelRef) GetTokenRateLimits() []*TokenRateLimit {
+	if x != nil {
+		return x.TokenRateLimits
+	}
+	return nil
+}
+
+func (x *SubscriptionModelRef) GetUnlimited() bool {
+	if x != nil {
+		return x.Unlimited
+	}
+	return false
+}
+
+func (x *SubscriptionModelRef) GetBillingRate() *BillingRate {
+	if x != nil {
+		return x.BillingRate
+	}
+	return nil
+}
+
+func (x *SubscriptionModelRef) GetGuardrails() []*GuardrailAttachment {
+	if x != nil {
+		return x.Guardrails
+	}
+	return nil
+}
+
+func (x *SubscriptionModelRef) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *SubscriptionModelRef) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+type TokenRateLimit struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Limit         int64                  `protobuf:"varint,1,opt,name=limit,proto3" json:"limit,omitempty"`
+	Window        string                 `protobuf:"bytes,2,opt,name=window,proto3" json:"window,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TokenRateLimit) Reset() {
+	*x = TokenRateLimit{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TokenRateLimit) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TokenRateLimit) ProtoMessage() {}
+
+func (x *TokenRateLimit) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TokenRateLimit.ProtoReflect.Descriptor instead.
+func (*TokenRateLimit) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *TokenRateLimit) GetLimit() int64 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *TokenRateLimit) GetWindow() string {
+	if x != nil {
+		return x.Window
+	}
+	return ""
+}
+
+type BillingRate struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PerToken      string                 `protobuf:"bytes,1,opt,name=per_token,json=perToken,proto3" json:"per_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BillingRate) Reset() {
+	*x = BillingRate{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BillingRate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BillingRate) ProtoMessage() {}
+
+func (x *BillingRate) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BillingRate.ProtoReflect.Descriptor instead.
+func (*BillingRate) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *BillingRate) GetPerToken() string {
+	if x != nil {
+		return x.PerToken
+	}
+	return ""
+}
+
+type TokenMetadata struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CostCenter    string                 `protobuf:"bytes,2,opt,name=cost_center,json=costCenter,proto3" json:"cost_center,omitempty"`
+	Labels        map[string]string      `protobuf:"bytes,3,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TokenMetadata) Reset() {
+	*x = TokenMetadata{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TokenMetadata) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TokenMetadata) ProtoMessage() {}
+
+func (x *TokenMetadata) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TokenMetadata.ProtoReflect.Descriptor instead.
+func (*TokenMetadata) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *TokenMetadata) GetCostCenter() string {
+	if x != nil {
+		return x.CostCenter
+	}
+	return ""
+}
+
+func (x *TokenMetadata) GetLabels() map[string]string {
+	if x != nil {
+		return x.Labels
+	}
+	return nil
+}
+
+type GuardrailAttachment struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RefName       string                 `protobuf:"bytes,1,opt,name=ref_name,json=refName,proto3" json:"ref_name,omitempty"`
+	Checks        []string               `protobuf:"bytes,2,rep,name=checks,proto3" json:"checks,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GuardrailAttachment) Reset() {
+	*x = GuardrailAttachment{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GuardrailAttachment) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GuardrailAttachment) ProtoMessage() {}
+
+func (x *GuardrailAttachment) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GuardrailAttachment.ProtoReflect.Descriptor instead.
+func (*GuardrailAttachment) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *GuardrailAttachment) GetRefName() string {
+	if x != nil {
+		return x.RefName
+	}
+	return ""
+}
+
+func (x *GuardrailAttachment) GetChecks() []string {
+	if x != nil {
+		return x.Checks
+	}
+	return nil
+}
+
+type SubscriptionStatus struct {
+	state                  protoimpl.MessageState  `protogen:"open.v1"`
+	Phase                  string                  `protobuf:"bytes,1,opt,name=phase,proto3" json:"phase,omitempty"`
+	Conditions             []*Condition            `protobuf:"bytes,2,rep,name=conditions,proto3" json:"conditions,omitempty"`
+	ModelRefStatuses       []*ResourceRefStatus    `protobuf:"bytes,3,rep,name=model_ref_statuses,json=modelRefStatuses,proto3" json:"model_ref_statuses,omitempty"`
+	TokenRateLimitStatuses []*TokenRateLimitStatus `protobuf:"bytes,4,rep,name=token_rate_limit_statuses,json=tokenRateLimitStatuses,proto3" json:"token_rate_limit_statuses,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *SubscriptionStatus) Reset() {
+	*x = SubscriptionStatus{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubscriptionStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubscriptionStatus) ProtoMessage() {}
+
+func (x *SubscriptionStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubscriptionStatus.ProtoReflect.Descriptor instead.
+func (*SubscriptionStatus) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *SubscriptionStatus) GetPhase() string {
+	if x != nil {
+		return x.Phase
+	}
+	return ""
+}
+
+func (x *SubscriptionStatus) GetConditions() []*Condition {
+	if x != nil {
+		return x.Conditions
+	}
+	return nil
+}
+
+func (x *SubscriptionStatus) GetModelRefStatuses() []*ResourceRefStatus {
+	if x != nil {
+		return x.ModelRefStatuses
+	}
+	return nil
+}
+
+func (x *SubscriptionStatus) GetTokenRateLimitStatuses() []*TokenRateLimitStatus {
+	if x != nil {
+		return x.TokenRateLimitStatuses
+	}
+	return nil
+}
+
+type ResourceRefStatus struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Namespace     string                 `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Ready         bool                   `protobuf:"varint,3,opt,name=ready,proto3" json:"ready,omitempty"`
+	Reason        string                 `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
+	Message       string                 `protobuf:"bytes,5,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResourceRefStatus) Reset() {
+	*x = ResourceRefStatus{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResourceRefStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResourceRefStatus) ProtoMessage() {}
+
+func (x *ResourceRefStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResourceRefStatus.ProtoReflect.Descriptor instead.
+func (*ResourceRefStatus) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *ResourceRefStatus) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ResourceRefStatus) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *ResourceRefStatus) GetReady() bool {
+	if x != nil {
+		return x.Ready
+	}
+	return false
+}
+
+func (x *ResourceRefStatus) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *ResourceRefStatus) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+type TokenRateLimitStatus struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ref           *ResourceRefStatus     `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
+	Model         string                 `protobuf:"bytes,2,opt,name=model,proto3" json:"model,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TokenRateLimitStatus) Reset() {
+	*x = TokenRateLimitStatus{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TokenRateLimitStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TokenRateLimitStatus) ProtoMessage() {}
+
+func (x *TokenRateLimitStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TokenRateLimitStatus.ProtoReflect.Descriptor instead.
+func (*TokenRateLimitStatus) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *TokenRateLimitStatus) GetRef() *ResourceRefStatus {
+	if x != nil {
+		return x.Ref
+	}
+	return nil
+}
+
+func (x *TokenRateLimitStatus) GetModel() string {
+	if x != nil {
+		return x.Model
+	}
+	return ""
+}
+
+type AuthPolicy struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Metadata      *Metadata              `protobuf:"bytes,2,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	SubjectGroups []string               `protobuf:"bytes,3,rep,name=subject_groups,json=subjectGroups,proto3" json:"subject_groups,omitempty"`
+	ModelRefs     []*AuthPolicyModelRef  `protobuf:"bytes,5,rep,name=model_refs,json=modelRefs,proto3" json:"model_refs,omitempty"`
+	Phase         string                 `protobuf:"bytes,6,opt,name=phase,proto3" json:"phase,omitempty"`
+	Conditions    []*Condition           `protobuf:"bytes,7,rep,name=conditions,proto3" json:"conditions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AuthPolicy) Reset() {
+	*x = AuthPolicy{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuthPolicy) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuthPolicy) ProtoMessage() {}
+
+func (x *AuthPolicy) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuthPolicy.ProtoReflect.Descriptor instead.
+func (*AuthPolicy) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *AuthPolicy) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *AuthPolicy) GetMetadata() *Metadata {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+func (x *AuthPolicy) GetSubjectGroups() []string {
+	if x != nil {
+		return x.SubjectGroups
+	}
+	return nil
+}
+
+func (x *AuthPolicy) GetModelRefs() []*AuthPolicyModelRef {
+	if x != nil {
+		return x.ModelRefs
+	}
+	return nil
+}
+
+func (x *AuthPolicy) GetPhase() string {
+	if x != nil {
+		return x.Phase
+	}
+	return ""
+}
+
+func (x *AuthPolicy) GetConditions() []*Condition {
+	if x != nil {
+		return x.Conditions
+	}
+	return nil
+}
+
+type AuthPolicyModelRef struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Namespace     string                 `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AuthPolicyModelRef) Reset() {
+	*x = AuthPolicyModelRef{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuthPolicyModelRef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuthPolicyModelRef) ProtoMessage() {}
+
+func (x *AuthPolicyModelRef) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuthPolicyModelRef.ProtoReflect.Descriptor instead.
+func (*AuthPolicyModelRef) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *AuthPolicyModelRef) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *AuthPolicyModelRef) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+type ModelRegistration struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Namespace     string                 `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Phase         string                 `protobuf:"bytes,3,opt,name=phase,proto3" json:"phase,omitempty"`
+	Endpoint      string                 `protobuf:"bytes,4,opt,name=endpoint,proto3" json:"endpoint,omitempty"`
+	Conditions    []*Condition           `protobuf:"bytes,5,rep,name=conditions,proto3" json:"conditions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ModelRegistration) Reset() {
+	*x = ModelRegistration{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ModelRegistration) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ModelRegistration) ProtoMessage() {}
+
+func (x *ModelRegistration) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ModelRegistration.ProtoReflect.Descriptor instead.
+func (*ModelRegistration) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *ModelRegistration) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ModelRegistration) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *ModelRegistration) GetPhase() string {
+	if x != nil {
+		return x.Phase
+	}
+	return ""
+}
+
+func (x *ModelRegistration) GetEndpoint() string {
+	if x != nil {
+		return x.Endpoint
+	}
+	return ""
+}
+
+func (x *ModelRegistration) GetConditions() []*Condition {
+	if x != nil {
+		return x.Conditions
+	}
+	return nil
+}
+
+type SubscriptionsListRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubscriptionsListRequest) Reset() {
+	*x = SubscriptionsListRequest{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubscriptionsListRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubscriptionsListRequest) ProtoMessage() {}
+
+func (x *SubscriptionsListRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubscriptionsListRequest.ProtoReflect.Descriptor instead.
+func (*SubscriptionsListRequest) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{39}
+}
+
+type SubscriptionsListResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Items         []*Subscription        `protobuf:"bytes,3,rep,name=items,proto3" json:"items,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubscriptionsListResponse) Reset() {
+	*x = SubscriptionsListResponse{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubscriptionsListResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubscriptionsListResponse) ProtoMessage() {}
+
+func (x *SubscriptionsListResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubscriptionsListResponse.ProtoReflect.Descriptor instead.
+func (*SubscriptionsListResponse) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *SubscriptionsListResponse) GetItems() []*Subscription {
+	if x != nil {
+		return x.Items
+	}
+	return nil
+}
+
+type SubscriptionsGetRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubscriptionsGetRequest) Reset() {
+	*x = SubscriptionsGetRequest{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubscriptionsGetRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubscriptionsGetRequest) ProtoMessage() {}
+
+func (x *SubscriptionsGetRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubscriptionsGetRequest.ProtoReflect.Descriptor instead.
+func (*SubscriptionsGetRequest) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *SubscriptionsGetRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type SubscriptionsGetResponse struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Object             *Subscription          `protobuf:"bytes,1,opt,name=object,proto3" json:"object,omitempty"`
+	AuthPolicies       []*AuthPolicy          `protobuf:"bytes,2,rep,name=auth_policies,json=authPolicies,proto3" json:"auth_policies,omitempty"`
+	ModelRegistrations []*ModelRegistration   `protobuf:"bytes,3,rep,name=model_registrations,json=modelRegistrations,proto3" json:"model_registrations,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *SubscriptionsGetResponse) Reset() {
+	*x = SubscriptionsGetResponse{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubscriptionsGetResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubscriptionsGetResponse) ProtoMessage() {}
+
+func (x *SubscriptionsGetResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubscriptionsGetResponse.ProtoReflect.Descriptor instead.
+func (*SubscriptionsGetResponse) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{42}
+}
+
+func (x *SubscriptionsGetResponse) GetObject() *Subscription {
+	if x != nil {
+		return x.Object
+	}
+	return nil
+}
+
+func (x *SubscriptionsGetResponse) GetAuthPolicies() []*AuthPolicy {
+	if x != nil {
+		return x.AuthPolicies
+	}
+	return nil
+}
+
+func (x *SubscriptionsGetResponse) GetModelRegistrations() []*ModelRegistration {
+	if x != nil {
+		return x.ModelRegistrations
+	}
+	return nil
+}
+
+type SubscriptionsCreateRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Object        *Subscription          `protobuf:"bytes,1,opt,name=object,proto3" json:"object,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubscriptionsCreateRequest) Reset() {
+	*x = SubscriptionsCreateRequest{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[43]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubscriptionsCreateRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubscriptionsCreateRequest) ProtoMessage() {}
+
+func (x *SubscriptionsCreateRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[43]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubscriptionsCreateRequest.ProtoReflect.Descriptor instead.
+func (*SubscriptionsCreateRequest) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{43}
+}
+
+func (x *SubscriptionsCreateRequest) GetObject() *Subscription {
+	if x != nil {
+		return x.Object
+	}
+	return nil
+}
+
+type SubscriptionsCreateResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Object        *Subscription          `protobuf:"bytes,1,opt,name=object,proto3" json:"object,omitempty"`
+	AuthPolicy    *AuthPolicy            `protobuf:"bytes,2,opt,name=auth_policy,json=authPolicy,proto3" json:"auth_policy,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubscriptionsCreateResponse) Reset() {
+	*x = SubscriptionsCreateResponse{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[44]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubscriptionsCreateResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubscriptionsCreateResponse) ProtoMessage() {}
+
+func (x *SubscriptionsCreateResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[44]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubscriptionsCreateResponse.ProtoReflect.Descriptor instead.
+func (*SubscriptionsCreateResponse) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{44}
+}
+
+func (x *SubscriptionsCreateResponse) GetObject() *Subscription {
+	if x != nil {
+		return x.Object
+	}
+	return nil
+}
+
+func (x *SubscriptionsCreateResponse) GetAuthPolicy() *AuthPolicy {
+	if x != nil {
+		return x.AuthPolicy
+	}
+	return nil
+}
+
+type SubscriptionsUpdateRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Object        *Subscription          `protobuf:"bytes,1,opt,name=object,proto3" json:"object,omitempty"`
+	UpdateMask    *fieldmaskpb.FieldMask `protobuf:"bytes,2,opt,name=update_mask,json=updateMask,proto3" json:"update_mask,omitempty"`
+	Lock          bool                   `protobuf:"varint,3,opt,name=lock,proto3" json:"lock,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubscriptionsUpdateRequest) Reset() {
+	*x = SubscriptionsUpdateRequest{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubscriptionsUpdateRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubscriptionsUpdateRequest) ProtoMessage() {}
+
+func (x *SubscriptionsUpdateRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubscriptionsUpdateRequest.ProtoReflect.Descriptor instead.
+func (*SubscriptionsUpdateRequest) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{45}
+}
+
+func (x *SubscriptionsUpdateRequest) GetObject() *Subscription {
+	if x != nil {
+		return x.Object
+	}
+	return nil
+}
+
+func (x *SubscriptionsUpdateRequest) GetUpdateMask() *fieldmaskpb.FieldMask {
+	if x != nil {
+		return x.UpdateMask
+	}
+	return nil
+}
+
+func (x *SubscriptionsUpdateRequest) GetLock() bool {
+	if x != nil {
+		return x.Lock
+	}
+	return false
+}
+
+type SubscriptionsUpdateResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Object        *Subscription          `protobuf:"bytes,1,opt,name=object,proto3" json:"object,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubscriptionsUpdateResponse) Reset() {
+	*x = SubscriptionsUpdateResponse{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubscriptionsUpdateResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubscriptionsUpdateResponse) ProtoMessage() {}
+
+func (x *SubscriptionsUpdateResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubscriptionsUpdateResponse.ProtoReflect.Descriptor instead.
+func (*SubscriptionsUpdateResponse) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *SubscriptionsUpdateResponse) GetObject() *Subscription {
+	if x != nil {
+		return x.Object
+	}
+	return nil
+}
+
+type SubscriptionsDeleteRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubscriptionsDeleteRequest) Reset() {
+	*x = SubscriptionsDeleteRequest{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubscriptionsDeleteRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubscriptionsDeleteRequest) ProtoMessage() {}
+
+func (x *SubscriptionsDeleteRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubscriptionsDeleteRequest.ProtoReflect.Descriptor instead.
+func (*SubscriptionsDeleteRequest) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{47}
+}
+
+func (x *SubscriptionsDeleteRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type SubscriptionsDeleteResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubscriptionsDeleteResponse) Reset() {
+	*x = SubscriptionsDeleteResponse{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[48]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubscriptionsDeleteResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubscriptionsDeleteResponse) ProtoMessage() {}
+
+func (x *SubscriptionsDeleteResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[48]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubscriptionsDeleteResponse.ProtoReflect.Descriptor instead.
+func (*SubscriptionsDeleteResponse) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{48}
+}
+
 var File_ai_grid_backend_v1_backend_proto protoreflect.FileDescriptor
 
 const file_ai_grid_backend_v1_backend_proto_rawDesc = "" +
@@ -1371,7 +2926,131 @@ const file_ai_grid_backend_v1_backend_proto_rawDesc = "" +
 	"\x14TenantsDeleteRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\x05R\aversion\"\x17\n" +
-	"\x15TenantsDeleteResponseBXZVgithub.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/backend/v1;backendv1b\x06proto3"
+	"\x15TenantsDeleteResponse\"\xfd\x01\n" +
+	"\tCondition\x12\x12\n" +
+	"\x04type\x18\x01 \x01(\tR\x04type\x12;\n" +
+	"\x06status\x18\x02 \x01(\x0e2#.ai_grid.backend.v1.ConditionStatusR\x06status\x12L\n" +
+	"\x14last_transition_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x12lastTransitionTime\x12\x1b\n" +
+	"\x06reason\x18\x04 \x01(\tH\x00R\x06reason\x88\x01\x01\x12\x1d\n" +
+	"\amessage\x18\x05 \x01(\tH\x01R\amessage\x88\x01\x01B\t\n" +
+	"\a_reasonB\n" +
+	"\n" +
+	"\b_message\"\xd2\x01\n" +
+	"\fSubscription\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x128\n" +
+	"\bmetadata\x18\x02 \x01(\v2\x1c.ai_grid.backend.v1.MetadataR\bmetadata\x128\n" +
+	"\x04spec\x18\x03 \x01(\v2$.ai_grid.backend.v1.SubscriptionSpecR\x04spec\x12>\n" +
+	"\x06status\x18\x04 \x01(\v2&.ai_grid.backend.v1.SubscriptionStatusR\x06status\"\xe4\x03\n" +
+	"\x10SubscriptionSpec\x12;\n" +
+	"\x05owner\x18\x01 \x01(\v2%.ai_grid.backend.v1.SubscriptionOwnerR\x05owner\x12G\n" +
+	"\n" +
+	"model_refs\x18\x02 \x03(\v2(.ai_grid.backend.v1.SubscriptionModelRefR\tmodelRefs\x12\x1a\n" +
+	"\bpriority\x18\x03 \x01(\x05R\bpriority\x12P\n" +
+	"\forganization\x18\x04 \x01(\v2,.ai_grid.backend.v1.SubscriptionOrganizationR\forganization\x12H\n" +
+	"\x0etoken_metadata\x18\x05 \x01(\v2!.ai_grid.backend.v1.TokenMetadataR\rtokenMetadata\x122\n" +
+	"\x12inference_priority\x18\x06 \x01(\x05H\x00R\x11inferencePriority\x88\x01\x01\x12G\n" +
+	"\n" +
+	"guardrails\x18\a \x03(\v2'.ai_grid.backend.v1.GuardrailAttachmentR\n" +
+	"guardrailsB\x15\n" +
+	"\x13_inference_priority\"*\n" +
+	"\x18SubscriptionOrganization\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"A\n" +
+	"\x11SubscriptionOwner\x12\x16\n" +
+	"\x06groups\x18\x01 \x03(\tR\x06groups\x12\x14\n" +
+	"\x05users\x18\x02 \x03(\tR\x05users\"\x88\x03\n" +
+	"\x14SubscriptionModelRef\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1c\n" +
+	"\tnamespace\x18\x02 \x01(\tR\tnamespace\x12N\n" +
+	"\x11token_rate_limits\x18\x03 \x03(\v2\".ai_grid.backend.v1.TokenRateLimitR\x0ftokenRateLimits\x12\x1c\n" +
+	"\tunlimited\x18\x04 \x01(\bR\tunlimited\x12B\n" +
+	"\fbilling_rate\x18\x05 \x01(\v2\x1f.ai_grid.backend.v1.BillingRateR\vbillingRate\x12G\n" +
+	"\n" +
+	"guardrails\x18\x06 \x03(\v2'.ai_grid.backend.v1.GuardrailAttachmentR\n" +
+	"guardrails\x12!\n" +
+	"\fdisplay_name\x18\a \x01(\tR\vdisplayName\x12 \n" +
+	"\vdescription\x18\b \x01(\tR\vdescription\">\n" +
+	"\x0eTokenRateLimit\x12\x14\n" +
+	"\x05limit\x18\x01 \x01(\x03R\x05limit\x12\x16\n" +
+	"\x06window\x18\x02 \x01(\tR\x06window\"*\n" +
+	"\vBillingRate\x12\x1b\n" +
+	"\tper_token\x18\x01 \x01(\tR\bperToken\"\xb2\x01\n" +
+	"\rTokenMetadata\x12\x1f\n" +
+	"\vcost_center\x18\x02 \x01(\tR\n" +
+	"costCenter\x12E\n" +
+	"\x06labels\x18\x03 \x03(\v2-.ai_grid.backend.v1.TokenMetadata.LabelsEntryR\x06labels\x1a9\n" +
+	"\vLabelsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"H\n" +
+	"\x13GuardrailAttachment\x12\x19\n" +
+	"\bref_name\x18\x01 \x01(\tR\arefName\x12\x16\n" +
+	"\x06checks\x18\x02 \x03(\tR\x06checks\"\xa3\x02\n" +
+	"\x12SubscriptionStatus\x12\x14\n" +
+	"\x05phase\x18\x01 \x01(\tR\x05phase\x12=\n" +
+	"\n" +
+	"conditions\x18\x02 \x03(\v2\x1d.ai_grid.backend.v1.ConditionR\n" +
+	"conditions\x12S\n" +
+	"\x12model_ref_statuses\x18\x03 \x03(\v2%.ai_grid.backend.v1.ResourceRefStatusR\x10modelRefStatuses\x12c\n" +
+	"\x19token_rate_limit_statuses\x18\x04 \x03(\v2(.ai_grid.backend.v1.TokenRateLimitStatusR\x16tokenRateLimitStatuses\"\x8d\x01\n" +
+	"\x11ResourceRefStatus\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1c\n" +
+	"\tnamespace\x18\x02 \x01(\tR\tnamespace\x12\x14\n" +
+	"\x05ready\x18\x03 \x01(\bR\x05ready\x12\x16\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\x12\x18\n" +
+	"\amessage\x18\x05 \x01(\tR\amessage\"e\n" +
+	"\x14TokenRateLimitStatus\x127\n" +
+	"\x03ref\x18\x01 \x01(\v2%.ai_grid.backend.v1.ResourceRefStatusR\x03ref\x12\x14\n" +
+	"\x05model\x18\x02 \x01(\tR\x05model\"\x99\x02\n" +
+	"\n" +
+	"AuthPolicy\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x128\n" +
+	"\bmetadata\x18\x02 \x01(\v2\x1c.ai_grid.backend.v1.MetadataR\bmetadata\x12%\n" +
+	"\x0esubject_groups\x18\x03 \x03(\tR\rsubjectGroups\x12E\n" +
+	"\n" +
+	"model_refs\x18\x05 \x03(\v2&.ai_grid.backend.v1.AuthPolicyModelRefR\tmodelRefs\x12\x14\n" +
+	"\x05phase\x18\x06 \x01(\tR\x05phase\x12=\n" +
+	"\n" +
+	"conditions\x18\a \x03(\v2\x1d.ai_grid.backend.v1.ConditionR\n" +
+	"conditions\"F\n" +
+	"\x12AuthPolicyModelRef\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1c\n" +
+	"\tnamespace\x18\x02 \x01(\tR\tnamespace\"\xb6\x01\n" +
+	"\x11ModelRegistration\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1c\n" +
+	"\tnamespace\x18\x02 \x01(\tR\tnamespace\x12\x14\n" +
+	"\x05phase\x18\x03 \x01(\tR\x05phase\x12\x1a\n" +
+	"\bendpoint\x18\x04 \x01(\tR\bendpoint\x12=\n" +
+	"\n" +
+	"conditions\x18\x05 \x03(\v2\x1d.ai_grid.backend.v1.ConditionR\n" +
+	"conditions\"\x1a\n" +
+	"\x18SubscriptionsListRequest\"S\n" +
+	"\x19SubscriptionsListResponse\x126\n" +
+	"\x05items\x18\x03 \x03(\v2 .ai_grid.backend.v1.SubscriptionR\x05items\")\n" +
+	"\x17SubscriptionsGetRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xf1\x01\n" +
+	"\x18SubscriptionsGetResponse\x128\n" +
+	"\x06object\x18\x01 \x01(\v2 .ai_grid.backend.v1.SubscriptionR\x06object\x12C\n" +
+	"\rauth_policies\x18\x02 \x03(\v2\x1e.ai_grid.backend.v1.AuthPolicyR\fauthPolicies\x12V\n" +
+	"\x13model_registrations\x18\x03 \x03(\v2%.ai_grid.backend.v1.ModelRegistrationR\x12modelRegistrations\"V\n" +
+	"\x1aSubscriptionsCreateRequest\x128\n" +
+	"\x06object\x18\x01 \x01(\v2 .ai_grid.backend.v1.SubscriptionR\x06object\"\x98\x01\n" +
+	"\x1bSubscriptionsCreateResponse\x128\n" +
+	"\x06object\x18\x01 \x01(\v2 .ai_grid.backend.v1.SubscriptionR\x06object\x12?\n" +
+	"\vauth_policy\x18\x02 \x01(\v2\x1e.ai_grid.backend.v1.AuthPolicyR\n" +
+	"authPolicy\"\xa7\x01\n" +
+	"\x1aSubscriptionsUpdateRequest\x128\n" +
+	"\x06object\x18\x01 \x01(\v2 .ai_grid.backend.v1.SubscriptionR\x06object\x12;\n" +
+	"\vupdate_mask\x18\x02 \x01(\v2\x1a.google.protobuf.FieldMaskR\n" +
+	"updateMask\x12\x12\n" +
+	"\x04lock\x18\x03 \x01(\bR\x04lock\"W\n" +
+	"\x1bSubscriptionsUpdateResponse\x128\n" +
+	"\x06object\x18\x01 \x01(\v2 .ai_grid.backend.v1.SubscriptionR\x06object\",\n" +
+	"\x1aSubscriptionsDeleteRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\x1d\n" +
+	"\x1bSubscriptionsDeleteResponse*j\n" +
+	"\x0fConditionStatus\x12 \n" +
+	"\x1cCONDITION_STATUS_UNSPECIFIED\x10\x00\x12\x19\n" +
+	"\x15CONDITION_STATUS_TRUE\x10\x01\x12\x1a\n" +
+	"\x16CONDITION_STATUS_FALSE\x10\x02BXZVgithub.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/backend/v1;backendv1b\x06proto3"
 
 var (
 	file_ai_grid_backend_v1_backend_proto_rawDescOnce sync.Once
@@ -1385,64 +3064,125 @@ func file_ai_grid_backend_v1_backend_proto_rawDescGZIP() []byte {
 	return file_ai_grid_backend_v1_backend_proto_rawDescData
 }
 
-var file_ai_grid_backend_v1_backend_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
+var file_ai_grid_backend_v1_backend_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_ai_grid_backend_v1_backend_proto_msgTypes = make([]protoimpl.MessageInfo, 52)
 var file_ai_grid_backend_v1_backend_proto_goTypes = []any{
-	(*Metadata)(nil),               // 0: ai_grid.backend.v1.Metadata
-	(*ManagedCluster)(nil),         // 1: ai_grid.backend.v1.ManagedCluster
-	(*ManagedClusterSpec)(nil),     // 2: ai_grid.backend.v1.ManagedClusterSpec
-	(*ManagedClusterStatus)(nil),   // 3: ai_grid.backend.v1.ManagedClusterStatus
-	(*ClustersListRequest)(nil),    // 4: ai_grid.backend.v1.ClustersListRequest
-	(*ClustersListResponse)(nil),   // 5: ai_grid.backend.v1.ClustersListResponse
-	(*ClustersGetRequest)(nil),     // 6: ai_grid.backend.v1.ClustersGetRequest
-	(*ClustersGetResponse)(nil),    // 7: ai_grid.backend.v1.ClustersGetResponse
-	(*ClustersUpdateRequest)(nil),  // 8: ai_grid.backend.v1.ClustersUpdateRequest
-	(*ClustersUpdateResponse)(nil), // 9: ai_grid.backend.v1.ClustersUpdateResponse
-	(*Tenant)(nil),                 // 10: ai_grid.backend.v1.Tenant
-	(*TenantSpec)(nil),             // 11: ai_grid.backend.v1.TenantSpec
-	(*TenantStatus)(nil),           // 12: ai_grid.backend.v1.TenantStatus
-	(*TenantsListRequest)(nil),     // 13: ai_grid.backend.v1.TenantsListRequest
-	(*TenantsListResponse)(nil),    // 14: ai_grid.backend.v1.TenantsListResponse
-	(*TenantsGetRequest)(nil),      // 15: ai_grid.backend.v1.TenantsGetRequest
-	(*TenantsGetResponse)(nil),     // 16: ai_grid.backend.v1.TenantsGetResponse
-	(*TenantsCreateRequest)(nil),   // 17: ai_grid.backend.v1.TenantsCreateRequest
-	(*TenantsCreateResponse)(nil),  // 18: ai_grid.backend.v1.TenantsCreateResponse
-	(*TenantsUpdateRequest)(nil),   // 19: ai_grid.backend.v1.TenantsUpdateRequest
-	(*TenantsUpdateResponse)(nil),  // 20: ai_grid.backend.v1.TenantsUpdateResponse
-	(*TenantsDeleteRequest)(nil),   // 21: ai_grid.backend.v1.TenantsDeleteRequest
-	(*TenantsDeleteResponse)(nil),  // 22: ai_grid.backend.v1.TenantsDeleteResponse
-	nil,                            // 23: ai_grid.backend.v1.Metadata.LabelsEntry
-	nil,                            // 24: ai_grid.backend.v1.Metadata.AnnotationsEntry
-	(*timestamppb.Timestamp)(nil),  // 25: google.protobuf.Timestamp
-	(*fieldmaskpb.FieldMask)(nil),  // 26: google.protobuf.FieldMask
+	(ConditionStatus)(0),                // 0: ai_grid.backend.v1.ConditionStatus
+	(*Metadata)(nil),                    // 1: ai_grid.backend.v1.Metadata
+	(*ManagedCluster)(nil),              // 2: ai_grid.backend.v1.ManagedCluster
+	(*ManagedClusterSpec)(nil),          // 3: ai_grid.backend.v1.ManagedClusterSpec
+	(*ManagedClusterStatus)(nil),        // 4: ai_grid.backend.v1.ManagedClusterStatus
+	(*ClustersListRequest)(nil),         // 5: ai_grid.backend.v1.ClustersListRequest
+	(*ClustersListResponse)(nil),        // 6: ai_grid.backend.v1.ClustersListResponse
+	(*ClustersGetRequest)(nil),          // 7: ai_grid.backend.v1.ClustersGetRequest
+	(*ClustersGetResponse)(nil),         // 8: ai_grid.backend.v1.ClustersGetResponse
+	(*ClustersUpdateRequest)(nil),       // 9: ai_grid.backend.v1.ClustersUpdateRequest
+	(*ClustersUpdateResponse)(nil),      // 10: ai_grid.backend.v1.ClustersUpdateResponse
+	(*Tenant)(nil),                      // 11: ai_grid.backend.v1.Tenant
+	(*TenantSpec)(nil),                  // 12: ai_grid.backend.v1.TenantSpec
+	(*TenantStatus)(nil),                // 13: ai_grid.backend.v1.TenantStatus
+	(*TenantsListRequest)(nil),          // 14: ai_grid.backend.v1.TenantsListRequest
+	(*TenantsListResponse)(nil),         // 15: ai_grid.backend.v1.TenantsListResponse
+	(*TenantsGetRequest)(nil),           // 16: ai_grid.backend.v1.TenantsGetRequest
+	(*TenantsGetResponse)(nil),          // 17: ai_grid.backend.v1.TenantsGetResponse
+	(*TenantsCreateRequest)(nil),        // 18: ai_grid.backend.v1.TenantsCreateRequest
+	(*TenantsCreateResponse)(nil),       // 19: ai_grid.backend.v1.TenantsCreateResponse
+	(*TenantsUpdateRequest)(nil),        // 20: ai_grid.backend.v1.TenantsUpdateRequest
+	(*TenantsUpdateResponse)(nil),       // 21: ai_grid.backend.v1.TenantsUpdateResponse
+	(*TenantsDeleteRequest)(nil),        // 22: ai_grid.backend.v1.TenantsDeleteRequest
+	(*TenantsDeleteResponse)(nil),       // 23: ai_grid.backend.v1.TenantsDeleteResponse
+	(*Condition)(nil),                   // 24: ai_grid.backend.v1.Condition
+	(*Subscription)(nil),                // 25: ai_grid.backend.v1.Subscription
+	(*SubscriptionSpec)(nil),            // 26: ai_grid.backend.v1.SubscriptionSpec
+	(*SubscriptionOrganization)(nil),    // 27: ai_grid.backend.v1.SubscriptionOrganization
+	(*SubscriptionOwner)(nil),           // 28: ai_grid.backend.v1.SubscriptionOwner
+	(*SubscriptionModelRef)(nil),        // 29: ai_grid.backend.v1.SubscriptionModelRef
+	(*TokenRateLimit)(nil),              // 30: ai_grid.backend.v1.TokenRateLimit
+	(*BillingRate)(nil),                 // 31: ai_grid.backend.v1.BillingRate
+	(*TokenMetadata)(nil),               // 32: ai_grid.backend.v1.TokenMetadata
+	(*GuardrailAttachment)(nil),         // 33: ai_grid.backend.v1.GuardrailAttachment
+	(*SubscriptionStatus)(nil),          // 34: ai_grid.backend.v1.SubscriptionStatus
+	(*ResourceRefStatus)(nil),           // 35: ai_grid.backend.v1.ResourceRefStatus
+	(*TokenRateLimitStatus)(nil),        // 36: ai_grid.backend.v1.TokenRateLimitStatus
+	(*AuthPolicy)(nil),                  // 37: ai_grid.backend.v1.AuthPolicy
+	(*AuthPolicyModelRef)(nil),          // 38: ai_grid.backend.v1.AuthPolicyModelRef
+	(*ModelRegistration)(nil),           // 39: ai_grid.backend.v1.ModelRegistration
+	(*SubscriptionsListRequest)(nil),    // 40: ai_grid.backend.v1.SubscriptionsListRequest
+	(*SubscriptionsListResponse)(nil),   // 41: ai_grid.backend.v1.SubscriptionsListResponse
+	(*SubscriptionsGetRequest)(nil),     // 42: ai_grid.backend.v1.SubscriptionsGetRequest
+	(*SubscriptionsGetResponse)(nil),    // 43: ai_grid.backend.v1.SubscriptionsGetResponse
+	(*SubscriptionsCreateRequest)(nil),  // 44: ai_grid.backend.v1.SubscriptionsCreateRequest
+	(*SubscriptionsCreateResponse)(nil), // 45: ai_grid.backend.v1.SubscriptionsCreateResponse
+	(*SubscriptionsUpdateRequest)(nil),  // 46: ai_grid.backend.v1.SubscriptionsUpdateRequest
+	(*SubscriptionsUpdateResponse)(nil), // 47: ai_grid.backend.v1.SubscriptionsUpdateResponse
+	(*SubscriptionsDeleteRequest)(nil),  // 48: ai_grid.backend.v1.SubscriptionsDeleteRequest
+	(*SubscriptionsDeleteResponse)(nil), // 49: ai_grid.backend.v1.SubscriptionsDeleteResponse
+	nil,                                 // 50: ai_grid.backend.v1.Metadata.LabelsEntry
+	nil,                                 // 51: ai_grid.backend.v1.Metadata.AnnotationsEntry
+	nil,                                 // 52: ai_grid.backend.v1.TokenMetadata.LabelsEntry
+	(*timestamppb.Timestamp)(nil),       // 53: google.protobuf.Timestamp
+	(*fieldmaskpb.FieldMask)(nil),       // 54: google.protobuf.FieldMask
 }
 var file_ai_grid_backend_v1_backend_proto_depIdxs = []int32{
-	25, // 0: ai_grid.backend.v1.Metadata.creation_timestamp:type_name -> google.protobuf.Timestamp
-	25, // 1: ai_grid.backend.v1.Metadata.deletion_timestamp:type_name -> google.protobuf.Timestamp
-	23, // 2: ai_grid.backend.v1.Metadata.labels:type_name -> ai_grid.backend.v1.Metadata.LabelsEntry
-	24, // 3: ai_grid.backend.v1.Metadata.annotations:type_name -> ai_grid.backend.v1.Metadata.AnnotationsEntry
-	0,  // 4: ai_grid.backend.v1.ManagedCluster.metadata:type_name -> ai_grid.backend.v1.Metadata
-	2,  // 5: ai_grid.backend.v1.ManagedCluster.spec:type_name -> ai_grid.backend.v1.ManagedClusterSpec
-	3,  // 6: ai_grid.backend.v1.ManagedCluster.status:type_name -> ai_grid.backend.v1.ManagedClusterStatus
-	1,  // 7: ai_grid.backend.v1.ClustersListResponse.items:type_name -> ai_grid.backend.v1.ManagedCluster
-	1,  // 8: ai_grid.backend.v1.ClustersGetResponse.object:type_name -> ai_grid.backend.v1.ManagedCluster
-	1,  // 9: ai_grid.backend.v1.ClustersUpdateRequest.object:type_name -> ai_grid.backend.v1.ManagedCluster
-	26, // 10: ai_grid.backend.v1.ClustersUpdateRequest.update_mask:type_name -> google.protobuf.FieldMask
-	1,  // 11: ai_grid.backend.v1.ClustersUpdateResponse.object:type_name -> ai_grid.backend.v1.ManagedCluster
-	0,  // 12: ai_grid.backend.v1.Tenant.metadata:type_name -> ai_grid.backend.v1.Metadata
-	11, // 13: ai_grid.backend.v1.Tenant.spec:type_name -> ai_grid.backend.v1.TenantSpec
-	12, // 14: ai_grid.backend.v1.Tenant.status:type_name -> ai_grid.backend.v1.TenantStatus
-	10, // 15: ai_grid.backend.v1.TenantsListResponse.items:type_name -> ai_grid.backend.v1.Tenant
-	10, // 16: ai_grid.backend.v1.TenantsGetResponse.object:type_name -> ai_grid.backend.v1.Tenant
-	10, // 17: ai_grid.backend.v1.TenantsCreateRequest.object:type_name -> ai_grid.backend.v1.Tenant
-	10, // 18: ai_grid.backend.v1.TenantsCreateResponse.object:type_name -> ai_grid.backend.v1.Tenant
-	10, // 19: ai_grid.backend.v1.TenantsUpdateRequest.object:type_name -> ai_grid.backend.v1.Tenant
-	26, // 20: ai_grid.backend.v1.TenantsUpdateRequest.update_mask:type_name -> google.protobuf.FieldMask
-	10, // 21: ai_grid.backend.v1.TenantsUpdateResponse.object:type_name -> ai_grid.backend.v1.Tenant
-	22, // [22:22] is the sub-list for method output_type
-	22, // [22:22] is the sub-list for method input_type
-	22, // [22:22] is the sub-list for extension type_name
-	22, // [22:22] is the sub-list for extension extendee
-	0,  // [0:22] is the sub-list for field type_name
+	53, // 0: ai_grid.backend.v1.Metadata.creation_timestamp:type_name -> google.protobuf.Timestamp
+	53, // 1: ai_grid.backend.v1.Metadata.deletion_timestamp:type_name -> google.protobuf.Timestamp
+	50, // 2: ai_grid.backend.v1.Metadata.labels:type_name -> ai_grid.backend.v1.Metadata.LabelsEntry
+	51, // 3: ai_grid.backend.v1.Metadata.annotations:type_name -> ai_grid.backend.v1.Metadata.AnnotationsEntry
+	1,  // 4: ai_grid.backend.v1.ManagedCluster.metadata:type_name -> ai_grid.backend.v1.Metadata
+	3,  // 5: ai_grid.backend.v1.ManagedCluster.spec:type_name -> ai_grid.backend.v1.ManagedClusterSpec
+	4,  // 6: ai_grid.backend.v1.ManagedCluster.status:type_name -> ai_grid.backend.v1.ManagedClusterStatus
+	2,  // 7: ai_grid.backend.v1.ClustersListResponse.items:type_name -> ai_grid.backend.v1.ManagedCluster
+	2,  // 8: ai_grid.backend.v1.ClustersGetResponse.object:type_name -> ai_grid.backend.v1.ManagedCluster
+	2,  // 9: ai_grid.backend.v1.ClustersUpdateRequest.object:type_name -> ai_grid.backend.v1.ManagedCluster
+	54, // 10: ai_grid.backend.v1.ClustersUpdateRequest.update_mask:type_name -> google.protobuf.FieldMask
+	2,  // 11: ai_grid.backend.v1.ClustersUpdateResponse.object:type_name -> ai_grid.backend.v1.ManagedCluster
+	1,  // 12: ai_grid.backend.v1.Tenant.metadata:type_name -> ai_grid.backend.v1.Metadata
+	12, // 13: ai_grid.backend.v1.Tenant.spec:type_name -> ai_grid.backend.v1.TenantSpec
+	13, // 14: ai_grid.backend.v1.Tenant.status:type_name -> ai_grid.backend.v1.TenantStatus
+	11, // 15: ai_grid.backend.v1.TenantsListResponse.items:type_name -> ai_grid.backend.v1.Tenant
+	11, // 16: ai_grid.backend.v1.TenantsGetResponse.object:type_name -> ai_grid.backend.v1.Tenant
+	11, // 17: ai_grid.backend.v1.TenantsCreateRequest.object:type_name -> ai_grid.backend.v1.Tenant
+	11, // 18: ai_grid.backend.v1.TenantsCreateResponse.object:type_name -> ai_grid.backend.v1.Tenant
+	11, // 19: ai_grid.backend.v1.TenantsUpdateRequest.object:type_name -> ai_grid.backend.v1.Tenant
+	54, // 20: ai_grid.backend.v1.TenantsUpdateRequest.update_mask:type_name -> google.protobuf.FieldMask
+	11, // 21: ai_grid.backend.v1.TenantsUpdateResponse.object:type_name -> ai_grid.backend.v1.Tenant
+	0,  // 22: ai_grid.backend.v1.Condition.status:type_name -> ai_grid.backend.v1.ConditionStatus
+	53, // 23: ai_grid.backend.v1.Condition.last_transition_time:type_name -> google.protobuf.Timestamp
+	1,  // 24: ai_grid.backend.v1.Subscription.metadata:type_name -> ai_grid.backend.v1.Metadata
+	26, // 25: ai_grid.backend.v1.Subscription.spec:type_name -> ai_grid.backend.v1.SubscriptionSpec
+	34, // 26: ai_grid.backend.v1.Subscription.status:type_name -> ai_grid.backend.v1.SubscriptionStatus
+	28, // 27: ai_grid.backend.v1.SubscriptionSpec.owner:type_name -> ai_grid.backend.v1.SubscriptionOwner
+	29, // 28: ai_grid.backend.v1.SubscriptionSpec.model_refs:type_name -> ai_grid.backend.v1.SubscriptionModelRef
+	27, // 29: ai_grid.backend.v1.SubscriptionSpec.organization:type_name -> ai_grid.backend.v1.SubscriptionOrganization
+	32, // 30: ai_grid.backend.v1.SubscriptionSpec.token_metadata:type_name -> ai_grid.backend.v1.TokenMetadata
+	33, // 31: ai_grid.backend.v1.SubscriptionSpec.guardrails:type_name -> ai_grid.backend.v1.GuardrailAttachment
+	30, // 32: ai_grid.backend.v1.SubscriptionModelRef.token_rate_limits:type_name -> ai_grid.backend.v1.TokenRateLimit
+	31, // 33: ai_grid.backend.v1.SubscriptionModelRef.billing_rate:type_name -> ai_grid.backend.v1.BillingRate
+	33, // 34: ai_grid.backend.v1.SubscriptionModelRef.guardrails:type_name -> ai_grid.backend.v1.GuardrailAttachment
+	52, // 35: ai_grid.backend.v1.TokenMetadata.labels:type_name -> ai_grid.backend.v1.TokenMetadata.LabelsEntry
+	24, // 36: ai_grid.backend.v1.SubscriptionStatus.conditions:type_name -> ai_grid.backend.v1.Condition
+	35, // 37: ai_grid.backend.v1.SubscriptionStatus.model_ref_statuses:type_name -> ai_grid.backend.v1.ResourceRefStatus
+	36, // 38: ai_grid.backend.v1.SubscriptionStatus.token_rate_limit_statuses:type_name -> ai_grid.backend.v1.TokenRateLimitStatus
+	35, // 39: ai_grid.backend.v1.TokenRateLimitStatus.ref:type_name -> ai_grid.backend.v1.ResourceRefStatus
+	1,  // 40: ai_grid.backend.v1.AuthPolicy.metadata:type_name -> ai_grid.backend.v1.Metadata
+	38, // 41: ai_grid.backend.v1.AuthPolicy.model_refs:type_name -> ai_grid.backend.v1.AuthPolicyModelRef
+	24, // 42: ai_grid.backend.v1.AuthPolicy.conditions:type_name -> ai_grid.backend.v1.Condition
+	24, // 43: ai_grid.backend.v1.ModelRegistration.conditions:type_name -> ai_grid.backend.v1.Condition
+	25, // 44: ai_grid.backend.v1.SubscriptionsListResponse.items:type_name -> ai_grid.backend.v1.Subscription
+	25, // 45: ai_grid.backend.v1.SubscriptionsGetResponse.object:type_name -> ai_grid.backend.v1.Subscription
+	37, // 46: ai_grid.backend.v1.SubscriptionsGetResponse.auth_policies:type_name -> ai_grid.backend.v1.AuthPolicy
+	39, // 47: ai_grid.backend.v1.SubscriptionsGetResponse.model_registrations:type_name -> ai_grid.backend.v1.ModelRegistration
+	25, // 48: ai_grid.backend.v1.SubscriptionsCreateRequest.object:type_name -> ai_grid.backend.v1.Subscription
+	25, // 49: ai_grid.backend.v1.SubscriptionsCreateResponse.object:type_name -> ai_grid.backend.v1.Subscription
+	37, // 50: ai_grid.backend.v1.SubscriptionsCreateResponse.auth_policy:type_name -> ai_grid.backend.v1.AuthPolicy
+	25, // 51: ai_grid.backend.v1.SubscriptionsUpdateRequest.object:type_name -> ai_grid.backend.v1.Subscription
+	54, // 52: ai_grid.backend.v1.SubscriptionsUpdateRequest.update_mask:type_name -> google.protobuf.FieldMask
+	25, // 53: ai_grid.backend.v1.SubscriptionsUpdateResponse.object:type_name -> ai_grid.backend.v1.Subscription
+	54, // [54:54] is the sub-list for method output_type
+	54, // [54:54] is the sub-list for method input_type
+	54, // [54:54] is the sub-list for extension type_name
+	54, // [54:54] is the sub-list for extension extendee
+	0,  // [0:54] is the sub-list for field type_name
 }
 
 func init() { file_ai_grid_backend_v1_backend_proto_init() }
@@ -1452,18 +3192,21 @@ func file_ai_grid_backend_v1_backend_proto_init() {
 	}
 	file_ai_grid_backend_v1_backend_proto_msgTypes[4].OneofWrappers = []any{}
 	file_ai_grid_backend_v1_backend_proto_msgTypes[13].OneofWrappers = []any{}
+	file_ai_grid_backend_v1_backend_proto_msgTypes[23].OneofWrappers = []any{}
+	file_ai_grid_backend_v1_backend_proto_msgTypes[25].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ai_grid_backend_v1_backend_proto_rawDesc), len(file_ai_grid_backend_v1_backend_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   25,
+			NumEnums:      1,
+			NumMessages:   52,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_ai_grid_backend_v1_backend_proto_goTypes,
 		DependencyIndexes: file_ai_grid_backend_v1_backend_proto_depIdxs,
+		EnumInfos:         file_ai_grid_backend_v1_backend_proto_enumTypes,
 		MessageInfos:      file_ai_grid_backend_v1_backend_proto_msgTypes,
 	}.Build()
 	File_ai_grid_backend_v1_backend_proto = out.File

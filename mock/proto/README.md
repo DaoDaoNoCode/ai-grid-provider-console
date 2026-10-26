@@ -32,11 +32,11 @@ What keeps it honest:
   backend's `proto/ai_grid/v1` at the commit in `mock/proto/upstream/COMMIT`, and
   `mock/proto/upstream/image.binpb` is those files compiled with their imports by `buf build`.
   `hack/sync-upstream-proto.sh <ref>` refreshes all three.
-- **A test guards the BFF's copy.** Against the real backend the BFF calls `Clusters` and
-  `Tenants` with a copy of their messages, `mock/proto/ai_grid/backend/v1`.
+- **A test guards the BFF's copy.** Against the real backend the BFF calls `Clusters`,
+  `Tenants` and `Subscriptions` with a copy of their messages, `mock/proto/ai_grid/backend/v1`.
   `bff/internal/protodrift` loads the vendored image and checks that every copied message,
   field (same number, name, cardinality, presence, oneof and type) and enum value is still
-  the backend's, and that the four RPCs the BFF calls still take and return those messages.
+  the backend's, and that the RPCs the BFF calls still take and return those messages.
   The day the backend changes one of them, the sync script plus this test name every
   difference. `TestFakeImplementsEveryProtoMethod` in
   `bff/internal/fakebackend` then calls every method of every draft service and fails on an

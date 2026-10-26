@@ -23,7 +23,7 @@ backend service for cluster access and this BFF for the browser.
   (`hack/sync-upstream-proto.sh <ref>` refreshes both).
 - What the BFF compiles against: the console's draft proto in `mock/proto/ai_grid/v1`,
   generated into `bff/gen/ai_grid/v1` (`make -C bff generate`), which the fake backend serves;
-  and, for the real backend's Clusters and Tenants RPCs, a copy of their messages in
+  and, for the real backend's Clusters, Tenants and Subscriptions RPCs, a copy of their messages in
   `mock/proto/ai_grid/backend/v1` (see "Against a real backend" below).
   `bff/internal/protodrift` fails when that copy stops matching the vendored backend proto.
   When the console generates its types from the backend's proto, the copy, the draft and the
@@ -39,7 +39,8 @@ backend service for cluster access and this BFF for the browser.
 
 Until the console moves to Connect and the backend's generated contract (issues 20–27 and the
 ADRs in `docs/adr/`), the BFF calls a real backend's `ai_grid.v1.Clusters` `List`, `Get` and
-`Update` and `Tenants` `List`, `Get`, `Create`, `Update` and `Delete` for the clusters and tenants routes, and maps them onto the draft
+`Update`, `Tenants` `List`, `Get`, `Create`, `Update` and `Delete`, and `Subscriptions` `List`, `Get`, `Create`, `Update` and
+`Delete` for the clusters, tenants and subscriptions routes, and maps them onto the draft
 types, so the handlers and the JSON above are unchanged (`bff/internal/backend/v1.go`, messages in
 `mock/proto/ai_grid/backend/v1`). The fake backend still serves the draft, so `--fake-backend`
 keeps the draft clients. `If-Match` maps to `metadata.version` with `lock: true`, and the
@@ -60,6 +61,18 @@ stored tenant after checking the version, writing nothing. DELETE sends the `If-
 `TenantsDeleteRequest.version` (backend PR 16). The backend refuses a change to a label or annotation
 outside `ai-grid/*` and the `location` label, and a bad coordinate, with `InvalidArgument` (422),
 after it checks the version: a stale one is `Aborted` (409) whatever the labels.
+
+Subscriptions follow backend PR 27 (vendored at its merge ref until it merges). The organization
+(`tokenMetadata.organizationId` in the JSON) is sent as `spec.organization.id`, which the backend
+keeps immutable (422 on a change); the display name and description travel as the
+`openshift.io/display-name` and `openshift.io/description` annotations, and the billing rate as
+`billing_rate.per_token`. A PUT sends the mask `spec` and `metadata.annotations` with the `If-Match`
+version and `lock: true`; the backend merge-patches annotations, so a cleared display name or
+description is sent as an empty value. The backend always creates `<name>-policy`, so a create with
+`createAuthPolicy: false` answers 501. `GET /subscriptions/{name}` lists each model the backend
+reports a MaaS registration for in `modelRefs`, with that registration's phase (Ready, Failed for
+Failed, Invalid or Unhealthy, else Pending); a model without one shows as not found. The backend's
+`Delete` takes no version, so DELETE still requires `If-Match` but nothing checks it.
 
 ## Decisions
 

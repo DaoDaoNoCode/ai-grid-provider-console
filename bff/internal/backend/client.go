@@ -44,7 +44,7 @@ type Config struct {
 	// Timeout bounds every RPC.
 	Timeout time.Duration
 	// DraftAPI says the backend serves the console's draft proto (the fake).
-	// Otherwise clusters and tenants use the backend's real RPCs (v1.go).
+	// Otherwise clusters, tenants and subscriptions use the backend's real RPCs (v1.go).
 	DraftAPI bool
 }
 
@@ -91,8 +91,10 @@ func Dial(cfg Config, extra ...grpc.DialOption) (*Client, error) {
 	}
 	var clusters aigridv1.ManagedClustersClient = v1Clusters{conn}
 	var tenants aigridv1.TenantsClient = v1Tenants{conn}
+	var subscriptions aigridv1.SubscriptionsClient = v1Subscriptions{conn}
 	if cfg.DraftAPI {
 		clusters, tenants = aigridv1.NewManagedClustersClient(conn), aigridv1.NewTenantsClient(conn)
+		subscriptions = aigridv1.NewSubscriptionsClient(conn)
 	}
 	return &Client{
 		conn:          conn,
@@ -101,7 +103,7 @@ func Dial(cfg Config, extra ...grpc.DialOption) (*Client, error) {
 		Clusters:      clusters,
 		Tenants:       tenants,
 		Models:        aigridv1.NewModelsClient(conn),
-		Subscriptions: aigridv1.NewSubscriptionsClient(conn),
+		Subscriptions: subscriptions,
 		Grid:          aigridv1.NewGridClient(conn),
 	}, nil
 }
