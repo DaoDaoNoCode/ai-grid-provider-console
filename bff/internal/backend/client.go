@@ -157,11 +157,14 @@ func forwardIdentity(ctx context.Context, method string, req, reply any, cc *grp
 // EncodeMetadataValue percent-encodes `%` and every byte outside printable
 // ASCII (0x20-0x7E) as `%XX`, upper-case hex, so that any proxy header value
 // is a valid gRPC metadata value. An ASCII value without `%` stays the same,
-// byte for byte. The backend decodes with plain percent-decoding (Go's
+// byte for byte. A receiver decodes with plain percent-decoding (Go's
 // url.PathUnescape, which leaves `+` alone) and gets the original bytes back,
 // UTF-8 for a name such as `équipe-ops`. The groups are encoded one by one
 // and joined with `,`; a group never contains one (package identity splits
-// the header on it), so the receiver splits first and then decodes.
+// the header on it), so the receiver splits first and then decodes. This is
+// a proposal to the backend team, not yet agreed: the fake decodes it, the
+// shipped backend doesn't yet and sees a non-ASCII name still encoded
+// (harmless while these values are advisory, docs/plan/bff-api.md).
 func EncodeMetadataValue(v string) string {
 	if !strings.ContainsFunc(v, func(r rune) bool { return r == '%' || r < 0x20 || r > 0x7e }) {
 		return v

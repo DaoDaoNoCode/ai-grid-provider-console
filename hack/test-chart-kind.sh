@@ -7,7 +7,7 @@
 #      must apply in place. Then manifests/base again, taken over by a Helm release the way
 #      hack/deploy.sh does it (hack/chart-takeover.sh);
 #   2. helm install: the pod is ready, the proxy refuses a caller without a token, accepts a
-#      ServiceAccount token (TokenReview), the BFF answers isProviderAdmin from the cluster's access
+#      ServiceAccount token (TokenReview) and drops the identity headers a caller forges, the BFF answers isProviderAdmin from the cluster's access
 #      review and lists ManagedClusters through the backend; only the proxy listens off loopback;
 #   3. helm upgrade with backend.clusterWrites: the backend may label ManagedClusters ai-grid/*, and
 #      the admission policy refuses its other changes;
@@ -186,6 +186,13 @@ TOKEN="$(k -n default create token tester)"
 auth=(-H "Authorization: Bearer ${TOKEN}")
 expect 200 "a ServiceAccount token signs in" "${auth[@]}" "${u}/api/v1/user"
 grep -q '"isProviderAdmin":false' "${TMP}/body" || fail "isProviderAdmin should be false: $(cat "${TMP}/body")"
+# The BFF trusts the proxy's identity headers, so the proxy must drop the ones a caller sends.
+# A forged access token that got through would reach the hub's access review and fail it.
+expect 200 "identity headers a caller sends are dropped" "${auth[@]}" \
+  -H "X-Forwarded-User: forged-admin" -H "X-Forwarded-Email: forged@example.com" \
+  -H "X-Forwarded-Groups: forged-group" -H "X-Forwarded-Preferred-Username: forged-admin" \
+  -H "X-Forwarded-Access-Token: forged-token" "${u}/api/v1/user"
+! grep -q forged "${TMP}/body" || fail "a forged identity header reached the BFF: $(cat "${TMP}/body")"
 expect 403 "a non-admin may not list clusters" "${auth[@]}" "${u}/api/v1/clusters"
 k create clusterrole tester-managedclusters --verb=patch \
   --resource=managedclusters.cluster.open-cluster-management.io --dry-run=client -o yaml | k apply -f - >/dev/null

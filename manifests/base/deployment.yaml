@@ -43,9 +43,11 @@ spec:
             - --pass-access-token=true
             - --pass-user-headers=true
             - --set-xauthrequest=true
-            # Drop the identity headers (X-Forwarded-*, X-Auth-Request-*) a client sends
-            # before setting its own: the BFF trusts them. The proxy's default, stated
-            # so that a change of default can't let a caller name itself.
+            # Drop the X-Forwarded-* identity headers (user, email, groups, preferred
+            # username, access token) a client sends before setting its own: the BFF
+            # trusts them. The proxy's default, stated so that a change of default can't
+            # let a caller name itself; hack/test-chart-kind.sh sends forged ones.
+            # (--set-xauthrequest sets X-Auth-Request-* on responses, not requests.)
             - --skip-auth-strip-headers=true
             - --skip-jwt-bearer-tokens=true
             - --enable-k8s-token-validation=true
