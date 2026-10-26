@@ -210,9 +210,9 @@ func listFilter(r *http.Request, removed ...string) (*string, error) {
 	return nil, nil
 }
 
-// noQuery refuses query parameters on a list that takes none (clusters and
-// subscriptions: their requests carry no filter or page the BFF forwards), so
-// `?filter=false` is 422 rather than the whole list read as a filtered one.
+// noQuery refuses query parameters on a list that takes none (subscriptions:
+// ListSubscriptionsRequest carries no filter or page the BFF could forward),
+// so `?filter=false` is 422 rather than the whole list read as a filtered one.
 func noQuery(r *http.Request, what string) error {
 	if r.URL.RawQuery == "" {
 		return nil

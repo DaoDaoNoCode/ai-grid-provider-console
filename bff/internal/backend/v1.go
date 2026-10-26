@@ -35,9 +35,18 @@ type v1Clusters struct{ conn grpc.ClientConnInterface }
 
 var _ aigridv1.ManagedClustersClient = v1Clusters{}
 
-func (c v1Clusters) ListManagedClusters(ctx context.Context, _ *aigridv1.ListManagedClustersRequest, opts ...grpc.CallOption) (*aigridv1.ListManagedClustersResponse, error) {
+// ListManagedClusters forwards offset and limit, which the backend pages by
+// (applyListWindow). Its ClustersListRequest has a filter it doesn't evaluate
+// yet ("Not evaluated yet"), and its total always counts every cluster, so a
+// forwarded filter would come back as the whole list presented as the
+// filtered one; a filter is Unimplemented (501) instead.
+func (c v1Clusters) ListManagedClusters(ctx context.Context, in *aigridv1.ListManagedClustersRequest, opts ...grpc.CallOption) (*aigridv1.ListManagedClustersResponse, error) {
+	if in.Filter != nil {
+		return nil, status.Error(codes.Unimplemented, "the backend's Clusters API does not evaluate filter yet")
+	}
+	req := &backendv1.ClustersListRequest{Offset: in.Offset, Limit: in.Limit}
 	resp := &backendv1.ClustersListResponse{}
-	if err := c.conn.Invoke(ctx, methodClustersList, &backendv1.ClustersListRequest{}, resp, opts...); err != nil {
+	if err := c.conn.Invoke(ctx, methodClustersList, req, resp, opts...); err != nil {
 		return nil, err
 	}
 	out := &aigridv1.ListManagedClustersResponse{Size: resp.GetSize(), Total: resp.GetTotal()}

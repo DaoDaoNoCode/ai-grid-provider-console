@@ -45,7 +45,9 @@ types, so the handlers and the JSON above are unchanged (`bff/internal/backend/v
 keeps the draft clients. `If-Match` maps to `metadata.version` with `lock: true`, and the
 `labels` and `annotations` mask paths to `metadata.labels` and `metadata.annotations`. The
 cluster state is derived from `spec.hub_accepts_client`, `status.joined` and
-`status.available_condition` only. The tenant list forwards `offset`, `limit` and `filter`; the
+`status.available_condition` only. The cluster list forwards `offset` and `limit`, which the
+backend pages by; it doesn't evaluate `filter` yet and counts every cluster in `total`, so a
+filtered cluster list answers 501 without calling it. The tenant list forwards `offset`, `limit` and `filter`; the
 backend pages but doesn't evaluate `filter` yet, so a filtered list answers 501. A tenant write
 sends `name` as `metadata.name` and `domains` as `spec.domains` (mask paths likewise), and the
 `If-Match` version as `metadata.version` with `lock: true`. Backend PR 16 requires a version:
@@ -107,7 +109,7 @@ under `/perses/api`.
 | GET | `/readyz` | `{status, version, backend}` | `AiGrid/Ping`; readiness, 503 when the backend does not answer. The pod is then unready, and with the one replica the chart runs, the Service has no endpoint left: the OpenShift router answers every request with its own 503 page (HTML, not this API's JSON error), until the backend answers again |
 | GET | `/api/v1/user` | `{username, email?, groups, isProviderAdmin}` (`email` omitted when the proxy sends none) | none; the identity from the proxy headers, `isProviderAdmin` from a hub `SelfSubjectAccessReview` |
 | GET | `/api/v1/config` | `{gridEndpoint, mapTileUrl, mapTileAttribution, billingUrl, version, modelsNamespace, fakeBackend, monitoring: {enabled, persesProject}}`: `modelsNamespace` is the namespace the console creates models in (default `ai-grid-models`), `fakeBackend` makes the UI show its fake-backend banner, `monitoring.enabled` says the BFF relays `/perses/api` (it has a `PERSES_URL`) and `monitoring.persesProject` names the Perses project whose `dashboard-*` objects are the Monitoring tabs (empty: every project the caller may read) | none; env `GRID_CONSUMER_URL`, `MAP_TILE_URL`, `MAP_TILE_ATTRIBUTION` (the attribution shown with `MAP_TILE_URL`'s tiles; with no `MAP_TILE_URL` the map draws a bundled land outline), `BILLING_URL`, `MODELS_NAMESPACE`, `FAKE_BACKEND`, `PERSES_URL`, `PERSES_PROJECT` |
-| GET | `/api/v1/clusters` | `GridCluster[]` sorted by name; takes no query parameters yet (any is 422 `the clusters list takes no query parameters; filter, sort and page it in the client`) | `ManagedClusters/ListManagedClusters` |
+| GET | `/api/v1/clusters?offset=&limit=&filter=` | `GridCluster[]` sorted by name, with `meta` (`size`, `total`, `offset`, `limit`) as for tenants; `filter` is the client's CEL over `this` (a `ManagedCluster`), forwarded as sent. Neither backend evaluates it yet: the fake answers 422, and against the shipped backend, which would ignore it, the BFF answers 501 | `ManagedClusters/ListManagedClusters` |
 | GET | `/api/v1/clusters/{name}` | `GridCluster`, `ETag: "<resourceVersion>"` | `ManagedClusters/GetManagedCluster` (on the shipped backend, its `Clusters/Get`); 404 with the backend's message when absent. Against an older backend that answers `Unimplemented` the BFF filters `ListManagedClusters` by name instead, so the detail works either way; neither the fake nor the shipped backend needs that any more |
 | PATCH | `/api/v1/clusters/{name}` | `GridCluster` after the write, with its `ETag` | `UpdateManagedCluster` (no read first) with the present body fields as the object and the mask (`labels`, `annotations`) and `lock: true` on the `If-Match` version; an empty body is 422; 409 when the hub object is not at that version, 428 without `If-Match`, 422 on a bad body or `If-Match`, a coordinate annotation the backend refuses or a change to a key outside the console's (`ai-grid/*`, `location`), 413 over 1 MiB, 415 when the body is not `application/json` |
 | GET | `/api/v1/tenants?offset=&limit=&filter=` | `Tenant[]` in Keycloak's order (by name, the realm database's collation) plus `meta`; `filter` is a CEL expression the client writes, over `this` (a Tenant), see "Writes, versions and lists"; `limit` omitted returns everything; the removed `search` is 422 | `Tenants/ListTenants` with `offset`, `limit` and `filter` exactly as sent |
@@ -123,7 +125,7 @@ under `/perses/api`.
 | GET | `/api/v1/capabilities` | `{manifestWorkReplicaSetEnabled, observabilityInstalled, acmVersion}` | `AiGrid/GetHubCapabilities`; 501 against a backend without the RPC, which a client reads as "unknown" |
 | GET, POST | `/perses/api/<Perses API path>` | Perses's own answer, status and body unchanged, without `Set-Cookie` | none; the Monitoring page's relay to the hub's Perses (`PERSES_URL`), see "The Perses relay" |
 | GET | `/api/v1/locations` | `string[]`: the `location` labels a model can be placed on, in the backend's order | `Models/ListLocations` (proposal P7, `mock/proto/README.md`) |
-| GET | `/api/v1/subscriptions` | `Subscription[]` in the backend's order; takes no query parameters (any is 422, as for clusters) | `Subscriptions/ListSubscriptions` |
+| GET | `/api/v1/subscriptions` | `Subscription[]` in the backend's order; takes no query parameters (any is 422 `the subscriptions list takes no query parameters; filter, sort and page it in the client`) | `Subscriptions/ListSubscriptions` |
 | GET | `/api/v1/subscriptions/{name}` | `ETag: "<resourceVersion>"`, `{subscription, authPolicies, meteringMetadata?, modelRegistrations, modelRefs}`: the subscription, the authorization policies that cover its models, `meteringMetadata`, the subscription's `tokenMetadata` again, as the PoC's SubscriptionInfoResponse has it (omitted when the subscription has none), the status of each referenced model's registration, and the referenced models in the `Model` JSON | `Subscriptions/GetSubscription`; 404 with the backend's message when absent |
 | POST | `/api/v1/subscriptions` | 201, `{subscription, authPolicy?}`, `Location: /api/v1/subscriptions/{name}` | `Subscriptions/CreateSubscription` with `createAuthPolicy` from the body; 422 with `fieldErrors` on a bad body (a new subscription without `tokenMetadata.organizationId` is "Select an organization"), 409 on a taken name |
 | PUT | `/api/v1/subscriptions/{name}` | `{subscription}` after the write, with its `ETag` | `Subscriptions/UpdateSubscription`; the `If-Match` version is `object.resource_version` with `lock: true` (below), 409 when stale, 428 without `If-Match`, 422 with `fieldErrors` |
@@ -462,7 +464,7 @@ decides.
   Values are CEL string literals (escape `"` and `\`), and the whole expression is URL-encoded
   in the query. The field names are the proto's (`this.metadata.labels`, `this.domains`), so
   they are part of this HTTP contract: renaming a proto field breaks the filters clients have
-  written. `GET /clusters` and `GET /subscriptions` take no `filter` (nor any other parameter: 422). CEL is strict: `contains` is a literal
+  written. `GET /subscriptions` takes no `filter` (nor any other parameter: 422), and no backend evaluates a cluster `filter` yet. CEL is strict: `contains` is a literal
   substring (`%` and `_` match themselves), and indexing a missing map key is a `no such key`
   error, not false, so a label term without the `in` guard fails on the first model that lacks
   the label. A filter that does not compile, is not a bool or fails on an object is the
@@ -491,7 +493,7 @@ decides.
   code carries `fieldErrors`, whatever details the backend attached.
 - **Lists.** The console's pages send none of the list parameters (`offset`, `limit`,
   `filter`): Clusters, Organizations and Models fetch the whole list and filter, sort and page
-  in the browser. The clusters and subscriptions lists take no query parameters: any is 422, so a client that sends `filter` or `limit` there gets an error, not the whole list. A repeated `offset` or `limit` is 422, like a repeated `filter`.
+  in the browser. The subscriptions list takes no query parameters: any is 422, so a client that sends `filter` or `limit` there gets an error, not the whole list. A repeated `offset` or `limit` is 422, like a repeated `filter`.
 
 ### Headers, caching and compression
 
@@ -609,7 +611,7 @@ exists; the frontend uses the mock service meanwhile.
 | Backend `Unauthenticated` | 401 |
 | Backend `PermissionDenied` (the hub's RBAC denies the caller) | 403, backend message kept |
 | Backend `NotFound` | 404, backend message kept (`object with identifier '<name>' not found`) |
-| Invalid POST, PATCH or PUT body (unknown field, wrong type, trailing content), bad or repeated `offset`/`limit` query (`query parameter "offset" must be sent once`), any query parameter on `GET /clusters` or `GET /subscriptions`, a removed list parameter (`search`, `namespace`, `label`), malformed `If-Match` | 422, BFF message |
+| Invalid POST, PATCH or PUT body (unknown field, wrong type, trailing content), bad or repeated `offset`/`limit` query (`query parameter "offset" must be sent once`), any query parameter on `GET /subscriptions`, a removed list parameter (`search`, `namespace`, `label`), malformed `If-Match` | 422, BFF message |
 | POST, PATCH or PUT body not declared `application/json` | 415, BFF message |
 | PATCH, PUT or DELETE without `If-Match`, or with `If-Match: *` | 428, BFF message |
 | `filter`, `limit` or `offset` against a backend whose list answer has no `total` | 501, BFF message |

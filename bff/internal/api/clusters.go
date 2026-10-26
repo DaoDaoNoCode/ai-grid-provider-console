@@ -19,6 +19,7 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
@@ -202,34 +203,50 @@ func parseCoordinate(s string, limit float64) *float64 {
 	return &v
 }
 
-func (a *App) fetchClusters(r *http.Request) ([]GridCluster, error) {
+// listClusters answers GET /api/v1/clusters?offset=&limit=&filter=, mapped
+// like the tenants list: offset and limit as the request's page, `filter` as
+// sent (listFilter). The backend returns the clusters by name and counts
+// `total` over the whole filtered list, which `meta` carries. Neither backend
+// evaluates `filter` yet: the fake answers InvalidArgument (422), and the
+// shipped one, which would ignore it, is refused before the call (501, see
+// backend.v1Clusters).
+func (a *App) listClusters(w http.ResponseWriter, r *http.Request) {
+	offset, err := queryInt(r, "offset")
+	if err != nil {
+		a.respondError(w, r, err)
+		return
+	}
+	limit, err := queryInt(r, "limit")
+	if err != nil {
+		a.respondError(w, r, err)
+		return
+	}
+	filter, err := listFilter(r)
+	if err != nil {
+		a.respondError(w, r, err)
+		return
+	}
+	req := &aigridv1.ListManagedClustersRequest{Filter: filter}
+	if offset != nil {
+		req.Offset = proto.Int32(int32(*offset))
+	}
+	if limit != nil {
+		req.Limit = proto.Int32(int32(*limit))
+	}
 	ctx, cancel := a.backend.Context(r.Context())
 	defer cancel()
-	resp, err := a.backend.Clusters.ListManagedClusters(ctx, &aigridv1.ListManagedClustersRequest{})
+	resp, err := a.backend.Clusters.ListManagedClusters(ctx, req)
 	if err != nil {
-		return nil, err
+		a.respondError(w, r, err)
+		return
 	}
 	out := make([]GridCluster, 0, len(resp.GetClusters()))
 	for _, mc := range resp.GetClusters() {
 		out = append(out, toGridCluster(mc))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return out, nil
-}
-
-// listClusters answers GET /api/v1/clusters. It takes no query parameters
-// yet (noQuery).
-func (a *App) listClusters(w http.ResponseWriter, r *http.Request) {
-	if err := noQuery(r, "clusters"); err != nil {
-		a.respondError(w, r, err)
-		return
-	}
-	out, err := a.fetchClusters(r)
-	if err != nil {
-		a.respondError(w, r, err)
-		return
-	}
-	writeData(w, http.StatusOK, out)
+	total := resp.GetTotal()
+	writeList(w, http.StatusOK, out, listMeta(offset, limit, len(out), &total))
 }
 
 // getCluster answers GET /api/v1/clusters/{name}.

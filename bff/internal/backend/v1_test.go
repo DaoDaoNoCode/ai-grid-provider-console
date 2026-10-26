@@ -83,6 +83,28 @@ func TestFromV1ClusterState(t *testing.T) {
 	}
 }
 
+func TestV1ListClustersForwardsPage(t *testing.T) {
+	conn := &recordingConn{reply: &backendv1.ClustersListResponse{Size: 1, Total: 3, Items: []*backendv1.ManagedCluster{{Id: "site2"}}}}
+	resp, err := v1Clusters{conn}.ListManagedClusters(context.Background(), &aigridv1.ListManagedClustersRequest{Offset: proto.Int32(1), Limit: proto.Int32(1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (&backendv1.ClustersListRequest{Offset: proto.Int32(1), Limit: proto.Int32(1)}); conn.method != methodClustersList || !proto.Equal(conn.req.(proto.Message), want) {
+		t.Fatalf("sent %s %v, want %v", conn.method, conn.req, want)
+	}
+	if resp.GetTotal() != 3 || resp.GetSize() != 1 || len(resp.GetClusters()) != 1 || resp.GetClusters()[0].GetName() != "site2" {
+		t.Fatalf("got %v", resp)
+	}
+
+	// The backend doesn't evaluate filter yet and would count every cluster,
+	// so a filter never reaches it.
+	conn = &recordingConn{reply: &backendv1.ClustersListResponse{}}
+	_, err = v1Clusters{conn}.ListManagedClusters(context.Background(), &aigridv1.ListManagedClustersRequest{Filter: proto.String(`this.name == "a"`)})
+	if status.Code(err) != codes.Unimplemented || conn.method != "" {
+		t.Fatalf("filter: %v, sent %q", err, conn.method)
+	}
+}
+
 func TestV1ListTenantsForwardsPageAndFilter(t *testing.T) {
 	conn := &recordingConn{reply: &backendv1.TenantsListResponse{Size: 1, Total: 3, Items: []*backendv1.Tenant{{Id: "t2"}}}}
 	resp, err := v1Tenants{conn}.ListTenants(context.Background(), &aigridv1.ListTenantsRequest{Offset: proto.Int32(1), Limit: proto.Int32(1)})

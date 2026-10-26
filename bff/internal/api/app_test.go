@@ -11,6 +11,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -213,15 +214,16 @@ func TestHeadUserAndConfigAreOpenLikeGet(t *testing.T) {
 	}
 }
 
-// Lists that take no query parameters refuse them instead of answering the
-// whole list as if it were filtered or paged; tenants and models refuse a
-// repeated offset or limit as they refuse a repeated filter.
+// The subscriptions list takes no query parameters and refuses them instead
+// of answering the whole list as if it were filtered or paged; clusters,
+// tenants and models refuse a repeated offset or limit as they refuse a
+// repeated filter.
 func TestListQueryParameters(t *testing.T) {
 	fake := &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{{Name: "site-1", ResourceVersion: "1"}}}
 	app := newTestApp(t, testConfig(t), fake)
 	for _, path := range []string{
-		"/api/v1/clusters?filter=false",
-		"/api/v1/clusters?limit=1",
+		"/api/v1/clusters?limit=1&limit=2",
+		"/api/v1/clusters?offset=-1",
 		"/api/v1/subscriptions?filter=false&limit=1",
 		"/api/v1/subscriptions?offset=0",
 		"/api/v1/tenants?offset=1&offset=2",
@@ -233,10 +235,55 @@ func TestListQueryParameters(t *testing.T) {
 			t.Errorf("GET %s: %d %s, want 422", path, rec.Code, rec.Body.String())
 		}
 	}
-	for _, path := range []string{"/api/v1/clusters", "/api/v1/subscriptions", "/api/v1/tenants?offset=0&limit=10"} {
+	for _, path := range []string{"/api/v1/clusters", "/api/v1/clusters?offset=0&limit=10", "/api/v1/subscriptions", "/api/v1/tenants?offset=0&limit=10"} {
 		if rec := serve(app, asUser(http.MethodGet, path)); rec.Code != http.StatusOK {
 			t.Errorf("GET %s: %d %s", path, rec.Code, rec.Body.String())
 		}
+	}
+}
+
+// The clusters list forwards offset and limit as the request's page and
+// `filter` as sent; meta carries the backend's total over the whole list.
+func TestListClustersPages(t *testing.T) {
+	fake := &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{
+		{Name: "site-3", ResourceVersion: "1"}, {Name: "site-1", ResourceVersion: "1"}, {Name: "site-2", ResourceVersion: "1"},
+	}}
+	app := newTestApp(t, testConfig(t), fake)
+
+	var list []GridCluster
+	rec := serve(app, asUser(http.MethodGet, "/api/v1/clusters"))
+	meta := decodeList(t, rec, &list)
+	if len(list) != 3 || list[0].Name != "site-1" || meta.Size != 3 || total(meta) != 3 {
+		t.Fatalf("list = %+v, meta = %+v", list, meta)
+	}
+	if r := fake.LastListClusters; r.Offset != nil || r.Limit != nil || r.Filter != nil {
+		t.Errorf("no query means an empty request: %v", r)
+	}
+
+	rec = serve(app, asUser(http.MethodGet, "/api/v1/clusters?offset=1&limit=1"))
+	meta = decodeList(t, rec, &list)
+	if len(list) != 1 || list[0].Name != "site-2" || meta.Offset != 1 || meta.Limit == nil || *meta.Limit != 1 || total(meta) != 3 {
+		t.Fatalf("page = %+v, meta = %+v", list, meta)
+	}
+	if r := fake.LastListClusters; r.GetOffset() != 1 || r.GetLimit() != 1 {
+		t.Errorf("page not forwarded: %v", r)
+	}
+
+	// limit=0 counts only; an offset past the end is an empty page with the count.
+	for _, q := range []string{"limit=0", "offset=10"} {
+		rec = serve(app, asUser(http.MethodGet, "/api/v1/clusters?"+q))
+		meta = decodeList(t, rec, &list)
+		if len(list) != 0 || meta.Size != 0 || total(meta) != 3 {
+			t.Errorf("%s: list = %+v, meta = %+v", q, list, meta)
+		}
+	}
+
+	// The filter is forwarded as sent; this fake, like the console's fake
+	// backend, doesn't evaluate one yet and answers InvalidArgument.
+	const enabled = `this.labels["ai-grid/enabled"] == "true"`
+	rec = serve(app, asUser(http.MethodGet, "/api/v1/clusters?filter="+url.QueryEscape(enabled)))
+	if rec.Code != http.StatusUnprocessableEntity || fake.LastListClusters.GetFilter() != enabled {
+		t.Errorf("filter: %d %s, forwarded %q", rec.Code, rec.Body.String(), fake.LastListClusters.GetFilter())
 	}
 }
 
