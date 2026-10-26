@@ -59,7 +59,7 @@ const caller = (): Caller => {
   return cached;
 };
 
-/** The BFF's paths: its API, and the Monitoring page's relay to the hub's Perses. */
+/** The BFF's paths: its API, the Monitoring page's relay to the hub's Perses, and the Connect relay to the backend. */
 const toBff: ProxyOptions = {
   target: bffUrl,
   changeOrigin: true,
@@ -90,6 +90,8 @@ export default defineConfig({
     proxy: {
       '/api': toBff,
       '/perses/api': toBff,
+      // The backend's own RPCs over Connect (src/api/connect), which the BFF relays (bff/internal/relay).
+      '^/ai_grid\\.v1\\.': toBff,
     },
   },
   build: {
