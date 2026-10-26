@@ -29,6 +29,8 @@ const tones: Record<string, StatusTone> = {
   Active: 'success',
   Pending: 'info',
   Failed: 'danger',
+  // A placed model serving on some of its clusters but not all (proposal P13).
+  'Partially available': 'warning',
   Invalid: 'danger',
   Unavailable: 'danger',
   Unhealthy: 'danger',

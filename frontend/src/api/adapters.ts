@@ -13,6 +13,7 @@ import type {
   MaaSSubscription,
   ManagedModel,
   ModelPlacementSpec,
+  ModelWork,
   Organization,
   SubscriptionInfoResponse,
 } from './types';
@@ -131,7 +132,14 @@ export const toOrganization = (json: ApiTenant): Organization => {
   return out;
 };
 
-const modelPhases: Record<string, string> = { pending: 'Pending', ready: 'Ready', failed: 'Failed' };
+const modelPhases: Record<string, string> = {
+  pending: 'Pending',
+  ready: 'Ready',
+  failed: 'Failed',
+  partiallyavailable: 'Partially available',
+};
+
+const phaseOf = (phase: string | undefined) => (phase ? (modelPhases[phase] ?? phase) : 'Pending');
 
 /**
  * Maps a model of GET/POST /models to the PoC's ManagedModel. Status is PR 12's phase (Pending
@@ -143,12 +151,20 @@ export const toManagedModel = (json: ApiModel): ManagedModel => ({
   displayName: json.displayName,
   description: json.description,
   modelRef: { kind: 'LLMInferenceService', name: json.name },
-  phase: json.phase ? (modelPhases[json.phase] ?? json.phase) : 'Pending',
+  phase: phaseOf(json.phase),
   reason: json.reason,
   statusMessage: json.message,
   creationTimestamp: json.creationTimestamp,
   resourceVersion: json.resourceVersion ?? '',
   locations: json.placement?.locations ?? [],
+  works: json.rollout?.works?.map((work): ModelWork => ({
+    cluster: work.cluster,
+    phase: phaseOf(work.phase),
+    reason: work.reason,
+    message: work.message,
+    ready: work.feedback?.ready,
+    conditions: work.conditions ?? [],
+  })),
   modelUri: json.modelUri,
   modelName: json.modelName,
   runtimeImage: json.runtimeImage,

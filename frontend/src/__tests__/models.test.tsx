@@ -99,12 +99,10 @@ it('walks the deployment wizard, selects locations, saves the model and removes 
   const table = await screen.findByTestId('model-deployments-table');
   expect(table).toHaveTextContent('Widget');
   expect(await screen.findByText('Model deployed')).toBeVisible();
-  // The first location, and the rest behind "+1 more".
+  // Up to five locations show as labels in the row.
   const locationsCell = screen.getByTestId('model-locations-widget');
-  expect(locationsCell).toHaveTextContent(site1);
-  await user.click(within(locationsCell).getByText('+1 more'));
-  expect(await screen.findByText('Locations (2)')).toBeVisible();
-  expect(screen.getAllByText(site2).length).toBeGreaterThan(0);
+  expect(within(locationsCell).getByText(site1)).toBeVisible();
+  expect(within(locationsCell).getByText(site2)).toBeVisible();
   const saved = (await service.listModels()).find((m) => m.name === 'widget');
   expect(saved).toMatchObject({
     namespace: 'ai-grid-models',
@@ -416,9 +414,15 @@ it('shows the phase', async () => {
   const failed = within(await row('llama-3-70b')).getByTestId('model-phase');
   expect(failed).toHaveTextContent('Failed');
   expect(screen.queryByText(/Git/)).not.toBeInTheDocument();
+  // Only a status that opens something is filled: Ready is an outline label and no button.
+  const ready = within(await row('granite-8b-instruct')).getByTestId('model-phase');
+  expect(within(ready).queryByRole('button')).not.toBeInTheDocument();
+  expect(ready.querySelector('.pf-v6-c-label')).toHaveClass('pf-m-outline');
+  expect(failed.querySelector('.pf-v6-c-label')).not.toHaveClass('pf-m-outline');
   await user.click(within(failed).getByRole('button', { name: 'Failed' }));
-  // A sentence and the next step; the controller's own words fold away under Details.
-  expect(await screen.findByText('Deployment failed')).toBeVisible();
+  // A modal: a sentence and the next step; the controller's own words fold away under Details.
+  const modal = await screen.findByTestId('model-status-modal');
+  expect(within(modal).getByRole('heading', { name: /Llama 3 70B status/ })).toBeVisible();
   expect(screen.getByText('A runtime template this model needs isn’t installed on the hub.')).toBeVisible();
   const raw = screen.getByText(/v3-6-0-kserve-config-llm-template-tpu" not found/);
   expect(raw).not.toBeVisible();
@@ -1089,4 +1093,192 @@ it('shows the loading spinner until the models arrive, then the list in its plac
   act(() => release());
   expect(await screen.findByRole('grid', { name: 'Model deployments' })).toBeVisible();
   expect(screen.queryByRole('progressbar', { name: 'Loading models' })).not.toBeInTheDocument();
+});
+
+describe('each location of a placed model (proposal P13)', () => {
+  const at = '2026-10-26T12:00:00Z';
+  // Mistral as the backend answers once it serves on two of its three clusters: site1 Ready,
+  // site2 failed to apply, site3 still starting.
+  const partialJson = () => {
+    const data = structuredClone(getModels.body.data) as unknown as Record<string, unknown>[];
+    const mistral = data.find((m) => m.name === 'mistral-7b-instruct')!;
+    mistral.phase = 'partiallyavailable';
+    mistral.reason = 'PartiallyAvailable';
+    mistral.message = '1 of 3 clusters are serving the model.';
+    (mistral.placement as { locations: string[] }).locations = ['site1', 'site2', 'site3'];
+    (mistral.rollout as { works: unknown[] }).works = [
+      {
+        cluster: 'site1',
+        phase: 'ready',
+        feedback: { ready: 'True' },
+        conditions: [
+          { type: 'Applied', status: 'True', reason: 'AppliedManifestWorkComplete', lastTransitionTime: at },
+          { type: 'Available', status: 'True', reason: 'ResourcesAvailable', lastTransitionTime: at },
+          { type: 'Progressing', status: 'False', reason: 'ConditionRulesAggregated', lastTransitionTime: at },
+          { type: 'Degraded', status: 'False', reason: 'ConditionRulesAggregated', lastTransitionTime: at },
+        ],
+      },
+      {
+        cluster: 'site2',
+        phase: 'failed',
+        reason: 'AppliedManifestWorkFailed',
+        message: 'Failed to apply manifest work',
+        conditions: [
+          {
+            type: 'Applied',
+            status: 'False',
+            reason: 'AppliedManifestWorkFailed',
+            message: 'Failed to apply manifest work',
+            lastTransitionTime: at,
+          },
+          {
+            type: 'Available',
+            status: 'Unknown',
+            reason: 'ResourcesStatusUnknown',
+            message: '1 of 2 resources have unknown status',
+            lastTransitionTime: at,
+          },
+        ],
+      },
+      { cluster: 'site3', phase: 'pending', conditions: [] },
+    ];
+    return data;
+  };
+  const partialFetch = () =>
+    vi.fn(async (url: string, init?: RequestInit) => {
+      const data = partialJson();
+      if (isOneModel(url, init)) {
+        const name = decodeURIComponent(url.split('/').pop()!);
+        return jsonResponse(200, { data: data.find((m) => m.name === name) });
+      }
+      return jsonResponse(200, { data });
+    });
+  const mistralRow = async () =>
+    (await screen.findByTestId('model-locations-mistral-7b-instruct')).closest('tr') as HTMLElement;
+
+  it('expands a model to each cluster, named by its location, with the status the backend derived', async () => {
+    const user = userEvent.setup();
+    renderAt('/models', serviceOnModelJson(partialFetch()));
+    const row = await mistralRow();
+    // A hub model has nothing to expand.
+    const tiny = (await screen.findByTestId('model-locations-tiny-llm')).closest('tr') as HTMLElement;
+    expect(within(tiny).queryByRole('button', { name: 'Details' })).not.toBeInTheDocument();
+
+    expect(within(row).getByTestId('model-phase')).toHaveTextContent('Partially available');
+    await user.click(within(row).getByRole('button', { name: 'Details' }));
+    const works = screen.getAllByTestId('model-work-row');
+    expect(works.map((w) => w.textContent)).toEqual([
+      expect.stringContaining('San Francisco (site1)'),
+      expect.stringContaining('New York (site2)'),
+      expect.stringContaining('Brussels (site3)'),
+    ]);
+    expect(within(works[0]).getByTestId('model-work-cluster')).toHaveTextContent('site1');
+    expect(works.map((w) => within(w).getByTestId('model-work-phase').textContent)).toEqual([
+      'Ready at San Francisco (site1)',
+      'Failed at New York (site2)',
+      'Pending at Brussels (site3)',
+    ]);
+  });
+
+  it('opens Partially available with how many clusters serve it, and shows the locations from there', async () => {
+    const user = userEvent.setup();
+    renderAt('/models', serviceOnModelJson(partialFetch()));
+    const row = await mistralRow();
+    await user.click(within(row).getByRole('button', { name: 'Partially available' }));
+    const modal = await screen.findByTestId('model-status-modal');
+    expect(modal).toHaveTextContent('1 of 3 clusters are serving the model.');
+    expect(screen.queryByTestId('model-works-mistral-7b-instruct')).not.toBeInTheDocument();
+    await user.click(within(modal).getByRole('button', { name: 'View locations' }));
+    expect(screen.queryByTestId('model-status-modal')).not.toBeInTheDocument();
+    expect(await screen.findByTestId('model-works-mistral-7b-instruct')).toBeVisible();
+  });
+
+  it("opens a failed location's progress from what its cluster reported, and offers Edit deployment", async () => {
+    const user = userEvent.setup();
+    const service = serviceOnModelJson(partialFetch());
+    renderAt('/models', service);
+    await user.click(within(await mistralRow()).getByRole('button', { name: 'Details' }));
+    await user.click(screen.getByRole('button', { name: 'Failed at New York (site2)' }));
+    const modal = await screen.findByTestId('deployment-status-modal');
+    expect(within(modal).getByRole('heading', { name: /Mistral 7B Instruct status/ })).toBeVisible();
+    expect(modal).toHaveTextContent('New York (site2)');
+    expect(modal).toHaveTextContent('on cluster site2');
+    const applied = within(modal).getByTestId('deployment-step-applied');
+    expect(applied).toHaveClass('pf-m-danger');
+    expect(applied).toHaveTextContent('Failed to apply manifest work');
+    expect(within(applied).getByText(/2026/)).toBeInTheDocument();
+    // Unknown shows its message; steps the cluster never reported are pending, with no time.
+    expect(within(modal).getByTestId('deployment-step-available')).toHaveTextContent(
+      '1 of 2 resources have unknown status',
+    );
+    for (const id of ['workload', 'ready']) {
+      const step = within(modal).getByTestId(`deployment-step-${id}`);
+      expect(step).toHaveClass('pf-m-pending');
+      expect(within(step).queryByText(/2026/)).not.toBeInTheDocument();
+    }
+    expect(within(modal).queryByRole('button', { name: /Stop/ })).not.toBeInTheDocument();
+    await user.click(within(modal).getByRole('button', { name: 'Edit deployment' }));
+    expect(await screen.findByRole('heading', { name: /Edit/ })).toBeVisible();
+  });
+
+  it("keeps an open location's status current as the list refreshes, and closes it when the location goes", async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      const user = userEvent.setup();
+      // What the next poll answers for site3: still starting, then serving, then gone.
+      let site3: 'pending' | 'ready' | 'gone' = 'pending';
+      const fetchFn = vi.fn(async (url: string, init?: RequestInit) => {
+        const data = partialJson();
+        const mistral = data.find((m) => m.name === 'mistral-7b-instruct')!;
+        const rollout = mistral.rollout as { works: { cluster: string; phase: string; feedback?: unknown }[] };
+        if (site3 === 'gone') {
+          rollout.works = rollout.works.filter((w) => w.cluster !== 'site3');
+        } else if (site3 === 'ready') {
+          Object.assign(
+            rollout.works.find((w) => w.cluster === 'site3')!,
+            { phase: 'ready', feedback: { ready: 'True' } },
+          );
+        }
+        if (isOneModel(url, init)) {
+          const name = decodeURIComponent(url.split('/').pop()!);
+          return jsonResponse(200, { data: data.find((m) => m.name === name) });
+        }
+        return jsonResponse(200, { data });
+      });
+      renderAt('/models', serviceOnModelJson(fetchFn));
+      await user.click(within(await mistralRow()).getByRole('button', { name: 'Details' }));
+      await user.click(screen.getByRole('button', { name: 'Pending at Brussels (site3)' }));
+      const modal = await screen.findByTestId('deployment-status-modal');
+      expect(within(modal).getByRole('heading', { name: /status/ })).toHaveTextContent('Pending');
+
+      site3 = 'ready';
+      await act(async () => {
+        vi.advanceTimersByTime(30_000);
+      });
+      await waitFor(() => expect(within(modal).getByRole('heading', { name: /status/ })).toHaveTextContent('Ready'));
+
+      site3 = 'gone';
+      await act(async () => {
+        vi.advanceTimersByTime(30_000);
+      });
+      await waitFor(() => expect(screen.queryByTestId('deployment-status-modal')).not.toBeInTheDocument());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('shows a ready location with every step done, on the model page too', async () => {
+    const user = userEvent.setup();
+    const service = serviceOnModelJson(partialFetch());
+    renderAt('/models/ai-grid-models/mistral-7b-instruct', service);
+    // The details page lists the same locations.
+    const table = await screen.findByTestId('model-works-mistral-7b-instruct');
+    await user.click(within(table).getByRole('button', { name: 'Ready at San Francisco (site1)' }));
+    const modal = await screen.findByTestId('deployment-status-modal');
+    for (const id of ['applied', 'available', 'workload', 'ready']) {
+      expect(within(modal).getByTestId(`deployment-step-${id}`)).toHaveClass('pf-m-success');
+    }
+    // The ready feedback carries no time of its own.
+    expect(within(within(modal).getByTestId('deployment-step-ready')).queryByText(/2026/)).not.toBeInTheDocument();
+  });
 });

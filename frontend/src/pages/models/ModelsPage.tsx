@@ -2,6 +2,9 @@
 // Adapted from packages/model-serving/src/components/deployments/DeploymentsTable.tsx
 // and components/global/GlobalDeploymentsView.tsx.
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
+// jgiardino's "models per cluster" design (jgiardino/ai-grid-provider-console@ada68ad): a model
+// row expands to its locations and each one's status; the Locations cell shows up to five compact
+// labels.
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
@@ -10,16 +13,17 @@ import {
   EmptyStateActions,
   EmptyStateBody,
   EmptyStateFooter,
+  Label,
+  LabelGroup,
   PageSection,
   Stack,
   ToolbarItem,
 } from '@patternfly/react-core';
-import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
+import { ExpandableRowContent, Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { ThProps } from '@patternfly/react-table';
 import type { ClustersService } from '../../api/clusters';
 import type { ManagedModel } from '../../api/types';
 import { LoadError } from '../../components/LoadError';
-import { OverflowList } from '../../components/OverflowList';
 import { PageHeader } from '../../components/PageHeader';
 import { PageLoading } from '../../components/PageLoading';
 import { PaginatedTable } from '../../components/PaginatedTable';
@@ -31,6 +35,7 @@ import { useConsoleSession } from '../../context/useConsoleSession';
 import { useServiceData } from '../../hooks/useServiceData';
 import { EMPTY_VALUE } from '../../utilities/format';
 import { locationLabel, modelPath, siteNamesOf } from './modelUtils';
+import { ModelLocationsTable } from './ModelLocationsTable';
 import { ModelStatusLabel } from './ModelStatus';
 import type { ModelDeleteService } from './useDeleteModel';
 import { useDeleteModel } from './useDeleteModel';
@@ -59,6 +64,18 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
   const canWrite = !!user?.isProviderAdmin;
   const [filter, setFilter] = useState('');
   const [sortBy, setSortBy] = useState<{ index: number; direction: 'asc' | 'desc' }>({ index: 0, direction: 'asc' });
+  // The models whose rows show their locations.
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+  const setRowExpanded = (key: string, open: boolean) =>
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (open) {
+        next.add(key);
+      } else {
+        next.delete(key);
+      }
+      return next;
+    });
   const [confirmDelete, deleteModal] = useDeleteModel(service, {
     refresh: () => void refresh(),
     onDeleted: () => void refresh(),
@@ -123,13 +140,10 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
           }
         >
           {(pageRows) => (
-            <Table
-              aria-label="Model deployments"
-
-              data-testid="model-deployments-table"
-            >
+            <Table aria-label="Model deployments" isExpandable data-testid="model-deployments-table">
               <Thead>
                 <Tr>
+                  <Th screenReaderText="Show locations" />
                   {columns.map((c, i) => (
                     <Th key={c.label} sort={sortParams(i)} modifier="wrap">
                       {c.label}
@@ -141,17 +155,32 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
               {rows.length === 0 ? (
                 <Tbody>
                   <TableEmptyRow
-                    colSpan={columns.length + 1}
+                    colSpan={columns.length + 1 + (canWrite ? 1 : 0)}
                     body="Change the filter to see more models."
                     onClear={() => setFilter('')}
                   />
                 </Tbody>
               ) : (
-                <Tbody>
-                  {pageRows.map((deployment) => {
-                    const title = deployment.displayName ?? deployment.name;
-                    return (
-                      <Tr key={keyOf(deployment)}>
+                pageRows.map((deployment, rowIndex) => {
+                  const title = deployment.displayName ?? deployment.name;
+                  const key = keyOf(deployment);
+                  const works = deployment.works ?? [];
+                  const isExpanded = works.length > 0 && expanded.has(key);
+                  return (
+                    <Tbody key={key} isExpanded={isExpanded}>
+                      <Tr isContentExpanded={isExpanded}>
+                        {works.length > 0 ? (
+                          <Td
+                            expand={{
+                              rowIndex,
+                              isExpanded,
+                              onToggle: () => setRowExpanded(key, !isExpanded),
+                              expandId: `model-locations-toggle-${deployment.name}`,
+                            }}
+                          />
+                        ) : (
+                          <Td />
+                        )}
                         <Td dataLabel="Name">
                           <Link to={modelPath(deployment)}>{title}</Link>
                         </Td>
@@ -160,16 +189,26 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
                         </Td>
                         <Td dataLabel="Replicas">{deployment.replicas ?? EMPTY_VALUE}</Td>
                         <Td dataLabel="Locations" data-testid={`model-locations-${deployment.name}`}>
-                          <OverflowList
-                            noun="Locations"
-                            items={deployment.locations.map((location) => locationLabel(location, siteNames))}
-                          />
+                          {deployment.locations.length ? (
+                            <LabelGroup numLabels={5}>
+                              {deployment.locations.map((location) => (
+                                <Label key={location} color="grey" isCompact>
+                                  {locationLabel(location, siteNames)}
+                                </Label>
+                              ))}
+                            </LabelGroup>
+                          ) : (
+                            EMPTY_VALUE
+                          )}
                         </Td>
                         <Td dataLabel="Created" modifier="nowrap">
                           <RelativeTime time={deployment.creationTimestamp} />
                         </Td>
                         <Td dataLabel="Status">
-                          <ModelStatusLabel model={deployment} />
+                          <ModelStatusLabel
+                            model={deployment}
+                            onViewLocations={works.length ? () => setRowExpanded(key, true) : undefined}
+                          />
                         </Td>
                         {canWrite && (
                           <Td isActionCell>
@@ -195,9 +234,28 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
                           </Td>
                         )}
                       </Tr>
-                    );
-                  })}
-                </Tbody>
+                      {works.length > 0 && (
+                        <Tr isExpanded={isExpanded}>
+                          <Td />
+                          <Td colSpan={columns.length + (canWrite ? 1 : 0)}>
+                            <ExpandableRowContent>
+                              {isExpanded && (
+                                <ModelLocationsTable
+                                  model={deployment}
+                                  works={works}
+                                  clusters={clusters}
+                                  siteNames={siteNames}
+                                  onEdit={canWrite ? () => navigate(`${modelPath(deployment)}/edit`) : undefined}
+                                  isNested
+                                />
+                              )}
+                            </ExpandableRowContent>
+                          </Td>
+                        </Tr>
+                      )}
+                    </Tbody>
+                  );
+                })
               )}
             </Table>
           )}
