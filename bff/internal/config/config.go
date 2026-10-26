@@ -40,6 +40,10 @@ const (
 	// check before it (at most 5 seconds, hub.Config's default), inside
 	// WriteTimeout, so the relay can still answer 504.
 	MaxPersesTimeout = WriteTimeout - 10*time.Second
+	// MaxBackendTimeout keeps a call to the backend, with the provider-admin
+	// check before it, inside WriteTimeout likewise, so the Connect relay can
+	// still answer 504 for a unary call or a backend that sends no headers.
+	MaxBackendTimeout = WriteTimeout - 10*time.Second
 )
 
 // Config is the fully resolved BFF configuration.
@@ -183,8 +187,8 @@ func Parse(args []string, lookupEnv func(string) (string, bool)) (Config, error)
 	if cfg.PersesTimeout <= 0 || cfg.PersesTimeout > MaxPersesTimeout {
 		return Config{}, fmt.Errorf("perses-timeout must be positive and at most %s, to stay inside the server's %s write timeout", MaxPersesTimeout, WriteTimeout)
 	}
-	if cfg.BackendTimeout <= 0 {
-		return Config{}, fmt.Errorf("backend-timeout must be positive")
+	if cfg.BackendTimeout <= 0 || cfg.BackendTimeout > MaxBackendTimeout {
+		return Config{}, fmt.Errorf("backend-timeout must be positive and at most %s, to stay inside the server's %s write timeout", MaxBackendTimeout, WriteTimeout)
 	}
 	return cfg, nil
 }
