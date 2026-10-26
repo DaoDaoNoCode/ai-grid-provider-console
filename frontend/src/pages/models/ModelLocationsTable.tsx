@@ -3,7 +3,7 @@
 // two clusters at one location are two rows, each with its own status as the backend derived it
 // (proposal P13); the page adds no status of its own.
 import { useState } from 'react';
-import { Content, ContentVariants, Label } from '@patternfly/react-core';
+import { Label, Tooltip } from '@patternfly/react-core';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { GridCluster, ManagedModel, ModelWork } from '../../api/types';
 import { getPhaseProps } from '../../utilities/phaseLabelUtils';
@@ -42,7 +42,9 @@ export const ModelLocationsTable: React.FC<Props> = ({ model, works, clusters, s
         data-testid={`model-works-${model.name}`}
       >
         <Thead>
-          <Tr>
+          {/* resetOffset: inside the Models page's expanded row, the nested table's first column lines
+              up with the row's Name, as PatternFly's nested tables and jgiardino's design do. */}
+          <Tr resetOffset={isNested}>
             <Th>Location</Th>
             <Th modifier="fitContent">Status</Th>
           </Tr>
@@ -52,17 +54,24 @@ export const ModelLocationsTable: React.FC<Props> = ({ model, works, clusters, s
             const location = locationOf(work);
             const { icon, status, color } = getPhaseProps(work.phase);
             return (
-              <Tr key={work.cluster} data-testid="model-work-row">
+              <Tr key={work.cluster} resetOffset={isNested} data-testid="model-work-row">
                 <Td dataLabel="Location">
-                  {/* In a div, so the stacked phone layout doesn't stretch the label across the cell. */}
+                  {/* In a div, so the stacked phone layout doesn't stretch the label across the cell.
+                      The cluster is detail most rows don't need (one cluster per location): it shows
+                      on hover, is read with the location by a screen reader, and the status dialog
+                      names it too. A location without a label shows its cluster's name instead. */}
                   <div>
-                    <Label color="grey">{location}</Label>
+                    {location === work.cluster ? (
+                      <Label color="grey">{location}</Label>
+                    ) : (
+                      <Tooltip content={`Cluster: ${work.cluster}`}>
+                        <Label color="grey" data-testid="model-work-location">
+                          {location}
+                          <span className="pf-v6-screen-reader">, cluster {work.cluster}</span>
+                        </Label>
+                      </Tooltip>
+                    )}
                   </div>
-                  {location !== work.cluster && (
-                    <Content component={ContentVariants.small} data-testid="model-work-cluster">
-                      {work.cluster}
-                    </Content>
-                  )}
                 </Td>
                 <Td dataLabel="Status" modifier="fitContent">
                   <div>

@@ -1172,7 +1172,12 @@ describe('each location of a placed model (proposal P13)', () => {
       expect.stringContaining('New York (site2)'),
       expect.stringContaining('Brussels (site3)'),
     ]);
-    expect(within(works[0]).getByTestId('model-work-cluster')).toHaveTextContent('site1');
+    // The cluster isn't a second line: a screen reader reads it with the location, and hovering the
+    // location shows it.
+    const location = within(works[0]).getByTestId('model-work-location');
+    expect(location).toHaveTextContent('San Francisco (site1), cluster site1');
+    await user.hover(location);
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Cluster: site1');
     expect(works.map((w) => within(w).getByTestId('model-work-phase').textContent)).toEqual([
       'Ready at San Francisco (site1)',
       'Failed at New York (site2)',
