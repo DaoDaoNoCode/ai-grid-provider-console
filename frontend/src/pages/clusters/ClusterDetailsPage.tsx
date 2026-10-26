@@ -47,6 +47,7 @@ import {
 } from './gpuText';
 import type { MembershipChange } from './MembershipModal';
 import { MembershipModal } from './MembershipModal';
+import { changeMembership } from './changeMembership';
 import { MissingLabel } from './MissingLabel';
 import { roleOf } from './roles';
 
@@ -124,8 +125,21 @@ const gpuItems = (g: ClusterGPUs) => [
     term: g.configurations.length === 1 ? 'Configuration' : 'Configurations',
     value: (
       <List isPlain data-testid="cluster-gpu-configurations">
-        {g.configurations.map((c) => (
-          <ListItem key={`${c.product}-${c.gpusPerNode}-${c.sharing.strategy}-${c.sharing.replicas}`}>
+        {g.configurations.map((c, i) => (
+          // Everything that tells two configurations apart, and the index for two the backend
+          // sent alike.
+          <ListItem
+            key={[
+              c.vendor,
+              c.product,
+              c.memoryMib,
+              c.gpusPerNode,
+              c.sharing.strategy,
+              c.sharing.replicas,
+              c.sharing.migStrategy,
+              i,
+            ].join('|')}
+          >
             {[
               configurationText(c),
               gpuMemory(c.memoryMib) && `${gpuMemory(c.memoryMib)} each`,
@@ -257,11 +271,18 @@ export const ClusterDetailsPage: React.FC<Props> = ({ service }) => {
   const cluster = confirmed ?? loadedCluster;
 
   /** Adds the cluster to AI Grid or removes it, then reloads it; throws for the modal to show. */
-  const applyChange = async ({ cluster: c, join }: MembershipChange, membership?: GridMembership) => {
-    const updated = membership ? await service.enrollCluster(c, membership) : await service.removeClusterFromGrid(c);
-    if (updated.aiGridEnabled !== join) {
-      throw new Error('The Hub did not confirm the change. Refresh and try again.');
-    }
+  const applyChange = async (change: MembershipChange, membership?: GridMembership) => {
+    const { join } = change;
+    // A 409 loads the cluster again into the open dialog, as on the Clusters list.
+    const updated = await changeMembership(service, change, membership, {
+      reload: (clusterName) => service.getCluster(clusterName),
+      onConflict: (current) => {
+        if (current) {
+          setChange((open) => (open?.cluster.name === current.name ? { ...open, cluster: current } : open));
+        }
+        void refresh();
+      },
+    });
     setConfirmed(updated);
     setAwaitingReload(true);
     setChange(undefined);
@@ -308,7 +329,7 @@ export const ClusterDetailsPage: React.FC<Props> = ({ service }) => {
       );
     }
     if (error && !cluster) {
-      return <LoadError subject="Clusters" error={error} />;
+      return <LoadError subject="Clusters" error={error} onRetry={() => void refresh()} />;
     }
     if (!cluster) {
       return null;

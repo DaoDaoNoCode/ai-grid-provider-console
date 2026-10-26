@@ -14,8 +14,8 @@ import (
 // search-search-api GraphQL `search` query) returns it: the cluster, the node
 // name, every node label as one "key=value; key=value" string, and the
 // conditions as "Type=Status; ...". That is where the hub sees a spoke's GPUs:
-// ManagedClusterInfo keeps no NVIDIA GPU Feature Discovery labels (dev hub
-// hf299, 2026-10-26). The real backend reads these items from Search; the fake
+// ManagedClusterInfo keeps no NVIDIA GPU Feature Discovery labels (checked on
+// a dev hub). The real backend reads these items from Search; the fake
 // reads them from gpunodes.json and derives the same ClusterGPUs.
 type SearchNode struct {
 	Cluster   string `json:"cluster"`

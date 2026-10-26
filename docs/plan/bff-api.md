@@ -234,7 +234,8 @@ also works against a backend that only returns `name`, `labels`, `hubAcceptsClie
   cluster status details (conditions, Kubernetes version, capacity, allocatable, claims)
   sends the creation time only, so the page shows those as not reported.
 - `gpus` is the backend's `status.gpus`, the cluster's GPU inventory, passed through: `total`
-  physical GPUs and `nodeCount` GPU nodes; `configurations`, the distinct node configurations
+  GPU devices as GPU Feature Discovery counts them (physical GPUs, but MIG devices on a node with
+  MIG strategy `single`, where GFD reports no physical count) and `nodeCount` GPU nodes; `configurations`, the distinct node configurations
   (vendor, product, memory in MiB per GPU, GPUs per node, sharing) with how many nodes have
   each, most nodes first; and every GPU `node` (product, count, memory, architecture `family`,
   `computeCapability`, `driverVersion`, `cudaRuntimeVersion`, `sharing`, `instanceType`,

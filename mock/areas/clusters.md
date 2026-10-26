@@ -50,7 +50,7 @@ is 428); it does not read the cluster first and neither merges, compares nor val
 GPUs: the draft's `ManagedClusterStatus.gpus` (`ClusterGPUs`, the backend's field 10) is each
 cluster's GPU inventory. The real backend reads it from ACM Search (search-v2's `search` query for
 `kind=Node` with `nvidia.com/gpu.present=true`), because `ManagedClusterInfo` keeps only instance
-type, region, zone and node-role labels (dev hub hf299, 2026-10-26); the fake derives the same from
+type, region, zone and node-role labels (checked on a dev hub); the fake derives the same from
 `mock/fixtures/gpunodes.json` (`bff/internal/fakebackend/gpus.go`): each node from GPU Feature
 Discovery's labels (`gpu.product`, `gpu.count`, `gpu.memory` MiB, `gpu.family`,
 `gpu.compute.major/minor`, `cuda.driver-version.full`, `cuda.runtime-version.full`, `gpu.machine`,
@@ -62,7 +62,7 @@ UI: the Clusters page (`frontend/src/pages/clusters/ClustersPage.tsx`) lists eve
 ManagedCluster with its location, connection, AI Grid membership, role, GPUs (the configuration:
 "NVIDIA H200, 8 GPUs/node", with "Time-sliced ×4", "MPS ×2" or "MIG 3g.20gb" when shared, and
 "+N more" for more configurations), capacity ("4 nodes, 32 GPUs"; "8 GPUs" from
-`capacity["nvidia.com/gpu"]` when the backend has no inventory), as Jenny Yi's provider-admin
+`capacity["nvidia.com/gpu"]` when the backend has no inventory), as provider-admin
 feedback asks (the OpenShift version is on the details page, to leave the list room); adds a cluster to AI Grid or removes it, and links each name to
 the cluster's details page (`ClusterDetailsPage.tsx`, `/clusters/:name`). That page shows the
 membership (status, role, location), what the hub knows about the cluster (versions, platform,

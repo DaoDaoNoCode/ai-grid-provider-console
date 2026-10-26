@@ -1,4 +1,5 @@
 import { screen, waitFor, within } from '@testing-library/react';
+import { vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { ServiceError } from '../api/ConsoleService';
 import { MockConsoleService, seedClusters } from '../api/MockConsoleService';
@@ -131,6 +132,13 @@ it('says when the hub counts GPUs but has no details for them', async () => {
   expect(screen.queryByRole('grid', { name: 'GPU nodes' })).not.toBeInTheDocument();
 });
 
+it('seeds each cluster with its own copy of the GPU inventory', () => {
+  const [first] = seedClusters().filter((c) => c.gpus);
+  const again = seedClusters().find((c) => c.name === first.name)!;
+  expect(again.gpus).toEqual(first.gpus);
+  expect(again.gpus).not.toBe(first.gpus);
+});
+
 it('marks a GPU node that is not ready', async () => {
   const clusters = seedClusters();
   clusters[0].gpus!.nodes[1] = { ...clusters[0].gpus!.nodes[1], ready: false };
@@ -218,15 +226,96 @@ it('removes the cluster from AI Grid', async () => {
 it('keeps the modal open with the error when the change fails', async () => {
   const user = userEvent.setup();
   const service = new MockConsoleService();
-  service.removeClusterFromGrid = () =>
-    Promise.reject(new ServiceError(409, 'the cluster changed since you loaded it'));
+  service.removeClusterFromGrid = () => Promise.reject(new ServiceError(500, 'the hub refused the change'));
   renderAt('/clusters/site1', service);
   await user.click(await screen.findByRole('button', { name: 'Actions for site1' }));
   await user.click(screen.getByRole('menuitem', { name: 'Remove from AI Grid' }));
   const modal = await screen.findByTestId('cluster-membership-modal');
   await user.click(within(modal).getByRole('button', { name: 'Remove' }));
-  expect(await within(modal).findByText(/the cluster changed since you loaded it/)).toBeVisible();
+  expect(await within(modal).findByText(/the hub refused the change/)).toBeVisible();
   expect(screen.getByTestId('cluster-membership')).toHaveTextContent('Provisioned');
+});
+
+/** Opens Add to AI Grid for site4 from its page, typed us-east and Inference, and leaves the dialog open. */
+const openAddSite4 = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(await screen.findByRole('button', { name: 'Actions for site4' }));
+  await user.click(screen.getByRole('menuitem', { name: 'Add to AI Grid' }));
+  const modal = await screen.findByTestId('cluster-membership-modal');
+  const location = within(modal).getByRole('textbox', { name: 'Location' });
+  await user.clear(location);
+  await user.type(location, 'us-east');
+  await user.click(within(modal).getByRole('combobox', { name: 'Role' }));
+  await user.click(await screen.findByRole('option', { name: /Inference/ }));
+  return modal;
+};
+
+it('loads the cluster again into the open dialog after a conflict, so the next Add works', async () => {
+  const user = userEvent.setup();
+  const service = new MockConsoleService();
+  renderAt('/clusters/site4', service);
+  const modal = await openAddSite4(user);
+  // Someone else changes another label while the dialog is open.
+  const index = service.clusters.findIndex((c) => c.name === 'site4');
+  const before = service.clusters[index];
+  service.clusters[index] = {
+    ...before,
+    labels: { ...before.labels, team: 'blue' },
+    resourceVersion: String(Number(before.resourceVersion) + 5),
+  };
+  const enroll = vi.spyOn(service, 'enrollCluster');
+
+  await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
+  expect(
+    await within(modal).findByText('This cluster changed since you opened this dialog. Check it and try again.'),
+  ).toBeVisible();
+  // The user's choices stand when the other change didn't touch them.
+  expect(within(modal).getByRole('textbox', { name: 'Location' })).toHaveValue('us-east');
+
+  await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
+  expect(await screen.findByText('site4 added to AI Grid')).toBeVisible();
+  expect(enroll).toHaveBeenCalledTimes(2);
+  expect(enroll.mock.calls[1][0].resourceVersion).toBe(String(Number(before.resourceVersion) + 5));
+  expect(service.clusters[index].labels).toMatchObject({
+    team: 'blue',
+    'ai-grid/enabled': 'true',
+    location: 'us-east',
+  });
+});
+
+it('shows the location and role someone else set meanwhile instead of sending the dialog’s over them', async () => {
+  const user = userEvent.setup();
+  const service = new MockConsoleService();
+  renderAt('/clusters/site4', service);
+  const modal = await openAddSite4(user);
+  const index = service.clusters.findIndex((c) => c.name === 'site4');
+  const before = service.clusters[index];
+  service.clusters[index] = {
+    ...before,
+    location: 'eu-west',
+    labels: { ...before.labels, location: 'eu-west', 'ai-grid/role': 'ingress' },
+    resourceVersion: String(Number(before.resourceVersion) + 1),
+  };
+
+  await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
+  expect(
+    await within(modal).findByText(
+      'Someone else changed the location or role of this cluster since you opened this dialog. The dialog now shows theirs; check them and try again.',
+    ),
+  ).toBeVisible();
+  expect(within(modal).getByRole('textbox', { name: 'Location' })).toHaveValue('eu-west');
+  expect(within(modal).getByRole('combobox', { name: 'Role' })).toHaveValue('Ingress');
+});
+
+it('offers Retry when the cluster could not be loaded', async () => {
+  const user = userEvent.setup();
+  const service = new MockConsoleService();
+  const getCluster = service.getCluster;
+  service.getCluster = () => Promise.reject(new ServiceError(503, 'the hub is unavailable'));
+  renderAt('/clusters/site1', service);
+  const retry = await screen.findByRole('button', { name: 'Retry' });
+  service.getCluster = getCluster;
+  await user.click(retry);
+  expect(await screen.findByTestId('cluster-membership')).toHaveTextContent('Provisioned');
 });
 
 it('says when the hub has no such cluster', async () => {

@@ -10,7 +10,7 @@ import (
 	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
 )
 
-// One of the dev hub's L4 spoke nodes, as ACM Search returned it (labels trimmed to GFD's).
+// An L4 node as ACM Search returns it (labels trimmed to GFD's).
 const hubL4Labels = "node-role.kubernetes.io/gpu=; node-role.kubernetes.io/worker=; " +
 	"nvidia.com/cuda.driver-version.full=580.105.08; nvidia.com/cuda.runtime-version.full=13.0; " +
 	"nvidia.com/gpu.compute.major=8; nvidia.com/gpu.compute.minor=9; nvidia.com/gpu.count=1; " +
@@ -20,11 +20,11 @@ const hubL4Labels = "node-role.kubernetes.io/gpu=; node-role.kubernetes.io/worke
 
 func TestGPUNodeReadsGFDLabels(t *testing.T) {
 	got, ok := gpuNode(SearchNode{
-		Cluster: "site-a", Name: "ip-10-0-21-83", Label: hubL4Labels,
+		Cluster: "site-a", Name: "node-a", Label: hubL4Labels,
 		Condition: "DiskPressure=False; MemoryPressure=False; PIDPressure=False; Ready=True",
 	})
 	want := &aigridv1.GPUNode{
-		Name: "ip-10-0-21-83", Vendor: "NVIDIA", Product: "NVIDIA-L4", Count: 1, MemoryMib: 23034,
+		Name: "node-a", Vendor: "NVIDIA", Product: "NVIDIA-L4", Count: 1, MemoryMib: 23034,
 		Family: "ada-lovelace", ComputeCapability: "8.9", DriverVersion: "580.105.08", CudaRuntimeVersion: "13.0",
 		Sharing:      &aigridv1.GPUSharing{Strategy: "none", Replicas: 1},
 		InstanceType: "g6.xlarge", Ready: true,
