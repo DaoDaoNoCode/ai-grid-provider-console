@@ -46,6 +46,13 @@ models, three organizations and three subscriptions, no scenario events), for co
 the PoC; the browser tests use it. Run the pieces separately with `make dev-fake-backend`, `make dev-bff-fake` and
 `make dev-frontend-fake`.
 
+This fake serves the console's draft over gRPC only, so the Connect relay (`/ai_grid.v1.*`,
+`docs/plan/bff-api.md`, "The Connect relay") has nothing to reach here. For a page built on the
+backend's own RPCs over Connect (`frontend/src/api/connect`), run `make dev-fake-infra` instead:
+the real backend at `.backend-api-version` on its own repository's fake hub and Keycloak, with the
+same tokens (`dev-token`, `viewer-token`, `expired-token`) and the same ports, so not both at once
+(`docs/dev-setup.md`, "On the backend's own fakes").
+
 The fake backend (`bff/cmd/fake-backend`) serves the backend's gRPC services from
 `fixtures/` and answers the BFF's access review like a hub would. The fake hub answers one
 question only, the provider-admin check (`patch` on `managedclusters` in

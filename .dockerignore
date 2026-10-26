@@ -11,3 +11,4 @@ bff/bin
 frontend/.pnpm-store
 **/.env
 **/.env.*
+.cache

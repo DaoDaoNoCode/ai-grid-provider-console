@@ -30,7 +30,14 @@ What the BFF does:
   `isProviderAdmin` (a `SelfSubjectAccessReview` with the caller's token);
 - relays `/perses/api` to the hub's Perses with the caller's token, for the Monitoring page:
   only the read and query paths the Perses components call, nothing else of the caller's
-  (`bff/internal/perses`). Perses authorizes and runs the queries.
+  (`bff/internal/perses`). Perses authorizes and runs the queries;
+- relays the browser's Connect calls to the backend's own RPCs (`/ai_grid.v1.<Service>/<Method>`,
+  `bff/internal/relay`) behind the same caller checks as `/api/v1`: a reverse proxy that drops
+  whatever the browser sent about who it is (`Authorization`, cookies, `Forwarded`, every
+  `X-Forwarded-*`) and sets the caller exactly as `forwardIdentity` does for gRPC, passes only
+  POST and GET with at most 1 MiB, bounds a unary call by `BACKEND_TIMEOUT`, and never reads a
+  body or compiles against the contract. A new RPC needs no change in the BFF; don't add
+  per-RPC code there (`docs/plan/bff-api.md`, "The Connect relay").
 
 What belongs in the backend, and so in the fake (`bff/internal/fakebackend`) until the backend
 ships it: validation of values, normalization and defaults, resource versions and the
@@ -52,6 +59,24 @@ Follow `mock/proto/README.md`, "Working with the backend team":
 
 Afterwards run `make -C bff golden` when the BFF's JSON or a fixture changed, and update the
 docs (`docs/plan/bff-api.md`, `mock/AGENTS.md`, `mock/areas/*.md`) in the same change.
+
+## The backend's own API over Connect
+
+The console is moving to the backend's RPCs, called from the browser over Connect (ADRs 0002
+and 0004). The foundation is in place; no page uses it yet:
+
+- `.backend-api-version` holds the backend commit (one full SHA) whose `proto/` (package
+  `ai_grid.v1`, not `ai_grid/draft`) the frontend is generated from. `make generate-api` writes
+  `frontend/src/gen` (committed; never edit it, `make check-generated-api` fails CI when it
+  differs). To move to a newer backend, change the SHA and regenerate in the same change.
+- `frontend/src/api/connect`: `createConsoleTransport` (Connect JSON to the console's origin; on
+  Unauthenticated it calls the console's `checkSession`), `createConsoleClients` (typed clients
+  per service), `describeError` and `toServiceError` (a ConnectError as the UI states the pages
+  already show), and `fakeClients` in `testing.ts` (typed in-memory fakes for tests).
+- `make dev-fake-infra` runs the backend at that commit on its own fake hub and Keycloak (its
+  `make dev-fake`, fetched into `.cache/backend/<sha>`, or `BACKEND_DIR`), the BFF against it
+  and the frontend, so pages and the relay can be tried on the real backend without a cluster.
+  `make dev-fake` (the console's own fake, serving the draft over gRPC only) is unchanged.
 
 ## Known exceptions, to move behind the RPCs later
 

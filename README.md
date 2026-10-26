@@ -18,10 +18,12 @@ the caller's own token: may this user patch ManagedClusters? That answer is `isP
 | Path | What |
 |---|---|
 | `bff/` | Go backend-for-frontend: `/api/v1/*` as JSON over the backend's gRPC, plus the built frontend |
+| `bff/internal/relay` | The relay of the browser's Connect calls (`/ai_grid.v1.*`) to the backend's own RPCs, with the caller's identity |
 | `frontend/` | Vite, React 18, PatternFly 6 |
+| `frontend/src/gen`, `.backend-api-version` | TypeScript generated from the backend's proto (`ai_grid.v1`) at the commit in `.backend-api-version` (`make generate-api`; never edited by hand); `frontend/src/api/connect` has its transport and clients |
 | `charts/ai-grid-provider-console/` | Helm chart: kube-auth-proxy, bff and ai-grid-backend in one pod, one per ACM hub |
 | `manifests/` | The same pod as kustomize. Not an install path: the chart is (ai-grid-env-setup deploys it, and so does `make deploy`). `manifests/base` is kept for `hack/undeploy.sh`'s fallback, which removes a console deployed before the chart, and for the takeover test in `make chart-test`; `make chart-check` keeps it equal to the chart's defaults |
-| `hack/` | `forward-backend.sh` (the hub's backend for `make start`), `forward-perses.sh` (the hub's Perses for `make start`), `hub-ca.sh`, `service-ca.sh` (the hub's service CA, for Perses), `deploy.sh`, `undeploy.sh`, `chart-takeover.sh`, `check-chart.sh`, `test-chart-kind.sh`, `api.sh` (curl as you), `smoke.sh`, `sync-upstream-proto.sh` (vendors the backend's proto), `test-image-workflows.sh` (tests the PR-image workflows' delete logic) |
+| `hack/` | `forward-backend.sh` (the hub's backend for `make start`), `forward-perses.sh` (the hub's Perses for `make start`), `backend-checkout.sh` (the backend at `.backend-api-version` for `make dev-fake-infra`), `hub-ca.sh`, `service-ca.sh` (the hub's service CA, for Perses), `deploy.sh`, `undeploy.sh`, `chart-takeover.sh`, `check-chart.sh`, `test-chart-kind.sh`, `api.sh` (curl as you), `smoke.sh`, `sync-upstream-proto.sh` (vendors the backend's proto), `test-image-workflows.sh` (tests the PR-image workflows' delete logic) |
 | `docs/dev-setup.md` | Running against a real cluster, checks, deploying |
 | `docs/plan/bff-api.md` | API decisions, endpoint list, RPCs still needed from the backend |
 | `docs/plan/work-breakdown.md` | Work split across backend, BFF and frontend |
@@ -36,7 +38,10 @@ make start        # the hub's deployed backend on :9090, BFF :8080, frontend :90
 ```
 
 Then open http://127.0.0.1:9000. To run your own backend from its repository instead, use
-`make dev`; without a cluster, `make dev-fake`. See `docs/dev-setup.md` for details.
+`make dev`; without a cluster, `make dev-fake` (the console's own fake backend) or
+`make dev-fake-infra` (the real backend at `.backend-api-version` on the fake hub and Keycloak of
+its repository, fetched into `.cache/backend/`, or your checkout with `BACKEND_DIR`). See
+`docs/dev-setup.md` for details.
 
 ## Pages
 
