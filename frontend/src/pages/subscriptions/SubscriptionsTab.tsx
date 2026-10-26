@@ -82,6 +82,7 @@ export const SubscriptionsTab: React.FC<Props> = ({ service }) => {
   const filteredSubscriptions = useMemo(() => {
     const keyword = filterData[SubscriptionsFilterOptions.keyword]?.trim().toLowerCase();
     const model = filterData[SubscriptionsFilterOptions.model]?.trim().toLowerCase();
+    const group = filterData[SubscriptionsFilterOptions.group]?.trim().toLowerCase();
     const matches = (term: string, ...values: (string | undefined)[]) =>
       values.some((value) => value?.toLowerCase().includes(term));
     return subscriptions.filter(
@@ -93,7 +94,8 @@ export const SubscriptionsTab: React.FC<Props> = ({ service }) => {
           sub.modelRefs.some((ref) => {
             const hub = models.find((m) => isSameModel(m, ref));
             return matches(model, ref.name, ref.displayName, ref.description, hub?.displayName, hub?.description);
-          })),
+          })) &&
+        (!group || sub.owner.groups.some((g) => matches(group, g.name))),
     );
   }, [subscriptions, models, filterData]);
 

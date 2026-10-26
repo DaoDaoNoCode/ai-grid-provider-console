@@ -173,6 +173,22 @@ describe('administrator subscription flows', () => {
     expect(within(table).getByRole('link', { name: 'Research' })).toBeVisible();
   });
 
+  it('filters by group name', async () => {
+    const user = userEvent.setup();
+    renderAt('/subscriptions', new MockConsoleService());
+    const table = await screen.findByTestId('subscriptions-table');
+    // The Subscription filter searches the name, ID or description.
+    expect(screen.getByTestId('subscriptions-filter-input').querySelector('input')).toHaveAttribute(
+      'placeholder',
+      'Filter by name, ID, or description',
+    );
+    await user.click(screen.getByTestId('subscriptions-filter-attribute'));
+    await user.click(await screen.findByRole('option', { name: 'Group' }));
+    await user.type(screen.getByTestId('subscriptions-group-filter-input').querySelector('input')!, 'platform');
+    expect(within(table).getByRole('link', { name: 'Data science' })).toBeVisible();
+    expect(within(table).queryByRole('link', { name: 'Engineering' })).not.toBeInTheDocument();
+  });
+
   it('names the row each count opens, for assistive technology', async () => {
     const user = userEvent.setup();
     renderAt('/subscriptions', new MockConsoleService());

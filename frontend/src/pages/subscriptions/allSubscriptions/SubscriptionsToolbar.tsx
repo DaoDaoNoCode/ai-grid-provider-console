@@ -99,7 +99,7 @@ export const SubscriptionsToolbar: React.FC<Props> = ({ filterData, onFilterUpda
                   data-testid={
                     key === SubscriptionsFilterOptions.keyword
                       ? 'subscriptions-filter-input'
-                      : 'subscriptions-model-filter-input'
+                      : `subscriptions-${key}-filter-input`
                   }
                 />
               </ToolbarFilter>
