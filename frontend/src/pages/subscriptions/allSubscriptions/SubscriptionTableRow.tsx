@@ -28,6 +28,7 @@ type Props = {
   /** The hub's models, for the models expansion, and whether they have loaded. */
   models: ManagedModel[];
   modelsState: ModelsState;
+  siteNames: Map<string, string>;
   canWrite: boolean;
   setDeleteSubscription: (subscription: MaaSSubscription) => void;
 };
@@ -40,6 +41,7 @@ export const SubscriptionTableRow: React.FC<Props> = ({
   organization,
   models,
   modelsState,
+  siteNames,
   canWrite,
   setDeleteSubscription,
 }) => {
@@ -149,7 +151,12 @@ export const SubscriptionTableRow: React.FC<Props> = ({
         <Td colSpan={columns.length + 1}>
           <ExpandableRowContent>
             {expanded === 'models' && (
-              <ExpandedModelsPanel modelRefs={subscription.modelRefs} models={models} modelsState={modelsState} />
+              <ExpandedModelsPanel
+                modelRefs={subscription.modelRefs}
+                models={models}
+                modelsState={modelsState}
+                siteNames={siteNames}
+              />
             )}
           </ExpandableRowContent>
         </Td>

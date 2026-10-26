@@ -21,6 +21,8 @@ type Props = {
   /** The hub's models, for the rows' models expansion, and whether they have loaded. */
   models: ManagedModel[];
   modelsState: ModelsState;
+  /** Each location's site name, from the clusters. */
+  siteNames: Map<string, string>;
   toolbarContent: React.ReactNode;
   onClearFilters: () => void;
   canWrite: boolean;
@@ -32,6 +34,7 @@ export const SubscriptionsTable: React.FC<Props> = ({
   organizationName,
   models,
   modelsState,
+  siteNames,
   toolbarContent,
   onClearFilters,
   canWrite,
@@ -78,6 +81,7 @@ export const SubscriptionsTable: React.FC<Props> = ({
                   organization={organizationName(subscription)}
                   models={models}
                   modelsState={modelsState}
+                  siteNames={siteNames}
                   canWrite={canWrite}
                   setDeleteSubscription={setDeleteSubscription}
                 />

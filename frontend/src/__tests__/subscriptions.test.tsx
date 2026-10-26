@@ -95,8 +95,11 @@ describe('administrator subscription flows', () => {
     const model = within(models).getByTestId('expanded-subscription-model-row');
     expect(model).toHaveTextContent('Granite 3.3 8B Instruct');
     expect(model).toHaveTextContent('granite-3-8b');
-    // Where the model's placement put it, and every limit on one line.
-    expect(within(model).getByTestId('expanded-subscription-model-locations')).toHaveTextContent('site1');
+    // Where the model's placement put it, named by its site as on the Models page, and every limit
+    // on one line.
+    expect(within(model).getByTestId('expanded-subscription-model-locations')).toHaveTextContent(
+      'San Francisco (site1)',
+    );
     expect(within(model).getByTestId('expanded-subscription-model-token-limits')).toHaveTextContent(
       '100,000 / 1 hour, 10,000 / 1 minute',
     );

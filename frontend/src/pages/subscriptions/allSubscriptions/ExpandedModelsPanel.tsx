@@ -2,7 +2,8 @@
 // packages/maas/frontend/src/app/shared/ExpandedModelsPanel.tsx
 // upstream commit: 6f47c0f775d19c89ef02f74d192b32dc7d3c669d
 // The console adds the Locations column (where the model's placement put it), as the org admin's
-// view shows regions, and moves the model's description into a popover by its name.
+// view shows regions, named and styled as the Models page names them, and moves the model's
+// description into a popover by its name.
 import { Button, Label, LabelGroup, Popover, Skeleton } from '@patternfly/react-core';
 import { OutlinedQuestionCircleIcon } from '@patternfly/react-icons';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
@@ -11,6 +12,7 @@ import { TableRowTitleDescription } from '../../../components/TableRowTitleDescr
 import { isSameModel, modelKey } from '../../../utilities/authpolicies';
 import { EMPTY_VALUE } from '../../../utilities/format';
 import { formatTokenRateLimitLine } from '../../../utilities/rateLimits';
+import { locationLabel } from '../../models/modelUtils';
 
 /** Whether the hub's models have loaded: until then, or when they fail, no locations are known. */
 export type ModelsState = 'loading' | 'loaded' | 'failed';
@@ -20,9 +22,15 @@ type Props = {
   /** The hub's models, for each reference's locations, display name and description. */
   models: ManagedModel[];
   modelsState: ModelsState;
+  /** Each location's site name, for "Paris DC1 (paris)" as on the Models page. */
+  siteNames: Map<string, string>;
 };
 
-const locationsCell = (model: ManagedModel | undefined, modelsState: ModelsState): React.ReactNode => {
+const locationsCell = (
+  model: ManagedModel | undefined,
+  modelsState: ModelsState,
+  siteNames: Map<string, string>,
+): React.ReactNode => {
   if (modelsState === 'loading') {
     return <Skeleton width="6rem" screenreaderText="Loading locations" />;
   }
@@ -33,8 +41,8 @@ const locationsCell = (model: ManagedModel | undefined, modelsState: ModelsState
   return locations.length ? (
     <LabelGroup numLabels={4}>
       {locations.map((location) => (
-        <Label key={location} variant="outline" isCompact>
-          {location}
+        <Label key={location} color="grey" isCompact>
+          {locationLabel(location, siteNames)}
         </Label>
       ))}
     </LabelGroup>
@@ -54,7 +62,7 @@ const tokenLimits = (ref: ModelSubscriptionRef): string => {
 };
 
 /** A subscription's models in its row's expansion: name, where each runs, and its token limits. */
-export const ExpandedModelsPanel: React.FC<Props> = ({ modelRefs, models, modelsState }) => (
+export const ExpandedModelsPanel: React.FC<Props> = ({ modelRefs, models, modelsState, siteNames }) => (
   <Table aria-label="Subscription models" variant="compact" data-testid="subscription-models-expanded-panel">
     <Thead>
       <Tr>
@@ -97,7 +105,7 @@ export const ExpandedModelsPanel: React.FC<Props> = ({ modelRefs, models, models
                 />
               </Td>
               <Td dataLabel="Locations" data-testid="expanded-subscription-model-locations">
-                {locationsCell(model, modelsState)}
+                {locationsCell(model, modelsState, siteNames)}
               </Td>
               <Td dataLabel="Token limits" data-testid="expanded-subscription-model-token-limits">
                 {tokenLimits(ref)}

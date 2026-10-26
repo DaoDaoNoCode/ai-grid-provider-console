@@ -18,12 +18,15 @@ import {
 } from '@patternfly/react-core';
 import { ExclamationCircleIcon } from '@patternfly/react-icons';
 import { ServiceError } from '../../api/ConsoleService';
+import type { ClustersService } from '../../api/clusters';
 import type { MaaSSubscription } from '../../api/types';
 import { LoadError } from '../../components/LoadError';
 import { PageLoading } from '../../components/PageLoading';
 import type { GovernanceService } from '../../context/useMaaSGovernanceContext';
 import { useMaaSGovernanceContext } from '../../context/useMaaSGovernanceContext';
+import { useServiceData } from '../../hooks/useServiceData';
 import { isSameModel } from '../../utilities/authpolicies';
+import { siteNamesOf } from '../models/modelUtils';
 import type { SubscriptionsFilterDataType } from './allSubscriptions/const';
 import { initialSubscriptionsFilterData, SubscriptionsFilterOptions } from './allSubscriptions/const';
 import type { ModelsState } from './allSubscriptions/ExpandedModelsPanel';
@@ -32,7 +35,8 @@ import { SubscriptionsToolbar } from './allSubscriptions/SubscriptionsToolbar';
 import { DeleteSubscriptionModal } from './DeleteSubscriptionModal';
 import { EmptyStatePage } from './EmptyStatePage';
 
-type Props = { service: GovernanceService };
+// The clusters name the models' locations' sites, as on the Models page.
+type Props = { service: GovernanceService & Pick<ClustersService, 'listClusters'> };
 
 export const SubscriptionsTab: React.FC<Props> = ({ service }) => {
   const {
@@ -46,6 +50,10 @@ export const SubscriptionsTab: React.FC<Props> = ({ service }) => {
     refresh,
     canWrite,
   } = useMaaSGovernanceContext();
+  // Loaded once, as the Models page does: a site name rarely changes, and without one (or without
+  // the clusters) a location shows as itself.
+  const [clusters] = useServiceData(() => service.listClusters(), [], 0);
+  const siteNames = useMemo(() => siteNamesOf(clusters), [clusters]);
   const [filterData, setFilterData] = useState<SubscriptionsFilterDataType>(initialSubscriptionsFilterData);
   const [notice, setNotice] = useState(false);
   const [deleteSubscription, setDeleteSubscription] = useState<MaaSSubscription>();
@@ -164,6 +172,7 @@ export const SubscriptionsTab: React.FC<Props> = ({ service }) => {
           organizationName={organizationName}
           models={models}
           modelsState={modelsState}
+          siteNames={siteNames}
           onClearFilters={onClearFilters}
           toolbarContent={
             <SubscriptionsToolbar filterData={filterData} onFilterUpdate={onFilterUpdate} canWrite={canWrite} />
