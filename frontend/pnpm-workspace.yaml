@@ -13,5 +13,10 @@ patchedDependencies:
 
 # Perses 0.54 declares Query v4. The real-renderer browser test in e2e/perses.spec.ts
 # verifies its v5 integration; keep the console and all plugins on the same runtime.
+# Under v5, three things in Perses behave differently (docs/connect.md, "Perses on Query v5"):
+# the query summary table counts no active queries ('loading' is 'pending' in v5), a panel
+# plugin that fails to load shows "Missing PanelComponent ..." instead of its own error
+# (`useErrorBoundary` is `throwOnError` in v5), and a disabled query without data is not
+# `isLoading`. Drop this override once the @perses-dev packages declare Query v5.
 overrides:
   '@tanstack/react-query': 5.104.5

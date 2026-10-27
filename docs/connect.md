@@ -107,6 +107,36 @@ still declares v4 support; `e2e/perses.spec.ts` verifies the actual renderer on 
 regression passing when updating these dependencies. No existing page is migrated by this
 foundation change.
 
+### Perses on Query v5
+
+Every `@perses-dev` package up to 0.55.0 declares `@tanstack/react-query` `^4.39.1` as its peer;
+the `overrides` entry in `frontend/pnpm-workspace.yaml` gives it the console's v5 instead, so
+there is one Query runtime in the app. Perses's built code uses the object syntax v5 requires,
+but three v4 names it still uses mean something else, or nothing, in v5 ([TanStack's migration
+guide](https://tanstack.com/query/v5/docs/framework/react/guides/migrating-to-v5)):
+
+- **The query summary table counts no active queries.**
+  `node_modules/@perses-dev/dashboards/dist/components/QuerySummaryTable/QuerySummaryTable.js`
+  counts queries whose `state.status` is `'loading'`; v5 renamed that status `'pending'`, so the
+  count is always 0.
+- **A panel plugin that fails to load shows a different error.**
+  `node_modules/@perses-dev/dashboards/dist/components/Panel/PanelPluginLoader.js` and
+  `PanelContent.js` pass `useErrorBoundary: true` to `usePlugin`, which hands it to `useQuery`;
+  v5 renamed the option `throwOnError` and ignores the old name. The plugin's own load error is
+  no longer thrown: the plugin is just missing, and the panel's error boundary shows "Missing
+  PanelComponent from panel plugin for kind '...'" instead. A query's error is unaffected:
+  `PanelContent.js` throws it itself. (`@perses-dev/plugin-system`'s `MultiQueryEditor.js` passes
+  the same option, in the panel editor, which the console doesn't open.)
+- **A disabled query without data is not loading.** v4's `isLoading` was `status === 'loading'`,
+  true for a query that was disabled before it had data; v5's is `isPending && isFetching`, false
+  for it (v4's `isInitialLoading`). Perses code that shows a skeleton on `isLoading`, such as
+  `PanelContent.js` while `usePlugin` waits for a plugin kind, renders on instead.
+
+Each one only changes what a dashboard shows in those cases. The exit: drop the override when the
+`@perses-dev` packages declare Query v5 (Perses has already moved its code to the v5-compatible
+syntax, perses/perses#2139). If the integration regresses before then, the fallback is a second
+Query runtime for Perses alone.
+
 ## Testing
 
 `fakeClients` (`testing.ts`) gives typed clients over an in-memory backend
