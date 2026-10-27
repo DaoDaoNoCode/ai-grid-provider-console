@@ -11,12 +11,13 @@ answering `/healthcheck` and `/readyz`, and serving the console's own configurat
 legacy request mapping goes away. The optional Perses integration has a separate relay,
 which remains an explicit BFF responsibility until an alternative is agreed.
 
-**Relaying means proxying, not re-implementing.** The BFF is an `httputil.ReverseProxy` with a
-Director that attaches the caller's identity. In the target architecture it does not compile
-against the contract: a new RPC needs no transport implementation here. Until backend
-authorization lands, the relay explicitly allows reviewed procedures already offered by the
-console API; new procedures, Clusters Create/Delete and `Tenants/ListMembers` remain blocked. This temporary
-access boundary is removed once the backend enforces authorization for each RPC.
+**Relaying means proxying, not re-implementing.** The BFF is an `httputil.ReverseProxy` whose
+`Rewrite` hook drops whatever the browser sent about who it is and attaches the caller's
+identity. In the target architecture it does not compile against the contract: a new RPC needs
+no transport implementation here. Until backend authorization lands, the relay passes only the
+reviewed procedures the console's API already offers; new procedures, Clusters Create/Delete and
+`Tenants/ListMembers` stay blocked (AGENTS.md, "Known exceptions"). This temporary access
+boundary goes once the backend enforces authorization for each RPC.
 
 A first attempt got this wrong. It was built and discarded before merging, and is recorded
 only because the failure mode is easy to repeat. Before the backend served Connect, the BFF
@@ -37,17 +38,28 @@ rebuilding it to integrate with OSAC.
 
 - The backend owns the REST routes under `/api/v1/*`. The BFF's own endpoints move to
   `/console/*` so no path is served by two things.
-- `isProviderAdmin` moves to the backend, proposed as `GetCurrentUser`, once the backend can
+- `isProviderAdmin` moves to the backend, planned as `GetCurrentUser`, once the backend can
   authenticate and authorize the caller. The identity mechanism remains to be agreed below.
   Once that replaces the BFF's `SelfSubjectAccessReview`, `bff/internal/hub` can be deleted.
 - The BFF keeps no credential, reads no cluster, and makes no authorization decision.
 
 ## Current boundary (verified 2026-10-27)
 
+There is one provider console per ACM hub, deployed by this repository's Helm chart, for
+provider admins only: organization users never reach it, and their UI is the MaaS consumer
+portal on each ingress cluster. The console is one pod. kube-auth-proxy listens on `:8443`, the
+only listener on the pod network and the Service's only port; the BFF and the backend listen on
+loopback (the backend's `--listen-address=127.0.0.1:9090` for Connect, gRPC and gRPC-Web and
+`--http-listen-address=127.0.0.1:8081` for REST). `hack/test-chart-kind.sh` checks that nothing
+but the proxy listens off loopback.
+
 The BFF still maps legacy JSON requests and responses. Its `requireProviderAdmin` middleware
 asks the hub for a `SelfSubjectAccessReview` with the caller's token and requires permission
-to patch ManagedClusters. Every `/api/v1` call except `GET` or `HEAD` on `/user` and `/config` passes this gate.
-The `/perses/api/` relay also uses it. The BFF keeps its hub client
+to patch ManagedClusters. Every `/api/v1` call except `GET` or `HEAD` on `/user` and `/config`
+passes this gate. The Connect relay (`/ai_grid.v1.*`) passes it too, after the session check
+and before its procedure allowlist, and so does the `/perses/api/` relay. kube-auth-proxy answers
+a Connect path without a session with 401 (`--api-route=^/ai_grid\.v1\.`) instead of a login
+redirect. The BFF keeps its hub client
 and this authorization decision until backend enforcement can replace them. Perses also
 remains an outbound dependency, so removing the hub access review alone would not leave the
 BFF with only a backend connection.
@@ -70,12 +82,17 @@ expected outcomes, not agreement on this mechanism.
 That proposal deviates from the standard, which specifies JWT validation plus OPA/Rego policy
 with tenancy from the `organization` claim. Hub impersonation could reuse existing RBAC for
 provider admins rather than maintaining a second policy. The standard's tenant-scoping
-invariant is unimplemented because the MVP is single-tenant.
+invariant is unimplemented: in the MVP only provider admins reach the backend, through the
+console, so `metadata.tenant` stays empty.
 
-The [ODH shared OIDC identity contract and gateway layout](https://github.com/opendatahub-io/architecture-decision-records/pull/175)
-(merged 2026-10-21) puts token validation at the gateway, identifies users by `iss` plus `sub`, and creates no
-Kubernetes identity for organization users. Those users cannot simply be assumed to have a
-hub identity to impersonate. Provider-admin access and organization-user access need an
+The ODH shared OIDC identity contract and portal gateway layout merged on 2026-10-21
+([opendatahub-io/architecture-decision-records#175](https://github.com/opendatahub-io/architecture-decision-records/pull/175)),
+renumbered on merge as MS-0007 (the identity contract) and MS-0008 (the portal gateway layout).
+MS-0007 has one shared OIDC issuer and one AITenant for all organizations; it identifies a user
+by `iss` plus `sub`, carries organization membership in the `orgs` claim, qualifies groups by
+organization (`<organization-id>/<group>`), and validates tokens at the gateway only, never in
+the BFF. It creates no Kubernetes identity for organization users. Those users cannot simply be
+assumed to have a hub identity to impersonate. Provider-admin access and organization-user access need an
 explicitly agreed boundary.
 
 The backend team and the OIDC integration owners need to
@@ -87,5 +104,5 @@ needs an authorization boundary before it can safely serve untrusted callers.
 
 The merged Git write path (backend PR #29) removed the public backend Routes and their
 cluster-mode write permissions. It does not add authentication: the backend still needs to
-remain behind the console's authenticated, authorized path. The proposed `GetCurrentUser`
-and impersonation work have not shipped.
+remain behind the console's authenticated, authorized path. The planned `GetCurrentUser` and
+the proposed impersonation have not shipped.

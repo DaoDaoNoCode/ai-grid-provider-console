@@ -11,8 +11,8 @@
 > Current boundary (verified 2026-10-27):
 >
 > - The backend is **`ai-grid-cloud/ai-grid-provider-backend`**. The vendored source in
->   `mock/proto/upstream/COMMIT` and the drift guard now track that repository; the old
->   `yuvalturg/ai-grid-backend` target was corrected.
+>   `mock/proto/upstream/COMMIT` and the drift guard now track that repository; the old target, an
+>   earlier copy in a personal repository, was corrected.
 > - The backend now uses `connect.NewServer()` and vanguard for REST. It still has no
 >   authentication or authorization interceptor and uses its own Kubernetes ServiceAccount.
 >   The BFF's `requireProviderAdmin` hub access review protects the console path today.
@@ -755,9 +755,10 @@ What the relay owns is the boundary:
   never its REST gateway, health or reflection on the same port: any other path under the
   prefix is 404 (`unimplemented`). The explicit allowlist permits the existing console
   operations: `AiGrid/Ping`, Clusters List/Get/Update, Tenants CRUD/List, Models CRUD/List
-  and ListLocations, and Subscriptions CRUD/List. Clusters Create/Delete, `Tenants/ListMembers`,
-  unknown services and future methods
-  return 404 until reviewed. Only `POST` (Connect unary and streaming calls) and `GET`
+  and ListLocations, and Subscriptions CRUD/List. Clusters Create/Delete, `Tenants/ListMembers`
+  (the console never lists an organization's members: one organization is one tenant, and the
+  provider must not see a company's internals), unknown services and future methods return 404
+  until reviewed (AGENTS.md, "Known exceptions"). Only `POST` (Connect unary and streaming calls) and `GET`
   (Connect's GET, for methods the proto marks free of side effects): any other method is 405
   (`unimplemented`) with `Allow: GET, POST`, after the caller checks, as on `/api/v1`. Only the
   Connect protocol, the one the browser's client speaks: a POST's `Content-Type` must be
@@ -865,7 +866,7 @@ exists; the frontend uses the mock service meanwhile.
   the `SelfSubjectAccessReview` behind `isProviderAdmin`, which asks the hub about the
   caller with the caller's own token and reads nothing.
 - No session handling. The proxy owns login and cookies.
-- No billing data. Nothing in the platform stores it (Andrew Ballantyne, 2026-10-14) and
+- No billing data. Nothing in the platform stores it (confirmed 2026-10-14) and
   whether AI Grid gets a cost or spend view is an open product question. `billingUrl` in
   `/api/v1/config` is a plain external link that stays empty until a page exists.
 - No metering. Praxis AI's `external_metering` filter emits CloudEvents to a metering

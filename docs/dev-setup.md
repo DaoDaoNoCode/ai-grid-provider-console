@@ -227,10 +227,13 @@ make check-generated-api   # what CI runs: a fresh generation in a temporary dir
 
 `frontend/buf.gen.yaml` runs `@bufbuild/protoc-gen-es`, the devDependency pinned in
 `package.json` at the version of `@bufbuild/protobuf` (the runtime the generated code imports),
-with `target=ts` and the imported files too (`google/api`, `buf/validate`, the OpenAPI options).
+with `target=ts` and the imported files too (`google/api`, `buf/validate`, the OpenAPI options),
+and `@connectrpc/protoc-gen-connect-query`, pinned the same way, for the Connect Query descriptors
+(`*_connectquery.ts`, one export per RPC).
 `make generate-api` also generates `google/rpc/error_details.proto` from googleapis at the commit
 the backend's `buf.lock` pins, for the `BadRequest` field violations in the backend's errors.
-`frontend/src/api/connect` has the transport, the clients, the error mapping and a fake for tests.
+`frontend/src/api/connect` has the transport, the clients, the error mapping, `BackendProvider`
+(which an area wraps itself in when it moves to Connect Query) and a fake for tests; `docs/connect.md` is the how-to.
 
 ## Deploy to a cluster
 

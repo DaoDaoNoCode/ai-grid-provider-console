@@ -14,6 +14,8 @@ plugins:
     # too: protoc-gen-es v2 links each file's descriptor to those of its imports. The well-known
     # types come from @bufbuild/protobuf/wkt.
     include_imports: true
+  # Connect Query descriptors (*_connectquery.ts), one export per RPC, for useQuery and
+  # useMutation; the pinned devDependency @connectrpc/protoc-gen-connect-query, like protoc-gen-es.
   - local: node_modules/.bin/protoc-gen-connect-query
     out: src/gen
     opt: target=ts

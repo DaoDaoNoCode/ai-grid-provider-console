@@ -12,9 +12,10 @@
 // Authorization: Bearer, and the user, email and groups percent-encoded in
 // x-forwarded-user, x-forwarded-email and x-forwarded-groups. Anything the
 // browser sent under those names, cookies and every other proxy header stay
-// behind. Only the Connect protocol passes: POST with a Connect content type
-// (unary and streaming calls) and GET (for methods without side effects), with
-// a body of at most MaxBodyBytes. A unary call is bounded by the backend
+// behind. Only the procedures in allowedProcedures pass, and only the Connect
+// protocol: POST with a Connect content type (unary and streaming calls) and
+// GET (for methods without side effects), uncompressed, with a body of at most
+// MaxBodyBytes. A unary call is bounded by the backend
 // timeout, and any call waits at most that long for the backend's headers. Of
 // the answer, only the headers a Connect client and the browser need pass.
 package relay
@@ -51,7 +52,11 @@ const MaxBodyBytes = 1 << 20
 var procedure = regexp.MustCompile(`^/ai_grid\.v1\.[A-Za-z_][A-Za-z0-9_]*/[A-Za-z_][A-Za-z0-9_]*$`)
 
 // allowedProcedures keeps the console's existing API surface until the backend
-// authorizes callers itself. In particular, Tenants/ListMembers is not exposed.
+// authorizes callers itself. Left out of the pinned API: Clusters Create and
+// Delete, which the console doesn't offer, and Tenants/ListMembers, because the
+// console never lists an organization's members: one organization is one
+// tenant, and the provider must not see a company's internals (decided
+// 2026-10-23).
 var allowedProcedures = map[string]struct{}{
 	"/ai_grid.v1.AiGrid/Ping":          {},
 	"/ai_grid.v1.Clusters/List":        {},

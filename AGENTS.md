@@ -16,8 +16,9 @@ decisions before designing anything new:
   draft and fake were copied into the backend by PR #10; their console copies are pending
   removal. The vendored upstream copy and drift guard remain, aimed at the real backend.
 - [ADR-0002](docs/adr/0002-connect-end-to-end-with-vanguard-for-rest.md): the browser speaks
-  Connect; the backend serves Connect, gRPC, gRPC-Web and REST from one handler via vanguard.
-  The JSON envelope, the `ETag`/`If-Match` protocol and the hand-written TypeScript go away.
+  Connect; the backend serves Connect, gRPC and gRPC-Web from one connect-go server, and vanguard
+  only adds its REST routes, which the console and the BFF never use. The JSON envelope, the
+  `ETag`/`If-Match` protocol and the hand-written TypeScript go away.
 - [ADR-0003](docs/adr/0003-the-resource-version-stays-a-string.md): a proposed string version
   instead of the backend's shipped `int32`, because a Kubernetes `resourceVersion` is opaque.
 - [ADR-0004](docs/adr/0004-the-bff-is-a-thin-relay.md): the target BFF relays backend calls, serves
@@ -35,10 +36,12 @@ the code right now; the glossary says which one wins.
 
 ## The BFF does transport only
 
-The console is a React frontend, a thin Go BFF (`bff/`) and `ai-grid-provider-backend`, a gRPC
-service in its own repository, `ai-grid-cloud/ai-grid-provider-backend`
-(`docs/plan/bff-api.md`). The backend is meant to be a provider API that
-stands on its own: a CLI, GitOps tooling and other UIs will call it without the BFF. So anything
+There is one provider console per ACM hub ("hub" always means the ACM hub), deployed by this
+repository's Helm chart, for provider admins only: organization users never reach it, and their
+UI is the MaaS consumer portal on each ingress cluster. The console is a React frontend, a thin
+Go BFF (`bff/`) and `ai-grid-provider-backend`, the provider API in its own repository,
+`ai-grid-cloud/ai-grid-provider-backend` (`docs/plan/bff-api.md`). The backend is meant to stand
+on its own: a CLI, GitOps tooling and other UIs will call it without the BFF. So anything
 that decides what data means, or what a request may do, belongs in the backend; if it lived in
 the BFF, every other client would have to copy it. The draft proto also follows OSAC's
 conventions (`mock/research/backend-conventions.md`): a List request carries only `offset`,
@@ -66,8 +69,9 @@ What the BFF does:
   whatever the browser sent about who it is (`Authorization`, cookies, `Forwarded`, every
   `X-Forwarded-*`) and sets the caller exactly as `forwardIdentity` does for gRPC, passes only
   the Connect protocol (POST with a Connect content type, GET), refuses compressed requests,
-  limits bodies to 1 MiB, bounds a unary call and every call's wait for headers by `BACKEND_TIMEOUT`, passes back only the response
-  headers a Connect client needs, and never reads a body or compiles against the contract. A
+  limits bodies to 1 MiB, bounds a unary call and every call's wait for headers by
+  `BACKEND_TIMEOUT`, passes back only the response headers a Connect client needs, and never
+  reads a body or compiles against the contract. A
   new RPC needs no transport implementation in the BFF. Until backend authorization lands,
   review it for the procedure allowlist (`docs/plan/bff-api.md`, "The Connect relay").
 
@@ -112,7 +116,8 @@ and 0004). The foundation is in place; no page uses it yet:
 - `frontend/src/api/connect`: `createConsoleTransport` (Connect JSON to the console's origin; on
   Unauthenticated it calls the console's `checkSession`), `createConsoleClients` (typed clients
   per service), `BackendProvider` (Connect Query and a Query v5 cache), `describeError` and
-  `toServiceError` (a ConnectError as the UI states the pages already show), and `fakeClients` in `testing.ts` (typed in-memory fakes for tests).
+  `toServiceError` (a ConnectError as the UI states the pages already show), and `fakeClients`
+  in `testing.ts` (typed in-memory fakes for tests).
 - `make dev-fake-infra` runs the backend at that commit on its own fake hub and Keycloak (its
   `make dev-fake`, fetched into `.cache/backend/<sha>`, or `BACKEND_DIR`), the BFF against it
   and the frontend, so pages and the relay can be tried on the real backend without a cluster.
@@ -126,9 +131,14 @@ own ServiceAccount, which may label every ManagedCluster and, on the hub, read A
 of every managed cluster. So in the console's pod:
 
 - kube-auth-proxy is the only listener on the pod network (`:8443`), and the only port the
-  Service and Route expose. The BFF and the backend bind to loopback, and every call reaches the
-  backend through the BFF's caller checks (signed in, provider admin), on `/api/v1` and on the
-  Connect relay alike.
+  Service and Route expose. The BFF and the backend bind to loopback (the backend's
+  `--listen-address=127.0.0.1:9090` and `--http-listen-address=127.0.0.1:8081`), and every call
+  reaches the backend through the BFF's caller checks (signed in, provider admin), on `/api/v1`
+  and on the Connect relay alike.
+- The BFF never validates a token: kube-auth-proxy signs provider admins in, and the BFF asks the
+  hub whether the caller is one (`SelfSubjectAccessReview` with the caller's token), until the
+  backend answers that itself (`GetCurrentUser`, planned). Organization users' tokens are
+  validated at the gateway only (ODH MS-0007), and never reach the console.
 - Don't add a Service port, Route, NetworkPolicy exception or `0.0.0.0` bind for the backend, and
   don't weaken the BFF's gates, until the backend authenticates callers itself (ADR-0004). The
   chart's kind test (`hack/test-chart-kind.sh`: only `:8443` listens off loopback) and
@@ -150,11 +160,15 @@ when the RPCs allow it.
 > `openshift.io/display-name` goes away. `requireTotal` goes away with the shipped backend it
 > exists to tolerate.
 
-- The Connect relay allowlist (`bff/internal/relay/relay.go`) exposes only the reviewed
-  procedures already offered by the console API. Clusters Create/Delete, `Tenants/ListMembers`
-  and new procedures
-  stay blocked until explicitly reviewed. Remove this temporary gate only when backend
-  authorization enforces the intended access for every RPC.
+- The Connect relay allowlist (`allowedProcedures`, `bff/internal/relay/relay.go`): the relay
+  passes only the reviewed procedures the console's API already offers, so every other procedure
+  of the backend is 404 (`unimplemented`), a method the backend adds later included. The backend
+  authorizes nothing itself, so without this list every one of its methods would be open to a
+  provider admin. Left out on purpose: Clusters `Create` and `Delete`, which the console doesn't
+  offer, and `Tenants/ListMembers`, because the console never lists an organization's members:
+  one organization is one tenant, and the provider must not see a company's internals (decided
+  2026-10-23). A new procedure needs a review and a line in the list. Remove the list once the
+  backend authorizes every RPC itself.
 - `toGridCluster` (`bff/internal/api/clusters.go`): `aiGridEnabled` and `provisioned` (the
   `ai-grid/enabled` and `ai-grid/provisioned` labels equal to `"true"`; when the backend reports
   `status.provisioning`, `provisioned` is that equal to `"Compliant"` instead, until the backend

@@ -45,7 +45,8 @@ _Avoid_: tenant (for this customer resource)
 
 **Tenant scope**:
 The owner of a resource, represented by the OSAC `metadata.tenant` field. This is distinct
-from the Organization resource the console manages. It is unpopulated in the single-tenant MVP.
+from the Organization resource the console manages. It is unpopulated in the MVP, where only
+provider admins reach the backend.
 
 **Model**:
 A deployed inference service, either on the hub alone or placed across grid members.

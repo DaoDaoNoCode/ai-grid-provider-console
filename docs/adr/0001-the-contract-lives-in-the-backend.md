@@ -18,8 +18,10 @@ reconciled to the OSAC service standards, and the console deletes its draft.
 
 - **Keep both protos, compare them periodically.** Rejected: they already answer the same URLs
   with different shapes, and a comparison is not a decision. The console was additionally
-  vendoring and drift-testing against `yuvalturg/ai-grid-backend` — a third repository that is
-  not the backend — so the drift job was green while real divergence accumulated.
+  vendoring and drift-testing against
+  [an earlier personal repository](https://github.com/yuvalturg/ai-grid-backend) — a third
+  repository that is not the backend — so the drift job was green while real divergence
+  accumulated.
 - **The console's draft wins.** Rejected: it is richer (Models, Subscriptions, Grid) but has no
   constituency outside this repository, and the backend's own `AGENTS.md` mandates OSAC
   conventions, which the draft does not follow.
@@ -29,9 +31,9 @@ reconciled to the OSAC service standards, and the console deletes its draft.
 
 ## What reconciling means
 
-Per `mpaulgreen/osac-service-standards`: plural service names with no suffix (`Clusters`),
-methods `List`/`Get`/`Create`/`Update`/`Delete`, messages `{Service}{Method}Request`, the
-object shape `id + metadata + spec + status` (lint-enforced by the custom `OSAC_OBJECT_SHAPE`
+Per the [OSAC service standards](https://github.com/mpaulgreen/osac-service-standards): plural
+service names with no suffix (`Clusters`), methods `List`/`Get`/`Create`/`Update`/`Delete`,
+messages `{Service}{Method}Request`, the object shape `id + metadata + spec + status` (lint-enforced by the custom `OSAC_OBJECT_SHAPE`
 rule), `offset`/`limit`/`filter` (CEL)/`order` on list requests, `size`/`total`/`items` on list
 responses, `buf.validate` for field rules with cross-resource checks in server logic, and
 enums as `UPPER_SNAKE_CASE` with a type prefix starting at `_UNSPECIFIED = 0`. URLs are flat
@@ -39,7 +41,9 @@ under `/api/v1/` in the backend.
 
 The string resource version is a proposed deviation (ADR-0003); the backend currently exposes
 `int32` versions and enforces optimistic locking. The standard's tenant-scoping invariant is
-unimplemented because the MVP is single-tenant.
+unimplemented: in the MVP only provider admins reach the backend, through the console, so
+`metadata.tenant` stays empty. Each organization is a tenant, but organization users never
+reach the provider console.
 
 ## Consequences
 
@@ -70,8 +74,8 @@ worth recording because each is a better answer than the original.
   `ai-grid-fake-infra`, which fakes the *hub and Keycloak* and runs the real backend against
   them. The two coexist deliberately: the fake infrastructure serves the areas the backend
   implements, the draft fake serves the ones it does not.
-- **The drift guard was repaired, not removed.** It had been pointed at
-  `yuvalturg/ai-grid-backend` and was green against a repository nobody ships. Rather than
+- **The drift guard was repaired, not removed.** It had been pointed at that earlier
+  personal repository and was green against a repository nobody ships. Rather than
   delete it, the console repointed it at `ai-grid-cloud/ai-grid-provider-backend`,
   `path=proto/ai_grid/v1`. A guard aimed at the right target earns its place; deleting it would
   have removed the signal along with the false assurance.

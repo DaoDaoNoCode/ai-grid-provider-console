@@ -553,7 +553,9 @@ func TestRelaysOnlyTheResponseHeadersAClientNeeds(t *testing.T) {
 	}
 }
 
-// A server stream reaches the browser as the backend flushes it, not at its end.
+// A server stream reaches the browser as the backend flushes it, not at its end. The pinned API has
+// no streaming RPC and the relay passes only allowed procedures; it tells a stream by its content
+// type, so an allowed path carries one here.
 func TestStreamsFlushAsTheyCome(t *testing.T) {
 	release := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

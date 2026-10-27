@@ -189,7 +189,8 @@ func browserCall(t *testing.T, ctx context.Context, front *httptest.Server, path
 }
 
 // Through the whole handler, with the browser accepting gzip: a stream's messages arrive as the
-// backend flushes them, and the browser going away cancels the backend's call.
+// backend flushes them, and the browser going away cancels the backend's call. The relay tells a
+// stream by its content type, and the pinned API has no streaming RPC, so an allowed path carries it.
 func TestConnectStreamThroughTheBFFFlushesAndCancels(t *testing.T) {
 	canceled := make(chan struct{})
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
