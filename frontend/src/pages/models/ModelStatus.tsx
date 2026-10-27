@@ -36,14 +36,15 @@ type LabelProps = {
 
 /**
  * The model's phase as a label. As in jgiardino's Models design (an RHOAI pattern), only a label
- * that can be clicked is filled: Ready is an outline label with nothing to open; any other status
- * opens ModelStatusModal.
+ * that can be clicked is filled: Ready and Saved to Git are outline labels with nothing to open (Saved
+ * to Git is all git mode knows, so a modal would only repeat it); any other status opens
+ * ModelStatusModal.
  */
 export const ModelStatusLabel: React.FC<LabelProps> = ({ model, onViewLocations }) => {
   const [open, setOpen] = useState(false);
   const phase = modelPhase(model);
   const { icon, status, color } = getPhaseProps(phase);
-  if (phase === 'Ready') {
+  if (phase === 'Ready' || phase === 'Saved to Git') {
     return (
       <span data-testid="model-phase">
         <Label isCompact variant="outline" icon={icon} status={status} color={color}>

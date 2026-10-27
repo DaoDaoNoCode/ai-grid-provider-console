@@ -503,6 +503,11 @@ it('shows Saved to Git, not Pending, for a model the backend saved to Git', asyn
   expect(phase).toHaveTextContent(/^Saved to Git$/);
   // Neutral (grey, PatternFly's default), not Pending's in-progress info status.
   expect(phase.querySelector('.pf-v6-c-label')).not.toHaveClass('pf-m-info');
+  // Like Ready: an outline label with nothing to open, so the git-mode message isn't repeated.
+  expect(phase.querySelector('.pf-v6-c-label')).toHaveClass('pf-m-outline');
+  expect(within(phase).queryByRole('button')).not.toBeInTheDocument();
+  await userEvent.setup().click(within(phase).getByText('Saved to Git'));
+  expect(screen.queryByTestId('model-status-modal')).not.toBeInTheDocument();
   renderAt(`/models/${saved.namespace}/granite-8b-instruct`, serviceOnModelJson(fetchFn));
   expect(await screen.findByTestId('model-phase')).toHaveTextContent(/^Saved to Git$/);
   // The label says it all: no alert repeats the backend's git-mode message.
