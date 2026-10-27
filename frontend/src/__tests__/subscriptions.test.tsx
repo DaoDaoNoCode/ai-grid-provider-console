@@ -643,6 +643,38 @@ it('shows Saved to Git, not Pending, for a model the backend saved to Git', asyn
   expect(models).not.toHaveTextContent('Pending');
 });
 
+it("shows a policy's Ready message on its status label", async () => {
+  const service = new MockConsoleService();
+  const info = await service.getSubscriptionInfo('engineering');
+  // The BFF's JSON for a policy: its conditions only, no statusMessage (backend PR #40).
+  const body = {
+    ...info,
+    authPolicies: [
+      {
+        name: 'engineering-policy',
+        displayName: 'Engineering policy',
+        phase: 'Active',
+        modelRefs: info.subscription.modelRefs.map(({ name, namespace }) => ({ name, namespace })),
+        subjects: { groups: [{ name: 'engineering' }] },
+        conditions: [{ type: 'Ready', status: 'True', reason: 'Reconciled', message: 'Ready on site-a' }],
+      },
+    ],
+  };
+  const http = new HttpConsoleService(
+    vi.fn(
+      async () => new Response(JSON.stringify({ data: body }), { headers: { 'Content-Type': 'application/json' } }),
+    ) as unknown as typeof fetch,
+  );
+  service.getSubscriptionInfo = (name) => http.getSubscriptionInfo(name);
+  const user = userEvent.setup();
+  renderAt('/subscriptions/view/engineering', service);
+  const policies = await screen.findByTestId('subscription-auth-policies');
+  const active = within(policies).getByText('Active');
+  await user.hover(active);
+  expect(await screen.findByRole('tooltip')).toHaveTextContent('Ready on site-a');
+  expect(active.closest('[aria-describedby]')).toHaveAccessibleDescription('Ready on site-a');
+});
+
 describe("model references on PR 12's models", () => {
   it('offers PR 12 models and sends the picked model with its namespace', async () => {
     const service = serviceOnPr12Json();

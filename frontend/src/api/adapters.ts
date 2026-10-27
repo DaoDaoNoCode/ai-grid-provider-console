@@ -10,6 +10,7 @@ import type {
   EnvVar,
   GridCluster,
   IdentityProvider,
+  MaaSAuthPolicy,
   MaaSSubscription,
   ManagedModel,
   ModelPlacementSpec,
@@ -69,14 +70,12 @@ export const toGridCluster = (json: ApiCluster): GridCluster => ({
 });
 
 /**
- * A subscription as the BFF returns it, with its Ready condition picked into the fields the
- * PoC's pages read (reason, statusMessage, status, conditionType, lastTransitionTime). A
- * subscription the controller hasn't reconciled has no phase (the controller never writes
- * Pending); the label shows it as Unknown, as odh-dashboard does.
+ * A MaaS resource as the BFF returns it, with its Ready condition picked into the fields the
+ * PoC's pages read (reason, statusMessage, status, conditionType, lastTransitionTime).
  */
-export const toSubscription = (json: MaaSSubscription): MaaSSubscription => {
+const withReadyCondition = <T extends MaaSSubscription | MaaSAuthPolicy>(json: T): T => {
   const ready = json.conditions?.find((c) => c.type === 'Ready');
-  const out: MaaSSubscription = { ...json };
+  const out: T = { ...json };
   if (ready) {
     out.status = ready.status;
     out.reason = ready.reason;
@@ -87,10 +86,22 @@ export const toSubscription = (json: MaaSSubscription): MaaSSubscription => {
   return out;
 };
 
-/** GET /subscriptions/{name}, with its subscription adapted by toSubscription. */
+/**
+ * A subscription with its Ready condition picked into its status fields. A subscription the
+ * controller hasn't reconciled has no phase (the controller never writes Pending); the label
+ * shows it as Unknown, as odh-dashboard does.
+ */
+export const toSubscription = (json: MaaSSubscription): MaaSSubscription => withReadyCondition(json);
+
+/**
+ * GET /subscriptions/{name}, with its subscription adapted by toSubscription and each policy's
+ * Ready condition picked into its status fields the same way: the BFF sends a policy's
+ * conditions only.
+ */
 export const toSubscriptionInfo = (json: SubscriptionInfoResponse): SubscriptionInfoResponse => ({
   ...json,
   subscription: toSubscription(json.subscription),
+  authPolicies: Array.isArray(json.authPolicies) ? json.authPolicies.map(withReadyCondition) : json.authPolicies,
 });
 
 const toIdentityProvider = (json: NonNullable<ApiTenant['identityProvider']>): IdentityProvider => {
