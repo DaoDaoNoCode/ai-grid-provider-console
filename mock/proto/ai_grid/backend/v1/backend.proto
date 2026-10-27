@@ -453,3 +453,9 @@ message ModelsDeleteRequest {
 }
 
 message ModelsDeleteResponse {}
+
+message ModelsListLocationsRequest {}
+
+message ModelsListLocationsResponse {
+  repeated string locations = 1;
+}

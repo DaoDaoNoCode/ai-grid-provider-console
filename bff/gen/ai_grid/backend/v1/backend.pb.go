@@ -4463,6 +4463,86 @@ func (*ModelsDeleteResponse) Descriptor() ([]byte, []int) {
 	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{74}
 }
 
+type ModelsListLocationsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ModelsListLocationsRequest) Reset() {
+	*x = ModelsListLocationsRequest{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[75]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ModelsListLocationsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ModelsListLocationsRequest) ProtoMessage() {}
+
+func (x *ModelsListLocationsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[75]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ModelsListLocationsRequest.ProtoReflect.Descriptor instead.
+func (*ModelsListLocationsRequest) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{75}
+}
+
+type ModelsListLocationsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Locations     []string               `protobuf:"bytes,1,rep,name=locations,proto3" json:"locations,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ModelsListLocationsResponse) Reset() {
+	*x = ModelsListLocationsResponse{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[76]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ModelsListLocationsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ModelsListLocationsResponse) ProtoMessage() {}
+
+func (x *ModelsListLocationsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[76]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ModelsListLocationsResponse.ProtoReflect.Descriptor instead.
+func (*ModelsListLocationsResponse) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{76}
+}
+
+func (x *ModelsListLocationsResponse) GetLocations() []string {
+	if x != nil {
+		return x.Locations
+	}
+	return nil
+}
+
 var File_ai_grid_backend_v1_backend_proto protoreflect.FileDescriptor
 
 const file_ai_grid_backend_v1_backend_proto_rawDesc = "" +
@@ -4802,7 +4882,10 @@ const file_ai_grid_backend_v1_backend_proto_rawDesc = "" +
 	"\x13ModelsDeleteRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12)\n" +
 	"\x10resource_version\x18\x02 \x01(\x05R\x0fresourceVersion\"\x16\n" +
-	"\x14ModelsDeleteResponse*j\n" +
+	"\x14ModelsDeleteResponse\"\x1c\n" +
+	"\x1aModelsListLocationsRequest\";\n" +
+	"\x1bModelsListLocationsResponse\x12\x1c\n" +
+	"\tlocations\x18\x01 \x03(\tR\tlocations*j\n" +
 	"\x0fConditionStatus\x12 \n" +
 	"\x1cCONDITION_STATUS_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15CONDITION_STATUS_TRUE\x10\x01\x12\x1a\n" +
@@ -4832,7 +4915,7 @@ func file_ai_grid_backend_v1_backend_proto_rawDescGZIP() []byte {
 }
 
 var file_ai_grid_backend_v1_backend_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_ai_grid_backend_v1_backend_proto_msgTypes = make([]protoimpl.MessageInfo, 82)
+var file_ai_grid_backend_v1_backend_proto_msgTypes = make([]protoimpl.MessageInfo, 84)
 var file_ai_grid_backend_v1_backend_proto_goTypes = []any{
 	(ConditionStatus)(0),                  // 0: ai_grid.backend.v1.ConditionStatus
 	(ModelRolloutStrategy)(0),             // 1: ai_grid.backend.v1.ModelRolloutStrategy
@@ -4912,28 +4995,30 @@ var file_ai_grid_backend_v1_backend_proto_goTypes = []any{
 	(*ModelsUpdateResponse)(nil),          // 75: ai_grid.backend.v1.ModelsUpdateResponse
 	(*ModelsDeleteRequest)(nil),           // 76: ai_grid.backend.v1.ModelsDeleteRequest
 	(*ModelsDeleteResponse)(nil),          // 77: ai_grid.backend.v1.ModelsDeleteResponse
-	nil,                                   // 78: ai_grid.backend.v1.Metadata.LabelsEntry
-	nil,                                   // 79: ai_grid.backend.v1.Metadata.AnnotationsEntry
-	nil,                                   // 80: ai_grid.backend.v1.TokenMetadata.LabelsEntry
-	nil,                                   // 81: ai_grid.backend.v1.ModelContainer.RequestsEntry
-	nil,                                   // 82: ai_grid.backend.v1.ModelContainer.LimitsEntry
-	nil,                                   // 83: ai_grid.backend.v1.ModelKedaTrigger.MetadataEntry
-	nil,                                   // 84: ai_grid.backend.v1.ModelLabelSelector.MatchLabelsEntry
-	(*timestamppb.Timestamp)(nil),         // 85: google.protobuf.Timestamp
-	(*fieldmaskpb.FieldMask)(nil),         // 86: google.protobuf.FieldMask
+	(*ModelsListLocationsRequest)(nil),    // 78: ai_grid.backend.v1.ModelsListLocationsRequest
+	(*ModelsListLocationsResponse)(nil),   // 79: ai_grid.backend.v1.ModelsListLocationsResponse
+	nil,                                   // 80: ai_grid.backend.v1.Metadata.LabelsEntry
+	nil,                                   // 81: ai_grid.backend.v1.Metadata.AnnotationsEntry
+	nil,                                   // 82: ai_grid.backend.v1.TokenMetadata.LabelsEntry
+	nil,                                   // 83: ai_grid.backend.v1.ModelContainer.RequestsEntry
+	nil,                                   // 84: ai_grid.backend.v1.ModelContainer.LimitsEntry
+	nil,                                   // 85: ai_grid.backend.v1.ModelKedaTrigger.MetadataEntry
+	nil,                                   // 86: ai_grid.backend.v1.ModelLabelSelector.MatchLabelsEntry
+	(*timestamppb.Timestamp)(nil),         // 87: google.protobuf.Timestamp
+	(*fieldmaskpb.FieldMask)(nil),         // 88: google.protobuf.FieldMask
 }
 var file_ai_grid_backend_v1_backend_proto_depIdxs = []int32{
-	85, // 0: ai_grid.backend.v1.Metadata.creation_timestamp:type_name -> google.protobuf.Timestamp
-	85, // 1: ai_grid.backend.v1.Metadata.deletion_timestamp:type_name -> google.protobuf.Timestamp
-	78, // 2: ai_grid.backend.v1.Metadata.labels:type_name -> ai_grid.backend.v1.Metadata.LabelsEntry
-	79, // 3: ai_grid.backend.v1.Metadata.annotations:type_name -> ai_grid.backend.v1.Metadata.AnnotationsEntry
+	87, // 0: ai_grid.backend.v1.Metadata.creation_timestamp:type_name -> google.protobuf.Timestamp
+	87, // 1: ai_grid.backend.v1.Metadata.deletion_timestamp:type_name -> google.protobuf.Timestamp
+	80, // 2: ai_grid.backend.v1.Metadata.labels:type_name -> ai_grid.backend.v1.Metadata.LabelsEntry
+	81, // 3: ai_grid.backend.v1.Metadata.annotations:type_name -> ai_grid.backend.v1.Metadata.AnnotationsEntry
 	3,  // 4: ai_grid.backend.v1.ManagedCluster.metadata:type_name -> ai_grid.backend.v1.Metadata
 	5,  // 5: ai_grid.backend.v1.ManagedCluster.spec:type_name -> ai_grid.backend.v1.ManagedClusterSpec
 	6,  // 6: ai_grid.backend.v1.ManagedCluster.status:type_name -> ai_grid.backend.v1.ManagedClusterStatus
 	4,  // 7: ai_grid.backend.v1.ClustersListResponse.items:type_name -> ai_grid.backend.v1.ManagedCluster
 	4,  // 8: ai_grid.backend.v1.ClustersGetResponse.object:type_name -> ai_grid.backend.v1.ManagedCluster
 	4,  // 9: ai_grid.backend.v1.ClustersUpdateRequest.object:type_name -> ai_grid.backend.v1.ManagedCluster
-	86, // 10: ai_grid.backend.v1.ClustersUpdateRequest.update_mask:type_name -> google.protobuf.FieldMask
+	88, // 10: ai_grid.backend.v1.ClustersUpdateRequest.update_mask:type_name -> google.protobuf.FieldMask
 	4,  // 11: ai_grid.backend.v1.ClustersUpdateResponse.object:type_name -> ai_grid.backend.v1.ManagedCluster
 	3,  // 12: ai_grid.backend.v1.Tenant.metadata:type_name -> ai_grid.backend.v1.Metadata
 	14, // 13: ai_grid.backend.v1.Tenant.spec:type_name -> ai_grid.backend.v1.TenantSpec
@@ -4943,10 +5028,10 @@ var file_ai_grid_backend_v1_backend_proto_depIdxs = []int32{
 	13, // 17: ai_grid.backend.v1.TenantsCreateRequest.object:type_name -> ai_grid.backend.v1.Tenant
 	13, // 18: ai_grid.backend.v1.TenantsCreateResponse.object:type_name -> ai_grid.backend.v1.Tenant
 	13, // 19: ai_grid.backend.v1.TenantsUpdateRequest.object:type_name -> ai_grid.backend.v1.Tenant
-	86, // 20: ai_grid.backend.v1.TenantsUpdateRequest.update_mask:type_name -> google.protobuf.FieldMask
+	88, // 20: ai_grid.backend.v1.TenantsUpdateRequest.update_mask:type_name -> google.protobuf.FieldMask
 	13, // 21: ai_grid.backend.v1.TenantsUpdateResponse.object:type_name -> ai_grid.backend.v1.Tenant
 	0,  // 22: ai_grid.backend.v1.Condition.status:type_name -> ai_grid.backend.v1.ConditionStatus
-	85, // 23: ai_grid.backend.v1.Condition.last_transition_time:type_name -> google.protobuf.Timestamp
+	87, // 23: ai_grid.backend.v1.Condition.last_transition_time:type_name -> google.protobuf.Timestamp
 	3,  // 24: ai_grid.backend.v1.Subscription.metadata:type_name -> ai_grid.backend.v1.Metadata
 	28, // 25: ai_grid.backend.v1.Subscription.spec:type_name -> ai_grid.backend.v1.SubscriptionSpec
 	36, // 26: ai_grid.backend.v1.Subscription.status:type_name -> ai_grid.backend.v1.SubscriptionStatus
@@ -4958,7 +5043,7 @@ var file_ai_grid_backend_v1_backend_proto_depIdxs = []int32{
 	32, // 32: ai_grid.backend.v1.SubscriptionModelRef.token_rate_limits:type_name -> ai_grid.backend.v1.TokenRateLimit
 	33, // 33: ai_grid.backend.v1.SubscriptionModelRef.billing_rate:type_name -> ai_grid.backend.v1.BillingRate
 	35, // 34: ai_grid.backend.v1.SubscriptionModelRef.guardrails:type_name -> ai_grid.backend.v1.GuardrailAttachment
-	80, // 35: ai_grid.backend.v1.TokenMetadata.labels:type_name -> ai_grid.backend.v1.TokenMetadata.LabelsEntry
+	82, // 35: ai_grid.backend.v1.TokenMetadata.labels:type_name -> ai_grid.backend.v1.TokenMetadata.LabelsEntry
 	26, // 36: ai_grid.backend.v1.SubscriptionStatus.conditions:type_name -> ai_grid.backend.v1.Condition
 	37, // 37: ai_grid.backend.v1.SubscriptionStatus.model_ref_statuses:type_name -> ai_grid.backend.v1.ResourceRefStatus
 	38, // 38: ai_grid.backend.v1.SubscriptionStatus.token_rate_limit_statuses:type_name -> ai_grid.backend.v1.TokenRateLimitStatus
@@ -4975,7 +5060,7 @@ var file_ai_grid_backend_v1_backend_proto_depIdxs = []int32{
 	27, // 49: ai_grid.backend.v1.SubscriptionsCreateResponse.object:type_name -> ai_grid.backend.v1.Subscription
 	39, // 50: ai_grid.backend.v1.SubscriptionsCreateResponse.auth_policy:type_name -> ai_grid.backend.v1.AuthPolicy
 	27, // 51: ai_grid.backend.v1.SubscriptionsUpdateRequest.object:type_name -> ai_grid.backend.v1.Subscription
-	86, // 52: ai_grid.backend.v1.SubscriptionsUpdateRequest.update_mask:type_name -> google.protobuf.FieldMask
+	88, // 52: ai_grid.backend.v1.SubscriptionsUpdateRequest.update_mask:type_name -> google.protobuf.FieldMask
 	27, // 53: ai_grid.backend.v1.SubscriptionsUpdateResponse.object:type_name -> ai_grid.backend.v1.Subscription
 	3,  // 54: ai_grid.backend.v1.Model.metadata:type_name -> ai_grid.backend.v1.Metadata
 	53, // 55: ai_grid.backend.v1.Model.spec:type_name -> ai_grid.backend.v1.ModelSpec
@@ -4987,13 +5072,13 @@ var file_ai_grid_backend_v1_backend_proto_depIdxs = []int32{
 	61, // 61: ai_grid.backend.v1.ModelSpec.placement:type_name -> ai_grid.backend.v1.ModelPlacement
 	64, // 62: ai_grid.backend.v1.ModelSpec.rollout:type_name -> ai_grid.backend.v1.ModelRollout
 	56, // 63: ai_grid.backend.v1.ModelRouter.gateway_refs:type_name -> ai_grid.backend.v1.ModelGatewayRef
-	81, // 64: ai_grid.backend.v1.ModelContainer.requests:type_name -> ai_grid.backend.v1.ModelContainer.RequestsEntry
-	82, // 65: ai_grid.backend.v1.ModelContainer.limits:type_name -> ai_grid.backend.v1.ModelContainer.LimitsEntry
+	83, // 64: ai_grid.backend.v1.ModelContainer.requests:type_name -> ai_grid.backend.v1.ModelContainer.RequestsEntry
+	84, // 65: ai_grid.backend.v1.ModelContainer.limits:type_name -> ai_grid.backend.v1.ModelContainer.LimitsEntry
 	58, // 66: ai_grid.backend.v1.ModelContainer.env:type_name -> ai_grid.backend.v1.ModelEnvVar
 	60, // 67: ai_grid.backend.v1.ModelScaling.triggers:type_name -> ai_grid.backend.v1.ModelKedaTrigger
-	83, // 68: ai_grid.backend.v1.ModelKedaTrigger.metadata:type_name -> ai_grid.backend.v1.ModelKedaTrigger.MetadataEntry
+	85, // 68: ai_grid.backend.v1.ModelKedaTrigger.metadata:type_name -> ai_grid.backend.v1.ModelKedaTrigger.MetadataEntry
 	62, // 69: ai_grid.backend.v1.ModelPlacement.label_selector:type_name -> ai_grid.backend.v1.ModelLabelSelector
-	84, // 70: ai_grid.backend.v1.ModelLabelSelector.match_labels:type_name -> ai_grid.backend.v1.ModelLabelSelector.MatchLabelsEntry
+	86, // 70: ai_grid.backend.v1.ModelLabelSelector.match_labels:type_name -> ai_grid.backend.v1.ModelLabelSelector.MatchLabelsEntry
 	63, // 71: ai_grid.backend.v1.ModelLabelSelector.match_expressions:type_name -> ai_grid.backend.v1.ModelLabelSelectorRequirement
 	1,  // 72: ai_grid.backend.v1.ModelRollout.strategy:type_name -> ai_grid.backend.v1.ModelRolloutStrategy
 	26, // 73: ai_grid.backend.v1.ModelStatus.conditions:type_name -> ai_grid.backend.v1.Condition
@@ -5007,7 +5092,7 @@ var file_ai_grid_backend_v1_backend_proto_depIdxs = []int32{
 	52, // 81: ai_grid.backend.v1.ModelsCreateRequest.object:type_name -> ai_grid.backend.v1.Model
 	52, // 82: ai_grid.backend.v1.ModelsCreateResponse.object:type_name -> ai_grid.backend.v1.Model
 	52, // 83: ai_grid.backend.v1.ModelsUpdateRequest.object:type_name -> ai_grid.backend.v1.Model
-	86, // 84: ai_grid.backend.v1.ModelsUpdateRequest.update_mask:type_name -> google.protobuf.FieldMask
+	88, // 84: ai_grid.backend.v1.ModelsUpdateRequest.update_mask:type_name -> google.protobuf.FieldMask
 	52, // 85: ai_grid.backend.v1.ModelsUpdateResponse.object:type_name -> ai_grid.backend.v1.Model
 	86, // [86:86] is the sub-list for method output_type
 	86, // [86:86] is the sub-list for method input_type
@@ -5034,7 +5119,7 @@ func file_ai_grid_backend_v1_backend_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ai_grid_backend_v1_backend_proto_rawDesc), len(file_ai_grid_backend_v1_backend_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   82,
+			NumMessages:   84,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -9,9 +9,9 @@ package backend
 //     one namespace of its own. The draft's namespace is the BFF's configured
 //     models namespace (--models-namespace), which reads give back and the other
 //     calls require.
-//   - A location is one cluster (Chris, 2026-10-23), and the backend's git mode
-//     places a model by the ACM `name` label. So ListLocations answers the names
-//     of the AI Grid member clusters, and the console's placement (the member
+//   - A location is one cluster, and the backend's git mode places a model by
+//     the ACM `name` label (backend PR 29's placement rules). So the backend's
+//     ListLocations answers cluster names, and the console's placement (the member
 //     labels plus `location In [...]`) is sent as `name In [...]`; a read turns
 //     `name In [...]` back into the console's shape. Any other placement is sent
 //     as it is, and the backend decides.
@@ -141,21 +141,15 @@ func (c v1Models) DeleteModel(ctx context.Context, in *aigridv1.DeleteModelReque
 	return &aigridv1.DeleteModelResponse{}, nil
 }
 
-// ListLocations answers the names of the clusters labelled ai-grid/enabled,
-// sorted, from the backend's Clusters List.
+// ListLocations passes the backend's Models/ListLocations through: the names
+// of the members a model can run on (provisioned, Available, role inference
+// or combined), which the console's placement selects by.
 func (c v1Models) ListLocations(ctx context.Context, _ *aigridv1.ListLocationsRequest, opts ...grpc.CallOption) (*aigridv1.ListLocationsResponse, error) {
-	resp := &backendv1.ClustersListResponse{}
-	if err := c.conn.Invoke(ctx, methodClustersList, &backendv1.ClustersListRequest{}, resp, opts...); err != nil {
+	resp := &backendv1.ModelsListLocationsResponse{}
+	if err := c.conn.Invoke(ctx, methodModelsListLocations, &backendv1.ModelsListLocationsRequest{}, resp, opts...); err != nil {
 		return nil, err
 	}
-	out := &aigridv1.ListLocationsResponse{Locations: []string{}}
-	for _, mc := range resp.GetItems() {
-		if mc.GetMetadata().GetLabels()[labelEnabled] == "true" {
-			out.Locations = append(out.Locations, mc.GetId())
-		}
-	}
-	slices.Sort(out.Locations)
-	return out, nil
+	return &aigridv1.ListLocationsResponse{Locations: append([]string{}, resp.GetLocations()...)}, nil
 }
 
 // inNamespace answers the draft's NotFound for a model outside the configured
