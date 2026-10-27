@@ -45,7 +45,9 @@ const consoleMessages: Partial<Record<Code, string>> = {
   [Code.Unavailable]: 'the AI Grid backend is unavailable; try again',
   [Code.Canceled]: 'the AI Grid backend is unavailable; try again',
   [Code.DeadlineExceeded]: 'the AI Grid backend did not answer in time',
-  [Code.ResourceExhausted]: 'the AI Grid backend is rate limiting requests; try again shortly',
+  // The relay answers an oversized body (over 1 MiB) with this code too, which no retry fixes.
+  [Code.ResourceExhausted]:
+    'the request is too large, or the AI Grid backend is limiting requests; make it smaller or try again shortly',
 };
 
 const kinds: Partial<Record<Code, ApiErrorKind>> = {

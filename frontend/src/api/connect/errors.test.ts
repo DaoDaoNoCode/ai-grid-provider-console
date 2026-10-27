@@ -37,7 +37,11 @@ describe('describeError', () => {
       [Code.Unimplemented, 'notAvailable', 'the AI Grid backend does not support this operation yet'],
       [Code.Unavailable, 'unavailable', 'the AI Grid backend is unavailable; try again'],
       [Code.DeadlineExceeded, 'unavailable', 'the AI Grid backend did not answer in time'],
-      [Code.ResourceExhausted, 'unavailable', 'the AI Grid backend is rate limiting requests; try again shortly'],
+      [
+        Code.ResourceExhausted,
+        'unavailable',
+        'the request is too large, or the AI Grid backend is limiting requests; make it smaller or try again shortly',
+      ],
       [Code.Canceled, 'unavailable', 'the AI Grid backend is unavailable; try again'],
       // Never the backend's own words about its failure: they can name its internals.
       [Code.Internal, 'error', 'the AI Grid backend failed to process the request'],
