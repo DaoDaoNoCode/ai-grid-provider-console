@@ -30,7 +30,8 @@ export const fakeClients = (
       service(Models, backend.models ?? {});
       service(Subscriptions, backend.subscriptions ?? {});
     },
-    { transport: { interceptors } },
+    // JSON, as the console's own transport sends; createRouterTransport defaults to binary.
+    { transport: { interceptors, useBinaryFormat: false } },
   );
   return { transport, clients: createConsoleClients(transport) };
 };
