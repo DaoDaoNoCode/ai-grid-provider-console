@@ -290,6 +290,17 @@ func v1Version(rv string) (int32, error) {
 	return int32(v), nil
 }
 
+// v1DeleteVersion is v1Version for a delete's If-Match. The backend treats
+// version 0 as "no check" and git mode's versions start at 1, so 0 is refused
+// rather than turning the delete unconditional.
+func v1DeleteVersion(rv string) (int32, error) {
+	v, err := v1Version(rv)
+	if err == nil && v == 0 {
+		return 0, status.Errorf(codes.FailedPrecondition, "version %q is not one this backend answered", rv)
+	}
+	return v, err
+}
+
 // readBackValue reports whether path p, which the backend's Tenant lacks,
 // holds what a read gives back: no description, enabled, no attributes.
 func readBackValue(p string, obj *aigridv1.Tenant) bool {
@@ -424,7 +435,7 @@ func (c v1Subscriptions) UpdateSubscription(ctx context.Context, in *aigridv1.Up
 func (c v1Subscriptions) DeleteSubscription(ctx context.Context, in *aigridv1.DeleteSubscriptionRequest, opts ...grpc.CallOption) (*aigridv1.DeleteSubscriptionResponse, error) {
 	req := &backendv1.SubscriptionsDeleteRequest{Id: in.GetName()}
 	if rv := in.GetResourceVersion(); rv != "" {
-		v, err := v1Version(rv)
+		v, err := v1DeleteVersion(rv)
 		if err != nil {
 			return nil, err
 		}

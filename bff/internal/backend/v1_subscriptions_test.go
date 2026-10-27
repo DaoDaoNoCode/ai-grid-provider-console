@@ -233,6 +233,12 @@ func TestV1SubscriptionDelete(t *testing.T) {
 	if _, err := (v1Subscriptions{stale}).DeleteSubscription(context.Background(), &aigridv1.DeleteSubscriptionRequest{Name: "gold", ResourceVersion: "11"}); status.Code(err) != codes.Aborted {
 		t.Fatalf("stale Delete: %v, want Aborted", err)
 	}
+
+	// Version 0 is the backend's "no check": refused, so If-Match never makes a delete unconditional.
+	unsent := &recordingConn{}
+	if _, err := (v1Subscriptions{unsent}).DeleteSubscription(context.Background(), &aigridv1.DeleteSubscriptionRequest{Name: "gold", ResourceVersion: "0"}); status.Code(err) != codes.FailedPrecondition || unsent.method != "" {
+		t.Fatalf("Delete with version 0: %v after calling %q, want FailedPrecondition and no call", err, unsent.method)
+	}
 }
 
 type abortingConn struct{ *recordingConn }

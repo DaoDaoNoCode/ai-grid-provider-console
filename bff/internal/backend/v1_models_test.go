@@ -166,6 +166,12 @@ func TestV1ModelWrites(t *testing.T) {
 			t.Errorf("Delete with version %q sent %s %v, want version %d", rv, conn.method, sent, version)
 		}
 	}
+
+	// Version 0 is the backend's "no check": refused, so If-Match never makes a delete unconditional.
+	conn = &recordingConn{}
+	if _, err := (v1Models{conn, modelsNS}).DeleteModel(ctx, &aigridv1.DeleteModelRequest{Namespace: modelsNS, Name: "granite", ResourceVersion: "0"}); status.Code(err) != codes.FailedPrecondition || conn.method != "" {
+		t.Errorf("Delete with version 0: %v after calling %q, want FailedPrecondition and no call", err, conn.method)
+	}
 }
 
 // Placements other than the console's own pass through in both directions.

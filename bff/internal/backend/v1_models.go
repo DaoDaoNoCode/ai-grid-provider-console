@@ -129,7 +129,7 @@ func (c v1Models) DeleteModel(ctx context.Context, in *aigridv1.DeleteModelReque
 	}
 	req := &backendv1.ModelsDeleteRequest{Id: in.GetName()}
 	if rv := in.GetResourceVersion(); rv != "" {
-		v, err := v1Version(rv)
+		v, err := v1DeleteVersion(rv)
 		if err != nil {
 			return nil, err
 		}
