@@ -260,7 +260,8 @@ fine-grained token with `contents: write` on that repository only; the chart mou
 backend's default). With `url` set, the chart also grants `get` on the two inform-only Policies the
 backend reads the spokes' status from (`ai-grid-models-status`, `ai-grid-catalog-status`, and each
 cluster's copy). Backend images with git mode don't start without `url`; leave it empty for older
-ones. `hack/deploy.sh` sets it from `GIT_URL`, `GIT_BRANCH` and `GIT_TOKEN`, creating the Secret.
+ones. `hack/deploy.sh` sets it from `GIT_URL`, `GIT_BRANCH`, `GIT_TOKEN` and
+`GIT_GRID_NAMESPACE` (`grid` on the dev hub), creating the Secret.
 
 The chart doesn't create the `OAuthClient`, the proxy's Secret, the backend's Keycloak Secret or its Git token Secret:
 `hack/deploy.sh` does, or ai-grid-env-setup's `bootstrap/60-console.sh`. Generated secrets would

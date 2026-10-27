@@ -33,6 +33,11 @@ for url in http://github.com/example/catalog.git https://user:token@github.com/e
     exit 1
   fi
 done
+if helm template console "${CHART}" -n ai-grid --set-string backend.git.url=https://github.com/example/catalog.git \
+  --set-string backend.git.gridNamespace=Not_A_Namespace >/dev/null 2>&1; then
+  echo "check-chart: backend.git.gridNamespace=Not_A_Namespace renders; values.schema.json must refuse it" >&2
+  exit 1
+fi
 for url in https://github.com/example/catalog.git https://git.example.com:8443/team/repo@archive.git; do
   helm template console "${CHART}" -n ai-grid --set-string "backend.git.url=${url}" >/dev/null || {
     echo "check-chart: backend.git.url=${url} doesn't render; values.schema.json must accept it" >&2

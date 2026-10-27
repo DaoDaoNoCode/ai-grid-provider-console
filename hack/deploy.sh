@@ -20,6 +20,9 @@
 #                            on that repository only) goes into secret ai-grid-backend-git, and the
 #                            chart's backend.git.url and backend.git.branch (GIT_BRANCH, default main)
 #                            are set.
+#   GIT_GRID_NAMESPACE       with GIT_URL: the spokes' grid namespace, which each model's
+#                            NetworkPolicy admits (backend.git.gridNamespace; grid on the dev hub).
+#                            Unset: the backend's default, redhat-ai-grid.
 #   HELM_ARGS                more chart values, e.g. "--set backend.clusterWrites=true"; not the
 #                            names of the Secrets, the release's objects or the Route
 #
@@ -85,6 +88,14 @@ if [[ -n "${GIT_URL:-}" ]]; then
   # (a comma) escaped.
   git_branch="${GIT_BRANCH:-main}"
   VALUES+=(--set-string "backend.git.url=${GIT_URL//,/\\,}" --set-string "backend.git.branch=${git_branch//,/\\,}")
+  if [[ -n "${GIT_GRID_NAMESPACE:-}" ]]; then
+    # A namespace name (RFC 1123 label), as the chart's schema requires.
+    if [[ ! "${GIT_GRID_NAMESPACE}" =~ ^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$ ]]; then
+      echo "GIT_GRID_NAMESPACE must be a namespace name, such as grid." >&2
+      exit 1
+    fi
+    VALUES+=(--set-string "backend.git.gridNamespace=${GIT_GRID_NAMESPACE}")
+  fi
 fi
 # This script creates the Secrets and the OAuthClient and finds the Route by these names.
 case " ${HELM_ARGS:-} " in
