@@ -11,7 +11,8 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CHART="${ROOT}/charts/ai-grid-provider-console"
-ALL=(--set backend.clusterWrites=true --set route.host=console.apps.example.com --set tls.serviceCA=false
+ALL=(--set backend.clusterWrites=true --set backend.git.url=https://github.com/example/catalog.git
+  --set backend.git.gridNamespace=grid --set route.host=console.apps.example.com --set tls.serviceCA=false
   --set images.console.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000
   --set 'imagePullSecrets[0].name=pull' --set imagePullPolicy=Always
   --set console.perses.url=https://perses.openshift-cluster-observability-operator.svc:8080
@@ -24,6 +25,25 @@ if helm template console "${CHART}" -n ai-grid --set backend.clusterwrites=true 
   echo "check-chart: a misspelled value (backend.clusterwrites) renders; values.schema.json must refuse it" >&2
   exit 1
 fi
+# backend.git.url is https:// without credentials: the backend refuses anything else at start.
+for url in http://github.com/example/catalog.git https://user:token@github.com/example/catalog.git \
+  'https://?q=/catalog.git' https://:443/catalog.git https://github.com; do
+  if helm template console "${CHART}" -n ai-grid --set-string "backend.git.url=${url}" >/dev/null 2>&1; then
+    echo "check-chart: backend.git.url=${url} renders; values.schema.json must refuse it" >&2
+    exit 1
+  fi
+done
+if helm template console "${CHART}" -n ai-grid --set-string backend.git.url=https://github.com/example/catalog.git \
+  --set-string backend.git.gridNamespace=Not_A_Namespace >/dev/null 2>&1; then
+  echo "check-chart: backend.git.gridNamespace=Not_A_Namespace renders; values.schema.json must refuse it" >&2
+  exit 1
+fi
+for url in https://github.com/example/catalog.git https://git.example.com:8443/team/repo@archive.git; do
+  helm template console "${CHART}" -n ai-grid --set-string "backend.git.url=${url}" >/dev/null || {
+    echo "check-chart: backend.git.url=${url} doesn't render; values.schema.json must accept it" >&2
+    exit 1
+  }
+done
 # The BFF reads the log level case-insensitively (slog.Level), so the schema takes both spellings.
 helm template console "${CHART}" -n ai-grid --set console.logLevel=INFO >/dev/null
 if helm template console "${CHART}" -n ai-grid --set console.logLevel=verbose >/dev/null 2>&1; then

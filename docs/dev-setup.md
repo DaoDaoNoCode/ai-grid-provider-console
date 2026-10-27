@@ -244,14 +244,26 @@ curl -H "Authorization: Bearer $(oc whoami -t)" https://<route-host>/api/v1/user
 standalone deployment the architecture expects for the provider console in 3.6 (there is no
 operator for it on the hub). Its values (`values.yaml`) choose the three images (tag, digest or
 both), the Route, its host and the CA it trusts for the proxy, the serving certificate
-(OpenShift's service CA, or a Secret you provide), the names of the two Secrets, the console's `/api/v1/config` settings, resources, and
+(OpenShift's service CA, or a Secret you provide), the names of the Secrets, the console's `/api/v1/config` settings, resources, and
 `backend.clusterWrites`: `patch` on ManagedClusters for Add to AI Grid and Remove, together with a
 `ValidatingAdmissionPolicy` (from ai-grid-env-setup) that limits the backend to the `ai-grid/*`
 and `location` labels and `ai-grid/*` annotations. Argo CD applies the policy before the grant
 (sync wave -1); `helm` applies it last, so turning `clusterWrites` on with `helm` leaves the backend
 unrestricted until the policy loads, a few seconds.
 
-The chart doesn't create the `OAuthClient`, the proxy's Secret or the backend's Keycloak Secret:
+`backend.git` sets up the backend's git mode (ai-grid-provider-backend#29): Models and
+Subscriptions are commits to a Git repository, which Argo CD delivers to the spokes. `url` is the
+repository (`https://`, without credentials; the schema refuses anything else), `branch` defaults to
+`main`, and `tokenSecretName` (default `ai-grid-backend-git`) is a Secret whose key `token` holds a
+fine-grained token with `contents: write` on that repository only; the chart mounts it as a file.
+`gridNamespace` is the spokes' grid namespace each model's NetworkPolicy admits (empty: the
+backend's default). With `url` set, the chart also grants `get` on the two inform-only Policies the
+backend reads the spokes' status from (`ai-grid-models-status`, `ai-grid-catalog-status`, and each
+cluster's copy). Backend images with git mode don't start without `url`; leave it empty for older
+ones. `hack/deploy.sh` sets it from `GIT_URL`, `GIT_BRANCH`, `GIT_TOKEN` and
+`GIT_GRID_NAMESPACE` (`grid` on the dev hub), creating the Secret.
+
+The chart doesn't create the `OAuthClient`, the proxy's Secret, the backend's Keycloak Secret or its Git token Secret:
 `hack/deploy.sh` does, or ai-grid-env-setup's `bootstrap/60-console.sh`. Generated secrets would
 need Helm's `lookup`, which returns nothing under `helm template` and Argo CD, so every render
 would make new ones.
