@@ -102,6 +102,9 @@ backend:
     # The spokes' grid namespace, which each model's NetworkPolicy admits. Empty: the backend's
     # default (redhat-ai-grid).
     gridNamespace: ""
+    # The spokes' namespace each model is deployed to. Empty: the backend's default
+    # (ai-grid-models). The reference environment and our clusters use ai-grid-internal-models.
+    modelsNamespace: ""
   resources:
     requests: { cpu: 50m, memory: 64Mi }
     limits: { memory: 256Mi }
