@@ -2,7 +2,7 @@
 // Adapted from packages/model-serving/src/components/deployments/DeploymentsTable.tsx
 // and components/global/GlobalDeploymentsView.tsx.
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
-// jgiardino's "models per cluster" design (jgiardino/ai-grid-provider-console@ada68ad): a model
+// The UX team's "models per cluster" design (jgiardino/ai-grid-provider-console@ada68ad): a model
 // row expands to its locations and each one's status; the Locations cell shows up to five compact
 // labels.
 import { useMemo, useState } from 'react';

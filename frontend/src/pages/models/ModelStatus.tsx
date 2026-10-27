@@ -35,7 +35,7 @@ type LabelProps = {
 };
 
 /**
- * The model's phase as a label. As in jgiardino's Models design (an RHOAI pattern), only a label
+ * The model's phase as a label. As in the UX team's Models design (an RHOAI pattern), only a label
  * that can be clicked is filled: Ready and Saved to Git are outline labels with nothing to open (Saved
  * to Git is all git mode knows, so a modal would only repeat it); any other status opens
  * ModelStatusModal.

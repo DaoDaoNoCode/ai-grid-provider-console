@@ -80,8 +80,8 @@ Owner: console team. A handler per RPC, nothing else.
 3. Done: ai-grid-env-setup deploys the console's Helm chart on the dev hub with Argo CD
    (`apps/console`, the chart and CI-built images pinned to console `main` at the merge of
    PR 41), with login through the Route.
-4. If the auth setup changes to a Keycloak realm (open question for Lindani Phiri and
-   Andrew Ballantyne), switch the proxy provider in `manifests/` and the header names in
+4. If the auth setup changes to a Keycloak realm (open question for the OIDC
+   integration owners), switch the proxy provider in `manifests/` and the header names in
    `config`; nothing else changes.
 
 ## Frontend (this repo, `frontend/`)
@@ -101,10 +101,10 @@ Owner: console team.
 
 | Question | Who | Why it matters |
 |---|---|---|
-| Does the backend authorize per caller, or does everyone with console access get the pod ServiceAccount's rights? | the backend team, Lindani Phiri | Decides whether `isProviderAdmin` can mean anything and whether the BFF must restrict who reaches the backend |
-| Auth setup for AI Grid: OpenShift OAuth as deployed here, or a Keycloak realm shared with tenants? | Lindani Phiri, Andrew Ballantyne | Decides the kube-auth-proxy provider; the dev hub already has Keycloak in `grid-sso` |
+| Does the backend authorize per caller, or does everyone with console access get the pod ServiceAccount's rights? | the backend team, the OIDC integration owners | Decides whether `isProviderAdmin` can mean anything and whether the BFF must restrict who reaches the backend |
+| Auth setup for AI Grid: OpenShift OAuth as deployed here, or a Keycloak realm shared with tenants? | the OIDC integration owners | Decides the kube-auth-proxy provider; the dev hub already has Keycloak in `grid-sso` |
 | Are Keycloak Organizations the tenant model, or will the tenant layer defined with Swati's team look different? | Swati's team, the backend team | The backend's `ListTenants` already assumes Organizations |
-| Which Thanos (ACM observability or user-workload monitoring) and which metric names? | Kevin Howell, Praxis team | Unblocks `GetOverview` with real data; the POC's names are assumptions |
+| Which Thanos (ACM observability or user-workload monitoring) and which metric names? | the observability owners, Praxis team | Unblocks `GetOverview` with real data; the POC's names are assumptions |
 | Does the backend repository move to `osac-project`? (Its image is published to `ghcr.io/ai-grid-cloud/ai-grid-provider-backend` by its CI, backend PR 8.) | the backend team | Decides the import path the console switches to when it drops the draft proto in `mock/proto`, and where the chart's backend image comes from |
 | Is there a cost or spend view for AI Grid at all? | Myriam Fentanes, Jenny Yi, Daniele Zonca | Decides whether `billingUrl` ever points anywhere |
 

@@ -1,7 +1,7 @@
 // Adapted from opendatahub-io/odh-dashboard
 // packages/model-serving/src/components/deployments/DeploymentStatusModal.tsx
 // upstream commit: 6f47c0f775d19c89ef02f74d192b32dc7d3c669d
-// One location's status in jgiardino's Models design ("models per cluster"): the model on one
+// One location's status in the UX team's Models design ("models per cluster"): the model on one
 // cluster. odh's Progress tab steps through the deployment's conditions; here the steps are the
 // ManifestWork's own, as the cluster's agent reported them (docs/plan/bff-api.md, `works[]`), and
 // nothing is filled in: a step the agent hasn't reported is pending, with no time. Kueue, the
