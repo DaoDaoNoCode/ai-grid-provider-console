@@ -59,20 +59,24 @@ strategy other than `none` is set, then the totals and the distinct configuratio
 first, then by product. A cluster without GPU nodes has no `gpus`.
 
 UI: the Clusters page (`frontend/src/pages/clusters/ClustersPage.tsx`) lists every
-ManagedCluster with its location, connection, AI Grid membership, role, GPUs (the configuration:
-"NVIDIA H200, 8 GPUs/node", with "Time-sliced ×4", "MPS ×2" or "MIG 3g.20gb" when shared, and
-"+N more" for more configurations), capacity ("4 nodes, 32 GPUs"; "8 GPUs" from
-`capacity["nvidia.com/gpu"]` when the backend has no inventory), as provider-admin
-feedback asks (the OpenShift version is on the details page, to leave the list room); adds a cluster to AI Grid or removes it, and links each name to
-the cluster's details page (`ClusterDetailsPage.tsx`, `/clusters/:name`). That page shows the
-membership (status, role, location), what the hub knows about the cluster (versions, platform,
-product, creation time, console link), its capacity, its GPUs (capacity, configurations with
-memory and sharing, manufacturer, architecture, driver and CUDA) and a table of its GPU nodes
-(model, GPUs, memory, architecture and compute capability, driver, sharing, instance type,
-status), and its conditions, with the same Add and Remove actions. Add-ons are left out: UX found
-them not needed there. The wording of products, memory, architecture and sharing is
-presentation only (`pages/clusters/gpuText.ts`). The real backend's cluster status details (conditions, Kubernetes version, capacity,
-allocatable and claims) fill the same sections; against a backend without them those parts say
+ManagedCluster under nested column headers that match the details page's cards: **Cluster** (name,
+the hub's connection status), **AI Grid** (status, with "Not added" outside it, location, role) and
+**GPUs** (capacity, "4 nodes, 32 GPUs", or "8 GPUs" from `capacity["nvidia.com/gpu"]` when the
+backend has no inventory; configuration, "NVIDIA H200, 8 GPUs/node", with ", Time-sliced ×4",
+", MPS ×2" or ", MIG 3g.20gb" when shared, and "+N more" for more configurations), as provider-admin
+feedback asks (the OpenShift version is on the details page, to leave the list room). The actions
+column sticks to the table's right edge, so a narrow window scrolls the table under it instead of
+hiding it. The page adds a cluster to AI Grid or removes it, and links each name to the cluster's
+details page (`ClusterDetailsPage.tsx`, `/clusters/:name`). That page shows the membership (status,
+location, role, in the list's order), the cluster as the hub knows it (its connection status, the
+OpenShift version when it is OpenShift, the Kubernetes version, platform, product, creation time,
+console link), its capacity, its GPUs (capacity, each configuration with memory and sharing, and its
+node count only when the cluster mixes configurations; manufacturer, architecture, driver and CUDA)
+and a table of its GPU nodes (model, GPUs, memory, architecture and compute capability, driver,
+sharing, instance type, status), with the same Add and Remove actions. Add-ons and the hub's
+conditions are left out: UX found them not needed there. The wording of products, memory, architecture and sharing is
+presentation only (`pages/clusters/gpuText.ts`). The real backend's cluster status details (Kubernetes version, capacity, allocatable and
+claims) fill the same sections; against a backend without them those parts say
 so instead of showing zeros. The map belongs to the grid overview area; Placement
 recomputation and ManifestWorkReplicaSet belong to the models area (`mock/areas/models.md`).
 

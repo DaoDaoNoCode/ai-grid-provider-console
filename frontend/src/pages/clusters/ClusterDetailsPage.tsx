@@ -62,25 +62,8 @@ const aiGridItems = (c: GridCluster) => {
   return [
     {
       term: 'Status',
-      value: c.aiGridEnabled ? (
-        <StatusLabel isCompact status={c.provisioningStatus} />
-      ) : (
-        <span className="pf-v6-u-text-color-subtle">Not added</span>
-      ),
+      value: <StatusLabel isCompact status={c.aiGridEnabled ? c.provisioningStatus : 'Not added'} />,
       'data-testid': 'cluster-membership',
-    },
-    {
-      term: 'Role',
-      value: !c.aiGridEnabled ? undefined : role ? (
-        `${role.label}: ${role.description}`
-      ) : (
-        <MissingLabel
-          testId="missing-role"
-          reason="This member has no role, so the hub doesn't install OpenShift AI or MaaS on it, and it never finishes provisioning. Remove it from AI Grid and add it again to choose a role."
-        >
-          No role
-        </MissingLabel>
-      ),
     },
     {
       term: 'Location',
@@ -95,11 +78,40 @@ const aiGridItems = (c: GridCluster) => {
           </MissingLabel>
         ) : undefined),
     },
+    {
+      term: 'Role',
+      value: !c.aiGridEnabled ? undefined : role ? (
+        `${role.label}: ${role.description}`
+      ) : (
+        <MissingLabel
+          testId="missing-role"
+          reason="This member has no role, so the hub doesn't install OpenShift AI or MaaS on it, and it never finishes provisioning. Remove it from AI Grid and add it again to choose a role."
+        >
+          No role
+        </MissingLabel>
+      ),
+    },
   ];
 };
 
+/**
+ * The cluster as the hub sees it, its connection first, as the peer of the AI Grid card's status.
+ * ACM sets the OpenShift version only on OpenShift clusters (the version.openshift.io claim), so
+ * another product, such as EKS, has no such row rather than an empty one.
+ */
 const clusterItems = (c: GridCluster) => [
-  { term: 'OpenShift version', value: c.openshiftVersion },
+  {
+    term: 'Status',
+    value: (
+      <StatusLabel
+        isCompact
+        status={c.status}
+        reason={['Connection to the hub', statusReason(c)].filter(Boolean).join(': ')}
+      />
+    ),
+    'data-testid': 'cluster-status',
+  },
+  ...(c.openshiftVersion ? [{ term: 'OpenShift version', value: c.openshiftVersion }] : []),
   { term: 'Kubernetes version', value: c.kubernetesVersion },
   { term: 'Platform', value: c.platform },
   { term: 'Product', value: c.product },
@@ -144,10 +156,11 @@ const gpuItems = (g: ClusterGPUs) => [
               configurationText(c),
               gpuMemory(c.memoryMib) && `${gpuMemory(c.memoryMib)} each`,
               gpuSharing(c.sharing, c.product),
-              `${c.nodeCount} ${c.nodeCount === 1 ? 'node' : 'nodes'}`,
+              // Capacity gives the nodes in all; only a mixed cluster needs each configuration's.
+              g.configurations.length > 1 && `${c.nodeCount} ${c.nodeCount === 1 ? 'node' : 'nodes'}`,
             ]
               .filter(Boolean)
-              .join(' · ')}
+              .join(', ')}
           </ListItem>
         ))}
       </List>
@@ -390,41 +403,6 @@ export const ClusterDetailsPage: React.FC<Props> = ({ service }) => {
             </Section>
           </GridItem>
         )}
-        <GridItem>
-          <Section
-            title="Conditions"
-            help="The hub's conditions on this ManagedCluster: whether it accepted and imported the cluster, and whether the cluster's agent still reports in."
-          >
-            {cluster.conditions.length ? (
-              <Table aria-label="Conditions" variant="compact" data-testid="cluster-conditions">
-                <Thead>
-                  <Tr>
-                    <Th>Type</Th>
-                    <Th>Status</Th>
-                    <Th>Reason</Th>
-                    <Th>Message</Th>
-                    <Th>Last changed</Th>
-                  </Tr>
-                </Thead>
-                <Tbody>
-                  {cluster.conditions.map((cond) => (
-                    <Tr key={cond.type}>
-                      <Td dataLabel="Type">{cond.type}</Td>
-                      <Td dataLabel="Status">{cond.status}</Td>
-                      <Td dataLabel="Reason">{cond.reason}</Td>
-                      <Td dataLabel="Message">{cond.message}</Td>
-                      <Td dataLabel="Last changed">
-                        <RelativeTime time={cond.lastTransitionTime} />
-                      </Td>
-                    </Tr>
-                  ))}
-                </Tbody>
-              </Table>
-            ) : (
-              <NotReported what="this cluster's conditions" />
-            )}
-          </Section>
-        </GridItem>
       </Grid>
     );
   };
@@ -433,14 +411,6 @@ export const ClusterDetailsPage: React.FC<Props> = ({ service }) => {
     <>
       <PageHeader
         title={name}
-        status={
-          cluster && (
-            <StatusLabel
-              status={cluster.status}
-              reason={['Connection to the hub', statusReason(cluster)].filter(Boolean).join(': ')}
-            />
-          )
-        }
         headerAction={actions}
         breadcrumb={
           <Breadcrumb>

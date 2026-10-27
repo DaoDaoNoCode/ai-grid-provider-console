@@ -32,7 +32,7 @@ it('opens from the Clusters list', async () => {
   expect(within(breadcrumb).getByRole('link', { name: 'Clusters' })).toHaveAttribute('href', '/clusters');
 });
 
-it('shows a member: AI Grid, the cluster, its capacity, GPUs and conditions', async () => {
+it('shows a member: AI Grid, the cluster, its capacity and GPUs', async () => {
   renderAt('/clusters/site1', new MockConsoleService());
   expect(await screen.findByRole('heading', { level: 1, name: 'site1' })).toBeVisible();
 
@@ -40,8 +40,20 @@ it('shows a member: AI Grid, the cluster, its capacity, GPUs and conditions', as
   const aiGrid = details('AI Grid membership');
   expect(aiGrid).toHaveTextContent('Combined: Takes tenant traffic and serves models.');
   expect(aiGrid).toHaveTextContent('site1');
+  // The same order as the list's AI Grid columns: status, location, role (UX review).
+  expect(
+    within(aiGrid)
+      .getAllByRole('term')
+      .map((t) => t.textContent),
+  ).toEqual(['Status', 'Location', 'Role']);
 
   const cluster = details('Cluster');
+  // The hub's connection to the cluster is the Cluster card's status, not an unlabeled one in the
+  // page header (UX review).
+  expect(screen.getByTestId('cluster-status')).toHaveTextContent('Ready');
+  expect(
+    within(screen.getByRole('heading', { level: 1, name: 'site1' }).parentElement!).queryByText('Ready'),
+  ).toBeNull();
   for (const text of ['4.22.15', 'v1.35.6', 'BareMetal', 'OpenShift']) {
     expect(cluster).toHaveTextContent(text);
   }
@@ -58,7 +70,7 @@ it('shows a member: AI Grid, the cluster, its capacity, GPUs and conditions', as
   const gpus = details('GPUs');
   expect(screen.getByTestId('cluster-gpu-capacity')).toHaveTextContent('2 nodes, 16 GPUs');
   expect(screen.getByTestId('cluster-gpu-configurations')).toHaveTextContent(
-    'NVIDIA H200, 8 GPUs/node · 140.4 GiB each · 2 nodes',
+    'NVIDIA H200, 8 GPUs/node, 140.4 GiB each',
   );
   expect(gpus).toHaveTextContent('ManufacturerNVIDIA');
   expect(gpus).toHaveTextContent('ArchitectureHopper');
@@ -78,10 +90,8 @@ it('shows a member: AI Grid, the cluster, its capacity, GPUs and conditions', as
   }
   expect(within(row).getByRole('cell', { name: '8' })).toBeInTheDocument();
 
-  const conditions = screen.getByTestId('cluster-conditions');
-  expect(within(conditions).getByRole('row', { name: /ManagedClusterConditionAvailable True/ })).toHaveTextContent(
-    'Managed cluster is available',
-  );
+  // No hub conditions: raw API state that the provider admin doesn't need (UX review).
+  expect(screen.queryByRole('heading', { name: 'Conditions' })).not.toBeInTheDocument();
 
   // The cluster's own console opens in a new tab.
   const console = screen.getByRole('link', { name: 'OpenShift console' });
@@ -98,7 +108,6 @@ it("says what the backend doesn't report yet instead of showing zeros", async ()
   expect(details('Cluster')).toHaveTextContent('4.21.36');
   expect(details('Cluster')).toHaveTextContent('Platform—');
   expect(screen.getByText("The backend doesn't report this cluster's capacity yet.")).toBeVisible();
-  expect(screen.getByText("The backend doesn't report this cluster's conditions yet.")).toBeVisible();
   expect(screen.queryByTestId('cluster-gpus')).not.toBeInTheDocument();
   expect(screen.getByText("The backend doesn't report this cluster's GPUs yet.")).toBeVisible();
   expect(screen.queryByRole('link', { name: 'OpenShift console' })).not.toBeInTheDocument();
@@ -107,17 +116,62 @@ it("says what the backend doesn't report yet instead of showing zeros", async ()
 it('words shared and sliced GPUs: time-slicing and MIG', async () => {
   renderAt('/clusters/site2', new MockConsoleService());
   expect(await screen.findByTestId('cluster-gpu-configurations')).toHaveTextContent(
-    'NVIDIA L4, 1 GPU/node · 22.5 GiB each · Time-sliced ×4 · 4 nodes',
+    'NVIDIA L4, 1 GPU/node, 22.5 GiB each, Time-sliced ×4',
   );
   expect(within(screen.getByRole('grid', { name: 'GPU nodes' })).getAllByRole('row')[1]).toHaveTextContent(
     /NVIDIA L4.*Time-sliced ×4/,
   );
 });
 
+it('gives each configuration its node count only when a cluster mixes them', async () => {
+  // One configuration: Capacity already says how many nodes, so the line doesn't repeat it.
+  renderAt('/clusters/site2', new MockConsoleService());
+  expect(await screen.findByTestId('cluster-gpu-configurations')).not.toHaveTextContent(/node(s)?$/);
+});
+
+it('says how many nodes each configuration has on a cluster that mixes them', async () => {
+  const clusters = seedClusters();
+  const site1 = clusters[0].gpus!;
+  clusters[0].gpus = {
+    ...site1,
+    total: site1.total + 4,
+    nodeCount: site1.nodeCount + 1,
+    configurations: [
+      ...site1.configurations,
+      { ...site1.configurations[0], product: 'NVIDIA-H100-80GB-HBM3', gpusPerNode: 4, nodeCount: 1 },
+    ],
+  };
+  renderAt('/clusters/site1', new MockConsoleService(undefined, clusters));
+  const lines = within(await screen.findByTestId('cluster-gpu-configurations')).getAllByRole('listitem');
+  expect(lines.map((l) => l.textContent)).toEqual([
+    'NVIDIA H200, 8 GPUs/node, 140.4 GiB each, 2 nodes',
+    'NVIDIA H100-80GB-HBM3, 4 GPUs/node, 140.4 GiB each, 1 node',
+  ]);
+});
+
+it('has no OpenShift version row for a cluster that is not OpenShift', async () => {
+  // ACM sets version.openshift.io only on OpenShift; an EKS cluster has a Kubernetes version only.
+  const eks: GridCluster = {
+    ...bare(),
+    name: 'eks-1',
+    openshiftVersion: undefined,
+    product: 'EKS',
+    kubernetesVersion: 'v1.33.4',
+  };
+  renderAt('/clusters/eks-1', new MockConsoleService(undefined, [eks]));
+  expect(await screen.findByRole('heading', { level: 1, name: 'eks-1' })).toBeVisible();
+  const terms = within(details('Cluster'))
+    .getAllByRole('term')
+    .map((t) => t.textContent);
+  expect(terms).not.toContain('OpenShift version');
+  expect(terms).toContain('Kubernetes version');
+  expect(details('Cluster')).toHaveTextContent('EKS');
+});
+
 it('words a MIG configuration by its profile', async () => {
   renderAt('/clusters/site3', new MockConsoleService());
   expect(await screen.findByTestId('cluster-gpu-configurations')).toHaveTextContent(
-    'NVIDIA A100-SXM4-40GB, 8 GPUs/node · 19.5 GiB each · MIG 3g.20gb · 2 nodes',
+    'NVIDIA A100-SXM4-40GB, 8 GPUs/node, 19.5 GiB each, MIG 3g.20gb',
   );
   expect(screen.getByTestId('cluster-gpu-capacity')).toHaveTextContent('2 nodes, 16 GPUs');
 });

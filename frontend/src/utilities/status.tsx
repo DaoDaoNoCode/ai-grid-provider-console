@@ -28,6 +28,8 @@ const tones: Record<string, StatusTone> = {
   Provisioned: 'success',
   Provisioning: 'info',
   'Not provisioned': 'neutral',
+  // A cluster outside AI Grid (no ai-grid/enabled label).
+  'Not added': 'neutral',
   // Models (ManagedModel.phase) and subscriptions (normalized MaaSSubscription phases).
   Active: 'success',
   Pending: 'info',
@@ -71,7 +73,7 @@ export const statusLabelProps = (status: string | undefined): Pick<LabelProps, '
   if (status === 'Saved to Git') {
     return { ...props, icon: <InfoCircleIcon /> };
   }
-  if (status === 'Disabled' || status === 'Not provisioned') {
+  if (status === 'Disabled' || status === 'Not provisioned' || status === 'Not added') {
     return { ...props, icon: <BanIcon /> };
   }
   return props;

@@ -338,7 +338,7 @@ it('shows the role of each member, and warns about a member without one', async 
   const names = () =>
     within(table)
       .getAllByRole('row')
-      .slice(1)
+      .slice(2)
       .map((r) => r.querySelector('td')?.textContent);
   const before = names();
   await user.click(within(table).getByRole('button', { name: 'About cluster roles' }));
@@ -362,7 +362,7 @@ it('sorts by role: clusters outside AI Grid, then members without a role, then b
   const names = () =>
     within(table)
       .getAllByRole('row')
-      .slice(1)
+      .slice(2)
       .map((r) => r.querySelector('td')?.textContent);
   const sortButton = within(within(table).getByRole('columnheader', { name: /^Role/ })).getByRole('button', {
     name: 'Role',
@@ -528,10 +528,10 @@ it("lists each cluster's GPU configuration and capacity, as provider admins aske
   await user.click(within(screen.getByTestId('cluster-gpu-models-site1')).getByText('+1 more'));
   expect(await screen.findByText('NVIDIA H100-80GB-HBM3, 4 GPUs/node')).toBeVisible();
 
-  expect(screen.getByTestId('cluster-gpu-models-site2')).toHaveTextContent('NVIDIA L4, 1 GPU/node · Time-sliced ×4');
+  expect(screen.getByTestId('cluster-gpu-models-site2')).toHaveTextContent('NVIDIA L4, 1 GPU/node, Time-sliced ×4');
   expect(screen.getByTestId('cluster-gpu-capacity-site2')).toHaveTextContent('4 nodes, 4 GPUs');
   expect(screen.getByTestId('cluster-gpu-models-site3')).toHaveTextContent(
-    'NVIDIA A100-SXM4-40GB, 8 GPUs/node · MIG 3g.20gb',
+    'NVIDIA A100-SXM4-40GB, 8 GPUs/node, MIG 3g.20gb',
   );
   expect(screen.getByTestId('cluster-gpu-models-site4')).toHaveTextContent('—');
   expect(screen.getByTestId('cluster-gpu-capacity-site4')).toHaveTextContent('8 GPUs');
@@ -545,19 +545,39 @@ it('shows no GPUs for a cluster whose capacity has none, and sorts by GPU count'
   await user.click(screen.getByRole('button', { name: 'Capacity' }));
   const names = screen
     .getAllByRole('row')
-    .slice(1)
+    .slice(2)
     .map((r) => r.textContent?.split(' ')[0]);
   expect(names[0]).toMatch(/^site4/);
 });
 
-it('wraps the headers, shows Role, and has no Hub, Site or Region column', async () => {
+it('groups the columns as the details page does, wraps them, and has no Hub, Site or Region column', async () => {
   renderAt('/clusters', serviceWith(hubClusters()));
   const table = await screen.findByTestId('clusters-table');
-  for (const header of within(table)
-    .getAllByRole('columnheader')
-    .filter((h) => h.textContent !== 'Actions')) {
+  const [groups, columns] = within(table).getAllByRole('row').slice(0, 2);
+  // Nested column headers (UX review): Cluster, AI Grid and GPUs, as on the details page.
+  expect(
+    within(groups)
+      .getAllByRole('columnheader')
+      .map((h) => h.textContent)
+      .filter((t) => t !== 'Actions'),
+  ).toEqual(['Cluster', 'AI Grid', 'GPUs']);
+  const headers = within(columns).getAllByRole('columnheader');
+  expect(headers.map((h) => h.textContent)).toEqual([
+    'Name',
+    'Cluster Status',
+    'AI Grid Status',
+    'Location',
+    'Role',
+    'Capacity',
+    'Configuration',
+  ]);
+  for (const header of headers) {
     expect(header).toHaveClass('pf-m-wrap');
   }
+  // The two Status columns read Status on screen, under their groups; their sort buttons say which.
+  expect(within(columns).getByRole('button', { name: 'Cluster Status' })).toBeInTheDocument();
+  expect(within(columns).getByRole('button', { name: 'AI Grid Status' })).toBeInTheDocument();
+  expect(within(columns).getAllByText('Status')).toHaveLength(2);
   expect(within(table).getByRole('columnheader', { name: /^Role/ })).not.toHaveClass('pf-m-hidden');
   // A cluster the hub hasn't accepted says so under Connection. Site and Region are out of scope
   // until geography is (after the MVP).
@@ -566,10 +586,8 @@ it('wraps the headers, shows Role, and has no Hub, Site or Region column', async
   }
   // The OpenShift version is on the details page, leaving room for GPUs and Capacity.
   expect(within(table).queryByRole('columnheader', { name: 'OpenShift' })).not.toBeInTheDocument();
-  expect(within(table).getByRole('columnheader', { name: /^GPUs/ })).toBeInTheDocument();
-  expect(within(table).getByRole('columnheader', { name: /^Capacity/ })).toBeInTheDocument();
-  // The hub's connection to the cluster, not its AI Grid provisioning, which has its own column.
-  expect(within(table).getByRole('columnheader', { name: /^Connection/ })).toBeInTheDocument();
+  // The actions column stays in view: it sticks to the right edge of the scrolling table.
+  expect(within(groups).getByRole('columnheader', { name: 'Actions' })).toHaveClass('pf-v6-c-table__sticky-cell');
 });
 
 it('says when the search matches no cluster, and clears it from the table', async () => {
