@@ -317,7 +317,11 @@ export const ClusterDetailsPage: React.FC<Props> = ({ service }) => {
     setConfirmed(updated);
     setAwaitingReload(true);
     setChange(undefined);
-    navigate('.', { state: { notice: `${updated.name} ${join ? 'added to' : 'removed from'} AI Grid` } });
+    // Replace, so the notice doesn't add a second entry for this page to the browser's history.
+    navigate('.', {
+      replace: true,
+      state: { notice: `${updated.name} ${join ? 'added to' : 'removed from'} AI Grid` },
+    });
     void refresh();
   };
 

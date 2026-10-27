@@ -1,6 +1,9 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter, useNavigate } from 'react-router-dom';
+import type { NavigateFunction } from 'react-router-dom';
+import { App } from '../App';
 import { ServiceError } from '../api/ConsoleService';
 import { MockConsoleService, seedClusters } from '../api/MockConsoleService';
 import type { GridCluster } from '../api/types';
@@ -306,6 +309,25 @@ it('shows the added membership while the reload is still running', async () => {
   await user.click(screen.getByRole('button', { name: 'Actions for site4' }));
   expect(screen.getByRole('menuitem', { name: 'Remove from AI Grid' })).toBeVisible();
   service.getCluster = getCluster;
+});
+
+it('keeps one history entry for the page after a change, so Back leaves it', async () => {
+  let navigate: NavigateFunction = () => undefined;
+  const Navigator = () => {
+    navigate = useNavigate();
+    return null;
+  };
+  const user = userEvent.setup();
+  render(
+    <MemoryRouter initialEntries={['/clusters', '/clusters/site4']} initialIndex={1}>
+      <Navigator />
+      <App service={new MockConsoleService()} />
+    </MemoryRouter>,
+  );
+  await addSite4(user);
+  expect(await screen.findByText('site4 added to AI Grid')).toBeVisible();
+  await act(async () => navigate(-1));
+  expect(await screen.findByRole('heading', { level: 1, name: 'Clusters' })).toBeVisible();
 });
 
 it('keeps the added membership when the reload fails', async () => {
