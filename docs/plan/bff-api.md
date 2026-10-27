@@ -68,8 +68,8 @@ Subscriptions follow backend PR 27 (vendored at its merge ref until it merges). 
 keeps immutable (422 on a change); the display name and description travel as the
 `openshift.io/display-name` and `openshift.io/description` annotations, and the billing rate as
 `billing_rate.per_token`. A PUT sends the mask `spec` and `metadata.annotations` with the `If-Match`
-version and `lock: true`; the backend merge-patches annotations, so a cleared display name or
-description is sent as an empty value. The backend always creates `<name>-policy`, so a create with
+version and `lock: true`; git mode replaces the annotations, so a cleared display name or
+description is left out. The backend always creates `<name>-policy`, so a create with
 `createAuthPolicy: false` answers 501. `GET /subscriptions/{name}` lists each model the backend
 reports a MaaS registration for in `modelRefs`, with that registration's phase (Ready, Failed for
 Failed, Invalid or Unhealthy, else Pending); a model without one shows as not found. DELETE sends

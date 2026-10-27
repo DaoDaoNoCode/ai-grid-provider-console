@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -177,7 +178,7 @@ func TestV1SubscriptionCreate(t *testing.T) {
 func TestV1SubscriptionUpdate(t *testing.T) {
 	conn := &recordingConn{reply: &backendv1.SubscriptionsUpdateResponse{Object: v1Sub()}}
 	in := draftSub()
-	in.Description = "" // cleared: sent as an empty annotation, which a merge patch writes
+	in.Description = "" // cleared: left out, because git mode replaces the annotations
 	got, err := v1Subscriptions{conn}.UpdateSubscription(context.Background(), &aigridv1.UpdateSubscriptionRequest{Object: in, Lock: true})
 	if err != nil || conn.method != methodSubscriptionsUpdate {
 		t.Fatalf("Update sent %s: %v", conn.method, err)
@@ -190,8 +191,8 @@ func TestV1SubscriptionUpdate(t *testing.T) {
 	if meta.GetVersion() != 12 || meta.GetAnnotations()[annotationDisplayName] != "Gold" {
 		t.Fatalf("Update metadata %v", meta)
 	}
-	if d, ok := meta.GetAnnotations()[annotationDescription]; !ok || d != "" {
-		t.Fatalf("Update description annotation %q (sent %v), want an empty one", d, ok)
+	if d, ok := meta.GetAnnotations()[annotationDescription]; ok {
+		t.Fatalf("Update sent description annotation %q, want none", d)
 	}
 	if req.GetObject().GetSpec().GetOrganization().GetId() != "org-uuid" {
 		t.Fatalf("Update spec %v", req.GetObject().GetSpec())
@@ -214,4 +215,16 @@ func TestV1SubscriptionDelete(t *testing.T) {
 	if want := (&backendv1.SubscriptionsDeleteRequest{Id: "gold", ResourceVersion: 12}); conn.method != methodSubscriptionsDelete || !proto.Equal(conn.req.(proto.Message), want) {
 		t.Fatalf("Delete sent %s %v, want %v", conn.method, conn.req, want)
 	}
+
+	// A stale version: the backend's Aborted reaches the API layer, which answers 409.
+	stale := abortingConn{&recordingConn{}}
+	if _, err := (v1Subscriptions{stale}).DeleteSubscription(context.Background(), &aigridv1.DeleteSubscriptionRequest{Name: "gold", ResourceVersion: "11"}); status.Code(err) != codes.Aborted {
+		t.Fatalf("stale Delete: %v, want Aborted", err)
+	}
+}
+
+type abortingConn struct{ *recordingConn }
+
+func (abortingConn) Invoke(context.Context, string, any, any, ...grpc.CallOption) error {
+	return status.Error(codes.Aborted, "the subscription changed since it was read")
 }

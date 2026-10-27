@@ -383,14 +383,15 @@ func (c v1Subscriptions) CreateSubscription(ctx context.Context, in *aigridv1.Cr
 }
 
 // UpdateSubscription replaces the spec and the display name and description,
-// with the If-Match version as metadata.version. The backend merge-patches the
-// annotations, so a cleared display name or description is sent empty.
+// with the If-Match version as metadata.version. Git mode replaces the
+// annotations, so a cleared display name or description is left out.
 func (c v1Subscriptions) UpdateSubscription(ctx context.Context, in *aigridv1.UpdateSubscriptionRequest, opts ...grpc.CallOption) (*aigridv1.UpdateSubscriptionResponse, error) {
 	version, err := v1Version(in.GetObject().GetResourceVersion())
 	if err != nil {
 		return nil, err
 	}
 	obj := toV1Subscription(in.GetObject())
+	obj.Metadata.Annotations = nonEmpty(obj.GetMetadata().GetAnnotations())
 	obj.Metadata.Version = version
 	req := &backendv1.SubscriptionsUpdateRequest{
 		Object:     obj,
