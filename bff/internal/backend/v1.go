@@ -9,6 +9,7 @@ package backend
 
 import (
 	"context"
+	"maps"
 	"strconv"
 	"strings"
 
@@ -383,15 +384,27 @@ func (c v1Subscriptions) CreateSubscription(ctx context.Context, in *aigridv1.Cr
 }
 
 // UpdateSubscription replaces the spec and the display name and description,
-// with the If-Match version as metadata.version. Git mode replaces the
-// annotations, so a cleared display name or description is left out.
+// with the If-Match version as metadata.version. The annotations mask
+// replaces the whole map, so the subscription is read first and its other
+// annotations are sent back unchanged; a cleared display name or description
+// is left out. If the subscription changes between the read and the update,
+// the backend refuses the stale version.
 func (c v1Subscriptions) UpdateSubscription(ctx context.Context, in *aigridv1.UpdateSubscriptionRequest, opts ...grpc.CallOption) (*aigridv1.UpdateSubscriptionResponse, error) {
 	version, err := v1Version(in.GetObject().GetResourceVersion())
 	if err != nil {
 		return nil, err
 	}
+	current := &backendv1.SubscriptionsGetResponse{}
+	if err := c.conn.Invoke(ctx, methodSubscriptionsGet, &backendv1.SubscriptionsGetRequest{Id: in.GetObject().GetName()}, current, opts...); err != nil {
+		return nil, err
+	}
 	obj := toV1Subscription(in.GetObject())
-	obj.Metadata.Annotations = nonEmpty(obj.GetMetadata().GetAnnotations())
+	annotations := maps.Clone(current.GetObject().GetMetadata().GetAnnotations())
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+	maps.Copy(annotations, obj.GetMetadata().GetAnnotations())
+	obj.Metadata.Annotations = nonEmpty(annotations)
 	obj.Metadata.Version = version
 	req := &backendv1.SubscriptionsUpdateRequest{
 		Object:     obj,

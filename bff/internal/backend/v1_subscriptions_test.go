@@ -2,6 +2,8 @@ package backend
 
 import (
 	"context"
+	"maps"
+	"slices"
 	"testing"
 	"time"
 
@@ -176,23 +178,33 @@ func TestV1SubscriptionCreate(t *testing.T) {
 }
 
 func TestV1SubscriptionUpdate(t *testing.T) {
-	conn := &recordingConn{reply: &backendv1.SubscriptionsUpdateResponse{Object: v1Sub()}}
+	conn := &methodConn{replies: map[string]proto.Message{
+		methodSubscriptionsGet:    &backendv1.SubscriptionsGetResponse{Object: v1Sub()},
+		methodSubscriptionsUpdate: &backendv1.SubscriptionsUpdateResponse{Object: v1Sub()},
+	}}
 	in := draftSub()
+	in.DisplayName = "Gold plus"
 	in.Description = "" // cleared: left out, because git mode replaces the annotations
 	got, err := v1Subscriptions{conn}.UpdateSubscription(context.Background(), &aigridv1.UpdateSubscriptionRequest{Object: in, Lock: true})
-	if err != nil || conn.method != methodSubscriptionsUpdate {
-		t.Fatalf("Update sent %s: %v", conn.method, err)
+	if err != nil {
+		t.Fatal(err)
 	}
-	req := conn.req.(*backendv1.SubscriptionsUpdateRequest)
+	if want := []string{methodSubscriptionsGet, methodSubscriptionsUpdate}; !slices.Equal(conn.called, want) {
+		t.Fatalf("Update called %v, want %v", conn.called, want)
+	}
+	if id := conn.reqs[0].(*backendv1.SubscriptionsGetRequest).GetId(); id != "gold" {
+		t.Fatalf("Update read subscription %q, want gold", id)
+	}
+	req := conn.reqs[1].(*backendv1.SubscriptionsUpdateRequest)
 	if want := []string{"spec", "metadata.annotations"}; !proto.Equal(req.GetUpdateMask(), &fieldmaskpb.FieldMask{Paths: want}) || !req.GetLock() {
 		t.Fatalf("Update mask %v lock %v, want %v and lock", req.GetUpdateMask(), req.GetLock(), want)
 	}
+	// The mask replaces the whole map: annotations the console doesn't edit
+	// are sent back as read, the display name changes, and the cleared
+	// description is left out.
 	meta := req.GetObject().GetMetadata()
-	if meta.GetVersion() != 12 || meta.GetAnnotations()[annotationDisplayName] != "Gold" {
-		t.Fatalf("Update metadata %v", meta)
-	}
-	if d, ok := meta.GetAnnotations()[annotationDescription]; ok {
-		t.Fatalf("Update sent description annotation %q, want none", d)
+	if want := map[string]string{annotationDisplayName: "Gold plus", "other": "kept"}; meta.GetVersion() != 12 || !maps.Equal(meta.GetAnnotations(), want) {
+		t.Fatalf("Update metadata %v, want version 12 and annotations %v", meta, want)
 	}
 	if req.GetObject().GetSpec().GetOrganization().GetId() != "org-uuid" {
 		t.Fatalf("Update spec %v", req.GetObject().GetSpec())
