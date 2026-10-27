@@ -2,7 +2,8 @@
 // (docs/adr 0002 and 0004): a reverse proxy for the paths under Prefix, to the
 // backend at BACKEND_ADDRESS, which serves Connect, gRPC and gRPC-Web on that
 // port. It compiles against no contract and reads no body, so a new RPC needs
-// no change here.
+// no transport implementation here. Until backend authorization lands, new
+// procedures require an explicit boundary review (allowedProcedures).
 //
 // What it owns is the boundary. It runs behind the BFF's caller checks (the
 // token header, then the provider-admin check), and of what the browser sent,
@@ -48,6 +49,31 @@ const MaxBodyBytes = 1 << 20
 // else (no further segment, dot segment or escape), so the backend routes the
 // path the relay checked.
 var procedure = regexp.MustCompile(`^/ai_grid\.v1\.[A-Za-z_][A-Za-z0-9_]*/[A-Za-z_][A-Za-z0-9_]*$`)
+
+// allowedProcedures keeps the console's existing API surface until the backend
+// authorizes callers itself. In particular, Tenants/ListMembers is not exposed.
+var allowedProcedures = map[string]struct{}{
+	"/ai_grid.v1.AiGrid/Ping":          {},
+	"/ai_grid.v1.Clusters/List":        {},
+	"/ai_grid.v1.Clusters/Get":         {},
+	"/ai_grid.v1.Clusters/Update":      {},
+	"/ai_grid.v1.Tenants/List":         {},
+	"/ai_grid.v1.Tenants/Get":          {},
+	"/ai_grid.v1.Tenants/Create":       {},
+	"/ai_grid.v1.Tenants/Update":       {},
+	"/ai_grid.v1.Tenants/Delete":       {},
+	"/ai_grid.v1.Models/List":          {},
+	"/ai_grid.v1.Models/Get":           {},
+	"/ai_grid.v1.Models/Create":        {},
+	"/ai_grid.v1.Models/Update":        {},
+	"/ai_grid.v1.Models/Delete":        {},
+	"/ai_grid.v1.Models/ListLocations": {},
+	"/ai_grid.v1.Subscriptions/List":   {},
+	"/ai_grid.v1.Subscriptions/Get":    {},
+	"/ai_grid.v1.Subscriptions/Create": {},
+	"/ai_grid.v1.Subscriptions/Update": {},
+	"/ai_grid.v1.Subscriptions/Delete": {},
+}
 
 // Handles reports whether a path belongs to the relay: the BFF routes it here,
 // and answers its own refusals on it as Connect errors (WriteError).
@@ -128,6 +154,10 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		WriteError(w, http.StatusNotFound, "no such procedure: the console relays /ai_grid.v1.<Service>/<Method> only")
 		return
 	}
+	if _, ok := allowedProcedures[req.URL.Path]; !ok {
+		WriteError(w, http.StatusNotFound, "this procedure is not exposed by the console")
+		return
+	}
 	if req.Method != http.MethodPost && req.Method != http.MethodGet {
 		w.Header().Set("Allow", "GET, POST")
 		WriteError(w, http.StatusMethodNotAllowed, fmt.Sprintf("%s is not allowed on %s; Connect uses POST, and GET for a method without side effects", req.Method, req.URL.Path))
@@ -135,6 +165,19 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	if _, ok := identity.FromContext(req.Context()); !ok {
 		WriteError(w, http.StatusUnauthorized, "missing caller identity")
+		return
+	}
+	// Limit decoded input as well as wire bytes: browsers do not compress requests.
+	for _, header := range []string{"Content-Encoding", "Connect-Content-Encoding"} {
+		for _, encoding := range req.Header.Values(header) {
+			if encoding = strings.TrimSpace(encoding); encoding != "" && !strings.EqualFold(encoding, "identity") {
+				WriteError(w, http.StatusUnsupportedMediaType, "compressed requests are not supported by the console")
+				return
+			}
+		}
+	}
+	if encoding := req.URL.Query().Get("compression"); encoding != "" && encoding != "identity" {
+		WriteError(w, http.StatusUnsupportedMediaType, "compressed requests are not supported by the console")
 		return
 	}
 	streaming := false

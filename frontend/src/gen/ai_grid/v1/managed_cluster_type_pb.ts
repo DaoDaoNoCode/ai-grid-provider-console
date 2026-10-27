@@ -7,13 +7,15 @@ import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Metadata } from "./metadata_type_pb";
 import { file_ai_grid_v1_metadata_type } from "./metadata_type_pb";
 import { file_buf_validate_validate } from "../../buf/validate/validate_pb";
+import type { Timestamp } from "@bufbuild/protobuf/wkt";
+import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file ai_grid/v1/managed_cluster_type.proto.
  */
 export const file_ai_grid_v1_managed_cluster_type: GenFile = /*@__PURE__*/
-  fileDesc("CiVhaV9ncmlkL3YxL21hbmFnZWRfY2x1c3Rlcl90eXBlLnByb3RvEgphaV9ncmlkLnYxItUBCg5NYW5hZ2VkQ2x1c3RlchI7CgJpZBgBIAEoCUIvukgscioQARg/MiReW2EtejAtOV0oW2EtejAtOS1dezAsNjF9W2EtejAtOV0pPyQSJgoIbWV0YWRhdGEYAiABKAsyFC5haV9ncmlkLnYxLk1ldGFkYXRhEiwKBHNwZWMYAyABKAsyHi5haV9ncmlkLnYxLk1hbmFnZWRDbHVzdGVyU3BlYxIwCgZzdGF0dXMYBCABKAsyIC5haV9ncmlkLnYxLk1hbmFnZWRDbHVzdGVyU3RhdHVzIjAKEk1hbmFnZWRDbHVzdGVyU3BlYxIaChJodWJfYWNjZXB0c19jbGllbnQYASABKAgibAoUTWFuYWdlZENsdXN0ZXJTdGF0dXMSEQoJYXZhaWxhYmxlGAEgASgIEg4KBmpvaW5lZBgCIAEoCBIbChNhdmFpbGFibGVfY29uZGl0aW9uGAMgASgJEhQKDHByb3Zpc2lvbmluZxgEIAEoCUJKWkhnaXRodWIuY29tL29zYWMtcHJvamVjdC9haS1ncmlkLXByb3ZpZGVyLWJhY2tlbmQvZ2VuL2FpX2dyaWQvdjE7YWlncmlkdjFiBnByb3RvMw", [file_ai_grid_v1_metadata_type, file_buf_validate_validate]);
+  fileDesc("CiVhaV9ncmlkL3YxL21hbmFnZWRfY2x1c3Rlcl90eXBlLnByb3RvEgphaV9ncmlkLnYxItUBCg5NYW5hZ2VkQ2x1c3RlchI7CgJpZBgBIAEoCUIvukgscioQARg/MiReW2EtejAtOV0oW2EtejAtOS1dezAsNjF9W2EtejAtOV0pPyQSJgoIbWV0YWRhdGEYAiABKAsyFC5haV9ncmlkLnYxLk1ldGFkYXRhEiwKBHNwZWMYAyABKAsyHi5haV9ncmlkLnYxLk1hbmFnZWRDbHVzdGVyU3BlYxIwCgZzdGF0dXMYBCABKAsyIC5haV9ncmlkLnYxLk1hbmFnZWRDbHVzdGVyU3RhdHVzIjAKEk1hbmFnZWRDbHVzdGVyU3BlYxIaChJodWJfYWNjZXB0c19jbGllbnQYASABKAgikAQKFE1hbmFnZWRDbHVzdGVyU3RhdHVzEhEKCWF2YWlsYWJsZRgBIAEoCBIOCgZqb2luZWQYAiABKAgSGwoTYXZhaWxhYmxlX2NvbmRpdGlvbhgDIAEoCRIUCgxwcm92aXNpb25pbmcYBCABKAkSNwoKY29uZGl0aW9ucxgFIAMoCzIjLmFpX2dyaWQudjEuTWFuYWdlZENsdXN0ZXJDb25kaXRpb24SGgoSa3ViZXJuZXRlc192ZXJzaW9uGAYgASgJEkAKCGNhcGFjaXR5GAcgAygLMi4uYWlfZ3JpZC52MS5NYW5hZ2VkQ2x1c3RlclN0YXR1cy5DYXBhY2l0eUVudHJ5EkYKC2FsbG9jYXRhYmxlGAggAygLMjEuYWlfZ3JpZC52MS5NYW5hZ2VkQ2x1c3RlclN0YXR1cy5BbGxvY2F0YWJsZUVudHJ5EjcKDmNsdXN0ZXJfY2xhaW1zGAkgAygLMh8uYWlfZ3JpZC52MS5NYW5hZ2VkQ2x1c3RlckNsYWltEiUKBGdwdXMYCiABKAsyFy5haV9ncmlkLnYxLkNsdXN0ZXJHUFVzGi8KDUNhcGFjaXR5RW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ARoyChBBbGxvY2F0YWJsZUVudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiigEKC0NsdXN0ZXJHUFVzEg0KBXRvdGFsGAEgASgFEhIKCm5vZGVfY291bnQYAiABKAUSNAoOY29uZmlndXJhdGlvbnMYAyADKAsyHC5haV9ncmlkLnYxLkdQVUNvbmZpZ3VyYXRpb24SIgoFbm9kZXMYBCADKAsyEy5haV9ncmlkLnYxLkdQVU5vZGUimwEKEEdQVUNvbmZpZ3VyYXRpb24SDgoGdmVuZG9yGAEgASgJEg8KB3Byb2R1Y3QYAiABKAkSEgoKbWVtb3J5X21pYhgDIAEoAxIVCg1ncHVzX3Blcl9ub2RlGAQgASgFEhIKCm5vZGVfY291bnQYBSABKAUSJwoHc2hhcmluZxgGIAEoCzIWLmFpX2dyaWQudjEuR1BVU2hhcmluZyJbCgpHUFVTaGFyaW5nEhAKCHN0cmF0ZWd5GAEgASgJEhAKCHJlcGxpY2FzGAIgASgFEhMKC21pZ19jYXBhYmxlGAMgASgIEhQKDG1pZ19zdHJhdGVneRgEIAEoCSKMAgoHR1BVTm9kZRIMCgRuYW1lGAEgASgJEg4KBnZlbmRvchgCIAEoCRIPCgdwcm9kdWN0GAMgASgJEg0KBWNvdW50GAQgASgFEhIKCm1lbW9yeV9taWIYBSABKAMSDgoGZmFtaWx5GAYgASgJEhoKEmNvbXB1dGVfY2FwYWJpbGl0eRgHIAEoCRIWCg5kcml2ZXJfdmVyc2lvbhgIIAEoCRIcChRjdWRhX3J1bnRpbWVfdmVyc2lvbhgJIAEoCRInCgdzaGFyaW5nGAogASgLMhYuYWlfZ3JpZC52MS5HUFVTaGFyaW5nEhUKDWluc3RhbmNlX3R5cGUYCyABKAkSDQoFcmVhZHkYDCABKAgikgEKF01hbmFnZWRDbHVzdGVyQ29uZGl0aW9uEgwKBHR5cGUYASABKAkSDgoGc3RhdHVzGAIgASgJEg4KBnJlYXNvbhgDIAEoCRIPCgdtZXNzYWdlGAQgASgJEjgKFGxhc3RfdHJhbnNpdGlvbl90aW1lGAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCIyChNNYW5hZ2VkQ2x1c3RlckNsYWltEgwKBG5hbWUYASABKAkSDQoFdmFsdWUYAiABKAlCSlpIZ2l0aHViLmNvbS9vc2FjLXByb2plY3QvYWktZ3JpZC1wcm92aWRlci1iYWNrZW5kL2dlbi9haV9ncmlkL3YxO2FpZ3JpZHYxYgZwcm90bzM", [file_ai_grid_v1_metadata_type, file_buf_validate_validate, file_google_protobuf_timestamp]);
 
 /**
  * Hub-side ACM/OCM ManagedCluster inventory object.
@@ -114,6 +116,58 @@ export type ManagedClusterStatus = Message<"ai_grid.v1.ManagedClusterStatus"> & 
    * @generated from field: string provisioning = 4;
    */
   provisioning: string;
+
+  /**
+   * `status.conditions`, as the hub reports them, in the hub's order.
+   *
+   * @generated from field: repeated ai_grid.v1.ManagedClusterCondition conditions = 5;
+   */
+  conditions: ManagedClusterCondition[];
+
+  /**
+   * `status.version.kubernetes`, for example "v1.34.9". Empty until the
+   * cluster's agent reports it.
+   *
+   * @generated from field: string kubernetes_version = 6;
+   */
+  kubernetesVersion: string;
+
+  /**
+   * `status.capacity`: what the cluster's nodes provide, as Kubernetes
+   * quantity strings keyed by resource name (for example "cpu": "68",
+   * "memory": "273509824Ki", "nvidia.com/gpu": "1"). Empty until the agent
+   * reports it.
+   *
+   * @generated from field: map<string, string> capacity = 7;
+   */
+  capacity: { [key: string]: string };
+
+  /**
+   * `status.allocatable`, keyed and encoded like `capacity`.
+   *
+   * @generated from field: map<string, string> allocatable = 8;
+   */
+  allocatable: { [key: string]: string };
+
+  /**
+   * `status.clusterClaims`, as the cluster's agent reports them, for example
+   * `consoleurl.cluster.open-cluster-management.io`,
+   * `platform.open-cluster-management.io` and
+   * `product.open-cluster-management.io`.
+   *
+   * @generated from field: repeated ai_grid.v1.ManagedClusterClaim cluster_claims = 9;
+   */
+  clusterClaims: ManagedClusterClaim[];
+
+  /**
+   * The cluster's GPUs, from ACM Search's index of its nodes and the labels
+   * NVIDIA GPU Feature Discovery puts on them. Unset when Search isn't
+   * available or hasn't indexed the cluster; `capacity["nvidia.com/gpu"]`
+   * still counts its schedulable GPUs then.
+   *
+   * @generated from field: ai_grid.v1.ClusterGPUs gpus = 10;
+   */
+  gpus?: ClusterGPUs | undefined;
 };
 
 /**
@@ -122,4 +176,324 @@ export type ManagedClusterStatus = Message<"ai_grid.v1.ManagedClusterStatus"> & 
  */
 export const ManagedClusterStatusSchema: GenMessage<ManagedClusterStatus> = /*@__PURE__*/
   messageDesc(file_ai_grid_v1_managed_cluster_type, 2);
+
+/**
+ * GPU inventory of one cluster.
+ *
+ * @generated from message ai_grid.v1.ClusterGPUs
+ */
+export type ClusterGPUs = Message<"ai_grid.v1.ClusterGPUs"> & {
+  /**
+   * GPU devices on the cluster's GPU nodes, as GPU Feature Discovery counts
+   * them: the sum of each node's `count`. That is physical GPUs, except on a
+   * node with MIG strategy "single", where GFD's count is the MIG devices
+   * (GFD replaces the physical count there and reports none; under "mixed"
+   * it stays the physical count).
+   *
+   * @generated from field: int32 total = 1;
+   */
+  total: number;
+
+  /**
+   * Nodes with at least one GPU.
+   *
+   * @generated from field: int32 node_count = 2;
+   */
+  nodeCount: number;
+
+  /**
+   * The distinct node configurations (vendor, product, memory, GPUs per node,
+   * sharing), each with how many nodes have it, most nodes first, then by
+   * product. One entry is the usual case, for example NVIDIA-L4 with 1 GPU per
+   * node on 2 nodes.
+   *
+   * @generated from field: repeated ai_grid.v1.GPUConfiguration configurations = 3;
+   */
+  configurations: GPUConfiguration[];
+
+  /**
+   * Every GPU node, by name.
+   *
+   * @generated from field: repeated ai_grid.v1.GPUNode nodes = 4;
+   */
+  nodes: GPUNode[];
+};
+
+/**
+ * Describes the message ai_grid.v1.ClusterGPUs.
+ * Use `create(ClusterGPUsSchema)` to create a new message.
+ */
+export const ClusterGPUsSchema: GenMessage<ClusterGPUs> = /*@__PURE__*/
+  messageDesc(file_ai_grid_v1_managed_cluster_type, 3);
+
+/**
+ * Nodes that share one GPU configuration.
+ *
+ * @generated from message ai_grid.v1.GPUConfiguration
+ */
+export type GPUConfiguration = Message<"ai_grid.v1.GPUConfiguration"> & {
+  /**
+   * "NVIDIA" for the nvidia.com labels.
+   *
+   * @generated from field: string vendor = 1;
+   */
+  vendor: string;
+
+  /**
+   * `nvidia.com/gpu.product` as GPU Feature Discovery writes it, for example
+   * "NVIDIA-L4" or "NVIDIA-H200"; MIG and time-slicing suffixes kept.
+   *
+   * @generated from field: string product = 2;
+   */
+  product: string;
+
+  /**
+   * `nvidia.com/gpu.memory`, MiB per GPU (per MIG device under MIG
+   * strategy "single").
+   *
+   * @generated from field: int64 memory_mib = 3;
+   */
+  memoryMib: bigint;
+
+  /**
+   * `nvidia.com/gpu.count`: physical GPUs, or MIG devices under MIG
+   * strategy "single" (see ClusterGPUs.total).
+   *
+   * @generated from field: int32 gpus_per_node = 4;
+   */
+  gpusPerNode: number;
+
+  /**
+   * Nodes with this configuration.
+   *
+   * @generated from field: int32 node_count = 5;
+   */
+  nodeCount: number;
+
+  /**
+   * How these nodes share or slice their GPUs.
+   *
+   * @generated from field: ai_grid.v1.GPUSharing sharing = 6;
+   */
+  sharing?: GPUSharing | undefined;
+};
+
+/**
+ * Describes the message ai_grid.v1.GPUConfiguration.
+ * Use `create(GPUConfigurationSchema)` to create a new message.
+ */
+export const GPUConfigurationSchema: GenMessage<GPUConfiguration> = /*@__PURE__*/
+  messageDesc(file_ai_grid_v1_managed_cluster_type, 4);
+
+/**
+ * How a node's GPUs are shared or sliced.
+ *
+ * @generated from message ai_grid.v1.GPUSharing
+ */
+export type GPUSharing = Message<"ai_grid.v1.GPUSharing"> & {
+  /**
+   * `nvidia.com/gpu.sharing-strategy`: "none", "time-slicing" or "mps";
+   * "mig" when `nvidia.com/mig.strategy` is set. Empty when GPU Feature
+   * Discovery reports none.
+   *
+   * @generated from field: string strategy = 1;
+   */
+  strategy: string;
+
+  /**
+   * `nvidia.com/gpu.replicas`: schedulable units per GPU; 1 without sharing.
+   *
+   * @generated from field: int32 replicas = 2;
+   */
+  replicas: number;
+
+  /**
+   * `nvidia.com/mig.capable`.
+   *
+   * @generated from field: bool mig_capable = 3;
+   */
+  migCapable: boolean;
+
+  /**
+   * `nvidia.com/mig.strategy`: "single" or "mixed"; empty without MIG.
+   *
+   * @generated from field: string mig_strategy = 4;
+   */
+  migStrategy: string;
+};
+
+/**
+ * Describes the message ai_grid.v1.GPUSharing.
+ * Use `create(GPUSharingSchema)` to create a new message.
+ */
+export const GPUSharingSchema: GenMessage<GPUSharing> = /*@__PURE__*/
+  messageDesc(file_ai_grid_v1_managed_cluster_type, 5);
+
+/**
+ * One node with GPUs.
+ *
+ * @generated from message ai_grid.v1.GPUNode
+ */
+export type GPUNode = Message<"ai_grid.v1.GPUNode"> & {
+  /**
+   * The node's name.
+   *
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * "NVIDIA" for the nvidia.com labels.
+   *
+   * @generated from field: string vendor = 2;
+   */
+  vendor: string;
+
+  /**
+   * `nvidia.com/gpu.product`, for example "NVIDIA-L4".
+   *
+   * @generated from field: string product = 3;
+   */
+  product: string;
+
+  /**
+   * `nvidia.com/gpu.count`: physical GPUs, or MIG devices under MIG
+   * strategy "single" (see ClusterGPUs.total).
+   *
+   * @generated from field: int32 count = 4;
+   */
+  count: number;
+
+  /**
+   * `nvidia.com/gpu.memory`, MiB per GPU.
+   *
+   * @generated from field: int64 memory_mib = 5;
+   */
+  memoryMib: bigint;
+
+  /**
+   * `nvidia.com/gpu.family`, the architecture, for example "ada-lovelace".
+   *
+   * @generated from field: string family = 6;
+   */
+  family: string;
+
+  /**
+   * `nvidia.com/gpu.compute.major` "." `minor`, for example "8.9".
+   *
+   * @generated from field: string compute_capability = 7;
+   */
+  computeCapability: string;
+
+  /**
+   * `nvidia.com/cuda.driver-version.full`, for example "580.105.08".
+   *
+   * @generated from field: string driver_version = 8;
+   */
+  driverVersion: string;
+
+  /**
+   * `nvidia.com/cuda.runtime-version.full`, for example "13.0".
+   *
+   * @generated from field: string cuda_runtime_version = 9;
+   */
+  cudaRuntimeVersion: string;
+
+  /**
+   * How the node shares or slices its GPUs.
+   *
+   * @generated from field: ai_grid.v1.GPUSharing sharing = 10;
+   */
+  sharing?: GPUSharing | undefined;
+
+  /**
+   * `nvidia.com/gpu.machine`, the instance type, for example "g6.xlarge".
+   *
+   * @generated from field: string instance_type = 11;
+   */
+  instanceType: string;
+
+  /**
+   * The node's Ready condition is True.
+   *
+   * @generated from field: bool ready = 12;
+   */
+  ready: boolean;
+};
+
+/**
+ * Describes the message ai_grid.v1.GPUNode.
+ * Use `create(GPUNodeSchema)` to create a new message.
+ */
+export const GPUNodeSchema: GenMessage<GPUNode> = /*@__PURE__*/
+  messageDesc(file_ai_grid_v1_managed_cluster_type, 6);
+
+/**
+ * One `status.conditions[]` entry of a ManagedCluster.
+ *
+ * @generated from message ai_grid.v1.ManagedClusterCondition
+ */
+export type ManagedClusterCondition = Message<"ai_grid.v1.ManagedClusterCondition"> & {
+  /**
+   * For example "ManagedClusterConditionAvailable" or "ManagedClusterJoined".
+   *
+   * @generated from field: string type = 1;
+   */
+  type: string;
+
+  /**
+   * "True", "False" or "Unknown".
+   *
+   * @generated from field: string status = 2;
+   */
+  status: string;
+
+  /**
+   * @generated from field: string reason = 3;
+   */
+  reason: string;
+
+  /**
+   * @generated from field: string message = 4;
+   */
+  message: string;
+
+  /**
+   * Unset when the hub recorded none.
+   *
+   * @generated from field: google.protobuf.Timestamp last_transition_time = 5;
+   */
+  lastTransitionTime?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message ai_grid.v1.ManagedClusterCondition.
+ * Use `create(ManagedClusterConditionSchema)` to create a new message.
+ */
+export const ManagedClusterConditionSchema: GenMessage<ManagedClusterCondition> = /*@__PURE__*/
+  messageDesc(file_ai_grid_v1_managed_cluster_type, 7);
+
+/**
+ * One `status.clusterClaims[]` entry of a ManagedCluster.
+ *
+ * @generated from message ai_grid.v1.ManagedClusterClaim
+ */
+export type ManagedClusterClaim = Message<"ai_grid.v1.ManagedClusterClaim"> & {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string value = 2;
+   */
+  value: string;
+};
+
+/**
+ * Describes the message ai_grid.v1.ManagedClusterClaim.
+ * Use `create(ManagedClusterClaimSchema)` to create a new message.
+ */
+export const ManagedClusterClaimSchema: GenMessage<ManagedClusterClaim> = /*@__PURE__*/
+  messageDesc(file_ai_grid_v1_managed_cluster_type, 8);
 

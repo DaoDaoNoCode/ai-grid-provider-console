@@ -38,4 +38,12 @@ describe('fakeClients', () => {
     await clients.tenants.list({});
     expect(methods).toEqual(['ai_grid.v1.Tenants/List']);
   });
+  it('provides Models and Subscriptions from the current backend pin', async () => {
+    const { clients } = fakeClients({
+      models: { list: () => ({ total: 1, items: [{ id: 'model-a' }] }) },
+      subscriptions: { list: () => ({ total: 1, items: [{ id: 'subscription-a' }] }) },
+    });
+    expect((await clients.models.list({})).items[0].id).toBe('model-a');
+    expect((await clients.subscriptions.list({})).items[0].id).toBe('subscription-a');
+  });
 });

@@ -10,3 +10,8 @@ patchedDependencies:
   # `format`, as the other Perses plugins import it. Fixed upstream by perses/plugins#893; drop
   # this patch once a pie chart release with that fix is in use.
   '@perses-dev/pie-chart-plugin@0.14.0': patches/@perses-dev__pie-chart-plugin@0.14.0.patch
+
+# Perses 0.54 declares Query v4. The real-renderer browser test in e2e/perses.spec.ts
+# verifies its v5 integration; keep the console and all plugins on the same runtime.
+overrides:
+  '@tanstack/react-query': 5.104.5

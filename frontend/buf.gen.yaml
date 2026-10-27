@@ -14,3 +14,6 @@ plugins:
     # too: protoc-gen-es v2 links each file's descriptor to those of its imports. The well-known
     # types come from @bufbuild/protobuf/wkt.
     include_imports: true
+  - local: node_modules/.bin/protoc-gen-connect-query
+    out: src/gen
+    opt: target=ts

@@ -65,10 +65,11 @@ What the BFF does:
   `bff/internal/relay`) behind the same caller checks as `/api/v1`: a reverse proxy that drops
   whatever the browser sent about who it is (`Authorization`, cookies, `Forwarded`, every
   `X-Forwarded-*`) and sets the caller exactly as `forwardIdentity` does for gRPC, passes only
-  the Connect protocol (POST with a Connect content type, GET) with at most 1 MiB, bounds a unary
-  call and every call's wait for headers by `BACKEND_TIMEOUT`, passes back only the response
+  the Connect protocol (POST with a Connect content type, GET), refuses compressed requests,
+  limits bodies to 1 MiB, bounds a unary call and every call's wait for headers by `BACKEND_TIMEOUT`, passes back only the response
   headers a Connect client needs, and never reads a body or compiles against the contract. A
-  new RPC needs no change in the BFF; don't add per-RPC code there (`docs/plan/bff-api.md`, "The Connect relay").
+  new RPC needs no transport implementation in the BFF. Until backend authorization lands,
+  review it for the procedure allowlist (`docs/plan/bff-api.md`, "The Connect relay").
 
 What belongs in the backend, and so in the fake (`bff/internal/fakebackend`) until the backend
 ships it: validation of values, normalization and defaults, resource versions and the
@@ -110,8 +111,8 @@ and 0004). The foundation is in place; no page uses it yet:
   differs). To move to a newer backend, change the SHA and regenerate in the same change.
 - `frontend/src/api/connect`: `createConsoleTransport` (Connect JSON to the console's origin; on
   Unauthenticated it calls the console's `checkSession`), `createConsoleClients` (typed clients
-  per service), `describeError` and `toServiceError` (a ConnectError as the UI states the pages
-  already show), and `fakeClients` in `testing.ts` (typed in-memory fakes for tests).
+  per service), `BackendProvider` (Connect Query and a Query v5 cache), `describeError` and
+  `toServiceError` (a ConnectError as the UI states the pages already show), and `fakeClients` in `testing.ts` (typed in-memory fakes for tests).
 - `make dev-fake-infra` runs the backend at that commit on its own fake hub and Keycloak (its
   `make dev-fake`, fetched into `.cache/backend/<sha>`, or `BACKEND_DIR`), the BFF against it
   and the frontend, so pages and the relay can be tried on the real backend without a cluster.
@@ -149,6 +150,11 @@ when the RPCs allow it.
 > `openshift.io/display-name` goes away. `requireTotal` goes away with the shipped backend it
 > exists to tolerate.
 
+- The Connect relay allowlist (`bff/internal/relay/relay.go`) exposes only the reviewed
+  procedures already offered by the console API. Clusters Create/Delete, `Tenants/ListMembers`
+  and new procedures
+  stay blocked until explicitly reviewed. Remove this temporary gate only when backend
+  authorization enforces the intended access for every RPC.
 - `toGridCluster` (`bff/internal/api/clusters.go`): `aiGridEnabled` and `provisioned` (the
   `ai-grid/enabled` and `ai-grid/provisioned` labels equal to `"true"`; when the backend reports
   `status.provisioning`, `provisioned` is that equal to `"Compliant"` instead, until the backend

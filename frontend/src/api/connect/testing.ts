@@ -1,5 +1,5 @@
 import { createRouterTransport, type Interceptor, type ServiceImpl, type Transport } from '@connectrpc/connect';
-import { AiGrid, Clusters, createConsoleClients, Tenants, type ConsoleClients } from './clients';
+import { AiGrid, Clusters, createConsoleClients, Tenants, Models, Subscriptions, type ConsoleClients } from './clients';
 
 /**
  * The methods a test implements, per service. A method left out answers Unimplemented, as an RPC
@@ -9,6 +9,8 @@ export type FakeBackend = {
   aiGrid?: Partial<ServiceImpl<typeof AiGrid>>;
   clusters?: Partial<ServiceImpl<typeof Clusters>>;
   tenants?: Partial<ServiceImpl<typeof Tenants>>;
+  models?: Partial<ServiceImpl<typeof Models>>;
+  subscriptions?: Partial<ServiceImpl<typeof Subscriptions>>;
 };
 
 /**
@@ -25,6 +27,8 @@ export const fakeClients = (
       service(AiGrid, backend.aiGrid ?? {});
       service(Clusters, backend.clusters ?? {});
       service(Tenants, backend.tenants ?? {});
+      service(Models, backend.models ?? {});
+      service(Subscriptions, backend.subscriptions ?? {});
     },
     { transport: { interceptors } },
   );

@@ -703,7 +703,8 @@ over Connect with clients generated from the backend's proto (ADRs 0002 and 0004
 frontend"). The BFF relays those calls (`bff/internal/relay`): an `httputil.ReverseProxy` for the
 paths under `/ai_grid.v1.`, to the backend at `BACKEND_ADDRESS`, which serves Connect, gRPC and
 gRPC-Web on its gRPC port over HTTP/1.1 and h2c. It is transport and nothing else: it compiles
-against no contract and never reads a body, so a new RPC needs no change in the BFF. No page
+against no contract and never reads a body. A new RPC needs no transport implementation;
+until backend authorization lands it requires review for the procedure allowlist. No page
 uses it yet; every `/api/v1` route stays as it is.
 
 What the relay owns is the boundary:
@@ -727,7 +728,11 @@ What the relay owns is the boundary:
 - **Which calls.** Only a path `/ai_grid.v1.<Service>/<Method>` (letters, digits and `_`; no
   further segment, dot segment or escape), so the backend routes the path that was checked, and
   never its REST gateway, health or reflection on the same port: any other path under the
-  prefix is 404 (`unimplemented`). Only `POST` (Connect unary and streaming calls) and `GET`
+  prefix is 404 (`unimplemented`). The explicit allowlist permits the existing console
+  operations: `AiGrid/Ping`, Clusters List/Get/Update, Tenants CRUD/List, Models CRUD/List
+  and ListLocations, and Subscriptions CRUD/List. Clusters Create/Delete, `Tenants/ListMembers`,
+  unknown services and future methods
+  return 404 until reviewed. Only `POST` (Connect unary and streaming calls) and `GET`
   (Connect's GET, for methods the proto marks free of side effects): any other method is 405
   (`unimplemented`) with `Allow: GET, POST`, after the caller checks, as on `/api/v1`. Only the
   Connect protocol, the one the browser's client speaks: a POST's `Content-Type` must be
@@ -737,7 +742,9 @@ What the relay owns is the boundary:
   before the backend is called. A GET needs none.
 - **How much.** A body of at most 1 MiB, as for the JSON API: a declared larger one is 413
   (`resource_exhausted`) before the backend is called, an undeclared one is cut at 1 MiB with
-  the same answer.
+  the same answer. Compressed requests (`Content-Encoding`, `Connect-Content-Encoding`,
+  or GET `compression`) are refused with 415, so compression cannot bypass the decoded-size
+  bound. Identity encoding remains allowed; response compression is unchanged.
 - **How long.** A unary call (every GET, and a unary POST) is bounded by `BACKEND_TIMEOUT` (10s,
   at most 50s so that the 504 fits in the server's 60s write timeout), as an RPC from the BFF
   is: past it the relay answers 504 (`deadline_exceeded`). Every call, a stream included, waits

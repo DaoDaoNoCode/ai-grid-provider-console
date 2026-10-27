@@ -577,7 +577,7 @@ func TestStreamsFlushAsTheyCome(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, front.URL+"/ai_grid.v1.Clusters/Watch", strings.NewReader(`{}`))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, front.URL+"/ai_grid.v1.Clusters/List", strings.NewReader(`{}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -746,5 +746,55 @@ func TestWriteError(t *testing.T) {
 	}
 	if !relay.Handles("/ai_grid.v1.Clusters/List") || relay.Handles("/api/v1/clusters") || relay.Handles("/ai_grid.draft.v1.Models/List") {
 		t.Error("Handles")
+	}
+}
+
+func TestUnreviewedProceduresStayBehindTheBoundary(t *testing.T) {
+	srv, got := connectBackend(t)
+	r := relayTo(t, srv)
+	for _, path := range []string{
+		"/ai_grid.v1.Tenants/ListMembers",
+		"/ai_grid.v1.Clusters/Create",
+		"/ai_grid.v1.Clusters/Delete",
+		"/ai_grid.v1.Clusters/NewMethod",
+		"/ai_grid.v1.NewService/List",
+	} {
+		t.Run(path, func(t *testing.T) {
+			rec := serve(r, asCaller(t, http.MethodPost, path, strings.NewReader(`{}`), nil))
+			if code, _ := connectError(t, rec); rec.Code != http.StatusNotFound || code != "unimplemented" {
+				t.Fatalf("got %d %q", rec.Code, rec.Body)
+			}
+		})
+	}
+	if got.count() != 0 {
+		t.Fatal("an unreviewed procedure reached the backend")
+	}
+}
+
+func TestRefusesCompressedRequests(t *testing.T) {
+	srv, got := connectBackend(t)
+	r := relayTo(t, srv)
+	for _, tc := range []struct {
+		name, method, path string
+		headers            http.Header
+	}{
+		{"unary", http.MethodPost, list, http.Header{"Content-Encoding": {"gzip"}}},
+		{"stream", http.MethodPost, list, http.Header{"Content-Type": {"application/connect+json"}, "Connect-Content-Encoding": {"gzip"}}},
+		{"duplicate encoding", http.MethodPost, list, http.Header{"Content-Encoding": {"identity", "gzip"}}},
+		{"get", http.MethodGet, list + "?compression=gzip&encoding=json&message=e30", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := serve(r, asCaller(t, tc.method, tc.path, strings.NewReader(`{}`), tc.headers))
+			if code, _ := connectError(t, rec); rec.Code != http.StatusUnsupportedMediaType || code != "unimplemented" {
+				t.Fatalf("got %d %q", rec.Code, rec.Body)
+			}
+		})
+	}
+	if got.count() != 0 {
+		t.Fatal("a compressed request reached the backend")
+	}
+	rec := serve(r, asCaller(t, http.MethodPost, list, strings.NewReader(`{}`), http.Header{"Content-Encoding": {"identity"}}))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("identity encoding: got %d %q", rec.Code, rec.Body)
 	}
 }

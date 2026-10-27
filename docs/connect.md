@@ -22,8 +22,8 @@ page ── generated client ──► kube-auth-proxy ──► BFF relay ─�
 ```
 
 - **The page** calls a method on a client generated from the backend's proto
-  (`frontend/src/api/connect/clients.ts`). The request and the answer are typed from the same
-  `.proto` files the backend's Go code is generated from.
+  (`frontend/src/api/connect/clients.ts`) or a generated Connect Query descriptor. The request
+  and the answer are typed from the same `.proto` files the backend's Go code is generated from.
 - **kube-auth-proxy** signs the user in. For paths matching `--api-route=^/ai_grid\.v1\.` it
   answers an expired session with 401 instead of a login redirect, which a Connect client can't
   follow.
@@ -31,7 +31,8 @@ page ── generated client ──► kube-auth-proxy ──► BFF relay ─�
   admin), drops every identity header the browser sent, sets the caller's token and identity the
   way the gRPC client does, and forwards the bytes unchanged. It accepts only the Connect protocol,
   bounds the wait, and passes back only the response headers a Connect client needs. It never
-  decodes a body and has no per-RPC code: a new RPC needs no BFF change. Rules and errors:
+  decodes a body and has no per-RPC transport code. Until the backend authorizes callers,
+  its procedure allowlist requires an explicit review before a new RPC is exposed. Rules and errors:
   `docs/plan/bff-api.md`, "The Connect relay".
 - **The backend** decodes the request into the same generated message, runs its checks and
   answers. Its REST surface (vanguard, `/api/v1/...` on the backend's own port) is for other tools;
@@ -42,7 +43,8 @@ page ── generated client ──► kube-auth-proxy ──► BFF relay ─�
 - `.backend-api-version` holds one full commit SHA of the backend. The console is built against
   that commit's `proto/` (package `ai_grid.v1`; `ai_grid/draft` is excluded).
 - `make generate-api` writes `frontend/src/gen` with protoc-gen-es v2 (a pinned devDependency,
-  run locally by buf through `go run`), plus `google/rpc/error_details.proto` for field errors.
+  run locally by buf through `go run`), and Connect Query descriptors, plus
+  `google/rpc/error_details.proto` for field errors.
 - `frontend/src/gen` is committed and never edited by hand. `make check-generated-api` regenerates
   into a temporary directory and fails CI when anything differs: stale, hand-edited, missing or
   left-over files.
@@ -77,8 +79,8 @@ await clusters.update({
   field errors from `google.rpc.BadRequest`. Only request-related codes show the backend's own
   message; server-side failures show the console's generic text, as the BFF's `/api/v1` errors do.
 - **Optimistic locking.** Send the version the page read, with `lock: true` where the request has
-  it; a stale version answers Aborted. `Metadata.version` is `int32` at today's pin and becomes a
-  string (ADR-0003), which the generated types will show when the pin moves.
+  it; a stale version answers Aborted. `Metadata.version` is `int32` at today's pin. ADR-0003
+  proposes a string; use the shipped integer contract until a compatible migration is agreed.
 - **Field masks.** An Update changes only the paths in `updateMask`; a map field (labels) is
   replaced whole, so send the whole map the page edited.
 - **Enums.** A value the console's pin doesn't know arrives as the field's zero value
@@ -86,6 +88,24 @@ await clusters.update({
   an exhaustive `switch` also makes `tsc` point at the code to update when a new value appears.
 - **Unknown fields** in an answer from a newer backend are ignored, so the console keeps working
   until the pin moves.
+
+### Connect Query in a migrating page
+
+Wrap the area in `BackendProvider` from `frontend/src/api/connect/BackendProvider.tsx`,
+passing `useConsoleSession().checkSession`. It provides the session-aware transport and a
+Query v5 cache. Tests can pass the transport from `fakeClients`. For example:
+
+```ts
+import { useQuery } from '@connectrpc/connect-query';
+import { list } from '../gen/ai_grid/v1/clusters_service-Clusters_connectquery';
+
+const clusters = useQuery(list, { limit: 50 }, { refetchInterval: 30_000 });
+```
+
+Query v5 is pinned for the console and Perses plugins in `pnpm-workspace.yaml`. Perses 0.54
+still declares v4 support; `e2e/perses.spec.ts` verifies the actual renderer on v5. Keep that
+regression passing when updating these dependencies. No existing page is migrated by this
+foundation change.
 
 ## Testing
 

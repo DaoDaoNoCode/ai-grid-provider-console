@@ -13,7 +13,10 @@ which remains an explicit BFF responsibility until an alternative is agreed.
 
 **Relaying means proxying, not re-implementing.** The BFF is an `httputil.ReverseProxy` with a
 Director that attaches the caller's identity. In the target architecture it does not compile
-against the contract: a new RPC needs no change here.
+against the contract: a new RPC needs no transport implementation here. Until backend
+authorization lands, the relay explicitly allows reviewed procedures already offered by the
+console API; new procedures, Clusters Create/Delete and `Tenants/ListMembers` remain blocked. This temporary
+access boundary is removed once the backend enforces authorization for each RPC.
 
 A first attempt got this wrong. It was built and discarded before merging, and is recorded
 only because the failure mode is easy to repeat. Before the backend served Connect, the BFF
@@ -69,13 +72,13 @@ with tenancy from the `organization` claim. Hub impersonation could reuse existi
 provider admins rather than maintaining a second policy. The standard's tenant-scoping
 invariant is unimplemented because the MVP is single-tenant.
 
-The [draft ODH shared OIDC identity contract and gateway layout](https://github.com/opendatahub-io/architecture-decision-records/pull/175)
-put token validation at the gateway, identify users by `iss` plus `sub`, and create no
+The [ODH shared OIDC identity contract and gateway layout](https://github.com/opendatahub-io/architecture-decision-records/pull/175)
+(merged 2026-10-21) puts token validation at the gateway, identifies users by `iss` plus `sub`, and creates no
 Kubernetes identity for organization users. Those users cannot simply be assumed to have a
 hub identity to impersonate. Provider-admin access and organization-user access need an
 explicitly agreed boundary.
 
-RJ and the backend team, together with Lindani and Andrew for the OIDC integration, need to
+The backend team and the OIDC integration owners need to
 agree where tokens are validated, how provider-admin authority is established, and whether
 hub impersonation applies. The accepted thin-relay decision does not settle these questions.
 

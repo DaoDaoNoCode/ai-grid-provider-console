@@ -79,7 +79,8 @@ protocol rather than swapping one.
 Console [PR #63](https://github.com/ai-grid-cloud/ai-grid-provider-console/pull/63) added real
 Models and Subscriptions RPCs behind the existing BFF JSON API. The browser still uses that
 API for these pages. [PR #70](https://github.com/ai-grid-cloud/ai-grid-provider-console/pull/70)
-proposes the shared Connect relay and pinned generated-client foundation; it is still open.
+provides the shared Connect relay, pinned generated-client foundation and Connect Query
+provider. Pages migrate separately.
 
 ## The frontend
 
@@ -87,6 +88,14 @@ proposes the shared Connect relay and pinned generated-client foundation; it is 
 objects for proto3). The console generates TypeScript locally from `.proto` files fetched from
 the backend; publishing a Buf Schema Registry module is the better end state but needs a
 pipeline nobody owns yet.
+
+Perses 0.54 declares Query v4 support. The console pins a single Query v5 runtime with an
+explicit dependency override after comparing it with the two-runtime baseline in a real
+browser. `frontend/e2e/perses.spec.ts` covers stat and time-series rendering, variable changes,
+time ranges, manual and automatic refresh, dashboard tabs, theme changes, and recovery from
+panel errors and relay 401s. This is tested compatibility, not upstream-declared v5 support;
+rerun the regression test when changing Perses, its plugins or Query. The two-runtime setup
+remains a fallback if that integration regresses.
 
 To delete as pages migrate: `useServiceData`, `HttpConsoleService`, `ConsoleService`,
 `MockConsoleService`, `frontend/src/api/types.ts` and `frontend/src/api/adapters.ts`.

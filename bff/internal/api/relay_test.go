@@ -205,7 +205,7 @@ func TestConnectStreamThroughTheBFFFlushesAndCancels(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	resp := browserCall(t, ctx, front, "/ai_grid.v1.Clusters/Watch", "application/connect+json", `{}`)
+	resp := browserCall(t, ctx, front, "/ai_grid.v1.Clusters/List", "application/connect+json", `{}`)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Encoding") != "" {
 		t.Fatalf("got %d, Content-Encoding %q: a stream passes as the backend sent it", resp.StatusCode, resp.Header.Get("Content-Encoding"))
