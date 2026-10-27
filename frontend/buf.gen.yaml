@@ -1,0 +1,21 @@
+# TypeScript for the backend's real API (ai_grid.v1), the contract the console calls over Connect
+# (docs/adr/0002). Run from the repository root: `make generate-api`. It gives buf the inputs: the
+# backend repository's proto/ at the commit in ../.backend-api-version (without ai_grid/draft), and
+# google/rpc/error_details.proto for the BadRequest field violations in its errors. Never edit
+# src/gen by hand; `make check-generated-api` (CI) fails when it differs from what this generates.
+version: v2
+plugins:
+  # The pinned devDependency @bufbuild/protoc-gen-es, not a remote plugin: the version is the
+  # lockfile's and must match @bufbuild/protobuf's, which the generated code imports.
+  - local: node_modules/.bin/protoc-gen-es
+    out: src/gen
+    opt: target=ts
+    # The files the API imports (google/api, buf/validate, the OpenAPI options) are generated
+    # too: protoc-gen-es v2 links each file's descriptor to those of its imports. The well-known
+    # types come from @bufbuild/protobuf/wkt.
+    include_imports: true
+  # Connect Query descriptors (*_connectquery.ts), one export per RPC, for useQuery and
+  # useMutation; the pinned devDependency @connectrpc/protoc-gen-connect-query, like protoc-gen-es.
+  - local: node_modules/.bin/protoc-gen-connect-query
+    out: src/gen
+    opt: target=ts

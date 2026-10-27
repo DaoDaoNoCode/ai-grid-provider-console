@@ -13,6 +13,7 @@ import (
 
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/hub"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/identity"
+	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/relay"
 )
 
 // requireIdentity rejects API calls without a caller token and stores the
@@ -21,6 +22,10 @@ func (a *App) requireIdentity(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id, err := a.headers.Extract(r.Header)
 		if err != nil {
+			if relay.Handles(r.URL.Path) {
+				relay.WriteError(w, http.StatusUnauthorized, err.Error())
+				return
+			}
 			writeError(w, http.StatusUnauthorized, err.Error())
 			return
 		}

@@ -11,8 +11,8 @@
 > Current boundary (verified 2026-10-27):
 >
 > - The backend is **`ai-grid-cloud/ai-grid-provider-backend`**. The vendored source in
->   `mock/proto/upstream/COMMIT` and the drift guard now track that repository; the old
->   `yuvalturg/ai-grid-backend` target was corrected.
+>   `mock/proto/upstream/COMMIT` and the drift guard now track that repository; the old target, an
+>   earlier copy in a personal repository, was corrected.
 > - The backend now uses `connect.NewServer()` and vanguard for REST. It still has no
 >   authentication or authorization interceptor and uses its own Kubernetes ServiceAccount.
 >   The BFF's `requireProviderAdmin` hub access review protects the console path today.
@@ -128,6 +128,7 @@ bff/
   internal/config       flags and env vars
   internal/identity     Identity from proxy headers, context helpers
   internal/backend      gRPC client, identity-forwarding interceptor; backendtest/ fake server
+  internal/relay        reverse proxy for the browser's Connect calls to the backend (/ai_grid.v1.*)
   internal/api          App, routes, middleware, gRPC-to-HTTP error mapping, handlers, SPA
 ```
 
@@ -144,8 +145,9 @@ belong to the backend (the root `AGENTS.md`, which also lists the exceptions the
 
 ## Endpoints
 
-Paths are under `/api/v1`, except `/healthcheck` and `/readyz` at the root and the Perses relay
-under `/perses/api`.
+Paths are under `/api/v1`, except `/healthcheck` and `/readyz` at the root, the Perses relay
+under `/perses/api`, and the Connect relay to the backend's own RPCs under `/ai_grid.v1.`
+("The Connect relay" below).
 
 ### Implemented
 
@@ -718,6 +720,92 @@ are label values. Not the logs table either: its 0.54-compatible package imports
 doesn't ship. Without
 `monitoring.enabled`, `/monitoring` keeps the AI Grid overview's metrics (`Grid/GetOverview`).
 
+### The Connect relay
+
+The console is moving from the BFF's JSON API to the backend's own RPCs, called from the browser
+over Connect with clients generated from the backend's proto (ADRs 0002 and 0004 in
+`docs/adr/`; the generated code and its pin in `docs/dev-setup.md`, "The backend's API in the
+frontend"). The BFF relays those calls (`bff/internal/relay`): an `httputil.ReverseProxy` for the
+paths under `/ai_grid.v1.`, to the backend at `BACKEND_ADDRESS`, which serves Connect, gRPC and
+gRPC-Web on its gRPC port over HTTP/1.1 and h2c. It is transport and nothing else: it compiles
+against no contract and never reads a body. A new RPC needs no transport implementation;
+until backend authorization lands it requires review for the procedure allowlist. No page
+uses it yet; every `/api/v1` route stays as it is.
+
+What the relay owns is the boundary:
+
+- **Who may call.** The same checks as `/api/v1`, before anything else: the token header (401
+  without one), then the provider-admin check (401 for a token the hub rejects, 403 for a
+  caller who isn't a provider admin, 502 when the hub can't answer). On these paths the BFF's
+  own refusals are Connect errors, `{"code": "unauthenticated" | "permission_denied" | ..., "message"}`
+  with the same HTTP status, which the browser's Connect client reads; the backend's own errors
+  pass through as it sent them.
+- **What reaches the backend about the caller.** Of the browser's request, `Authorization`,
+  `Proxy-Authorization`, `Cookie`, `Forwarded`, every `X-Forwarded-*` and `X-Auth-Request-*`
+  header and the configured `AUTH_*_HEADER`s are dropped (Go's reverse proxy also drops the
+  hop-by-hop headers). Then the relay sets the caller as the BFF read them from the proxy's
+  headers, exactly as on every gRPC call (`internal/backend`, `forwardIdentity`):
+  `Authorization: Bearer <token>`, and `x-forwarded-user`, `x-forwarded-email` and
+  `x-forwarded-groups`, each percent-encoded and the groups joined with `,` (see Identity under
+  "Decisions"); a field the caller doesn't have is not sent. The rest of the request (the
+  Connect headers such as `Connect-Protocol-Version` and `Connect-Timeout-Ms`, `Content-Type`,
+  `Accept-Encoding`, the query of a Connect GET) passes unchanged.
+- **Which calls.** Only a path `/ai_grid.v1.<Service>/<Method>` (letters, digits and `_`; no
+  further segment, dot segment or escape), so the backend routes the path that was checked, and
+  never its REST gateway, health or reflection on the same port: any other path under the
+  prefix is 404 (`unimplemented`). The explicit allowlist permits the existing console
+  operations: `AiGrid/Ping`, Clusters List/Get/Update, Tenants CRUD/List, Models CRUD/List
+  and ListLocations, and Subscriptions CRUD/List. Clusters Create/Delete, `Tenants/ListMembers`
+  (the console never lists an organization's members: one organization is one tenant, and the
+  provider must not see a company's internals), unknown services and future methods return 404
+  until reviewed (AGENTS.md, "Known exceptions"). Only `POST` (Connect unary and streaming calls) and `GET`
+  (Connect's GET, for methods the proto marks free of side effects): any other method is 405
+  (`unimplemented`) with `Allow: GET, POST`, after the caller checks, as on `/api/v1`. Only the
+  Connect protocol, the one the browser's client speaks: a POST's `Content-Type` must be
+  `application/json` or `application/proto` (unary) or `application/connect+json` or
+  `application/connect+proto` (streaming), parameters such as `charset` allowed; gRPC, gRPC-Web
+  (which the backend also serves on that port) and anything else are 415 (`unimplemented`)
+  before the backend is called. A GET needs none.
+- **How much.** A body of at most 1 MiB, as for the JSON API: a declared larger one is 413
+  (`resource_exhausted`) before the backend is called, an undeclared one is cut at 1 MiB with
+  the same answer. Compressed requests (`Content-Encoding`, `Connect-Content-Encoding`,
+  or GET `compression`) are refused with 415, so compression cannot bypass the decoded-size
+  bound. Identity encoding remains allowed; response compression is unchanged.
+- **How long.** A unary call (every GET, and a unary POST) is bounded by `BACKEND_TIMEOUT` (10s,
+  at most 50s so that the 504 fits in the server's 60s write timeout), as an RPC from the BFF
+  is: past it the relay answers 504 (`deadline_exceeded`). Every call, a stream included, waits
+  at most `BACKEND_TIMEOUT` for the backend's headers (504 likewise). A stream whose headers came
+  runs until it ends or the server's 60s write timeout cuts it, and reaches the browser as the
+  backend flushes it; when the browser goes away, the backend's call is canceled. A backend that
+  can't be reached, or whose certificate isn't trusted, is 502 (`unavailable`), with the detail
+  in the BFF's log.
+- **What comes back.** The backend's status and body as it sent them, and of its headers only
+  `Content-Type`, `Content-Encoding`, `Content-Length`, `Accept-Encoding`, `Vary`,
+  `Cache-Control`, `Date` and those starting with `Connect-`, `Grpc-` or `Trailer-` (a Connect
+  unary call's trailers), plus the relay's own `X-Content-Type-Options: nosniff`. Anything else
+  stays behind: a `Set-Cookie` for the console's origin, a CORS grant, a `WWW-Authenticate`
+  challenge, a `Location` or `Refresh`, and the backend's say on the security headers. The BFF's
+  gzip applies as to any answer: a unary JSON answer of 1 KiB or more is compressed, a stream
+  isn't.
+- **Where to.** The gRPC client's rules (`backend.Config.TLS`): plaintext to a loopback address
+  (the pod's `127.0.0.1:9090`) or with `BACKEND_INSECURE=true`; HTTPS verified against
+  `BACKEND_CA_FILE` (with `BACKEND_SERVER_NAME`) when it is set; no plaintext across the network
+  otherwise.
+
+kube-auth-proxy runs with `--api-route=^/ai_grid\.v1\.` (the chart, `manifests/base`), so a call
+without a valid session on these paths is 401, not a redirect to the login page that `fetch`
+can't follow; the frontend's transport (`frontend/src/api/connect/transport.ts`) then asks the
+console to check its session, as a 401 from the Perses relay does. The Vite dev server proxies
+the same paths to the BFF. Try it on the backend's own fakes with `make dev-fake-infra`
+(`docs/dev-setup.md`): the console's own fake (`make dev-fake`) serves only the draft over gRPC,
+so the relay answers 502 there.
+
+```sh
+curl -s -H 'x-forwarded-access-token: dev-token' -H 'x-forwarded-user: dev-user' \
+  -H 'Content-Type: application/json' -d '{"limit":2}' \
+  http://127.0.0.1:8080/ai_grid.v1.Clusters/List
+```
+
 ### Waiting on backend RPCs
 
 Each row is a request to the backend repository. The BFF mapping is small once the RPC
@@ -757,6 +845,12 @@ exists; the frontend uses the mock service meanwhile.
 | `/perses/api` query `POST` not declared `application/x-www-form-urlencoded` | 415, BFF message |
 | Perses unreachable or its certificate untrusted; Perses slower than `PERSES_TIMEOUT` | 502, `the hub's Perses could not be reached; try again`; 504 |
 | Any answer from Perses (its 401, 403 and 404 included) | Perses's status and body unchanged |
+| `/ai_grid.v1.*` without a token, with one the hub rejects, from a caller who isn't a provider admin, or with the hub unreachable | 401, 401, 403, 502 as on `/api/v1`, as a Connect error (`unauthenticated`, `permission_denied`, `unavailable`) |
+| `/ai_grid.v1.*` path that is not `/ai_grid.v1.<Service>/<Method>`; a method other than `POST` and `GET` | 404, 405 with `Allow: GET, POST`; Connect error `unimplemented` |
+| `/ai_grid.v1.*` body over 1 MiB | 413, Connect error `resource_exhausted` |
+| `/ai_grid.v1.*` POST that is not the Connect protocol (gRPC, gRPC-Web, any other `Content-Type`) | 415, Connect error `unimplemented` |
+| `/ai_grid.v1.*` backend unreachable or untrusted; a unary call slower than `BACKEND_TIMEOUT`, or any call whose headers take longer | 502 `unavailable`; 504 `deadline_exceeded` |
+| Any answer from the backend on `/ai_grid.v1.*` (its Connect errors included) | the backend's status and body unchanged, with only the headers a Connect client needs |
 | Backend `InvalidArgument`, `OutOfRange`: Keycloak's validation messages ("Name can not be null", "Invalid domain format: x", "Cannot change the alias", "Domain x is already linked to organization y in realm ai-grid"), the API server's and the CRD's for a model (the DNS-1123 name message, the schema's "spec.replicas: Invalid value: -1: spec.replicas in body should be greater than or equal to 0" and "spec.scaling.maxReplicas: Required value", "replicas and scaling are mutually exclusive; ...", "at least one trigger is required when using direct KEDA scaling", "minReplicas cannot exceed maxReplicas"), and the backend's own checks with the console's proposed wording (URI scheme, Placement operators, rollout fields, `spec.rollout requires spec.placement`, the reserved tenant version attribute, an `ai-grid/latitude` or `ai-grid/longitude` annotation that is not a number in range, a list `filter` that does not compile, is not a bool or fails on an object) | 422, backend message kept; with `fieldErrors` for `InvalidArgument` only |
 | Backend `AlreadyExists` (Keycloak: "A organization with the same name already exists.", also for a blank name on update), `Aborted` (the object is not at the `If-Match` version) | 409, backend message kept |
 | Backend `FailedPrecondition` (hub feature gate missing, e.g. "ManifestWorkReplicaSet feature gate disabled on hub"; a model still referenced by a catalog entry or subscription; Keycloak realm missing or organizations disabled) | 412, backend message kept |
@@ -772,7 +866,7 @@ exists; the frontend uses the mock service meanwhile.
   the `SelfSubjectAccessReview` behind `isProviderAdmin`, which asks the hub about the
   caller with the caller's own token and reads nothing.
 - No session handling. The proxy owns login and cookies.
-- No billing data. Nothing in the platform stores it (Andrew Ballantyne, 2026-10-14) and
+- No billing data. Nothing in the platform stores it (confirmed 2026-10-14) and
   whether AI Grid gets a cost or spend view is an open product question. `billingUrl` in
   `/api/v1/config` is a plain external link that stays empty until a page exists.
 - No metering. Praxis AI's `external_metering` filter emits CloudEvents to a metering

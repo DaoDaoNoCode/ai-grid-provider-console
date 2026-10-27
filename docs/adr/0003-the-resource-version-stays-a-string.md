@@ -5,8 +5,8 @@ date: 2026-10-19
 
 # Proposal: expose resource versions as strings
 
-`mpaulgreen/osac-service-standards` specifies `metadata.version` as an `int32`,
-auto-incremented on every change. Kubernetes-backed resources carry a `resourceVersion` that
+The [OSAC service standards](https://github.com/mpaulgreen/osac-service-standards) specify
+`metadata.version` as an `int32`, auto-incremented on every change. Kubernetes-backed resources carry a `resourceVersion` that
 clients must treat as an **opaque string**, comparing it only for equality. This ADR proposes
 exposing that string unchanged, as a deviation from the standard. The backend team still needs
 to agree the shared contract change; the backend currently ships `int32` versions.

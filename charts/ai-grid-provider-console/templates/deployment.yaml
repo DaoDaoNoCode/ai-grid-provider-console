@@ -74,6 +74,10 @@ spec:
             # The BFF listens on loopback, so the kubelet probes it through
             # the proxy. /readyz carries no user data and needs no login.
             - --skip-auth-route=^/readyz$
+            # The browser's Connect calls to the backend (the BFF relays /ai_grid.v1.*): a call
+            # without a valid session is 401, which the Connect client reads as Unauthenticated,
+            # not a redirect to the login page, which fetch can't follow.
+            - --api-route=^/ai_grid\.v1\.
           env:
             # Created by hack/deploy.sh together with the OAuthClient.
             {{- $oauth := include "console.oauthSecretName" . }}

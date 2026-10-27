@@ -15,7 +15,25 @@ PERSES_ADDRESS ?= 127.0.0.1:9445
 PERSES_NAMESPACE ?= openshift-cluster-observability-operator
 PERSES_SERVICE ?= perses
 
-.PHONY: help start dev dev-cluster dev-fake dev-fake-poc dev-forward-backend dev-forward-perses dev-fake-backend dev-bff dev-bff-fake dev-frontend dev-frontend-fake install lint test build e2e image push manifests deploy undeploy chart-check chart-test
+# The ai-grid-provider-backend commit whose API the console is generated from (make generate-api)
+# and runs against in make dev-fake-infra: one full commit SHA in .backend-api-version.
+BACKEND_API_VERSION := $(strip $(shell cat .backend-api-version))
+BACKEND_REPO ?= https://github.com/ai-grid-cloud/ai-grid-provider-backend.git
+# A checkout of the backend to run in make dev-fake-infra; empty clones BACKEND_API_VERSION into
+# .cache/backend/<sha> (hack/backend-checkout.sh).
+BACKEND_DIR ?=
+BUF := go run github.com/bufbuild/buf/cmd/buf@v1.57.2
+# The backend's real API at the pin, without its draft (ai_grid.draft.v1), and the googleapis
+# commit the backend's proto/buf.lock pins, for google.rpc.BadRequest in its errors.
+API_INPUT := $(BACKEND_REPO)\#ref=$(BACKEND_API_VERSION),subdir=proto
+GOOGLEAPIS := buf.build/googleapis/googleapis:8ac61b9e502343289c8c42b17aa5b245
+# Generates the TypeScript into $(1)/src/gen, from frontend/ (buf.gen.yaml runs the protoc-gen-es
+# in frontend/node_modules: make install first).
+generate-api-into = cd frontend && \
+	$(BUF) generate '$(API_INPUT)' --exclude-path ai_grid/draft --template buf.gen.yaml -o "$(1)" && \
+	$(BUF) generate '$(GOOGLEAPIS)' --path google/rpc/error_details.proto --template buf.gen.yaml -o "$(1)"
+
+.PHONY: help start dev dev-cluster dev-fake dev-fake-poc dev-forward-backend dev-forward-perses dev-fake-backend dev-bff dev-bff-fake dev-frontend dev-frontend-fake dev-fake-infra dev-fake-infra-backend dev-bff-fake-infra install lint test build e2e image push manifests deploy undeploy chart-check chart-test generate-api check-generated-api
 
 help: ## Show targets
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -74,6 +92,23 @@ dev-bff-fake: ## Run the BFF against the fake backend and fake hub
 dev-frontend-fake: ## Run the Vite dev server as dev-user with a fixture token (AUTH_TOKEN=viewer-token to see a non-admin)
 	cd frontend && AUTH_TOKEN=$${AUTH_TOKEN:-dev-token} AUTH_USER=$${AUTH_USER:-dev-user} pnpm dev
 
+##@ Development on the backend's own fakes (the real backend at .backend-api-version on a fake hub and Keycloak)
+
+dev-fake-infra: ## The backend at .backend-api-version on its fake hub and Keycloak (:9090-:9094), the BFF against it on :8080 (not --fake-backend; it relays /ai_grid.v1.*) and the frontend on :9000; no oc login needed
+	@BACKEND_DIR='$(BACKEND_DIR)' BACKEND_REPO='$(BACKEND_REPO)' hack/backend-checkout.sh >/dev/null
+	@trap 'kill 0' INT TERM; \
+	$(MAKE) -s dev-fake-infra-backend & \
+	$(MAKE) -s dev-bff-fake-infra & \
+	$(MAKE) -s dev-frontend-fake & \
+	wait
+
+dev-fake-infra-backend: ## Run the backend's own `make dev-fake` from a checkout at .backend-api-version (.cache/backend/<sha>, or BACKEND_DIR)
+	@dir="$$(BACKEND_DIR='$(BACKEND_DIR)' BACKEND_REPO='$(BACKEND_REPO)' hack/backend-checkout.sh)" && \
+	MAKEFLAGS= $(MAKE) -C "$$dir" dev-fake
+
+dev-bff-fake-infra: ## Run the BFF against dev-fake-infra-backend: its backend on BACKEND_ADDRESS, its fake hub on :9091 for the provider-admin check
+	$(MAKE) -C bff run BACKEND_ADDRESS=$(BACKEND_ADDRESS) HUB_API_URL=http://127.0.0.1:9091 HUB_CA_FILE=
+
 dev-bff: ## Run the BFF; callers must send the identity headers (see hack/api.sh)
 	$(MAKE) -C bff run BACKEND_ADDRESS=$(BACKEND_ADDRESS)
 
@@ -83,11 +118,23 @@ dev-frontend: ## Run the Vite dev server, which injects `oc whoami -t`
 install: ## Install frontend dependencies
 	cd frontend && pnpm install
 
+##@ The backend's API (generated TypeScript in frontend/src/gen)
+
+generate-api: ## Regenerate frontend/src/gen from the backend's proto at .backend-api-version (buf through go run; make install first)
+	rm -rf frontend/src/gen
+	$(call generate-api-into,.)
+
+check-generated-api: ## Fail when frontend/src/gen differs from what make generate-api writes: stale, hand-edited, missing or left-over files
+	tmp="$$(mktemp -d)" && trap 'rm -rf "$$tmp"' EXIT && \
+	($(call generate-api-into,$$tmp)) && \
+	diff -r "$$tmp/src/gen" frontend/src/gen
+
 ##@ Quality
 
-lint: ## Lint the BFF (vet, golangci-lint, buf lint on mock/proto) and the frontend (ESLint, Prettier, tsc)
+lint: ## Lint the BFF (vet, golangci-lint, buf lint on mock/proto) and the frontend (ESLint, Prettier, tsc, generated API current)
 	$(MAKE) -C bff vet lint lint-proto
 	cd frontend && pnpm lint && pnpm format:check && pnpm typecheck
+	$(MAKE) --no-print-directory check-generated-api
 
 test: ## Run all tests
 	$(MAKE) -C bff test

@@ -124,12 +124,36 @@ fixture file and field, [mock/fixtures/README.md](../mock/fixtures/README.md);
 [mock/README.md](../mock/README.md) explains why the console runs against a fake. Edit the
 fixtures and restart to change the fleet.
 
+### On the backend's own fakes
+
+```sh
+make install          # once: frontend dependencies
+make dev-fake-infra   # the backend at .backend-api-version on its fake hub and Keycloak, BFF :8080, frontend :9000
+```
+
+This runs the real `ai-grid-provider-backend`, at the commit in `.backend-api-version`, on the
+fake hub and Keycloak of its own repository (its `make dev-fake`: gRPC, Connect and gRPC-Web on
+:9090, the fake hub on :9091, REST on :9092, Keycloak on :9093, its draft fake on :9094), the BFF
+against it without `--fake-backend` (`make dev-bff-fake-infra`), and the frontend as `dev-user`
+with `dev-token` (`make dev-frontend-fake`). It is the stack to try the Connect relay on (the
+browser's `/ai_grid.v1.*` calls, `docs/plan/bff-api.md`, "The Connect relay"): the console's own
+fake serves only the draft over gRPC. Models and Subscriptions run against the backend
+with its local Git catalog. The legacy Grid overview still lacks a real backend RPC and
+shows it as not available.
+
+The backend is fetched once into `.cache/backend/<sha>` (gitignored; `hack/backend-checkout.sh`),
+the commit only, and built there with Go. To run your own checkout instead, set `BACKEND_DIR`
+(`make dev-fake-infra BACKEND_DIR=../ai-grid-provider-backend`); a checkout at another commit is
+run with a warning, as the frontend's generated types are those of the pinned one. It uses the
+same ports as `make dev-fake`, so run one or the other. `make dev-fake-infra-backend` runs the
+backend part alone.
+
 ## BFF settings
 
 Environment variables the BFF reads: `HUB_API_URL` (required outside a pod; in a pod it
 defaults to the in-cluster API server), `HUB_CA_FILE`, `BIND_ADDRESS` (default `127.0.0.1`;
 `0.0.0.0` exposes the BFF without a proxy in front), `PORT`, `BACKEND_ADDRESS`,
-`BACKEND_CA_FILE`, `BACKEND_SERVER_NAME`, `BACKEND_INSECURE`, `BACKEND_TIMEOUT`,
+`BACKEND_CA_FILE`, `BACKEND_SERVER_NAME`, `BACKEND_INSECURE`, `BACKEND_TIMEOUT` (10s, at most 50s),
 `PERSES_URL`, `PERSES_CA_FILE`, `PERSES_SERVER_NAME`, `PERSES_INSECURE`, `PERSES_TIMEOUT`,
 `PERSES_PROJECT` (the Perses relay, `docs/plan/bff-api.md`),
 `AUTH_TOKEN_HEADER`, `AUTH_USER_HEADER`, `AUTH_EMAIL_HEADER`, `AUTH_GROUPS_HEADER`,
@@ -141,13 +165,14 @@ in `bff/` for the flags.
 ## Checks
 
 ```sh
-make lint    # go vet, golangci-lint, buf lint on mock/proto; ESLint, Prettier check, tsc (fix formatting with: cd frontend && pnpm format)
+make lint    # go vet, golangci-lint, buf lint on mock/proto; ESLint, Prettier check, tsc (fix formatting with: cd frontend && pnpm format); make check-generated-api
 make test    # go test -race (in-memory gRPC backend, proto drift test), vitest
 make build   # BFF binary and frontend bundle
 ```
 
 CI runs the same plus `make -C bff check-generated` (a fresh generation in a temporary
-directory must match `bff/gen`, file for file), the browser tests, `kustomize build`,
+directory must match `bff/gen`, file for file), `make check-generated-api` (likewise for
+`frontend/src/gen`, below), the browser tests, `kustomize build`,
 `make chart-check`, `make chart-test` and, after a merge, the container image build. Its last
 job, `CI passed`, fails unless every job a pull request runs succeeded; that is the check the
 `main` ruleset should require, since GitHub counts a skipped job as passing. A separate
@@ -184,6 +209,31 @@ copy intact). `go test ./internal/protodrift/` then says whether the BFF's copy 
 `mock/proto/ai_grid/backend/v1` still matches it, and whether the RPCs the BFF calls still
 exist. The vendored commit is the backend's `main` (`mock/proto/upstream/COMMIT`), and the nightly
 `.github/workflows/drift.yaml` checks the copy against the newest one.
+
+## The backend's API in the frontend
+
+The frontend calls the backend's own RPCs over Connect (no page does yet) with TypeScript
+generated from the backend's proto: `proto/` of ai-grid-cloud/ai-grid-provider-backend, package
+`ai_grid.v1` (not its draft, `ai_grid/draft`), at the full commit SHA in `.backend-api-version`,
+into `frontend/src/gen`, which is committed and never edited by hand. To move the console to a
+newer backend:
+
+```sh
+git ls-remote https://github.com/ai-grid-cloud/ai-grid-provider-backend.git refs/heads/main  # the SHA
+echo <sha> > .backend-api-version
+make generate-api          # buf through `go run`, protoc-gen-es from frontend/node_modules (make install first)
+make check-generated-api   # what CI runs: a fresh generation in a temporary directory must match src/gen
+```
+
+`frontend/buf.gen.yaml` runs `@bufbuild/protoc-gen-es`, the devDependency pinned in
+`package.json` at the version of `@bufbuild/protobuf` (the runtime the generated code imports),
+with `target=ts` and the imported files too (`google/api`, `buf/validate`, the OpenAPI options),
+and `@connectrpc/protoc-gen-connect-query`, pinned the same way, for the Connect Query descriptors
+(`*_connectquery.ts`, one export per RPC).
+`make generate-api` also generates `google/rpc/error_details.proto` from googleapis at the commit
+the backend's `buf.lock` pins, for the `BadRequest` field violations in the backend's errors.
+`frontend/src/api/connect` has the transport, the clients, the error mapping, `BackendProvider`
+(which an area wraps itself in when it moves to Connect Query) and a fake for tests; `docs/connect.md` is the how-to.
 
 ## Deploy to a cluster
 

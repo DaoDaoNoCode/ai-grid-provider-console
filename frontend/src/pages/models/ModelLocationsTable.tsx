@@ -1,4 +1,4 @@
-// The model on each cluster it was sent to, in jgiardino's Models design ("models per cluster"):
+// The model on each cluster it was sent to, in the UX team's Models design ("models per cluster"):
 // a row per location with its status, which opens that location's status. One row per work, so
 // two clusters at one location are two rows, each with its own status as the backend derived it
 // (proposal P13); the page adds no status of its own.
@@ -43,7 +43,7 @@ export const ModelLocationsTable: React.FC<Props> = ({ model, works, clusters, s
       >
         <Thead>
           {/* resetOffset: inside the Models page's expanded row, the nested table's first column lines
-              up with the row's Name, as PatternFly's nested tables and jgiardino's design do. */}
+              up with the row's Name, as PatternFly's nested tables and the UX design do. */}
           <Tr resetOffset={isNested}>
             <Th>Location</Th>
             <Th modifier="fitContent">Status</Th>

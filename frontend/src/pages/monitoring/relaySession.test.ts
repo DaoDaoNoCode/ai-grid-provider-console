@@ -10,7 +10,7 @@ const fail = (client: QueryClient, key: string, err: unknown) =>
 
 describe('watchUnauthorized', () => {
   it('calls back for a query that fails with 401, and only that', async () => {
-    const client = new QueryClient({ logger: { log: () => {}, warn: () => {}, error: () => {} } });
+    const client = new QueryClient();
     const onUnauthorized = vi.fn();
     const stop = watchUnauthorized(client, onUnauthorized);
     await fail(client, 'panel', Object.assign(new Error('Unauthorized'), { status: 401 }));
@@ -26,7 +26,7 @@ describe('watchUnauthorized', () => {
 
 describe('useRelaySessionCheck', () => {
   it('checks the session for a 401 while mounted, and no longer once unmounted', async () => {
-    const client = new QueryClient({ logger: { log: () => {}, warn: () => {}, error: () => {} } });
+    const client = new QueryClient();
     const checkSession = vi.fn();
     const { unmount } = renderHook(() => useRelaySessionCheck(client), {
       wrapper: ({ children }) =>

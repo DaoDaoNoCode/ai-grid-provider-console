@@ -8,3 +8,5 @@ test-results
 .vite
 coverage
 src/pages/grid/ne_110m_land.json
+# Generated from the backend proto by make generate-api; never edited by hand.
+src/gen

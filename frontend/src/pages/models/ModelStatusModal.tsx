@@ -1,4 +1,4 @@
-// A model's status in a modal, opened from its status label: jgiardino's Models page design
+// A model's status in a modal, opened from its status label: the UX team's Models page design
 // ("models per cluster"), where a status label that can be clicked always opens a modal.
 import { Button, Flex, FlexItem, Label, Modal, ModalBody, ModalFooter, ModalHeader } from '@patternfly/react-core';
 import type { ManagedModel } from '../../api/types';
