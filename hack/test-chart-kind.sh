@@ -96,7 +96,12 @@ IMAGES=(--set images.console.repository=localhost/ai-grid-provider-console --set
   --set images.backend.repository=localhost/ai-grid-backend --set images.backend.tag=kind
   --set images.authProxy.repository=localhost/kube-auth-proxy --set images.authProxy.tag=kind)
 # No service CA on kind: the test makes the certificate.
-VALUES=(--set tls.serviceCA=false "${IMAGES[@]}")
+# The backend doesn't start without a Git URL (git mode, ai-grid-provider-backend#29). It clones in
+# the background, so an unreachable one is enough: the console serves, and Models and
+# Subscriptions answer 503 until the clone succeeds. .invalid never resolves, so the run needs no
+# network or repository.
+GIT_URL=https://git.invalid/catalog.git
+VALUES=(--set tls.serviceCA=false --set backend.git.url="${GIT_URL}" "${IMAGES[@]}")
 
 step "namespace ${NS} and the secrets the chart expects to exist"
 k create namespace "${NS}" --dry-run=client -o yaml | k apply -f - >/dev/null
@@ -113,6 +118,8 @@ k -n "${NS}" create secret generic "${NAME}-oauth" --dry-run=client -o yaml \
 k -n "${NS}" create secret generic ai-grid-backend-keycloak --dry-run=client -o yaml \
   --from-literal=url=http://keycloak.invalid --from-literal=realm=ai-grid --from-literal=admin-realm=ai-grid \
   --from-literal=username=placeholder --from-literal=password=placeholder | k apply -f - >/dev/null
+k -n "${NS}" create secret generic ai-grid-backend-git --dry-run=client -o yaml \
+  --from-literal=token=placeholder | k apply -f - >/dev/null
 
 rollout() {
   k -n "${NS}" rollout status "deploy/${NAME}" --timeout=300s >/dev/null || {
@@ -147,6 +154,8 @@ base_install() {
       -e "s#ghcr.io/ai-grid-cloud/ai-grid-provider-backend:latest#localhost/ai-grid-backend:kind#" \
       -e "s#quay.io/opendatahub/odh-kube-auth-proxy:latest#localhost/kube-auth-proxy:kind#" |
     k apply -f - >/dev/null
+  # manifests/base has the chart's defaults, which set no Git URL (see VALUES).
+  k -n "${NS}" set env "deploy/${NAME}" -c ai-grid-backend AI_GRID_GIT_URL="${GIT_URL}" >/dev/null
   rollout
   pass "manifests/base is ready"
 }
@@ -208,6 +217,7 @@ expect 200 "with patch on ManagedClusters the caller is a provider admin" "${aut
 grep -q '"isProviderAdmin":true' "${TMP}/body" || fail "isProviderAdmin should be true: $(cat "${TMP}/body")"
 expect 200 "the backend lists ManagedClusters with its ServiceAccount" "${auth[@]}" "${u}/api/v1/clusters"
 grep -q '"name":"site-a"' "${TMP}/body" || fail "site-a missing: $(cat "${TMP}/body")"
+expect 503 "Models wait for the Git clone, which can't reach git.invalid" "${auth[@]}" "${u}/api/v1/models"
 expect 200 "the frontend is served" "${auth[@]}" "${u}/"
 
 # Only the proxy may listen off loopback: the BFF trusts identity headers, and the backend's gRPC
