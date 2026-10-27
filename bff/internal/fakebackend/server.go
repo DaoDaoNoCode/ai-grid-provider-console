@@ -170,6 +170,17 @@ func New(fx *Fixtures, logger *slog.Logger) (*Server, error) {
 		}
 		s.clusters[c.GetName()] = c
 	}
+	// Each cluster's GPUs, as the backend derives them from ACM Search's nodes.
+	for cluster, gpus := range gpusByCluster(fx.GPUNodes) {
+		c, ok := s.clusters[cluster]
+		if !ok {
+			return nil, fmt.Errorf("gpunodes.json names cluster %q, which managedclusters.json doesn't have", cluster)
+		}
+		if c.Status == nil {
+			c.Status = &aigridv1.ManagedClusterStatus{}
+		}
+		c.Status.Gpus = gpus
+	}
 	names := make([]string, 0, len(s.clusters))
 	for name := range s.clusters {
 		names = append(names, name)

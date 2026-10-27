@@ -421,6 +421,39 @@ func TestClustersFromBackend(t *testing.T) {
 	}
 }
 
+// The backend's GPU inventory reaches the browser as it was sent: nothing
+// derived in the BFF, and no "gpus" for a cluster the backend has none for.
+func TestClusterGPUsPassThrough(t *testing.T) {
+	sharing := &aigridv1.GPUSharing{Strategy: "time-slicing", Replicas: 4}
+	fake := &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{
+		{Name: "gpu", ResourceVersion: "1", Status: &aigridv1.ManagedClusterStatus{
+			Capacity: map[string]string{"nvidia.com/gpu": "8"},
+			Gpus: &aigridv1.ClusterGPUs{
+				Total: 2, NodeCount: 2,
+				Configurations: []*aigridv1.GPUConfiguration{{Vendor: "NVIDIA", Product: "NVIDIA-L4-SHARED", MemoryMib: 23034, GpusPerNode: 1, NodeCount: 2, Sharing: sharing}},
+				Nodes: []*aigridv1.GPUNode{{Name: "n1", Vendor: "NVIDIA", Product: "NVIDIA-L4-SHARED", Count: 1, MemoryMib: 23034,
+					Family: "ada-lovelace", ComputeCapability: "8.9", DriverVersion: "580.105.08", CudaRuntimeVersion: "13.0",
+					Sharing: sharing, InstanceType: "g6.xlarge", Ready: true}},
+			},
+		}},
+		{Name: "cpu", ResourceVersion: "1"},
+	}}
+	app := newTestApp(t, testConfig(t), fake)
+	rec := serve(app, asUser(http.MethodGet, "/api/v1/clusters/gpu"))
+	for _, want := range []string{
+		`"gpuCapacity":8`,
+		`"gpus":{"total":2,"nodeCount":2,"configurations":[{"vendor":"NVIDIA","product":"NVIDIA-L4-SHARED","memoryMib":23034,"gpusPerNode":1,"nodeCount":2,"sharing":{"strategy":"time-slicing","replicas":4,"migCapable":false}}]`,
+		`"nodes":[{"name":"n1","vendor":"NVIDIA","product":"NVIDIA-L4-SHARED","count":1,"memoryMib":23034,"family":"ada-lovelace","computeCapability":"8.9","driverVersion":"580.105.08","cudaRuntimeVersion":"13.0","sharing":{"strategy":"time-slicing","replicas":4,"migCapable":false},"instanceType":"g6.xlarge","ready":true}]`,
+	} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("missing %s in %s", want, rec.Body.String())
+		}
+	}
+	if body := serve(app, asUser(http.MethodGet, "/api/v1/clusters/cpu")).Body.String(); strings.Contains(body, `"gpus"`) {
+		t.Errorf("a cluster without an inventory has gpus: %s", body)
+	}
+}
+
 func TestTenantsFromBackend(t *testing.T) {
 	fake := &backendtest.Fake{Tenants: []*aigridv1.Tenant{
 		{Id: "2", Name: "tenant-b", Domains: []string{"b.example.com"}},

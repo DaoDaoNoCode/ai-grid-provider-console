@@ -97,8 +97,37 @@ describe('toGridCluster', () => {
       latitude: 48.8566,
       longitude: 2.3522,
       openshiftVersion: '4.22.15',
+      gpuCapacity: 8,
+      addons: {},
+      conditions: [{ type: 'ManagedClusterConditionAvailable', status: 'True' }],
       resourceVersion: '7',
       labels: { 'ai-grid/enabled': 'true' },
+    });
+  });
+
+  it('keeps the hub details the details page shows', () => {
+    const json = {
+      ...apiCluster(),
+      consoleUrl: 'https://console.example.com',
+      kubernetesVersion: 'v1.35.6',
+      platform: 'AWS',
+      product: 'ROSA',
+      capacity: { cpu: '32', 'nvidia.com/gpu': '1' },
+      gpuCapacity: 1,
+      allocatable: { cpu: '31' },
+      creationTimestamp: '2026-10-21T00:15:04Z',
+      addons: { submariner: 'available' },
+    } as ApiCluster;
+    expect(toGridCluster(json)).toMatchObject({
+      consoleUrl: 'https://console.example.com',
+      kubernetesVersion: 'v1.35.6',
+      platform: 'AWS',
+      product: 'ROSA',
+      capacity: { cpu: '32', 'nvidia.com/gpu': '1' },
+      gpuCapacity: 1,
+      allocatable: { cpu: '31' },
+      creationTimestamp: '2026-10-21T00:15:04Z',
+      addons: { submariner: 'available' },
     });
   });
 

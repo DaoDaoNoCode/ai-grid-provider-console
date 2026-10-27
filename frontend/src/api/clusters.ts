@@ -9,6 +9,8 @@ export type GridMembership = { location: string; role: ClusterRole };
 /** The Clusters area: ManagedClusters and AI Grid membership. */
 export interface ClustersService {
   listClusters(): Promise<GridCluster[]>;
+  /** One cluster by name; a ServiceError with status 404 when the hub has none. */
+  getCluster(name: string): Promise<GridCluster>;
   /**
    * Adds the cluster to AI Grid (labels `ai-grid/enabled: "true"`, `ai-grid/role` and `location`,
    * written with the rest of the labels it was read with, at the version it was read at) and

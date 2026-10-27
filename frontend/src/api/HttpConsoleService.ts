@@ -59,6 +59,10 @@ export class HttpConsoleService implements ConsoleService {
     return clusters.map(toGridCluster);
   }
 
+  async getCluster(name: string): Promise<GridCluster> {
+    return toGridCluster(await this.request<ApiCluster>('GET', `/clusters/${encodeURIComponent(name)}`));
+  }
+
   async enrollCluster(cluster: GridCluster, { location, role }: GridMembership): Promise<GridCluster> {
     // The BFF replaces the labels map as a whole, so send every label read with the cluster.
     const updated = await this.request<ApiCluster>('PATCH', `/clusters/${encodeURIComponent(cluster.name)}`, {

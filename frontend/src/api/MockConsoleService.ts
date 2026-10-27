@@ -14,6 +14,9 @@ import type {
   CreateModelRequest,
   CreateSubscriptionRequest,
   CreateSubscriptionResponse,
+  ClusterGPUs,
+  GPUNode,
+  GPUSharing,
   GridCluster,
   GridOverview,
   GridRange,
@@ -77,6 +80,14 @@ export class MockConsoleService implements ConsoleService {
   getConfig = async (): Promise<ConsoleConfig> => this.config;
 
   listClusters = async (): Promise<GridCluster[]> => [...this.clusters];
+
+  getCluster = async (name: string): Promise<GridCluster> => {
+    const cluster = this.clusters.find((c) => c.name === name);
+    if (!cluster) {
+      throw new ServiceError(404, `object with identifier '${name}' not found`);
+    }
+    return cluster;
+  };
 
   /**
    * Sets `ai-grid/enabled`, `ai-grid/role` and `location` on the labels the caller read, as
@@ -511,6 +522,77 @@ const seedSites: [name: string, site: string, siteName: string, region: string, 
     ['site4', 'sydney', 'Sydney', 'asia-pacific', -33.8688, 151.2093],
   ];
 
+/** One GPU node as the backend reports it from GPU Feature Discovery's labels. */
+const gpuNode = (
+  name: string,
+  product: string,
+  count: number,
+  memoryMib: number,
+  family: string,
+  computeCapability: string,
+  instanceType: string,
+  sharing: GPUSharing = { strategy: 'none', replicas: 1, migCapable: false },
+): GPUNode => ({
+  name,
+  vendor: 'NVIDIA',
+  product,
+  count,
+  memoryMib,
+  family,
+  computeCapability,
+  driverVersion: '580.105.08',
+  cudaRuntimeVersion: '13.0',
+  sharing,
+  instanceType,
+  ready: true,
+});
+
+/** A cluster's inventory from nodes that share one configuration, as the backend derives it. */
+const gpuInventory = (nodes: GPUNode[]): ClusterGPUs => ({
+  total: nodes.reduce((sum, n) => sum + n.count, 0),
+  nodeCount: nodes.length,
+  configurations: [
+    {
+      vendor: nodes[0].vendor,
+      product: nodes[0].product,
+      memoryMib: nodes[0].memoryMib,
+      gpusPerNode: nodes[0].count,
+      nodeCount: nodes.length,
+      sharing: nodes[0].sharing,
+    },
+  ],
+  nodes,
+});
+
+/**
+ * The members' GPUs, 16 schedulable on each as their capacity says: site1 H200, 2 nodes x 8;
+ * site2 L4 time-sliced x4 on 4 nodes; site3 MIG (A100 3g.20gb), 2 nodes x 8 devices.
+ */
+const seedGPUs: Record<string, ClusterGPUs> = {
+  site1: gpuInventory(
+    [0, 1].map((i) => gpuNode(`gpu-h200-${i}`, 'NVIDIA-H200', 8, 143771, 'hopper', '9.0', 'p5en.48xlarge')),
+  ),
+  site2: gpuInventory(
+    [0, 1, 2, 3].map((i) =>
+      gpuNode(`gpu-l4-${i}`, 'NVIDIA-L4-SHARED', 1, 23034, 'ada-lovelace', '8.9', 'g6.xlarge', {
+        strategy: 'time-slicing',
+        replicas: 4,
+        migCapable: false,
+      }),
+    ),
+  ),
+  site3: gpuInventory(
+    [0, 1].map((i) =>
+      gpuNode(`gpu-a100-${i}`, 'NVIDIA-A100-SXM4-40GB-MIG-3g.20gb', 8, 19968, 'ampere', '8.0', 'p4d.24xlarge', {
+        strategy: 'mig',
+        replicas: 1,
+        migCapable: true,
+        migStrategy: 'single',
+      }),
+    ),
+  ),
+};
+
 export const seedClusters = (): GridCluster[] =>
   seedSites.map(([name, site, siteName, region, latitude, longitude], index) => {
     const member = index < 3;
@@ -527,6 +609,26 @@ export const seedClusters = (): GridCluster[] =>
       latitude,
       longitude,
       openshiftVersion: '4.22.15',
+      consoleUrl: `https://console-openshift-console.apps.${name}.example.com`,
+      kubernetesVersion: 'v1.35.6',
+      platform: 'BareMetal',
+      product: 'OpenShift',
+      capacity: { cpu: '192', memory: '1572864Mi', 'nvidia.com/gpu': member ? '16' : '0' },
+      gpuCapacity: member ? 16 : 0,
+      allocatable: { cpu: '186', memory: '1540000Mi', 'nvidia.com/gpu': member ? '16' : '0' },
+      // A copy each time, so a test that changes one cluster's GPUs doesn't change the next seed's.
+      ...(seedGPUs[name] ? { gpus: structuredClone(seedGPUs[name]) } : {}),
+      creationTimestamp: '2026-10-01T09:00:00Z',
+      addons: { 'work-manager': 'available', 'cluster-proxy': 'available' },
+      conditions: [
+        {
+          type: 'ManagedClusterConditionAvailable',
+          status: 'True',
+          reason: 'ManagedClusterAvailable',
+          message: 'Managed cluster is available',
+          lastTransitionTime: '2026-10-01T09:00:08Z',
+        },
+      ],
       resourceVersion: '1',
       labels: {
         name,
