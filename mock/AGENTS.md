@@ -1,5 +1,28 @@
 # Building UI against the fake backend
 
+> **The contract below is being replaced.** Everything on this page is accurate today and is
+> how you build a page today. But under
+> [ADR-0001](../docs/adr/0001-the-contract-lives-in-the-backend.md) the contract moves to
+> `ai-grid-cloud/ai-grid-provider-backend`, and the fake and its fixtures move with it, and
+> under [ADR-0002](../docs/adr/0002-connect-end-to-end-with-vanguard-for-rest.md) the browser
+> speaks Connect — so the JSON envelope, the `ETag`/`If-Match` protocol and the HTTP status
+> table on this page all go away. Don't invest in the parts marked for deletion; do read
+> ADR-0001 before adding an RPC.
+>
+> **The backend copy has landed** ([backend PR #10](https://github.com/ai-grid-cloud/ai-grid-provider-backend/pull/10),
+> merged 2026-10-22). It carries the draft as `ai_grid.draft.v1` on its own port, the fake as
+> `internal/fakeinfra/draft/`, and the fixtures as `fixtures/draft/{default,poc}`.
+> It is **not** reconciled to OSAC conventions in
+> one step: each area is reshaped and deleted from the draft as the real backend implements it,
+> so the other pages keep working meanwhile. Console cleanup remains pending and removes
+> the draft proto, generated draft code and `bff/internal/fakebackend` from here. Models
+> and Subscriptions have already moved to real backend services (backend PRs #27 and #29);
+> console PR #63 uses them through the existing BFF adapters. The
+> vendored upstream proto and drift guard remain during migration.
+
+Monitoring uses the hub's Perses dashboards when configured. Its fallback page uses the
+draft grid overview described below.
+
 The entry point for a coding agent (or a person) building console pages against the fake
 `ai-grid-backend`. It says what runs, what the BFF answers and what the fixtures seed, and
 points to the detail:
