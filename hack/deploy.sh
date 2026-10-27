@@ -23,6 +23,9 @@
 #   GIT_GRID_NAMESPACE       with GIT_URL: the spokes' grid namespace, which each model's
 #                            NetworkPolicy admits (backend.git.gridNamespace; grid on the dev hub).
 #                            Unset: the backend's default, redhat-ai-grid.
+#   GIT_MODELS_NAMESPACE     with GIT_URL: the spokes' namespace each model is deployed to
+#                            (backend.git.modelsNamespace; ai-grid-internal-models in the reference
+#                            environment). Unset: the backend's default.
 #   HELM_ARGS                more chart values, e.g. "--set backend.clusterWrites=true"; not the
 #                            names of the Secrets, the release's objects or the Route
 #
@@ -95,6 +98,14 @@ if [[ -n "${GIT_URL:-}" ]]; then
       exit 1
     fi
     VALUES+=(--set-string "backend.git.gridNamespace=${GIT_GRID_NAMESPACE}")
+  fi
+  if [[ -n "${GIT_MODELS_NAMESPACE:-}" ]]; then
+    # A namespace name (RFC 1123 label), as the chart's schema requires.
+    if [[ ! "${GIT_MODELS_NAMESPACE}" =~ ^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$ ]]; then
+      echo "GIT_MODELS_NAMESPACE must be a namespace name, such as ai-grid-internal-models." >&2
+      exit 1
+    fi
+    VALUES+=(--set-string "backend.git.modelsNamespace=${GIT_MODELS_NAMESPACE}")
   fi
 fi
 # This script creates the Secrets and the OAuthClient and finds the Route by these names.
