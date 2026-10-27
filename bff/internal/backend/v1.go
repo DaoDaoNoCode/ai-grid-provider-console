@@ -122,25 +122,6 @@ func (c v1Clusters) UpdateManagedCluster(ctx context.Context, in *aigridv1.Updat
 // backend sends them (a condition status other than True or False reads as
 // Unknown). Provisioning is always set, so the console reads it instead of the
 // ai-grid/provisioned label.
-// fromV1GPUs copies the backend's GPU inventory onto the draft's. The two declare the same
-// messages with the same field numbers (ClusterGPUs, GPUConfiguration, GPUSharing, GPUNode), so
-// the copy goes through the wire format; TestFromV1GPUs sets every field and fails if the draft
-// ever stops matching. Unset stays unset: the backend sends none when ACM Search has nothing.
-func fromV1GPUs(in *backendv1.ClusterGPUs) *aigridv1.ClusterGPUs {
-	if in == nil {
-		return nil
-	}
-	raw, err := proto.Marshal(in)
-	if err != nil {
-		return nil
-	}
-	out := &aigridv1.ClusterGPUs{}
-	if err := proto.Unmarshal(raw, out); err != nil {
-		return nil
-	}
-	return out
-}
-
 func FromV1Cluster(mc *backendv1.ManagedCluster) *aigridv1.ManagedCluster {
 	meta := mc.GetMetadata()
 	st := mc.GetStatus()
@@ -176,6 +157,25 @@ func FromV1Cluster(mc *backendv1.ManagedCluster) *aigridv1.ManagedCluster {
 			Gpus:              fromV1GPUs(st.GetGpus()),
 		},
 	}
+}
+
+// fromV1GPUs copies the backend's GPU inventory onto the draft's. The two declare the same
+// messages with the same field numbers (ClusterGPUs, GPUConfiguration, GPUSharing, GPUNode), so
+// the copy goes through the wire format; TestFromV1GPUs sets every field and fails if the draft
+// ever stops matching. Unset stays unset: the backend sends none when ACM Search has nothing.
+func fromV1GPUs(in *backendv1.ClusterGPUs) *aigridv1.ClusterGPUs {
+	if in == nil {
+		return nil
+	}
+	raw, err := proto.Marshal(in)
+	if err != nil {
+		return nil
+	}
+	out := &aigridv1.ClusterGPUs{}
+	if err := proto.Unmarshal(raw, out); err != nil {
+		return nil
+	}
+	return out
 }
 
 var v1ConditionStatus = map[string]aigridv1.ConditionStatus{
