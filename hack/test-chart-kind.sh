@@ -130,7 +130,9 @@ rollout() {
 }
 forward() {
   [[ -n "${pf}" ]] && kill "${pf}" 2>/dev/null || true
-  k -n "${NS}" port-forward "svc/${NAME}" "${PORT}:8443" >/dev/null 2>&1 &
+  # exec, so $! is kubectl itself: killing only a subshell would leave the old port-forward
+  # holding the port, and the next one would fail to bind while curl reached the old one.
+  (exec kubectl --context "${CTX}" -n "${NS}" port-forward "svc/${NAME}" "${PORT}:8443" >/dev/null 2>&1) &
   pf=$!
   for _ in $(seq 1 30); do
     curl -sk -o /dev/null "https://127.0.0.1:${PORT}/readyz" && return
