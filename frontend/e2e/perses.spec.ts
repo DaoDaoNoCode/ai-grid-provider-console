@@ -61,6 +61,7 @@ const dashboard = (name: string, title: string) => ({
     ],
   },
 });
+const injectedFailure = 'Compatibility test injected failure';
 const dashboards = [dashboard('dashboard-1-fleet', 'Fleet health'), dashboard('dashboard-2-usage', 'Token usage')];
 
 test('real Perses panels remain compatible with the shared Query runtime', async ({ page }) => {
@@ -69,12 +70,28 @@ test('real Perses panels remain compatible with the shared Query runtime', async
   const queries: { query: string; start: string; end: string }[] = [];
   let userReads = 0;
   let responseStatus = 200;
-  page.on('pageerror', (error) => errors.push('Uncaught: ' + error.message));
+  let expectedPanelBoundaryReports = 0;
+  page.on('pageerror', (error) => {
+    if (error.message === injectedFailure) {
+      expectedPanelBoundaryReports++;
+      return;
+    }
+    errors.push('Uncaught: ' + error.message);
+  });
   page.on('console', (msg) => {
+    // React development reports a caught panel error, then logs its component stack.
+    if (
+      msg.type() === 'error' &&
+      expectedPanelBoundaryReports > 0 &&
+      msg.text().startsWith('The above error occurred in the <PanelContent> component:')
+    ) {
+      expectedPanelBoundaryReports--;
+      return;
+    }
     if (
       msg.type() === 'error' &&
       !/Failed to load resource:.*(?:401|500)/.test(msg.text()) &&
-      !msg.text().includes('Compatibility test injected failure')
+      !msg.text().includes(injectedFailure)
     ) {
       errors.push(msg.text());
     }
@@ -106,7 +123,7 @@ test('real Perses panels remain compatible with the shared Query runtime', async
       if (responseStatus !== 200)
         return route.fulfill({
           status: responseStatus,
-          json: { status: 'error', errorType: 'server_error', error: 'Compatibility test injected failure' },
+          json: { status: 'error', errorType: 'server_error', error: injectedFailure },
         });
       const start = Number(params.get('start')) || Date.now() / 1000 - 3600;
       const end = Number(params.get('end')) || Date.now() / 1000;
