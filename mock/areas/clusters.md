@@ -74,7 +74,9 @@ details page (`ClusterDetailsPage.tsx`, `/clusters/:name`). That page shows the 
 location, role, in the list's order), the cluster as the hub knows it (its connection status, the
 OpenShift version when it is OpenShift, the Kubernetes version, platform, product, creation time,
 console link), its capacity (with "Schedulable GPUs": the hub's `nvidia.com/gpu` as `gpuCapacity`, and the GPU Feature
-Discovery count beside it when time-slicing or MPS makes them differ), its GPUs (capacity, each configuration with memory and sharing, and its
+Discovery count beside it when time-slicing or MPS makes them differ; "MIG slices not counted" when
+a configuration's MIG strategy is `mixed`, whose slices the device plugin advertises as
+`nvidia.com/mig-<profile>` instead), its GPUs (capacity, each configuration with memory and sharing, and its
 node count only when the cluster mixes configurations; manufacturer, architecture, driver and CUDA)
 and a table of its GPU nodes (model, GPUs, memory, architecture and compute capability, driver,
 sharing, instance type, status), with the same Add and Remove actions. Add-ons and the hub's

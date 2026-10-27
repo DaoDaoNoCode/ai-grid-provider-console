@@ -235,6 +235,40 @@ it('words a MIG configuration by its profile', async () => {
   expect(screen.getByTestId('cluster-gpu-capacity')).toHaveTextContent('2 nodes, 16 GPUs');
 });
 
+/**
+ * site3's A100 nodes under the GPU Operator's MIG strategy mixed: the device plugin advertises the
+ * slices as nvidia.com/mig-<profile>, and nvidia.com/gpu counts only the GPUs without MIG.
+ */
+const mixedMIG = (schedulable: number) => {
+  const clusters = seedClusters();
+  const site3 = clusters[2];
+  const sharing = { strategy: 'mig', replicas: 1, migCapable: true, migStrategy: 'mixed' };
+  site3.capacity = { ...site3.capacity, 'nvidia.com/gpu': String(schedulable), 'nvidia.com/mig-3g.20gb': '32' };
+  site3.gpuCapacity = schedulable;
+  site3.gpus = {
+    ...site3.gpus!,
+    configurations: site3.gpus!.configurations.map((g) => ({ ...g, product: 'NVIDIA-A100-SXM4-40GB', sharing })),
+    nodes: site3.gpus!.nodes.map((n) => ({ ...n, product: 'NVIDIA-A100-SXM4-40GB', sharing })),
+  };
+  return clusters;
+};
+
+it('says the schedulable GPUs leave out MIG slices under the mixed strategy', async () => {
+  // Every GPU sliced: the hub counts none of them as nvidia.com/gpu.
+  renderAt('/clusters/site3', new MockConsoleService(undefined, mixedMIG(0)));
+  expect(await screen.findByTestId('cluster-gpus')).toHaveTextContent(/^0 \(16 GPUs, MIG slices not counted\)$/);
+});
+
+it('says MIG slices are not counted under the mixed strategy even when no GPU is sliced', async () => {
+  renderAt('/clusters/site3', new MockConsoleService(undefined, mixedMIG(16)));
+  expect(await screen.findByTestId('cluster-gpus')).toHaveTextContent(/^16 \(MIG slices not counted\)$/);
+});
+
+it('says nothing about MIG slices under the single strategy', async () => {
+  renderAt('/clusters/site3', new MockConsoleService());
+  expect(await screen.findByTestId('cluster-gpus')).toHaveTextContent(/^16$/);
+});
+
 it('says when the hub counts GPUs but has no details for them', async () => {
   const clusters = seedClusters();
   delete clusters[0].gpus;

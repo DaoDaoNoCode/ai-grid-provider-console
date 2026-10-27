@@ -126,17 +126,28 @@ const distinct = (values: (string | undefined)[]) => [...new Set(values.filter((
  * Discovery count beside it when the two differ: time-slicing and MPS count each GPU once per
  * replica, so 2 GPUs time-sliced ×4 are 8 schedulable. Without that note the Capacity card and the
  * GPUs card would show two numbers for one cluster with nothing to say which is which (review).
+ *
+ * Under the GPU Operator's MIG strategy mixed, the device plugin advertises MIG slices as
+ * nvidia.com/mig-<profile>, and nvidia.com/gpu counts only the GPUs without MIG, so the row says
+ * the slices aren't counted. Wording only: the console doesn't count them (review).
  */
 const schedulableGPUs = (c: GridCluster) => {
   const schedulable = gpuCount(c);
   const gpus = c.gpus;
-  if (schedulable === undefined || !gpus || gpus.total === schedulable) return schedulable;
-  // How the GPUs are shared, only when every configuration shares them the same way: a cluster
-  // that mixes unshared and time-sliced GPUs gets the count alone. Worded as the list words it
-  // ("Time-sliced ×4", "MPS ×2").
-  const sharing = new Set(gpus.configurations.map((g) => gpuSharing(g.sharing, g.product)));
-  const [how] = sharing;
-  return `${schedulable} (${gpuCountText(gpus.total)}${sharing.size === 1 && how ? `, ${how}` : ''})`;
+  if (schedulable === undefined || !gpus) return schedulable;
+  const mixedMIG = gpus.configurations.some((g) => g.sharing.migStrategy === 'mixed');
+  const notes: string[] = [];
+  if (gpus.total !== schedulable) {
+    notes.push(gpuCountText(gpus.total));
+    // How the GPUs are shared, only when every configuration shares them the same way: a cluster
+    // that mixes unshared and time-sliced GPUs gets the count alone. Worded as the list words it
+    // ("Time-sliced ×4", "MPS ×2"). Left out under mixed MIG, whose note says more.
+    const sharing = new Set(gpus.configurations.map((g) => gpuSharing(g.sharing, g.product)));
+    const [how] = sharing;
+    if (sharing.size === 1 && how && !mixedMIG) notes.push(how);
+  }
+  if (mixedMIG) notes.push('MIG slices not counted');
+  return notes.length ? `${schedulable} (${notes.join(', ')})` : schedulable;
 };
 
 const capacityItems = (c: GridCluster) => {
