@@ -64,7 +64,7 @@ test('creates, views, edits and deletes a subscription', async ({ page }) => {
   // Delete from the list with the typed confirmation.
   const row = page.getByTestId('subscription-row').filter({ hasText: unique });
   await expect(row).toContainText('42');
-  await row.getByRole('button', { name: 'Kebab toggle' }).click();
+  await row.getByRole('button', { name: `Actions for ${unique}` }).click();
   await page.getByRole('menuitem', { name: 'Delete' }).click();
   await page.getByLabel(/^Type .* to confirm/).fill(unique);
   await page.getByRole('button', { name: 'Delete', exact: true }).click();

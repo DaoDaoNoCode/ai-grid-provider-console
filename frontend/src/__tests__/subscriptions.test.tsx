@@ -203,6 +203,23 @@ describe('administrator subscription flows', () => {
     }
   });
 
+  it("names each row's actions menu after its subscription, as the other lists do", async () => {
+    const user = userEvent.setup();
+    const service = new MockConsoleService();
+    const research = service.subscriptions.find((s) => s.displayName === 'Research')!;
+    research.deletionTimestamp = '2026-10-27T10:00:00Z';
+    renderAt('/subscriptions', service);
+    const table = await screen.findByTestId('subscriptions-table');
+    const row = within(table).getByRole('link', { name: 'Engineering' }).closest('tr')!;
+    const actions = within(row).getByRole('button', { name: 'Actions for Engineering' });
+    expect(within(table).queryByRole('button', { name: 'Kebab toggle' })).not.toBeInTheDocument();
+    await user.click(actions);
+    expect(actions).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeVisible();
+    // A subscription being deleted keeps its named menu, disabled.
+    expect(within(table).getByRole('button', { name: 'Actions for Research' })).toBeDisabled();
+  });
+
   it('keeps keyboard focus on the filter menu after choosing what to filter by', async () => {
     const user = userEvent.setup();
     renderAt('/subscriptions', new MockConsoleService());
@@ -429,7 +446,7 @@ it('hides write actions until it knows the user is a provider admin', async () =
   expect(within(table).getByRole('link', { name: 'Engineering' })).toBeVisible();
   expect(screen.queryByRole('link', { name: 'Create subscription' })).not.toBeInTheDocument();
   const row = within(table).getByRole('link', { name: 'Engineering' }).closest('tr')!;
-  await user.click(within(row).getByRole('button', { name: /Kebab toggle/ }));
+  await user.click(within(row).getByRole('button', { name: 'Actions for Engineering' }));
   expect(screen.getByRole('menuitem', { name: 'View details' })).toBeVisible();
   expect(screen.queryByRole('menuitem', { name: 'Edit' })).not.toBeInTheDocument();
   expect(screen.queryByRole('menuitem', { name: 'Delete' })).not.toBeInTheDocument();
