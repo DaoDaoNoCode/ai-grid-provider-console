@@ -12,7 +12,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CHART="${ROOT}/charts/ai-grid-provider-console"
 ALL=(--set backend.clusterWrites=true --set backend.git.url=https://github.com/example/catalog.git
-  --set backend.git.gridNamespace=grid --set route.host=console.apps.example.com --set tls.serviceCA=false
+  --set backend.git.gridNamespace=grid --set backend.git.modelsNamespace=ai-grid-internal-models --set route.host=console.apps.example.com --set tls.serviceCA=false
   --set images.console.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000
   --set 'imagePullSecrets[0].name=pull' --set imagePullPolicy=Always
   --set console.perses.url=https://perses.openshift-cluster-observability-operator.svc:8080
@@ -38,6 +38,24 @@ if helm template console "${CHART}" -n ai-grid --set-string backend.git.url=http
   echo "check-chart: backend.git.gridNamespace=Not_A_Namespace renders; values.schema.json must refuse it" >&2
   exit 1
 fi
+if helm template console "${CHART}" -n ai-grid --set-string backend.git.url=https://github.com/example/catalog.git \
+  --set-string backend.git.modelsNamespace=Not_A_Namespace >/dev/null 2>&1; then
+  echo "check-chart: backend.git.modelsNamespace=Not_A_Namespace renders; values.schema.json must refuse it" >&2
+  exit 1
+fi
+# backend.git.modelsNamespace sets AI_GRID_MODELS_NAMESPACE; empty leaves the backend's default.
+models_ns() {
+  helm template console "${CHART}" -n ai-grid --set-string backend.git.url=https://github.com/example/catalog.git "$@" |
+    yq 'select(.kind == "Deployment") | .spec.template.spec.containers[] | select(.name == "ai-grid-backend")
+      | .env[] | select(.name == "AI_GRID_MODELS_NAMESPACE") | .value'
+}
+got="$(models_ns --set-string backend.git.modelsNamespace=ai-grid-internal-models)"
+[[ "${got}" == ai-grid-internal-models ]] || {
+  echo "check-chart: backend.git.modelsNamespace=ai-grid-internal-models sets AI_GRID_MODELS_NAMESPACE to '${got}'" >&2
+  exit 1
+}
+got="$(models_ns)"
+[[ -z "${got}" ]] || { echo "check-chart: without backend.git.modelsNamespace, AI_GRID_MODELS_NAMESPACE is '${got}'" >&2; exit 1; }
 for url in https://github.com/example/catalog.git https://git.example.com:8443/team/repo@archive.git; do
   helm template console "${CHART}" -n ai-grid --set-string "backend.git.url=${url}" >/dev/null || {
     echo "check-chart: backend.git.url=${url} doesn't render; values.schema.json must accept it" >&2
