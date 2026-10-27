@@ -1,5 +1,5 @@
 # Source of ai_grid/v1/*.proto and image.binpb: the backend's real proto, vendored unchanged.
 # Update with hack/sync-upstream-proto.sh <ref>.
 repo=https://github.com/ai-grid-cloud/ai-grid-provider-backend
-commit=3f3cd1552fdcc7ddf210fce3ee74a3946b5735aa
+commit=5a048fac9da91d141550363a361e6a8489ea45e6
 path=proto/ai_grid/v1
