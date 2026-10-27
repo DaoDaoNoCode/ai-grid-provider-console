@@ -142,6 +142,7 @@ it('names the sharing beside the schedulable GPUs only when every configuration 
   const site2 = clusters[1];
   const sliced = site2.gpus!.configurations[0];
   site2.capacity = { ...site2.capacity, 'nvidia.com/gpu': '24' };
+  site2.gpuCapacity = 24;
   site2.gpus = {
     ...site2.gpus!,
     total: site2.gpus!.total + 8,

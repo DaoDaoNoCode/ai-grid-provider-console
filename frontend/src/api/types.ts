@@ -97,6 +97,8 @@ export type ApiCluster = {
   product?: string;
   /** `status.capacity` and `status.allocatable`: Kubernetes quantities by resource name. */
   capacity?: Record<string, string>;
+  /** The BFF's count of `capacity["nvidia.com/gpu"]`, 0 when the capacity has none. */
+  gpuCapacity?: number;
   allocatable?: Record<string, string>;
   /** The backend's `status.gpus`: the GPU inventory from ACM Search; absent without one. */
   gpus?: ClusterGPUs;
@@ -146,6 +148,8 @@ export type GridCluster = {
   product?: string;
   /** Absent when the backend doesn't report the cluster's resources. */
   capacity?: Record<string, string>;
+  /** The BFF's count of `capacity["nvidia.com/gpu"]`, the GPUs Kubernetes can schedule. */
+  gpuCapacity?: number;
   allocatable?: Record<string, string>;
   /** The backend's `status.gpus`: the GPU inventory from ACM Search; absent without one. */
   gpus?: ClusterGPUs;

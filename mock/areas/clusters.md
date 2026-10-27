@@ -64,8 +64,8 @@ first, then by product, then most GPUs per node. A cluster without GPU nodes has
 UI: the Clusters page (`frontend/src/pages/clusters/ClustersPage.tsx`) lists every
 ManagedCluster under nested column headers that match the details page's cards: **Cluster** (name,
 the hub's connection status), **AI Grid** (status, with "Not added" outside it, location, role) and
-**GPUs** (capacity, "4 nodes, 32 GPUs", or "8 GPUs" from `capacity["nvidia.com/gpu"]` when the
-backend has no inventory; configuration, "NVIDIA H200, 8 GPUs/node", with ", Time-sliced ×4",
+**GPUs** (capacity, "4 nodes, 32 GPUs", or "8 GPUs" from the BFF's `gpuCapacity` (its count of
+`capacity["nvidia.com/gpu"]`, the console's only parser of it) when the backend has no inventory; configuration, "NVIDIA H200, 8 GPUs/node", with ", Time-sliced ×4",
 ", MPS ×2" or ", MIG 3g.20gb" when shared, and "+N more" for more configurations), as provider-admin
 feedback asks (the OpenShift version is on the details page, to leave the list room). The actions
 column sticks to the table's right edge, so a narrow window scrolls the table under it instead of
@@ -73,7 +73,7 @@ hiding it. The page adds a cluster to AI Grid or removes it, and links each name
 details page (`ClusterDetailsPage.tsx`, `/clusters/:name`). That page shows the membership (status,
 location, role, in the list's order), the cluster as the hub knows it (its connection status, the
 OpenShift version when it is OpenShift, the Kubernetes version, platform, product, creation time,
-console link), its capacity (with "Schedulable GPUs": the hub's `nvidia.com/gpu`, and the GPU Feature
+console link), its capacity (with "Schedulable GPUs": the hub's `nvidia.com/gpu` as `gpuCapacity`, and the GPU Feature
 Discovery count beside it when time-slicing or MPS makes them differ), its GPUs (capacity, each configuration with memory and sharing, and its
 node count only when the cluster mixes configurations; manufacturer, architecture, driver and CUDA)
 and a table of its GPU nodes (model, GPUs, memory, architecture and compute capability, driver,

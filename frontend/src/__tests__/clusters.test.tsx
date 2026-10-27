@@ -520,6 +520,7 @@ it("lists each cluster's GPU configuration and capacity, as provider admins aske
   };
   // The hub counts site4's GPUs, but Search has nothing for them: no model.
   clusters[3].capacity = { ...clusters[3].capacity, 'nvidia.com/gpu': '8' };
+  clusters[3].gpuCapacity = 8;
   renderAt('/clusters', new MockConsoleService(undefined, clusters));
   await screen.findByRole('row', { name: /^site1 / });
 

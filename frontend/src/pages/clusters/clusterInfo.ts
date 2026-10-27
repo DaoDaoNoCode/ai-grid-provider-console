@@ -1,9 +1,6 @@
 import type { GridCluster } from '../../api/types';
 import type { MembershipChange } from './MembershipModal';
 
-/** The resource name the NVIDIA device plugin advertises GPUs under. */
-const GPU_RESOURCE = 'nvidia.com/gpu';
-
 /** The Connection tooltip: the ACM state behind Unknown, then the backend's message. */
 export const statusReason = (c: GridCluster) => [c.state, c.statusMessage].filter(Boolean).join(': ') || undefined;
 
@@ -16,14 +13,12 @@ export const cannotAddReason = (c: GridCluster) => {
 };
 
 /**
- * The cluster's NVIDIA GPUs as the hub reports its capacity: 0 when it reports capacity without
- * GPUs (no GPU nodes, or no GPU operator yet), undefined when it reports no capacity at all.
+ * The cluster's NVIDIA GPUs as the hub reports its capacity, counted by the BFF (`gpuCapacity`) so
+ * the console has one parser: 0 when it reports capacity without GPUs (no GPU nodes, or no GPU
+ * operator yet), undefined when it reports no capacity at all or a negative count.
  */
-export const gpuCount = (c: GridCluster): number | undefined => {
-  if (!c.capacity) return undefined;
-  const gpus = Number(c.capacity[GPU_RESOURCE] ?? '0');
-  return Number.isInteger(gpus) && gpus >= 0 ? gpus : undefined;
-};
+export const gpuCount = (c: GridCluster): number | undefined =>
+  c.capacity && c.gpuCapacity !== undefined && c.gpuCapacity >= 0 ? c.gpuCapacity : undefined;
 
 /** The one membership action a provider admin has on a cluster: Remove for a member, else Add. */
 export const membershipAction = (c: GridCluster, onChange: (change: MembershipChange) => void) =>

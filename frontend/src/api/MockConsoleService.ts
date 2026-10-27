@@ -614,6 +614,7 @@ export const seedClusters = (): GridCluster[] =>
       platform: 'BareMetal',
       product: 'OpenShift',
       capacity: { cpu: '192', memory: '1572864Mi', 'nvidia.com/gpu': member ? '16' : '0' },
+      gpuCapacity: member ? 16 : 0,
       allocatable: { cpu: '186', memory: '1540000Mi', 'nvidia.com/gpu': member ? '16' : '0' },
       // A copy each time, so a test that changes one cluster's GPUs doesn't change the next seed's.
       ...(seedGPUs[name] ? { gpus: structuredClone(seedGPUs[name]) } : {}),
