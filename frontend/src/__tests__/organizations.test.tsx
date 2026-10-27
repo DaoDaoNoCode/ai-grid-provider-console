@@ -149,7 +149,8 @@ it('onboards organization details then IdP, saves only after review, supports de
   await user.type(within(modal).getByTestId('delete-modal-input'), 'tenant1');
   await user.click(within(modal).getByRole('button', { name: 'Delete' }));
   expect(await screen.findByText('Organization deleted')).toBeVisible();
-  expect(screen.getByText('No organizations yet. Register one to get started.')).toBeVisible();
+  // The list reloads after the delete; the toast can show before it does.
+  expect(await screen.findByText('No organizations yet. Register one to get started.')).toBeVisible();
   expect(await service.listOrganizations()).toEqual([]);
 }, 15000);
 
