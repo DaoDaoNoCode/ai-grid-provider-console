@@ -23,7 +23,7 @@ backend service for cluster access and this BFF for the browser.
   (`hack/sync-upstream-proto.sh <ref>` refreshes both).
 - What the BFF compiles against: the console's draft proto in `mock/proto/ai_grid/v1`,
   generated into `bff/gen/ai_grid/v1` (`make -C bff generate`), which the fake backend serves;
-  and, for the real backend's Clusters and Tenants RPCs, a copy of their messages in
+  and, for the real backend's Clusters, Tenants, Subscriptions and Models RPCs, a copy of their messages in
   `mock/proto/ai_grid/backend/v1` (see "Against a real backend" below).
   `bff/internal/protodrift` fails when that copy stops matching the vendored backend proto.
   When the console generates its types from the backend's proto, the copy, the draft and the
@@ -39,8 +39,10 @@ backend service for cluster access and this BFF for the browser.
 
 Until the console moves to Connect and the backend's generated contract (issues 20–27 and the
 ADRs in `docs/adr/`), the BFF calls a real backend's `ai_grid.v1.Clusters` `List`, `Get` and
-`Update` and `Tenants` `List`, `Get`, `Create`, `Update` and `Delete` for the clusters and tenants routes, and maps them onto the draft
-types, so the handlers and the JSON above are unchanged (`bff/internal/backend/v1.go`, messages in
+`Update`, `Tenants` `List`, `Get`, `Create`, `Update` and `Delete`, and `Subscriptions` and `Models`
+`List`, `Get`, `Create`, `Update` and `Delete` for the clusters, tenants, subscriptions, models and
+locations routes, and maps them onto the draft types, so the handlers and the JSON above are
+unchanged (`bff/internal/backend/v1.go` and `v1_models.go`, messages in
 `mock/proto/ai_grid/backend/v1`). The fake backend still serves the draft, so `--fake-backend`
 keeps the draft clients. `If-Match` maps to `metadata.version` with `lock: true`, and the
 `labels` and `annotations` mask paths to `metadata.labels` and `metadata.annotations`. The
@@ -60,6 +62,31 @@ stored tenant after checking the version, writing nothing. DELETE sends the `If-
 `TenantsDeleteRequest.version` (backend PR 16). The backend refuses a change to a label or annotation
 outside `ai-grid/*` and the `location` label, and a bad coordinate, with `InvalidArgument` (422),
 after it checks the version: a stale one is `Aborted` (409) whatever the labels.
+
+Subscriptions follow backend PR 27 (vendored at its merge ref until it merges). The organization
+(`tokenMetadata.organizationId` in the JSON) is sent as `spec.organization.id`, which the backend
+keeps immutable (422 on a change); the display name and description travel as the
+`openshift.io/display-name` and `openshift.io/description` annotations, and the billing rate as
+`billing_rate.per_token`. A PUT sends the mask `spec` and `metadata.annotations` with the `If-Match`
+version and `lock: true`; git mode replaces the annotations, so a cleared display name or
+description is left out. The backend always creates `<name>-policy`, so a create with
+`createAuthPolicy: false` answers 501. `GET /subscriptions/{name}` lists each model the backend
+reports a MaaS registration for in `modelRefs`, with that registration's phase (Ready, Failed for
+Failed, Invalid or Unhealthy, else Pending); a model without one shows as not found. DELETE sends
+the `If-Match` version, so a stale one is 409.
+
+Models follow backend PR 27 too. The backend's models have an `id` and no namespace (it keeps them
+in one namespace of its own), so the BFF reports every model in its `--models-namespace` and
+answers 404 for a model in any other; against a real backend, set it to the backend's subscription
+namespace (`AI_GRID_SUBSCRIPTION_NAMESPACE`, default `models-as-a-service`), where the backend
+keeps the `MaaSModelRef` that subscriptions name, so a subscription's model references match the
+models. A location is one cluster: `GET /locations` lists the names of the clusters labelled
+`ai-grid/enabled: "true"` from `Clusters` `List`, and the console's placement (the member labels
+plus `location In [...]`) is sent as the ACM `name` label, `name In [...]`, which the backend's git
+mode places by; a read turns it back. Any other placement goes as it is, except claim expressions,
+tolerations and spread constraints, which the backend lacks (501). A list with a filter or an order
+answers 501, because the backend's filter uses its own field names. PATCH sends the draft's mask
+unchanged, with the `If-Match` version and `lock: true`, and DELETE sends the `If-Match` version.
 
 ## Decisions
 
@@ -108,7 +135,7 @@ under `/perses/api`.
 | GET | `/healthcheck` | `{status, version}` | none; no identity and no backend call: a check, by a person or a script on the pod, that the BFF process serves HTTP and which build it is (`version`). No probe uses it: the kubelet probes only `/readyz` (below), and there is deliberately no liveness probe, which would restart the BFF whenever the proxy in front of it is down. Through the route it is behind the login like any page (the proxy skips auth for `/readyz` only) |
 | GET | `/readyz` | `{status, version, backend}` | `AiGrid/Ping`; readiness, 503 when the backend does not answer. The pod is then unready, and with the one replica the chart runs, the Service has no endpoint left: the OpenShift router answers every request with its own 503 page (HTML, not this API's JSON error), until the backend answers again |
 | GET | `/api/v1/user` | `{username, email?, groups, isProviderAdmin}` (`email` omitted when the proxy sends none) | none; the identity from the proxy headers, `isProviderAdmin` from a hub `SelfSubjectAccessReview` |
-| GET | `/api/v1/config` | `{gridEndpoint, mapTileUrl, mapTileAttribution, billingUrl, version, modelsNamespace, fakeBackend, monitoring: {enabled, persesProject}}`: `modelsNamespace` is the namespace the console creates models in (default `ai-grid-models`), `fakeBackend` makes the UI show its fake-backend banner, `monitoring.enabled` says the BFF relays `/perses/api` (it has a `PERSES_URL`) and `monitoring.persesProject` names the one Perses project the relay reads, whose `dashboard-*` objects are the Monitoring tabs (always set when `monitoring.enabled`) | none; env `GRID_CONSUMER_URL`, `MAP_TILE_URL`, `MAP_TILE_ATTRIBUTION` (the attribution shown with `MAP_TILE_URL`'s tiles; with no `MAP_TILE_URL` the map draws a bundled land outline), `BILLING_URL`, `MODELS_NAMESPACE`, `FAKE_BACKEND`, `PERSES_URL`, `PERSES_PROJECT` |
+| GET | `/api/v1/config` | `{gridEndpoint, mapTileUrl, mapTileAttribution, billingUrl, version, modelsNamespace, fakeBackend, monitoring: {enabled, persesProject}}`: `modelsNamespace` is the namespace the console creates models in (default `models-as-a-service`, the backend's subscription namespace; `make dev-fake` sets `ai-grid-models` for the fake's fixtures), `fakeBackend` makes the UI show its fake-backend banner, `monitoring.enabled` says the BFF relays `/perses/api` (it has a `PERSES_URL`) and `monitoring.persesProject` names the one Perses project the relay reads, whose `dashboard-*` objects are the Monitoring tabs (always set when `monitoring.enabled`) | none; env `GRID_CONSUMER_URL`, `MAP_TILE_URL`, `MAP_TILE_ATTRIBUTION` (the attribution shown with `MAP_TILE_URL`'s tiles; with no `MAP_TILE_URL` the map draws a bundled land outline), `BILLING_URL`, `MODELS_NAMESPACE`, `FAKE_BACKEND`, `PERSES_URL`, `PERSES_PROJECT` |
 | GET | `/api/v1/clusters?offset=&limit=&filter=` | `GridCluster[]` sorted by name, with `meta` (`size`, `total`, `offset`, `limit`) as for tenants; `filter` is the client's CEL over `this` (a `ManagedCluster`), forwarded as sent. Neither backend evaluates it yet: the fake answers 422, and against the shipped backend, which would ignore it, the BFF answers 501 | `ManagedClusters/ListManagedClusters` |
 | GET | `/api/v1/clusters/{name}` | `GridCluster`, `ETag: "<resourceVersion>"` | `ManagedClusters/GetManagedCluster` (on the shipped backend, its `Clusters/Get`); 404 with the backend's message when absent. Against an older backend that answers `Unimplemented` the BFF filters `ListManagedClusters` by name instead, so the detail works either way; neither the fake nor the shipped backend needs that any more |
 | PATCH | `/api/v1/clusters/{name}` | `GridCluster` after the write, with its `ETag` | `UpdateManagedCluster` (no read first) with the present body fields as the object and the mask (`labels`, `annotations`) and `lock: true` on the `If-Match` version; an empty body is 422; 409 when the hub object is not at that version, 428 without `If-Match`, 422 on a bad body or `If-Match`, a coordinate annotation the backend refuses or a change to a key outside the console's (`ai-grid/*`, `location`), 413 over 1 MiB, 415 when the body is not `application/json` |

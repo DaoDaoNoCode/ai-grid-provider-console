@@ -134,7 +134,7 @@ defaults to the in-cluster API server), `HUB_CA_FILE`, `BIND_ADDRESS` (default `
 `PERSES_PROJECT` (the Perses relay, `docs/plan/bff-api.md`),
 `AUTH_TOKEN_HEADER`, `AUTH_USER_HEADER`, `AUTH_EMAIL_HEADER`, `AUTH_GROUPS_HEADER`,
 `GRID_CONSUMER_URL`, `MAP_TILE_URL`, `MAP_TILE_ATTRIBUTION`, `BILLING_URL`, `LOG_LEVEL`, `AUTH_TOKEN_PREFIX`,
-`MODELS_NAMESPACE` (the namespace the console creates models in), `FAKE_BACKEND` (the backend is
+`MODELS_NAMESPACE` (the namespace the console creates models in, default `models-as-a-service`; `make dev-fake` sets `ai-grid-models`), `FAKE_BACKEND` (the backend is
 the fake; the UI shows a banner), `CERT_FILE`, `KEY_FILE`, `STATIC_ASSETS_DIR`. Run `go run ./cmd --help`
 in `bff/` for the flags.
 
@@ -161,7 +161,7 @@ after it merges.
 The BFF imports `bff/gen/ai_grid/v1`, generated from the console's draft proto in
 `mock/proto/ai_grid/v1` (the console's proposal, which the fake backend serves; see
 `mock/proto/README.md`), and `bff/gen/ai_grid/backend/v1`, generated from its copy of the real
-backend's Clusters and Tenants messages in `mock/proto/ai_grid/backend/v1`. After editing a
+backend's Clusters, Tenants, Subscriptions and Models messages in `mock/proto/ai_grid/backend/v1`. After editing a
 `.proto` file:
 
 ```sh

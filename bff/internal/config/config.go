@@ -23,9 +23,11 @@ const (
 	DefaultAuthGroupsHeader = "x-forwarded-groups"
 	// DefaultBackendAddress is the backend container in the same pod.
 	DefaultBackendAddress = "127.0.0.1:9090"
-	// DefaultModelsNamespace is where the console creates models, the
-	// namespace of PR 12's fixture models.
-	DefaultModelsNamespace = "ai-grid-models"
+	// DefaultModelsNamespace is where the console creates models: the
+	// backend's subscription namespace, where git mode lists models and where
+	// subscriptions reference them. The fake backend's fixtures use
+	// ai-grid-models, which `make run-fake` passes.
+	DefaultModelsNamespace = "models-as-a-service"
 	// DefaultBindAddress keeps the BFF off the pod network: only kube-auth-proxy
 	// in the same pod (and the kubelet through it) can reach it.
 	DefaultBindAddress = "127.0.0.1"

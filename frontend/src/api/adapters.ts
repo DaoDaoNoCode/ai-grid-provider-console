@@ -141,9 +141,16 @@ const modelPhases: Record<string, string> = {
 
 const phaseOf = (phase: string | undefined) => (phase ? (modelPhases[phase] ?? phase) : 'Pending');
 
+/** The backend's reason for a model in git mode, where it reports no phase. */
+const SAVED_TO_GIT_REASON = 'SavedToGit';
+
+/** A model's phase: Saved to Git when the backend saved it to Git and reports no phase. */
+const modelPhaseOf = (phase: string | undefined, reason: string | undefined) =>
+  !phase && reason === SAVED_TO_GIT_REASON ? 'Saved to Git' : phaseOf(phase);
+
 /**
  * Maps a model of GET/POST /models to the PoC's ManagedModel. Status is PR 12's phase (Pending
- * before the backend reports one); locations are the placement's decided locations (P8).
+ * before the backend reports one, Saved to Git when the backend saved it to Git); locations are the placement's decided locations (P8).
  */
 export const toManagedModel = (json: ApiModel): ManagedModel => ({
   name: json.name,
@@ -151,7 +158,7 @@ export const toManagedModel = (json: ApiModel): ManagedModel => ({
   displayName: json.displayName,
   description: json.description,
   modelRef: { kind: 'LLMInferenceService', name: json.name },
-  phase: phaseOf(json.phase),
+  phase: modelPhaseOf(json.phase, json.reason),
   reason: json.reason,
   statusMessage: json.message,
   creationTimestamp: json.creationTimestamp,

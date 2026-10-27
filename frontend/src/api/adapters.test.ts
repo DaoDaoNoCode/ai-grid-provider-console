@@ -359,6 +359,11 @@ describe('toManagedModel', () => {
       statusMessage: expect.stringContaining('not found in namespaces'),
     });
     expect(toManagedModel({ name: 'new', namespace: 'ns', modelUri: 'hf://x', modelName: 'x' }).phase).toBe('Pending');
+    // Git mode: the backend reports no phase, only that the model was saved to Git.
+    const saved = { name: 'new', namespace: 'ns', modelUri: 'hf://x', modelName: 'x', reason: 'SavedToGit' };
+    expect(toManagedModel(saved)).toMatchObject({ phase: 'Saved to Git', reason: 'SavedToGit' });
+    // A real phase wins over the reason.
+    expect(toManagedModel({ ...saved, phase: 'ready' }).phase).toBe('Ready');
   });
 
   it('maps the fields the pages read', () => {

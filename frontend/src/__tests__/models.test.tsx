@@ -149,8 +149,8 @@ it('leaves the deploy form out of history once the model is deployed, so Back sk
   expect(await screen.findByRole('heading', { level: 1, name: 'Clusters' })).toBeVisible();
 }, 20000);
 
-it('keeps the confirmation dialog and model when a subscription blocks deletion', async () => {
-  const service = new MockConsoleService();
+/** A model "widget" that subscription "widget-users" uses. */
+const referencedModel = async (service: MockConsoleService) => {
   const result = await service.createModel(input);
   await service.createSubscription({
     name: 'widget-users',
@@ -160,6 +160,13 @@ it('keeps the confirmation dialog and model when a subscription blocks deletion'
     tokenMetadata: { organizationId: '3f1c9a72-5b6e-4d2a-8c01-2d3e4f5a6b7c' },
     createAuthPolicy: true,
   });
+  return result;
+};
+
+it('disables Delete while subscriptions use the model, and says why', async () => {
+  const service = new MockConsoleService();
+  const remove = vi.spyOn(service, 'deleteModel');
+  await referencedModel(service);
   const user = userEvent.setup();
   renderAt('/models', service);
   await user.click(await screen.findByTestId('model-actions-widget'));
@@ -170,7 +177,24 @@ it('keeps the confirmation dialog and model when a subscription blocks deletion'
     'href',
     '/subscriptions/view/widget-users',
   );
-  await user.type(screen.getByTestId('delete-modal-input'), 'Widget');
+  await user.type(screen.getByTestId('delete-modal-input'), 'Widget{Enter}');
+  const button = within(screen.getByTestId('delete-deployment-modal')).getByRole('button', { name: 'Delete' });
+  expect(button).toHaveAttribute('aria-disabled', 'true');
+  await user.click(button);
+  await user.hover(button);
+  expect(await screen.findByText('Remove this model from its subscriptions first')).toBeInTheDocument();
+  expect(remove).not.toHaveBeenCalled();
+});
+
+it('leaves Delete to the backend when the subscriptions fail to load, and keeps the dialog when it refuses', async () => {
+  const service = new MockConsoleService();
+  const result = await referencedModel(service);
+  service.listSubscriptions = () => Promise.reject(new ServiceError(503, 'Service unavailable.'));
+  const user = userEvent.setup();
+  renderAt('/models', service);
+  await user.click(await screen.findByTestId('model-actions-widget'));
+  await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
+  await user.type(await screen.findByTestId('delete-modal-input'), 'Widget');
   await user.click(within(screen.getByTestId('delete-deployment-modal')).getByRole('button', { name: 'Delete' }));
   expect(await screen.findByTestId('delete-model-error-message-alert')).toHaveTextContent('Remove this model');
   expect(screen.getByTestId('delete-deployment-modal')).toBeVisible();
@@ -306,6 +330,37 @@ it('keeps chosen locations visible when the reload offers none', async () => {
   expect(await screen.findByText('No locations available')).toBeVisible();
 });
 
+describe('the hint about AI Grid clusters the Locations step leaves out', () => {
+  const hint = /AI Grid clusters? (isn’t|aren’t) listed/;
+
+  it('counts members whose location label is not offered, when locations are labels (fake backend)', async () => {
+    const service = new MockConsoleService();
+    service.clusters[2] = { ...service.clusters[2], status: 'Offline' };
+    const user = userEvent.setup();
+    renderAt('/models/deploy', service);
+    await fillModel(user);
+    await screen.findByRole('combobox', { name: 'Locations' });
+    expect(await screen.findByText(hint)).toHaveTextContent('1 AI Grid cluster isn’t listed');
+  });
+
+  it('counts members whose name is not offered, when locations are cluster names (real backend)', async () => {
+    const service = new MockConsoleService();
+    // The real backend offers the enabled clusters' names; their location labels are regions.
+    service.clusters = service.clusters.map((c) => ({ ...c, location: c.region }));
+    service.listLocations = async () => ['site1', 'site2'];
+    const user = userEvent.setup();
+    renderAt('/models/deploy', service);
+    await fillModel(user);
+    await screen.findByRole('combobox', { name: 'Locations' });
+    expect(await screen.findByText(hint)).toHaveTextContent('1 AI Grid cluster isn’t listed');
+    service.listLocations = async () => ['site1', 'site2', 'site3'];
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    await screen.findByRole('combobox', { name: 'Locations' });
+    await waitFor(() => expect(screen.queryByText(hint)).not.toBeInTheDocument());
+  });
+});
+
 it('keeps input when saving fails', async () => {
   const service = new MockConsoleService();
   await service.createModel(input);
@@ -429,6 +484,35 @@ it('shows the phase', async () => {
   await user.click(screen.getByRole('button', { name: 'Details' }));
   expect(raw).toBeVisible();
   expect(raw).toHaveTextContent(/^ConfigNotFound: /);
+});
+
+it('shows Saved to Git, not Pending, for a model the backend saved to Git', async () => {
+  const saved = {
+    ...getModels.body.data.find((m) => m.name === 'granite-8b-instruct')!,
+    phase: undefined,
+    reason: 'SavedToGit',
+    message: 'Saved to Git; git mode doesn’t read the model’s status from the clusters',
+  };
+  const fetchFn = vi.fn(async (url: string) =>
+    /\/models\/[^/]+\/[^/]+$/.test(url) ? jsonResponse(200, { data: saved }) : jsonResponse(200, { data: [saved] }),
+  );
+  renderAt('/models', serviceOnModelJson(fetchFn));
+  const phase = within(
+    (await screen.findByTestId('model-locations-granite-8b-instruct')).closest('tr') as HTMLElement,
+  ).getByTestId('model-phase');
+  expect(phase).toHaveTextContent(/^Saved to Git$/);
+  // Neutral (grey, PatternFly's default), not Pending's in-progress info status.
+  expect(phase.querySelector('.pf-v6-c-label')).not.toHaveClass('pf-m-info');
+  // Like Ready: an outline label with nothing to open, so the git-mode message isn't repeated.
+  expect(phase.querySelector('.pf-v6-c-label')).toHaveClass('pf-m-outline');
+  expect(within(phase).queryByRole('button')).not.toBeInTheDocument();
+  await userEvent.setup().click(within(phase).getByText('Saved to Git'));
+  expect(screen.queryByTestId('model-status-modal')).not.toBeInTheDocument();
+  renderAt(`/models/${saved.namespace}/granite-8b-instruct`, serviceOnModelJson(fetchFn));
+  expect(await screen.findByTestId('model-phase')).toHaveTextContent(/^Saved to Git$/);
+  // The label says it all: no alert repeats the backend's git-mode message.
+  expect(screen.queryByTestId('model-status-alert')).not.toBeInTheDocument();
+  expect(screen.queryByText('Pending')).not.toBeInTheDocument();
 });
 
 it('offers only eligible locations', async () => {
