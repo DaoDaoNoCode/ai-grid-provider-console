@@ -304,11 +304,18 @@ repository (`https://`, without credentials; the schema refuses anything else), 
 `main`, and `tokenSecretName` (default `ai-grid-backend-git`) is a Secret whose key `token` holds a
 fine-grained token with `contents: write` on that repository only; the chart mounts it as a file.
 `gridNamespace` is the spokes' grid namespace each model's NetworkPolicy admits (empty: the
-backend's default). With `url` set, the chart also grants `get` on the two inform-only Policies the
+backend's default). `modelsNamespace` is the spokes' namespace each model is deployed to (empty: the
+backend's default); the reference environment and our clusters use `ai-grid-internal-models`.
+It must match the environment's model namespace. The environment delivers models to that
+namespace, creates it enabled for the grid, and reads model status from it, so setting only
+`modelsNamespace` commits models that are never delivered, routed or reported. Changing it on a
+live install moves each model to the new namespace on its next write, and Argo CD prunes the old
+copy. Models nobody edits stay in the old namespace, so the spokes serve from both until each
+model is written again. With `url` set, the chart also grants `get` on the two inform-only Policies the
 backend reads the spokes' status from (`ai-grid-models-status`, `ai-grid-catalog-status`, and each
 cluster's copy). Backend images with git mode don't start without `url`; leave it empty for older
-ones. `hack/deploy.sh` sets it from `GIT_URL`, `GIT_BRANCH`, `GIT_TOKEN` and
-`GIT_GRID_NAMESPACE` (`grid` on the dev hub), creating the Secret.
+ones. `hack/deploy.sh` sets it from `GIT_URL`, `GIT_BRANCH`, `GIT_TOKEN`,
+`GIT_GRID_NAMESPACE` (`grid` on the dev hub) and `GIT_MODELS_NAMESPACE`, creating the Secret.
 
 The chart doesn't create the `OAuthClient`, the proxy's Secret, the backend's Keycloak Secret or its Git token Secret:
 `hack/deploy.sh` does, or ai-grid-env-setup's `bootstrap/60-console.sh`. Generated secrets would

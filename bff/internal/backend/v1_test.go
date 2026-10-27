@@ -105,6 +105,57 @@ func TestV1ListClustersForwardsPage(t *testing.T) {
 	}
 }
 
+func TestFromV1ClusterDetails(t *testing.T) {
+	changed := timestamppb.New(time.Date(2026, 10, 21, 4, 1, 2, 0, time.UTC))
+	mc := &backendv1.ManagedCluster{Id: "site-a", Spec: &backendv1.ManagedClusterSpec{HubAcceptsClient: true}, Status: &backendv1.ManagedClusterStatus{
+		Joined: true, Available: true, AvailableCondition: "True",
+		Conditions: []*backendv1.ManagedClusterCondition{
+			{Type: "ManagedClusterConditionAvailable", Status: "True", Reason: "ManagedClusterAvailable", Message: "Managed cluster is available", LastTransitionTime: changed},
+			{Type: "ManagedClusterJoined", Status: "Unknown"},
+		},
+		KubernetesVersion: "v1.34.9",
+		Capacity:          map[string]string{"cpu": "68", "nvidia.com/gpu": "1"},
+		Allocatable:       map[string]string{"cpu": "65"},
+		ClusterClaims:     []*backendv1.ManagedClusterClaim{{Name: "platform.open-cluster-management.io", Value: "AWS"}},
+	}}
+	want := &aigridv1.ManagedClusterStatus{
+		State:        aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_AVAILABLE,
+		Provisioning: proto.String(""),
+		Conditions: []*aigridv1.Condition{
+			{Type: "ManagedClusterConditionAvailable", Status: aigridv1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: proto.String("ManagedClusterAvailable"), Message: proto.String("Managed cluster is available"), LastTransitionTime: changed},
+			// Unknown has no value of its own in the draft's enum.
+			{Type: "ManagedClusterJoined", Status: aigridv1.ConditionStatus_CONDITION_STATUS_UNSPECIFIED},
+		},
+		KubernetesVersion: "v1.34.9",
+		Capacity:          map[string]string{"cpu": "68", "nvidia.com/gpu": "1"},
+		Allocatable:       map[string]string{"cpu": "65"},
+		ClusterClaims:     []*aigridv1.ClusterClaim{{Name: "platform.open-cluster-management.io", Value: "AWS"}},
+	}
+	if got := FromV1Cluster(mc).GetStatus(); !proto.Equal(got, want) {
+		t.Fatalf("status = %v\nwant %v", got, want)
+	}
+
+	for in, want := range map[string]aigridv1.ConditionStatus{
+		"True":    aigridv1.ConditionStatus_CONDITION_STATUS_TRUE,
+		"False":   aigridv1.ConditionStatus_CONDITION_STATUS_FALSE,
+		"Unknown": aigridv1.ConditionStatus_CONDITION_STATUS_UNSPECIFIED,
+		"":        aigridv1.ConditionStatus_CONDITION_STATUS_UNSPECIFIED,
+		"Maybe":   aigridv1.ConditionStatus_CONDITION_STATUS_UNSPECIFIED,
+	} {
+		got := fromV1ClusterConditions([]*backendv1.ManagedClusterCondition{{Type: "T", Status: in}})
+		if got[0].GetStatus() != want || got[0].Reason != nil || got[0].Message != nil {
+			t.Errorf("status %q: %v, want %v without reason or message", in, got[0], want)
+		}
+	}
+
+	// A backend without the details (the deployed one) gives none of them.
+	bare := FromV1Cluster(&backendv1.ManagedCluster{Id: "site-b", Status: &backendv1.ManagedClusterStatus{Joined: true}}).GetStatus()
+	if len(bare.GetConditions()) != 0 || bare.GetKubernetesVersion() != "" || bare.GetCapacity() != nil ||
+		bare.GetAllocatable() != nil || len(bare.GetClusterClaims()) != 0 {
+		t.Fatalf("status without details = %v", bare)
+	}
+}
+
 func TestV1ListTenantsForwardsPageAndFilter(t *testing.T) {
 	conn := &recordingConn{reply: &backendv1.TenantsListResponse{Size: 1, Total: 3, Items: []*backendv1.Tenant{{Id: "t2"}}}}
 	resp, err := v1Tenants{conn}.ListTenants(context.Background(), &aigridv1.ListTenantsRequest{Offset: proto.Int32(1), Limit: proto.Int32(1)})
@@ -323,5 +374,43 @@ func TestV1TenantNegativeVersion(t *testing.T) {
 	}
 	if _, err := (v1Tenants{conn}).DeleteTenant(ctx, &aigridv1.DeleteTenantRequest{Id: "t1", ResourceVersion: "-1"}); status.Code(err) != codes.InvalidArgument || conn.method != "" {
 		t.Fatalf("delete at -1: %v, sent %q", err, conn.method)
+	}
+}
+
+// Every GPU field the backend sends reaches the draft, and none is dropped or renumbered.
+func TestFromV1GPUs(t *testing.T) {
+	sharing := &backendv1.GPUSharing{Strategy: "time-slicing", Replicas: 4, MigCapable: true, MigStrategy: "single"}
+	in := &backendv1.ClusterGPUs{
+		Total:     2,
+		NodeCount: 1,
+		Configurations: []*backendv1.GPUConfiguration{{
+			Vendor: "NVIDIA", Product: "NVIDIA-L4-SHARED", MemoryMib: 23034, GpusPerNode: 2, NodeCount: 1, Sharing: sharing,
+		}},
+		Nodes: []*backendv1.GPUNode{{
+			Name: "gpu-0", Vendor: "NVIDIA", Product: "NVIDIA-L4-SHARED", Count: 2, MemoryMib: 23034, Family: "ada-lovelace",
+			ComputeCapability: "8.9", DriverVersion: "580.105.08", CudaRuntimeVersion: "13.0", Sharing: sharing,
+			InstanceType: "g6.xlarge", Ready: true,
+		}},
+	}
+	got := FromV1Cluster(&backendv1.ManagedCluster{Id: "site-a", Status: &backendv1.ManagedClusterStatus{Gpus: in}}).GetStatus().GetGpus()
+	want := &aigridv1.ClusterGPUs{
+		Total:     2,
+		NodeCount: 1,
+		Configurations: []*aigridv1.GPUConfiguration{{
+			Vendor: "NVIDIA", Product: "NVIDIA-L4-SHARED", MemoryMib: 23034, GpusPerNode: 2, NodeCount: 1,
+			Sharing: &aigridv1.GPUSharing{Strategy: "time-slicing", Replicas: 4, MigCapable: true, MigStrategy: "single"},
+		}},
+		Nodes: []*aigridv1.GPUNode{{
+			Name: "gpu-0", Vendor: "NVIDIA", Product: "NVIDIA-L4-SHARED", Count: 2, MemoryMib: 23034, Family: "ada-lovelace",
+			ComputeCapability: "8.9", DriverVersion: "580.105.08", CudaRuntimeVersion: "13.0",
+			Sharing:      &aigridv1.GPUSharing{Strategy: "time-slicing", Replicas: 4, MigCapable: true, MigStrategy: "single"},
+			InstanceType: "g6.xlarge", Ready: true,
+		}},
+	}
+	if !proto.Equal(got, want) {
+		t.Fatalf("gpus = %v, want %v", got, want)
+	}
+	if FromV1Cluster(&backendv1.ManagedCluster{Id: "site-b", Status: &backendv1.ManagedClusterStatus{}}).GetStatus().Gpus != nil {
+		t.Fatal("no inventory from the backend must stay unset")
 	}
 }

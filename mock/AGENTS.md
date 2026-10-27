@@ -224,16 +224,19 @@ field, and `areas/*.md` what the fake derives from them.
 
 | Cluster | `status` | Notes |
 |---|---|---|
-| `local-cluster` | `ready` | the hub itself |
-| `site-paris-1` | `ready` | enrolled and provisioned, 16 GPUs, site name and coordinates |
-| `site-frankfurt-1` | `ready` | not enrolled (no `ai-grid/*` labels), 8 GPUs, add-on `application-manager` `unhealthy` |
-| `site-madrid-1` | `unknown` | lease expired, `unreachable` taint, add-ons `unreachable`; enrolled and provisioned; `ai-grid-mock/fail-apply=mistral-7b-instruct`, so only Mistral's work fails to apply there |
-| `site-ashburn-1` | `offline` | API server down, `unavailable` taint; add-ons still `available` (the hub changes them only on a lost lease) |
+| `local-cluster` | `ready` | the hub itself; one L4 GPU (`gpus`: 1 node x 1) |
+| `site-paris-1` | `ready` | enrolled and provisioned, 32 GPUs (`gpus`: H200, 4 nodes x 8), site name and coordinates |
+| `site-frankfurt-1` | `ready` | not enrolled (no `ai-grid/*` labels), 8 GPUs in two configurations (H100 x4 on 1 node, L40S x2 on 2 nodes, one not Ready), add-on `application-manager` `unhealthy` |
+| `site-madrid-1` | `unknown` | lease expired, `unreachable` taint, add-ons `unreachable`; enrolled and provisioned; `ai-grid-mock/fail-apply=mistral-7b-instruct`, so only Mistral's work fails to apply there; 4 MIG devices (`gpus`: A100 3g.20gb, MIG `single`) |
+| `site-ashburn-1` | `offline` | API server down, `unavailable` taint; add-ons still `available` (the hub changes them only on a lost lease); 8 GPUs as 2 L4s time-sliced x4 |
 | `site-berlin-1` | `importing` | no claims yet |
 | `site-oslo-1` | `pendingimport` | |
 | `site-dublin-1` | `importfailed` | |
 | `site-lisbon-1` | `notaccepted` | `hubAcceptsClient: false` |
-| `edge-lyon-2` | `detaching` | `Deleting=False/ResourceRemaining` while its add-ons drain |
+| `edge-lyon-2` | `detaching` | `Deleting=False/ResourceRemaining` while its add-ons drain; 2 GPUs in its capacity, no `gpus` (Search has nothing for it) |
+
+GPU inventories (`status.gpus` on `GridCluster.gpus`) come from `gpunodes.json`, the GPU nodes as
+ACM Search returns them; a cluster without an entry there has none.
 
 **Tenants** (`tenants.json`): `umbrella-biotech` is disabled; `acme-robotics` has two domains
 (one verified, with `autoRedirect`) and attributes; `vandelay-industries` has a wildcard

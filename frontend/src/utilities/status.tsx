@@ -23,9 +23,13 @@ const tones: Record<string, StatusTone> = {
   Ready: 'success',
   Offline: 'danger',
   Unknown: 'neutral',
+  // A cluster's GPU node (its Ready condition, through ACM Search).
+  'Not ready': 'danger',
   Provisioned: 'success',
   Provisioning: 'info',
   'Not provisioned': 'neutral',
+  // A cluster outside AI Grid (no ai-grid/enabled label).
+  'Not added': 'neutral',
   // Models (ManagedModel.phase) and subscriptions (normalized MaaSSubscription phases).
   Active: 'success',
   Pending: 'info',
@@ -40,6 +44,9 @@ const tones: Record<string, StatusTone> = {
   Degraded: 'warning',
   // A subscription's model that the hub doesn't have.
   'Not found': 'danger',
+  // ACM add-ons (feature.open-cluster-management.io/addon-* labels).
+  Available: 'success',
+  Unreachable: 'danger',
   // Organizations.
   Enabled: 'success',
   Disabled: 'neutral',
@@ -66,7 +73,7 @@ export const statusLabelProps = (status: string | undefined): Pick<LabelProps, '
   if (status === 'Saved to Git') {
     return { ...props, icon: <InfoCircleIcon /> };
   }
-  if (status === 'Disabled' || status === 'Not provisioned') {
+  if (status === 'Disabled' || status === 'Not provisioned' || status === 'Not added') {
     return { ...props, icon: <BanIcon /> };
   }
   return props;

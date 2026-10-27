@@ -1,0 +1,71 @@
+{
+  "_comment": "The spokes' GPU nodes as ACM Search (search-v2, the search-search-api GraphQL `search` query for kind=Node) returns them: cluster, name, every node label as one \"key=value; key=value\" string (NVIDIA GPU Feature Discovery's nvidia.com/* labels, shaped like the dev hub's L4 spokes), and the conditions. The fake derives each cluster's status.gpus from them (bff/internal/fakebackend/gpus.go), as the backend does from Search; managedclusters.json's capacity[\"nvidia.com/gpu\"] matches (GPUs x replicas; MIG devices under the single strategy). site-paris-1: H200, 4 nodes x 8. site-madrid-1: MIG single (A100 3g.20gb, 4 devices). site-ashburn-1: L4 time-sliced x4 on 2 nodes. site-frankfurt-1: two configurations (H100 x4 on 1 node, L40S x2 on 2 nodes, one not Ready). local-cluster (the hub, serving models as a combined cluster): L4, 1 node x 1. site-lisbon-1 is not accepted, so its agent never registered and Search has nothing for it. edge-lyon-2 has GPUs in its capacity but no Search entry (it is detaching), so it shows the count only. Node names are fictional.",
+  "nodes": [
+    {
+      "cluster": "site-paris-1",
+      "name": "gpu-h200-0.paris.example",
+      "label": "node-role.kubernetes.io/gpu=; node-role.kubernetes.io/worker=; node.kubernetes.io/instance-type=p5en.48xlarge; nvidia.com/cuda.driver-version.full=580.105.08; nvidia.com/cuda.runtime-version.full=13.0; nvidia.com/gfd.timestamp=1792618318; nvidia.com/gpu.compute.major=9; nvidia.com/gpu.compute.minor=0; nvidia.com/gpu.count=8; nvidia.com/gpu.family=hopper; nvidia.com/gpu.machine=p5en.48xlarge; nvidia.com/gpu.memory=143771; nvidia.com/gpu.mode=compute; nvidia.com/gpu.present=true; nvidia.com/gpu.product=NVIDIA-H200; nvidia.com/gpu.replicas=1; nvidia.com/gpu.sharing-strategy=none; nvidia.com/mig.capable=true; nvidia.com/mps.capable=false; nvidia.com/vgpu.present=false",
+      "condition": "DiskPressure=False; MemoryPressure=False; PIDPressure=False; Ready=True"
+    },
+    {
+      "cluster": "site-paris-1",
+      "name": "gpu-h200-1.paris.example",
+      "label": "node-role.kubernetes.io/gpu=; node-role.kubernetes.io/worker=; node.kubernetes.io/instance-type=p5en.48xlarge; nvidia.com/cuda.driver-version.full=580.105.08; nvidia.com/cuda.runtime-version.full=13.0; nvidia.com/gfd.timestamp=1792618318; nvidia.com/gpu.compute.major=9; nvidia.com/gpu.compute.minor=0; nvidia.com/gpu.count=8; nvidia.com/gpu.family=hopper; nvidia.com/gpu.machine=p5en.48xlarge; nvidia.com/gpu.memory=143771; nvidia.com/gpu.mode=compute; nvidia.com/gpu.present=true; nvidia.com/gpu.product=NVIDIA-H200; nvidia.com/gpu.replicas=1; nvidia.com/gpu.sharing-strategy=none; nvidia.com/mig.capable=true; nvidia.com/mps.capable=false; nvidia.com/vgpu.present=false",
+      "condition": "DiskPressure=False; MemoryPressure=False; PIDPressure=False; Ready=True"
+    },
+    {
+      "cluster": "site-paris-1",
+      "name": "gpu-h200-2.paris.example",
+      "label": "node-role.kubernetes.io/gpu=; node-role.kubernetes.io/worker=; node.kubernetes.io/instance-type=p5en.48xlarge; nvidia.com/cuda.driver-version.full=580.105.08; nvidia.com/cuda.runtime-version.full=13.0; nvidia.com/gfd.timestamp=1792618318; nvidia.com/gpu.compute.major=9; nvidia.com/gpu.compute.minor=0; nvidia.com/gpu.count=8; nvidia.com/gpu.family=hopper; nvidia.com/gpu.machine=p5en.48xlarge; nvidia.com/gpu.memory=143771; nvidia.com/gpu.mode=compute; nvidia.com/gpu.present=true; nvidia.com/gpu.product=NVIDIA-H200; nvidia.com/gpu.replicas=1; nvidia.com/gpu.sharing-strategy=none; nvidia.com/mig.capable=true; nvidia.com/mps.capable=false; nvidia.com/vgpu.present=false",
+      "condition": "DiskPressure=False; MemoryPressure=False; PIDPressure=False; Ready=True"
+    },
+    {
+      "cluster": "site-paris-1",
+      "name": "gpu-h200-3.paris.example",
+      "label": "node-role.kubernetes.io/gpu=; node-role.kubernetes.io/worker=; node.kubernetes.io/instance-type=p5en.48xlarge; nvidia.com/cuda.driver-version.full=580.105.08; nvidia.com/cuda.runtime-version.full=13.0; nvidia.com/gfd.timestamp=1792618318; nvidia.com/gpu.compute.major=9; nvidia.com/gpu.compute.minor=0; nvidia.com/gpu.count=8; nvidia.com/gpu.family=hopper; nvidia.com/gpu.machine=p5en.48xlarge; nvidia.com/gpu.memory=143771; nvidia.com/gpu.mode=compute; nvidia.com/gpu.present=true; nvidia.com/gpu.product=NVIDIA-H200; nvidia.com/gpu.replicas=1; nvidia.com/gpu.sharing-strategy=none; nvidia.com/mig.capable=true; nvidia.com/mps.capable=false; nvidia.com/vgpu.present=false",
+      "condition": "DiskPressure=False; MemoryPressure=False; PIDPressure=False; Ready=True"
+    },
+    {
+      "cluster": "site-madrid-1",
+      "name": "gpu-a100-0.madrid.example",
+      "label": "node-role.kubernetes.io/gpu=; node-role.kubernetes.io/worker=; node.kubernetes.io/instance-type=p4d.24xlarge; nvidia.com/cuda.driver-version.full=580.105.08; nvidia.com/cuda.runtime-version.full=13.0; nvidia.com/gfd.timestamp=1792618318; nvidia.com/gpu.compute.major=8; nvidia.com/gpu.compute.minor=0; nvidia.com/gpu.count=4; nvidia.com/gpu.family=ampere; nvidia.com/gpu.machine=p4d.24xlarge; nvidia.com/gpu.memory=19968; nvidia.com/gpu.mode=compute; nvidia.com/gpu.present=true; nvidia.com/gpu.product=NVIDIA-A100-SXM4-40GB-MIG-3g.20gb; nvidia.com/gpu.replicas=1; nvidia.com/gpu.sharing-strategy=none; nvidia.com/mig.capable=true; nvidia.com/mig.strategy=single; nvidia.com/mps.capable=false; nvidia.com/vgpu.present=false",
+      "condition": "DiskPressure=False; MemoryPressure=False; PIDPressure=False; Ready=True"
+    },
+    {
+      "cluster": "site-ashburn-1",
+      "name": "gpu-l4-0.ashburn.example",
+      "label": "node-role.kubernetes.io/gpu=; node-role.kubernetes.io/worker=; node.kubernetes.io/instance-type=g6.xlarge; nvidia.com/cuda.driver-version.full=580.105.08; nvidia.com/cuda.runtime-version.full=13.0; nvidia.com/gfd.timestamp=1792618318; nvidia.com/gpu.compute.major=8; nvidia.com/gpu.compute.minor=9; nvidia.com/gpu.count=1; nvidia.com/gpu.family=ada-lovelace; nvidia.com/gpu.machine=g6.xlarge; nvidia.com/gpu.memory=23034; nvidia.com/gpu.mode=compute; nvidia.com/gpu.present=true; nvidia.com/gpu.product=NVIDIA-L4-SHARED; nvidia.com/gpu.replicas=4; nvidia.com/gpu.sharing-strategy=time-slicing; nvidia.com/mig.capable=false; nvidia.com/mps.capable=false; nvidia.com/vgpu.present=false",
+      "condition": "DiskPressure=False; MemoryPressure=False; PIDPressure=False; Ready=True"
+    },
+    {
+      "cluster": "site-ashburn-1",
+      "name": "gpu-l4-1.ashburn.example",
+      "label": "node-role.kubernetes.io/gpu=; node-role.kubernetes.io/worker=; node.kubernetes.io/instance-type=g6.xlarge; nvidia.com/cuda.driver-version.full=580.105.08; nvidia.com/cuda.runtime-version.full=13.0; nvidia.com/gfd.timestamp=1792618318; nvidia.com/gpu.compute.major=8; nvidia.com/gpu.compute.minor=9; nvidia.com/gpu.count=1; nvidia.com/gpu.family=ada-lovelace; nvidia.com/gpu.machine=g6.xlarge; nvidia.com/gpu.memory=23034; nvidia.com/gpu.mode=compute; nvidia.com/gpu.present=true; nvidia.com/gpu.product=NVIDIA-L4-SHARED; nvidia.com/gpu.replicas=4; nvidia.com/gpu.sharing-strategy=time-slicing; nvidia.com/mig.capable=false; nvidia.com/mps.capable=false; nvidia.com/vgpu.present=false",
+      "condition": "DiskPressure=False; MemoryPressure=False; PIDPressure=False; Ready=True"
+    },
+    {
+      "cluster": "site-frankfurt-1",
+      "name": "gpu-h100-0.frankfurt.example",
+      "label": "node-role.kubernetes.io/gpu=; node-role.kubernetes.io/worker=; node.kubernetes.io/instance-type=p5.48xlarge; nvidia.com/cuda.driver-version.full=580.105.08; nvidia.com/cuda.runtime-version.full=13.0; nvidia.com/gfd.timestamp=1792618318; nvidia.com/gpu.compute.major=9; nvidia.com/gpu.compute.minor=0; nvidia.com/gpu.count=4; nvidia.com/gpu.family=hopper; nvidia.com/gpu.machine=p5.48xlarge; nvidia.com/gpu.memory=81559; nvidia.com/gpu.mode=compute; nvidia.com/gpu.present=true; nvidia.com/gpu.product=NVIDIA-H100-80GB-HBM3; nvidia.com/gpu.replicas=1; nvidia.com/gpu.sharing-strategy=none; nvidia.com/mig.capable=true; nvidia.com/mps.capable=false; nvidia.com/vgpu.present=false",
+      "condition": "DiskPressure=False; MemoryPressure=False; PIDPressure=False; Ready=True"
+    },
+    {
+      "cluster": "site-frankfurt-1",
+      "name": "gpu-l40s-0.frankfurt.example",
+      "label": "node-role.kubernetes.io/gpu=; node-role.kubernetes.io/worker=; node.kubernetes.io/instance-type=g6e.12xlarge; nvidia.com/cuda.driver-version.full=580.105.08; nvidia.com/cuda.runtime-version.full=13.0; nvidia.com/gfd.timestamp=1792618318; nvidia.com/gpu.compute.major=8; nvidia.com/gpu.compute.minor=9; nvidia.com/gpu.count=2; nvidia.com/gpu.family=ada-lovelace; nvidia.com/gpu.machine=g6e.12xlarge; nvidia.com/gpu.memory=46068; nvidia.com/gpu.mode=compute; nvidia.com/gpu.present=true; nvidia.com/gpu.product=NVIDIA-L40S; nvidia.com/gpu.replicas=1; nvidia.com/gpu.sharing-strategy=none; nvidia.com/mig.capable=false; nvidia.com/mps.capable=false; nvidia.com/vgpu.present=false",
+      "condition": "DiskPressure=False; MemoryPressure=False; PIDPressure=False; Ready=True"
+    },
+    {
+      "cluster": "site-frankfurt-1",
+      "name": "gpu-l40s-1.frankfurt.example",
+      "label": "node-role.kubernetes.io/gpu=; node-role.kubernetes.io/worker=; node.kubernetes.io/instance-type=g6e.12xlarge; nvidia.com/cuda.driver-version.full=580.105.08; nvidia.com/cuda.runtime-version.full=13.0; nvidia.com/gfd.timestamp=1792618318; nvidia.com/gpu.compute.major=8; nvidia.com/gpu.compute.minor=9; nvidia.com/gpu.count=2; nvidia.com/gpu.family=ada-lovelace; nvidia.com/gpu.machine=g6e.12xlarge; nvidia.com/gpu.memory=46068; nvidia.com/gpu.mode=compute; nvidia.com/gpu.present=true; nvidia.com/gpu.product=NVIDIA-L40S; nvidia.com/gpu.replicas=1; nvidia.com/gpu.sharing-strategy=none; nvidia.com/mig.capable=false; nvidia.com/mps.capable=false; nvidia.com/vgpu.present=false",
+      "condition": "DiskPressure=False; MemoryPressure=False; PIDPressure=False; Ready=False"
+    },
+    {
+      "cluster": "local-cluster",
+      "name": "gpu-l4-0.hub.example",
+      "label": "node-role.kubernetes.io/gpu=; node-role.kubernetes.io/worker=; node.kubernetes.io/instance-type=g6.xlarge; nvidia.com/cuda.driver-version.full=580.105.08; nvidia.com/cuda.runtime-version.full=13.0; nvidia.com/gfd.timestamp=1792618318; nvidia.com/gpu.compute.major=8; nvidia.com/gpu.compute.minor=9; nvidia.com/gpu.count=1; nvidia.com/gpu.family=ada-lovelace; nvidia.com/gpu.machine=g6.xlarge; nvidia.com/gpu.memory=23034; nvidia.com/gpu.mode=compute; nvidia.com/gpu.present=true; nvidia.com/gpu.product=NVIDIA-L4; nvidia.com/gpu.replicas=1; nvidia.com/gpu.sharing-strategy=none; nvidia.com/mig.capable=false; nvidia.com/mps.capable=false; nvidia.com/vgpu.present=false",
+      "condition": "DiskPressure=False; MemoryPressure=False; PIDPressure=False; Ready=True"
+    }
+  ]
+}

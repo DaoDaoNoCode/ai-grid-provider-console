@@ -36,6 +36,39 @@ export type ClusterState = 'Pending import' | 'Importing' | 'Import failed' | 'D
 
 export type ProvisioningStatus = 'Provisioned' | 'Provisioning' | 'Not provisioned';
 
+/** How a node's GPUs are shared: none, time-slicing, mps, or mig (with migStrategy single or mixed). */
+export type GPUSharing = { strategy: string; replicas: number; migCapable: boolean; migStrategy?: string };
+
+/** Nodes that share one GPU configuration (bff/internal/api/clusters.go GPUConfiguration). */
+export type GPUConfiguration = {
+  vendor: string;
+  /** GPU Feature Discovery's product, for example NVIDIA-L4; MIG and time-slicing suffixes kept. */
+  product: string;
+  memoryMib: number;
+  gpusPerNode: number;
+  nodeCount: number;
+  sharing: GPUSharing;
+};
+
+/** One node with GPUs, from its GPU Feature Discovery labels. */
+export type GPUNode = {
+  name: string;
+  vendor: string;
+  product: string;
+  count: number;
+  memoryMib: number;
+  family?: string;
+  computeCapability?: string;
+  driverVersion?: string;
+  cudaRuntimeVersion?: string;
+  sharing: GPUSharing;
+  instanceType?: string;
+  ready: boolean;
+};
+
+/** A cluster's GPU inventory, as the backend reads it from ACM Search. */
+export type ClusterGPUs = { total: number; nodeCount: number; configurations: GPUConfiguration[]; nodes: GPUNode[] };
+
 /**
  * A cluster as the BFF sends it (PR 12's `GridCluster` in bff/internal/api/clusters.go),
  * limited to the fields the console reads. `toGridCluster` in adapters.ts maps it.
@@ -58,8 +91,33 @@ export type ApiCluster = {
    */
   status?: string;
   statusMessage?: string;
+  consoleUrl?: string;
+  kubernetesVersion?: string;
+  platform?: string;
+  product?: string;
+  /** `status.capacity` and `status.allocatable`: Kubernetes quantities by resource name. */
+  capacity?: Record<string, string>;
+  /** The BFF's count of `capacity["nvidia.com/gpu"]`, 0 when the capacity has none. */
+  gpuCapacity?: number;
+  allocatable?: Record<string, string>;
+  /** The backend's `status.gpus`: the GPU inventory from ACM Search; absent without one. */
+  gpus?: ClusterGPUs;
+  creationTimestamp?: string;
+  /** Add-on name to available, unhealthy or unreachable. */
+  addons?: Record<string, string>;
+  conditions?: ClusterCondition[];
   resourceVersion?: string;
   labels?: Record<string, string>;
+};
+
+/** One of the hub's `status.conditions` on a ManagedCluster. */
+export type ClusterCondition = {
+  type: string;
+  /** True, False or Unknown. */
+  status: string;
+  reason?: string;
+  message?: string;
+  lastTransitionTime?: string;
 };
 
 /** A ManagedCluster as the console shows it; the PoC's GridCluster plus the hub fields. */
@@ -82,6 +140,23 @@ export type GridCluster = {
   latitude?: number;
   longitude?: number;
   openshiftVersion?: string;
+  /** The cluster's OpenShift web console, from its claims. */
+  consoleUrl?: string;
+  kubernetesVersion?: string;
+  /** The infrastructure, such as AWS or BareMetal, and the product, such as OpenShift or ROSA. */
+  platform?: string;
+  product?: string;
+  /** Absent when the backend doesn't report the cluster's resources. */
+  capacity?: Record<string, string>;
+  /** The BFF's count of `capacity["nvidia.com/gpu"]`, the GPUs Kubernetes can schedule. */
+  gpuCapacity?: number;
+  allocatable?: Record<string, string>;
+  /** The backend's `status.gpus`: the GPU inventory from ACM Search; absent without one. */
+  gpus?: ClusterGPUs;
+  /** When the hub created the ManagedCluster. */
+  creationTimestamp?: string;
+  addons: Record<string, string>;
+  conditions: ClusterCondition[];
   resourceVersion?: string;
   labels: Record<string, string>;
 };

@@ -74,9 +74,6 @@ const selectionFrom = (params: URLSearchParams): Selection | null => {
   return cluster ? { kind: 'cluster', name: cluster } : model ? { kind: 'model', name: model } : null;
 };
 
-/** The drawer's details are narrower than a page's, so their terms are too. */
-const DRAWER_TERM_WIDTH = '9rem';
-
 /** A card in the drawer's list: one control that opens the item, with its status beside the name. */
 const FleetCard: React.FC<{
   id: string;
@@ -275,7 +272,6 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
     <Stack hasGutter>
       <DetailsSection title="Site and cluster" headingLevel="h3">
         <DetailsList
-          termWidth={DRAWER_TERM_WIDTH}
           aria-label="Site and cluster"
           items={[
             { term: 'Site', value: cluster.siteName ?? cluster.site },
@@ -306,7 +302,6 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
     <Stack hasGutter>
       <DetailsSection title="Model configuration" headingLevel="h3">
         <DetailsList
-          termWidth={DRAWER_TERM_WIDTH}
           aria-label="Model configuration"
           items={[
             { term: 'Resource name', value: model.name },

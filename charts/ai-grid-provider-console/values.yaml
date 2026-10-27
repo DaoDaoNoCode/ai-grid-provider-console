@@ -102,6 +102,14 @@ backend:
     # The spokes' grid namespace, which each model's NetworkPolicy admits. Empty: the backend's
     # default (redhat-ai-grid).
     gridNamespace: ""
+    # The spokes' namespace each model is deployed to. Empty: the backend's default. The reference
+    # environment and our clusters use ai-grid-internal-models. It must match the environment's
+    # model namespace: the environment delivers models to that namespace, creates it enabled for
+    # the grid, and reads model status from it, so setting only this value commits models that are
+    # never delivered, routed or reported. Changing it on a live install moves each model to the
+    # new namespace on its next write, and Argo CD prunes the old copy; models nobody edits stay
+    # in the old namespace, so the spokes serve from both until each model is written again.
+    modelsNamespace: ""
   resources:
     requests: { cpu: 50m, memory: 64Mi }
     limits: { memory: 256Mi }

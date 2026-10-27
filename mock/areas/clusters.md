@@ -44,15 +44,47 @@ sends them in one Update RPC, with the present fields as the mask and
 is 428); it does not read the cluster first and neither merges, compares nor validates the maps
 (a body that names no field is 422); `GridCluster` exposes
 `status`, `statusMessage`, `consoleUrl`, `kubernetesVersion`, `platform`, `product`,
-`gpuCapacity`, `siteName`, `latitude`, `longitude`, `addons`, `conditions`, `resourceVersion`.
+`gpuCapacity`, `capacity`, `allocatable`, `gpus`, `creationTimestamp`, `siteName`, `latitude`,
+`longitude`, `addons`, `conditions`, `resourceVersion`.
 
-UI: main already has a basic, read-only Clusters page (`frontend/src/pages/ClustersPage.tsx`:
-name, site, region, location, enrolment, provisioned, hub acceptance, OpenShift version), which
-keeps working because the new fields are additive. Porting the fuller UI for this area (status,
-GPUs, console link, enrol and location editing) is out of scope here; it builds on the HTTP
-contract in `docs/plan/bff-api.md`. The map belongs to the grid overview area, not started
-here; Placement recomputation and ManifestWorkReplicaSet belong to the models area
-(`mock/areas/models.md`).
+GPUs: the draft's `ManagedClusterStatus.gpus` (`ClusterGPUs`, the backend's field 10) is each
+cluster's GPU inventory. The real backend reads it from ACM Search (search-v2's `search` query for
+`kind=Node` with `nvidia.com/gpu.present=true`), because `ManagedClusterInfo` keeps only instance
+type, region, zone and node-role labels (checked on a dev hub); the fake derives the same from
+`mock/fixtures/gpunodes.json` (`bff/internal/fakebackend/gpus.go`), following the backend's
+`internal/servers/cluster_gpus.go` field for field: each node from GPU Feature Discovery's labels
+(`gpu.product`, `gpu.count`, `gpu.memory` MiB, `gpu.family`, `gpu.compute.major/minor`, the driver
+and CUDA versions, full or from their major, minor and revision labels, `gpu.machine` or else
+`node.kubernetes.io/instance-type`, `gpu.replicas` at least 1, `gpu.sharing-strategy`,
+`mig.capable`, `mig.strategy`); sharing `mig` when the MIG strategy is `single` or `mixed`; a
+malformed or negative count read as 0 and the total capped at the largest int32. Then the distinct
+configurations (product, memory, GPUs per node and sharing, MIG capability included), most nodes
+first, then by product, then most GPUs per node. A cluster without GPU nodes has no `gpus`.
+
+UI: the Clusters page (`frontend/src/pages/clusters/ClustersPage.tsx`) lists every
+ManagedCluster under nested column headers that match the details page's cards: **Cluster** (name,
+the hub's connection status), **AI Grid** (status, with "Not added" outside it, location, role) and
+**GPUs** (capacity, "4 nodes, 32 GPUs", or "8 GPUs" from the BFF's `gpuCapacity` (its count of
+`capacity["nvidia.com/gpu"]`, the console's only parser of it) when the backend has no inventory; configuration, "NVIDIA H200, 8 GPUs/node", with ", Time-sliced ×4",
+", MPS ×2" or ", MIG 3g.20gb" when shared, and "+N more" for more configurations), as provider-admin
+feedback asks (the OpenShift version is on the details page, to leave the list room). The actions
+column sticks to the table's right edge, so a narrow window scrolls the table under it instead of
+hiding it. The page adds a cluster to AI Grid or removes it, and links each name to the cluster's
+details page (`ClusterDetailsPage.tsx`, `/clusters/:name`). That page shows the membership (status,
+location, role, in the list's order), the cluster as the hub knows it (its connection status, the
+OpenShift version when it is OpenShift, the Kubernetes version, platform, product, creation time,
+console link), its capacity (with "Schedulable GPUs": the hub's `nvidia.com/gpu` as `gpuCapacity`, and the GPU Feature
+Discovery count beside it when time-slicing or MPS makes them differ; "MIG slices not counted" when
+a configuration's MIG strategy is `mixed`, whose slices the device plugin advertises as
+`nvidia.com/mig-<profile>` instead), its GPUs (capacity, each configuration with memory and sharing, and its
+node count only when the cluster mixes configurations; manufacturer, architecture, driver and CUDA)
+and a table of its GPU nodes (model, GPUs, memory, architecture and compute capability, driver,
+sharing, instance type, status), with the same Add and Remove actions. Add-ons and the hub's
+conditions are left out: UX found them not needed there. The wording of products, memory, architecture and sharing is
+presentation only (`pages/clusters/gpuText.ts`). The real backend's cluster status details (Kubernetes version, capacity, allocatable and
+claims) fill the same sections; against a backend without them those parts say
+so instead of showing zeros. The map belongs to the grid overview area; Placement
+recomputation and ManifestWorkReplicaSet belong to the models area (`mock/areas/models.md`).
 
 Backend ask: ship the draft's `GetManagedCluster`, `UpdateManagedCluster` and richer
 message (`mock/proto/ai_grid/v1/managed_cluster*.proto`), with the state derived server-side.

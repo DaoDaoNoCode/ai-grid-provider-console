@@ -228,6 +228,10 @@ spec:
             - name: AI_GRID_GRID_NAMESPACE
               value: {{ . | quote }}
             {{- end }}
+            {{- with .modelsNamespace }}
+            - name: AI_GRID_MODELS_NAMESPACE
+              value: {{ . | quote }}
+            {{- end }}
             {{- end }}
             {{- end }}
           {{- if .Values.backend.git.url }}

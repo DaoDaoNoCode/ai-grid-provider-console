@@ -59,7 +59,8 @@
           "hugepages-1Gi": "0",
           "hugepages-2Mi": "0",
           "core_worker": "36",
-          "socket_worker": "6"
+          "socket_worker": "6",
+          "nvidia.com/gpu": "1"
         },
         "allocatable": {
           "cpu": "45",
@@ -67,7 +68,8 @@
           "pods": "750",
           "ephemeral-storage": "3300Gi",
           "hugepages-1Gi": "0",
-          "hugepages-2Mi": "0"
+          "hugepages-2Mi": "0",
+          "nvidia.com/gpu": "1"
         },
         "clusterClaims": [
           {
@@ -242,7 +244,7 @@
           "ephemeral-storage": "3600Gi",
           "hugepages-1Gi": "0",
           "hugepages-2Mi": "0",
-          "nvidia.com/gpu": "16",
+          "nvidia.com/gpu": "32",
           "core_worker": "128",
           "socket_worker": "8"
         },
@@ -253,7 +255,7 @@
           "ephemeral-storage": "3300Gi",
           "hugepages-1Gi": "0",
           "hugepages-2Mi": "0",
-          "nvidia.com/gpu": "16"
+          "nvidia.com/gpu": "32"
         },
         "clusterClaims": [
           {

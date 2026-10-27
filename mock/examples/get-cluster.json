@@ -22,7 +22,120 @@
       "kubernetesVersion": "v1.35.6",
       "platform": "BareMetal",
       "product": "OpenShift",
-      "gpuCapacity": 16,
+      "gpuCapacity": 32,
+      "capacity": {
+        "core_worker": "128",
+        "cpu": "192",
+        "ephemeral-storage": "3600Gi",
+        "hugepages-1Gi": "0",
+        "hugepages-2Mi": "0",
+        "memory": "1572864Mi",
+        "nvidia.com/gpu": "32",
+        "pods": "1000",
+        "socket_worker": "8"
+      },
+      "allocatable": {
+        "cpu": "186",
+        "ephemeral-storage": "3300Gi",
+        "hugepages-1Gi": "0",
+        "hugepages-2Mi": "0",
+        "memory": "1540000Mi",
+        "nvidia.com/gpu": "32",
+        "pods": "1000"
+      },
+      "gpus": {
+        "total": 32,
+        "nodeCount": 4,
+        "configurations": [
+          {
+            "vendor": "NVIDIA",
+            "product": "NVIDIA-H200",
+            "memoryMib": 143771,
+            "gpusPerNode": 8,
+            "nodeCount": 4,
+            "sharing": {
+              "strategy": "none",
+              "replicas": 1,
+              "migCapable": true
+            }
+          }
+        ],
+        "nodes": [
+          {
+            "name": "gpu-h200-0.paris.example",
+            "vendor": "NVIDIA",
+            "product": "NVIDIA-H200",
+            "count": 8,
+            "memoryMib": 143771,
+            "family": "hopper",
+            "computeCapability": "9.0",
+            "driverVersion": "580.105.08",
+            "cudaRuntimeVersion": "13.0",
+            "sharing": {
+              "strategy": "none",
+              "replicas": 1,
+              "migCapable": true
+            },
+            "instanceType": "p5en.48xlarge",
+            "ready": true
+          },
+          {
+            "name": "gpu-h200-1.paris.example",
+            "vendor": "NVIDIA",
+            "product": "NVIDIA-H200",
+            "count": 8,
+            "memoryMib": 143771,
+            "family": "hopper",
+            "computeCapability": "9.0",
+            "driverVersion": "580.105.08",
+            "cudaRuntimeVersion": "13.0",
+            "sharing": {
+              "strategy": "none",
+              "replicas": 1,
+              "migCapable": true
+            },
+            "instanceType": "p5en.48xlarge",
+            "ready": true
+          },
+          {
+            "name": "gpu-h200-2.paris.example",
+            "vendor": "NVIDIA",
+            "product": "NVIDIA-H200",
+            "count": 8,
+            "memoryMib": 143771,
+            "family": "hopper",
+            "computeCapability": "9.0",
+            "driverVersion": "580.105.08",
+            "cudaRuntimeVersion": "13.0",
+            "sharing": {
+              "strategy": "none",
+              "replicas": 1,
+              "migCapable": true
+            },
+            "instanceType": "p5en.48xlarge",
+            "ready": true
+          },
+          {
+            "name": "gpu-h200-3.paris.example",
+            "vendor": "NVIDIA",
+            "product": "NVIDIA-H200",
+            "count": 8,
+            "memoryMib": 143771,
+            "family": "hopper",
+            "computeCapability": "9.0",
+            "driverVersion": "580.105.08",
+            "cudaRuntimeVersion": "13.0",
+            "sharing": {
+              "strategy": "none",
+              "replicas": 1,
+              "migCapable": true
+            },
+            "instanceType": "p5en.48xlarge",
+            "ready": true
+          }
+        ]
+      },
+      "creationTimestamp": "2026-10-01T09:00:00Z",
       "siteName": "Paris DC1",
       "latitude": 48.8566,
       "longitude": 2.3522,
