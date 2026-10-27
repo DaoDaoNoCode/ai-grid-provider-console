@@ -3,6 +3,7 @@ package fakebackend
 import (
 	"context"
 	"log/slog"
+	"math"
 	"testing"
 
 	"google.golang.org/protobuf/proto"
@@ -133,5 +134,74 @@ func TestFixtureClustersCarryGPUs(t *testing.T) {
 		if g := resp.GetObject().GetStatus().GetGpus(); g != nil {
 			t.Errorf("%s: gpus = %v, want none", name, g)
 		}
+	}
+}
+
+// The fake follows the backend's derivation (ai-grid-provider-backend#33,
+// internal/servers/cluster_gpus.go); each case is one place the two used to
+// differ.
+func TestGPUDerivationMatchesTheBackend(t *testing.T) {
+	labels := func(extra string) string {
+		return "nvidia.com/gpu.present=true; nvidia.com/gpu.product=NVIDIA-L4; nvidia.com/gpu.count=1; " + extra
+	}
+	node := func(name, extra string) *aigridv1.GPUNode {
+		t.Helper()
+		g, ok := gpuNode(SearchNode{Name: name, Label: labels(extra), Condition: "Ready=True"})
+		if !ok {
+			t.Fatalf("gpuNode(%s) not a GPU node", name)
+		}
+		return g
+	}
+
+	// Replicas below 1 read as 1, as without sharing.
+	if r := node("n", "nvidia.com/gpu.replicas=0").GetSharing().GetReplicas(); r != 1 {
+		t.Errorf("replicas 0 read as %d, want 1", r)
+	}
+	// Only the MIG strategies single and mixed make the sharing MIG.
+	for strategy, want := range map[string]string{"single": "mig", "mixed": "mig", "none": "none", "bogus": "none"} {
+		got := node("n", "nvidia.com/gpu.sharing-strategy=none; nvidia.com/mig.strategy="+strategy).GetSharing()
+		if got.GetStrategy() != want {
+			t.Errorf("mig.strategy=%s: strategy %q, want %q", strategy, got.GetStrategy(), want)
+		}
+	}
+	// The driver and CUDA versions fall back to their parts, the instance type
+	// to the node's instance-type label, and a negative count reads as 0.
+	parts := node("n", "nvidia.com/cuda.driver.major=580; nvidia.com/cuda.driver.minor=105; nvidia.com/cuda.driver.rev=08; "+
+		"nvidia.com/cuda.runtime.major=13; nvidia.com/cuda.runtime.minor=0; node.kubernetes.io/instance-type=g6.xlarge; "+
+		"nvidia.com/gpu.memory=-1")
+	if parts.GetDriverVersion() != "580.105.08" || parts.GetCudaRuntimeVersion() != "13.0" ||
+		parts.GetInstanceType() != "g6.xlarge" || parts.GetMemoryMib() != 0 {
+		t.Errorf("fallbacks = driver %q, cuda %q, instance %q, memory %d", parts.GetDriverVersion(),
+			parts.GetCudaRuntimeVersion(), parts.GetInstanceType(), parts.GetMemoryMib())
+	}
+
+	// MIG capability tells two configurations apart.
+	split := clusterGPUs([]*aigridv1.GPUNode{
+		node("a", "nvidia.com/mig.capable=true"),
+		node("b", "nvidia.com/mig.capable=false"),
+	})
+	if len(split.GetConfigurations()) != 2 {
+		t.Errorf("MIG-capable and not: %d configurations, want 2", len(split.GetConfigurations()))
+	}
+
+	// Same node count and product: more GPUs per node first.
+	big := func(name string) *aigridv1.GPUNode {
+		g := node(name, "")
+		g.Count = 8
+		return g
+	}
+	order := clusterGPUs([]*aigridv1.GPUNode{node("a", ""), big("b")})
+	if got := order.GetConfigurations()[0].GetGpusPerNode(); got != 8 {
+		t.Errorf("first configuration has %d GPUs per node, want 8", got)
+	}
+
+	// The total stops at the largest int32 instead of wrapping negative.
+	huge := func(name string) *aigridv1.GPUNode {
+		g := node(name, "")
+		g.Count = math.MaxInt32
+		return g
+	}
+	if total := clusterGPUs([]*aigridv1.GPUNode{huge("a"), huge("b")}).GetTotal(); total != math.MaxInt32 {
+		t.Errorf("total = %d, want %d", total, int32(math.MaxInt32))
 	}
 }

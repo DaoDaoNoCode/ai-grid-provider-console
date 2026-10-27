@@ -123,6 +123,61 @@ it('words shared and sliced GPUs: time-slicing and MIG', async () => {
   );
 });
 
+it('says which GPU count is which on a time-sliced cluster', async () => {
+  // site2: 4 L4 nodes, one GPU each, time-sliced ×4, so the hub schedules 16. The Capacity card
+  // shows what Kubernetes can schedule, with the GPU Feature Discovery count beside it; the GPUs
+  // card and the list show the GPUs themselves.
+  renderAt('/clusters/site2', new MockConsoleService());
+  expect(await screen.findByTestId('cluster-gpus')).toHaveTextContent('16 (4 GPUs, Time-sliced ×4)');
+  expect(within(details('Capacity')).getByText('Schedulable GPUs')).toBeVisible();
+  expect(screen.getByTestId('cluster-gpu-capacity')).toHaveTextContent('4 nodes, 4 GPUs');
+});
+
+it('names the sharing beside the schedulable GPUs only when every configuration shares the same way', async () => {
+  const clusters = seedClusters();
+  // site2's 4 time-sliced L4 nodes plus one unshared H100 node with 8 GPUs: 16 + 8 schedulable, 12 GPUs.
+  const site2 = clusters[1];
+  const sliced = site2.gpus!.configurations[0];
+  site2.capacity = { ...site2.capacity, 'nvidia.com/gpu': '24' };
+  site2.gpus = {
+    ...site2.gpus!,
+    total: site2.gpus!.total + 8,
+    nodeCount: site2.gpus!.nodeCount + 1,
+    configurations: [
+      sliced,
+      {
+        ...sliced,
+        product: 'NVIDIA-H100-80GB-HBM3',
+        gpusPerNode: 8,
+        nodeCount: 1,
+        sharing: { strategy: 'none', replicas: 1, migCapable: false },
+      },
+    ],
+  };
+  renderAt('/clusters/site2', new MockConsoleService(undefined, clusters));
+  expect(await screen.findByTestId('cluster-gpus')).toHaveTextContent(/^24 \(12 GPUs\)$/);
+});
+
+it('keeps the sharing wording as the list has it, MPS included', async () => {
+  const clusters = seedClusters();
+  const site2 = clusters[1];
+  site2.gpus = {
+    ...site2.gpus!,
+    configurations: site2.gpus!.configurations.map((g) => ({
+      ...g,
+      sharing: { ...g.sharing, strategy: 'mps', replicas: 4 },
+    })),
+  };
+  renderAt('/clusters/site2', new MockConsoleService(undefined, clusters));
+  expect(await screen.findByTestId('cluster-gpus')).toHaveTextContent('16 (4 GPUs, MPS ×4)');
+});
+
+it('shows the schedulable GPUs alone when GPU Feature Discovery counts the same, as under MIG single', async () => {
+  // site3: MIG 3g.20gb, where GFD counts each MIG device as the hub does.
+  renderAt('/clusters/site3', new MockConsoleService());
+  expect(await screen.findByTestId('cluster-gpus')).toHaveTextContent(/^16$/);
+});
+
 it('gives each configuration its node count only when a cluster mixes them', async () => {
   // One configuration: Capacity already says how many nodes, so the line doesn't repeat it.
   renderAt('/clusters/site2', new MockConsoleService());

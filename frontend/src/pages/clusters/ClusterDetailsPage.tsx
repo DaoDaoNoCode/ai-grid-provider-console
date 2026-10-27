@@ -118,18 +118,36 @@ const clusterItems = (c: GridCluster) => [
   { term: 'Added to the hub', value: c.creationTimestamp && <RelativeTime time={c.creationTimestamp} /> },
 ];
 
+/** Each distinct value once, in order. */
+const distinct = (values: (string | undefined)[]) => [...new Set(values.filter((v): v is string => !!v))];
+
+/**
+ * The GPUs Kubernetes can give to pods (the hub's nvidia.com/gpu capacity), with the GPU Feature
+ * Discovery count beside it when the two differ: time-slicing and MPS count each GPU once per
+ * replica, so 2 GPUs time-sliced ×4 are 8 schedulable. Without that note the Capacity card and the
+ * GPUs card would show two numbers for one cluster with nothing to say which is which (review).
+ */
+const schedulableGPUs = (c: GridCluster) => {
+  const schedulable = gpuCount(c);
+  const gpus = c.gpus;
+  if (schedulable === undefined || !gpus || gpus.total === schedulable) return schedulable;
+  // How the GPUs are shared, only when every configuration shares them the same way: a cluster
+  // that mixes unshared and time-sliced GPUs gets the count alone. Worded as the list words it
+  // ("Time-sliced ×4", "MPS ×2").
+  const sharing = new Set(gpus.configurations.map((g) => gpuSharing(g.sharing, g.product)));
+  const [how] = sharing;
+  return `${schedulable} (${gpuCountText(gpus.total)}${sharing.size === 1 && how ? `, ${how}` : ''})`;
+};
+
 const capacityItems = (c: GridCluster) => {
   const cap = c.capacity ?? {};
   const alloc = c.allocatable ?? {};
   return [
     { term: 'CPU', value: withAllocatable(formatCores(cap.cpu), formatCores(alloc.cpu)) },
     { term: 'Memory', value: withAllocatable(formatGiB(cap.memory), formatGiB(alloc.memory)) },
-    { term: 'NVIDIA GPUs', value: gpuCount(c), 'data-testid': 'cluster-gpus' },
+    { term: 'Schedulable GPUs', value: schedulableGPUs(c), 'data-testid': 'cluster-gpus' },
   ];
 };
-
-/** Each distinct value once, in order. */
-const distinct = (values: (string | undefined)[]) => [...new Set(values.filter((v): v is string => !!v))];
 
 const gpuItems = (g: ClusterGPUs) => [
   { term: 'Capacity', value: capacityText(g), 'data-testid': 'cluster-gpu-capacity' },
@@ -370,7 +388,10 @@ export const ClusterDetailsPage: React.FC<Props> = ({ service }) => {
           </Section>
         </GridItem>
         <GridItem md={6}>
-          <Section title="Capacity" help="What the cluster's nodes provide, as the hub reports it.">
+          <Section
+            title="Capacity"
+            help="What the cluster's nodes provide, as the hub reports it. Schedulable GPUs are the GPUs Kubernetes can give to pods: when GPUs are time-sliced or shared with MPS, each one counts once per replica."
+          >
             {cluster.capacity ? (
               <DetailsList items={capacityItems(cluster)} aria-label="Capacity" />
             ) : (

@@ -51,12 +51,15 @@ GPUs: the draft's `ManagedClusterStatus.gpus` (`ClusterGPUs`, the backend's fiel
 cluster's GPU inventory. The real backend reads it from ACM Search (search-v2's `search` query for
 `kind=Node` with `nvidia.com/gpu.present=true`), because `ManagedClusterInfo` keeps only instance
 type, region, zone and node-role labels (checked on a dev hub); the fake derives the same from
-`mock/fixtures/gpunodes.json` (`bff/internal/fakebackend/gpus.go`): each node from GPU Feature
-Discovery's labels (`gpu.product`, `gpu.count`, `gpu.memory` MiB, `gpu.family`,
-`gpu.compute.major/minor`, `cuda.driver-version.full`, `cuda.runtime-version.full`, `gpu.machine`,
-`gpu.replicas`, `gpu.sharing-strategy`, `mig.capable`, `mig.strategy`), sharing `mig` when a MIG
-strategy other than `none` is set, then the totals and the distinct configurations, most nodes
-first, then by product. A cluster without GPU nodes has no `gpus`.
+`mock/fixtures/gpunodes.json` (`bff/internal/fakebackend/gpus.go`), following the backend's
+`internal/servers/cluster_gpus.go` field for field: each node from GPU Feature Discovery's labels
+(`gpu.product`, `gpu.count`, `gpu.memory` MiB, `gpu.family`, `gpu.compute.major/minor`, the driver
+and CUDA versions, full or from their major, minor and revision labels, `gpu.machine` or else
+`node.kubernetes.io/instance-type`, `gpu.replicas` at least 1, `gpu.sharing-strategy`,
+`mig.capable`, `mig.strategy`); sharing `mig` when the MIG strategy is `single` or `mixed`; a
+malformed or negative count read as 0 and the total capped at the largest int32. Then the distinct
+configurations (product, memory, GPUs per node and sharing, MIG capability included), most nodes
+first, then by product, then most GPUs per node. A cluster without GPU nodes has no `gpus`.
 
 UI: the Clusters page (`frontend/src/pages/clusters/ClustersPage.tsx`) lists every
 ManagedCluster under nested column headers that match the details page's cards: **Cluster** (name,
@@ -70,7 +73,8 @@ hiding it. The page adds a cluster to AI Grid or removes it, and links each name
 details page (`ClusterDetailsPage.tsx`, `/clusters/:name`). That page shows the membership (status,
 location, role, in the list's order), the cluster as the hub knows it (its connection status, the
 OpenShift version when it is OpenShift, the Kubernetes version, platform, product, creation time,
-console link), its capacity, its GPUs (capacity, each configuration with memory and sharing, and its
+console link), its capacity (with "Schedulable GPUs": the hub's `nvidia.com/gpu`, and the GPU Feature
+Discovery count beside it when time-slicing or MPS makes them differ), its GPUs (capacity, each configuration with memory and sharing, and its
 node count only when the cluster mixes configurations; manufacturer, architecture, driver and CUDA)
 and a table of its GPU nodes (model, GPUs, memory, architecture and compute capability, driver,
 sharing, instance type, status), with the same Add and Remove actions. Add-ons and the hub's
