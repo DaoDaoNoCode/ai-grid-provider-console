@@ -31,9 +31,14 @@ func Errorf(status int, message string) error {
 // respondError maps an error to a status and writes it.
 func (a *App) respondError(w http.ResponseWriter, r *http.Request, err error) {
 	code, message := classify(err)
-	if code >= http.StatusInternalServerError {
+	switch {
+	case code == http.StatusNotImplemented:
+		// Expected from a backend without the RPC or option (the frontend says
+		// "not available on this backend yet"); the request line still has the 501.
+		a.log(r).Debug("request not supported by the backend", "method", r.Method, "path", r.URL.Path, "status", code, "error", err)
+	case code >= http.StatusInternalServerError:
 		a.log(r).Error("request failed", "method", r.Method, "path", r.URL.Path, "status", code, "error", err)
-	} else {
+	default:
 		a.log(r).Debug("request rejected", "method", r.Method, "path", r.URL.Path, "status", code, "error", err)
 	}
 	if relay.Handles(r.URL.Path) {
