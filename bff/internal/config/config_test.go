@@ -21,7 +21,7 @@ func TestParseDefaults(t *testing.T) {
 	if cfg.Port != 8080 || cfg.AuthTokenHeader != DefaultAuthTokenHeader || cfg.AuthUserHeader != DefaultAuthUserHeader || cfg.BackendAddress != DefaultBackendAddress {
 		t.Fatalf("unexpected defaults: %+v", cfg)
 	}
-	if cfg.BackendTimeout != 10*time.Second || cfg.BindAddress != DefaultBindAddress || cfg.HubCAFile != "" || cfg.ModelsNamespace != DefaultModelsNamespace || DefaultModelsNamespace != "ai-grid-models" {
+	if cfg.BackendTimeout != 10*time.Second || cfg.BindAddress != DefaultBindAddress || cfg.HubCAFile != "" || cfg.ModelsNamespace != DefaultModelsNamespace || DefaultModelsNamespace != "models-as-a-service" {
 		t.Fatalf("unexpected defaults: %+v", cfg)
 	}
 	if cfg.TLSEnabled() {
