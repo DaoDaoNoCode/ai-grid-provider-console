@@ -142,6 +142,11 @@ Each one only changes what a dashboard shows in those cases. The exit: drop the 
 syntax, perses/perses#2139). If the integration regresses before then, the fallback is a second
 Query runtime for Perses alone.
 
+The console also renders navigations without React transitions (`frontend/src/router.ts`),
+because React 18 can drop an update that lands mid-render, which left Perses's time-range menu's
+invisible popover blocking the page. That goes with React 19, once Perses supports it
+(perses/shared#390, open as of 2026-10-27; Perses 0.55 still requires React 18).
+
 ## Testing
 
 `fakeClients` (`testing.ts`) gives typed clients over an in-memory backend
