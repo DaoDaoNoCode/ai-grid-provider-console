@@ -23,6 +23,12 @@ subjects:
 # grant that get: ai-grid-env-setup does, with a Role in apps/ai-grid-policies. Without it, a
 # cluster added to the grid stays at Provisioning in the console.
 #
+# In git mode (backend.git.url) the backend also reads what the spokes report about Models and
+# Subscriptions from two inform-only Policies: the roots in ai-grid-policies and each cluster's copy
+# (ai-grid-policies.<name>) in that cluster's namespace, which a Role in ai-grid-policies can't
+# reach. get on these names only: other Policies' copies hold rendered hub templates (fromSecret).
+# The names are the backend's deploy/openshift/rbac.yaml; ai-grid-env-setup ships the Policies.
+#
 # TODO(backend-as-caller): delete this ClusterRole and its binding once the backend builds its hub
 # client from the forwarded user token (work-breakdown backend item 2).
 apiVersion: rbac.authorization.k8s.io/v1
@@ -35,6 +41,16 @@ rules:
   - apiGroups: ["cluster.open-cluster-management.io"]
     resources: ["managedclusters"]
     verbs: ["get", "list", "watch"{{ if .Values.backend.clusterWrites }}, "patch"{{ end }}]
+  {{- if .Values.backend.git.url }}
+  - apiGroups: ["policy.open-cluster-management.io"]
+    resources: ["policies"]
+    resourceNames:
+      - ai-grid-models-status
+      - ai-grid-catalog-status
+      - ai-grid-policies.ai-grid-models-status
+      - ai-grid-policies.ai-grid-catalog-status
+    verbs: ["get"]
+  {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

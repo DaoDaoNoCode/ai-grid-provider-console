@@ -14,6 +14,12 @@
 #   KEYCLOAK_REALM           realm holding the tenant Organizations (default ai-grid)
 #   KEYCLOAK_ADMIN_REALM     realm the admin logs in to (default master)
 #   All five end up in secret ai-grid-backend-keycloak, which the backend requires.
+#   GIT_URL                  the Git repository the backend commits Models and Subscriptions to
+#                            (https://, no credentials in it); required by backend images with git
+#                            mode. With it, GIT_TOKEN (required: a fine-grained token, contents: write
+#                            on that repository only) goes into secret ai-grid-backend-git, and the
+#                            chart's backend.git.url and backend.git.branch (GIT_BRANCH, default main)
+#                            are set.
 #   HELM_ARGS                more chart values, e.g. "--set backend.clusterWrites=true"; not the
 #                            names of the Secrets, the release's objects or the Route
 #
@@ -62,11 +68,30 @@ image_values() {
 }
 # shellcheck disable=SC2207 # each value is one word
 VALUES=($(image_values console "${IMAGE}") $(image_values backend "${BACKEND_IMAGE}"))
+if [[ -n "${GIT_URL:-}" ]]; then
+  # https://, then a host name (and port) and a path: no user:password@ before the host, which the
+  # backend refuses and this script would print. The same rule as the chart's values.schema.json.
+  # Not echoed, since it may hold a secret.
+  git_url_re='^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?/'
+  if [[ ! "${GIT_URL}" =~ ${git_url_re} ]]; then
+    echo "GIT_URL must be https://<host>/..., without credentials: put the token in GIT_TOKEN." >&2
+    exit 1
+  fi
+  if [[ -z "${GIT_TOKEN:-}" ]]; then
+    echo "GIT_URL needs GIT_TOKEN: the backend pushes each Models and Subscriptions change with it." >&2
+    exit 1
+  fi
+  # --set-string, so a branch such as 123 or true stays a string, with Helm's list separator
+  # (a comma) escaped.
+  git_branch="${GIT_BRANCH:-main}"
+  VALUES+=(--set-string "backend.git.url=${GIT_URL//,/\\,}" --set-string "backend.git.branch=${git_branch//,/\\,}")
+fi
 # This script creates the Secrets and the OAuthClient and finds the Route by these names.
 case " ${HELM_ARGS:-} " in
-  *fullnameOverride* | *oauth.secretName* | *keycloakSecretName* | *route.enabled*)
-    echo "HELM_ARGS may not change fullnameOverride, oauth.secretName, backend.keycloakSecretName" >&2
-    echo "or route.enabled: this script creates those Secrets and finds the Route by their default names." >&2
+  *fullnameOverride* | *oauth.secretName* | *keycloakSecretName* | *tokenSecretName* | *route.enabled*)
+    echo "HELM_ARGS may not change fullnameOverride, oauth.secretName, backend.keycloakSecretName," >&2
+    echo "backend.git.tokenSecretName or route.enabled: this script creates those Secrets and finds the" >&2
+    echo "Route by their default names." >&2
     exit 1
     ;;
 esac
@@ -85,6 +110,14 @@ oc create secret generic ai-grid-backend-keycloak -n "${NAMESPACE}" \
   --from-file=username="${SECRETS}/username" \
   --from-file=password="${SECRETS}/password" \
   --dry-run=client -o yaml | oc apply -f -
+
+if [[ -n "${GIT_URL:-}" ]]; then
+  echo "==> creating secret ai-grid-backend-git, the backend's token for ${GIT_URL}"
+  secret_file git-token "${GIT_TOKEN}"
+  oc create secret generic ai-grid-backend-git -n "${NAMESPACE}" \
+    --from-file=token="${SECRETS}/git-token" \
+    --dry-run=client -o yaml | oc apply -f -
+fi
 
 # A console deployed before the chart, from manifests/base, becomes this release in place.
 "$(dirname "$0")/chart-takeover.sh" "${RELEASE}" "${NAMESPACE}" "${VALUES[@]}"

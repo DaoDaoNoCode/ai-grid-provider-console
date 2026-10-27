@@ -88,6 +88,20 @@ backend:
   # installs a ValidatingAdmissionPolicy that limits the backend's writes to the ai-grid/* and
   # location labels and the ai-grid/* annotations. Off: the backend only reads clusters.
   clusterWrites: false
+  # Git mode (ai-grid-provider-backend#29): the backend commits Models and Subscriptions to this
+  # repository, and Argo CD delivers them to the spokes. Backend images with git mode do not start
+  # without git.url. Empty url: no git settings, for backend images from before git mode.
+  git:
+    # https://, without credentials, e.g. https://github.com/ai-grid-cloud/demo-cluster.git.
+    url: ""
+    branch: main
+    # Secret with key token: a fine-grained token with contents: write on that repository only,
+    # mounted as a file. Created by hack/deploy.sh (GIT_TOKEN) or by hand on the hub, not by the
+    # chart.
+    tokenSecretName: ai-grid-backend-git
+    # The spokes' grid namespace, which each model's NetworkPolicy admits. Empty: the backend's
+    # default (redhat-ai-grid).
+    gridNamespace: ""
   resources:
     requests: { cpu: 50m, memory: 64Mi }
     limits: { memory: 256Mi }
