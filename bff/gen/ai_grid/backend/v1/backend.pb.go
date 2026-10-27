@@ -2856,10 +2856,11 @@ func (x *SubscriptionsUpdateResponse) GetObject() *Subscription {
 }
 
 type SubscriptionsDeleteRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Id              string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	ResourceVersion int32                  `protobuf:"varint,2,opt,name=resource_version,json=resourceVersion,proto3" json:"resource_version,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *SubscriptionsDeleteRequest) Reset() {
@@ -2897,6 +2898,13 @@ func (x *SubscriptionsDeleteRequest) GetId() string {
 		return x.Id
 	}
 	return ""
+}
+
+func (x *SubscriptionsDeleteRequest) GetResourceVersion() int32 {
+	if x != nil {
+		return x.ResourceVersion
+	}
+	return 0
 }
 
 type SubscriptionsDeleteResponse struct {
@@ -4668,9 +4676,10 @@ const file_ai_grid_backend_v1_backend_proto_rawDesc = "" +
 	"updateMask\x12\x12\n" +
 	"\x04lock\x18\x03 \x01(\bR\x04lock\"W\n" +
 	"\x1bSubscriptionsUpdateResponse\x128\n" +
-	"\x06object\x18\x01 \x01(\v2 .ai_grid.backend.v1.SubscriptionR\x06object\",\n" +
+	"\x06object\x18\x01 \x01(\v2 .ai_grid.backend.v1.SubscriptionR\x06object\"W\n" +
 	"\x1aSubscriptionsDeleteRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\x1d\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12)\n" +
+	"\x10resource_version\x18\x02 \x01(\x05R\x0fresourceVersion\"\x1d\n" +
 	"\x1bSubscriptionsDeleteResponse\"\xbd\x01\n" +
 	"\x05Model\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x128\n" +

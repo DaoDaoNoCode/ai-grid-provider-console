@@ -211,7 +211,7 @@ func TestV1SubscriptionDelete(t *testing.T) {
 	if _, err := (v1Subscriptions{conn}).DeleteSubscription(context.Background(), &aigridv1.DeleteSubscriptionRequest{Name: "gold", ResourceVersion: "12"}); err != nil {
 		t.Fatal(err)
 	}
-	if want := (&backendv1.SubscriptionsDeleteRequest{Id: "gold"}); conn.method != methodSubscriptionsDelete || !proto.Equal(conn.req.(proto.Message), want) {
+	if want := (&backendv1.SubscriptionsDeleteRequest{Id: "gold", ResourceVersion: 12}); conn.method != methodSubscriptionsDelete || !proto.Equal(conn.req.(proto.Message), want) {
 		t.Fatalf("Delete sent %s %v, want %v", conn.method, conn.req, want)
 	}
 }

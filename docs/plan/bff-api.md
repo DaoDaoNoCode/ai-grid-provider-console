@@ -72,8 +72,8 @@ version and `lock: true`; the backend merge-patches annotations, so a cleared di
 description is sent as an empty value. The backend always creates `<name>-policy`, so a create with
 `createAuthPolicy: false` answers 501. `GET /subscriptions/{name}` lists each model the backend
 reports a MaaS registration for in `modelRefs`, with that registration's phase (Ready, Failed for
-Failed, Invalid or Unhealthy, else Pending); a model without one shows as not found. The backend's
-`Delete` takes no version, so DELETE still requires `If-Match` but nothing checks it.
+Failed, Invalid or Unhealthy, else Pending); a model without one shows as not found. DELETE sends
+the `If-Match` version, so a stale one is 409.
 
 Models follow backend PR 27 too. The backend's models have an `id` and no namespace (it keeps them
 in one namespace of its own), so the BFF reports every model in its `--models-namespace` and

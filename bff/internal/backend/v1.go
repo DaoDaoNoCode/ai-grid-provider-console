@@ -404,10 +404,19 @@ func (c v1Subscriptions) UpdateSubscription(ctx context.Context, in *aigridv1.Up
 	return &aigridv1.UpdateSubscriptionResponse{Subscription: FromV1Subscription(resp.GetObject())}, nil
 }
 
-// DeleteSubscription deletes the subscription and its <name>-policy. The
-// backend's Delete takes no version, so the If-Match version isn't checked.
+// DeleteSubscription deletes the subscription and its <name>-policy, sending
+// the If-Match version; empty skips the check in both APIs (zero in the
+// backend's).
 func (c v1Subscriptions) DeleteSubscription(ctx context.Context, in *aigridv1.DeleteSubscriptionRequest, opts ...grpc.CallOption) (*aigridv1.DeleteSubscriptionResponse, error) {
-	if err := c.conn.Invoke(ctx, methodSubscriptionsDelete, &backendv1.SubscriptionsDeleteRequest{Id: in.GetName()}, &backendv1.SubscriptionsDeleteResponse{}, opts...); err != nil {
+	req := &backendv1.SubscriptionsDeleteRequest{Id: in.GetName()}
+	if rv := in.GetResourceVersion(); rv != "" {
+		v, err := v1Version(rv)
+		if err != nil {
+			return nil, err
+		}
+		req.ResourceVersion = v
+	}
+	if err := c.conn.Invoke(ctx, methodSubscriptionsDelete, req, &backendv1.SubscriptionsDeleteResponse{}, opts...); err != nil {
 		return nil, err
 	}
 	return &aigridv1.DeleteSubscriptionResponse{}, nil

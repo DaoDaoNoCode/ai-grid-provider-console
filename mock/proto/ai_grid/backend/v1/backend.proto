@@ -285,6 +285,7 @@ message SubscriptionsUpdateResponse {
 
 message SubscriptionsDeleteRequest {
   string id = 1;
+  int32 resource_version = 2;
 }
 
 message SubscriptionsDeleteResponse {}
