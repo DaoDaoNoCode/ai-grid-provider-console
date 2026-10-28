@@ -99,7 +99,6 @@ export default defineConfig({
     sourcemap: true,
   },
   test: {
-    environment: 'jsdom',
     globals: true,
     setupFiles: ['./vitest.setup.ts'],
     css: false,
@@ -113,5 +112,11 @@ export default defineConfig({
     env: { TZ: 'UTC', LC_ALL: 'en_US.UTF-8' },
     // Playwright specs run with `pnpm e2e`.
     exclude: ['**/node_modules/**', 'e2e/**'],
+    // Setting up jsdom costs far more per file than most logic tests take, so only components get
+    // it. A *.test.ts file that needs the DOM says so with `// @vitest-environment jsdom`.
+    projects: [
+      { extends: true, test: { name: 'node', environment: 'node', include: ['src/**/*.test.ts'] } },
+      { extends: true, test: { name: 'jsdom', environment: 'jsdom', include: ['src/**/*.test.tsx'] } },
+    ],
   },
 });

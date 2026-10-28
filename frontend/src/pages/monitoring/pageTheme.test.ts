@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+// jsdom: renders the hook and watches the class on <html>.
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { usePageTheme } from './pageTheme';
 

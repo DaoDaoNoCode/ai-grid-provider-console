@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+// jsdom: @perses-dev/components requires its font CSS, which Node cannot load.
 import { describe, expect, it } from 'vitest';
 import { patternFlyTheme, patternflyChartsMultiUnorderedPalette } from './persesTheme';
 

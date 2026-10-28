@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+// jsdom: renders the hook and fakes document.hidden.
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { useServiceData } from '../hooks/useServiceData';
 

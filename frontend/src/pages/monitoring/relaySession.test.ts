@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+// jsdom: renders the hook.
 import { createElement } from 'react';
 import { QueryClient } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react';

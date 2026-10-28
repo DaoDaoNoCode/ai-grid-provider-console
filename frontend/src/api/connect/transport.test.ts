@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+// jsdom: the transport posts to window.location's origin.
 import { create } from '@bufbuild/protobuf';
 import { Code, ConnectError, createClient, type Interceptor, type StreamResponse } from '@connectrpc/connect';
 import { Clusters } from '../../gen/ai_grid/v1/clusters_service_pb';
