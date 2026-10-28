@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-// A fixture AI Grid member (mock/fixtures-poc/managedclusters.json). No spec changes its
+// A fixture AI Grid member (the backend's fixtures/poc/managedclusters.json). No spec changes its
 // membership; cluster-membership.spec.ts adds and removes site4.
 const MEMBER = 'site1';
 

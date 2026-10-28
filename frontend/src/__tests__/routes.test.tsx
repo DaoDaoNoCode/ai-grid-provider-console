@@ -1,8 +1,8 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { TestApp } from './TestApp';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
 import type { InitialEntry, NavigateFunction } from 'react-router-dom';
-import { App } from '../App';
 import { ServiceError } from '../api/ConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
 // The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
@@ -23,7 +23,7 @@ import '../pages/subscriptions/ViewSubscriptionPage';
 const at = (path: InitialEntry, service = new MockConsoleService()) =>
   render(
     <MemoryRouter initialEntries={[path]}>
-      <App service={service} />
+      <TestApp service={service} />
     </MemoryRouter>,
   );
 
@@ -107,7 +107,7 @@ describe('routes', () => {
     ['/subscriptions/view/engineering', 'getSubscriptionInfo', subs],
     ['/subscriptions/create', 'listSubscriptions', subs],
     ['/subscriptions/edit/engineering', 'listSubscriptions', subs],
-    ['/ai-grid', 'getGridOverview', 'AI Grid is not available on this backend yet'],
+    ['/ai-grid', 'listClusters', 'AI Grid is not available on this backend yet'],
     ['/monitoring', 'getGridOverview', 'Monitoring is not available on this backend yet'],
   ])('renders not-available pages: %s without %s', async (path, methods, text, open) => {
     const service = new MockConsoleService();
@@ -244,7 +244,7 @@ describe('routes', () => {
     render(
       <MemoryRouter initialEntries={[{ pathname: '/clusters', state: { notice: 'Organization saved' } }]}>
         <CaptureNavigate />
-        <App service={new MockConsoleService()} />
+        <TestApp service={new MockConsoleService()} />
       </MemoryRouter>,
     );
     expect(await screen.findByText('Organization saved')).toBeInTheDocument();

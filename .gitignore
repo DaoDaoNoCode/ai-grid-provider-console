@@ -5,6 +5,7 @@ bff/coverage.out
 # Node
 node_modules/
 frontend/dist/
+frontend/dist-backend-fakes/
 frontend/.vite/
 *.tsbuildinfo
 

@@ -1,11 +1,11 @@
-import type { GridCluster } from '../../api/types';
+import type { ClusterView } from './clusterView';
 
 /**
  * What onConfirm throws when the cluster changed since the dialog loaded it (a 409): `current` is
  * the cluster as the backend has it now, or undefined when it couldn't be loaded again.
  */
 export class ClusterChangedError extends Error {
-  constructor(readonly current?: GridCluster) {
+  constructor(readonly current?: ClusterView) {
     super('The cluster changed since the dialog loaded it.');
     this.name = 'ClusterChangedError';
   }

@@ -9,7 +9,6 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
 import type { NavigateFunction } from 'react-router-dom';
-import { App } from '../App';
 import { ServiceError } from '../api/ConsoleService';
 import { HttpConsoleService } from '../api/HttpConsoleService';
 import { MockConsoleService, seedSubscriptions } from '../api/MockConsoleService';
@@ -22,6 +21,7 @@ import '../pages/subscriptions/CreateSubscriptionPage';
 import '../pages/subscriptions/EditSubscriptionPage';
 import '../pages/subscriptions/SubscriptionsPage';
 import '../pages/subscriptions/ViewSubscriptionPage';
+import { TestApp } from './TestApp';
 
 /** A user the console couldn't load: the pages show, but without write actions. A viewer
  * (isProviderAdmin false) sees no pages at all (App.test.tsx). */
@@ -784,7 +784,7 @@ it('leaves the create form out of history once the subscription is created, so B
   render(
     <MemoryRouter initialEntries={['/clusters', '/subscriptions/create']} initialIndex={1}>
       <Navigator />
-      <App service={new MockConsoleService()} />
+      <TestApp service={new MockConsoleService()} />
     </MemoryRouter>,
   );
   await pickOrganization(user, 'acme-robotics');
@@ -804,7 +804,7 @@ it.each(['view', 'edit'])('loads the other subscription when the name in /subscr
   render(
     <MemoryRouter initialEntries={[`/subscriptions/${page}/engineering`]}>
       <Navigator />
-      <App service={new MockConsoleService()} />
+      <TestApp service={new MockConsoleService()} />
     </MemoryRouter>,
   );
   const shows = (name: string) =>

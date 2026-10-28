@@ -1,4 +1,3 @@
-import { toGridCluster } from '../api/adapters';
 import { HttpConsoleService } from '../api/HttpConsoleService';
 
 const jsonResponse = (status: number, body: unknown) =>
@@ -184,59 +183,6 @@ describe('HttpConsoleService', () => {
         modelRef: { kind: 'LLMInferenceService', name: 'granite' },
       }),
     ]);
-  });
-
-  it('enrolls a cluster with a JSON PATCH of its whole labels map, role and location at the version it was read', async () => {
-    const fetchFn = vi
-      .fn()
-      .mockResolvedValue(jsonResponse(200, { data: { name: 'site4', aiGridEnabled: true, status: 'ready' } }));
-    const read = toGridCluster({
-      name: 'site4',
-      aiGridEnabled: false,
-      provisioned: false,
-      status: 'ready',
-      resourceVersion: '7',
-      labels: { location: 'sydney' },
-    });
-    await expect(
-      new HttpConsoleService(fetchFn).enrollCluster(read, { location: 'us-east', role: 'combined' }),
-    ).resolves.toMatchObject({
-      aiGridEnabled: true,
-      status: 'Ready',
-    });
-    expect(fetchFn).toHaveBeenCalledWith(
-      '/api/v1/clusters/site4',
-      expect.objectContaining({
-        method: 'PATCH',
-        body: '{"labels":{"location":"us-east","ai-grid/enabled":"true","ai-grid/role":"combined"}}',
-        headers: expect.objectContaining({ 'Content-Type': 'application/json', 'If-Match': '"7"' }),
-      }),
-    );
-  });
-
-  it('removes a cluster from AI Grid by PATCHing its labels without ai-grid/enabled', async () => {
-    const fetchFn = vi
-      .fn()
-      .mockResolvedValue(jsonResponse(200, { data: { name: 'site1', aiGridEnabled: false, status: 'ready' } }));
-    const read = toGridCluster({
-      name: 'site1',
-      aiGridEnabled: true,
-      provisioned: true,
-      status: 'ready',
-      resourceVersion: '4',
-      labels: { location: 'paris', 'ai-grid/enabled': 'true', 'ai-grid/provisioned': 'true' },
-    });
-    await expect(new HttpConsoleService(fetchFn).removeClusterFromGrid(read)).resolves.toMatchObject({
-      aiGridEnabled: false,
-    });
-    expect(fetchFn).toHaveBeenCalledWith(
-      '/api/v1/clusters/site1',
-      expect.objectContaining({
-        method: 'PATCH',
-        body: '{"labels":{"location":"paris","ai-grid/provisioned":"true"}}',
-        headers: expect.objectContaining({ 'If-Match': '"4"' }),
-      }),
-    );
   });
 
   it('requests the full cluster list without paging parameters and maps PR 12 clusters', async () => {

@@ -4,11 +4,11 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Flex } from '@patternfly/react-core';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import type { GridCluster } from '../../api/types';
+import type { FleetCluster } from './GridFleetView';
 import type { TileLayerConfig } from './tiles';
 
 type Props = {
-  clusters: GridCluster[];
+  clusters: FleetCluster[];
   selected: string | null;
   onSelect: (name: string) => void;
   /** The basemap; undefined while the console config loads, null when it could not be read. */
@@ -23,22 +23,22 @@ const initialZoom = 3;
 const maxFitZoom = 4;
 
 /** Each status's colour: PatternFly's status icon colours, so pins match the status labels. */
-const statusColor: Record<GridCluster['status'], string> = {
+const statusColor: Record<FleetCluster['status'], string> = {
   Ready: 'var(--pf-t--global--icon--color--status--success--default)',
   Offline: 'var(--pf-t--global--icon--color--status--danger--default)',
   Unknown: 'var(--pf-t--global--icon--color--subtle)',
 };
 
 /** A pin keeps its status colour when selected (the legend's colours); selection shows as a larger ring. */
-const pinColor = (cluster: GridCluster) => statusColor[cluster.status];
+const pinColor = (cluster: FleetCluster) => statusColor[cluster.status];
 
-const isMapped = (c: GridCluster) => c.latitude !== undefined && c.longitude !== undefined;
+const isMapped = (c: FleetCluster) => c.latitude !== undefined && c.longitude !== undefined;
 
 /**
  * What the pins show; the pins are redrawn only when it changes. JSON keeps a missing site name
  * apart from an empty one (the labels treat them differently) and can't mix up field boundaries.
  */
-const pinsSignature = (clusters: GridCluster[]) =>
+const pinsSignature = (clusters: FleetCluster[]) =>
   JSON.stringify(clusters.filter(isMapped).map((c) => [c.name, c.latitude, c.longitude, c.status, c.siteName, c.site]));
 
 export const GridFleetMap: React.FC<Props> = ({ clusters, selected, onSelect, tiles, isFiltered }) => {
@@ -207,7 +207,7 @@ export const GridFleetMap: React.FC<Props> = ({ clusters, selected, onSelect, ti
         className="fleet-map__overlay fleet-map__overlay--legend"
         spaceItems={{ default: 'spaceItemsMd' }}
       >
-        {(Object.keys(statusColor) as GridCluster['status'][]).map((status) => (
+        {(Object.keys(statusColor) as FleetCluster['status'][]).map((status) => (
           <Flex
             component="li"
             key={status}

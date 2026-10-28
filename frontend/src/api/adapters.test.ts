@@ -447,6 +447,13 @@ describe('toManagedModel', () => {
     expect(byName('tiny-llm').locations).toEqual([]);
   });
 
+  it('reads the clusters the placement chose, by name, from placement.selectedClusters', () => {
+    expect(byName('granite-8b-instruct').selectedClusters).toEqual(['site-paris-1']);
+    expect(byName('mistral-7b-instruct').selectedClusters).toEqual(['site-frankfurt-1', 'site-paris-1']);
+    expect(byName('codellama-13b').selectedClusters).toEqual([]);
+    expect(byName('tiny-llm').selectedClusters).toEqual([]);
+  });
+
   it('shows the phase with its reason and message', () => {
     expect(byName('granite-8b-instruct').phase).toBe('Ready');
     expect(byName('codellama-13b')).toMatchObject({ phase: 'Pending', reason: 'PlacementDecisionEmpty' });

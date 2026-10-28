@@ -47,7 +47,7 @@ rebuilding it to integrate with OSAC.
 
 There is one provider console per ACM hub, deployed by this repository's Helm chart, for
 provider admins only: organization users never reach it, and their UI is the MaaS consumer
-portal on each ingress cluster. The console is one pod. kube-auth-proxy listens on `:8443`, the
+portal on each MaaS (ingress) cluster. The console is one pod. kube-auth-proxy listens on `:8443`, the
 only listener on the pod network and the Service's only port; the BFF and the backend listen on
 loopback (the backend's `--listen-address=127.0.0.1:9090` for Connect, gRPC and gRPC-Web and
 `--http-listen-address=127.0.0.1:8081` for REST). `hack/test-chart-kind.sh` checks that nothing

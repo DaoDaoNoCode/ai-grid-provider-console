@@ -360,8 +360,11 @@ export type ApiModel = {
   phase?: string;
   reason?: string;
   message?: string;
-  /** Absent for a model served on the hub only. `locations` is proposal P8. */
-  placement?: ModelPlacementSpec & { locations?: string[] };
+  /**
+   * Absent for a model served on the hub only. `selectedClusters` are the decided ManagedClusters by
+   * name; `locations` is proposal P8.
+   */
+  placement?: ModelPlacementSpec & { selectedClusters?: string[]; locations?: string[] };
   /** The ManifestWorkReplicaSet's status: `works` is the model on each decided cluster. */
   rollout?: { works?: ApiModelWork[] };
   resourceVersion?: string;
@@ -414,6 +417,11 @@ export type ManagedModel = {
   resourceVersion: string;
   /** The `location` labels of the clusters the placement decided on; empty without one. */
   locations: string[];
+  /**
+   * The clusters the placement decided on, by ManagedCluster name (`placement.selectedClusters`);
+   * empty without one. Unlike `locations`, these name the same clusters on every backend.
+   */
+  selectedClusters: string[];
   /** The model on each cluster it was sent to; absent for a model served on the hub only. */
   works?: ModelWork[];
   modelUri?: string;

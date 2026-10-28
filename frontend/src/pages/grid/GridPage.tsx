@@ -1,8 +1,9 @@
 // Ported from krisv/ai-grid-cloud-provider-poc src/app/pages/grid/GridPage.tsx at 62319b8: the map at
 // /ai-grid and, with `monitoring`, the dashboards at /monitoring when the console relays to no
 // Perses (MonitoringPage shows the hub's Perses dashboards otherwise). The PoC's loading, error, and refresh
-// state becomes useServiceData, and a failed load is a LoadError. A backend without Grid/GetOverview
-// (501) gets the console's not-available page, as Models and Subscriptions do.
+// state becomes useServiceData, and a failed load is a LoadError. The map's clusters come from
+// AiGridPage (Clusters/List over Connect); the dashboards' from Grid/GetOverview. A backend without
+// the RPC (501) gets the console's not-available page, as Models and Subscriptions do.
 import { useEffect, useState } from 'react';
 import { Alert, Flex, PageSection, Stack, ToggleGroup, ToggleGroupItem } from '@patternfly/react-core';
 import { Link } from 'react-router-dom';
@@ -12,6 +13,7 @@ import type { GridService } from '../../api/grid';
 import type { ModelsService } from '../../api/models';
 import type { OrganizationsService } from '../../api/organizations';
 import type { GridOverview, GridRange, ManagedModel, Organization } from '../../api/types';
+import type { FleetCluster } from './GridFleetView';
 import { LoadError } from '../../components/LoadError';
 import { PageHeader } from '../../components/PageHeader';
 import { PageLoading } from '../../components/PageLoading';
@@ -30,7 +32,22 @@ type Props = {
     Pick<OrganizationsService, 'listOrganizations'> &
     Pick<ConsoleService, 'getConfig'>;
   monitoring?: boolean;
+  /** The map's AI Grid members, loaded by AiGridPage; unused with `monitoring`. */
+  map?: MapInventory;
 };
+
+/** The map's clusters: the AI Grid members, when they were read, and how to read them again. */
+export type MapInventory = {
+  /** Absent until they have been read; a failed reload keeps the last ones. */
+  clusters?: FleetCluster[];
+  loaded: boolean;
+  error?: Error;
+  /** When the console last read them (ms since the epoch). */
+  updatedAt?: number;
+  refresh: () => Promise<unknown>;
+};
+
+const noMap: MapInventory = { loaded: true, refresh: async () => undefined };
 
 const modelsErrorOf = (err: Error) =>
   err instanceof ServiceError && err.isNotImplemented ? 'Models are not available on this backend yet.' : err.message;
@@ -42,12 +59,7 @@ const organizationsErrorOf = (err: Error) =>
 
 const ranges: GridRange[] = ['1h', '6h', '24h'];
 
-export const GridPage: React.FC<Props> = ({ service, monitoring = false }) => {
-  // On /monitoring the metrics answer below carries the clusters too, so only the map asks for them alone.
-  const [inventory, inventoryLoaded, inventoryError, refreshOverview] = useServiceData<GridOverview | undefined>(
-    () => (monitoring ? Promise.resolve(undefined) : service.getGridOverview('1h', { includeMetrics: false })),
-    undefined,
-  );
+export const GridPage: React.FC<Props> = ({ service, monitoring = false, map = noMap }) => {
   const [models, , modelsLoadError, refreshModels] = useServiceData<ManagedModel[]>(() => service.listModels(), []);
   const { config, configError } = useConsoleSession();
   const [organizations, , organizationsLoadError, refreshOrganizations] = useServiceData<Organization[]>(
@@ -67,11 +79,12 @@ export const GridPage: React.FC<Props> = ({ service, monitoring = false }) => {
     undefined,
   );
   const metricsCurrent = metricsData?.range === range;
-  const data = monitoring ? metricsData?.overview : inventory;
-  const loaded = monitoring ? metricsLoaded : inventoryLoaded;
-  // The backend has no Grid/GetOverview: the page is the not-available state, with nothing to refresh
-  // or switch to, even if an earlier answer is still held (a backend redeployed without it).
-  const loadError = monitoring ? metricsLoadError : inventoryError;
+  const data = monitoring ? metricsData?.overview : map.clusters && map;
+  const loaded = monitoring ? metricsLoaded : map.loaded;
+  // The backend has no Grid/GetOverview (or, for the map, Clusters/List): the page is the
+  // not-available state, with nothing to refresh or switch to, even if an earlier answer is still
+  // held (a backend redeployed without it).
+  const loadError = monitoring ? metricsLoadError : map.error;
   const notServed = loadError instanceof ServiceError && loadError.isNotImplemented;
   // Otherwise a failed range keeps the last answer's clusters; the panel shows the metrics error.
   const error = notServed || !monitoring ? loadError : data ? undefined : metricsLoadError;
@@ -86,7 +99,7 @@ export const GridPage: React.FC<Props> = ({ service, monitoring = false }) => {
   const refresh = async () => {
     setRefreshing(true);
     await Promise.all([
-      refreshOverview(),
+      ...(monitoring ? [] : [map.refresh()]),
       refreshModels(),
       ...(monitoring ? [refreshOrganizations(), refreshMetrics()] : []),
     ]);
@@ -98,6 +111,12 @@ export const GridPage: React.FC<Props> = ({ service, monitoring = false }) => {
   const modelsError = modelsLoadError && modelsErrorOf(modelsLoadError);
 
   const metricsSource = metricsData?.overview.metricsSource;
+  const updatedAt = monitoring
+    ? metricsData?.overview.updatedAt
+    : map.updatedAt
+      ? new Date(map.updatedAt).toISOString()
+      : undefined;
+  const demo = monitoring && !!metricsData?.overview.demo;
 
   // One toolbar row: the time range (Monitoring), when the data was read, refresh, and the other view.
   const toolbar = (
@@ -115,9 +134,9 @@ export const GridPage: React.FC<Props> = ({ service, monitoring = false }) => {
           ))}
         </ToggleGroup>
       )}
-      {data?.updatedAt && (
+      {updatedAt && (
         <SubtleText>
-          Updated <RelativeTime time={data.updatedAt} />
+          Updated <RelativeTime time={updatedAt} />
         </SubtleText>
       )}
       <RefreshButton onRefresh={() => void refresh()} isRefreshing={!loaded || refreshing} />
@@ -150,25 +169,28 @@ export const GridPage: React.FC<Props> = ({ service, monitoring = false }) => {
             )}
             {data && !notServed && (
               <>
-                {data.demo && (
+                {demo && (
                   <Alert isInline variant="info" title="Demo data">
-                    {monitoring
-                      ? 'Inventory and metrics on this page are simulated.'
-                      : 'Inventory on this page is simulated.'}
+                    Inventory and metrics on this page are simulated.
                   </Alert>
                 )}
-                {monitoring && !data.demo && metricsSource === 'demo' && (
+                {monitoring && !demo && metricsSource === 'demo' && (
                   <Alert isInline variant="info" title="Simulated monitoring metrics">
                     Thanos is not configured. Charts show generated demo data; cluster inventory comes from the
                     configured backend.
                   </Alert>
                 )}
                 {!monitoring && (
-                  <GridFleetView clusters={data.clusters} models={models} modelsError={modelsError} tiles={tiles} />
+                  <GridFleetView
+                    clusters={data.clusters ?? []}
+                    models={models}
+                    modelsError={modelsError}
+                    tiles={tiles}
+                  />
                 )}
-                {monitoring && (
+                {monitoring && metricsData && (
                   <ObservabilityPanel
-                    clusters={data.clusters}
+                    clusters={metricsData.overview.clusters}
                     models={models}
                     modelsError={modelsError}
                     organizations={organizations}

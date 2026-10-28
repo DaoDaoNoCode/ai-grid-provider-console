@@ -1,6 +1,7 @@
 import { expect, test, type Locator } from '@playwright/test';
 
-// The fixture AI Grid sites with coordinates (mock/fixtures-poc/managedclusters.json). The map
+// Runs on the backend's own fakes (playwright.config.ts): the map reads Clusters/List over Connect.
+// The fixture AI Grid sites with coordinates (the backend's fixtures/poc/managedclusters.json). The map
 // can show more pins once other specs enroll another cluster, so the spec looks for these among them.
 const PINS = ['San Francisco', 'New York', 'Brussels'];
 
@@ -41,6 +42,6 @@ test('shows the fixture pins on the bundled land outline, and a pin opens its de
   await expect(tooltip).toBeVisible();
   await pins.first().click();
   await expect(page.getByRole('heading', { name: 'Site and cluster' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Models at this location' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Models on this cluster' })).toBeVisible();
   await expect(map.getByText(/ · .* · Ready/).first()).toBeVisible();
 });

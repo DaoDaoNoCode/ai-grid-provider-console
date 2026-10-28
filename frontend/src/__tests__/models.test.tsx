@@ -15,7 +15,6 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
 import type { NavigateFunction } from 'react-router-dom';
 import getModels from '../../../mock/examples/get-models.json';
-import { App } from '../App';
 import { ServiceError } from '../api/ConsoleService';
 import { consolePlacement } from '../api/adapters';
 import { HttpConsoleService } from '../api/HttpConsoleService';
@@ -27,6 +26,7 @@ import '../pages/models/ModelDetailsPage';
 import '../pages/models/ModelEditPage';
 import '../pages/models/ModelWizard';
 import '../pages/models/ModelsPage';
+import { TestApp } from './TestApp';
 
 const input: CreateModelRequest = {
   name: 'widget',
@@ -156,7 +156,7 @@ it('leaves the deploy form out of history once the model is deployed, so Back sk
   render(
     <MemoryRouter initialEntries={['/clusters', '/models/deploy']} initialIndex={1}>
       <CaptureNavigate />
-      <App service={new MockConsoleService()} />
+      <TestApp service={new MockConsoleService()} />
     </MemoryRouter>,
   );
   await fillModel(user);

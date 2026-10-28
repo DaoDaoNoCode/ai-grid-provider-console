@@ -7,8 +7,17 @@ const bffPort = process.env.E2E_BFF_PORT ?? '8080';
 const backendPort = process.env.E2E_BACKEND_PORT ?? '9090';
 const hubPort = process.env.E2E_HUB_PORT ?? '9091';
 const origin = `http://127.0.0.1:${port}`;
+// The second stack, for the pages that read the backend's own API over Connect (the Clusters
+// pages and the map), which the console's fake doesn't serve: the backend at .backend-api-version
+// on its own fake hub and Keycloak, PoC preset (hack/backend-fakes.sh), its BFF and its bundle,
+// on ports offset from the first stack's so both run side by side.
+const fakesPort = process.env.E2E_FAKES_FRONTEND_PORT ?? '9200';
+const fakesBffPort = process.env.E2E_FAKES_BFF_PORT ?? '8280';
+const fakesBackendPort = Number(process.env.E2E_FAKES_BACKEND_PORT ?? '9290');
+const fakesOrigin = `http://127.0.0.1:${fakesPort}`;
 const browser = { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } };
 const membership = 'cluster-membership.spec.ts';
+const onBackendFakes = ['clusters.spec.ts', 'grid.spec.ts'];
 
 export default defineConfig({
   testDir: './e2e',
@@ -27,11 +36,12 @@ export default defineConfig({
     navigationTimeout: 15_000,
   },
   projects: [
-    { name: 'chromium', use: browser, testIgnore: membership },
+    { name: 'chromium', use: browser, testIgnore: [membership, ...onBackendFakes] },
+    { name: 'backend fakes', use: { ...browser, baseURL: fakesOrigin }, testMatch: onBackendFakes },
     // Every spec but this one leaves the fixtures as it found them, or changes only objects it
     // created under a name of its own, so they can run side by side. This one adds a fixture
     // cluster to AI Grid and removes it again: one run at a time.
-    { name: 'cluster membership', use: browser, testMatch: membership, workers: 1 },
+    { name: 'cluster membership', use: { ...browser, baseURL: fakesOrigin }, testMatch: membership, workers: 1 },
   ],
   // The stack of `make dev-fake-poc`, but with the frontend as it ships: the production bundle,
   // served by `vite preview`, whose proxy is the dev server's (vite.config.ts), so the identity
@@ -65,6 +75,43 @@ export default defineConfig({
       timeout: 180_000,
       env: {
         BFF_URL: `http://127.0.0.1:${bffPort}`,
+        AUTH_TOKEN: 'dev-token',
+        AUTH_USER: 'dev-user',
+      },
+    },
+    {
+      // make dev-fake-infra-backend on the PoC preset (the backend's fixtures/poc): the first run
+      // fetches the backend at the pin and builds it, hence the longer wait.
+      command: '../hack/backend-fakes.sh',
+      port: fakesBackendPort,
+      reuseExistingServer: !process.env.CI,
+      timeout: 600_000,
+      env: {
+        DEV_FIXTURES: 'fixtures/poc',
+        DEV_DRAFT_FIXTURES: 'fixtures/draft/poc',
+        DEV_GRPC_PORT: String(fakesBackendPort),
+        DEV_HUB_PORT: String(fakesBackendPort + 1),
+        DEV_HTTP_PORT: String(fakesBackendPort + 2),
+        DEV_KEYCLOAK_PORT: String(fakesBackendPort + 3),
+        DEV_DRAFT_PORT: String(fakesBackendPort + 4),
+      },
+    },
+    {
+      // make dev-bff-fake-infra: the BFF relays /ai_grid.v1.* to that backend.
+      command: `go run ./cmd --port=${fakesBffPort} --backend-address=127.0.0.1:${fakesBackendPort} --hub-api-url=http://127.0.0.1:${fakesBackendPort + 1}`,
+      cwd: '../bff',
+      url: `http://127.0.0.1:${fakesBffPort}/healthcheck`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 600_000,
+    },
+    {
+      // Its own bundle directory, so the two builds never write the same files.
+      command: `pnpm exec vite build --outDir dist-backend-fakes && pnpm exec vite preview --outDir dist-backend-fakes --host 127.0.0.1 --port ${fakesPort} --strictPort`,
+      url: `${fakesOrigin}/api/v1/config`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 600_000,
+      env: {
+        BFF_URL: `http://127.0.0.1:${fakesBffPort}`,
         AUTH_TOKEN: 'dev-token',
         AUTH_USER: 'dev-user',
       },

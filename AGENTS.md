@@ -38,7 +38,7 @@ the code right now; the glossary says which one wins.
 
 There is one provider console per ACM hub ("hub" always means the ACM hub), deployed by this
 repository's Helm chart, for provider admins only: organization users never reach it, and their
-UI is the MaaS consumer portal on each ingress cluster. The console is a React frontend, a thin
+UI is the MaaS consumer portal on each MaaS (ingress) cluster. The console is a React frontend, a thin
 Go BFF (`bff/`) and `ai-grid-provider-backend`, the provider API in its own repository,
 `ai-grid-cloud/ai-grid-provider-backend` (`docs/plan/bff-api.md`). The backend is meant to stand
 on its own: a CLI, GitOps tooling and other UIs will call it without the BFF. So anything
@@ -110,7 +110,8 @@ docs (`docs/plan/bff-api.md`, `mock/AGENTS.md`, `mock/areas/*.md`) in the same c
 ## The backend's own API over Connect
 
 The console is moving to the backend's RPCs, called from the browser over Connect (ADRs 0002
-and 0004). The foundation is in place and wired at the root; no page uses it yet:
+and 0004), through one provider at the app root. The Clusters pages and the AI Grid map read and
+write through it (`docs/connect.md`, "The Clusters area"); the other areas still use `/api/v1`:
 
 - `.backend-api-version` holds the backend commit (one full SHA) whose `proto/` (package
   `ai_grid.v1`, not `ai_grid/draft`) the frontend is generated from. `make generate-api` writes
@@ -173,7 +174,11 @@ when the RPCs allow it.
   one organization is one tenant, and the provider must not see a company's internals (decided
   2026-10-23). A new procedure needs a review and a line in the list. Remove the list once the
   backend authorizes every RPC itself.
-- `toGridCluster` (`bff/internal/api/clusters.go`): `aiGridEnabled` and `provisioned` (the
+- `toGridCluster` (`bff/internal/api/clusters.go`). The Clusters pages and the map read only
+  `aiGridEnabled` and the state behind Unknown from it now (`docs/connect.md`, "Fields the pages
+  still read from /api/v1"), and the Models pages the site names; everything else they read
+  from `Clusters/List` with presentation selectors (`frontend/src/pages/clusters/clusterView.ts`).
+  It derives `aiGridEnabled` and `provisioned` (the
   `ai-grid/enabled` and `ai-grid/provisioned` labels equal to `"true"`; when the backend reports
   `status.provisioning`, `provisioned` is that equal to `"Compliant"` instead, until the backend
   serves a provisioned state), `location`, `site`,

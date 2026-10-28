@@ -16,7 +16,6 @@ import { InnerScrollContainer, Table, Tbody, Td, Th, Thead, Tr } from '@patternf
 import type { ThProps } from '@patternfly/react-table';
 import { Link, useNavigate } from 'react-router-dom';
 import type { ClustersService, GridMembership } from '../../api/clusters';
-import type { GridCluster } from '../../api/types';
 import { LoadError } from '../../components/LoadError';
 import { PageHeader } from '../../components/PageHeader';
 import { PageLoading } from '../../components/PageLoading';
@@ -28,7 +27,6 @@ import { ToolbarSearch } from '../../components/ToolbarSearch';
 import { TableEmptyRow } from '../../components/TableEmptyRow';
 import { OverflowList } from '../../components/OverflowList';
 import { useConsoleSession } from '../../context/useConsoleSession';
-import { useServiceData } from '../../hooks/useServiceData';
 import { EMPTY_VALUE } from '../../utilities/format';
 import type { MembershipChange } from './MembershipModal';
 import { changeMembership } from './changeMembership';
@@ -37,6 +35,8 @@ import { MissingLabel } from './MissingLabel';
 import { gpuCount, membershipAction, statusReason } from './clusterInfo';
 import { capacityText, configurationText, gpuCountText, gpuSharing } from './gpuText';
 import { clusterRoles, roleOf } from './roles';
+import type { ClusterView } from './clusterView';
+import { useClusterList, useMembershipWrites } from './useClusters';
 
 // Ported from krisv/ai-grid-cloud-provider-poc src/app/pages/clusters/ClustersPage.tsx at 62319b8.
 // The PoC's columns, labels, and enroll flow, plus the console's Role and GPU columns (capacity and
@@ -63,7 +63,7 @@ type Column = {
    * button's name then says which one, as the group header above it does on screen.
    */
   srPrefix?: string;
-  sort: (a: GridCluster, b: GridCluster) => number;
+  sort: (a: ClusterView, b: ClusterView) => number;
   info?: ThProps['info'];
 };
 
@@ -149,30 +149,31 @@ const groups: { label: string; span: number; info?: ThProps['info'] }[] = [
 ];
 
 /** Each GPU configuration as one line: "NVIDIA L4, 1 GPU/node", with how it is shared. */
-const gpuConfigurations = (c: GridCluster) =>
+const gpuConfigurations = (c: ClusterView) =>
   (c.gpus?.configurations ?? []).map((g) =>
     [configurationText(g), gpuSharing(g.sharing, g.product)].filter(Boolean).join(', '),
   );
 
 /** The GPUs to sort by: the inventory's, else the capacity's, -1 when the hub reports neither. */
-const gpuTotal = (c: GridCluster) => c.gpus?.total ?? gpuCount(c) ?? -1;
+const gpuTotal = (c: ClusterView) => c.gpus?.total ?? gpuCount(c) ?? -1;
 
 /** "4 nodes, 32 GPUs" from the inventory; without one, the capacity's count; nothing without GPUs. */
-const gpuCapacity = (c: GridCluster) => {
+const gpuCapacity = (c: ClusterView) => {
   if (c.gpus) return capacityText(c.gpus);
   const n = gpuCount(c);
   return n ? gpuCountText(n) : EMPTY_VALUE;
 };
 
 /** A member's provisioning, or nothing for a cluster outside AI Grid (sorts first). */
-const membership = (c: GridCluster) => (c.aiGridEnabled ? c.provisioningStatus : '');
+const membership = (c: ClusterView) => (c.aiGridEnabled ? c.provisioningStatus : '');
 
 /** A member's role label, '-' for a member without one, nothing outside AI Grid (sorts first). */
-const memberRole = (c: GridCluster) => (c.aiGridEnabled ? (roleOf(c.labels)?.label ?? '-') : '');
+const memberRole = (c: ClusterView) => (c.aiGridEnabled ? (roleOf(c.labels)?.label ?? '-') : '');
 
 export const ClustersPage: React.FC<Props> = ({ service }) => {
   const navigate = useNavigate();
-  const [clusters, loaded, error, refresh] = useServiceData<GridCluster[]>(() => service.listClusters(), []);
+  const { data: clusters, loaded, error, refresh } = useClusterList(service);
+  const writes = useMembershipWrites(service);
   const { user } = useConsoleSession();
   const isProviderAdmin = !!user?.isProviderAdmin;
   const [search, setSearch] = useState('');
@@ -181,7 +182,7 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
   // Clusters as the backend returned them from Add or Remove, with their new labels (role and
   // location), shown in place of the listed ones until a reload started after the latest change
   // answers. A poll that answers in between can't bring back the row from before the change.
-  const [confirmed, setConfirmed] = useState<Map<string, GridCluster>>(new Map());
+  const [confirmed, setConfirmed] = useState<Map<string, ClusterView>>(new Map());
   const lastReload = useRef(0);
 
   const rows = useMemo(() => {
@@ -204,8 +205,8 @@ export const ClustersPage: React.FC<Props> = ({ service }) => {
   /** Adds the cluster to AI Grid or removes it; throws for the modal to show. */
   const applyChange = async (change: MembershipChange, membership?: GridMembership) => {
     const { join } = change;
-    const updated = await changeMembership(service, change, membership, {
-      reload: (name) => service.listClusters().then((list) => list.find((c) => c.name === name)),
+    const updated = await changeMembership(writes, change, membership, {
+      reload: writes.loadCluster,
       onConflict: (current) => {
         if (current) {
           setChange((open) => (open?.cluster.name === current.name ? { ...open, cluster: current } : open));

@@ -1,11 +1,11 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { App } from '../App';
 import { MockConsoleService } from '../api/MockConsoleService';
 import { ServiceError } from '../api/ConsoleService';
 import type { ConsoleConfig, User } from '../api/types';
 import { deferred } from './render';
+import { TestApp } from './TestApp';
 import { SIGN_IN_AGAIN_KEY, SIGN_IN_AGAIN_WINDOW_MS, type Navigation } from '../utilities/signInAgain';
 // The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
 import '../pages/grid/GridPage';
@@ -16,7 +16,7 @@ describe('App', () => {
     const service = new MockConsoleService();
     render(
       <MemoryRouter>
-        <App service={service} />
+        <TestApp service={service} />
       </MemoryRouter>,
     );
 
@@ -31,7 +31,7 @@ describe('App', () => {
   it('has one h1, the page heading, first: the masthead title is not a heading', async () => {
     render(
       <MemoryRouter>
-        <App service={new MockConsoleService()} />
+        <TestApp service={new MockConsoleService()} />
       </MemoryRouter>,
     );
     await screen.findByRole('row', { name: /^site1 / });
@@ -45,7 +45,7 @@ describe('App', () => {
     const user = userEvent.setup();
     render(
       <MemoryRouter>
-        <App service={new MockConsoleService()} />
+        <TestApp service={new MockConsoleService()} />
       </MemoryRouter>,
     );
     await screen.findByRole('row', { name: /^site1 / });
@@ -59,7 +59,7 @@ describe('App', () => {
   it('has one h1 on the AI Grid map, which has no visible page heading', async () => {
     render(
       <MemoryRouter initialEntries={['/ai-grid']}>
-        <App service={new MockConsoleService()} />
+        <TestApp service={new MockConsoleService()} />
       </MemoryRouter>,
     );
     expect(await screen.findByRole('heading', { level: 1, name: 'AI Grid' })).toBeInTheDocument();
@@ -72,7 +72,7 @@ describe('App', () => {
     const user = userEvent.setup();
     render(
       <MemoryRouter>
-        <App service={service} />
+        <TestApp service={service} />
       </MemoryRouter>,
     );
     // Not a 401: somebody is signed in, the console just can't say who.
@@ -89,7 +89,7 @@ describe('App', () => {
     const user = userEvent.setup();
     render(
       <MemoryRouter>
-        <App service={service} />
+        <TestApp service={service} />
       </MemoryRouter>,
     );
     await user.click(await screen.findByRole('button', { name: 'User menu: Signing in...' }));
@@ -101,7 +101,7 @@ describe('App', () => {
     const service = new MockConsoleService({ username: 'viewer', groups: [], isProviderAdmin: false });
     render(
       <MemoryRouter>
-        <App service={service} />
+        <TestApp service={service} />
       </MemoryRouter>,
     );
 
@@ -115,7 +115,7 @@ describe('App', () => {
     const user = userEvent.setup();
     render(
       <MemoryRouter initialEntries={['/clusters']}>
-        <App service={service} />
+        <TestApp service={service} />
       </MemoryRouter>,
     );
     expect(
@@ -141,7 +141,7 @@ describe('App', () => {
     service.getConfig = async () => ({ ...config, fakeBackend: true });
     render(
       <MemoryRouter initialEntries={['/clusters']}>
-        <App service={service} />
+        <TestApp service={service} />
       </MemoryRouter>,
     );
     await screen.findByText(/^Fake backend:/);
@@ -155,7 +155,7 @@ describe('App', () => {
     service.getUser = () => Promise.reject(new ServiceError(500, 'unavailable'));
     render(
       <MemoryRouter initialEntries={['/clusters']}>
-        <App service={service} />
+        <TestApp service={service} />
       </MemoryRouter>,
     );
     expect(await screen.findByRole('row', { name: /^site1 / })).toBeInTheDocument();
@@ -166,7 +166,7 @@ describe('App', () => {
   it('navigates to organizations and shows them', async () => {
     render(
       <MemoryRouter>
-        <App service={new MockConsoleService()} />
+        <TestApp service={new MockConsoleService()} />
       </MemoryRouter>,
     );
     fireEvent.click(await screen.findByRole('link', { name: 'Organizations' }));
@@ -183,7 +183,7 @@ describe('App', () => {
     };
     render(
       <MemoryRouter>
-        <App service={service} />
+        <TestApp service={service} />
       </MemoryRouter>,
     );
     fireEvent.click(await screen.findByRole('link', { name: 'Organizations' }));
@@ -199,7 +199,7 @@ describe('App', () => {
     };
     render(
       <MemoryRouter>
-        <App service={service} />
+        <TestApp service={service} />
       </MemoryRouter>,
     );
     fireEvent.click(await screen.findByRole('link', { name: 'Organizations' }));
@@ -214,7 +214,7 @@ describe('user menu', () => {
     const user = userEvent.setup();
     render(
       <MemoryRouter>
-        <App service={new MockConsoleService()} />
+        <TestApp service={new MockConsoleService()} />
       </MemoryRouter>,
     );
     await user.click(await screen.findByRole('button', { name: /dev-user/ }));
@@ -228,7 +228,7 @@ describe('user menu', () => {
     const user = userEvent.setup();
     render(
       <MemoryRouter>
-        <App service={service} />
+        <TestApp service={service} />
       </MemoryRouter>,
     );
     await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('dev-user'));
@@ -244,7 +244,7 @@ describe('user menu', () => {
     const user = userEvent.setup();
     render(
       <MemoryRouter>
-        <App service={service} />
+        <TestApp service={service} />
       </MemoryRouter>,
     );
     await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('dev-user'));
@@ -280,7 +280,7 @@ describe('an ended session', () => {
   const renderEnded = (service: MockConsoleService, navigation: Navigation, storage?: () => Storage) =>
     render(
       <MemoryRouter initialEntries={['/clusters?view=all#top']}>
-        <App service={service} navigation={navigation} storage={storage} />
+        <TestApp service={service} navigation={navigation} storage={storage} />
       </MemoryRouter>,
     );
   /** The page with nothing of the console's pages: no nav, no nav toggle, no page heading. */
@@ -449,7 +449,7 @@ describe('an ended session', () => {
       const navigation = fakeNavigation();
       render(
         <MemoryRouter initialEntries={['/clusters']}>
-          <App service={service} navigation={navigation} />
+          <TestApp service={service} navigation={navigation} />
         </MemoryRouter>,
       );
       expect(await screen.findByRole('row', { name: /^site1 / })).toBeInTheDocument();
@@ -458,12 +458,13 @@ describe('an ended session', () => {
         vi.advanceTimersByTime(30000);
       });
       expect(await screen.findByRole('heading', { level: 1, name: 'Signing you in again…' })).toBeVisible();
-      expect(poll).toHaveBeenCalledTimes(1);
+      // A poll reads the list twice: over Connect (Clusters/List) and from /api/v1 (membership).
+      expect(poll).toHaveBeenCalledTimes(2);
       // Each further poll would only be another 401.
       await act(async () => {
         vi.advanceTimersByTime(120000);
       });
-      expect(poll).toHaveBeenCalledTimes(1);
+      expect(poll).toHaveBeenCalledTimes(2);
       expect(navigation.assign).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
@@ -476,7 +477,7 @@ describe('an ended session', () => {
     const user = userEvent.setup();
     render(
       <MemoryRouter initialEntries={['/clusters']}>
-        <App service={service} navigation={navigation} />
+        <TestApp service={service} navigation={navigation} />
       </MemoryRouter>,
     );
     expect(await screen.findByRole('row', { name: /^site1 / })).toBeInTheDocument();

@@ -1,8 +1,8 @@
 // The two error boundaries: one around the whole console, one around each page.
 import { render, screen, within } from '@testing-library/react';
+import { TestApp } from './TestApp';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { App } from '../App';
 import { MockConsoleService } from '../api/MockConsoleService';
 import type { User } from '../api/types';
 import { AppErrorBoundary } from '../components/AppErrorBoundary';
@@ -140,7 +140,7 @@ describe('AppErrorBoundary', () => {
     render(
       <AppErrorBoundary>
         <MemoryRouter>
-          <App service={service} />
+          <TestApp service={service} />
         </MemoryRouter>
       </AppErrorBoundary>,
     );

@@ -203,9 +203,11 @@ it('shows the role and location Add wrote while the list reloads', async () => {
   const user = userEvent.setup();
   renderAt('/clusters', service);
   await pick(user, 'cluster-b', 'Add to AI Grid');
-  // The reload after Add hasn't answered yet, so the table still holds the list from before.
-  let answer: () => void = () => {};
-  service.listClusters = () => new Promise((resolve) => (answer = () => resolve(list())));
+  // The reload after Add hasn't answered yet, so the table still holds the list from before. It
+  // reads the list twice (Clusters/List and /api/v1), so every call waits for answer().
+  const waiting: (() => void)[] = [];
+  const answer = () => waiting.splice(0).forEach((go) => go());
+  service.listClusters = () => new Promise((resolve) => waiting.push(() => resolve(list())));
   const modal = await screen.findByTestId('cluster-membership-modal');
   await user.click(within(modal).getByRole('textbox', { name: 'Location' }));
   await user.paste('paris');
@@ -226,7 +228,7 @@ it('shows the role and location Add wrote while the list reloads', async () => {
   answer();
   await waitFor(() =>
     expect(within(screen.getByTestId('clusters-table')).getByRole('row', { name: /^cluster-b / })).toHaveTextContent(
-      'Ingress',
+      'MaaS (ingress)',
     ),
   );
 });
@@ -247,9 +249,10 @@ it('keeps the cluster Add returned when a poll replaced the list during the PATC
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     renderAt('/clusters', service);
     await add(user, 'cluster-b');
-    // A poll answers with the list from before the change; then the reload after Add hangs.
+    // A poll answers with the list from before the change; then the reload after Add hangs. Each
+    // load reads the list twice: over Connect (Clusters/List) and from /api/v1 (membership).
     await act(() => vi.advanceTimersByTimeAsync(30000));
-    expect(polls).toBe(2);
+    expect(polls).toBe(4);
     service.listClusters = () => new Promise(() => {});
     await act(() => finish());
     expect(await screen.findByText('cluster-b added to AI Grid')).toBeVisible();
@@ -258,21 +261,21 @@ it('keeps the cluster Add returned when a poll replaced the list during the PATC
     // Refresh while that reload hangs keeps it, and an older reload that answers first (with the
     // list from before Add) doesn't drop it either.
     const before = [cluster('cluster-b', 'Ready', { location: 'site2' })];
-    let older: () => void = () => {};
-    service.listClusters = () => new Promise((resolve) => (older = () => resolve(before)));
+    const olderCalls: (() => void)[] = [];
+    service.listClusters = () => new Promise((resolve) => olderCalls.push(() => resolve(before)));
     await user.click(screen.getByRole('button', { name: 'Refresh' }));
-    let latest: () => void = () => {};
-    service.listClusters = () => new Promise((resolve) => (latest = () => resolve(list())));
+    const latestCalls: (() => void)[] = [];
+    service.listClusters = () => new Promise((resolve) => latestCalls.push(() => resolve(list())));
     await user.click(screen.getByRole('button', { name: 'Refresh' }));
-    await act(async () => older());
+    await act(async () => olderCalls.forEach((go) => go()));
     expect(row()).toHaveTextContent('Inference');
     // The latest reload's answer replaces it: someone changed the role in the meantime.
     service.clusters[0] = {
       ...service.clusters[0],
       labels: { ...service.clusters[0].labels, 'ai-grid/role': 'ingress' },
     };
-    await act(async () => latest());
-    await waitFor(() => expect(row()).toHaveTextContent('Ingress'));
+    await act(async () => latestCalls.forEach((go) => go()));
+    await waitFor(() => expect(row()).toHaveTextContent('MaaS (ingress)'));
   } finally {
     vi.useRealTimers();
   }
@@ -327,7 +330,7 @@ it('shows the role of each member, and warns about a member without one', async 
     ]),
   );
   const table = await screen.findByTestId('clusters-table');
-  expect(within(table).getByRole('row', { name: /^edge-1 / })).toHaveTextContent('Ingress');
+  expect(within(table).getByRole('row', { name: /^edge-1 / })).toHaveTextContent('MaaS (ingress)');
   expect(within(table).getByRole('row', { name: /^gpu-1 / })).toHaveTextContent('Inference');
   const former = within(table).getByRole('row', { name: /^former / });
   expect(former).toHaveTextContent('Not added');
@@ -345,7 +348,7 @@ it('shows the role of each member, and warns about a member without one', async 
       .map((r) => r.querySelector('td')?.textContent);
   const before = names();
   await user.click(within(table).getByRole('button', { name: 'About cluster roles' }));
-  expect(await screen.findByText('Serves models behind an ingress cluster.')).toBeVisible();
+  expect(await screen.findByText('Serves models behind a MaaS (ingress) cluster.')).toBeVisible();
   expect(names()).toEqual(before);
 });
 
@@ -416,10 +419,11 @@ it('shows one pagination, in the toolbar, for a single page', async () => {
 // PR 12's cluster JSON through HttpConsoleService, as GET /api/v1/clusters sends it.
 const serviceOnClusterJson = (clusters: unknown[]) => {
   const service = new MockConsoleService();
+  // A new Response per call: the page reads the list twice, over Connect and from /api/v1.
   const fetchFn = vi
     .fn()
-    .mockResolvedValue(
-      new Response(JSON.stringify({ data: clusters }), { headers: { 'Content-Type': 'application/json' } }),
+    .mockImplementation(
+      async () => new Response(JSON.stringify({ data: clusters }), { headers: { 'Content-Type': 'application/json' } }),
     );
   service.listClusters = () => new HttpConsoleService(fetchFn).listClusters();
   return service;
@@ -677,7 +681,7 @@ it('shows the location and role someone else set meanwhile instead of sending th
     ),
   ).toBeVisible();
   expect(within(modal).getByRole('textbox', { name: 'Location' })).toHaveValue('eu-west');
-  expect(within(modal).getByRole('combobox', { name: 'Role' })).toHaveValue('Ingress');
+  expect(within(modal).getByRole('combobox', { name: 'Role' })).toHaveValue('MaaS (ingress)');
 
   await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
   expect(await screen.findByText('site4 added to AI Grid')).toBeVisible();
@@ -699,7 +703,7 @@ it('says so when the cluster changed and could not be loaded again', async () =>
   const index = service.clusters.findIndex((c) => c.name === 'site4');
   const before = service.clusters[index];
   service.clusters[index] = { ...before, resourceVersion: String(Number(before.resourceVersion) + 1) };
-  vi.spyOn(service, 'listClusters').mockRejectedValueOnce(new Error('network down'));
+  vi.spyOn(service, 'getCluster').mockRejectedValueOnce(new Error('network down'));
 
   await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
   expect(

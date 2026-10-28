@@ -241,6 +241,16 @@ export class MockConsoleService implements ConsoleService {
       ),
     ].sort();
 
+  /**
+   * The fake backend's decision for the console's placement (bff/internal/fakebackend/placement.go):
+   * the provisioned AI Grid members whose `location` label is one of the locations, by name.
+   */
+  private decidedClusters = (locations: string[]): string[] =>
+    this.clusters
+      .filter((c) => c.aiGridEnabled && c.provisioned && c.location !== undefined && locations.includes(c.location))
+      .map((c) => c.name)
+      .sort();
+
   createModel = async (input: CreateModelRequest): Promise<ManagedModel> => {
     const fieldErrors = fieldErrorsOf(createModelSchema, input);
     if (Object.keys(fieldErrors).length > 0) {
@@ -264,6 +274,7 @@ export class MockConsoleService implements ConsoleService {
       creationTimestamp: new Date().toISOString(),
       resourceVersion: '1',
       locations: [...input.locations],
+      selectedClusters: this.decidedClusters(input.locations),
       modelUri: input.modelUri.trim(),
       modelName: input.modelName.trim(),
       runtimeImage: input.runtimeImage.trim(),
@@ -327,6 +338,7 @@ export class MockConsoleService implements ConsoleService {
     if (update.placement && locations) {
       model.placementSpec = structuredClone(update.placement);
       model.locations = [...locations];
+      model.selectedClusters = this.decidedClusters(locations);
     }
     model.resourceVersion = String(Number(model.resourceVersion) + 1);
     return structuredClone(model);
@@ -716,6 +728,8 @@ export const seedModels = (): ManagedModel[] =>
       : {}),
     resourceVersion: '1',
     locations,
+    // The seed clusters' location label is their name, and site1 is a provisioned member.
+    selectedClusters: [...locations],
     modelUri: `hf://example-org/${name}`,
     modelName: `example-org/${name}`,
     runtimeImage: 'quay.io/example/vllm:v1',

@@ -3,13 +3,13 @@ import { vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
 import type { NavigateFunction } from 'react-router-dom';
-import { App } from '../App';
 import { ServiceError } from '../api/ConsoleService';
 import { MockConsoleService, seedClusters } from '../api/MockConsoleService';
 import type { GridCluster } from '../api/types';
 import { renderAt } from './render';
 // The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
 import '../pages/clusters/ClusterDetailsPage';
+import { TestApp } from './TestApp';
 
 /** A cluster as today's backend sends it: no claims, capacity or conditions. */
 const bare = (): GridCluster => ({
@@ -43,7 +43,7 @@ it('shows a member: AI Grid, the cluster, its capacity and GPUs', async () => {
 
   expect(screen.getByTestId('cluster-membership')).toHaveTextContent('Provisioned');
   const aiGrid = details('AI Grid membership');
-  expect(aiGrid).toHaveTextContent('Combined: Takes tenant traffic and serves models.');
+  expect(aiGrid).toHaveTextContent('Combined: A MaaS (ingress) cluster that also serves models.');
   expect(aiGrid).toHaveTextContent('site1');
   // The same order as the list's AI Grid columns: status, location, role (UX review).
   expect(
@@ -358,7 +358,7 @@ it('keeps one history entry for the page after a change, so Back leaves it', asy
   render(
     <MemoryRouter initialEntries={['/clusters', '/clusters/site4']} initialIndex={1}>
       <Navigator />
-      <App service={new MockConsoleService()} />
+      <TestApp service={new MockConsoleService()} />
     </MemoryRouter>,
   );
   await addSite4(user);
@@ -394,7 +394,7 @@ it('removes the cluster from AI Grid', async () => {
 it('keeps the modal open with the error when the change fails', async () => {
   const user = userEvent.setup();
   const service = new MockConsoleService();
-  service.removeClusterFromGrid = () => Promise.reject(new ServiceError(500, 'the hub refused the change'));
+  service.removeClusterFromGrid = () => Promise.reject(new ServiceError(403, 'the hub refused the change'));
   renderAt('/clusters/site1', service);
   await user.click(await screen.findByRole('button', { name: 'Actions for site1' }));
   await user.click(screen.getByRole('menuitem', { name: 'Remove from AI Grid' }));
@@ -471,7 +471,7 @@ it('shows the location and role someone else set meanwhile instead of sending th
     ),
   ).toBeVisible();
   expect(within(modal).getByRole('textbox', { name: 'Location' })).toHaveValue('eu-west');
-  expect(within(modal).getByRole('combobox', { name: 'Role' })).toHaveValue('Ingress');
+  expect(within(modal).getByRole('combobox', { name: 'Role' })).toHaveValue('MaaS (ingress)');
 });
 
 it('offers Retry when the cluster could not be loaded', async () => {

@@ -7,7 +7,6 @@ import {
   toSubscription,
   toSubscriptionInfo,
 } from './adapters';
-import type { GridMembership } from './clusters';
 import type { ConsoleService } from './ConsoleService';
 import { RelayedError, ServiceError } from './ConsoleService';
 import { PERSES_API } from './monitoring';
@@ -61,25 +60,6 @@ export class HttpConsoleService implements ConsoleService {
 
   async getCluster(name: string): Promise<GridCluster> {
     return toGridCluster(await this.request<ApiCluster>('GET', `/clusters/${encodeURIComponent(name)}`));
-  }
-
-  async enrollCluster(cluster: GridCluster, { location, role }: GridMembership): Promise<GridCluster> {
-    // The BFF replaces the labels map as a whole, so send every label read with the cluster.
-    const updated = await this.request<ApiCluster>('PATCH', `/clusters/${encodeURIComponent(cluster.name)}`, {
-      body: { labels: { ...cluster.labels, 'ai-grid/enabled': 'true', 'ai-grid/role': role, location } },
-      ifMatch: cluster.resourceVersion,
-    });
-    return toGridCluster(updated);
-  }
-
-  async removeClusterFromGrid(cluster: GridCluster): Promise<GridCluster> {
-    const labels = { ...cluster.labels };
-    delete labels['ai-grid/enabled'];
-    const updated = await this.request<ApiCluster>('PATCH', `/clusters/${encodeURIComponent(cluster.name)}`, {
-      body: { labels },
-      ifMatch: cluster.resourceVersion,
-    });
-    return toGridCluster(updated);
   }
 
   /**

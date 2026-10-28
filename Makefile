@@ -10,6 +10,8 @@ CONTAINER_ENGINE ?= $(shell command -v podman 2>/dev/null || command -v docker)
 
 # The backend address the BFF dials, and where make dev-cluster forwards the hub's backend to.
 BACKEND_ADDRESS ?= 127.0.0.1:9090
+# The fake hub's port in make dev-fake-infra (the backend's make dev-fake reads the same variable).
+DEV_HUB_PORT ?= 9091
 # Where make dev-cluster forwards the hub's Perses to for the Monitoring page.
 PERSES_ADDRESS ?= 127.0.0.1:9445
 PERSES_NAMESPACE ?= openshift-cluster-observability-operator
@@ -94,6 +96,9 @@ dev-frontend-fake: ## Run the Vite dev server as dev-user with a fixture token (
 
 ##@ Development on the backend's own fakes (the real backend at .backend-api-version on a fake hub and Keycloak)
 
+# The backend's presets go as its variables: make dev-fake-infra DEV_FIXTURES=fixtures/poc
+# DEV_DRAFT_FIXTURES=fixtures/draft/poc is the PoC's sites (the browser tests' stack), and
+# DEV_FIXTURES=fixtures/locations its cluster location cases.
 dev-fake-infra: ## The backend at .backend-api-version on its fake hub and Keycloak (:9090-:9094), the BFF against it on :8080 (not --fake-backend; it relays /ai_grid.v1.*) and the frontend on :9000; no oc login needed
 	@BACKEND_DIR='$(BACKEND_DIR)' BACKEND_REPO='$(BACKEND_REPO)' hack/backend-checkout.sh >/dev/null
 	@trap 'kill 0' INT TERM; \
@@ -107,7 +112,7 @@ dev-fake-infra-backend: ## Run the backend's own `make dev-fake` from a checkout
 	MAKEFLAGS= $(MAKE) -C "$$dir" dev-fake
 
 dev-bff-fake-infra: ## Run the BFF against dev-fake-infra-backend: its backend on BACKEND_ADDRESS, its fake hub on :9091 for the provider-admin check
-	$(MAKE) -C bff run BACKEND_ADDRESS=$(BACKEND_ADDRESS) HUB_API_URL=http://127.0.0.1:9091 HUB_CA_FILE=
+	$(MAKE) -C bff run BACKEND_ADDRESS=$(BACKEND_ADDRESS) HUB_API_URL=http://127.0.0.1:$(DEV_HUB_PORT) HUB_CA_FILE=
 
 dev-bff: ## Run the BFF; callers must send the identity headers (see hack/api.sh)
 	$(MAKE) -C bff run BACKEND_ADDRESS=$(BACKEND_ADDRESS)
@@ -144,7 +149,7 @@ build: ## Build the BFF binary and the frontend bundle
 	$(MAKE) -C bff build
 	cd frontend && pnpm build
 
-e2e: ## Browser tests on the production bundle (vite build, vite preview) against the fake stack of make dev-fake-poc (Playwright; first run: cd frontend && pnpm exec playwright install chromium)
+e2e: ## Browser tests on the production bundle (vite build, vite preview) against the fake stack of make dev-fake-poc and, for the Clusters pages and the map, the backend's own fakes (hack/backend-fakes.sh; Playwright; first run: cd frontend && pnpm exec playwright install chromium)
 	cd frontend && pnpm e2e
 
 ##@ Packaging and deployment

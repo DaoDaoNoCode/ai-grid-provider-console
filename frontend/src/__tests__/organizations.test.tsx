@@ -7,7 +7,6 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
 import type { NavigateFunction } from 'react-router-dom';
-import { App } from '../App';
 import { ServiceError } from '../api/ConsoleService';
 import { HttpConsoleService } from '../api/HttpConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
@@ -17,6 +16,7 @@ import { deferred, renderAt } from './render';
 import '../pages/organizations/OrganizationDetailsPage';
 import '../pages/organizations/OrganizationListPage';
 import '../pages/organizations/OrganizationWizardPage';
+import { TestApp } from './TestApp';
 
 const input: Required<OrganizationInput> = {
   name: 'tenant1',
@@ -454,7 +454,7 @@ it('leaves the create form out of history once the organization is created, so B
   render(
     <MemoryRouter initialEntries={['/clusters', '/organizations/create']} initialIndex={1}>
       <CaptureNavigate />
-      <App service={new MockConsoleService()} />
+      <TestApp service={new MockConsoleService()} />
     </MemoryRouter>,
   );
   await user.click(await screen.findByRole('textbox', { name: 'Name' }));
@@ -538,7 +538,7 @@ it.each(['', '/edit'])('loads the other organization when the id in /organizatio
   render(
     <MemoryRouter initialEntries={[`/organizations/${acme.id}${suffix}`]}>
       <Navigator />
-      <App service={service} />
+      <TestApp service={service} />
     </MemoryRouter>,
   );
   const shows = (name: string) =>
