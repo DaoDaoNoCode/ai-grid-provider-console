@@ -144,8 +144,9 @@ Query runtime for Perses alone.
 
 The console also renders navigations without React transitions (`frontend/src/router.ts`),
 because React 18 can drop an update that lands mid-render, which left Perses's time-range menu's
-invisible popover blocking the page. That goes with React 19, once Perses supports it
-(perses/shared#390, open as of 2026-10-27; Perses 0.55 still requires React 18).
+invisible popover blocking the page. That goes with React 19 and Perses 0.56 or later: Perses
+supports React 19 from perses/shared#390 and perses/plugins#889 (merged 2026-10-28, first in
+0.56.0-beta.0).
 
 ## Testing
 
