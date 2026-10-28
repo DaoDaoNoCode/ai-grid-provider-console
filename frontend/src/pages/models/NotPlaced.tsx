@@ -2,15 +2,15 @@ import { Button, EmptyState, EmptyStateActions, EmptyStateBody, EmptyStateFooter
 import type { ManagedModel } from '../../api/types';
 
 type Props = {
-  model: Pick<ManagedModel, 'name' | 'locations' | 'placementIssue'>;
+  model: Pick<ManagedModel, 'name' | 'placementIssue'>;
   /** Opens the model's edit page; absent for a viewer. */
   onEdit?: () => void;
 };
 
 /**
- * A model row expanded before any cluster reported the model: why, as the backend's placement says
+ * A model row expanded when its placement chose no cluster: why, as the backend's placement says
  * when it isn't satisfied (PlacementSatisfied's reason and message), otherwise that it has no
- * locations or that no cluster has reported it yet.
+ * locations.
  */
 export const NotPlaced: React.FC<Props> = ({ model, onEdit }) => {
   const issue = model.placementIssue;
@@ -22,11 +22,7 @@ export const NotPlaced: React.FC<Props> = ({ model, onEdit }) => {
       data-testid={`model-not-placed-${model.name}`}
     >
       <EmptyStateBody>
-        {issue
-          ? [issue.reason, issue.message].filter(Boolean).join(': ')
-          : model.locations.length
-            ? 'No cluster has reported this model yet.'
-            : 'This model has no locations.'}
+        {issue ? [issue.reason, issue.message].filter(Boolean).join(': ') : 'This model has no locations.'}
       </EmptyStateBody>
       {onEdit && (
         <EmptyStateFooter>

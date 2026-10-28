@@ -1606,6 +1606,44 @@ describe('the Models list expands every row', () => {
     );
   });
 
+  it('lists the clusters a git-mode model was placed on, without calling it unplaced', async () => {
+    const user = userEvent.setup();
+    // As the real hub answers it: placed on site-b by name, the placement not reported satisfied,
+    // and no works, because the backend saves the model to Git and Argo CD delivers it.
+    const granite = getModels.body.data.find((m) => m.name === 'granite-8b-instruct')!;
+    const placed = {
+      ...granite,
+      name: 'granite-4-tiny',
+      phase: 'ready',
+      placement: {
+        matchExpressions: [{ key: 'name', operator: 'In', values: ['site-b'] }],
+        selectedClusters: ['site-b'],
+        locations: ['us-east'],
+        satisfied: false,
+        conditions: [],
+      },
+      rollout: { strategy: 'All', rolledOut: false, applied: false, conditions: [], works: [] },
+    };
+    const service = serviceOnModelJson(
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ data: [placed] }), { headers: { 'Content-Type': 'application/json' } }),
+      ),
+    );
+    const [cluster] = service.clusters;
+    service.clusters = [{ ...cluster, name: 'site-b', location: 'us-east', siteName: undefined }];
+    renderAt('/models', service);
+    await user.click(within(await rowOf('granite-4-tiny')).getByRole('button', { name: 'Details' }));
+    const selected = await screen.findByTestId('model-selected-clusters-granite-4-tiny');
+    expect(selected).toHaveTextContent("Status per location isn't reported for this model yet.");
+    expect(
+      within(selected)
+        .getAllByTestId('model-selected-cluster-row')
+        .map((r) => r.textContent),
+    ).toEqual(['us-east · site-bStatus not reported']);
+    expect(screen.queryByText('Not placed on any cluster yet')).not.toBeInTheDocument();
+  });
+
   it('offers no Edit locations to a user the console could not load', async () => {
     const user = userEvent.setup();
     const service = new MockConsoleService();

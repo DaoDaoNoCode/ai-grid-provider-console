@@ -36,6 +36,7 @@ import { EMPTY_VALUE } from '../../utilities/format';
 import { locationLabel, modelPath, siteNamesOf } from './modelUtils';
 import { ModelLocationsTable } from './ModelLocationsTable';
 import { NotPlaced } from './NotPlaced';
+import { ModelSelectedClusters } from './ModelSelectedClusters';
 import { ModelStatusLabel } from './ModelStatus';
 import type { ModelDeleteService } from './useDeleteModel';
 import { useDeleteModel } from './useDeleteModel';
@@ -170,7 +171,8 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
                   return (
                     <Tbody key={key} isExpanded={isExpanded}>
                       <Tr isContentExpanded={isExpanded}>
-                        {/* Every row expands: to its locations, or to why it has none. */}
+                        {/* Every row expands: to each location's status, to the clusters its placement chose
+                            when no status is reported (git mode), or to why it has none. */}
                         <Td
                           expand={{
                             rowIndex,
@@ -245,6 +247,8 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
                                     isNested
                                   />
                                 </div>
+                              ) : deployment.selectedClusters.length > 0 ? (
+                                <ModelSelectedClusters model={deployment} clusters={clusters} siteNames={siteNames} />
                               ) : (
                                 <NotPlaced
                                   model={deployment}
