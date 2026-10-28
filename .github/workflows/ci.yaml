@@ -10,10 +10,19 @@ on:
 permissions:
   contents: read
 
+# A newer push to a pull request cancels the run it supersedes. Runs on main and tags are never
+# cancelled, so every merged commit gets its checks and its image.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# timeout-minutes: about three times the slowest job seen (CI runs of 2026-10), so a hung step
+# fails the job instead of holding a runner for GitHub's default 6 hours.
 jobs:
   bff:
     name: BFF
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: bff
@@ -44,6 +53,7 @@ jobs:
   frontend:
     name: Frontend
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: frontend
@@ -77,6 +87,7 @@ jobs:
   e2e:
     name: Browser tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     # Playwright's image has the browsers and their system libraries, so nothing is installed per
     # run (the install took 18-525 s). Its version must be the one frontend/pnpm-lock.yaml has for
     # @playwright/test: Dependabot bumps the package but not this image, and with a different
@@ -114,6 +125,7 @@ jobs:
   manifests:
     name: Manifests
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: kustomize build
@@ -126,6 +138,7 @@ jobs:
   chart:
     name: Helm chart on kind
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [manifests]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -141,6 +154,7 @@ jobs:
     if: always()
     needs: [bff, frontend, e2e, manifests, chart]
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: every job succeeded
         env:
@@ -157,6 +171,7 @@ jobs:
     needs: [bff, frontend, e2e, manifests, chart]
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     # GITHUB_TOKEN pushes to ghcr.io for this organization's repositories; no stored secret.
     permissions:
       contents: read
