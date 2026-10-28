@@ -82,8 +82,19 @@ const toBff: ProxyOptions = {
   },
 };
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [react()],
+  resolve: {
+    // Dev server only: Perses 0.56 is "type": "module" and default-imports mdi-material-ui's icons by
+    // extensionless paths (mdi-material-ui/Circle), which are CommonJS files; mdi-material-ui has no
+    // "exports" map. Vite's dependency pre-bundling (esbuild) then follows Node's rules for an ES
+    // module importing CommonJS, and the default import becomes the whole module.exports object
+    // ({ __esModule, default }), so rendering a Perses icon fails ("Element type is invalid"). The
+    // same icons in mdi-material-ui/esm/ are ES modules. The production build (Rollup) honours
+    // __esModule and doesn't need this. Remove it once Perses imports the ESM paths.
+    alias:
+      command === 'serve' ? [{ find: /^mdi-material-ui\/(?!esm\/)(.+)$/, replacement: 'mdi-material-ui/esm/$1' }] : [],
+  },
   server: {
     port: Number(process.env.FRONTEND_PORT ?? 9000),
     strictPort: true,
@@ -112,6 +123,9 @@ export default defineConfig({
     env: { TZ: 'UTC', LC_ALL: 'en_US.UTF-8' },
     // Playwright specs run with `pnpm e2e`.
     exclude: ['**/node_modules/**', 'e2e/**'],
+    // Perses 0.56 is "type": "module" and imports mdi-material-ui/<Icon> without an extension, which
+    // Node's ES module resolver refuses ("Cannot find module"). Inlined, Vite resolves those imports.
+    server: { deps: { inline: [/@perses-dev\//] } },
     // Setting up jsdom costs far more per file than most logic tests take, so only components get
     // it. A *.test.ts file that needs the DOM says so with `// @vitest-environment jsdom`.
     projects: [
@@ -119,4 +133,4 @@ export default defineConfig({
       { extends: true, test: { name: 'jsdom', environment: 'jsdom', include: ['src/**/*.test.tsx'] } },
     ],
   },
-});
+}));
