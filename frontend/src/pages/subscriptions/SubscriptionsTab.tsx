@@ -20,7 +20,7 @@ import { initialSubscriptionsFilterData, SubscriptionsFilterOptions } from './al
 import type { ModelsState } from './allSubscriptions/ExpandedModelsPanel';
 import { SubscriptionsTable } from './allSubscriptions/SubscriptionsTable';
 import { SubscriptionsToolbar } from './allSubscriptions/SubscriptionsToolbar';
-import { DeleteSubscriptionModal } from './DeleteSubscriptionModal';
+import { useDeleteSubscription } from '../../hooks/useDeleteSubscription';
 import { useClusterList } from '../clusters/useClusters';
 
 // The clusters name the models' locations' sites, as on the Models page.
@@ -43,7 +43,13 @@ export const SubscriptionsTab: React.FC<Props> = ({ service }) => {
   const siteNames = useMemo(() => siteNamesOf(clusters), [clusters]);
   const [filterData, setFilterData] = useState<SubscriptionsFilterDataType>(initialSubscriptionsFilterData);
   const navigate = useNavigate();
-  const [deleteSubscription, setDeleteSubscription] = useState<MaaSSubscription>();
+  const [confirmDelete, deleteDialog] = useDeleteSubscription(service, {
+    onDeleted: () => {
+      // Replace, so the notice doesn't add a second Subscriptions entry to the browser's history.
+      void navigate('.', { replace: true, state: { notice: 'Subscription deleted' } });
+      refresh();
+    },
+  });
 
   const onFilterUpdate = useCallback(
     (key: SubscriptionsFilterOptions, value?: string) => setFilterData((prev) => ({ ...prev, [key]: value })),
@@ -140,7 +146,7 @@ export const SubscriptionsTab: React.FC<Props> = ({ service }) => {
             />
           }
           canWrite={canWrite}
-          setDeleteSubscription={setDeleteSubscription}
+          onDelete={confirmDelete}
         />
       </>
     );
@@ -159,20 +165,7 @@ export const SubscriptionsTab: React.FC<Props> = ({ service }) => {
       >
         {body()}
       </PageStateSection>
-      {deleteSubscription && (
-        <DeleteSubscriptionModal
-          service={service}
-          subscription={deleteSubscription}
-          onClose={(deleted) => {
-            setDeleteSubscription(undefined);
-            if (deleted) {
-              // Replace, so the notice doesn't add a second Subscriptions entry to the browser's history.
-              void navigate('.', { replace: true, state: { notice: 'Subscription deleted' } });
-              refresh();
-            }
-          }}
-        />
-      )}
+      {deleteDialog}
     </>
   );
 };

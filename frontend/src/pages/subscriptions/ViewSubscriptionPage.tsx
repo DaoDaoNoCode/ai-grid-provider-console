@@ -5,7 +5,6 @@
 // Telemetry is dropped; a viewer gets no actions; the console adds the Organization. The page
 // has one view, so it shows its sections without odh-dashboard's single "Details" tab, and its status
 // beside its title, as every details page does.
-import { useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Breadcrumb, BreadcrumbItem, Flex } from '@patternfly/react-core';
 import type { SubscriptionsService } from '../../api/subscriptions';
@@ -20,7 +19,7 @@ import { getBackUrl, getSubscriptionEditUrl, subscriptionNotFound } from '../../
 import { PageStateSection } from '../../components/states/PageStateSection';
 import { PhaseLabel } from '../../components/Phase/PhaseLabel';
 import { getSubscriptionAffectedModels } from '../../hooks/useGovernanceAffectedModels';
-import { DeleteSubscriptionModal } from './DeleteSubscriptionModal';
+import { useDeleteSubscription } from '../../hooks/useDeleteSubscription';
 import { SubscriptionDetailsSection } from './viewSubscription/SubscriptionDetailsSection';
 import { SubscriptionGroupsSection } from './viewSubscription/SubscriptionGroupsSection';
 
@@ -29,7 +28,12 @@ type ActionsProps = { service: SubscriptionsService; subscription: MaaSSubscript
 const SubscriptionActions: React.FC<ActionsProps> = ({ service, subscription, returnTo }) => {
   const navigate = useNavigate();
   const { refresh } = useMaaSGovernanceContext();
-  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [confirmDelete, deleteDialog] = useDeleteSubscription(service, {
+    onDeleted: () => {
+      refresh();
+      navigate(returnTo, { state: { notice: 'Subscription deleted' } });
+    },
+  });
   return (
     <>
       <SimpleMenuActions
@@ -48,24 +52,12 @@ const SubscriptionActions: React.FC<ActionsProps> = ({ service, subscription, re
             key: 'delete',
             label: 'Delete',
             isDanger: true,
-            onClick: () => setIsDeleteOpen(true),
+            onClick: () => confirmDelete(subscription),
             isDisabled: !!subscription.deletionTimestamp,
           },
         ]}
       />
-      {isDeleteOpen && (
-        <DeleteSubscriptionModal
-          service={service}
-          subscription={subscription}
-          onClose={(deleted) => {
-            setIsDeleteOpen(false);
-            if (deleted) {
-              refresh();
-              navigate(returnTo, { state: { notice: 'Subscription deleted' } });
-            }
-          }}
-        />
-      )}
+      {deleteDialog}
     </>
   );
 };

@@ -227,8 +227,12 @@ describe('administrator subscription flows', () => {
     await user.click(actions);
     expect(actions).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeVisible();
-    // A subscription being deleted keeps its named menu, disabled.
-    expect(within(table).getByRole('button', { name: 'Actions for Research' })).toBeDisabled();
+    // A subscription being deleted can still be viewed; Edit and Delete stay, disabled.
+    await user.keyboard('{Escape}');
+    await user.click(within(table).getByRole('button', { name: 'Actions for Research' }));
+    expect(screen.getByRole('menuitem', { name: 'View details' })).not.toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('menuitem', { name: 'Edit' })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('menuitem', { name: 'Delete' })).toHaveAttribute('aria-disabled', 'true');
   });
 
   it('keeps keyboard focus on the filter menu after choosing what to filter by', async () => {
@@ -466,17 +470,14 @@ it('requires an organization and shows it in the table', async () => {
 
 it('hides write actions until it knows the user is a provider admin', async () => {
   const service = unknownUser();
-  const user = userEvent.setup();
   const { unmount } = renderAt('/subscriptions', service);
   await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('User could not be loaded'));
   const table = await screen.findByTestId('subscriptions-table');
   expect(within(table).getByRole('link', { name: 'Engineering' })).toBeVisible();
   expect(screen.queryByRole('link', { name: 'Create subscription' })).not.toBeInTheDocument();
-  const row = within(table).getByRole('link', { name: 'Engineering' }).closest('tr')!;
-  await user.click(within(row).getByRole('button', { name: 'Actions for Engineering' }));
-  expect(screen.getByRole('menuitem', { name: 'View details' })).toBeVisible();
-  expect(screen.queryByRole('menuitem', { name: 'Edit' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('menuitem', { name: 'Delete' })).not.toBeInTheDocument();
+  // No row menu, as on the other lists: a viewer opens a subscription from its name.
+  expect(within(table).queryByRole('button', { name: 'Actions for Engineering' })).not.toBeInTheDocument();
+  expect(within(table).queryByRole('columnheader', { name: 'Actions' })).not.toBeInTheDocument();
   unmount();
 
   renderAt('/subscriptions/view/engineering', service);

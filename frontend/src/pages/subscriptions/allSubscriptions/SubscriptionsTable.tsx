@@ -26,7 +26,7 @@ type Props = {
   toolbarContent: React.ReactNode;
   onClearFilters: () => void;
   canWrite: boolean;
-  setDeleteSubscription: (subscription: MaaSSubscription) => void;
+  onDelete: (subscription: MaaSSubscription) => void;
 };
 
 export const SubscriptionsTable: React.FC<Props> = ({
@@ -38,7 +38,7 @@ export const SubscriptionsTable: React.FC<Props> = ({
   toolbarContent,
   onClearFilters,
   canWrite,
-  setDeleteSubscription,
+  onDelete,
 }) => {
   const [sortBy, setSortBy] = useState<{ index: number; direction: 'asc' | 'desc' }>({ index: 0, direction: 'asc' });
   const columns = useMemo(() => subscriptionsColumns(organizationName), [organizationName]);
@@ -69,7 +69,7 @@ export const SubscriptionsTable: React.FC<Props> = ({
                     {col.label}
                   </Th>
                 ))}
-                <Th screenReaderText="Actions" />
+                {canWrite && <Th screenReaderText="Actions" />}
               </Tr>
             </Thead>
             {sorted.length ? (
@@ -83,13 +83,13 @@ export const SubscriptionsTable: React.FC<Props> = ({
                   modelsState={modelsState}
                   siteNames={siteNames}
                   canWrite={canWrite}
-                  setDeleteSubscription={setDeleteSubscription}
+                  onDelete={onDelete}
                 />
               ))
             ) : (
               <Tbody>
                 <TableEmptyRow
-                  colSpan={columns.length + 1}
+                  colSpan={columns.length + (canWrite ? 1 : 0)}
                   body="Change the filter to see more subscriptions."
                   onClear={onClearFilters}
                 />

@@ -739,5 +739,5 @@ it('heads the wizard sections at h2, moves focus to an added domain, and names t
   await user.click(await screen.findByTestId('organization-actions'));
   await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
   const modal = await screen.findByTestId('delete-tenant-modal');
-  expect(within(modal).getByRole('textbox', { name: `Type ${organization.name} to confirm deletion:` })).toBeVisible();
+  expect(within(modal).getByRole('textbox', { name: `Type ${organization.name} to confirm:` })).toBeVisible();
 });
