@@ -84,8 +84,15 @@ func env(msg proto.Message) (*cel.Env, error) {
 // whitespace-only expression is no filter (nil, nil): the proto says empty
 // means all. A syntax or type error, and an expression whose type is known
 // not to be bool, are InvalidArgument naming the filter and quoting cel-go's
-// error (console wording around cel-go's own text).
+// error (console wording around cel-go's own text). One evaluation costs at
+// most CostLimit.
 func Compile(src string, msg proto.Message) (*Filter, error) {
+	return compile(src, msg, CostLimit)
+}
+
+// compile is Compile with the cost limit of one evaluation as an argument, so
+// a test can reach the limit without burning a million steps.
+func compile(src string, msg proto.Message, costLimit uint64) (*Filter, error) {
 	if strings.TrimSpace(src) == "" {
 		return nil, nil
 	}
@@ -100,7 +107,7 @@ func Compile(src string, msg proto.Message) (*Filter, error) {
 	if out := ast.OutputType(); !out.IsExactType(cel.BoolType) && !out.IsExactType(cel.DynType) {
 		return nil, status.Errorf(codes.InvalidArgument, "filter %s must evaluate to a bool, not %s", src, out)
 	}
-	prg, err := e.Program(ast, cel.CostLimit(CostLimit), cel.InterruptCheckFrequency(interruptEvery))
+	prg, err := e.Program(ast, cel.CostLimit(costLimit), cel.InterruptCheckFrequency(interruptEvery))
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "filter %s is not a valid CEL expression: %v", src, err)
 	}

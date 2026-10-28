@@ -49,19 +49,29 @@ func TestDynResultMustBeABool(t *testing.T) {
 	}
 }
 
+// The cost limit stops a filter whose work grows with the object, and only
+// then: the same filter passes on a small object. The limit here is 1000, not
+// CostLimit, which would take a million interpreted steps (seconds under the
+// race detector) to reach.
 func TestCostLimitStopsARunawayFilter(t *testing.T) {
-	tn := &aigridv1.Tenant{}
-	for i := range 200 {
-		tn.Domains = append(tn.Domains, fmt.Sprintf("d%d.example.com", i))
+	tenant := func(domains int) *aigridv1.Tenant {
+		tn := &aigridv1.Tenant{}
+		for i := range domains {
+			tn.Domains = append(tn.Domains, fmt.Sprintf("d%d.example.com", i))
+		}
+		return tn
 	}
 	src := `this.domains.all(a, this.domains.all(b, this.domains.all(c, a != "")))`
-	f, err := Compile(src, &aigridv1.Tenant{})
+	f, err := compile(src, &aigridv1.Tenant{}, 1000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = f.Match(context.Background(), tn, "t-1", time.Now())
+	if ok, err := f.Match(t.Context(), tenant(2), "t-1", time.Now()); !ok || err != nil {
+		t.Fatalf("2 domains, 8 steps: %v, %v; want a match", ok, err)
+	}
+	_, err = f.Match(t.Context(), tenant(20), "t-2", time.Now())
 	if status.Code(err) != codes.InvalidArgument || !strings.Contains(status.Convert(err).Message(), "cost limit exceeded") {
-		t.Errorf("runaway = %v", err)
+		t.Errorf("20 domains, 8000 steps: %v; want InvalidArgument with cost limit exceeded", err)
 	}
 }
 
