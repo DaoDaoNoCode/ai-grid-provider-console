@@ -11,6 +11,7 @@ import {
   DEFAULT_RATE_LIMIT,
   getCountDigitError,
   getCountError,
+  getSavedWindowMessage,
   getTimeDigitError,
   getTimeError,
   rateLimitExceedsMaxDigits,
@@ -61,23 +62,30 @@ export const EditRateLimitsModal: React.FC<Props> = ({ modelName, rateLimits, on
         {/* A form, so the token limits' labels are PatternFly form labels. */}
         <Form onSubmit={(event) => event.preventDefault()}>
           <Stack hasGutter>
-            {localLimits.map((limit, index) => (
-              <StackItem key={index}>
-                <RateLimitRow
-                  id={`edit-token-limit-${index}`}
-                  rateLimit={limit}
-                  onChange={(updated) =>
-                    setLocalLimits((prev) => prev.map((item, i) => (i === index ? updated : item)))
-                  }
-                  onRemove={() => setLocalLimits((prev) => prev.filter((_, i) => i !== index))}
-                  showRemove={localLimits.length > 1}
-                  countError={submitted ? getCountError(limit) : undefined}
-                  timeError={submitted ? getTimeError(limit) : undefined}
-                  countDigitError={getCountDigitError(limit)}
-                  timeDigitError={getTimeDigitError(limit)}
-                />
-              </StackItem>
-            ))}
+            {localLimits.map((limit, index) => {
+              // A limit saved with a window the form cannot read, such as one written in Git by
+              // hand: its row names that window, as a warning until Save is tried, then as the
+              // time's error, until a valid time replaces it.
+              const savedWindowMessage = getSavedWindowMessage(limit);
+              return (
+                <StackItem key={index}>
+                  <RateLimitRow
+                    id={`edit-token-limit-${index}`}
+                    rateLimit={limit}
+                    onChange={(updated) =>
+                      setLocalLimits((prev) => prev.map((item, i) => (i === index ? updated : item)))
+                    }
+                    onRemove={() => setLocalLimits((prev) => prev.filter((_, i) => i !== index))}
+                    showRemove={localLimits.length > 1}
+                    countError={submitted ? getCountError(limit) : undefined}
+                    timeError={submitted ? (savedWindowMessage ?? getTimeError(limit)) : undefined}
+                    timeWarning={savedWindowMessage}
+                    countDigitError={getCountDigitError(limit)}
+                    timeDigitError={getTimeDigitError(limit)}
+                  />
+                </StackItem>
+              );
+            })}
             <StackItem>
               <Button
                 variant="link"

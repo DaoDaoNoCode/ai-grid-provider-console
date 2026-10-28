@@ -950,6 +950,85 @@ it('asks before Cancel discards the subscription form’s input', async () => {
   expect(await screen.findByTestId('subscriptions-table')).toBeVisible();
 });
 
+it('shows a window the form cannot read as it is, and saves it only once a new time is entered', async () => {
+  const seed = structuredClone(seedSubscriptions()[0]);
+  seed.modelRefs[0] = {
+    ...seed.modelRefs[0],
+    tokenRateLimits: [
+      { limit: 5000, window: '1h' },
+      { limit: 100, window: '2d' },
+    ],
+  };
+  const service = new MockConsoleService();
+  service.subscriptions = [seed];
+  const update = vi.spyOn(service, 'updateSubscription');
+  const user = userEvent.setup();
+  renderAt(`/subscriptions/edit/${seed.name}`, service);
+  const models = await screen.findByTestId('subscription-models-table');
+  await user.click(within(models).getByRole('button', { name: /^5,000 \/ 1 hour\s*100 \/ 2d$/ }));
+  const dialog = screen.getByRole('dialog', { name: 'Edit token limits' });
+  const readable = within(dialog).getByTestId('edit-token-limit-0');
+  const unreadable = within(dialog).getByTestId('edit-token-limit-1');
+  const message = 'Saved as "2d", which MaaS doesn\'t accept. Enter a time from 1 to 9999.';
+  // From the moment the dialog opens, the row with "2d" warns, with its time empty; the other row says nothing.
+  expect(within(readable).getByRole('spinbutton', { name: 'Per' })).toHaveValue(1);
+  expect(within(readable).getByTestId('edit-token-limit-0-helper-text')).toHaveTextContent(/^$/);
+  const time = within(unreadable).getByRole('spinbutton', { name: 'Per' });
+  expect(time).toHaveValue(null);
+  expect(time).not.toBeInvalid();
+  expect(within(unreadable).getByTestId('edit-token-limit-1-helper-text')).toHaveTextContent(
+    `${message}: warning status;`,
+    { normalizeWhitespace: false },
+  );
+  // Save turns the same message into the time's error.
+  await user.click(within(dialog).getByTestId('save-rate-limits'));
+  expect(dialog).toBeInTheDocument();
+  expect(time).toBeInvalid();
+  expect(within(unreadable).getByTestId('edit-token-limit-1-helper-text')).toHaveTextContent(
+    `${message}: error status;`,
+    { normalizeWhitespace: false },
+  );
+  expect(within(readable).getByTestId('edit-token-limit-0-helper-text')).toHaveTextContent(/^$/);
+  // A valid time clears it.
+  await user.type(time, '48');
+  expect(time).not.toBeInvalid();
+  expect(within(unreadable).getByTestId('edit-token-limit-1-helper-text')).toHaveTextContent(/^$/);
+  await user.click(within(dialog).getByTestId('save-rate-limits'));
+  expect(dialog).not.toBeInTheDocument();
+  await user.click(screen.getByTestId('update-subscription-button'));
+  await waitFor(() => expect(update).toHaveBeenCalled());
+  expect(update.mock.calls[0][1].modelRefs[0].tokenRateLimits).toEqual([
+    { limit: 5000, window: '1h' },
+    { limit: 100, window: '48h' },
+  ]);
+});
+
+it('refuses a token limit window over 8784 hours as it is typed, and takes 8784', async () => {
+  const user = userEvent.setup();
+  renderAt('/subscriptions/create', new MockConsoleService());
+  await user.click(await screen.findByTestId('add-models-button'));
+  await user.click(screen.getByTestId('toggle-model-granite-3-8b'));
+  await user.click(screen.getByTestId('confirm-add-models'));
+  await user.click(screen.getByTestId('add-token-limit-0'));
+  const dialog = screen.getByRole('dialog', { name: 'Edit token limits' });
+  const row = within(dialog).getByTestId('edit-token-limit-0');
+  const time = within(row).getByRole('spinbutton', { name: 'Per' });
+  await user.clear(time);
+  await user.type(time, '8785');
+  expect(time).toBeInvalid();
+  expect(within(row).getByTestId('edit-token-limit-0-helper-text')).toHaveTextContent(
+    'At most 8784 hours (366 days): error status;',
+    { normalizeWhitespace: false },
+  );
+  expect(within(dialog).getByTestId('save-rate-limits')).toBeDisabled();
+  await user.type(time, '{Backspace}4');
+  expect(time).not.toBeInvalid();
+  expect(within(row).getByTestId('edit-token-limit-0-helper-text')).toHaveTextContent(/^$/);
+  await user.click(within(dialog).getByTestId('save-rate-limits'));
+  expect(dialog).not.toBeInTheDocument();
+  expect(screen.getByTestId('subscription-models-table')).toHaveTextContent('1,000 / 8,784 hours');
+});
+
 it('keeps Save disabled on an edit until something changes', async () => {
   const user = userEvent.setup();
   renderAt('/subscriptions/edit/engineering', new MockConsoleService());
