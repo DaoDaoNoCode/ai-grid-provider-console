@@ -933,6 +933,32 @@ it('shows a window the form cannot read as it is, and saves it only once a new t
   ]);
 });
 
+it('refuses a token limit window over 8784 hours as it is typed, and takes 8784', async () => {
+  const user = userEvent.setup();
+  renderAt('/subscriptions/create', new MockConsoleService());
+  await user.click(await screen.findByTestId('add-models-button'));
+  await user.click(screen.getByTestId('toggle-model-granite-3-8b'));
+  await user.click(screen.getByTestId('confirm-add-models'));
+  await user.click(screen.getByTestId('add-token-limit-0'));
+  const dialog = screen.getByRole('dialog', { name: 'Edit token limits' });
+  const row = within(dialog).getByTestId('edit-token-limit-0');
+  const time = within(row).getByRole('spinbutton', { name: 'Per' });
+  await user.clear(time);
+  await user.type(time, '8785');
+  expect(time).toBeInvalid();
+  expect(within(row).getByTestId('edit-token-limit-0-helper-text')).toHaveTextContent(
+    'At most 8784 hours (366 days): error status;',
+    { normalizeWhitespace: false },
+  );
+  expect(within(dialog).getByTestId('save-rate-limits')).toBeDisabled();
+  await user.type(time, '{Backspace}4');
+  expect(time).not.toBeInvalid();
+  expect(within(row).getByTestId('edit-token-limit-0-helper-text')).toHaveTextContent(/^$/);
+  await user.click(within(dialog).getByTestId('save-rate-limits'));
+  expect(dialog).not.toBeInTheDocument();
+  expect(screen.getByTestId('subscription-models-table')).toHaveTextContent('1,000 / 8,784 hours');
+});
+
 it('keeps Save disabled on an edit until something changes', async () => {
   const user = userEvent.setup();
   renderAt('/subscriptions/edit/engineering', new MockConsoleService());

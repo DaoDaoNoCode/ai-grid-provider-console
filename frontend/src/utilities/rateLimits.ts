@@ -85,11 +85,24 @@ export const MAX_WINDOW_VALUE = 9_999;
 
 export const exceedsTokenLimit = (n: number): boolean => !Number.isNaN(n) && Math.trunc(Math.abs(n)) > MAX_VALUE;
 
+/**
+ * The longest window MaaS applies, 366 days. The CRD admits up to 9999h, but the MaaS controller
+ * refuses a window over 366 * 24 * 3600 seconds and leaves the subscription out of the model's
+ * TokenRateLimitPolicy (maxWindowSeconds and validateTokenRateLimit in
+ * opendatahub-io/models-as-a-service maas-controller/pkg/controller/maas/maassubscription_controller.go
+ * at 4d71db2), so the backend refuses it on a write (maxTokenWindowSeconds in
+ * ai-grid-provider-backend internal/servers/subscription_mapper.go, PR #40). Only hours can
+ * reach it: 9999m and 9999s are shorter.
+ */
+export const MAX_WINDOW_HOURS = 8_784;
+
 export const exceedsWindowLimit = (n: number): boolean =>
   !Number.isNaN(n) && Math.trunc(Math.abs(n)) > MAX_WINDOW_VALUE;
 
+const exceedsMaxWindowHours = (limit: RateLimit): boolean => limit.unit === 'hour' && limit.time > MAX_WINDOW_HOURS;
+
 export const rateLimitExceedsMaxDigits = (limit: RateLimit): boolean =>
-  exceedsTokenLimit(limit.count) || exceedsWindowLimit(limit.time);
+  exceedsTokenLimit(limit.count) || exceedsWindowLimit(limit.time) || exceedsMaxWindowHours(limit);
 
 export const rateLimitSchema = z.object({
   count: z
@@ -126,5 +139,8 @@ export const getTimeError = (limit: RateLimit): string | undefined => {
 export const getCountDigitError = (limit: RateLimit): string | undefined =>
   exceedsTokenLimit(limit.count) ? 'Token count exceeds maximum allowed value' : undefined;
 
-export const getTimeDigitError = (limit: RateLimit): string | undefined =>
-  exceedsWindowLimit(limit.time) ? 'Time value exceeds maximum allowed value' : undefined;
+/** The time's too-large error, shown as soon as it is typed: over 8784 hours, or over 4 digits. */
+export const getTimeDigitError = (limit: RateLimit): string | undefined => {
+  if (exceedsMaxWindowHours(limit)) return `At most ${MAX_WINDOW_HOURS} hours (366 days)`;
+  return exceedsWindowLimit(limit.time) ? 'Time value exceeds maximum allowed value' : undefined;
+};

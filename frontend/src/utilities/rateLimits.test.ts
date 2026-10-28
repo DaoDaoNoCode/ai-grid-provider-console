@@ -3,7 +3,9 @@ import {
   formatTokenRateLimitLine,
   formatWindow,
   getSavedWindowMessage,
+  getTimeDigitError,
   parseWindow,
+  rateLimitExceedsMaxDigits,
   toRateLimit,
   toTokenRateLimit,
 } from './rateLimits';
@@ -76,6 +78,25 @@ describe('the token limit form', () => {
   it('names nothing for a window it reads', () => {
     expect(toRateLimit({ limit: 1000, window: '1h' })).toEqual({ count: 1000, time: 1, unit: 'hour' });
     expect(getSavedWindowMessage({ count: 1000, time: NaN, unit: 'hour' })).toBeUndefined();
+  });
+});
+
+describe('the longest window, 366 days', () => {
+  const hoursMessage = 'At most 8784 hours (366 days)';
+
+  it.each([
+    [8784, 'hour', undefined],
+    [8785, 'hour', hoursMessage],
+    [9999, 'hour', hoursMessage],
+    [10000, 'hour', hoursMessage],
+    [9999, 'minute', undefined],
+    [9999, 'second', undefined],
+    [10000, 'minute', 'Time value exceeds maximum allowed value'],
+    [NaN, 'hour', undefined],
+  ] as const)('%d %s: %s', (time, unit, want) => {
+    const limit = { count: 1000, time, unit };
+    expect(getTimeDigitError(limit)).toBe(want);
+    expect(rateLimitExceedsMaxDigits(limit)).toBe(want !== undefined);
   });
 });
 
