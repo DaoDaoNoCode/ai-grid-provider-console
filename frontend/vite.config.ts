@@ -110,12 +110,14 @@ export default defineConfig(({ command }) => ({
     sourcemap: true,
     rollupOptions: {
       treeshake: {
-        // @perses-dev/components, unlike Perses's other packages, doesn't declare "sideEffects": false.
-        // So Rollup follows every import its index reaches, used or not, and keeps the top-level code
-        // of what they import: the YAML editor's yaml and @lezer/yaml (about 36 kB gzipped in the
-        // Monitoring chunk), which the console never shows. Its modules have no side effects of their
-        // own (its fonts come from @fontsource, which this leaves alone). Remove this once Perses
-        // declares it.
+        // @perses-dev/components doesn't declare "sideEffects": false (client, dashboards, explore,
+        // plugin-system and spec do; the plugins don't either). So Rollup follows every import its
+        // index reaches, used or not, and keeps the top-level code of what they import: the YAML
+        // editor's yaml and @lezer/yaml (about 36 kB gzipped in the Monitoring chunk), which the
+        // console never shows. This only drops a components module none of whose exports is used:
+        // EChart.js, which registers the ECharts charts and components at its top level, stays,
+        // because the chart plugins import EChart; and the fonts come from @fontsource, outside this
+        // rule. Remove it once Perses declares "sideEffects" for components.
         moduleSideEffects: (id) => !id.includes('/@perses-dev/components/'),
       },
     },
