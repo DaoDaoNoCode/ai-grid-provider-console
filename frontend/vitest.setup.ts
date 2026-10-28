@@ -8,3 +8,7 @@ class ResizeObserverStub {
   disconnect() {}
 }
 globalThis.ResizeObserver ??= ResizeObserverStub;
+
+// No test reaches the network. A test that needs fetch stubs it (vi.stubGlobal, vi.spyOn, or a
+// fetch passed in); one that forgets fails with the URL instead of calling the real one.
+globalThis.fetch = (input) => Promise.reject(new Error(`unstubbed fetch: ${String(input)}`));
