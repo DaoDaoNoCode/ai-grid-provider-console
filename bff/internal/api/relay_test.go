@@ -152,11 +152,11 @@ func TestAPIErrorsKeepTheirEnvelopeWithTheRelay(t *testing.T) {
 	t.Parallel()
 	r, _ := connectUpstream(t)
 	app := newTestAppWithHub(t, testConfig(t), nil, &fakeHub{allowed: false}).WithRelay(r)
-	rec := serve(app, asUser(http.MethodGet, "/api/v1/clusters"))
+	rec := serve(app, asUser(http.MethodGet, "/api/v1/tenants"))
 	if rec.Code != http.StatusForbidden || decodeError(t, rec).Error.Code != "403" {
 		t.Fatalf("got %d %q", rec.Code, rec.Body)
 	}
-	rec = serve(app, httptest.NewRequest(http.MethodGet, "/api/v1/clusters", nil))
+	rec = serve(app, httptest.NewRequest(http.MethodGet, "/api/v1/tenants", nil))
 	if rec.Code != http.StatusUnauthorized || decodeError(t, rec).Error.Code != "401" {
 		t.Fatalf("got %d %q", rec.Code, rec.Body)
 	}

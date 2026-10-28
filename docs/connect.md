@@ -116,44 +116,28 @@ regression passing when updating these dependencies.
 - **Reads.** `useClusterList` and `useCluster` (`frontend/src/pages/clusters/useClusters.ts`) call
   `Clusters/List` and `Clusters/Get` with Connect Query, polling every 30 s as the other pages do,
   with no retries (the page offers Retry). `toClusterView` (`clusterView.ts`) is the thin selector
-  layer ADR-0002 allows: each field reads one documented key of the generated `ManagedCluster`
-  and words it (the `location`, `ai-grid/site`, `ai-grid/region` and `openshiftVersion` labels, the
-  `ai-grid/site-name`, `ai-grid/latitude` and `ai-grid/longitude` annotations, the claims
-  `ManagedClusterStatus.cluster_claims` names, `capacity["nvidia.com/gpu"]` as a number,
-  `available_condition` as Ready, Offline or Unknown, `provisioning` `Compliant` as Provisioned).
-  The GPU sections read `status.gpus` as generated.
+  layer ADR-0002 allows: the backend decides what a cluster is, and the page words it:
+  `status.ai_grid_member` (membership), `status.state` and `state_message` (Ready, Offline, or
+  Unknown with the ACM state behind it), `status.location` (site name, coordinates, where they
+  come from, what is wrong with them, the cloud region), `provisioning` `Compliant` as
+  Provisioned, the `location`, `ai-grid/site`, `ai-grid/role` and `openshiftVersion` labels, the
+  claims `ManagedClusterStatus.cluster_claims` names, and `capacity["nvidia.com/gpu"]` as a number.
+  The GPU sections read `status.gpus` as generated. The Models and Subscriptions pages take their
+  site names from the same list.
 - **Writes.** Add and Remove call `Clusters/Update` (in the relay's allowlist): the labels map as
   read with `ai-grid/enabled`, `ai-grid/role` and `location` set (or `ai-grid/enabled` dropped),
   `update_mask: metadata.labels`, `metadata.version` with `lock: true`. Aborted is the conflict
-  the dialog already handles. `PATCH /api/v1/clusters/{name}` has no caller in the console any
-  more.
-- **The map** (`pages/grid/AiGridPage.tsx`) shows the members among the same list, placed by their
-  coordinate annotations; `Grid/GetOverview`, which the backend doesn't have, serves only the
+  the dialog already handles, and the answer's `ai_grid_member` confirms the change. The BFF has
+  no `/api/v1/clusters` routes any more.
+- **The map** (`pages/grid/AiGridPage.tsx`) shows the members among the same list, placed where
+  `status.location` says; `Grid/GetOverview`, which the backend doesn't have, serves only the
   Monitoring fallback now. It links a member to the models whose placement chose it by cluster
-  name (`placement.selectedClusters` of `GET /api/v1/models`), not by `locations`: from the
-  backend those are cluster names too, from the console's fake `location` labels that several
-  clusters share.
+  name (`placement.selectedClusters` of `GET /api/v1/models`), not by `locations`, the `location`
+  labels that several clusters share.
 
-### Fields the pages still read from /api/v1
-
-Two things the Clusters pages and the map show are meanings, not values the pinned API carries,
-so they still come from the BFF's `GET /api/v1/clusters[/{name}]`, joined by name
-(`Membership` in `clusterView.ts`; the BFF's `toGridCluster` and `FromV1Cluster`, AGENTS.md
-"Known exceptions"). Moving them into the page would relocate a BFF derivation into React, which
-ADR-0002 rules out. Each is a backend ask:
-
-- **Membership.** Whether the cluster is an AI Grid member (today the `ai-grid/enabled` label
-  equal to `"true"`): a field such as `ManagedClusterStatus.ai_grid_member` (bool), or better a
-  spec block (`ai_grid { enabled, role, location }`) that Update writes, so the console stops
-  writing labels.
-- **Lifecycle state.** The draft's `ManagedClusterStatus.state` (the `ManagedClusterState` enum:
-  available, unavailable, unknown, pending import, importing, import failed, detaching, not
-  accepted) and `state_message`, derived server-side in the ACM console's order. Without it the
-  console can't say why Add is disabled (not accepted, not imported, detaching).
-
-Not asks yet, but the selectors above would go with them: the map's `location { site, site_name,
-region, latitude, longitude }`, a provisioning enum instead of the Policy's compliance string,
-and typed `openshift_version`, `console_url`, `platform` and `product`.
+Still worded in the page, and backend asks if another client needs them: a provisioning enum
+instead of the Policy's compliance string, and typed `openshift_version`, `console_url`,
+`platform` and `product`.
 
 ### Perses on Query v5
 

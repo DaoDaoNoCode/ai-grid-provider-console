@@ -1,8 +1,8 @@
 package backend
 
 // Stopgap: clients for the backend's real ai_grid.v1
-// Clusters, Tenants, Subscriptions and Models RPCs (Models in v1_models.go), behind
-// the draft's ManagedClustersClient, TenantsClient, SubscriptionsClient and
+// Tenants, Subscriptions and Models RPCs (Models in v1_models.go), behind
+// the draft's TenantsClient, SubscriptionsClient and
 // ModelsClient interfaces so the
 // API handlers are unchanged. The fake backend
 // serves the draft, so Dial uses these only for a real backend.
@@ -24,14 +24,11 @@ import (
 )
 
 const (
-	methodClustersList   = "/ai_grid.v1.Clusters/List"
-	methodClustersGet    = "/ai_grid.v1.Clusters/Get"
-	methodClustersUpdate = "/ai_grid.v1.Clusters/Update"
-	methodTenantsList    = "/ai_grid.v1.Tenants/List"
-	methodTenantsGet     = "/ai_grid.v1.Tenants/Get"
-	methodTenantsCreate  = "/ai_grid.v1.Tenants/Create"
-	methodTenantsUpdate  = "/ai_grid.v1.Tenants/Update"
-	methodTenantsDelete  = "/ai_grid.v1.Tenants/Delete"
+	methodTenantsList   = "/ai_grid.v1.Tenants/List"
+	methodTenantsGet    = "/ai_grid.v1.Tenants/Get"
+	methodTenantsCreate = "/ai_grid.v1.Tenants/Create"
+	methodTenantsUpdate = "/ai_grid.v1.Tenants/Update"
+	methodTenantsDelete = "/ai_grid.v1.Tenants/Delete"
 
 	methodSubscriptionsList   = "/ai_grid.v1.Subscriptions/List"
 	methodSubscriptionsGet    = "/ai_grid.v1.Subscriptions/Get"
@@ -54,161 +51,6 @@ const (
 	annotationDisplayName = "openshift.io/display-name"
 	annotationDescription = "openshift.io/description"
 )
-
-type v1Clusters struct{ conn grpc.ClientConnInterface }
-
-var _ aigridv1.ManagedClustersClient = v1Clusters{}
-
-// ListManagedClusters forwards offset and limit, which the backend pages by
-// (applyListWindow). Its ClustersListRequest has a filter it doesn't evaluate
-// yet ("Not evaluated yet"), and its total always counts every cluster, so a
-// forwarded filter would come back as the whole list presented as the
-// filtered one; a filter is Unimplemented (501) instead.
-func (c v1Clusters) ListManagedClusters(ctx context.Context, in *aigridv1.ListManagedClustersRequest, opts ...grpc.CallOption) (*aigridv1.ListManagedClustersResponse, error) {
-	if in.Filter != nil {
-		return nil, status.Error(codes.Unimplemented, "the backend's Clusters API does not evaluate filter yet")
-	}
-	req := &backendv1.ClustersListRequest{Offset: in.Offset, Limit: in.Limit}
-	resp := &backendv1.ClustersListResponse{}
-	if err := c.conn.Invoke(ctx, methodClustersList, req, resp, opts...); err != nil {
-		return nil, err
-	}
-	out := &aigridv1.ListManagedClustersResponse{Size: resp.GetSize(), Total: resp.GetTotal()}
-	for _, mc := range resp.GetItems() {
-		out.Clusters = append(out.Clusters, FromV1Cluster(mc))
-	}
-	return out, nil
-}
-
-func (c v1Clusters) GetManagedCluster(ctx context.Context, in *aigridv1.GetManagedClusterRequest, opts ...grpc.CallOption) (*aigridv1.GetManagedClusterResponse, error) {
-	resp := &backendv1.ClustersGetResponse{}
-	if err := c.conn.Invoke(ctx, methodClustersGet, &backendv1.ClustersGetRequest{Id: in.GetName()}, resp, opts...); err != nil {
-		return nil, err
-	}
-	return &aigridv1.GetManagedClusterResponse{Object: FromV1Cluster(resp.GetObject())}, nil
-}
-
-// UpdateManagedCluster sends the draft's labels/annotations mask as the real
-// metadata paths and its resource_version as metadata.version.
-func (c v1Clusters) UpdateManagedCluster(ctx context.Context, in *aigridv1.UpdateManagedClusterRequest, opts ...grpc.CallOption) (*aigridv1.UpdateManagedClusterResponse, error) {
-	obj := in.GetObject()
-	version, err := strconv.ParseInt(obj.GetResourceVersion(), 10, 32)
-	if err != nil {
-		return nil, status.Errorf(codes.FailedPrecondition, "version %q is not one this backend answered", obj.GetResourceVersion())
-	}
-	var paths []string
-	for _, p := range in.GetUpdateMask().GetPaths() {
-		paths = append(paths, "metadata."+p)
-	}
-	req := &backendv1.ClustersUpdateRequest{
-		Object: &backendv1.ManagedCluster{
-			Id:       obj.GetName(),
-			Metadata: &backendv1.Metadata{Labels: obj.GetLabels(), Annotations: obj.GetAnnotations(), Version: int32(version)},
-		},
-		UpdateMask: &fieldmaskpb.FieldMask{Paths: paths},
-		Lock:       in.GetLock(),
-	}
-	resp := &backendv1.ClustersUpdateResponse{}
-	if err := c.conn.Invoke(ctx, methodClustersUpdate, req, resp, opts...); err != nil {
-		return nil, err
-	}
-	return &aigridv1.UpdateManagedClusterResponse{Object: FromV1Cluster(resp.GetObject())}, nil
-}
-
-// FromV1Cluster maps a real ManagedCluster onto the draft. The state is derived
-// from the Joined and Available results in the fake's order
-// (fakebackend/state.go); import progress is not available. The conditions,
-// Kubernetes version, capacity, allocatable and claims are copied as the
-// backend sends them (a condition status other than True or False reads as
-// Unknown). Provisioning is always set, so the console reads it instead of the
-// ai-grid/provisioned label.
-func FromV1Cluster(mc *backendv1.ManagedCluster) *aigridv1.ManagedCluster {
-	meta := mc.GetMetadata()
-	st := mc.GetStatus()
-	state := aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_UNKNOWN
-	switch {
-	case meta.GetDeletionTimestamp() != nil:
-		state = aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_DETACHING
-	case !mc.GetSpec().GetHubAcceptsClient():
-		state = aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_NOT_ACCEPTED
-	case !st.GetJoined():
-		state = aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_PENDING_IMPORT
-	case st.GetAvailableCondition() == "True":
-		state = aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_AVAILABLE
-	case st.GetAvailableCondition() == "False":
-		state = aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_UNAVAILABLE
-	}
-	return &aigridv1.ManagedCluster{
-		Name:              mc.GetId(),
-		Labels:            meta.GetLabels(),
-		Annotations:       meta.GetAnnotations(),
-		HubAcceptsClient:  mc.GetSpec().GetHubAcceptsClient(),
-		ResourceVersion:   strconv.Itoa(int(meta.GetVersion())),
-		CreationTimestamp: meta.GetCreationTimestamp(),
-		DeletionTimestamp: meta.GetDeletionTimestamp(),
-		Status: &aigridv1.ManagedClusterStatus{
-			State:             state,
-			Provisioning:      proto.String(st.GetProvisioning()),
-			Conditions:        fromV1ClusterConditions(st.GetConditions()),
-			KubernetesVersion: st.GetKubernetesVersion(),
-			Capacity:          st.GetCapacity(),
-			Allocatable:       st.GetAllocatable(),
-			ClusterClaims:     fromV1Claims(st.GetClusterClaims()),
-			Gpus:              fromV1GPUs(st.GetGpus()),
-		},
-	}
-}
-
-// fromV1GPUs copies the backend's GPU inventory onto the draft's. The two declare the same
-// messages with the same field numbers (ClusterGPUs, GPUConfiguration, GPUSharing, GPUNode), so
-// the copy goes through the wire format; TestFromV1GPUs sets every field and fails if the draft
-// ever stops matching. Unset stays unset: the backend sends none when ACM Search has nothing.
-func fromV1GPUs(in *backendv1.ClusterGPUs) *aigridv1.ClusterGPUs {
-	if in == nil {
-		return nil
-	}
-	raw, err := proto.Marshal(in)
-	if err != nil {
-		return nil
-	}
-	out := &aigridv1.ClusterGPUs{}
-	if err := proto.Unmarshal(raw, out); err != nil {
-		return nil
-	}
-	return out
-}
-
-var v1ConditionStatus = map[string]aigridv1.ConditionStatus{
-	"True":  aigridv1.ConditionStatus_CONDITION_STATUS_TRUE,
-	"False": aigridv1.ConditionStatus_CONDITION_STATUS_FALSE,
-}
-
-func fromV1ClusterConditions(in []*backendv1.ManagedClusterCondition) []*aigridv1.Condition {
-	out := make([]*aigridv1.Condition, 0, len(in))
-	for _, c := range in {
-		cond := &aigridv1.Condition{
-			Type:               c.GetType(),
-			Status:             v1ConditionStatus[c.GetStatus()],
-			LastTransitionTime: c.GetLastTransitionTime(),
-		}
-		if c.GetReason() != "" {
-			cond.Reason = proto.String(c.GetReason())
-		}
-		if c.GetMessage() != "" {
-			cond.Message = proto.String(c.GetMessage())
-		}
-		out = append(out, cond)
-	}
-	return out
-}
-
-func fromV1Claims(in []*backendv1.ManagedClusterClaim) []*aigridv1.ClusterClaim {
-	out := make([]*aigridv1.ClusterClaim, 0, len(in))
-	for _, c := range in {
-		out = append(out, &aigridv1.ClusterClaim{Name: c.GetName(), Value: c.GetValue()})
-	}
-	return out
-}
 
 type v1Tenants struct{ conn grpc.ClientConnInterface }
 

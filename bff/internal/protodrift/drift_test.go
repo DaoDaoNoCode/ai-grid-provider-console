@@ -6,7 +6,7 @@
 // bff/internal/backend/v1.go calls by path, and AiGrid/Ping, which /readyz calls through the
 // draft's client.
 //
-// The copy is a stopgap: the BFF calls the backend's ai_grid.v1 Clusters, Tenants
+// The copy is a stopgap: the BFF calls the backend's ai_grid.v1 Tenants
 // and Subscriptions services while the rest of the console still speaks the draft. Protobuf is wire
 // compatible across package names, so a copied field that the backend renumbers, retypes
 // or drops would silently send or read the wrong data. hack/sync-upstream-proto.sh
@@ -52,9 +52,6 @@ var calls = []struct {
 	input, output protoreflect.FullName
 }{
 	{"ai_grid.v1.AiGrid.Ping", "ai_grid.v1.PingRequest", "ai_grid.v1.PingResponse"},
-	{"ai_grid.v1.Clusters.List", "ai_grid.backend.v1.ClustersListRequest", "ai_grid.backend.v1.ClustersListResponse"},
-	{"ai_grid.v1.Clusters.Get", "ai_grid.backend.v1.ClustersGetRequest", "ai_grid.backend.v1.ClustersGetResponse"},
-	{"ai_grid.v1.Clusters.Update", "ai_grid.backend.v1.ClustersUpdateRequest", "ai_grid.backend.v1.ClustersUpdateResponse"},
 	{"ai_grid.v1.Tenants.List", "ai_grid.backend.v1.TenantsListRequest", "ai_grid.backend.v1.TenantsListResponse"},
 	{"ai_grid.v1.Tenants.Get", "ai_grid.backend.v1.TenantsGetRequest", "ai_grid.backend.v1.TenantsGetResponse"},
 	{"ai_grid.v1.Tenants.Create", "ai_grid.backend.v1.TenantsCreateRequest", "ai_grid.backend.v1.TenantsCreateResponse"},
@@ -342,9 +339,9 @@ func TestDriftIsDetected(t *testing.T) {
 		{
 			name: "field type changed",
 			mutate: func(t *testing.T, set *descriptorpb.FileDescriptorSet) {
-				field(t, set, "ManagedClusterStatus", "available").Type = descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()
+				field(t, set, "ModelRouter", "managed_route").Type = descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()
 			},
-			want: []string{"ManagedClusterStatus.available: backend type string, copy type bool"},
+			want: []string{"ModelRouter.managed_route: backend type string, copy type bool"},
 		},
 		{
 			name: "field renamed in place",
@@ -363,9 +360,9 @@ func TestDriftIsDetected(t *testing.T) {
 		{
 			name: "field became repeated",
 			mutate: func(t *testing.T, set *descriptorpb.FileDescriptorSet) {
-				field(t, set, "ClustersUpdateRequest", "lock").Label = descriptorpb.FieldDescriptorProto_LABEL_REPEATED.Enum()
+				field(t, set, "TenantsUpdateRequest", "lock").Label = descriptorpb.FieldDescriptorProto_LABEL_REPEATED.Enum()
 			},
-			want: []string{"ClustersUpdateRequest.lock: backend cardinality repeated, copy optional"},
+			want: []string{"TenantsUpdateRequest.lock: backend cardinality repeated, copy optional"},
 		},
 		{
 			name: "optional field lost its presence",
@@ -403,13 +400,13 @@ func TestDriftIsDetected(t *testing.T) {
 		{
 			name: "method output changed to a message with other fields",
 			mutate: func(t *testing.T, set *descriptorpb.FileDescriptorSet) {
-				method(t, set, "Clusters", "Get").OutputType = proto.String(".ai_grid.v1.ClustersListResponse")
+				method(t, set, "Tenants", "Get").OutputType = proto.String(".ai_grid.v1.TenantsListResponse")
 			},
 			want: []string{
-				"method ai_grid.v1.Clusters.Get returns ai_grid.v1.ClustersListResponse, which no longer matches the BFF's ai_grid.backend.v1.ClustersGetResponse:",
-				`field 1 of ai_grid.v1.ClustersListResponse: the backend calls it "size", the copy "object"`,
-				"field ai_grid.v1.ClustersListResponse.size: backend presence (optional) false, copy true",
-				"field ai_grid.v1.ClustersListResponse.size: backend type int32, copy type message ai_grid.v1.ManagedCluster",
+				"method ai_grid.v1.Tenants.Get returns ai_grid.v1.TenantsListResponse, which no longer matches the BFF's ai_grid.backend.v1.TenantsGetResponse:",
+				`field 1 of ai_grid.v1.TenantsListResponse: the backend calls it "size", the copy "object"`,
+				"field ai_grid.v1.TenantsListResponse.size: backend presence (optional) false, copy true",
+				"field ai_grid.v1.TenantsListResponse.size: backend type int32, copy type message ai_grid.v1.Tenant",
 			},
 		},
 		{
@@ -432,16 +429,16 @@ func TestDriftIsDetected(t *testing.T) {
 		{
 			name: "method became server streaming",
 			mutate: func(t *testing.T, set *descriptorpb.FileDescriptorSet) {
-				method(t, set, "Clusters", "List").ServerStreaming = proto.Bool(true)
+				method(t, set, "Tenants", "List").ServerStreaming = proto.Bool(true)
 			},
-			want: []string{"method ai_grid.v1.Clusters.List became streaming"},
+			want: []string{"method ai_grid.v1.Tenants.List became streaming"},
 		},
 		{
 			name: "method became client streaming",
 			mutate: func(t *testing.T, set *descriptorpb.FileDescriptorSet) {
-				method(t, set, "Clusters", "Update").ClientStreaming = proto.Bool(true)
+				method(t, set, "Tenants", "Update").ClientStreaming = proto.Bool(true)
 			},
-			want: []string{"method ai_grid.v1.Clusters.Update became streaming"},
+			want: []string{"method ai_grid.v1.Tenants.Update became streaming"},
 		},
 		{
 			name: "map value type changed",
@@ -457,20 +454,20 @@ func TestDriftIsDetected(t *testing.T) {
 		{
 			name: "field moved into a oneof",
 			mutate: func(t *testing.T, set *descriptorpb.FileDescriptorSet) {
-				msg := message(t, set, "ClustersGetRequest")
+				msg := message(t, set, "TenantsGetRequest")
 				msg.OneofDecl = append(msg.OneofDecl, &descriptorpb.OneofDescriptorProto{Name: proto.String("ref")})
-				field(t, set, "ClustersGetRequest", "id").OneofIndex = proto.Int32(int32(len(msg.OneofDecl) - 1))
+				field(t, set, "TenantsGetRequest", "id").OneofIndex = proto.Int32(int32(len(msg.OneofDecl) - 1))
 			},
 			// A oneof member also has presence, so the field is reported twice.
 			want: []string{
-				"field ai_grid.v1.ClustersGetRequest.id: backend presence (optional) true, copy false",
-				`field ai_grid.v1.ClustersGetRequest.id: backend oneof "ref", copy oneof ""`,
+				"field ai_grid.v1.TenantsGetRequest.id: backend presence (optional) true, copy false",
+				`field ai_grid.v1.TenantsGetRequest.id: backend oneof "ref", copy oneof ""`,
 			},
 		},
 		{
 			name: "additions the BFF doesn't use pass",
 			mutate: func(t *testing.T, set *descriptorpb.FileDescriptorSet) {
-				status := message(t, set, "ManagedClusterStatus")
+				status := message(t, set, "ModelPlacementStatus")
 				status.Field = append(status.Field, &descriptorpb.FieldDescriptorProto{
 					Name: proto.String("site"), Number: proto.Int32(99), JsonName: proto.String("site"),
 					Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),

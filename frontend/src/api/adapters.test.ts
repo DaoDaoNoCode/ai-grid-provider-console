@@ -21,7 +21,7 @@ import type {
   SubscriptionInfoResponse,
 } from './types';
 
-// The cluster JSON of GET /api/v1/clusters (mock/examples/get-clusters.json), trimmed.
+// A cluster of GET /api/v1/grid/overview (mock/examples/get-grid-overview.json), trimmed.
 const apiCluster = (overrides: Partial<ApiCluster> = {}): ApiCluster => ({
   name: 'site-paris-1',
   aiGridEnabled: true,

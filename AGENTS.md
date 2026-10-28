@@ -174,11 +174,10 @@ when the RPCs allow it.
   one organization is one tenant, and the provider must not see a company's internals (decided
   2026-10-23). A new procedure needs a review and a line in the list. Remove the list once the
   backend authorizes every RPC itself.
-- `toGridCluster` (`bff/internal/api/clusters.go`). The Clusters pages and the map read only
-  `aiGridEnabled` and the state behind Unknown from it now (`docs/connect.md`, "Fields the pages
-  still read from /api/v1"), and the Models pages the site names; everything else they read
-  from `Clusters/List` with presentation selectors (`frontend/src/pages/clusters/clusterView.ts`).
-  It derives `aiGridEnabled` and `provisioned` (the
+- `toGridCluster` (`bff/internal/api/clusters.go`), for the clusters of the Monitoring
+  fallback's `GET /api/v1/grid/overview` only: the Clusters pages, the map and the site names on
+  the Models pages read `Clusters/List`, whose membership, state and location the backend
+  derives (`docs/connect.md`, "The Clusters area"). It derives `aiGridEnabled` and `provisioned` (the
   `ai-grid/enabled` and `ai-grid/provisioned` labels equal to `"true"`; when the backend reports
   `status.provisioning`, `provisioned` is that equal to `"Compliant"` instead, until the backend
   serves a provisioned state), `location`, `site`,
@@ -187,14 +186,8 @@ when the RPCs allow it.
   that do not parse or are out of range left out; `consoleUrl`, `platform` and `product` from
   cluster claims; `gpuCapacity` from `status.capacity["nvidia.com/gpu"]`; `addons` from the
   `feature.open-cluster-management.io/addon-*` labels; the list sorted by name.
-- `fetchCluster`: when `GetManagedCluster` answers `Unimplemented`, the BFF filters
-  `ListManagedClusters` by name and writes its own NotFound message. Neither the fake nor the
-  shipped backend (`mock/proto/upstream/COMMIT`, whose `Clusters/Get` `v1.go` calls) answers
-  that any more, so this only serves an older backend; remove it once none is deployed.
 - The stopgap clients for the backend's current `ai_grid.v1` (`bff/internal/backend/v1.go`),
-  until the console moves to Connect and the backend's contract: `FromV1Cluster` derives the
-  draft's cluster state from `spec.hub_accepts_client`, `status.joined`,
-  `status.available_condition` and the deletion time, and the tenant writes refuse with
+  until the console moves to Connect and the backend's contract: the tenant writes refuse with
   `Unimplemented` the draft fields the backend's `Tenant` lacks. They accept those fields when
   they hold what a read shows (`description: ""`, `enabled: true`, `attributes: {}`), which may
   not be what Keycloak stores (`readBackValue`), and send a PATCH that sets only such fields as

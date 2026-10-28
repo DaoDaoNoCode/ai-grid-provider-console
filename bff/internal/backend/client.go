@@ -60,7 +60,6 @@ type Client struct {
 	conn          *grpc.ClientConn
 	timeout       time.Duration
 	Health        aigridv1.AiGridClient
-	Clusters      aigridv1.ManagedClustersClient
 	Tenants       aigridv1.TenantsClient
 	Models        aigridv1.ModelsClient
 	Subscriptions aigridv1.SubscriptionsClient
@@ -90,19 +89,17 @@ func Dial(cfg Config, extra ...grpc.DialOption) (*Client, error) {
 	if timeout <= 0 {
 		timeout = 10 * time.Second
 	}
-	var clusters aigridv1.ManagedClustersClient = v1Clusters{conn}
 	var tenants aigridv1.TenantsClient = v1Tenants{conn}
 	var subscriptions aigridv1.SubscriptionsClient = v1Subscriptions{conn}
 	var models aigridv1.ModelsClient = v1Models{conn: conn, namespace: cfg.ModelsNamespace}
 	if cfg.DraftAPI {
-		clusters, tenants = aigridv1.NewManagedClustersClient(conn), aigridv1.NewTenantsClient(conn)
+		tenants = aigridv1.NewTenantsClient(conn)
 		subscriptions, models = aigridv1.NewSubscriptionsClient(conn), aigridv1.NewModelsClient(conn)
 	}
 	return &Client{
 		conn:          conn,
 		timeout:       timeout,
 		Health:        aigridv1.NewAiGridClient(conn),
-		Clusters:      clusters,
 		Tenants:       tenants,
 		Models:        models,
 		Subscriptions: subscriptions,

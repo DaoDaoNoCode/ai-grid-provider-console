@@ -37,15 +37,12 @@ and the key check run first), bumps `resource_version` on a real write, and answ
 `PermissionDenied` with the API server's forbidden message for a token `access.json` denies.
 Every RPC but `Ping` needs `authorization` metadata (`Unauthenticated` otherwise).
 
-BFF: `GET /api/v1/clusters/{name}` uses the Get RPC and sends the `resourceVersion` as the
-`ETag`; `PATCH /api/v1/clusters/{name}` takes `labels` and `annotations` (whole maps) and
-sends them in one Update RPC, with the present fields as the mask and
-`lock: true` on the `If-Match` version the client must send (a stale tab gets 409; no `If-Match`
-is 428); it does not read the cluster first and neither merges, compares nor validates the maps
-(a body that names no field is 422); `GridCluster` exposes
-`status`, `statusMessage`, `consoleUrl`, `kubernetesVersion`, `platform`, `product`,
-`gpuCapacity`, `capacity`, `allocatable`, `gpus`, `creationTimestamp`, `siteName`, `latitude`,
-`longitude`, `addons`, `conditions`, `resourceVersion`.
+BFF: no cluster routes any more. The fake's ManagedClusters service stands in for the backend's
+`Clusters` List, Get and Update (`fakebackend_test.go`, standIns), and its clusters feed the
+Monitoring fallback's `GET /api/v1/grid/overview`, whose `GridCluster` exposes `status`,
+`statusMessage`, `consoleUrl`, `kubernetesVersion`, `platform`, `product`, `gpuCapacity`,
+`capacity`, `allocatable`, `gpus`, `creationTimestamp`, `siteName`, `latitude`, `longitude`,
+`addons`, `conditions`, `resourceVersion`.
 
 GPUs: the draft's `ManagedClusterStatus.gpus` (`ClusterGPUs`, the backend's field 10) is each
 cluster's GPU inventory. The real backend reads it from ACM Search (search-v2's `search` query for
@@ -62,9 +59,8 @@ configurations (product, memory, GPUs per node and sharing, MIG capability inclu
 first, then by product, then most GPUs per node. A cluster without GPU nodes has no `gpus`.
 
 UI: the Clusters pages and the map read the backend's `Clusters/List` and `Clusters/Get` over
-Connect and write `Clusters/Update` (`docs/connect.md`, "The Clusters area"), with membership and
-the state behind Unknown still from `GET /api/v1/clusters` ("Fields the pages still read from
-/api/v1"). So they run on the backend's own fakes (`make dev-fake-infra`), not on this fake, whose
+Connect and write `Clusters/Update` (`docs/connect.md`, "The Clusters area"), with the
+membership, the lifecycle state and the location the backend derives. So they run on the backend's own fakes (`make dev-fake-infra`), not on this fake, whose
 draft the relay can't reach. The Clusters page (`frontend/src/pages/clusters/ClustersPage.tsx`) lists every
 ManagedCluster under nested column headers that match the details page's cards: **Cluster** (name,
 the hub's connection status), **AI Grid** (status, with "Not added" outside it, location, role: Combined, MaaS (ingress), the

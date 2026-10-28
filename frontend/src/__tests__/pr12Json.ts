@@ -1,6 +1,7 @@
 // The BFF's JSON under PR 12's fixtures (mock/examples), served to HttpConsoleService, so page
 // tests render what the browser gets from `make dev-fake` instead of the mock's own shapes.
-import getClusters from '../../../mock/examples/get-clusters.json';
+import getGridOverview from '../../../mock/examples/get-grid-overview.json';
+import getLocations from '../../../mock/examples/get-locations.json';
 import getModels from '../../../mock/examples/get-models.json';
 import { HttpConsoleService } from '../api/HttpConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
@@ -13,9 +14,9 @@ export const pr12Fetch = () =>
   vi.fn(async (url: string, init?: RequestInit) => {
     if (init?.method === 'DELETE') return new Response(null, { status: 204 });
     if (url.endsWith('/models')) return json(getModels.body.data);
-    if (url.endsWith('/locations')) return json(['paris']);
+    if (url.endsWith('/locations')) return json(getLocations.body.data);
     if (url.includes('/grid/overview')) {
-      return json({ updatedAt: '2026-10-16T12:00:00.000Z', demo: false, clusters: getClusters.body.data, metrics: [] });
+      return json({ ...getGridOverview.body.data, metrics: [] });
     }
     return new Response(JSON.stringify({ error: { message: `unexpected ${url}` } }), { status: 404 });
   });

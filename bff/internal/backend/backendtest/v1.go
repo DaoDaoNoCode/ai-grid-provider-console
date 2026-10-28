@@ -28,8 +28,8 @@ const V1ModelsNamespace = "ai-grid-models"
 
 // V1 answers the backend's own API, ai_grid.v1 as ai-grid-provider-backend
 // serves it, which is what production calls through the adapters in
-// internal/backend (v1.go, v1_models.go): AiGrid (Ping only), Clusters,
-// Tenants, Models and Subscriptions on the backend's method paths, with the
+// internal/backend (v1.go, v1_models.go): AiGrid (Ping only), Tenants,
+// Models and Subscriptions on the backend's method paths, with the
 // messages of the BFF's copy of its proto (ai_grid.backend.v1). The backend
 // has no Grid service and no capabilities, so those answer Unimplemented, and
 // so does every method it doesn't have.
@@ -38,30 +38,25 @@ const V1ModelsNamespace = "ai-grid-models"
 // handler test needs them:
 //   - metadata.version is the lock. An Update with lock and version 0 is
 //     InvalidArgument; a nonzero version other than the stored one is Aborted;
-//     and an update stores version + 1 (clusters_server.go Update,
-//     models_git.go and subscriptions_git.go gitUpdate). A cluster update that
-//     changes nothing keeps its version, as the API server does. A Delete
+//     and an update stores version + 1 (models_git.go and subscriptions_git.go
+//     gitUpdate). A Delete
 //     with a nonzero version other than the stored one is Aborted (gitDelete).
 //   - A tenant Update or Delete without a version is InvalidArgument
 //     (tenants_server.go errTenantVersionRequired), and a tenant update
 //     stores version + 1.
 //   - The update_mask paths are the backend's own (metadata.labels,
-//     spec.domains, ...). A cluster path it doesn't know changes nothing
-//     (updatePaths); a tenant or model path it doesn't know is
+//     spec.domains, ...). A tenant or model path it doesn't know is
 //     InvalidArgument (tenantUpdatePaths, parseModelUpdateMask).
-//   - Lists of clusters, tenants and models page by offset and limit and
-//     count every item in total (applyListWindow). Neither Clusters nor
-//     Tenants evaluates filter.
+//   - Lists of tenants and models page by offset and limit and count every
+//     item in total (applyListWindow). Tenants doesn't evaluate filter.
 //   - NotFound, AlreadyExists and Aborted carry the backend's messages.
 //
-// Left out: the console-key rules on cluster labels (the request's maps are
-// stored as sent), Keycloak's and Git's validation, and every status, which
-// is served as seeded.
+// Left out: Keycloak's and Git's validation, and every status, which is
+// served as seeded.
 //
 // Seed the exported fields before StartV1. Each call is handled under a lock,
 // so concurrent calls are safe; read Calls and Metadata after a call returned.
 type V1 struct {
-	Clusters           []*backendv1.ManagedCluster
 	Tenants            []*backendv1.Tenant
 	Models             []*backendv1.Model
 	Subscriptions      []*backendv1.Subscription
@@ -100,11 +95,6 @@ func StartV1(t *testing.T, v *V1) *backend.Client {
 	srv := grpc.NewServer()
 	srv.RegisterService(&grpc.ServiceDesc{ServiceName: "ai_grid.v1.AiGrid", HandlerType: (*any)(nil), Methods: []grpc.MethodDesc{
 		unary(v, "Ping", v.ping),
-	}}, v)
-	srv.RegisterService(&grpc.ServiceDesc{ServiceName: "ai_grid.v1.Clusters", HandlerType: (*any)(nil), Methods: []grpc.MethodDesc{
-		unary(v, "List", v.listClusters),
-		unary(v, "Get", v.getCluster),
-		unary(v, "Update", v.updateCluster),
 	}}, v)
 	srv.RegisterService(&grpc.ServiceDesc{ServiceName: "ai_grid.v1.Tenants", HandlerType: (*any)(nil), Methods: []grpc.MethodDesc{
 		unary(v, "List", v.listTenants),
@@ -191,60 +181,6 @@ func staleV1(op, kind, noun, id string) error {
 
 func (v *V1) ping(in *aigridv1.PingRequest) (*aigridv1.PingResponse, error) {
 	return &aigridv1.PingResponse{Message: "pong " + in.GetName()}, nil
-}
-
-func (v *V1) listClusters(in *backendv1.ClustersListRequest) (*backendv1.ClustersListResponse, error) {
-	sorted := slices.SortedFunc(slices.Values(v.Clusters), func(a, b *backendv1.ManagedCluster) int { return cmp.Compare(a.GetId(), b.GetId()) })
-	page, total := window(sorted, in.Offset, in.Limit)
-	return &backendv1.ClustersListResponse{Size: int32(len(page)), Total: total, Items: clones(page)}, nil
-}
-
-func (v *V1) findCluster(id string) (int, error) {
-	for i, c := range v.Clusters {
-		if c.GetId() == id {
-			return i, nil
-		}
-	}
-	return 0, status.Errorf(codes.NotFound, "ManagedCluster %q not found", id)
-}
-
-func (v *V1) getCluster(in *backendv1.ClustersGetRequest) (*backendv1.ClustersGetResponse, error) {
-	i, err := v.findCluster(in.GetId())
-	if err != nil {
-		return nil, err
-	}
-	return &backendv1.ClustersGetResponse{Object: proto.Clone(v.Clusters[i]).(*backendv1.ManagedCluster)}, nil
-}
-
-func (v *V1) updateCluster(in *backendv1.ClustersUpdateRequest) (*backendv1.ClustersUpdateResponse, error) {
-	obj := in.GetObject()
-	i, err := v.findCluster(obj.GetId())
-	if err != nil {
-		return nil, err
-	}
-	c := v.Clusters[i]
-	if err := lockedVersion(in.GetLock(), obj.GetMetadata().GetVersion(), c.GetMetadata().GetVersion(), staleV1("update", "ManagedCluster", "cluster", c.GetId())); err != nil {
-		return nil, err
-	}
-	labels, annotations := c.GetMetadata().GetLabels(), c.GetMetadata().GetAnnotations()
-	for _, p := range in.GetUpdateMask().GetPaths() {
-		switch p {
-		case "metadata.labels":
-			labels = obj.GetMetadata().GetLabels()
-		case "metadata.annotations":
-			annotations = obj.GetMetadata().GetAnnotations()
-		}
-	}
-	if !maps.Equal(labels, c.GetMetadata().GetLabels()) || !maps.Equal(annotations, c.GetMetadata().GetAnnotations()) {
-		next := proto.Clone(c).(*backendv1.ManagedCluster)
-		if next.Metadata == nil {
-			next.Metadata = &backendv1.Metadata{}
-		}
-		next.Metadata.Labels, next.Metadata.Annotations = maps.Clone(labels), maps.Clone(annotations)
-		next.Metadata.Version++
-		v.Clusters[i] = next
-	}
-	return &backendv1.ClustersUpdateResponse{Object: proto.Clone(v.Clusters[i]).(*backendv1.ManagedCluster)}, nil
 }
 
 func (v *V1) listTenants(in *backendv1.TenantsListRequest) (*backendv1.TenantsListResponse, error) {

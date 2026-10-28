@@ -101,7 +101,7 @@ it('switches between clusters and models and follows placement cross-links', asy
 it("follows placement cross-links on PR 12's model JSON", async () => {
   const user = userEvent.setup();
   const service = serviceOnPr12Json();
-  // PR 12's clusters, as GET /api/v1/clusters sends them (and so Clusters/List, connectClusters.ts).
+  // PR 12's clusters, as Clusters/List over Connect (connectClusters.ts).
   service.listClusters = async () => (await service.getGridOverview('1h')).clusters;
   renderAt('/ai-grid', service);
   await user.click(await screen.findByRole('button', { name: 'View site-paris-1 details' }));

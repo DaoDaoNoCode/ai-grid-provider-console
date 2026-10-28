@@ -158,9 +158,6 @@ under `/perses/api`, and the Connect relay to the backend's own RPCs under `/ai_
 | GET | `/readyz` | `{status, version, backend}` | `AiGrid/Ping`; readiness, 503 when the backend does not answer. The pod is then unready, and with the one replica the chart runs, the Service has no endpoint left: the OpenShift router answers every request with its own 503 page (HTML, not this API's JSON error), until the backend answers again |
 | GET | `/api/v1/user` | `{username, email?, groups, isProviderAdmin}` (`email` omitted when the proxy sends none) | none; the identity from the proxy headers, `isProviderAdmin` from a hub `SelfSubjectAccessReview` |
 | GET | `/api/v1/config` | `{gridEndpoint, mapTileUrl, mapTileAttribution, billingUrl, version, modelsNamespace, fakeBackend, monitoring: {enabled, persesProject}}`: `modelsNamespace` is the namespace the console creates models in (default `models-as-a-service`, the backend's subscription namespace; `make dev-fake` sets `ai-grid-models` for the fake's fixtures), `fakeBackend` makes the UI show its fake-backend banner, `monitoring.enabled` says the BFF relays `/perses/api` (it has a `PERSES_URL`) and `monitoring.persesProject` names the one Perses project the relay reads, whose `dashboard-*` objects are the Monitoring tabs (always set when `monitoring.enabled`) | none; env `GRID_CONSUMER_URL`, `MAP_TILE_URL`, `MAP_TILE_ATTRIBUTION` (the attribution shown with `MAP_TILE_URL`'s tiles; with no `MAP_TILE_URL` the map draws a bundled land outline), `BILLING_URL`, `MODELS_NAMESPACE`, `FAKE_BACKEND`, `PERSES_URL`, `PERSES_PROJECT` |
-| GET | `/api/v1/clusters?offset=&limit=&filter=` | (The Clusters pages and the map read only `aiGridEnabled`, `status` and `statusMessage` from it, beside `Clusters/List` over the relay; the Models pages the site names.) `GridCluster[]` sorted by name, with `meta` (`size`, `total`, `offset`, `limit`) as for tenants; `filter` is the client's CEL over `this` (a `ManagedCluster`), forwarded as sent. Neither backend evaluates it yet: the fake answers 422, and against the shipped backend, which would ignore it, the BFF answers 501 | `ManagedClusters/ListManagedClusters` |
-| GET | `/api/v1/clusters/{name}` | `GridCluster`, `ETag: "<resourceVersion>"` | `ManagedClusters/GetManagedCluster` (on the shipped backend, its `Clusters/Get`); 404 with the backend's message when absent. Against an older backend that answers `Unimplemented` the BFF filters `ListManagedClusters` by name instead, so the detail works either way; neither the fake nor the shipped backend needs that any more |
-| PATCH | `/api/v1/clusters/{name}` | (No caller in the console: Add and Remove write `Clusters/Update` over the relay.) `GridCluster` after the write, with its `ETag` | `UpdateManagedCluster` (no read first) with the present body fields as the object and the mask (`labels`, `annotations`) and `lock: true` on the `If-Match` version; an empty body is 422; 409 when the hub object is not at that version, 428 without `If-Match`, 422 on a bad body or `If-Match`, a coordinate annotation the backend refuses or a change to a key outside the console's (`ai-grid/*`, `location`), 413 over 1 MiB, 415 when the body is not `application/json` |
 | GET | `/api/v1/tenants?offset=&limit=&filter=` | `Tenant[]` in Keycloak's order (by name, the realm database's collation) plus `meta`; `filter` is a CEL expression the client writes, over `this` (a Tenant), see "Writes, versions and lists"; `limit` omitted returns everything; the removed `search` is 422 | `Tenants/ListTenants` with `offset`, `limit` and `filter` exactly as sent |
 | GET | `/api/v1/tenants/{id}` | `Tenant`, `ETag: "<resourceVersion>"` | `Tenants/GetTenant`; 404 with the backend's message when absent |
 | POST | `/api/v1/tenants` | 201, `Tenant` as created, `Location: /api/v1/tenants/{id}`, `ETag` | `Tenants/CreateTenant`; 422 with Keycloak's message on a bad name, alias or domain, 409 on a taken name or alias |
@@ -181,8 +178,9 @@ under `/perses/api`, and the Connect relay to the backend's own RPCs under `/ai_
 | DELETE | `/api/v1/subscriptions/{name}` | 204 | `Subscriptions/DeleteSubscription` with the `If-Match` version as `resource_version`; 404 when absent, 409 when stale, 428 without `If-Match` |
 | GET | `/api/v1/grid/overview?range=1h\|6h\|24h&site=&metrics=false` | (Only the Monitoring fallback, without a Perses relay; the map reads `Clusters/List`.) `GridOverview`: `{updatedAt, inventorySource?, demo, metricsSource?, clusters, metrics}`; `inventorySource` (`acm\|git`) and `metricsSource` (`thanos\|demo`) are omitted when the backend does not say, and each metric's `status` (`ok\|no-data\|unavailable\|not-configured`) likewise | `Grid/GetOverview`; `range` is forwarded as sent (the backend defaults it to `1h` and refuses anything but `1h`, `6h` and `24h` with 422), an empty `site` selects every site and only `metrics=false` leaves the metrics out |
 
-`GridCluster` (fields the shipped backend does not fill are omitted or empty, so a client
-also works against a backend that only returns `name`, `labels`, `hubAcceptsClient`):
+`GridCluster`, each of the clusters of `GET /api/v1/grid/overview` (the Monitoring fallback;
+the Clusters pages read `Clusters/List`). Fields the backend does not fill are omitted or empty,
+so a client also works against a backend that only returns `name`, `labels`, `hubAcceptsClient`:
 
 ```json
 {
@@ -253,45 +251,6 @@ also works against a backend that only returns `name`, `labels`, `hubAcceptsClie
   in range (`NaN` and `Inf` parse but cannot be encoded, so they count as absent).
 - `conditions[].lastTransitionTime` is omitted when the hub recorded none; it is never the
   Unix epoch.
-
-`PATCH /api/v1/clusters/{name}` body, every field optional:
-
-```json
-{"labels": {"name": "site-paris-1", "ai-grid/enabled": "true", "location": "paris", "...": "..."},
- "annotations": {"ai-grid/site-name": "Paris DC1", "ai-grid/latitude": "48.8566", "...": "..."}}
-```
-
-A present map replaces the stored one as a whole (FieldMask semantics, as in OSAC; there are no
-per-key paths), so a page that enrols a cluster sends the `labels` map it loaded with
-`ai-grid/enabled` set to `"true"`, and removes a label or annotation by leaving it out of the
-map; an absent field or `null` is left alone. The BFF writes the present fields into one
-`UpdateManagedCluster` (object, mask, `lock: true` on `If-Match`) without reading the cluster
-first and without merging, comparing or validating the maps; unknown fields, wrong types and
-anything after the object are 422, more than 1 MiB is 413. A body that names no field is 422
-`the request body names no field to change`, before any call. Hub acceptance
-(`hubAcceptsClient`) is read-only here: no page needs to write it, and turning it off makes the
-hub drop a live site. The backend does the rest: the hub's webhook and controllers put back what
-they own (the `name` and default clusterset labels, the add-on labels, `clusterID`,
-`openshiftVersion*` and the `open-cluster-management/created-via` annotation; not a removed
-`cloud` or `vendor`), and the fake does the same before `UpdateManagedCluster` answers, so the
-response shows the labels as the hub keeps them; an `ai-grid/latitude` or `ai-grid/longitude`
-annotation must be a number within -90..90 or -180..180 when it is present and not blank,
-surrounding whitespace allowed as on the read side (422 `annotation "ai-grid/latitude" must be a
-number between -90 and 90, got "<v>"`, a console proposal for the backend, which owns the
-convention); only the console's keys may change: adding, changing or removing a label or
-annotation outside `ai-grid/*`, `ai-grid-mock/*` (the fake's test switches) and the `location`
-label is 422 `label "<k>" cannot be changed through the console; only ai-grid/* labels and
-annotations and the location label can` (compared after the hub has put back its own labels, so
-leaving one of those out is fine; a console proposal, the hub lets a provider admin patch any
-label); and an update that leaves labels and annotations as stored is not written (the response
-keeps the stored `resourceVersion`, as the API server's does).
-
-The lock is on the ManagedCluster's `resourceVersion`, which the hub also moves when its
-registration agent or controllers write the cluster (conditions, capacity, add-on labels). On a
-busy hub a page that waits before saving can get 409 although nobody edited its labels; the
-page reloads and retries. Whether the backend should instead retry once by itself when the
-stored labels and annotations still equal what the client loaded is an open question for the
-backend team (`mock/areas/clusters.md`, "What remains").
 
 `Tenant` (a Keycloak Organization in the `ai-grid` realm, `mock/research/keycloak.md` section 4;
 the collections are always present even though Keycloak omits an empty `domains`):
@@ -820,7 +779,6 @@ exists; the frontend uses the mock service meanwhile.
 | Method | Path | Needs in the proto | Feature plan |
 |---|---|---|---|
 | GET | `/api/v1/user` (`isProviderAdmin`) | Optional: `AiGrid/GetCurrentUser` returning roles, once the backend acts as the caller; today the BFF asks the hub directly | Step 1 |
-| GET/PATCH | `/api/v1/clusters[/{name}]` (implemented against the draft) | The backend has to ship the draft's `GetManagedCluster`, `UpdateManagedCluster` and the richer `ManagedCluster` (`mock/proto/ai_grid/v1/managed_cluster*.proto`), with `status.state` derived server-side; `patch` on managedclusters in its ClusterRole | Steps 2, 10 |
 | GET/POST/PATCH/DELETE | `/api/v1/tenants[/{id}]` (on the backend's `Tenants` RPCs) | the draft `Tenant`'s `alias`, `enabled`, `description`, `attributes`, `domain_details` and `identity_provider`, if the console keeps them; `filter` evaluated on `List`; mutations gated on the provider-admin check | Step 6 |
 | GET/POST/PATCH/DELETE | `/api/v1/models[/{namespace}/{name}]`, GET `/api/v1/capabilities` (implemented against the draft) | The backend has to ship the draft's `Models` service and `Model` message (`mock/proto/ai_grid/v1/model*.proto`) over LLMInferenceService, Placement and ManifestWorkReplicaSet with the status derived server-side (including proposal P13: each work's `phase`, `reason` and `message`, and `MODEL_PHASE_PARTIALLY_AVAILABLE`), and `AiGrid/GetHubCapabilities`; the `ManifestWorkReplicaSet` feature gate on the hub for multi-site models (`FailedPrecondition` otherwise) | Steps 3, 4 |
 | GET/POST/PUT/DELETE | `/api/v1/catalog[/{name}]` | `Catalog/*` on ConfigMaps | Step 9 |
@@ -833,7 +791,7 @@ exists; the frontend uses the mock service meanwhile.
 | Situation | Status |
 |---|---|
 | A path under `/api/v1` that no route has | 404, `the requested resource could not be found` |
-| A known `/api/v1` path with a method it has no route for (`POST /clusters`) | 405 with `Allow` (`GET, HEAD`; a GET route also answers HEAD) and the JSON error shape, `POST is not allowed on /api/v1/clusters; use GET, HEAD`. It is checked after the identity and provider-admin checks, so a non-admin gets 403 |
+| A known `/api/v1` path with a method it has no route for (`POST /locations`) | 405 with `Allow` (`GET, HEAD`; a GET route also answers HEAD) and the JSON error shape, `POST is not allowed on /api/v1/locations; use GET, HEAD`. It is checked after the identity and provider-admin checks, so a non-admin gets 403 |
 | Missing or malformed token header | 401 |
 | Hub rejects the token in the access review | 401 |
 | Hub unreachable, failing or slower than 5 s during the access review | 502, `the hub could not confirm the caller's permissions; try again`, detail in the BFF log (a slow hub is not the backend's 504) |

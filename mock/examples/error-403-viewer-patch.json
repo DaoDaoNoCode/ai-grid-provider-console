@@ -1,27 +1,10 @@
 {
-  "request": "PATCH /api/v1/clusters/site-frankfurt-1",
+  "request": "PATCH /api/v1/tenants/3f1c9a72-5b6e-4d2a-8c01-2d3e4f5a6b7c",
   "requestHeaders": {
-    "If-Match": "\"48809977\""
+    "If-Match": "\"1\""
   },
   "requestBody": {
-    "labels": {
-      "name": "site-frankfurt-1",
-      "cloud": "BareMetal",
-      "vendor": "OpenShift",
-      "clusterID": "c41e8a77-3b5d-4f60-9c12-345678abcdef",
-      "openshiftVersion": "4.21.9",
-      "openshiftVersion-major": "4",
-      "openshiftVersion-major-minor": "4.21",
-      "cluster.open-cluster-management.io/clusterset": "default",
-      "feature.open-cluster-management.io/addon-application-manager": "unhealthy",
-      "feature.open-cluster-management.io/addon-cert-policy-controller": "available",
-      "feature.open-cluster-management.io/addon-cluster-proxy": "available",
-      "feature.open-cluster-management.io/addon-config-policy-controller": "available",
-      "feature.open-cluster-management.io/addon-governance-policy-framework": "available",
-      "feature.open-cluster-management.io/addon-managed-serviceaccount": "available",
-      "feature.open-cluster-management.io/addon-work-manager": "available",
-      "ai-grid/enabled": "true"
-    }
+    "description": "Acme Robotics, EU"
   },
   "token": "viewer-token",
   "user": "viewer",

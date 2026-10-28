@@ -99,7 +99,7 @@ Without the frontend:
 make dev-forward-backend   # or your own backend on :9090
 make dev-bff
 hack/api.sh /api/v1/user
-hack/api.sh /api/v1/clusters
+hack/api.sh /api/v1/tenants
 hack/api.sh /api/v1/tenants
 hack/api.sh /api/v1/models          # 501 until the backend ships the Models service
 curl -s http://127.0.0.1:8080/readyz
