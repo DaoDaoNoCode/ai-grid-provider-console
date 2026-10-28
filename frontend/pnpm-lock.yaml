@@ -6,6 +6,7 @@ settings:
 
 overrides:
   '@tanstack/react-query': 5.105.0
+  fast-uri@<3.1.9: 3.1.9
 
 importers:
 
@@ -2237,9 +2238,6 @@ packages:
   fast-levenshtein@2.0.6:
     resolution: {integrity: sha512-DCXu6Ifhqcks7TZKY3Hxp3y6qphY5SJZmrWMDrKcERSOXWQdMhU9Ig/PYrzyw/ul9jOIyh0N4M0tbC5hodg8dw==}
 
-  fast-uri@3.1.8:
-    resolution: {integrity: sha512-GZMtZUTNRpOVIECoXwLNZS5xUGE+mVNbTB8h/7Rwh2TFWcBQiPzTgyZi05BF9UMZKkLJv8XBRJTlU7zg8+ZfMg==}
-
   fast-uri@3.1.9:
     resolution: {integrity: sha512-hS/0Wt3Ya043oKXs0sIxrMpKQITXhMLIrVAKKXi4gozGC9v7YRWVnXIZzjNPTO02M9BdxLCWqK1yRXgNziVyJQ==}
 
@@ -4392,7 +4390,7 @@ snapshots:
       '@tanstack/react-query': 5.105.0(@types/react@19.3.0)(react@19.3.1)
       date-fns: 4.4.0
       date-fns-tz: 3.2.0(date-fns@4.4.0)
-      fast-uri: 3.1.8
+      fast-uri: 3.1.9
       immer: 10.1.1
       react: 19.3.1
       react-compiler-runtime: 1.0.0(react@19.3.1)
@@ -5449,8 +5447,6 @@ snapshots:
   fast-json-stable-stringify@2.1.0: {}
 
   fast-levenshtein@2.0.6: {}
-
-  fast-uri@3.1.8: {}
 
   fast-uri@3.1.9: {}
 
