@@ -179,6 +179,16 @@ rollout() {
     fi
   done
 }
+# Deleting the Deployment (helm uninstall, kubectl delete) leaves its pods to the garbage
+# collector, and helm's and kubectl's --wait don't wait for them. The next install's rollout and
+# port-forward could then reach the old pod, and kubectl debug a pod that is being deleted.
+pods_gone() {
+  for _ in $(seq 1 60); do
+    [[ -z "$(k -n "${NS}" get pods -l app.kubernetes.io/name="${NAME}" -o name)" ]] && return
+    sleep 2
+  done
+  fail "the console's previous pods were not deleted in 120s: $(k -n "${NS}" get pods 2>&1)"
+}
 forward() {
   [[ -n "${pf}" ]] && kill "${pf}" 2>/dev/null || true
   # exec, so $! is kubectl itself: killing only a subshell would leave the old port-forward
@@ -221,6 +231,7 @@ rollout
 forward
 expect 200 "readyz after moving to the chart" "https://127.0.0.1:${PORT}/readyz"
 k delete -f "${TMP}/chart.yaml" --wait >/dev/null
+pods_gone
 base_install
 KUBECTL=kubectl KUBE_CONTEXT="${CTX}" "${ROOT}/hack/chart-takeover.sh" console "${NS}" "${VALUES[@]}" \
   --set route.host=console.apps.example.com >/dev/null
@@ -233,6 +244,7 @@ rollout
   fail "the taken-over Deployment lacks the chart's labels"
 pass "a Helm release takes over manifests/base in place"
 helm --kube-context "${CTX}" uninstall console -n "${NS}" --wait >/dev/null
+pods_gone
 
 step "2. helm install"
 helm --kube-context "${CTX}" install console "${CHART}" -n "${NS}" "${VALUES[@]}" >/dev/null
