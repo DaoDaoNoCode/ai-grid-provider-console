@@ -264,7 +264,8 @@ it("explains, in a help popover, where a cluster's models come from", async () =
 it('says no clusters match and clears the search and filter', async () => {
   const user = userEvent.setup();
   renderAt('/ai-grid', new MockConsoleService());
-  await user.type(await screen.findByRole('textbox', { name: 'Search grid clusters' }), 'zzz');
+  await user.click(await screen.findByRole('textbox', { name: 'Search grid clusters' }));
+  await user.paste('zzz');
   expect(screen.getByText('No clusters match')).toBeVisible();
   await user.click(screen.getByRole('button', { name: 'Clear all filters' }));
   expect(screen.getByRole('button', { name: 'View site1 details' })).toBeVisible();

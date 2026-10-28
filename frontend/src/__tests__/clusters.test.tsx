@@ -76,7 +76,8 @@ it('lists live Hub states, includes AI Grid navigation and enrolls with a label-
   const enrolled = service.clusters.find((c) => c.name === 'cluster-b')!;
   expect(enrolled.labels).toEqual({ location: 'site2', 'ai-grid/enabled': 'true', 'ai-grid/role': 'inference' });
   expect(enrolled.location).toBe('site2');
-  await user.type(screen.getByRole('textbox', { name: 'Search clusters' }), 'cluster-c');
+  await user.click(screen.getByRole('textbox', { name: 'Search clusters' }));
+  await user.paste('cluster-c');
   expect(within(screen.getByTestId('clusters-table')).queryByText('cluster-a')).not.toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'Actions for cluster-c' }));
   expect(screen.getByRole('menuitem', { name: 'Add to AI Grid' })).not.toHaveAttribute('aria-disabled', 'true');
@@ -137,7 +138,8 @@ it('warns about a member without a location, and asks for a location and role be
   expect(role).toHaveAttribute('aria-invalid', 'true');
   expect(location).toHaveAccessibleDescription(/^Required\./);
   expect(role).toHaveAccessibleDescription(/^Required\./);
-  await user.type(location, 'us east');
+  await user.click(location);
+  await user.paste('us east');
   expect(location).toHaveAccessibleDescription(/Use up to 63 letters/);
   expect(service.clusters[1].labels).toEqual({});
   await user.click(within(modal).getByRole('button', { name: 'Cancel' }));
@@ -205,7 +207,8 @@ it('shows the role and location Add wrote while the list reloads', async () => {
   let answer: () => void = () => {};
   service.listClusters = () => new Promise((resolve) => (answer = () => resolve(list())));
   const modal = await screen.findByTestId('cluster-membership-modal');
-  await user.type(within(modal).getByRole('textbox', { name: 'Location' }), 'paris');
+  await user.click(within(modal).getByRole('textbox', { name: 'Location' }));
+  await user.paste('paris');
   await user.click(within(modal).getByRole('combobox', { name: 'Role' }));
   await user.click(await screen.findByRole('option', { name: /Inference/ }));
   await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
@@ -595,7 +598,8 @@ it('says when the search matches no cluster, and clears it from the table', asyn
   const user = userEvent.setup();
   renderAt('/clusters', new MockConsoleService());
   await screen.findByRole('row', { name: /^site1 / });
-  await user.type(screen.getByRole('textbox', { name: 'Search clusters' }), 'no-such-cluster');
+  await user.click(screen.getByRole('textbox', { name: 'Search clusters' }));
+  await user.paste('no-such-cluster');
   expect(screen.getByRole('heading', { name: 'No results found' })).toBeVisible();
   expect(screen.getByText('Change the search to see more clusters.')).toBeVisible();
   await user.click(screen.getByRole('button', { name: 'Clear all filters' }));
@@ -611,7 +615,7 @@ it('reloads the cluster in the open dialog after a conflict, keeping the choices
   const modal = await screen.findByTestId('cluster-membership-modal');
   const location = within(modal).getByRole('textbox', { name: 'Location' });
   await user.clear(location);
-  await user.type(location, 'us-east');
+  await user.paste('us-east');
   await user.click(within(modal).getByRole('combobox', { name: 'Role' }));
   await user.click(await screen.findByRole('option', { name: /Inference/ }));
   // Someone else changes the cluster while the dialog is open.
@@ -652,7 +656,7 @@ it('shows the location and role someone else set meanwhile instead of sending th
   const modal = await screen.findByTestId('cluster-membership-modal');
   const location = within(modal).getByRole('textbox', { name: 'Location' });
   await user.clear(location);
-  await user.type(location, 'us-east');
+  await user.paste('us-east');
   await user.click(within(modal).getByRole('combobox', { name: 'Role' }));
   await user.click(await screen.findByRole('option', { name: /Inference/ }));
   // Another admin sets a location and role while the dialog is open.
@@ -689,7 +693,7 @@ it('says so when the cluster changed and could not be loaded again', async () =>
   const modal = await screen.findByTestId('cluster-membership-modal');
   const location = within(modal).getByRole('textbox', { name: 'Location' });
   await user.clear(location);
-  await user.type(location, 'us-east');
+  await user.paste('us-east');
   await user.click(within(modal).getByRole('combobox', { name: 'Role' }));
   await user.click(await screen.findByRole('option', { name: /Inference/ }));
   const index = service.clusters.findIndex((c) => c.name === 'site4');

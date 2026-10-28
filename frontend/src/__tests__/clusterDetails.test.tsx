@@ -409,7 +409,7 @@ const openAddSite4 = async (user: ReturnType<typeof userEvent.setup>) => {
   const modal = await screen.findByTestId('cluster-membership-modal');
   const location = within(modal).getByRole('textbox', { name: 'Location' });
   await user.clear(location);
-  await user.type(location, 'us-east');
+  await user.paste('us-east');
   await user.click(within(modal).getByRole('combobox', { name: 'Role' }));
   await user.click(await screen.findByRole('option', { name: /Inference/ }));
   return modal;

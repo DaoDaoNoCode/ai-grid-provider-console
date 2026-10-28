@@ -70,11 +70,15 @@ describe('routes', () => {
   const subs = 'Subscriptions are not available on this backend yet';
   /** The deploy wizard loads locations up front but shows them on its third step. */
   const toLocationsStep = async (user: ReturnType<typeof userEvent.setup>) => {
-    await user.type(await screen.findByRole('textbox', { name: /Model URI/ }), 'hf://org/widget');
-    await user.type(screen.getByRole('textbox', { name: /^Model name/ }), 'org/widget');
+    await user.click(await screen.findByRole('textbox', { name: /Model URI/ }));
+    await user.paste('hf://org/widget');
+    await user.click(screen.getByRole('textbox', { name: /^Model name/ }));
+    await user.paste('org/widget');
     await user.click(screen.getByRole('button', { name: 'Next' }));
-    await user.type(await screen.findByTestId('model-name-desc-name'), 'Widget');
-    await user.type(screen.getByRole('textbox', { name: /Runtime image/ }), 'registry.example/runtime:test');
+    await user.click(await screen.findByTestId('model-name-desc-name'));
+    await user.paste('Widget');
+    await user.click(screen.getByRole('textbox', { name: /Runtime image/ }));
+    await user.paste('registry.example/runtime:test');
     await user.click(screen.getByRole('button', { name: 'Next' }));
     await user.click(screen.getByRole('button', { name: 'Next' }));
   };

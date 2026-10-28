@@ -37,8 +37,10 @@ const pickOrganization = async (user: User, name: string) => {
 /** Fills the create form for "Test team" with one group and granite-3-8b at the default limit. */
 const fillNewSubscription = async (user: User) => {
   const name = await screen.findByTestId('subscription-name-desc-name');
-  await user.type(name, 'Test team');
-  await user.type(screen.getByRole('combobox', { name: 'Enter groups' }), 'engineering');
+  await user.click(name);
+  await user.paste('Test team');
+  await user.click(screen.getByRole('combobox', { name: 'Enter groups' }));
+  await user.paste('engineering');
   const option = await screen.findByRole('option', { name: 'Add group "engineering"' });
   await user.click(option.querySelector('button') ?? option);
   await user.keyboard('{Escape}');
@@ -62,7 +64,8 @@ describe('administrator subscription flows', () => {
     );
     expect(within(row).getByTestId('subscription-groups')).toHaveTextContent('1');
     expect(within(row).getByTestId('subscription-models')).toHaveTextContent('1');
-    await user.type(screen.getByTestId('subscriptions-filter-input').querySelector('input')!, 'production');
+    await user.click(screen.getByTestId('subscriptions-filter-input').querySelector('input')!);
+    await user.paste('production');
     expect(within(table).queryByRole('link', { name: 'Research' })).not.toBeInTheDocument();
     await user.click(within(table).getByRole('link', { name: 'Engineering' }));
     expect(await screen.findByRole('heading', { name: 'Engineering', level: 1 })).toBeVisible();
@@ -153,19 +156,21 @@ describe('administrator subscription flows', () => {
     expect(input).toHaveAttribute('placeholder', 'Filter by model name, ID, or description');
 
     // By the hub model's description: only subscriptions with Llama remain.
-    await user.type(input, 'general purpose');
+    await user.click(input);
+    await user.paste('general purpose');
     expect(within(table).getByRole('link', { name: 'Data science' })).toBeVisible();
     expect(within(table).queryByRole('link', { name: 'Engineering' })).not.toBeInTheDocument();
     // By the model's ID.
     await user.clear(input);
-    await user.type(input, 'granite-3-8b');
+    await user.paste('granite-3-8b');
     expect(within(table).getByRole('link', { name: 'Engineering' })).toBeVisible();
     expect(within(table).queryByRole('link', { name: 'Research' })).not.toBeInTheDocument();
 
     // The model filter stays, as a label, while the search box filters by subscription.
     await user.click(screen.getByTestId('subscriptions-filter-attribute'));
     await user.click(await screen.findByRole('option', { name: 'Subscription' }));
-    await user.type(screen.getByTestId('subscriptions-filter-input').querySelector('input')!, 'shared');
+    await user.click(screen.getByTestId('subscriptions-filter-input').querySelector('input')!);
+    await user.paste('shared');
     expect(within(table).getByRole('link', { name: 'Data science' })).toBeVisible();
     expect(within(table).queryByRole('link', { name: 'Engineering' })).not.toBeInTheDocument();
     expect(screen.getByText('granite-3-8b')).toBeVisible();
@@ -185,7 +190,8 @@ describe('administrator subscription flows', () => {
     );
     await user.click(screen.getByTestId('subscriptions-filter-attribute'));
     await user.click(await screen.findByRole('option', { name: 'Group' }));
-    await user.type(screen.getByTestId('subscriptions-group-filter-input').querySelector('input')!, 'platform');
+    await user.click(screen.getByTestId('subscriptions-group-filter-input').querySelector('input')!);
+    await user.paste('platform');
     expect(within(table).getByRole('link', { name: 'Data science' })).toBeVisible();
     expect(within(table).queryByRole('link', { name: 'Engineering' })).not.toBeInTheDocument();
   });
@@ -240,7 +246,8 @@ describe('administrator subscription flows', () => {
     // The reference's own name still filters.
     await user.click(screen.getByTestId('subscriptions-filter-attribute'));
     await user.click(await screen.findByRole('option', { name: 'Model' }));
-    await user.type(screen.getByTestId('subscriptions-model-filter-input').querySelector('input')!, 'granite-3-8b');
+    await user.click(screen.getByTestId('subscriptions-model-filter-input').querySelector('input')!);
+    await user.paste('granite-3-8b');
     expect(within(table).getByRole('link', { name: 'Engineering' })).toBeVisible();
   });
 
@@ -252,8 +259,10 @@ describe('administrator subscription flows', () => {
     expect(screen.queryByTestId('subscription-create-auth-policy')).not.toBeInTheDocument();
     expect(screen.getByTestId('create-subscription-button')).toBeDisabled();
     await pickOrganization(user, 'acme-robotics');
-    await user.type(screen.getByTestId('subscription-name-desc-name'), 'Test team');
-    await user.type(screen.getByRole('combobox', { name: 'Enter groups' }), 'engineering');
+    await user.click(screen.getByTestId('subscription-name-desc-name'));
+    await user.paste('Test team');
+    await user.click(screen.getByRole('combobox', { name: 'Enter groups' }));
+    await user.paste('engineering');
     const option = await screen.findByRole('option', { name: 'Add group "engineering"' });
     await user.click(option.querySelector('button') ?? option);
     await user.keyboard('{Escape}');
@@ -286,7 +295,7 @@ describe('administrator subscription flows', () => {
     const name = await screen.findByTestId('subscription-name-desc-name');
     expect(screen.queryByTestId('subscription-create-auth-policy')).not.toBeInTheDocument();
     await user.clear(name);
-    await user.type(name, 'Engineering updated');
+    await user.paste('Engineering updated');
     await user.click(screen.getByTestId('update-subscription-button'));
     expect(await screen.findByRole('link', { name: 'Engineering updated' })).toBeVisible();
     const info = await service.getSubscriptionInfo('engineering');
@@ -304,7 +313,8 @@ describe('administrator subscription flows', () => {
     await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
     const modal = await screen.findByTestId('delete-subscription-modal');
     expect(within(modal).getByRole('button', { name: 'Delete' })).toBeDisabled();
-    await user.type(screen.getByTestId('delete-modal-input'), 'Engineering');
+    await user.click(screen.getByTestId('delete-modal-input'));
+    await user.paste('Engineering');
     const remove = service.deleteSubscription;
     service.deleteSubscription = async () => {
       service.deleteSubscription = remove;
@@ -338,7 +348,7 @@ describe('administrator subscription flows', () => {
     const description = await screen.findByTestId('subscription-name-desc-description');
     expect(screen.getByTestId('subscription-models-table')).toHaveTextContent('Unlimited');
     await user.clear(description);
-    await user.type(description, 'Changed description');
+    await user.paste('Changed description');
     await user.click(screen.getByTestId('update-subscription-button'));
     await screen.findByTestId('subscriptions-table');
     const saved = (await service.getSubscriptionInfo(seed.name)).subscription;
@@ -372,7 +382,7 @@ describe('administrator subscription flows', () => {
     renderAt('/subscriptions/edit/engineering', service);
     const description = await screen.findByTestId('subscription-name-desc-description');
     await user.clear(description);
-    await user.type(description, 'Unsaved description');
+    await user.paste('Unsaved description');
     const sub = (await service.getSubscriptionInfo('engineering')).subscription;
     await service.updateSubscription(
       sub.name,
@@ -485,7 +495,7 @@ describe('a failed background poll', () => {
     renderAt(path, service);
     const field = await screen.findByTestId(testId);
     await user.clear(field);
-    await user.type(field, 'Unsaved input');
+    await user.paste('Unsaved input');
     const failed = vi.fn(async () => {
       throw new ServiceError(503, 'Service unavailable.');
     });
@@ -633,8 +643,10 @@ describe("model references on PR 12's models", () => {
     const user = userEvent.setup();
     renderAt('/subscriptions/create', service);
     await pickOrganization(user, 'acme-robotics');
-    await user.type(screen.getByTestId('subscription-name-desc-name'), 'Test team');
-    await user.type(screen.getByRole('combobox', { name: 'Enter groups' }), 'engineering');
+    await user.click(screen.getByTestId('subscription-name-desc-name'));
+    await user.paste('Test team');
+    await user.click(screen.getByRole('combobox', { name: 'Enter groups' }));
+    await user.paste('engineering');
     const option = await screen.findByRole('option', { name: 'Add group "engineering"' });
     await user.click(option.querySelector('button') ?? option);
     await user.keyboard('{Escape}');
@@ -675,7 +687,8 @@ describe("model references on PR 12's models", () => {
     expect(within(row('Shared granite')).getByRole('checkbox', { name: 'Select Shared granite' })).not.toBeChecked();
     await user.keyboard('{Escape}');
     // An unchanged edit can't be saved; change something besides the models.
-    await user.type(screen.getByTestId('subscription-name-desc-description'), ' (edited)');
+    await user.click(screen.getByTestId('subscription-name-desc-description'));
+    await user.paste(' (edited)');
     await user.click(screen.getByTestId('update-subscription-button'));
     await waitFor(() => expect(update).toHaveBeenCalled());
     expect(update.mock.calls[0][1].modelRefs).toEqual([
@@ -811,7 +824,8 @@ it('reloads a subscription after a stale delete, keeping the typed name, so a re
   await user.click(screen.getByTestId('subscription-actions-toggle'));
   await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
   const modal = await screen.findByTestId('delete-subscription-modal');
-  await user.type(within(modal).getByTestId('delete-modal-input'), 'Engineering');
+  await user.click(within(modal).getByTestId('delete-modal-input'));
+  await user.paste('Engineering');
   // Someone else saves the subscription while the dialog is open.
   service.subscriptions = service.subscriptions.map((s) =>
     s.name === 'engineering' ? { ...s, resourceVersion: String(Number(s.resourceVersion) + 1) } : s,
@@ -834,7 +848,8 @@ it('keeps the delete dialog busy until the reloaded version is in, and says when
   await user.click(screen.getByTestId('subscription-actions-toggle'));
   await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
   const modal = await screen.findByTestId('delete-subscription-modal');
-  await user.type(within(modal).getByTestId('delete-modal-input'), 'Engineering');
+  await user.click(within(modal).getByTestId('delete-modal-input'));
+  await user.paste('Engineering');
   service.subscriptions = service.subscriptions.map((s) =>
     s.name === 'engineering' ? { ...s, resourceVersion: String(Number(s.resourceVersion) + 1) } : s,
   );
@@ -870,7 +885,8 @@ it('asks before Cancel discards the subscription form’s input', async () => {
   await user.click(await screen.findByTestId('cancel-subscription-button'));
   expect(await screen.findByTestId('subscriptions-table')).toBeVisible();
   await user.click(screen.getByRole('link', { name: 'Create subscription' }));
-  await user.type(await screen.findByTestId('subscription-name-desc-name'), 'Test team');
+  await user.click(await screen.findByTestId('subscription-name-desc-name'));
+  await user.paste('Test team');
   await user.click(screen.getByTestId('cancel-subscription-button'));
   const discard = await screen.findByTestId('discard-changes-modal');
   await user.click(within(discard).getByRole('button', { name: 'Keep editing' }));
@@ -887,7 +903,8 @@ it('keeps Save disabled on an edit until something changes', async () => {
   const save = screen.getByTestId('update-subscription-button');
   expect(save).toBeDisabled();
   // An unchanged form leaves without asking.
-  await user.type(description, ' more');
+  await user.click(description);
+  await user.paste(' more');
   expect(save).toBeEnabled();
   await user.type(description, '{Backspace>5}');
   expect(save).toBeDisabled();
