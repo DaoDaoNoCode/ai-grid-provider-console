@@ -1,11 +1,9 @@
-import { Breadcrumb, BreadcrumbItem, PageSection } from '@patternfly/react-core';
+import { Breadcrumb, BreadcrumbItem } from '@patternfly/react-core';
 import { Link, useParams } from 'react-router-dom';
 import type { UserService } from '../../api/ConsoleService';
 import type { ModelsService } from '../../api/models';
 import type { ManagedModel } from '../../api/types';
-import { LoadError } from '../../components/LoadError';
-import { PageHeader } from '../../components/PageHeader';
-import { PageLoading } from '../../components/PageLoading';
+import { PageStateSection } from '../../components/states/PageStateSection';
 import { useServiceData } from '../../hooks/useServiceData';
 import { modelNotFound, modelPath } from './modelUtils';
 import { ModelWizard } from './ModelWizard';
@@ -18,7 +16,7 @@ type Props = { service: ModelsService & UserService };
  */
 export const ModelEditPage: React.FC<Props> = ({ service }) => {
   const { namespace = '', name = '' } = useParams();
-  const [model, loaded, error] = useServiceData<ManagedModel | undefined>(
+  const [model, loaded, error, refresh] = useServiceData<ManagedModel | undefined>(
     () => service.getModel(namespace, name),
     undefined,
     0,
@@ -29,7 +27,7 @@ export const ModelEditPage: React.FC<Props> = ({ service }) => {
   const detailsPath = modelPath({ namespace, name });
   return (
     <>
-      <PageHeader
+      <PageStateSection
         title={`Edit ${name}`}
         breadcrumb={
           <Breadcrumb>
@@ -42,14 +40,14 @@ export const ModelEditPage: React.FC<Props> = ({ service }) => {
             <BreadcrumbItem isActive>Edit</BreadcrumbItem>
           </Breadcrumb>
         }
+        loaded={loaded}
+        error={error}
+        onRetry={() => void refresh()}
+        subject="Models"
+        object="model"
+        loadingLabel="Loading model"
+        notFound={modelNotFound(namespace, name)}
       />
-      {!error && !loaded ? (
-        <PageLoading label="Loading model" />
-      ) : (
-        <PageSection isFilled>
-          {error && <LoadError subject="Models" error={error} notFound={modelNotFound(namespace, name)} />}
-        </PageSection>
-      )}
     </>
   );
 };

@@ -71,7 +71,7 @@ const Pages: React.FC<Props> = ({ service }) => (
       path="/clusters/:name"
       element={
         <ByParams>
-          <ClusterDetailsPage service={service} />
+          <ClusterDetailsPage />
         </ByParams>
       }
     />

@@ -21,6 +21,7 @@ import {
   ToolbarToggleGroup,
 } from '@patternfly/react-core';
 import { FilterIcon } from '@patternfly/react-icons';
+import { RefreshButton } from '../../../components/RefreshButton';
 import { getSubscriptionCreateUrl } from '../../../utilities/maasGovernanceNavigation';
 import type { SubscriptionsFilterDataType } from './const';
 import { SubscriptionsFilterOptions, subscriptionsFilterOptions } from './const';
@@ -30,15 +31,16 @@ type Props = {
   onFilterUpdate: (key: SubscriptionsFilterOptions, value?: string) => void;
   /** Shows Create subscription. */
   canWrite: boolean;
+  onRefresh: () => void;
 };
 
 const attributes = Object.values(SubscriptionsFilterOptions);
 
 /**
- * The subscriptions list's toolbar items: the filters and Create subscription. The toolbar's own
+ * The subscriptions list's toolbar items: the filters, Create subscription and Refresh. The toolbar's own
  * Clear all filters (PaginatedTable's clearAllFilters) follows the filters' labels.
  */
-export const SubscriptionsToolbar: React.FC<Props> = ({ filterData, onFilterUpdate, canWrite }) => {
+export const SubscriptionsToolbar: React.FC<Props> = ({ filterData, onFilterUpdate, canWrite, onRefresh }) => {
   const [attribute, setAttribute] = useState(SubscriptionsFilterOptions.keyword);
   const [menuOpen, setMenuOpen] = useState(false);
   return (
@@ -118,6 +120,9 @@ export const SubscriptionsToolbar: React.FC<Props> = ({ filterData, onFilterUpda
           </Button>
         </ToolbarItem>
       )}
+      <ToolbarItem>
+        <RefreshButton onRefresh={onRefresh} />
+      </ToolbarItem>
     </>
   );
 };

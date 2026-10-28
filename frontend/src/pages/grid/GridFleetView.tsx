@@ -17,10 +17,6 @@ import {
   DrawerHead,
   DrawerPanelBody,
   DrawerPanelContent,
-  EmptyState,
-  EmptyStateActions,
-  EmptyStateBody,
-  EmptyStateFooter,
   Flex,
   FlexItem,
   Grid,
@@ -31,7 +27,7 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from '@patternfly/react-core';
-import { AngleLeftIcon, SearchIcon } from '@patternfly/react-icons';
+import { AngleLeftIcon } from '@patternfly/react-icons';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { ManagedModel } from '../../api/types';
 import type { ClusterView } from '../clusters/clusterView';
@@ -40,6 +36,7 @@ import { DetailsSection } from '../../components/DetailsSection';
 import { StatCard } from '../../components/StatCard';
 import { StatusLabel } from '../../components/StatusLabel';
 import { SubtleText } from '../../components/SubtleText';
+import { NoResultsState } from '../../components/states/NoResultsState';
 import { modelKey } from '../../utilities/authpolicies';
 import { modelPath } from '../models/modelUtils';
 import { LOCATION_DOCS_URL } from '../clusters/site';
@@ -256,8 +253,8 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
       <Flex alignItems={{ default: 'alignItemsCenter' }} spaceItems={{ default: 'spaceItemsSm' }}>
         <FlexItem grow={{ default: 'grow' }}>
           <SearchInput
-            aria-label={`Search grid ${objects}`}
-            placeholder={`Search ${objects}`}
+            aria-label={`Filter grid ${objects}`}
+            placeholder="Filter by name"
             value={search}
             onChange={(_, value) => setSearch(value)}
             onClear={() => setSearch('')}
@@ -348,18 +345,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
     </Stack>
   );
 
-  const noResults = (
-    <EmptyState variant="xs" titleText={`No ${objects} match`} headingLevel="h3" icon={SearchIcon}>
-      <EmptyStateBody>Change the search or the filter to see more.</EmptyStateBody>
-      <EmptyStateFooter>
-        <EmptyStateActions>
-          <Button variant="link" onClick={clearFilters}>
-            Clear all filters
-          </Button>
-        </EmptyStateActions>
-      </EmptyStateFooter>
-    </EmptyState>
-  );
+  const noResults = <NoResultsState body={`Change the filter to see more ${objects}.`} onClear={clearFilters} />;
 
   // Not on the map: no position (no annotations, no known cloud region), or annotations to fix.
   const notOnMap = clusters.filter((c) => !hasCoordinates(c));
@@ -447,7 +433,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
       <DrawerPanelBody>
         <Stack hasGutter>
           {modelsError && (
-            <Alert isInline variant="warning" title="Models unavailable">
+            <Alert isInline variant="warning" title="Unable to load models">
               {modelsError}
             </Alert>
           )}

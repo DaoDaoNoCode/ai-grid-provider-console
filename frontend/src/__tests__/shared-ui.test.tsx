@@ -1,13 +1,20 @@
-// Small shared pieces: status labels, short lists and chart ticks.
+// Small shared pieces: page states, status labels, short lists and chart ticks.
+import { useState } from 'react';
 import { render, screen, within } from '@testing-library/react';
 import { TestApp } from './TestApp';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
+import { ServiceError } from '../api/ConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
+import { LoadError } from '../components/LoadError';
 import { OverflowList } from '../components/OverflowList';
 import { PageErrorBoundary } from '../components/PageErrorBoundary';
 import { PageLoading } from '../components/PageLoading';
 import { StatusLabel } from '../components/StatusLabel';
+import { EmptyListState } from '../components/states/EmptyListState';
+import { ErrorState } from '../components/states/ErrorState';
+import { PageStateSection } from '../components/states/PageStateSection';
+import { SectionEmptyState } from '../components/states/SectionEmptyState';
 import { tickLabel } from '../pages/grid/chartScale';
 import { getSubtextProps } from '../utilities/phaseLabelUtils';
 import { statusLabelProps } from '../utilities/status';
@@ -91,7 +98,7 @@ it('offers a reload when a page fails to load, and tries again on another page',
       <Missing />
     </PageErrorBoundary>,
   );
-  expect(screen.getByRole('heading', { level: 1, name: 'This page could not be loaded' })).toBeVisible();
+  expect(screen.getByRole('heading', { level: 1, name: 'Unable to load this page' })).toBeVisible();
   await user.click(screen.getByRole('button', { name: 'Reload' }));
   expect(reload).toHaveBeenCalled();
   rerender(
@@ -100,4 +107,149 @@ it('offers a reload when a page fails to load, and tries again on another page',
     </PageErrorBoundary>,
   );
   expect(screen.getByText('Clusters')).toBeVisible();
+});
+
+describe('page states', () => {
+  const notFound = { what: 'Widget', body: 'There is no widget w1.', listPath: '/widgets', listLabel: 'Widgets' };
+  const renderLoadError = (error: Error, onRetry = vi.fn()) =>
+    render(
+      <MemoryRouter>
+        <LoadError subject="Widgets" object="widget" error={error} onRetry={onRetry} notFound={notFound} />
+      </MemoryRouter>,
+    );
+
+  it('shows a failed load as an error state with Retry', async () => {
+    const onRetry = vi.fn();
+    const user = userEvent.setup();
+    renderLoadError(new ServiceError(503, 'Service unavailable.'), onRetry);
+    const state = screen.getByTestId('error-state');
+    expect(state).toHaveClass('pf-m-danger');
+    expect(within(state).getByRole('heading', { level: 2, name: 'Unable to load widget' })).toBeVisible();
+    expect(state).toHaveTextContent('Service unavailable.');
+    await user.click(within(state).getByRole('button', { name: 'Retry' }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('says an object is not found, with its list and no Retry', () => {
+    renderLoadError(new ServiceError(404, 'object with identifier w1 not found'));
+    const state = screen.getByTestId('not-found-state');
+    expect(within(state).getByRole('heading', { name: 'Widget not found' })).toBeVisible();
+    expect(within(state).getByRole('link', { name: 'Go to Widgets' })).toHaveAttribute('href', '/widgets');
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/object with identifier/)).not.toBeInTheDocument();
+  });
+
+  it('says a 501 is not available yet, without Retry', () => {
+    renderLoadError(new ServiceError(501, 'not implemented'));
+    expect(screen.getByRole('heading', { name: 'Widgets are not available on this backend yet' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+  });
+
+  it('says a 403 is no access, with the reason', () => {
+    renderLoadError(new ServiceError(403, 'widgets are for admins'));
+    expect(screen.getByRole('heading', { level: 2, name: "You don't have access to widget" })).toBeVisible();
+    expect(screen.getByText('widgets are for admins')).toBeVisible();
+  });
+
+  it('shows nothing for an ended session', () => {
+    const { container } = renderLoadError(new ServiceError(401, 'expired'));
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('gives an empty list its create action, and a section a small state', () => {
+    render(
+      <>
+        <EmptyListState title="No widgets" action={<button>Create widget</button>}>
+          Create a widget to start.
+        </EmptyListState>
+        <SectionEmptyState title="No parts">This widget has no parts.</SectionEmptyState>
+      </>,
+    );
+    expect(screen.getByTestId('empty-list-state')).toHaveClass('pf-m-lg');
+    expect(screen.getByRole('heading', { level: 2, name: 'No widgets' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Create widget' })).toBeVisible();
+    expect(screen.getByRole('heading', { level: 3, name: 'No parts' }).closest('.pf-v6-c-empty-state')).toHaveClass(
+      'pf-m-xs',
+    );
+  });
+
+  it('labels its action as asked', () => {
+    render(<ErrorState title="Unable to load this page" retryLabel="Reload" onRetry={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Reload' })).toBeVisible();
+  });
+
+  /** A page whose load the test controls, with an input that must survive a failed reload. */
+  const Page: React.FC<{ loaded: boolean; error?: Error; onRetry?: () => void; list?: boolean }> = ({
+    loaded,
+    error,
+    onRetry,
+    list = false,
+  }) => {
+    const [text, setText] = useState('');
+    return (
+      <MemoryRouter>
+        <PageStateSection
+          title="w1"
+          headerAction={<button>Actions</button>}
+          loaded={loaded}
+          error={error}
+          onRetry={onRetry ?? (() => undefined)}
+          subject="Widgets"
+          object="widget"
+          loadingLabel="Loading widget"
+          notFound={list ? undefined : notFound}
+        >
+          <input aria-label="Name" value={text} onChange={(e) => setText(e.target.value)} />
+        </PageStateSection>
+      </MemoryRouter>
+    );
+  };
+
+  it("shows nothing from an object's URL id until the object answers", () => {
+    const { rerender } = render(<Page loaded={false} />);
+    expect(screen.getByRole('progressbar', { name: 'Loading widget' })).toBeVisible();
+    // No title or breadcrumb from the id: the real header comes with the object.
+    expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument();
+    rerender(<Page loaded error={new ServiceError(503, 'Service unavailable.')} />);
+    expect(screen.getByRole('heading', { level: 1, name: 'Widgets' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Unable to load widget' })).toBeVisible();
+    rerender(<Page loaded />);
+    expect(screen.getByRole('heading', { level: 1, name: 'w1' })).toBeVisible();
+  });
+
+  it("keeps a list page's header while it loads, and replaces the content when the first load fails", () => {
+    const { rerender } = render(<Page list loaded={false} />);
+    expect(screen.getByRole('heading', { level: 1, name: 'w1' })).toBeVisible();
+    expect(screen.getByRole('progressbar', { name: 'Loading widget' })).toBeVisible();
+    rerender(<Page list loaded error={new ServiceError(503, 'Service unavailable.')} />);
+    expect(screen.getByRole('heading', { name: 'Unable to load widget' })).toBeVisible();
+    // Actions need the object, so they go with it.
+    expect(screen.queryByRole('button', { name: 'Actions' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Name' })).not.toBeInTheDocument();
+  });
+
+  it('keeps what it showed, and the user input, under a warning when a reload fails', async () => {
+    const onRetry = vi.fn();
+    const user = userEvent.setup();
+    const { rerender } = render(<Page loaded onRetry={onRetry} />);
+    await user.type(screen.getByRole('textbox', { name: 'Name' }), 'kept');
+    rerender(<Page loaded error={new ServiceError(503, 'Service unavailable.')} onRetry={onRetry} />);
+    const alert = screen.getByTestId('stale-data-alert');
+    expect(alert).toHaveTextContent('Showing the last loaded widget');
+    expect(alert).toHaveTextContent('Service unavailable.');
+    expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('kept');
+    await user.click(within(alert).getByRole('button', { name: 'Retry' }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    rerender(<Page loaded onRetry={onRetry} />);
+    expect(screen.queryByTestId('stale-data-alert')).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('kept');
+  });
+
+  it("says an object that is gone is not found, under its list's name", () => {
+    const { rerender } = render(<Page loaded />);
+    rerender(<Page loaded error={new ServiceError(404, 'gone')} />);
+    expect(screen.getByRole('heading', { level: 1, name: 'Widgets' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Widget not found' })).toBeVisible();
+    expect(screen.queryByTestId('stale-data-alert')).not.toBeInTheDocument();
+  });
 });

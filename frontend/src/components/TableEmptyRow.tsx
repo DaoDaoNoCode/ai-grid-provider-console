@@ -1,18 +1,11 @@
-import {
-  Bullseye,
-  Button,
-  EmptyState,
-  EmptyStateActions,
-  EmptyStateBody,
-  EmptyStateFooter,
-} from '@patternfly/react-core';
-import { SearchIcon } from '@patternfly/react-icons';
+import { Bullseye } from '@patternfly/react-core';
 import { Td, Tr } from '@patternfly/react-table';
+import { NoResultsState } from './states/NoResultsState';
 
 type Props = {
   /** The table's column count, so the row spans it. */
   colSpan: number;
-  /** What to change, e.g. "Change the search to see more clusters." */
+  /** What to change, e.g. "Change the filter to see more clusters." */
   body: string;
   /** Clears the search or filters; without it the row has no action. */
   onClear?: () => void;
@@ -20,24 +13,13 @@ type Props = {
 
 /**
  * A table row for a search or filter that matches nothing: PatternFly's empty state in a table,
- * the same on every list.
+ * the same on every list. Only for a filter: a table with no rows at all says what is missing.
  */
 export const TableEmptyRow: React.FC<Props> = ({ colSpan, body, onClear }) => (
   <Tr>
     <Td colSpan={colSpan}>
       <Bullseye>
-        <EmptyState variant="xs" headingLevel="h3" titleText="No results found" icon={SearchIcon}>
-          <EmptyStateBody>{body}</EmptyStateBody>
-          {onClear && (
-            <EmptyStateFooter>
-              <EmptyStateActions>
-                <Button variant="link" onClick={onClear}>
-                  Clear all filters
-                </Button>
-              </EmptyStateActions>
-            </EmptyStateFooter>
-          )}
-        </EmptyState>
+        <NoResultsState body={body} onClear={onClear} />
       </Bullseye>
     </Td>
   </Tr>

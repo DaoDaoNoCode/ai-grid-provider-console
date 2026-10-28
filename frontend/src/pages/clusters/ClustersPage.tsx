@@ -5,23 +5,18 @@ import {
   DescriptionListDescription,
   DescriptionListGroup,
   DescriptionListTerm,
-  EmptyState,
-  EmptyStateActions,
-  EmptyStateBody,
-  EmptyStateFooter,
-  PageSection,
   ToolbarItem,
 } from '@patternfly/react-core';
+import { CubesIcon } from '@patternfly/react-icons';
 import { InnerScrollContainer, Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { ThProps } from '@patternfly/react-table';
 import { Link, useNavigate } from 'react-router-dom';
 import type { GridMembership } from '../../api/clusters';
-import { LoadError } from '../../components/LoadError';
-import { PageHeader } from '../../components/PageHeader';
-import { PageLoading } from '../../components/PageLoading';
 import { PaginatedTable } from '../../components/PaginatedTable';
 import { RefreshButton } from '../../components/RefreshButton';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
+import { EmptyListState } from '../../components/states/EmptyListState';
+import { PageStateSection } from '../../components/states/PageStateSection';
 import { StatusLabel } from '../../components/StatusLabel';
 import { ToolbarSearch } from '../../components/ToolbarSearch';
 import { TableEmptyRow } from '../../components/TableEmptyRow';
@@ -233,21 +228,19 @@ export const ClustersPage: React.FC = () => {
   });
 
   const body = () => {
-    if (error) {
-      return <LoadError subject="Clusters" error={error} title="Error loading clusters" onRetry={reload} />;
-    }
     if (clusters.length === 0) {
       return (
-        <EmptyState titleText="No managed clusters" headingLevel="h3">
-          <EmptyStateBody>No ManagedClusters are available.</EmptyStateBody>
-          <EmptyStateFooter>
-            <EmptyStateActions>
-              <Button variant="link" onClick={reload}>
-                Refresh
-              </Button>
-            </EmptyStateActions>
-          </EmptyStateFooter>
-        </EmptyState>
+        <EmptyListState
+          title="No clusters"
+          icon={CubesIcon}
+          action={
+            <Button variant="link" onClick={reload}>
+              Refresh
+            </Button>
+          }
+        >
+          The hub has no managed clusters yet. Import a cluster into the hub to add it to AI Grid.
+        </EmptyListState>
       );
     }
     return (
@@ -256,12 +249,7 @@ export const ClustersPage: React.FC = () => {
           rows={rows}
           toolbar={
             <>
-              <ToolbarSearch
-                label="Search clusters"
-                placeholder="Search clusters by name"
-                value={search}
-                onChange={setSearch}
-              />
+              <ToolbarSearch label="Filter clusters" placeholder="Filter by name" value={search} onChange={setSearch} />
               <ToolbarItem>
                 <RefreshButton onRefresh={reload} />
               </ToolbarItem>
@@ -304,7 +292,7 @@ export const ClustersPage: React.FC = () => {
                   {rows.length === 0 ? (
                     <TableEmptyRow
                       colSpan={columns.length + 1}
-                      body="Change the search to see more clusters."
+                      body="Change the filter to see more clusters."
                       onClear={() => setSearch('')}
                     />
                   ) : (
@@ -376,8 +364,17 @@ export const ClustersPage: React.FC = () => {
 
   return (
     <>
-      <PageHeader title="Clusters" description="Manage AI Grid membership and provisioning readiness." />
-      {!error && !loaded ? <PageLoading label="Loading clusters" /> : <PageSection isFilled>{body()}</PageSection>}
+      <PageStateSection
+        title="Clusters"
+        description="Manage AI Grid membership and provisioning readiness."
+        loaded={loaded}
+        error={error}
+        onRetry={reload}
+        subject="Clusters"
+        loadingLabel="Loading clusters"
+      >
+        {body()}
+      </PageStateSection>
       {change && (
         <MembershipModal
           {...change}

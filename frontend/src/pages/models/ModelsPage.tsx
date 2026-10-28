@@ -7,27 +7,16 @@
 // labels.
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import {
-  Button,
-  EmptyState,
-  EmptyStateActions,
-  EmptyStateBody,
-  EmptyStateFooter,
-  Label,
-  LabelGroup,
-  PageSection,
-  Stack,
-  ToolbarItem,
-} from '@patternfly/react-core';
+import { Button, Label, LabelGroup, ToolbarItem } from '@patternfly/react-core';
 import { ExpandableRowContent, Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { ThProps } from '@patternfly/react-table';
 import type { ManagedModel } from '../../api/types';
-import { LoadError } from '../../components/LoadError';
-import { PageHeader } from '../../components/PageHeader';
-import { PageLoading } from '../../components/PageLoading';
+import { RefreshButton } from '../../components/RefreshButton';
 import { PaginatedTable } from '../../components/PaginatedTable';
 import { RelativeTime } from '../../components/RelativeTime';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
+import { EmptyListState } from '../../components/states/EmptyListState';
+import { PageStateSection } from '../../components/states/PageStateSection';
 import { ToolbarSearch } from '../../components/ToolbarSearch';
 import { TableEmptyRow } from '../../components/TableEmptyRow';
 import { useConsoleSession } from '../../context/useConsoleSession';
@@ -44,12 +33,12 @@ import { useClusterList } from '../clusters/useClusters';
 
 type Props = { service: ModelDeleteService };
 
-type Column = { label: string; sort: (a: ManagedModel, b: ManagedModel) => number };
+type Column = { label: string; isNumber?: boolean; sort: (a: ManagedModel, b: ManagedModel) => number };
 
 const columns: Column[] = [
   { label: 'Name', sort: (a, b) => (a.displayName ?? a.name).localeCompare(b.displayName ?? b.name) },
   { label: 'Model', sort: (a, b) => (a.modelName ?? a.modelRef.name).localeCompare(b.modelName ?? b.modelRef.name) },
-  { label: 'Replicas', sort: (a, b) => (a.replicas ?? 0) - (b.replicas ?? 0) },
+  { label: 'Replicas', isNumber: true, sort: (a, b) => (a.replicas ?? 0) - (b.replicas ?? 0) },
   { label: 'Locations', sort: (a, b) => a.locations.length - b.locations.length },
   { label: 'Created', sort: (a, b) => (a.creationTimestamp ?? '').localeCompare(b.creationTimestamp ?? '') },
   { label: 'Status', sort: (a, b) => (a.phase ?? '').localeCompare(b.phase ?? '') },
@@ -80,7 +69,11 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
     });
   const [confirmDelete, deleteModal] = useDeleteModel(service, {
     refresh: () => void refresh(),
-    onDeleted: () => void refresh(),
+    onDeleted: () => {
+      // Replace, so the notice doesn't add a second Models entry to the browser's history.
+      void navigate('.', { replace: true, state: { notice: 'Model deployment deleted' } });
+      void refresh();
+    },
   });
 
   const rows = useMemo(() => {
@@ -103,180 +96,179 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
     columnIndex: index,
   });
 
-  const errorAlert = error && (
-    <LoadError subject="Models" error={error} title="Error loading models" onRetry={() => void refresh()} />
-  );
-
   const body = () => {
-    // A failed refresh keeps the last list and shows the error above it.
-    if (error && deployments.length === 0) {
-      return errorAlert;
-    }
     if (deployments.length === 0) {
       return (
-        <EmptyState titleText="No models" headingLevel="h2">
-          <EmptyStateBody>Add a deployment to configure a model for serving.</EmptyStateBody>
-          {deployButton && (
-            <EmptyStateFooter>
-              <EmptyStateActions>{deployButton}</EmptyStateActions>
-            </EmptyStateFooter>
-          )}
-        </EmptyState>
+        <EmptyListState title="No models" action={deployButton}>
+          Deploy a model to serve it on AI Grid clusters.
+        </EmptyListState>
       );
     }
     return (
-      <Stack hasGutter>
-        {errorAlert}
-        <PaginatedTable
-          rows={rows}
-          toolbar={
-            <>
-              <ToolbarSearch
-                label="Filter models"
-                placeholder="Filter by name or location"
-                value={filter}
-                onChange={setFilter}
-              />
-              {deployButton && <ToolbarItem>{deployButton}</ToolbarItem>}
-            </>
-          }
-        >
-          {(pageRows) => (
-            <Table aria-label="Model deployments" isExpandable data-testid="model-deployments-table">
-              <Thead>
-                <Tr>
-                  <Th screenReaderText="Show locations" />
-                  {columns.map((c, i) => (
-                    <Th key={c.label} sort={sortParams(i)} modifier="wrap">
-                      {c.label}
-                    </Th>
-                  ))}
-                  {canWrite && <Th screenReaderText="Actions" />}
-                </Tr>
-              </Thead>
-              {rows.length === 0 ? (
-                <Tbody>
-                  <TableEmptyRow
-                    colSpan={columns.length + 1 + (canWrite ? 1 : 0)}
-                    body="Change the filter to see more models."
-                    onClear={() => setFilter('')}
-                  />
-                </Tbody>
-              ) : (
-                pageRows.map((deployment, rowIndex) => {
-                  const title = deployment.displayName ?? deployment.name;
-                  const key = keyOf(deployment);
-                  const works = deployment.works ?? [];
-                  const isExpanded = expanded.has(key);
-                  return (
-                    <Tbody key={key} isExpanded={isExpanded}>
-                      <Tr isContentExpanded={isExpanded}>
-                        {/* Every row expands: to each location's status, to the clusters its placement chose
+      <PaginatedTable
+        rows={rows}
+        toolbar={
+          <>
+            <ToolbarSearch
+              label="Filter models"
+              placeholder="Filter by name or location"
+              value={filter}
+              onChange={setFilter}
+            />
+            {deployButton && <ToolbarItem>{deployButton}</ToolbarItem>}
+            <ToolbarItem>
+              <RefreshButton onRefresh={() => void refresh()} />
+            </ToolbarItem>
+          </>
+        }
+      >
+        {(pageRows) => (
+          <Table aria-label="Model deployments" isExpandable data-testid="model-deployments-table">
+            <Thead>
+              <Tr>
+                <Th screenReaderText="Show locations" />
+                {columns.map((c, i) => (
+                  <Th
+                    key={c.label}
+                    sort={sortParams(i)}
+                    modifier="wrap"
+                    className={c.isNumber ? 'console-number' : undefined}
+                  >
+                    {c.label}
+                  </Th>
+                ))}
+                {canWrite && <Th screenReaderText="Actions" />}
+              </Tr>
+            </Thead>
+            {rows.length === 0 ? (
+              <Tbody>
+                <TableEmptyRow
+                  colSpan={columns.length + 1 + (canWrite ? 1 : 0)}
+                  body="Change the filter to see more models."
+                  onClear={() => setFilter('')}
+                />
+              </Tbody>
+            ) : (
+              pageRows.map((deployment, rowIndex) => {
+                const title = deployment.displayName ?? deployment.name;
+                const key = keyOf(deployment);
+                const works = deployment.works ?? [];
+                const isExpanded = expanded.has(key);
+                return (
+                  <Tbody key={key} isExpanded={isExpanded}>
+                    <Tr isContentExpanded={isExpanded}>
+                      {/* Every row expands: to each location's status, to the clusters its placement chose
                             when no status is reported (git mode), or to why it has none. */}
-                        <Td
-                          expand={{
-                            rowIndex,
-                            isExpanded,
-                            onToggle: () => setRowExpanded(key, !isExpanded),
-                            expandId: `model-locations-toggle-${deployment.name}`,
-                          }}
-                        />
-                        <Td dataLabel="Name">
-                          <Link to={modelPath(deployment)}>{title}</Link>
-                        </Td>
-                        <Td dataLabel="Model" modifier="breakWord">
-                          {deployment.modelName ?? deployment.modelRef.name}
-                        </Td>
-                        <Td dataLabel="Replicas">{deployment.replicas ?? EMPTY_VALUE}</Td>
-                        <Td dataLabel="Locations" data-testid={`model-locations-${deployment.name}`}>
-                          {deployment.locations.length ? (
-                            <LabelGroup numLabels={5}>
-                              {deployment.locations.map((location) => (
-                                <Label key={location} color="grey" isCompact>
-                                  {locationLabel(location, siteNames)}
-                                </Label>
-                              ))}
-                            </LabelGroup>
-                          ) : (
-                            EMPTY_VALUE
-                          )}
-                        </Td>
-                        <Td dataLabel="Created" modifier="nowrap">
-                          <RelativeTime time={deployment.creationTimestamp} />
-                        </Td>
-                        <Td dataLabel="Status">
-                          <ModelStatusLabel model={deployment} onViewLocations={() => setRowExpanded(key, true)} />
-                        </Td>
-                        {canWrite && (
-                          <Td isActionCell>
-                            <SimpleMenuActions
-                              testId={`model-actions-${deployment.name}`}
-                              ariaLabel={`Actions for ${title}`}
-                              dropdownItems={[
-                                { key: 'view', label: 'View details', onClick: () => navigate(modelPath(deployment)) },
-                                {
-                                  key: 'edit',
-                                  label: 'Edit',
-                                  onClick: () => navigate(`${modelPath(deployment)}/edit`),
-                                },
-                                { isSpacer: true },
-                                {
-                                  key: 'delete',
-                                  label: 'Delete',
-                                  isDanger: true,
-                                  onClick: () => confirmDelete(deployment),
-                                },
-                              ]}
-                            />
-                          </Td>
+                      <Td
+                        expand={{
+                          rowIndex,
+                          isExpanded,
+                          onToggle: () => setRowExpanded(key, !isExpanded),
+                          expandId: `model-locations-toggle-${deployment.name}`,
+                        }}
+                      />
+                      <Td dataLabel="Name">
+                        <Link to={modelPath(deployment)}>{title}</Link>
+                      </Td>
+                      <Td dataLabel="Model" modifier="breakWord">
+                        {deployment.modelName ?? deployment.modelRef.name}
+                      </Td>
+                      <Td dataLabel="Replicas" className="console-number">
+                        {deployment.replicas ?? EMPTY_VALUE}
+                      </Td>
+                      <Td dataLabel="Locations" data-testid={`model-locations-${deployment.name}`}>
+                        {deployment.locations.length ? (
+                          <LabelGroup numLabels={5}>
+                            {deployment.locations.map((location) => (
+                              <Label key={location} color="grey" isCompact>
+                                {locationLabel(location, siteNames)}
+                              </Label>
+                            ))}
+                          </LabelGroup>
+                        ) : (
+                          EMPTY_VALUE
                         )}
-                      </Tr>
-                      <Tr isExpanded={isExpanded}>
-                        <Td />
-                        <Td noPadding colSpan={columns.length + (canWrite ? 1 : 0)}>
-                          <ExpandableRowContent>
-                            {isExpanded &&
-                              (works.length > 0 ? (
-                                <div className="pf-v6-u-pb-lg">
-                                  <ModelLocationsTable
-                                    model={deployment}
-                                    works={works}
-                                    clusters={clusters}
-                                    siteNames={siteNames}
-                                    onEdit={canWrite ? () => navigate(`${modelPath(deployment)}/edit`) : undefined}
-                                    isNested
-                                  />
-                                </div>
-                              ) : deployment.selectedClusters.length > 0 ? (
-                                <ModelSelectedClusters model={deployment} clusters={clusters} siteNames={siteNames} />
-                              ) : (
-                                <NotPlaced
-                                  model={deployment}
-                                  onEdit={canWrite ? () => navigate(`${modelPath(deployment)}/edit`) : undefined}
-                                />
-                              ))}
-                          </ExpandableRowContent>
+                      </Td>
+                      <Td dataLabel="Created" modifier="nowrap">
+                        <RelativeTime time={deployment.creationTimestamp} />
+                      </Td>
+                      <Td dataLabel="Status">
+                        <ModelStatusLabel model={deployment} onViewLocations={() => setRowExpanded(key, true)} />
+                      </Td>
+                      {canWrite && (
+                        <Td isActionCell>
+                          <SimpleMenuActions
+                            testId={`model-actions-${deployment.name}`}
+                            ariaLabel={`Actions for ${title}`}
+                            dropdownItems={[
+                              { key: 'view', label: 'View details', onClick: () => navigate(modelPath(deployment)) },
+                              {
+                                key: 'edit',
+                                label: 'Edit',
+                                onClick: () => navigate(`${modelPath(deployment)}/edit`),
+                              },
+                              { isSpacer: true },
+                              {
+                                key: 'delete',
+                                label: 'Delete',
+                                isDanger: true,
+                                onClick: () => confirmDelete(deployment),
+                              },
+                            ]}
+                          />
                         </Td>
-                      </Tr>
-                    </Tbody>
-                  );
-                })
-              )}
-            </Table>
-          )}
-        </PaginatedTable>
-      </Stack>
+                      )}
+                    </Tr>
+                    <Tr isExpanded={isExpanded}>
+                      <Td />
+                      <Td noPadding colSpan={columns.length + (canWrite ? 1 : 0)}>
+                        <ExpandableRowContent>
+                          {isExpanded &&
+                            (works.length > 0 ? (
+                              <div className="pf-v6-u-pb-lg">
+                                <ModelLocationsTable
+                                  model={deployment}
+                                  works={works}
+                                  clusters={clusters}
+                                  siteNames={siteNames}
+                                  onEdit={canWrite ? () => navigate(`${modelPath(deployment)}/edit`) : undefined}
+                                  isNested
+                                />
+                              </div>
+                            ) : deployment.selectedClusters.length > 0 ? (
+                              <ModelSelectedClusters model={deployment} clusters={clusters} siteNames={siteNames} />
+                            ) : (
+                              <NotPlaced
+                                model={deployment}
+                                onEdit={canWrite ? () => navigate(`${modelPath(deployment)}/edit`) : undefined}
+                              />
+                            ))}
+                        </ExpandableRowContent>
+                      </Td>
+                    </Tr>
+                  </Tbody>
+                );
+              })
+            )}
+          </Table>
+        )}
+      </PaginatedTable>
     );
   };
 
   return (
     <>
-      <PageHeader title="Models" description="Add and remove model deployments." />
-      {!(error && deployments.length === 0) && !loaded ? (
-        <PageLoading label="Loading models" />
-      ) : (
-        <PageSection isFilled>{body()}</PageSection>
-      )}
+      <PageStateSection
+        title="Models"
+        description="Add and remove model deployments."
+        loaded={loaded}
+        error={error}
+        onRetry={() => void refresh()}
+        subject="Models"
+        loadingLabel="Loading models"
+      >
+        {body()}
+      </PageStateSection>
       {deleteModal}
     </>
   );

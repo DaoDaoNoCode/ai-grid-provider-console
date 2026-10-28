@@ -3,53 +3,29 @@
 // packages/maas/frontend/src/app/pages/subscriptions/viewSubscription/SubscriptionDetailsSection.tsx
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
 // The console adds the Organization, the priority and the authorization policies, leaves out the
-// name the page title already shows, and lays the details out as every details page does.
+// name the page title already shows and the status beside it, and lays the details out as every
+// details page does.
 import { Flex, Stack } from '@patternfly/react-core';
-import type { MaaSAuthPolicy, MaaSSubscription, ModelRegistration } from '../../../api/types';
+import type { MaaSAuthPolicy, MaaSSubscription } from '../../../api/types';
 import { DetailsList } from '../../../components/DetailsList';
 import { DetailsSection } from '../../../components/DetailsSection';
-import { PhaseLabel } from '../../../components/Phase/PhaseLabel';
 import { StatusLabel } from '../../../components/StatusLabel';
-import { getSubscriptionAffectedModels } from '../../../hooks/useGovernanceAffectedModels';
-import { formatDateTime } from '../../../utilities/format';
+import { RelativeTime } from '../../../components/RelativeTime';
 
 type Props = {
   subscription: MaaSSubscription;
-  /** The referenced models' MaaSModelRef statuses. */
-  modelRegistrations: ModelRegistration[];
   /** The authorization policies that cover any of this subscription's models, as the backend lists them. */
   authPolicies: MaaSAuthPolicy[];
   /** The organization's name, or its id when the organization is unknown. */
   organization: string;
 };
 
-export const SubscriptionDetailsSection: React.FC<Props> = ({
-  subscription,
-  modelRegistrations,
-  authPolicies,
-  organization,
-}) => (
+export const SubscriptionDetailsSection: React.FC<Props> = ({ subscription, authPolicies, organization }) => (
   <div data-testid="subscription-details-section">
     <DetailsSection title="Details">
       <DetailsList
         aria-label="Subscription details"
         items={[
-          {
-            term: 'Status',
-            'data-testid': 'subscription-phase',
-            value: (
-              <PhaseLabel
-                phase={subscription.phase}
-                statusMessage={subscription.statusMessage}
-                reason={subscription.reason}
-                status={subscription.status}
-                conditionType={subscription.conditionType}
-                lastTransitionTime={subscription.lastTransitionTime}
-                resourceName={subscription.displayName ?? subscription.name}
-                affectedModels={getSubscriptionAffectedModels(subscription, modelRegistrations)}
-              />
-            ),
-          },
           { term: 'Description', value: subscription.description },
           { term: 'Resource name', value: subscription.name },
           { term: 'Organization', value: organization, 'data-testid': 'subscription-organization' },
@@ -72,7 +48,10 @@ export const SubscriptionDetailsSection: React.FC<Props> = ({
               </Stack>
             ) : undefined,
           },
-          { term: 'Created', value: formatDateTime(subscription.creationTimestamp) },
+          {
+            term: 'Created',
+            value: subscription.creationTimestamp && <RelativeTime time={subscription.creationTimestamp} />,
+          },
         ]}
       />
     </DetailsSection>

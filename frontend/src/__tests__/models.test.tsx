@@ -559,6 +559,8 @@ it('deletes by namespace and name with If-Match', async () => {
   await user.click(within(screen.getByTestId('delete-deployment-modal')).getByRole('button', { name: 'Delete' }));
   await waitFor(() => expect(screen.queryByTestId('delete-deployment-modal')).not.toBeInTheDocument());
   const call = fetchFn.mock.calls.find(([, init]) => init?.method === 'DELETE');
+  // A delete from the list says so, as one from the model's page does.
+  expect(await screen.findByText('Model deployment deleted')).toBeVisible();
   expect(call?.[0]).toBe('/api/v1/models/ai-grid-models/granite-8b-instruct');
   expect(call?.[1]?.headers).toMatchObject({ 'If-Match': '"48760230"' });
 });
@@ -660,10 +662,45 @@ it("takes only the fake backend's URI schemes and sends the URI trimmed", async 
   expect(create.mock.calls[0][0].modelUri).toBe('hf://org/widget');
 });
 
+it.each(['/models/ai-grid-models/granite-research', '/models/ai-grid-models/granite-research/edit'])(
+  'offers Retry when a model fails to load: %s',
+  async (path) => {
+    const service = new MockConsoleService();
+    const get = service.getModel;
+    service.getModel = async () => {
+      service.getModel = get;
+      throw new ServiceError(503, 'Service unavailable.');
+    };
+    const user = userEvent.setup();
+    renderAt(path, service);
+    expect(await screen.findByRole('heading', { name: 'Unable to load model' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(
+      await screen.findByRole('heading', { level: 1, name: /Granite research endpoint|granite-research/ }),
+    ).toBeVisible();
+    expect(screen.queryByTestId('error-state')).not.toBeInTheDocument();
+  },
+);
+
 describe('a failed background poll', () => {
   // Only the 30-second polls are faked; user-event and findBy keep real timeouts.
   beforeEach(() => vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] }));
   afterEach(() => vi.useRealTimers());
+
+  it("keeps a model's page under a warning, so stale data doesn't look current", async () => {
+    const service = new MockConsoleService();
+    renderAt('/models/ai-grid-models/granite-research', service);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Granite research endpoint' })).toBeVisible();
+    vi.spyOn(service, 'getModel').mockRejectedValue(new ServiceError(503, 'Service unavailable.'));
+    await act(async () => {
+      vi.advanceTimersByTime(30000);
+    });
+    expect(await screen.findByTestId('stale-data-alert')).toHaveTextContent(
+      'Showing the last loaded modelService unavailable.',
+    );
+    expect(screen.getByRole('heading', { level: 1, name: 'Granite research endpoint' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Deployment' })).toBeVisible();
+  });
 
   it('keeps the list and shows the error above it', async () => {
     const service = new MockConsoleService();
@@ -674,7 +711,7 @@ describe('a failed background poll', () => {
       vi.advanceTimersByTime(30000);
     });
     await waitFor(() => expect(failed).toHaveBeenCalled());
-    expect(await screen.findByText('Error loading models')).toBeVisible();
+    expect(await screen.findByText('Showing the last loaded models')).toBeVisible();
     expect(screen.getByTestId('model-deployments-table')).toHaveTextContent('Granite 3.3 8B Instruct');
   });
 });

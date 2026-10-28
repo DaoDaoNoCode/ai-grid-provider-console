@@ -51,7 +51,7 @@ describe('PageErrorBoundary', () => {
         <Throws error={new TypeError('Importing a module script failed.')} />
       </PageErrorBoundary>,
     );
-    expect(screen.getByRole('heading', { level: 1, name: 'This page could not be loaded' })).toBeVisible();
+    expect(screen.getByRole('heading', { level: 1, name: 'Unable to load this page' })).toBeVisible();
     expect(screen.getByText(/The console may have been updated since this tab opened/)).toBeVisible();
     expect(screen.queryByText('Something went wrong on this page')).not.toBeInTheDocument();
   });

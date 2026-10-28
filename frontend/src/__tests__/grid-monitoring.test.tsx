@@ -251,6 +251,31 @@ it('drops the dashboard for the not-available page when a later answer is 501', 
   expect(screen.queryByRole('button', { name: 'Last 24h' })).not.toBeInTheDocument();
 });
 
+it('names a failed overview for what it is, hides its controls and offers Retry', async () => {
+  const service = withOrganizations();
+  const serve = service.getGridOverview.bind(service);
+  const overview = vi
+    .spyOn(service, 'getGridOverview')
+    .mockRejectedValueOnce(new ServiceError(503, 'Service unavailable.'))
+    .mockImplementation(serve);
+  const user = userEvent.setup();
+  renderAt('/monitoring', service);
+  expect(await screen.findByRole('heading', { name: 'Unable to load metrics' })).toBeVisible();
+  expect(screen.queryByText(/AI Grid clusters/)).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Last 6h' })).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Retry' }));
+  expect(await screen.findByRole('grid', { name: 'Clusters' })).toBeVisible();
+  expect(overview).toHaveBeenCalledTimes(2);
+});
+
+it('keeps its header while the console settings load', async () => {
+  const service = withOrganizations();
+  service.getConfig = () => new Promise(() => undefined);
+  renderAt('/monitoring', service);
+  expect(await screen.findByRole('heading', { level: 1, name: 'Monitoring' })).toBeVisible();
+  expect(screen.getByRole('progressbar', { name: 'Loading monitoring' })).toBeVisible();
+});
+
 it('shows the not-available page, like Models, when the backend has no overview', async () => {
   const service = withOrganizations();
   const overview = vi

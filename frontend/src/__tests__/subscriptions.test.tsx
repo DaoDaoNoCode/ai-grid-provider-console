@@ -261,9 +261,7 @@ describe('administrator subscription flows', () => {
     expect(screen.getByTestId('expanded-subscription-model-locations')).toHaveTextContent('Loading locations');
 
     act(() => fail(new Error('backend down')));
-    expect(await screen.findByTestId('subscriptions-models-unavailable')).toHaveTextContent(
-      "The hub's models could not be loaded",
-    );
+    expect(await screen.findByTestId('subscriptions-models-unavailable')).toHaveTextContent('Unable to load models');
     expect(screen.getByTestId('expanded-subscription-model-locations')).toHaveTextContent('Unavailable');
     // The reference's own name still filters.
     await user.click(screen.getByTestId('subscriptions-filter-attribute'));
@@ -384,6 +382,19 @@ describe('administrator subscription flows', () => {
     });
   });
 
+  it('keeps the list under a warning when a reload fails', async () => {
+    const service = new MockConsoleService();
+    const user = userEvent.setup();
+    renderAt('/subscriptions', service);
+    expect(await screen.findByRole('link', { name: 'Engineering' })).toBeVisible();
+    vi.spyOn(service, 'listSubscriptions').mockRejectedValue(new ServiceError(503, 'Service unavailable.'));
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(await screen.findByTestId('stale-data-alert')).toHaveTextContent(
+      'Showing the last loaded subscriptionsService unavailable.',
+    );
+    expect(screen.getByRole('link', { name: 'Engineering' })).toBeVisible();
+  });
+
   it('renders load failures and allows retry', async () => {
     const service = new MockConsoleService();
     const list = service.listSubscriptions;
@@ -393,7 +404,8 @@ describe('administrator subscription flows', () => {
     };
     const user = userEvent.setup();
     renderAt('/subscriptions', service);
-    expect(await screen.findByTestId('error-empty-state')).toHaveTextContent('Service unavailable.');
+    expect(await screen.findByRole('heading', { name: 'Unable to load subscriptions' })).toBeVisible();
+    expect(screen.getByTestId('error-state')).toHaveTextContent('Service unavailable.');
     await user.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByTestId('subscriptions-table')).toBeVisible();
   });
@@ -494,7 +506,7 @@ it('says creating is not available on a backend without subscriptions', async ()
   await pickOrganization(user, 'acme-robotics');
   await user.click(screen.getByTestId('create-subscription-button'));
   expect(await screen.findByText('Creating subscriptions is not available on this backend yet.')).toBeVisible();
-  expect(screen.getByText('Failed to create subscription')).toBeVisible();
+  expect(screen.getByText('Unable to create subscription')).toBeVisible();
 });
 
 it('shows one pagination, in the toolbar, for a single page', async () => {
@@ -628,8 +640,8 @@ describe('MaaS subscription phases', () => {
     ];
     const user = userEvent.setup();
     renderAt('/subscriptions/view/degraded-sub', service);
-    const details = await screen.findByTestId('subscription-details-section');
-    await user.click(within(within(details).getByTestId('phase-label')).getByRole('button'));
+    // The status sits beside the page's title.
+    await user.click(within(await screen.findByTestId('subscription-phase')).getByRole('button'));
     const modal = await screen.findByTestId('phase-modal');
     expect(modal).toHaveTextContent('Awaiting governance pairing');
     expect(modal).toHaveTextContent('Governed but backend is not ready');

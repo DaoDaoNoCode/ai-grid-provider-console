@@ -189,7 +189,7 @@ describe('App', () => {
     fireEvent.click(await screen.findByRole('link', { name: 'Organizations' }));
 
     expect(await screen.findByText('Organizations are not available on this backend yet')).toBeInTheDocument();
-    expect(screen.queryByText('Error loading organizations')).not.toBeInTheDocument();
+    expect(screen.queryByText('Unable to load organizations')).not.toBeInTheDocument();
   });
 
   it('shows the backend error when organizations cannot be loaded', async () => {
@@ -204,7 +204,7 @@ describe('App', () => {
     );
     fireEvent.click(await screen.findByRole('link', { name: 'Organizations' }));
 
-    expect(await screen.findByText('Error loading organizations')).toBeInTheDocument();
+    expect(await screen.findByText('Unable to load organizations')).toBeInTheDocument();
     expect(screen.getByText('the AI Grid backend failed to process the request')).toBeInTheDocument();
   });
 });
@@ -296,7 +296,7 @@ describe('an ended session', () => {
     expect(screen.queryByRole('navigation', { name: 'Console sections' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /navigation/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Clusters' })).not.toBeInTheDocument();
-    expect(screen.queryByText('Error loading clusters')).not.toBeInTheDocument();
+    expect(screen.queryByText('Unable to load clusters')).not.toBeInTheDocument();
     expect(screen.queryAllByRole('heading', { level: 1 })).toHaveLength(h1s);
     expect(screen.getByText('Cloud Provider Admin Console')).toBeVisible();
   };

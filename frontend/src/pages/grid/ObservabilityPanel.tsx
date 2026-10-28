@@ -7,12 +7,11 @@ import { useId, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   Alert,
+  AlertActionLink,
   Bullseye,
   Card,
   CardBody,
   CardTitle,
-  EmptyState,
-  EmptyStateBody,
   Flex,
   Grid,
   Spinner,
@@ -33,6 +32,7 @@ import { StatCard } from '../../components/StatCard';
 import { StatusLabel } from '../../components/StatusLabel';
 import { SubtleText } from '../../components/SubtleText';
 import { TableEmptyRow } from '../../components/TableEmptyRow';
+import { SectionEmptyState } from '../../components/states/SectionEmptyState';
 import { TypeaheadSelect } from '../../components/TypeaheadSelect';
 import { modelKey } from '../../utilities/authpolicies';
 import { EMPTY_VALUE } from '../../utilities/format';
@@ -169,9 +169,9 @@ export function MetricChart({ metric }: { metric: GridMetric }) {
             </SubtleText>
           </>
         ) : (
-          <EmptyState variant="xs" titleText="No data" headingLevel="h4">
-            <EmptyStateBody>{metric.message ?? 'No data available.'}</EmptyStateBody>
-          </EmptyState>
+          <SectionEmptyState title="No data" headingLevel="h4">
+            {metric.message ?? 'No data available.'}
+          </SectionEmptyState>
         )}
       </CardBody>
     </Card>
@@ -291,6 +291,8 @@ type Props = {
   metrics: GridMetric[];
   loading: boolean;
   error?: string;
+  /** Loads the metrics again, after an error. */
+  onRetry?: () => void;
   simulated: boolean;
   range: GridRange;
 };
@@ -305,6 +307,7 @@ export function ObservabilityPanel({
   metrics,
   loading,
   error,
+  onRetry,
   simulated,
   range,
 }: Props) {
@@ -350,23 +353,23 @@ export function ObservabilityPanel({
   const usageTab = () => {
     if (organizationsError) {
       return (
-        <Alert isInline variant="warning" title="Organization data unavailable">
+        <Alert isInline variant="warning" title="Unable to load organizations">
           {organizationsError}
         </Alert>
       );
     }
     if (!organizations.length) {
       return (
-        <Alert isInline variant="info" title="No organizations">
+        <SectionEmptyState title="No organizations">
           Create organizations to see their simulated consumption.
-        </Alert>
+        </SectionEmptyState>
       );
     }
     if (!simulated || requestTotal === undefined) {
       return (
-        <Alert isInline variant="info" title="Organization usage unavailable">
+        <SectionEmptyState title="No organization usage">
           Organization token telemetry is not configured for this source or selection.
-        </Alert>
+        </SectionEmptyState>
       );
     }
     return (
@@ -431,7 +434,12 @@ export function ObservabilityPanel({
           </Bullseye>
         )}
         {error && (
-          <Alert isInline variant="danger" title="Monitoring unavailable">
+          <Alert
+            isInline
+            variant="warning"
+            title="Unable to load metrics for this range"
+            actionLinks={onRetry && <AlertActionLink onClick={onRetry}>Retry</AlertActionLink>}
+          >
             {error}
           </Alert>
         )}
@@ -470,7 +478,15 @@ export function ObservabilityPanel({
                   </Tr>
                 </Thead>
                 <Tbody>
-                  {!clusters.length && <TableEmptyRow colSpan={5} body="No AI Grid clusters to show." />}
+                  {!clusters.length && (
+                    <Tr>
+                      <Td colSpan={5}>
+                        <SectionEmptyState title="No AI Grid clusters">
+                          Add clusters to AI Grid from the Clusters page to see them here.
+                        </SectionEmptyState>
+                      </Td>
+                    </Tr>
+                  )}
                   {clusters.map((c) => (
                     <Tr key={c.name}>
                       <Td dataLabel="Cluster">
@@ -494,7 +510,7 @@ export function ObservabilityPanel({
         {tab === 'models' && (
           <>
             {modelsError && (
-              <Alert isInline variant="warning" title="Models unavailable">
+              <Alert isInline variant="warning" title="Unable to load models">
                 {modelsError}
               </Alert>
             )}
@@ -529,13 +545,22 @@ export function ObservabilityPanel({
                   </Tr>
                 </Thead>
                 <Tbody>
-                  {!visibleModels.length && (
-                    <TableEmptyRow
-                      colSpan={5}
-                      body="No model deployments match this selection."
-                      onClear={model === 'all' ? undefined : () => setModel('all')}
-                    />
-                  )}
+                  {!visibleModels.length &&
+                    (model === 'all' ? (
+                      <Tr>
+                        <Td colSpan={5}>
+                          <SectionEmptyState title="No model deployments">
+                            Deploy a model from the Models page to see it here.
+                          </SectionEmptyState>
+                        </Td>
+                      </Tr>
+                    ) : (
+                      <TableEmptyRow
+                        colSpan={5}
+                        body="Change the filter to see more model deployments."
+                        onClear={() => setModel('all')}
+                      />
+                    ))}
                   {visibleModels.map((m) => (
                     <Tr key={modelKey(m)}>
                       <Td dataLabel="Model deployment">

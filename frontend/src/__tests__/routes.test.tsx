@@ -128,34 +128,28 @@ describe('routes', () => {
   });
 
   it.each([
-    ['/models/ai-grid-models/nope', 'nope', 'Model deployment not found', 'Go to Models', '/models'],
-    ['/models/ai-grid-models/nope/edit', 'Edit nope', 'Model deployment not found', 'Go to Models', '/models'],
+    ['/models/ai-grid-models/nope', 'Models', 'Model deployment not found', 'Go to Models', '/models'],
+    ['/models/ai-grid-models/nope/edit', 'Models', 'Model deployment not found', 'Go to Models', '/models'],
     [
       '/organizations/does-not-exist',
-      'does-not-exist',
+      'Organizations',
       'Organization not found',
       'Go to Organizations',
       '/organizations',
     ],
     [
       '/organizations/does-not-exist/edit',
-      'Edit does-not-exist',
+      'Organizations',
       'Organization not found',
       'Go to Organizations',
       '/organizations',
     ],
-    ['/subscriptions/view/nope', 'nope', 'Subscription not found', 'Go to Subscriptions', '/subscriptions'],
-    [
-      '/subscriptions/edit/nope',
-      'Edit subscription',
-      'Subscription not found',
-      'Go to Subscriptions',
-      '/subscriptions',
-    ],
+    ['/subscriptions/view/nope', 'Subscriptions', 'Subscription not found', 'Go to Subscriptions', '/subscriptions'],
+    ['/subscriptions/edit/nope', 'Subscriptions', 'Subscription not found', 'Go to Subscriptions', '/subscriptions'],
   ])('says a missing object is not found, the same way: %s', async (path, h1, title, back, href) => {
     at(path);
     const state = await screen.findByTestId('not-found-state');
-    // The page's heading names the object that was asked for.
+    // The page's heading names the list, not the id that doesn't exist.
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(h1);
     expect(within(state).getByRole('heading', { name: title })).toBeVisible();
     expect(within(state).getByRole('link', { name: back })).toHaveAttribute('href', href);

@@ -196,9 +196,12 @@ it('shows the backend error, not the not-available page, when the clusters fail 
     new ServiceError(503, 'the AI Grid backend is unavailable; try again'),
   );
   renderAt('/ai-grid', service);
-  expect(await screen.findByText('AI Grid clusters could not be loaded')).toBeVisible();
+  expect(await screen.findByText('Unable to load AI Grid clusters')).toBeVisible();
   expect(screen.getByText('the AI Grid backend is unavailable; try again')).toBeVisible();
   expect(screen.queryByText('AI Grid is not available on this backend yet')).not.toBeInTheDocument();
+  // Nothing to switch to or refresh from the header: the error's Retry loads again.
+  expect(screen.queryByRole('link', { name: 'View monitoring' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Retry' })).toBeVisible();
 });
 
 it('shows only the AI Grid members, and when the console read them', async () => {
@@ -235,8 +238,8 @@ it('keeps the map, its selection and its models when a refresh fails', async () 
   vi.spyOn(service, 'listClusters').mockRejectedValue(failed);
   vi.spyOn(service, 'listModels').mockRejectedValue(failed);
   await user.click(screen.getByRole('button', { name: 'Refresh' }));
-  expect(await screen.findByText('AI Grid clusters could not be loaded')).toBeVisible();
-  expect(screen.getByText('Models unavailable')).toBeVisible();
+  expect(await screen.findByText('Showing the last loaded AI Grid clusters')).toBeVisible();
+  expect(screen.getByText('Unable to load models')).toBeVisible();
   expect(screen.getByRole('heading', { name: 'site1' })).toBeVisible();
   expect(screen.getByRole('button', { name: 'Map pin site1' })).toBeVisible();
   expect(screen.getByRole('button', { name: model.displayName })).toBeVisible();
@@ -254,9 +257,9 @@ it("explains, in a help popover, where a cluster's models come from", async () =
 it('says no clusters match and clears the search and filter', async () => {
   const user = userEvent.setup();
   renderAt('/ai-grid', new MockConsoleService());
-  await user.click(await screen.findByRole('textbox', { name: 'Search grid clusters' }));
+  await user.click(await screen.findByRole('textbox', { name: 'Filter grid clusters' }));
   await user.paste('zzz');
-  expect(screen.getByText('No clusters match')).toBeVisible();
+  expect(screen.getByText('No results found')).toBeVisible();
   await user.click(screen.getByRole('button', { name: 'Clear all filters' }));
   expect(screen.getByRole('button', { name: 'View site1 details' })).toBeVisible();
 });

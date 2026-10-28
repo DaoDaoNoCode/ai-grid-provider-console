@@ -1,52 +1,41 @@
-import {
-  Alert,
-  AlertActionLink,
-  Button,
-  EmptyState,
-  EmptyStateActions,
-  EmptyStateBody,
-  EmptyStateFooter,
-} from '@patternfly/react-core';
-import { SearchIcon } from '@patternfly/react-icons';
-import { Link } from 'react-router-dom';
 import { ServiceError } from '../api/ConsoleService';
+import { ErrorState } from './states/ErrorState';
+import { FullPageState } from './states/FullPageState';
+import { NotAvailableState } from './states/NotAvailableState';
+import { NotFoundState, type NotFound } from './states/NotFoundState';
 
-/** How a page for one object says the object doesn't exist. */
-export type NotFound = {
-  /** The object type, e.g. "Model deployment"; the title is "<what> not found". */
-  what: string;
-  /** Which one was asked for, e.g. "There is no organization acme." */
-  body: React.ReactNode;
-  /** Its list, and the list's name for the way back ("Go to Models"). */
-  listPath: string;
-  listLabel: string;
-};
+export type { NotFound };
 
 type Props = {
-  /** What was being loaded, e.g. "Clusters". */
+  /** The feature, plural, e.g. "Models": "Models are not available on this backend yet". */
   subject: string;
+  /** What failed to load, as the titles name it: "model" on a model's page; the subject in lower case without it. */
+  object?: string;
   error: Error;
+  /** Loads again. Every failure that can pass offers it; a 404 and a 501 don't. */
+  onRetry: () => void;
   /** The not-available title when "<subject> are ..." doesn't read, e.g. "AI Grid is not available ...". */
   notAvailableTitle?: string;
-  /** The error's title; "<subject> could not be loaded" without one. */
-  title?: string;
-  /** Offers Retry on the error. */
-  onRetry?: () => void;
-  /** For a page of one object: a 404 says it doesn't exist and links back to its list, with no Retry. */
+  /** For a page of one object: a 404 says it doesn't exist and links back to its list. */
   notFound?: NotFound;
 };
 
 /**
- * Renders a failed load. A 501 from the BFF means the backend does not
- * implement the RPC behind this page yet; that is an expected state while the
- * backend and the console are developed in parallel, so it is shown as an
- * informational empty state rather than an error. A 401 shows nothing: the
- * console says once, above every page, that the session has ended, and a retry
- * would send the same rejected token. A 404 on a page for one object is an
- * empty state naming it, with a link back to its list: retrying would not
- * bring it back. Everything else is an error with the BFF's message.
+ * A failed load with nothing to show instead, as the matching state from components/states:
+ *
+ * - 401: nothing. The console says once, instead of every page, that the session has ended, and a
+ *   retry would send the same rejected token.
+ * - 404 on a page for one object: NotFoundState, with a link back to its list.
+ * - 501: NotAvailableState. The backend doesn't implement the RPC yet, an expected state while the
+ *   backend and the console are developed in parallel.
+ * - 403: the no-access state, with the server's message.
+ * - Anything else: ErrorState, "Unable to load <object>", the server's message, and Retry.
+ *
+ * When the last answer is still on screen, a failed reload is a StaleDataAlert instead
+ * (PageStateSection decides).
  */
-export const LoadError: React.FC<Props> = ({ subject, error, notAvailableTitle, title, onRetry, notFound }) => {
+export const LoadError: React.FC<Props> = ({ subject, object, error, onRetry, notAvailableTitle, notFound }) => {
+  const what = object ?? subject.toLowerCase();
   if (error instanceof ServiceError && error.isUnauthenticated) {
     return null;
   }
@@ -54,41 +43,18 @@ export const LoadError: React.FC<Props> = ({ subject, error, notAvailableTitle, 
     return <NotFoundState {...notFound} />;
   }
   if (error instanceof ServiceError && error.isNotImplemented) {
+    return <NotAvailableState title={notAvailableTitle ?? `${subject} are not available on this backend yet`} />;
+  }
+  if (error instanceof ServiceError && error.status === 403) {
     return (
-      <EmptyState
-        titleText={notAvailableTitle ?? `${subject} are not available on this backend yet`}
-        headingLevel="h3"
-        variant="sm"
-      >
-        <EmptyStateBody>
-          The AI Grid backend this console talks to does not implement this capability yet. The page will work without
-          changes once it does.
-        </EmptyStateBody>
-      </EmptyState>
+      <FullPageState inPage title={`You don't have access to ${what}`}>
+        {error.message}
+      </FullPageState>
     );
   }
   return (
-    <Alert
-      variant="danger"
-      isInline
-      title={title ?? `${subject} could not be loaded`}
-      actionLinks={onRetry && <AlertActionLink onClick={onRetry}>Retry</AlertActionLink>}
-    >
+    <ErrorState title={`Unable to load ${what}`} onRetry={onRetry}>
       {error.message}
-    </Alert>
+    </ErrorState>
   );
 };
-
-/** A page's object that doesn't exist (or no longer does). */
-export const NotFoundState: React.FC<NotFound> = ({ what, body, listPath, listLabel }) => (
-  <EmptyState titleText={`${what} not found`} headingLevel="h2" icon={SearchIcon} data-testid="not-found-state">
-    <EmptyStateBody>{body}</EmptyStateBody>
-    <EmptyStateFooter>
-      <EmptyStateActions>
-        <Button variant="primary" component={(props) => <Link {...props} to={listPath} />}>
-          Go to {listLabel}
-        </Button>
-      </EmptyStateActions>
-    </EmptyStateFooter>
-  </EmptyState>
-);

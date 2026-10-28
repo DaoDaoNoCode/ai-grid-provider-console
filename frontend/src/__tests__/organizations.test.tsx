@@ -176,7 +176,7 @@ it('deletes an organization from its page after its name is typed', async () => 
   await user.click(within(modal).getByRole('button', { name: 'Delete' }));
   expect(await screen.findByText('Organization deleted')).toBeVisible();
   // The list reloads after the delete; the toast can show before it does.
-  expect(await screen.findByText('No organizations yet. Register one to get started.')).toBeVisible();
+  expect(await screen.findByRole('heading', { name: 'No organizations' })).toBeVisible();
   expect(await service.listOrganizations()).toEqual([]);
 });
 
@@ -231,7 +231,7 @@ it('shows a retry action when organization loading fails', async () => {
   renderAt('/organizations', service);
   expect(await screen.findByText('Organization service unavailable.')).toBeVisible();
   await user.click(screen.getByRole('button', { name: 'Retry' }));
-  expect(await screen.findByText('No organizations yet. Register one to get started.')).toBeVisible();
+  expect(await screen.findByRole('heading', { name: 'No organizations' })).toBeVisible();
 });
 
 it('an organization named create opens its details by id', async () => {
@@ -355,6 +355,51 @@ it('shows field errors from the server next to the field', async () => {
   await user.paste('/realms/x');
   expect(issuer).toHaveAttribute('aria-invalid', 'false');
   expect(screen.queryByText('Enter a valid HTTP or HTTPS URL.')).not.toBeInTheDocument();
+});
+
+it('deletes an organization from the list and says so', async () => {
+  const service = emptyService();
+  await service.createOrganization(input);
+  const user = userEvent.setup();
+  renderAt('/organizations', service);
+  await user.click(await screen.findByRole('button', { name: 'Actions for tenant1' }));
+  expect(screen.getByRole('menuitem', { name: 'View details' })).toBeVisible();
+  await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
+  const modal = await screen.findByRole('dialog', { name: /Delete organization\?/ });
+  await user.click(within(modal).getByRole('textbox'));
+  await user.paste('tenant1');
+  await user.click(within(modal).getByRole('button', { name: 'Delete' }));
+  expect(await screen.findByText('Organization deleted')).toBeVisible();
+  expect(await screen.findByRole('heading', { name: 'No organizations' })).toBeVisible();
+});
+
+it.each(['', '/edit'])('offers Retry when an organization fails to load: %s', async (suffix) => {
+  const service = new MockConsoleService();
+  const [first] = await service.listOrganizations();
+  const get = service.getOrganization;
+  service.getOrganization = async () => {
+    service.getOrganization = get;
+    throw new ServiceError(503, 'Service unavailable.');
+  };
+  const user = userEvent.setup();
+  renderAt(`/organizations/${encodeURIComponent(first.id)}${suffix}`, service);
+  expect(await screen.findByRole('heading', { name: 'Unable to load organization' })).toBeVisible();
+  await user.click(screen.getByRole('button', { name: 'Retry' }));
+  await waitFor(() => expect(screen.queryByTestId('error-state')).not.toBeInTheDocument());
+  expect(screen.getByRole('heading', { level: 1, name: new RegExp(first.name) })).toBeVisible();
+});
+
+it('keeps the list under a warning when a reload fails', async () => {
+  const service = new MockConsoleService();
+  const user = userEvent.setup();
+  renderAt('/organizations', service);
+  expect(await screen.findByRole('link', { name: 'initech-labs' })).toBeVisible();
+  vi.spyOn(service, 'listOrganizations').mockRejectedValue(new ServiceError(503, 'Service unavailable.'));
+  await user.click(screen.getByRole('button', { name: 'Refresh' }));
+  expect(await screen.findByTestId('stale-data-alert')).toHaveTextContent(
+    'Showing the last loaded organizationsService unavailable.',
+  );
+  expect(screen.getByRole('link', { name: 'initech-labs' })).toBeVisible();
 });
 
 it('shows the not-available state when the backend cannot delete organizations yet', async () => {
@@ -520,7 +565,8 @@ it('the organization page shows its description, verified domains, attributes an
   expect(details).toHaveTextContent('Acme Robotics, EU region');
   expect(details).toHaveTextContent('acme-robotics.example.com Verified');
   expect(details).toHaveTextContent('billing-account: ACME-0042');
-  expect(details).toHaveTextContent('2026');
+  // Created reads relative, as on every page, with the time itself on the element.
+  expect(within(details).getByText(/ ago$/)).toHaveAttribute('datetime', '2026-09-01T09:00:00Z');
   const tokenUrl = screen.getByText(tenantJson.identityProvider.config.tokenUrl);
   expect(tokenUrl).not.toBeVisible();
   await user.click(screen.getByRole('button', { name: 'OIDC endpoints' }));

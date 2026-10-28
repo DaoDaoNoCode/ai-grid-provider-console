@@ -5,7 +5,7 @@ import type { Organization, OrganizationInput } from '../../api/types';
 import type { DetailsItem } from '../../components/DetailsList';
 import { DetailsList } from '../../components/DetailsList';
 import { DetailsSection } from '../../components/DetailsSection';
-import { formatDateTime } from '../../utilities/format';
+import { RelativeTime } from '../../components/RelativeTime';
 
 export type OrganizationSection = 'details' | 'identityProvider';
 
@@ -69,7 +69,7 @@ export const OrganizationConfigurationDetails: React.FC<Props> = ({ organization
               </Stack>
             ),
           },
-          { term: 'Created', value: formatDateTime(saved.creationTimestamp) },
+          { term: 'Created', value: saved.creationTimestamp && <RelativeTime time={saved.creationTimestamp} /> },
         ]
       : []),
   ];

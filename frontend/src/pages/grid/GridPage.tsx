@@ -4,8 +4,8 @@
 // state becomes useServiceData, and a failed load is a LoadError. The map's clusters come from
 // AiGridPage (Clusters/List over Connect); the dashboards' from Grid/GetOverview. A backend without
 // the RPC (501) gets the console's not-available page, as Models and Subscriptions do.
-import { useEffect, useState } from 'react';
-import { Alert, Flex, PageSection, Stack, ToggleGroup, ToggleGroupItem } from '@patternfly/react-core';
+import { useEffect, useRef, useState } from 'react';
+import { Alert, Flex, Stack, ToggleGroup, ToggleGroupItem } from '@patternfly/react-core';
 import { Link } from 'react-router-dom';
 import type { ConsoleService } from '../../api/ConsoleService';
 import { ServiceError } from '../../api/ConsoleService';
@@ -14,12 +14,10 @@ import type { ModelsService } from '../../api/models';
 import type { OrganizationsService } from '../../api/organizations';
 import type { GridOverview, GridRange, ManagedModel, Organization } from '../../api/types';
 import type { FleetCluster } from './GridFleetView';
-import { LoadError } from '../../components/LoadError';
-import { PageHeader } from '../../components/PageHeader';
-import { PageLoading } from '../../components/PageLoading';
 import { RefreshButton } from '../../components/RefreshButton';
 import { RelativeTime } from '../../components/RelativeTime';
 import { SubtleText } from '../../components/SubtleText';
+import { PageStateSection } from '../../components/states/PageStateSection';
 import { useConsoleSession } from '../../context/useConsoleSession';
 import { useServiceData } from '../../hooks/useServiceData';
 import { GridFleetView } from './GridFleetView';
@@ -68,16 +66,16 @@ export const GridPage: React.FC<Props> = ({ service, monitoring = false, map = n
   );
   const [range, setRange] = useState<GridRange>('1h');
   // Each metrics response carries the range it was asked for, so a slow answer for an earlier
-  // range is never shown as the current one.
+  // range is never shown as the current one. The range last asked for decides whether a new one
+  // needs asking: a failed answer for the current range is shown with its Retry, not asked again.
+  const askedRange = useRef<GridRange>(undefined);
   const [metricsData, metricsLoaded, metricsLoadError, refreshMetrics] = useServiceData<
     { overview: GridOverview; range: GridRange } | undefined
-  >(
-    () =>
-      monitoring
-        ? service.getGridOverview(range).then((overview) => ({ overview, range }))
-        : Promise.resolve(undefined),
-    undefined,
-  );
+  >(() => {
+    if (!monitoring) return Promise.resolve(undefined);
+    askedRange.current = range;
+    return service.getGridOverview(range).then((overview) => ({ overview, range }));
+  }, undefined);
   const metricsCurrent = metricsData?.range === range;
   const data = monitoring ? metricsData?.overview : map.clusters && map;
   const loaded = monitoring ? metricsLoaded : map.loaded;
@@ -90,7 +88,7 @@ export const GridPage: React.FC<Props> = ({ service, monitoring = false, map = n
   const error = notServed || !monitoring ? loadError : data ? undefined : metricsLoadError;
   // A new range, or a late answer for an old one, asks again for the current range.
   useEffect(() => {
-    if (monitoring && metricsLoaded && !metricsCurrent && !notServed) {
+    if (monitoring && metricsLoaded && askedRange.current !== range && !notServed) {
       void refreshMetrics();
     }
   }, [monitoring, range, metricsData, metricsLoaded, metricsCurrent, notServed, refreshMetrics]);
@@ -145,68 +143,57 @@ export const GridPage: React.FC<Props> = ({ service, monitoring = false, map = n
   );
 
   return (
-    <>
-      <PageHeader
-        title={monitoring ? 'Monitoring' : 'AI Grid'}
-        description={
-          monitoring
-            ? 'Cluster availability, gateway performance and resource use across AI Grid.'
-            : 'Where the AI Grid clusters are, and which models they serve.'
-        }
-        headerAction={notServed ? undefined : toolbar}
-      />
-      {!error && !loaded ? (
-        <PageLoading label="Loading AI Grid" />
-      ) : (
-        <PageSection isFilled>
-          <Stack hasGutter>
-            {error && (
-              <LoadError
-                subject="AI Grid clusters"
-                error={error}
-                notAvailableTitle={`${monitoring ? 'Monitoring' : 'AI Grid'} is not available on this backend yet`}
+    <PageStateSection
+      title={monitoring ? 'Monitoring' : 'AI Grid'}
+      description={
+        monitoring
+          ? 'Cluster availability, gateway performance and resource use across AI Grid.'
+          : 'Where the AI Grid clusters are, and which models they serve.'
+      }
+      headerAction={toolbar}
+      loaded={loaded}
+      error={error}
+      onRetry={() => void refresh()}
+      subject={monitoring ? 'Monitoring' : 'AI Grid'}
+      object={monitoring ? 'metrics' : 'AI Grid clusters'}
+      notAvailableTitle={`${monitoring ? 'Monitoring' : 'AI Grid'} is not available on this backend yet`}
+      loadingLabel={monitoring ? 'Loading monitoring' : 'Loading AI Grid'}
+    >
+      <Stack hasGutter>
+        {data && (
+          <>
+            {demo && (
+              <Alert isInline variant="info" title="Demo data">
+                Inventory and metrics on this page are simulated.
+              </Alert>
+            )}
+            {monitoring && !demo && metricsSource === 'demo' && (
+              <Alert isInline variant="info" title="Simulated monitoring metrics">
+                Thanos is not configured. Charts show generated demo data; cluster inventory comes from the configured
+                backend.
+              </Alert>
+            )}
+            {!monitoring && (
+              <GridFleetView clusters={data.clusters ?? []} models={models} modelsError={modelsError} tiles={tiles} />
+            )}
+            {monitoring && metricsData && (
+              <ObservabilityPanel
+                clusters={metricsData.overview.clusters}
+                models={models}
+                modelsError={modelsError}
+                organizations={organizations}
+                organizationsError={organizationsLoadError && organizationsErrorOf(organizationsLoadError)}
+                metrics={metricsCurrent ? metricsData.overview.metrics : []}
+                loading={!metricsLoaded || (!metricsCurrent && !metricsLoadError)}
+                error={metricsLoadError?.message}
+                onRetry={() => void refreshMetrics()}
+                simulated={metricsSource === 'demo'}
+                range={range}
               />
             )}
-            {data && !notServed && (
-              <>
-                {demo && (
-                  <Alert isInline variant="info" title="Demo data">
-                    Inventory and metrics on this page are simulated.
-                  </Alert>
-                )}
-                {monitoring && !demo && metricsSource === 'demo' && (
-                  <Alert isInline variant="info" title="Simulated monitoring metrics">
-                    Thanos is not configured. Charts show generated demo data; cluster inventory comes from the
-                    configured backend.
-                  </Alert>
-                )}
-                {!monitoring && (
-                  <GridFleetView
-                    clusters={data.clusters ?? []}
-                    models={models}
-                    modelsError={modelsError}
-                    tiles={tiles}
-                  />
-                )}
-                {monitoring && metricsData && (
-                  <ObservabilityPanel
-                    clusters={metricsData.overview.clusters}
-                    models={models}
-                    modelsError={modelsError}
-                    organizations={organizations}
-                    organizationsError={organizationsLoadError && organizationsErrorOf(organizationsLoadError)}
-                    metrics={metricsCurrent ? metricsData.overview.metrics : []}
-                    loading={!metricsLoaded || (!metricsCurrent && !metricsLoadError)}
-                    error={metricsLoadError && 'Unable to load metrics for this selection. Please retry.'}
-                    simulated={metricsSource === 'demo'}
-                    range={range}
-                  />
-                )}
-              </>
-            )}
-          </Stack>
-        </PageSection>
-      )}
-    </>
+          </>
+        )}
+      </Stack>
+    </PageStateSection>
   );
 };

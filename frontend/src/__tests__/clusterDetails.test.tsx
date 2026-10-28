@@ -10,6 +10,7 @@ import { create } from '@bufbuild/protobuf';
 import { fakeClients } from '../api/connect/testing';
 import { ManagedClusterLocationSource, ManagedClusterSchema } from '../gen/ai_grid/v1/managed_cluster_type_pb';
 import { renderAt } from './render';
+import { EMPTY_VALUE } from '../utilities/format';
 // The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
 import '../pages/clusters/ClusterDetailsPage';
 import { TestApp } from './TestApp';
@@ -90,7 +91,8 @@ it('shows a member: AI Grid, the cluster, its capacity and GPUs', async () => {
     '140.4 GiB',
     'Hopper (9.0)',
     '580.105.08 (CUDA 13.0)',
-    'None',
+    // Not shared: the empty value, as every missing value.
+    EMPTY_VALUE,
     'p5en.48xlarge',
     'Ready',
   ]) {
@@ -377,7 +379,7 @@ it('keeps the added membership when the reload fails', async () => {
   expect(await screen.findByTestId('cluster-membership')).toHaveTextContent('Not added');
   service.getCluster = () => Promise.reject(new ServiceError(503, 'the hub is unavailable'));
   await addSite4(user);
-  expect(await screen.findByText('Showing the last loaded state')).toBeVisible();
+  expect(await screen.findByText('Showing the last loaded cluster')).toBeVisible();
   expect(screen.getByTestId('cluster-membership')).toHaveTextContent('Provisioning');
 });
 

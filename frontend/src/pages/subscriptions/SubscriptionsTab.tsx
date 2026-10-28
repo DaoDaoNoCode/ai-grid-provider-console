@@ -2,28 +2,18 @@
 // Adapted from opendatahub-io/odh-dashboard
 // packages/maas/frontend/src/app/pages/maas-governance/SubscriptionsTab.tsx
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
-// Telemetry is dropped; a 501 shows the console's not-available state.
+// Telemetry is dropped. The page and its states are the console's (PageStateSection), and a delete
+// says so in a toast, as every list does.
 import { useCallback, useMemo, useState } from 'react';
-import {
-  Alert,
-  AlertActionCloseButton,
-  AlertActionLink,
-  Button,
-  EmptyState,
-  EmptyStateActions,
-  EmptyStateBody,
-  EmptyStateFooter,
-  EmptyStateVariant,
-  PageSection,
-} from '@patternfly/react-core';
-import { ExclamationCircleIcon } from '@patternfly/react-icons';
-import { ServiceError } from '../../api/ConsoleService';
+import { Alert, AlertActionLink, Button } from '@patternfly/react-core';
+import { Link, useNavigate } from 'react-router-dom';
 import type { MaaSSubscription } from '../../api/types';
-import { LoadError } from '../../components/LoadError';
-import { PageLoading } from '../../components/PageLoading';
+import { EmptyListState } from '../../components/states/EmptyListState';
+import { PageStateSection } from '../../components/states/PageStateSection';
 import type { GovernanceService } from '../../context/useMaaSGovernanceContext';
 import { useMaaSGovernanceContext } from '../../context/useMaaSGovernanceContext';
 import { isSameModel } from '../../utilities/authpolicies';
+import { getSubscriptionCreateUrl } from '../../utilities/maasGovernanceNavigation';
 import { siteNamesOf } from '../models/modelUtils';
 import type { SubscriptionsFilterDataType } from './allSubscriptions/const';
 import { initialSubscriptionsFilterData, SubscriptionsFilterOptions } from './allSubscriptions/const';
@@ -31,7 +21,6 @@ import type { ModelsState } from './allSubscriptions/ExpandedModelsPanel';
 import { SubscriptionsTable } from './allSubscriptions/SubscriptionsTable';
 import { SubscriptionsToolbar } from './allSubscriptions/SubscriptionsToolbar';
 import { DeleteSubscriptionModal } from './DeleteSubscriptionModal';
-import { EmptyStatePage } from './EmptyStatePage';
 import { useClusterList } from '../clusters/useClusters';
 
 // The clusters name the models' locations' sites, as on the Models page.
@@ -53,7 +42,7 @@ export const SubscriptionsTab: React.FC<Props> = ({ service }) => {
   const { data: clusters } = useClusterList();
   const siteNames = useMemo(() => siteNamesOf(clusters), [clusters]);
   const [filterData, setFilterData] = useState<SubscriptionsFilterDataType>(initialSubscriptionsFilterData);
-  const [notice, setNotice] = useState(false);
+  const navigate = useNavigate();
   const [deleteSubscription, setDeleteSubscription] = useState<MaaSSubscription>();
 
   const onFilterUpdate = useCallback(
@@ -97,68 +86,36 @@ export const SubscriptionsTab: React.FC<Props> = ({ service }) => {
     );
   }, [subscriptions, models, filterData]);
 
-  if (!loaded && !error) {
-    return <PageLoading label="Loading subscriptions" />;
-  }
-
-  if (error instanceof ServiceError && (error.isNotImplemented || error.isUnauthenticated)) {
-    return (
-      <PageSection isFilled>
-        <LoadError subject="Subscriptions" error={error} />
-      </PageSection>
-    );
-  }
-
-  if (error) {
-    return (
-      <PageSection isFilled>
-        <EmptyState
-          headingLevel="h2"
-          icon={ExclamationCircleIcon}
-          titleText="Error loading subscriptions"
-          variant={EmptyStateVariant.lg}
-          data-testid="error-empty-state"
-        >
-          <EmptyStateBody data-testid="error-empty-state-body">{error.message}</EmptyStateBody>
-          <EmptyStateFooter>
-            <EmptyStateActions>
-              <Button variant="link" onClick={refresh}>
-                Retry
+  const body = () => {
+    if (subscriptions.length === 0) {
+      return (
+        <EmptyListState
+          title="No subscriptions"
+          data-testid="empty-subscriptions-page"
+          action={
+            canWrite && (
+              <Button
+                variant="primary"
+                component={(props) => <Link {...props} to={getSubscriptionCreateUrl()} />}
+                data-testid="create-subscription-button"
+              >
+                Create subscription
               </Button>
-            </EmptyStateActions>
-          </EmptyStateFooter>
-        </EmptyState>
-      </PageSection>
-    );
-  }
-
-  if (subscriptions.length === 0) {
+            )
+          }
+        >
+          Subscriptions define token limits for model access. Create a subscription to control usage for each user
+          group.
+        </EmptyListState>
+      );
+    }
     return (
-      <EmptyStatePage
-        testId="empty-subscriptions-page"
-        title="No subscriptions"
-        bodyText="Subscriptions define token limits for model access. Create a subscription to control usage for each user group."
-        showSubsButton={canWrite}
-      />
-    );
-  }
-
-  return (
-    <>
-      {notice && (
-        <Alert
-          variant="success"
-          isInline
-          title="Subscription deleted"
-          actionClose={<AlertActionCloseButton onClose={() => setNotice(false)} />}
-        />
-      )}
-      <PageSection isFilled>
+      <>
         {modelsState === 'failed' && (
           <Alert
             isInline
             variant="warning"
-            title="The hub's models could not be loaded"
+            title="Unable to load models"
             actionLinks={<AlertActionLink onClick={refresh}>Retry</AlertActionLink>}
             className="pf-v6-u-mb-md"
             data-testid="subscriptions-models-unavailable"
@@ -175,12 +132,33 @@ export const SubscriptionsTab: React.FC<Props> = ({ service }) => {
           siteNames={siteNames}
           onClearFilters={onClearFilters}
           toolbarContent={
-            <SubscriptionsToolbar filterData={filterData} onFilterUpdate={onFilterUpdate} canWrite={canWrite} />
+            <SubscriptionsToolbar
+              filterData={filterData}
+              onFilterUpdate={onFilterUpdate}
+              canWrite={canWrite}
+              onRefresh={refresh}
+            />
           }
           canWrite={canWrite}
           setDeleteSubscription={setDeleteSubscription}
         />
-      </PageSection>
+      </>
+    );
+  };
+
+  return (
+    <>
+      <PageStateSection
+        title="Subscriptions"
+        description="Manage subscriptions to models available through Models as a Service."
+        loaded={loaded}
+        error={error}
+        onRetry={refresh}
+        subject="Subscriptions"
+        loadingLabel="Loading subscriptions"
+      >
+        {body()}
+      </PageStateSection>
       {deleteSubscription && (
         <DeleteSubscriptionModal
           service={service}
@@ -188,7 +166,8 @@ export const SubscriptionsTab: React.FC<Props> = ({ service }) => {
           onClose={(deleted) => {
             setDeleteSubscription(undefined);
             if (deleted) {
-              setNotice(true);
+              // Replace, so the notice doesn't add a second Subscriptions entry to the browser's history.
+              void navigate('.', { replace: true, state: { notice: 'Subscription deleted' } });
               refresh();
             }
           }}

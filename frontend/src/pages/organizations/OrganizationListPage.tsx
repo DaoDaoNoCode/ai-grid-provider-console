@@ -2,23 +2,15 @@
 // Adapted from OSAC osac-ui/libs/ui-components/src/components/Tenant/TenantListPage.tsx
 // and TenantActionsMenu.tsx at commit 8cb0a227e45cc9b17421b6e79ce493ed370ebd5d.
 import { useMemo, useState } from 'react';
-import {
-  Button,
-  EmptyState,
-  EmptyStateActions,
-  EmptyStateBody,
-  EmptyStateFooter,
-  PageSection,
-  ToolbarItem,
-} from '@patternfly/react-core';
+import { Button, ToolbarItem } from '@patternfly/react-core';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { ThProps } from '@patternfly/react-table';
 import { Link, useNavigate } from 'react-router-dom';
 import type { OrganizationsService } from '../../api/organizations';
 import type { Organization } from '../../api/types';
-import { PageHeader } from '../../components/PageHeader';
-import { PageLoading } from '../../components/PageLoading';
-import { LoadError } from '../../components/LoadError';
+import { RefreshButton } from '../../components/RefreshButton';
+import { EmptyListState } from '../../components/states/EmptyListState';
+import { PageStateSection } from '../../components/states/PageStateSection';
 import { PaginatedTable } from '../../components/PaginatedTable';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
 import { StatusLabel } from '../../components/StatusLabel';
@@ -52,7 +44,11 @@ export const OrganizationListPage: React.FC<Props> = ({ service }) => {
   const [sortBy, setSortBy] = useState<{ index: number; direction: 'asc' | 'desc' }>({ index: 0, direction: 'asc' });
   const [confirmDelete, deleteModal] = useDeleteOrganization(service, {
     refresh: () => void refresh(),
-    onDeleted: () => void refresh(),
+    onDeleted: () => {
+      // Replace, so the notice doesn't add a second Organizations entry to the browser's history.
+      void navigate('.', { replace: true, state: { notice: 'Organization deleted' } });
+      void refresh();
+    },
   });
 
   const rows = useMemo(() => {
@@ -74,26 +70,11 @@ export const OrganizationListPage: React.FC<Props> = ({ service }) => {
   });
 
   const body = () => {
-    if (error) {
-      return (
-        <LoadError
-          subject="Organizations"
-          error={error}
-          title="Error loading organizations"
-          onRetry={() => void refresh()}
-        />
-      );
-    }
     if (organizations.length === 0) {
       return (
-        <EmptyState titleText="No organizations" headingLevel="h3">
-          <EmptyStateBody>No organizations yet. Register one to get started.</EmptyStateBody>
-          {createButton && (
-            <EmptyStateFooter>
-              <EmptyStateActions>{createButton}</EmptyStateActions>
-            </EmptyStateFooter>
-          )}
-        </EmptyState>
+        <EmptyListState title="No organizations" action={createButton}>
+          Create an organization to give its users access to models.
+        </EmptyListState>
       );
     }
     return (
@@ -103,12 +84,15 @@ export const OrganizationListPage: React.FC<Props> = ({ service }) => {
           toolbar={
             <>
               <ToolbarSearch
-                label="Search organizations"
-                placeholder="Search organizations by name"
+                label="Filter organizations"
+                placeholder="Filter by name"
                 value={search}
                 onChange={setSearch}
               />
               {createButton && <ToolbarItem>{createButton}</ToolbarItem>}
+              <ToolbarItem>
+                <RefreshButton onRefresh={() => void refresh()} />
+              </ToolbarItem>
             </>
           }
         >
@@ -128,7 +112,7 @@ export const OrganizationListPage: React.FC<Props> = ({ service }) => {
                 {rows.length === 0 ? (
                   <TableEmptyRow
                     colSpan={columns.length + 1}
-                    body="Change the search to see more organizations."
+                    body="Change the filter to see more organizations."
                     onClear={() => setSearch('')}
                   />
                 ) : (
@@ -153,6 +137,11 @@ export const OrganizationListPage: React.FC<Props> = ({ service }) => {
                             ariaLabel={`Actions for ${o.name}`}
                             dropdownItems={[
                               {
+                                key: 'view',
+                                label: 'View details',
+                                onClick: () => navigate(`/organizations/${encodeURIComponent(o.id)}`),
+                              },
+                              {
                                 key: 'edit',
                                 label: 'Edit',
                                 onClick: () => navigate(`/organizations/${encodeURIComponent(o.id)}/edit`),
@@ -176,8 +165,17 @@ export const OrganizationListPage: React.FC<Props> = ({ service }) => {
 
   return (
     <>
-      <PageHeader title="Organizations" description="Manage organizations and their identity providers." />
-      {!error && !loaded ? <PageLoading label="Loading organizations" /> : <PageSection isFilled>{body()}</PageSection>}
+      <PageStateSection
+        title="Organizations"
+        description="Manage organizations and their identity providers."
+        loaded={loaded}
+        error={error}
+        onRetry={() => void refresh()}
+        subject="Organizations"
+        loadingLabel="Loading organizations"
+      >
+        {body()}
+      </PageStateSection>
       {deleteModal}
     </>
   );

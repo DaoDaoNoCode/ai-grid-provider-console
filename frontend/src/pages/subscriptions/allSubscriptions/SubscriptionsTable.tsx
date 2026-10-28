@@ -58,6 +58,7 @@ export const SubscriptionsTable: React.FC<Props> = ({
                   <Th
                     key={col.label}
                     width={col.width}
+                    className={col.isNumber ? 'console-number' : undefined}
                     modifier="wrap"
                     sort={{
                       sortBy,
