@@ -10,10 +10,12 @@ on:
 permissions:
   contents: read
 
-# A newer push to a pull request cancels the run it supersedes. Runs on main and tags are never
-# cancelled, so every merged commit gets its checks and its image.
+# A newer push to a pull request cancels the run it supersedes. Every other run (main, tags,
+# manual) gets a group of its own, so it is never cancelled and never queued: GitHub keeps only
+# one pending run per group and cancels it when a newer one arrives, whatever cancel-in-progress
+# says. Every merged commit gets its checks and its image.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # timeout-minutes: about three times the slowest job seen (CI runs of 2026-10), so a hung step
