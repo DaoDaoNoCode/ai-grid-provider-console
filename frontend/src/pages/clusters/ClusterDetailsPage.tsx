@@ -141,9 +141,7 @@ const MapPosition: React.FC<{ cluster: ClusterView }> = ({ cluster: c }) => {
   if (c.latitude === undefined || c.longitude === undefined) {
     return (
       <Stack>
-        <span>
-          {c.locationProblem ? 'Not on the map: the coordinate annotations are wrong' : 'Not on the map: no position'}
-        </span>
+        <span>{c.locationProblem ? `Not on the map: ${c.locationProblem}` : 'Not on the map: no position'}</span>
         {how}
       </Stack>
     );

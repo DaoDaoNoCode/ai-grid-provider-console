@@ -523,3 +523,27 @@ it('says where the map puts the cluster, approximate from its cloud region, with
   );
   expect(screen.getByTestId('cluster-site')).toHaveTextContent('us-east-2 approximate');
 });
+
+it('says what to fix when the coordinate annotations are wrong', async () => {
+  const transport = fakeClients({
+    clusters: {
+      get: async () => ({
+        object: create(ManagedClusterSchema, {
+          id: 'wrong',
+          metadata: { name: 'wrong' },
+          status: {
+            location: {
+              source: ManagedClusterLocationSource.NONE,
+              problem: 'ai-grid/latitude "39,96" is not a decimal number of degrees',
+              region: 'us-east-2',
+            },
+          },
+        }),
+      }),
+    },
+  }).transport;
+  renderAt('/clusters/wrong', new MockConsoleService(), transport);
+  expect(await screen.findByTestId('cluster-map-position')).toHaveTextContent(
+    'Not on the map: ai-grid/latitude "39,96" is not a decimal number of degrees',
+  );
+});
