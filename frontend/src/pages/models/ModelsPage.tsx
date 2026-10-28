@@ -193,7 +193,7 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
                         <RelativeTime time={deployment.creationTimestamp} />
                       </Td>
                       <Td dataLabel="Status">
-                        <ModelStatusLabel model={deployment} onViewLocations={() => setRowExpanded(key, true)} />
+                        <ModelStatusLabel model={deployment} />
                       </Td>
                       {canWrite && (
                         <Td isActionCell>

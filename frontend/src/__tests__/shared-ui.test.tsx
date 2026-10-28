@@ -6,6 +6,9 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { ServiceError } from '../api/ConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
+import { renderAt } from './render';
+import '../pages/models/ModelsPage';
+import '../pages/subscriptions/SubscriptionsPage';
 import { LoadError } from '../components/LoadError';
 import { OverflowList } from '../components/OverflowList';
 import { PageErrorBoundary } from '../components/PageErrorBoundary';
@@ -24,6 +27,40 @@ it("opens a status's reason from the keyboard", async () => {
   render(<StatusLabel status="Unknown" reason="The hub hasn't heard from the cluster." />);
   await user.tab();
   expect(await screen.findByRole('tooltip')).toHaveTextContent("The hub hasn't heard from the cluster.");
+});
+
+it('fills a status label only when it opens something', async () => {
+  const onClick = vi.fn();
+  const user = userEvent.setup();
+  render(
+    <>
+      <StatusLabel status="Ready" data-testid="plain" />
+      <StatusLabel status="Failed" onClick={onClick} data-testid="clickable" />
+    </>,
+  );
+  expect(screen.getByTestId('plain')).toHaveClass('pf-m-outline');
+  expect(screen.getByTestId('clickable')).not.toHaveClass('pf-m-outline');
+  await user.click(screen.getByRole('button', { name: 'Failed' }));
+  expect(onClick).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+  ['/models', 'model-deployments-table'],
+  ['/subscriptions', 'subscriptions-table'],
+])('gives every status label in one column one variant, whatever the status: %s', async (path, table) => {
+  const service = new MockConsoleService();
+  // Mixed states, those that opened details (Failed, Partially available) among the others.
+  const phases = ['Ready', 'Saved to Git', 'Failed', 'Partially available', 'Pending'];
+  service.models = service.models.map((m, i) => ({ ...m, phase: phases[i % phases.length] }));
+  renderAt(path, service);
+  const rows = await screen.findByTestId(table);
+  const labels = Array.from(rows.querySelectorAll<HTMLElement>('td[data-label="Status"] .pf-v6-c-label'));
+  expect(new Set(labels.map((l) => l.textContent)).size).toBeGreaterThan(2);
+  // One variant per column: status labels open nothing, so every one is an outline label, no button.
+  expect(new Set(labels.map((l) => l.classList.contains('pf-m-outline')))).toEqual(new Set([true]));
+  for (const label of labels) {
+    expect(within(label).queryByRole('button')).not.toBeInTheDocument();
+  }
 });
 
 it('leaves a status without a reason out of the tab order', () => {

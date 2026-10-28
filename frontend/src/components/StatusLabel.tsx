@@ -7,21 +7,35 @@ type Props = {
   status: string;
   /** A short reason, shown in a tooltip on the label. */
   reason?: string;
-  /** Compact size, for tables and cards (PatternFly: compact labels when space is tight). */
+  /** Compact size, for tables and page headers (PatternFly: compact labels when space is tight). */
   isCompact?: boolean;
+  /** Opens the status's details; the label is then filled, a button. */
   onClick?: LabelProps['onClick'];
+  /** Read after the word by a screen reader only, e.g. " at us-east" in a table of locations. */
+  screenReaderSuffix?: string;
   'data-testid'?: string;
 };
 
 /**
- * A status as PatternFly's status pattern shows it, the same on every page: a filled label in the
- * status color with its icon. The tone comes from utilities/status.
+ * A status as PatternFly's status pattern shows it, the same on every page: a label in the status
+ * colour with its icon, the word and colour from utilities/status. A status label is an outline label
+ * with its reason in a tooltip, and opens nothing. It is clickable (filled, with onClick) only where a
+ * whole column opens each row's details, for every row (today only ModelLocationsTable's, which opens
+ * a location's deployment status): PatternFly's one type for clickable labels, another for the rest,
+ * never mixed in one column.
  */
-export const StatusLabel: React.FC<Props> = ({ status, reason, isCompact, onClick, 'data-testid': testId }) => {
+export const StatusLabel: React.FC<Props> = ({
+  status,
+  reason,
+  isCompact,
+  onClick,
+  screenReaderSuffix,
+  'data-testid': testId,
+}) => {
   const label = (
     <Label
       {...statusLabelProps(status)}
-      variant="filled"
+      variant={onClick ? 'filled' : 'outline'}
       isCompact={isCompact}
       isClickable={!!onClick}
       onClick={onClick}
@@ -31,6 +45,7 @@ export const StatusLabel: React.FC<Props> = ({ status, reason, isCompact, onClic
       data-testid={testId}
     >
       {status}
+      {screenReaderSuffix && <span className="pf-v6-screen-reader">{screenReaderSuffix}</span>}
     </Label>
   );
   return reason ? <Tooltip content={reason}>{label}</Tooltip> : label;

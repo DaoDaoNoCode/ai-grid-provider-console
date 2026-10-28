@@ -33,7 +33,7 @@ import {
 import type { ProgressStepProps } from '@patternfly/react-core';
 import { InProgressIcon, InfoCircleIcon } from '@patternfly/react-icons';
 import type { Condition, ManagedModel, ModelWork } from '../../api/types';
-import { getPhaseProps } from '../../utilities/phaseLabelUtils';
+import { StatusLabel } from '../../components/StatusLabel';
 
 type Props = {
   model: ManagedModel;
@@ -129,7 +129,6 @@ const StepDescription: React.FC<{ step: Step }> = ({ step }) => (
 /** The model's status on one location: a stepper of what that cluster's agent reported. */
 export const DeploymentStatusModal: React.FC<Props> = ({ model, work, location, onClose, onEdit }) => {
   const title = model.displayName ?? model.name;
-  const { icon, status, color } = getPhaseProps(work.phase);
   const steps = stepsOf(work);
   return (
     <Modal
@@ -145,9 +144,7 @@ export const DeploymentStatusModal: React.FC<Props> = ({ model, work, location, 
           <Flex gap={{ default: 'gapMd' }} alignItems={{ default: 'alignItemsCenter' }}>
             <FlexItem>{title} status</FlexItem>
             <FlexItem>
-              <Label isCompact variant="outline" icon={icon} status={status} color={color}>
-                {work.phase}
-              </Label>
+              <StatusLabel isCompact status={work.phase} />
             </FlexItem>
           </Flex>
         }

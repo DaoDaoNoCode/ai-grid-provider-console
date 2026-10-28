@@ -7,7 +7,7 @@ import { Label, Tooltip } from '@patternfly/react-core';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { ManagedModel, ModelWork } from '../../api/types';
 import type { ClusterView } from '../clusters/clusterView';
-import { getPhaseProps } from '../../utilities/phaseLabelUtils';
+import { StatusLabel } from '../../components/StatusLabel';
 import { DeploymentStatusModal } from './DeploymentStatusModal';
 import { locationLabel } from './modelUtils';
 
@@ -53,7 +53,6 @@ export const ModelLocationsTable: React.FC<Props> = ({ model, works, clusters, s
         <Tbody>
           {works.map((work) => {
             const location = locationOf(work);
-            const { icon, status, color } = getPhaseProps(work.phase);
             return (
               <Tr key={work.cluster} resetOffset={isNested} data-testid="model-work-row">
                 <Td dataLabel="Location">
@@ -76,17 +75,12 @@ export const ModelLocationsTable: React.FC<Props> = ({ model, works, clusters, s
                 </Td>
                 <Td dataLabel="Status" modifier="fitContent">
                   <div>
-                    <Label
-                      icon={icon}
-                      status={status}
-                      color={color}
-                      variant="filled"
+                    <StatusLabel
+                      status={work.phase}
                       onClick={() => setOpenCluster(work.cluster)}
+                      screenReaderSuffix={` at ${location}`}
                       data-testid="model-work-phase"
-                    >
-                      {work.phase}
-                      <span className="pf-v6-screen-reader"> at {location}</span>
-                    </Label>
+                    />
                   </div>
                 </Td>
               </Tr>

@@ -582,7 +582,12 @@ describe('MaaS subscription phases', () => {
     // No phase yet reads Unknown, as in odh-dashboard's MaaS screens.
     expect(label('unreconciled-sub')).toHaveTextContent('Unknown');
     expect(label('degraded-sub')).toHaveTextContent('Degraded');
-    expect(label('active-sub')).toHaveTextContent('Ready');
+    // Active, as its policy's phase reads beside it. Every status is an outline label that opens nothing.
+    expect(label('active-sub')).toHaveTextContent('Active');
+    for (const name of ['active-sub', 'degraded-sub']) {
+      expect(label(name)).toHaveClass('pf-m-outline');
+      expect(within(label(name)).queryByRole('button')).not.toBeInTheDocument();
+    }
     expect(label('failed-sub')).toHaveTextContent('Failed');
     expect(label('invalid-sub')).toHaveTextContent('Invalid');
     expect(screen.queryByText('Saved')).not.toBeInTheDocument();
@@ -596,57 +601,9 @@ describe('MaaS subscription phases', () => {
     const user = userEvent.setup();
     renderAt('/subscriptions', service);
     expect(await screen.findByTestId('phase-label-subtext')).toHaveTextContent(TRLP_MESSAGE);
-    await user.click(within(screen.getByTestId('phase-label')).getByRole('button'));
-    expect(await screen.findByTestId('phase-modal')).toHaveTextContent(TRLP_MESSAGE);
-  });
-
-  it('lists unpaired and unhealthy models as affected', async () => {
-    const service = new MockConsoleService();
-    const sub = withPhase('degraded-sub', 'Degraded', {
-      status: 'False',
-      reason: 'PartialFailure',
-      message: '1 of 3 model references are invalid or unavailable',
-    });
-    sub.modelRefs = ['granite-3-8b', 'llama-3-70b', 'retired-llm'].map((name) => ({
-      name,
-      tokenRateLimits: [{ limit: 1000, window: '1h' }],
-    }));
-    sub.modelRefStatuses = [
-      { name: 'granite-3-8b', namespace: 'ai-grid-models', ready: true, reason: 'Valid' },
-      { name: 'llama-3-70b', namespace: 'ai-grid-models', ready: true, reason: 'Valid' },
-      {
-        name: 'retired-llm',
-        namespace: 'ai-grid-models',
-        ready: false,
-        reason: 'NotFound',
-        message: 'MaaSModelRef ai-grid-models/retired-llm not found',
-      },
-    ];
-    service.subscriptions = [sub];
-    service.modelRegistrations = [
-      {
-        name: 'granite-3-8b',
-        namespace: 'ai-grid-models',
-        phase: 'Pending',
-        conditions: [{ type: 'Ready', status: 'False', reason: 'Pending', message: 'Awaiting governance pairing' }],
-      },
-      {
-        name: 'llama-3-70b',
-        namespace: 'ai-grid-models',
-        phase: 'Unhealthy',
-        conditions: [
-          { type: 'Ready', status: 'False', reason: 'Unhealthy', message: 'Governed but backend is not ready' },
-        ],
-      },
-    ];
-    const user = userEvent.setup();
-    renderAt('/subscriptions/view/degraded-sub', service);
-    // The status sits beside the page's title.
-    await user.click(within(await screen.findByTestId('subscription-phase')).getByRole('button'));
-    const modal = await screen.findByTestId('phase-modal');
-    expect(modal).toHaveTextContent('Awaiting governance pairing');
-    expect(modal).toHaveTextContent('Governed but backend is not ready');
-    expect(modal).toHaveTextContent('Model not found. It may have been deleted.');
+    // The condition's message is the label's tooltip too.
+    await user.hover(within(screen.getByTestId('phase-label')).getByText('Degraded'));
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(TRLP_MESSAGE);
   });
 });
 

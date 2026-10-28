@@ -14,7 +14,6 @@ import type { MaaSSubscription, ManagedModel } from '../../../api/types';
 import { PhaseLabel } from '../Phase/PhaseLabel';
 import { SimpleMenuActions } from '../../../components/SimpleMenuActions';
 import { TableRowTitleDescription } from '../../../components/TableRowTitleDescription';
-import { useSubscriptionAffectedModels } from '../hooks/useGovernanceAffectedModels';
 import { getSubscriptionEditUrl, getSubscriptionViewUrl } from '../../../utilities/maasGovernanceNavigation';
 import { EMPTY_VALUE } from '../../../utilities/format';
 import type { SubscriptionColumn } from './columns';
@@ -48,7 +47,6 @@ export const SubscriptionTableRow: React.FC<Props> = ({
 }) => {
   const navigate = useNavigate();
   const [expanded, setExpanded] = useState<Panel>();
-  const { affectedModels, overviewLoaded } = useSubscriptionAffectedModels(subscription);
   const groups = Array.isArray(subscription.owner.groups) ? subscription.owner.groups : [];
   const deleting = !!subscription.deletionTimestamp;
   const title = subscription.displayName ?? subscription.name;
@@ -116,12 +114,6 @@ export const SubscriptionTableRow: React.FC<Props> = ({
             phase={subscription.phase}
             statusMessage={subscription.statusMessage}
             reason={subscription.reason}
-            status={subscription.status}
-            conditionType={subscription.conditionType}
-            lastTransitionTime={subscription.lastTransitionTime}
-            resourceName={title}
-            affectedModels={affectedModels}
-            overviewLoaded={overviewLoaded}
           />
         </Td>
         {expandCell('groups', 3, groups.length)}

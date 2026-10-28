@@ -18,7 +18,6 @@ import { modelRefsToSummaries } from '../../utilities/authpolicies';
 import { getBackUrl, getSubscriptionEditUrl, subscriptionNotFound } from '../../utilities/maasGovernanceNavigation';
 import { PageStateSection } from '../../components/states/PageStateSection';
 import { PhaseLabel } from './Phase/PhaseLabel';
-import { getSubscriptionAffectedModels } from './hooks/useGovernanceAffectedModels';
 import { useDeleteSubscription } from './hooks/useDeleteSubscription';
 import { SubscriptionDetailsSection } from './viewSubscription/SubscriptionDetailsSection';
 import { SubscriptionGroupsSection } from './viewSubscription/SubscriptionGroupsSection';
@@ -90,14 +89,6 @@ export const ViewSubscriptionPage: React.FC<Props> = ({ service }) => {
               phase={subscriptionInfo.subscription.phase}
               statusMessage={subscriptionInfo.subscription.statusMessage}
               reason={subscriptionInfo.subscription.reason}
-              status={subscriptionInfo.subscription.status}
-              conditionType={subscriptionInfo.subscription.conditionType}
-              lastTransitionTime={subscriptionInfo.subscription.lastTransitionTime}
-              resourceName={displaySubscriptionName}
-              affectedModels={getSubscriptionAffectedModels(
-                subscriptionInfo.subscription,
-                subscriptionInfo.modelRegistrations ?? [],
-              )}
             />
           </span>
         )

@@ -2,93 +2,30 @@
 // Adapted from opendatahub-io/odh-dashboard
 // packages/maas/frontend/src/app/shared/Phase/PhaseLabel.tsx
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
-import { useState } from 'react';
-import { Content, Flex, FlexItem, Label } from '@patternfly/react-core';
-import type { AffectedModel } from '../../../utilities/phaseLabelUtils';
-import {
-  getModalSubtitle,
-  getPhaseProps,
-  getStatusSubtext,
-  getSubtextProps,
-  normalizePhase,
-  PhaseStatus,
-} from '../../../utilities/phaseLabelUtils';
-import { PhaseModal } from './PhaseModal';
+// The console's StatusLabel opens nothing: the controller's message is in its tooltip, the
+// subscription's page has the rest (its models and the policies for them).
+import { Content } from '@patternfly/react-core';
+import { StatusLabel } from '../../../components/StatusLabel';
+import { getStatusSubtext, getSubtextProps, normalizePhase } from '../../../utilities/phaseLabelUtils';
 
 type Props = {
   phase: string | undefined;
   statusMessage?: string;
   reason?: string;
-  resourceName: string;
-  status?: string;
-  conditionType?: string;
-  lastTransitionTime?: string;
-  affectedModels?: AffectedModel[];
-  overviewLoaded?: boolean;
 };
 
-/** A subscription's phase; anything but Ready opens the status modal. */
-export const PhaseLabel: React.FC<Props> = ({
-  phase,
-  statusMessage,
-  reason,
-  resourceName,
-  status,
-  conditionType,
-  lastTransitionTime,
-  affectedModels,
-  overviewLoaded = false,
-}) => {
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [hasOpenedModal, setHasOpenedModal] = useState(false);
-
+/** A subscription's phase: an outline StatusLabel with the controller's message in its tooltip, and a subtext. */
+export const PhaseLabel: React.FC<Props> = ({ phase, statusMessage, reason }) => {
   const normalized = normalizePhase(phase);
-  const phaseProps = getPhaseProps(normalized);
-  const isClickable = normalized !== PhaseStatus.READY;
   const statusSubtext = getStatusSubtext(normalized, statusMessage);
   const subtextProps = getSubtextProps(normalized);
-
-  const handleClick = () => {
-    setHasOpenedModal(true);
-    setIsModalOpen(true);
-  };
-
   return (
     <>
-      <Flex>
-        <FlexItem>
-          <Label
-            variant="filled"
-            isCompact
-            isClickable={isClickable}
-            data-testid="phase-label"
-            {...phaseProps}
-            onClick={isClickable ? handleClick : undefined}
-          >
-            {normalized}
-          </Label>
-        </FlexItem>
-      </Flex>
+      <StatusLabel isCompact status={normalized} reason={statusMessage || reason} data-testid="phase-label" />
       {statusSubtext && subtextProps ? (
         <Content component="small" {...subtextProps} data-testid="phase-label-subtext">
           {statusSubtext}
         </Content>
-      ) : null}
-      {isClickable && hasOpenedModal ? (
-        <PhaseModal
-          phase={normalized}
-          statusMessage={statusMessage}
-          reason={reason}
-          isOpen={isModalOpen}
-          onClose={() => setIsModalOpen(false)}
-          subtitle={getModalSubtitle()}
-          resourceName={resourceName}
-          status={status}
-          conditionType={conditionType}
-          lastTransitionTime={lastTransitionTime}
-          affectedModels={affectedModels}
-          overviewLoaded={overviewLoaded}
-        />
       ) : null}
     </>
   );

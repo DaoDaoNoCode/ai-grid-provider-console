@@ -62,8 +62,11 @@ a failed load.
 
 - `StatusLabel` only, compact in tables and page headers. The word and its colour come from
   `utilities/status.tsx`; one word per state ("Active" for a subscription and its policy alike).
-- Filled when it opens something (its details modal), outline when it doesn't. A short reason goes
-  in its tooltip.
+- A status label is an outline label with its reason in a tooltip, and opens nothing. The details
+  live on the page: the Models list's expanded row, the details pages, a subscription's policies.
+- A label is clickable (filled) only where a whole column opens each row's details, for every row:
+  today only the locations table of a model (`ModelLocationsTable`). Never mix the two variants in
+  one column.
 
 ## Time
 

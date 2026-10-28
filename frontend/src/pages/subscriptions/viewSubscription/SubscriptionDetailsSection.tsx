@@ -41,7 +41,6 @@ export const SubscriptionDetailsSection: React.FC<Props> = ({ subscription, auth
                 {authPolicies.map((policy) => (
                   <Flex key={policy.name} spaceItems={{ default: 'spaceItemsSm' }}>
                     <span>{policy.displayName ?? policy.name}</span>
-                    {/* A policy's phases are Pending and Active; only a subscription's Active reads Ready. */}
                     <StatusLabel isCompact status={policy.phase?.trim() || 'Unknown'} reason={policy.statusMessage} />
                   </Flex>
                 ))}
