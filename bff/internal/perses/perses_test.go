@@ -3,7 +3,6 @@ package perses
 import (
 	"bytes"
 	"compress/gzip"
-	"context"
 	"encoding/json"
 	"encoding/pem"
 	"io"
@@ -330,7 +329,7 @@ func TestRelayDropsInformationalAnswersAndTrailers(t *testing.T) {
 		informational = append(informational, code)
 		return nil
 	}}
-	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(context.Background(), trace),
+	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(t.Context(), trace),
 		http.MethodGet, front.URL+Prefix+"/api/v1/projects/ai-grid-monitoring/dashboards", nil)
 	if err != nil {
 		t.Fatal(err)

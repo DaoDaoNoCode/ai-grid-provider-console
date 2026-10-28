@@ -1,7 +1,6 @@
 package fakebackend
 
 import (
-	"context"
 	"encoding/json"
 	"math"
 	"os"
@@ -169,7 +168,7 @@ func TestToFixed3(t *testing.T) {
 func TestGetOverview(t *testing.T) {
 	t.Parallel()
 	s := newRepoServer(t)
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	names := func(resp *aigridv1.GetOverviewResponse) string {
 		var out []string
 		for _, c := range resp.GetClusters() {
@@ -239,7 +238,7 @@ func strptr(s string) *string { return &s }
 func TestOverviewRejectsAnUnknownRange(t *testing.T) {
 	t.Parallel()
 	s := newRepoServer(t)
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	_, err := s.GetOverview(ctx, &aigridv1.GetOverviewRequest{Range: "2h"})
 	if status.Code(err) != codes.InvalidArgument || status.Convert(err).Message() != "Choose a time range of 1h, 6h, or 24h." {
 		t.Fatalf("2h: %v", err)
@@ -255,7 +254,7 @@ func TestOverviewRejectsAnUnknownRange(t *testing.T) {
 	if resp.GetInventorySource() == aigridv1.InventorySource_INVENTORY_SOURCE_UNSPECIFIED || resp.GetMetricsSource() == aigridv1.MetricsSource_METRICS_SOURCE_UNSPECIFIED {
 		t.Fatalf("sources %v %v", resp.GetInventorySource(), resp.GetMetricsSource())
 	}
-	if _, err := s.GetOverview(context.Background(), &aigridv1.GetOverviewRequest{Range: "1h"}); status.Code(err) != codes.Unauthenticated {
+	if _, err := s.GetOverview(t.Context(), &aigridv1.GetOverviewRequest{Range: "1h"}); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("anonymous: %v", err)
 	}
 }

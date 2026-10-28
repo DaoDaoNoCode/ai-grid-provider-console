@@ -247,7 +247,7 @@ func TestRepoFixturesCoverEveryState(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.SetClock(func() time.Time { return time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC) }) // before any scenario fires
-	resp, err := s.ListManagedClusters(authed(context.Background()), &aigridv1.ListManagedClustersRequest{})
+	resp, err := s.ListManagedClusters(authed(t.Context()), &aigridv1.ListManagedClustersRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -382,7 +382,7 @@ func TestNewCopiesTheFixtures(t *testing.T) {
 	fx.Tenants[0].Name = "changed"
 	fx.Tenants[0].Domains[0] = "changed.example.com"
 
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	clusters, err := s.ListManagedClusters(ctx, &aigridv1.ListManagedClustersRequest{})
 	if err != nil {
 		t.Fatal(err)
@@ -434,7 +434,7 @@ func TestServerBehavesLikeTheBackend(t *testing.T) {
 		t.Fatal(err)
 	}
 	conn := dial(t, s)
-	ctx := metadata.AppendToOutgoingContext(context.Background(), "x-forwarded-user", "alice", "authorization", "Bearer t")
+	ctx := metadata.AppendToOutgoingContext(t.Context(), "x-forwarded-user", "alice", "authorization", "Bearer t")
 
 	pong, err := aigridv1.NewAiGridClient(conn).Ping(ctx, &aigridv1.PingRequest{Name: "bff"})
 	if err != nil || pong.GetMessage() != "Hello, bff!" {
@@ -446,13 +446,13 @@ func TestServerBehavesLikeTheBackend(t *testing.T) {
 	}
 	// Over gRPC the client always gets its own decoded objects, so the copy
 	// guarantee is checked on the Server directly: mutate a response, list again.
-	direct, err := s.ListManagedClusters(authed(context.Background()), &aigridv1.ListManagedClustersRequest{})
+	direct, err := s.ListManagedClusters(authed(t.Context()), &aigridv1.ListManagedClustersRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	direct.GetClusters()[0].Labels["mutated"] = "yes"
 	direct.GetClusters()[0].Name = "mutated"
-	again, err := s.ListManagedClusters(authed(context.Background()), &aigridv1.ListManagedClustersRequest{})
+	again, err := s.ListManagedClusters(authed(t.Context()), &aigridv1.ListManagedClustersRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -480,7 +480,7 @@ func TestShutdownClosesOpenStreams(t *testing.T) {
 	}
 	s.stopTimeout = 100 * time.Millisecond
 	lis := bufconn.Listen(1 << 20)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	served := make(chan error, 1)
 	go func() { served <- s.serve(ctx, lis) }()
@@ -490,7 +490,7 @@ func TestShutdownClosesOpenStreams(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = conn.Close() }()
-	watch, err := healthv1.NewHealthClient(conn).Watch(context.Background(), &healthv1.HealthCheckRequest{})
+	watch, err := healthv1.NewHealthClient(conn).Watch(t.Context(), &healthv1.HealthCheckRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -515,7 +515,7 @@ func TestShutdownClosesOpenStreams(t *testing.T) {
 func TestLatencyHonoursCancellation(t *testing.T) {
 	t.Parallel()
 	s, _ := New(&Fixtures{Latency: Duration{d: time.Second}}, slog.New(slog.DiscardHandler))
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
 	defer cancel()
 	_, err := s.Ping(ctx, &aigridv1.PingRequest{})
 	if status.Code(err) != codes.DeadlineExceeded {
@@ -789,7 +789,7 @@ func unimplementedMethods(t *testing.T, srv *grpc.Server) (missing, called []str
 			t.Fatalf("%s is a streaming method; extend unimplementedMethods to call it", full)
 		}
 		called = append(called, full)
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer test-token", "x-forwarded-user", "test-user")
 		err := conn.Invoke(ctx, full, dynamicpb.NewMessage(m.Input()), dynamicpb.NewMessage(m.Output()))
 		cancel()

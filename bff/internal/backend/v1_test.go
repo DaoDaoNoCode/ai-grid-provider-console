@@ -39,7 +39,7 @@ func TestV1UpdateSendsMetadataPathsAndVersion(t *testing.T) {
 	conn := &recordingConn{reply: &backendv1.ClustersUpdateResponse{Object: &backendv1.ManagedCluster{
 		Id: "site1", Metadata: &backendv1.Metadata{Version: 8}, Spec: &backendv1.ManagedClusterSpec{HubAcceptsClient: true},
 	}}}
-	resp, err := v1Clusters{conn}.UpdateManagedCluster(context.Background(), &aigridv1.UpdateManagedClusterRequest{
+	resp, err := v1Clusters{conn}.UpdateManagedCluster(t.Context(), &aigridv1.UpdateManagedClusterRequest{
 		Object:     &aigridv1.ManagedCluster{Name: "site1", ResourceVersion: "7", Labels: map[string]string{"ai-grid/enabled": "true"}},
 		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"labels"}},
 		Lock:       true,
@@ -88,7 +88,7 @@ func TestFromV1ClusterState(t *testing.T) {
 func TestV1ListClustersForwardsPage(t *testing.T) {
 	t.Parallel()
 	conn := &recordingConn{reply: &backendv1.ClustersListResponse{Size: 1, Total: 3, Items: []*backendv1.ManagedCluster{{Id: "site2"}}}}
-	resp, err := v1Clusters{conn}.ListManagedClusters(context.Background(), &aigridv1.ListManagedClustersRequest{Offset: proto.Int32(1), Limit: proto.Int32(1)})
+	resp, err := v1Clusters{conn}.ListManagedClusters(t.Context(), &aigridv1.ListManagedClustersRequest{Offset: proto.Int32(1), Limit: proto.Int32(1)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestV1ListClustersForwardsPage(t *testing.T) {
 	// The backend doesn't evaluate filter yet and would count every cluster,
 	// so a filter never reaches it.
 	conn = &recordingConn{reply: &backendv1.ClustersListResponse{}}
-	_, err = v1Clusters{conn}.ListManagedClusters(context.Background(), &aigridv1.ListManagedClustersRequest{Filter: proto.String(`this.name == "a"`)})
+	_, err = v1Clusters{conn}.ListManagedClusters(t.Context(), &aigridv1.ListManagedClustersRequest{Filter: proto.String(`this.name == "a"`)})
 	if status.Code(err) != codes.Unimplemented || conn.method != "" {
 		t.Fatalf("filter: %v, sent %q", err, conn.method)
 	}
@@ -189,7 +189,7 @@ func TestFromV1ClusterDetails(t *testing.T) {
 func TestV1ListTenantsForwardsPageAndFilter(t *testing.T) {
 	t.Parallel()
 	conn := &recordingConn{reply: &backendv1.TenantsListResponse{Size: 1, Total: 3, Items: []*backendv1.Tenant{{Id: "t2"}}}}
-	resp, err := v1Tenants{conn}.ListTenants(context.Background(), &aigridv1.ListTenantsRequest{Offset: proto.Int32(1), Limit: proto.Int32(1)})
+	resp, err := v1Tenants{conn}.ListTenants(t.Context(), &aigridv1.ListTenantsRequest{Offset: proto.Int32(1), Limit: proto.Int32(1)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +201,7 @@ func TestV1ListTenantsForwardsPageAndFilter(t *testing.T) {
 	}
 
 	// The backend doesn't evaluate filter yet: no total, so the handler answers 501.
-	resp, err = v1Tenants{conn}.ListTenants(context.Background(), &aigridv1.ListTenantsRequest{Filter: proto.String(`this.name == "a"`)})
+	resp, err = v1Tenants{conn}.ListTenants(t.Context(), &aigridv1.ListTenantsRequest{Filter: proto.String(`this.name == "a"`)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +214,7 @@ func TestV1TenantWrites(t *testing.T) {
 	t.Parallel()
 	created := timestamppb.New(time.Date(2026, 10, 22, 0, 0, 0, 0, time.UTC))
 	stored := &backendv1.Tenant{Id: "t1", Metadata: &backendv1.Metadata{Name: "org1", Version: 4, CreationTimestamp: created}, Spec: &backendv1.TenantSpec{Domains: []string{"org1.example.com"}}}
-	ctx := context.Background()
+	ctx := t.Context()
 
 	conn := &recordingConn{reply: &backendv1.TenantsGetResponse{Object: stored}}
 	got, err := v1Tenants{conn}.GetTenant(ctx, &aigridv1.GetTenantRequest{Id: "t1"})
@@ -278,7 +278,7 @@ func TestV1TenantWrites(t *testing.T) {
 // Fields the backend's Tenant lacks are refused before any call, not dropped.
 func TestV1TenantFieldsNotInBackend(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 	conn := &recordingConn{}
 	_, err := v1Tenants{conn}.CreateTenant(ctx, &aigridv1.CreateTenantRequest{Object: &aigridv1.Tenant{
 		Name: "org1", IdentityProvider: &aigridv1.IdentityProvider{Title: "SSO"},
@@ -325,7 +325,7 @@ func (c *methodConn) NewStream(context.Context, *grpc.StreamDesc, string, ...grp
 func TestV1GetTenantNoListFallback(t *testing.T) {
 	t.Parallel()
 	conn := &methodConn{errs: map[string]error{methodTenantsGet: status.Error(codes.Unimplemented, "unknown method Get")}}
-	if _, err := (v1Tenants{conn}).GetTenant(context.Background(), &aigridv1.GetTenantRequest{Id: "t2"}); status.Code(err) != codes.Unimplemented || len(conn.called) != 1 {
+	if _, err := (v1Tenants{conn}).GetTenant(t.Context(), &aigridv1.GetTenantRequest{Id: "t2"}); status.Code(err) != codes.Unimplemented || len(conn.called) != 1 {
 		t.Fatalf("GetTenant on Unimplemented: %v after %v, want Unimplemented and no list", err, conn.called)
 	}
 }
@@ -333,7 +333,7 @@ func TestV1GetTenantNoListFallback(t *testing.T) {
 // Description, enabled and attributes pass when they hold what a read gives back.
 func TestV1UpdateTenantReadBackValues(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 	stored := &backendv1.Tenant{Id: "t1", Metadata: &backendv1.Metadata{Name: "org1", Version: 4}}
 	newConn := func() *methodConn {
 		return &methodConn{replies: map[string]proto.Message{
@@ -400,7 +400,7 @@ func TestV1UpdateTenantReadBackValues(t *testing.T) {
 // A negative If-Match version is a bad request, refused before any call.
 func TestV1TenantNegativeVersion(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 	conn := &recordingConn{}
 	_, err := v1Tenants{conn}.UpdateTenant(ctx, &aigridv1.UpdateTenantRequest{
 		Object: &aigridv1.Tenant{Id: "t1", ResourceVersion: "-1"}, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"domains"}},

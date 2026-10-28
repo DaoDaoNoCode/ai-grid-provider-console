@@ -1,7 +1,6 @@
 package fakebackend
 
 import (
-	"context"
 	"maps"
 	"testing"
 	"time"
@@ -24,7 +23,7 @@ func TestUnchangedClusterUpdateIsNotWritten(t *testing.T) {
 	c := readyCluster("a")
 	c.Labels[LabelClusterSet] = ClusterSetDefault
 	s := newServer(t, &Fixtures{Clusters: []*aigridv1.ManagedCluster{c}})
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	get := func() *aigridv1.ManagedCluster {
 		t.Helper()
 		resp, err := s.GetManagedCluster(ctx, &aigridv1.GetManagedClusterRequest{Name: "a"})
@@ -76,7 +75,7 @@ func TestUnchangedClusterUpdateIsNotWritten(t *testing.T) {
 func TestClusterCoordinatesAreChecked(t *testing.T) {
 	t.Parallel()
 	s := newServer(t, &Fixtures{Clusters: []*aigridv1.ManagedCluster{readyCluster("a")}})
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	update := func(annotations map[string]string) (*aigridv1.ManagedCluster, error) {
 		resp, err := s.UpdateManagedCluster(ctx, &aigridv1.UpdateManagedClusterRequest{Object: &aigridv1.ManagedCluster{Name: "a", Annotations: annotations}, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{PathAnnotations}}})
 		return resp.GetObject(), err
@@ -112,7 +111,7 @@ func TestClusterCoordinatesAreChecked(t *testing.T) {
 func TestUnchangedModelUpdateIsNotWritten(t *testing.T) {
 	t.Parallel()
 	s, advance := modelServer(t, &Fixtures{Clusters: []*aigridv1.ManagedCluster{enrolled("site-a")}})
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	createModel(t, s, hubModel("hub"))
 	advance(time.Minute)
 	stored := getModel(t, s, "hub")
@@ -140,7 +139,7 @@ func TestUnchangedModelUpdateIsNotWritten(t *testing.T) {
 func TestUnchangedTenantUpdateIsNotPut(t *testing.T) {
 	t.Parallel()
 	s := tenantServer(t)
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	update := func(obj *aigridv1.Tenant, paths ...string) (*aigridv1.Tenant, error) {
 		resp, err := s.UpdateTenant(ctx, &aigridv1.UpdateTenantRequest{Object: obj, UpdateMask: &fieldmaskpb.FieldMask{Paths: paths}})
 		return resp.GetObject(), err

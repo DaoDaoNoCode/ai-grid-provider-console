@@ -1,7 +1,6 @@
 package fakebackend
 
 import (
-	"context"
 	"log/slog"
 	"slices"
 	"testing"
@@ -63,7 +62,7 @@ func TestPoCPresetMatchesThePoC(t *testing.T) {
 	}
 
 	s := newPoCServer(t)
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 
 	clusters, err := s.ListManagedClusters(ctx, &aigridv1.ListManagedClustersRequest{})
 	if err != nil {
@@ -162,7 +161,7 @@ func TestPoCPresetMatchesThePoC(t *testing.T) {
 func TestPoCPresetEnrollsSite4AsProvisioning(t *testing.T) {
 	t.Parallel()
 	s := newPoCServer(t)
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	site4, err := s.GetManagedCluster(ctx, &aigridv1.GetManagedClusterRequest{Name: "site4"})
 	if err != nil {
 		t.Fatal(err)

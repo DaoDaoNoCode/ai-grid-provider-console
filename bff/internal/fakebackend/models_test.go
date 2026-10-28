@@ -71,7 +71,7 @@ func modelServer(t *testing.T, fx *Fixtures) (*Server, func(time.Duration)) {
 
 func getModel(t *testing.T, s *Server, name string) *aigridv1.Model {
 	t.Helper()
-	resp, err := s.GetModel(authed(context.Background()), &aigridv1.GetModelRequest{Namespace: testNS, Name: name})
+	resp, err := s.GetModel(authed(t.Context()), &aigridv1.GetModelRequest{Namespace: testNS, Name: name})
 	if err != nil {
 		t.Fatalf("GetModel %s: %v", name, err)
 	}
@@ -80,7 +80,7 @@ func getModel(t *testing.T, s *Server, name string) *aigridv1.Model {
 
 func createModel(t *testing.T, s *Server, m *aigridv1.Model) *aigridv1.Model {
 	t.Helper()
-	resp, err := s.CreateModel(authed(context.Background()), &aigridv1.CreateModelRequest{Object: m})
+	resp, err := s.CreateModel(authed(t.Context()), &aigridv1.CreateModelRequest{Object: m})
 	if err != nil {
 		t.Fatalf("CreateModel %s: %v", m.GetName(), err)
 	}
@@ -655,7 +655,7 @@ func TestCreateModelValidation(t *testing.T) {
 	t.Parallel()
 	s, _ := modelServer(t, &Fixtures{Clusters: []*aigridv1.ManagedCluster{enrolled("site-a")}})
 	createModel(t, s, hubModel("taken"))
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	trigger := []*aigridv1.KedaTrigger{{Type: "prometheus", Metadata: map[string]string{"query": "vllm:num_requests_waiting"}}}
 	create := func(mutate func(m *aigridv1.Model)) error {
 		m := hubModel("candidate")
@@ -769,7 +769,7 @@ func TestPlacedModelNeedsTheFeatureGate(t *testing.T) {
 	off := false
 	fx := &Fixtures{Clusters: []*aigridv1.ManagedCluster{enrolled("site-a")}, ManifestWorkReplicaSetEnabled: &off, Models: []*aigridv1.Model{placedModel("seeded", nil)}}
 	s, _ := modelServer(t, fx)
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	caps, err := s.GetHubCapabilities(ctx, &aigridv1.GetHubCapabilitiesRequest{})
 	if err != nil || caps.GetCapabilities().GetManifestWorkReplicaSetEnabled() || caps.GetCapabilities().GetAcmVersion() != defaultACMVersion {
 		t.Fatalf("capabilities = %v, %v", caps, err)
@@ -788,7 +788,7 @@ func TestPlacedModelNeedsTheFeatureGate(t *testing.T) {
 	}
 	s.SetManifestWorkReplicaSetEnabled(true)
 	createModel(t, s, placedModel("placed", nil))
-	if _, err := s.GetHubCapabilities(context.Background(), &aigridv1.GetHubCapabilitiesRequest{}); status.Code(err) != codes.Unauthenticated {
+	if _, err := s.GetHubCapabilities(t.Context(), &aigridv1.GetHubCapabilitiesRequest{}); status.Code(err) != codes.Unauthenticated {
 		t.Errorf("GetHubCapabilities needs authorization, got %v", err)
 	}
 }
@@ -809,7 +809,7 @@ func TestModelMutationsNeedAProviderAdmin(t *testing.T) {
 	mustCode(t, err, codes.PermissionDenied, wantDenied)
 	_, err = s.DeleteModel(viewer, &aigridv1.DeleteModelRequest{Namespace: testNS, Name: "seeded"})
 	mustCode(t, err, codes.PermissionDenied, wantDenied)
-	anon := context.Background()
+	anon := t.Context()
 	for name, call := range map[string]func() error{
 		"List": func() error { _, err := s.ListModels(anon, &aigridv1.ListModelsRequest{}); return err },
 		"Get": func() error {
@@ -1061,7 +1061,7 @@ func TestAllRolloutAndClusterChanges(t *testing.T) {
 	if works := m.GetStatus().GetRollout().GetWorks(); len(works) != 3 || works[2].GetClusterName() != "site-c" {
 		t.Fatalf("All applies every cluster at once: %v", works)
 	}
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	// site-b leaves the decision: its work is deleted.
 	b, _ := s.GetManagedCluster(ctx, &aigridv1.GetManagedClusterRequest{Name: "site-b"})
 	labels := copyMap(b.GetObject().GetLabels())
@@ -1238,7 +1238,7 @@ func TestUnreachableClusterAgentDoesNotReport(t *testing.T) {
 func TestUpdateModel(t *testing.T) {
 	t.Parallel()
 	s, advance := modelServer(t, &Fixtures{Clusters: []*aigridv1.ManagedCluster{enrolled("site-a")}})
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	createModel(t, s, hubModel("hub"))
 	createModel(t, s, placedModel("placed", nil))
 	advance(time.Minute)
@@ -1341,7 +1341,7 @@ func TestUpdateModel(t *testing.T) {
 func TestDeleteModel(t *testing.T) {
 	t.Parallel()
 	s, advance := modelServer(t, &Fixtures{Clusters: []*aigridv1.ManagedCluster{enrolled("site-a")}})
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	createModel(t, s, hubModel("hub"))
 	createModel(t, s, placedModel("placed", nil))
 	createModel(t, s, hubModel("referenced"))
@@ -1398,7 +1398,7 @@ func TestListModelsFilterDecodesLiterals(t *testing.T) {
 		m.Metadata.Labels = map[string]string{"k": v}
 		createModel(t, s, m)
 	}
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	for literal, want := range map[string]string{`"say \"hi\""`: "quote", `"a\\b"`: "slash", `"x && y"`: "and", `"\u0078"`: "plain"} {
 		filter := `this.metadata.namespace == "` + testNS + `" && "k" in this.metadata.labels && this.metadata.labels["k"] == ` + literal
 		resp, err := s.ListModels(ctx, &aigridv1.ListModelsRequest{Filter: proto.String(filter)})
@@ -1422,7 +1422,7 @@ func TestListModelsFilterAndPaging(t *testing.T) {
 		m.Metadata.Labels = map[string]string{"team": spec.team}
 		createModel(t, s, m)
 	}
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	list := func(req *aigridv1.ListModelsRequest) []string {
 		t.Helper()
 		resp, err := s.ListModels(ctx, req)
@@ -1541,7 +1541,7 @@ func TestLoadModelFixtures(t *testing.T) {
 		t.Errorf("fixtures = %+v", fx)
 	}
 	s := newServer(t, fx)
-	caps, _ := s.GetHubCapabilities(authed(context.Background()), &aigridv1.GetHubCapabilitiesRequest{})
+	caps, _ := s.GetHubCapabilities(authed(t.Context()), &aigridv1.GetHubCapabilitiesRequest{})
 	if caps.GetCapabilities().GetManifestWorkReplicaSetEnabled() || !caps.GetCapabilities().GetObservabilityInstalled() || caps.GetCapabilities().GetAcmVersion() != "2.18.0" {
 		t.Errorf("capabilities = %v", caps)
 	}
@@ -1633,7 +1633,7 @@ func TestFailedClustersCountTowardsMaxFailuresAtOnce(t *testing.T) {
 	}
 	wantCond(t, got.GetStatus().GetRollout().GetConditions(), CondManifestworkApplied, cFalse, ReasonNotAsExpected, "")
 	wantPhase(t, got, aigridv1.ModelPhase_MODEL_PHASE_FAILED, ReasonNotAsExpected)
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	c, _ := s.GetManagedCluster(ctx, &aigridv1.GetManagedClusterRequest{Name: "site-c"})
 	labels := copyMap(c.GetObject().GetLabels())
 	labels["ai-grid/enabled"] = "true"
@@ -1703,7 +1703,7 @@ func TestProgressivePerGroupAndPercentConcurrency(t *testing.T) {
 func TestUpdatesAcrossGenerations(t *testing.T) {
 	t.Parallel()
 	s, advance := modelServer(t, &Fixtures{})
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	createModel(t, s, hubModel("gen"))
 	setImage := func(image string) {
 		t.Helper()
@@ -1773,7 +1773,7 @@ func TestUpdatesAcrossGenerations(t *testing.T) {
 func TestUpdateDuringProgressiveRolloutReappliesStaleWorksInNameOrder(t *testing.T) {
 	t.Parallel()
 	s, advance := modelServer(t, &Fixtures{Clusters: []*aigridv1.ManagedCluster{enrolled("site-a"), enrolled("site-b"), enrolled("site-c")}})
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	setImage := func(name, image string) {
 		t.Helper()
 		if _, err := s.UpdateModel(ctx, &aigridv1.UpdateModelRequest{Object: &aigridv1.Model{Name: name, Metadata: &aigridv1.ObjectMeta{Namespace: testNS}, Spec: &aigridv1.ModelSpec{Main: &aigridv1.Container{Image: image}}}, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{PathSpecMainImage}}}); err != nil {
@@ -1838,7 +1838,7 @@ func workApplied(m *aigridv1.Model) map[string]string {
 // leaves every existing work as it is.
 func TestOnlyATemplateChangeReappliesWorks(t *testing.T) {
 	t.Parallel()
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	three := func() *Fixtures {
 		return &Fixtures{Clusters: []*aigridv1.ManagedCluster{enrolled("site-a"), enrolled("site-b"), enrolled("site-c")}}
 	}
@@ -1927,7 +1927,7 @@ func TestOnlyATemplateChangeReappliesWorks(t *testing.T) {
 // an earlier instant, which would replay its lifecycle as already under way.
 func TestARolloutChangeNeverSchedulesAWorkBeforeIt(t *testing.T) {
 	t.Parallel()
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	stuck := func(name string, rollout *aigridv1.Rollout) (*Server, func(time.Duration)) {
 		t.Helper()
 		s, advance := modelServer(t, &Fixtures{Clusters: []*aigridv1.ManagedCluster{enrolled("site-a"), enrolled("site-b"), enrolled("site-c")}})
@@ -1996,7 +1996,7 @@ func TestARolloutChangeNeverSchedulesAWorkBeforeIt(t *testing.T) {
 // notices it, never at an earlier instant judged with the new decision.
 func TestADecisionChangeNeverSchedulesAWorkBeforeIt(t *testing.T) {
 	t.Parallel()
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	const change = 600 * time.Second
 	setEnabled := func(s *Server, cluster string, enabled bool) {
 		t.Helper()
@@ -2185,7 +2185,7 @@ func TestWorkSuffixGeneratorRenamesExistingWorks(t *testing.T) {
 		s.SetClock(func() time.Time { return testStart })
 		n := 0
 		s.SetWorkSuffixGenerator(func() string { n++; return fmt.Sprintf("g%04d", n) })
-		resp, err := s.ListModels(authed(context.Background()), &aigridv1.ListModelsRequest{})
+		resp, err := s.ListModels(authed(t.Context()), &aigridv1.ListModelsRequest{})
 		if err != nil {
 			t.Fatal(err)
 		}

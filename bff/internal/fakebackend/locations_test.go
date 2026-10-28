@@ -1,7 +1,6 @@
 package fakebackend
 
 import (
-	"context"
 	"slices"
 	"testing"
 	"time"
@@ -44,7 +43,7 @@ func TestListLocationsOnScenarioState(t *testing.T) {
 	s.SetClock(func() time.Time { return now })
 	list := func() []string {
 		t.Helper()
-		resp, err := s.ListLocations(authed(context.Background()), &aigridv1.ListLocationsRequest{})
+		resp, err := s.ListLocations(authed(t.Context()), &aigridv1.ListLocationsRequest{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -57,7 +56,7 @@ func TestListLocationsOnScenarioState(t *testing.T) {
 	if got := list(); !slices.Equal(got, []string{"paris"}) {
 		t.Fatalf("after madrid lost its lease: %v", got)
 	}
-	if _, err := s.ListLocations(context.Background(), &aigridv1.ListLocationsRequest{}); status.Code(err) != codes.Unauthenticated {
+	if _, err := s.ListLocations(t.Context(), &aigridv1.ListLocationsRequest{}); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("anonymous: %v", err)
 	}
 }
@@ -68,7 +67,7 @@ func TestListLocationsOnScenarioState(t *testing.T) {
 func TestListLocationsFromTheFixtures(t *testing.T) {
 	t.Parallel()
 	s := newRepoServer(t)
-	resp, err := s.ListLocations(authed(context.Background()), &aigridv1.ListLocationsRequest{})
+	resp, err := s.ListLocations(authed(t.Context()), &aigridv1.ListLocationsRequest{})
 	if err != nil || !slices.Equal(resp.GetLocations(), []string{"paris"}) {
 		t.Fatalf("locations %v %v", resp, err)
 	}

@@ -1,7 +1,6 @@
 package identity
 
 import (
-	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -57,10 +56,10 @@ func TestExtractErrors(t *testing.T) {
 
 func TestContext(t *testing.T) {
 	t.Parallel()
-	if _, ok := FromContext(context.Background()); ok {
+	if _, ok := FromContext(t.Context()); ok {
 		t.Fatal("empty context reported an identity")
 	}
-	ctx := WithIdentity(context.Background(), Identity{Username: "bob", token: "t"})
+	ctx := WithIdentity(t.Context(), Identity{Username: "bob", token: "t"})
 	id, ok := FromContext(ctx)
 	if !ok || id.Username != "bob" {
 		t.Fatalf("round trip failed: %v %v", id, ok)

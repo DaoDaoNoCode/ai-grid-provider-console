@@ -1,7 +1,6 @@
 package backend_test
 
 import (
-	"context"
 	"net/url"
 	"strings"
 	"testing"
@@ -47,7 +46,7 @@ func TestForwardsIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := client.Context(identity.WithIdentity(context.Background(), id))
+	ctx, cancel := client.Context(identity.WithIdentity(t.Context(), id))
 	defer cancel()
 	if _, err := client.Health.Ping(ctx, &aigridv1.PingRequest{Name: "bff"}); err != nil {
 		t.Fatal(err)
@@ -58,7 +57,7 @@ func TestForwardsIdentity(t *testing.T) {
 	}
 
 	// No identity: nothing forwarded.
-	ctx2, cancel2 := client.Context(context.Background())
+	ctx2, cancel2 := client.Context(t.Context())
 	defer cancel2()
 	if _, err := client.Health.Ping(ctx2, &aigridv1.PingRequest{}); err != nil {
 		t.Fatal(err)
@@ -81,7 +80,7 @@ func TestForwardsNonASCIIIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := client.Context(identity.WithIdentity(context.Background(), id))
+	ctx, cancel := client.Context(identity.WithIdentity(t.Context(), id))
 	defer cancel()
 	if _, err := client.Health.Ping(ctx, &aigridv1.PingRequest{Name: "bff"}); err != nil {
 		t.Fatalf("an accented identity must reach the backend: %v", err)

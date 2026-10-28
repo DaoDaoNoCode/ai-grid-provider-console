@@ -1,7 +1,6 @@
 package fakebackend
 
 import (
-	"context"
 	"log/slog"
 	"math"
 	"testing"
@@ -120,7 +119,7 @@ func TestFixtureClustersCarryGPUs(t *testing.T) {
 		"site-frankfurt-1": {8, 3, 2, "NVIDIA-L40S"},
 		"local-cluster":    {1, 1, 1, "NVIDIA-L4"},
 	} {
-		resp, err := s.GetManagedCluster(authed(context.Background()), &aigridv1.GetManagedClusterRequest{Name: name})
+		resp, err := s.GetManagedCluster(authed(t.Context()), &aigridv1.GetManagedClusterRequest{Name: name})
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
@@ -131,7 +130,7 @@ func TestFixtureClustersCarryGPUs(t *testing.T) {
 		}
 	}
 	for _, name := range []string{"site-lisbon-1", "site-berlin-1", "edge-lyon-2"} {
-		resp, err := s.GetManagedCluster(authed(context.Background()), &aigridv1.GetManagedClusterRequest{Name: name})
+		resp, err := s.GetManagedCluster(authed(t.Context()), &aigridv1.GetManagedClusterRequest{Name: name})
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
