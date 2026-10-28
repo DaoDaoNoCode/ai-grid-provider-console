@@ -144,7 +144,7 @@ build: ## Build the BFF binary and the frontend bundle
 	$(MAKE) -C bff build
 	cd frontend && pnpm build
 
-e2e: ## Browser tests against make dev-fake-poc (Playwright; first run: cd frontend && pnpm exec playwright install chromium)
+e2e: ## Browser tests on the production bundle (vite build, vite preview) against the fake stack of make dev-fake-poc (Playwright; first run: cd frontend && pnpm exec playwright install chromium)
 	cd frontend && pnpm e2e
 
 ##@ Packaging and deployment

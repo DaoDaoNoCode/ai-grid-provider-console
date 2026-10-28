@@ -25,19 +25,47 @@ export default defineConfig({
     navigationTimeout: 15_000,
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } } }],
-  webServer: {
-    // The PoC preset (mock/fixtures-poc): the specs use the PoC's site, model and pin names.
-    command: 'make -C .. dev-fake-poc',
-    // Vite answers before the BFF and the fake do, so wait on an API path that only they serve.
-    url: `${origin}/api/v1/clusters`,
-    reuseExistingServer: !process.env.CI,
-    timeout: 180_000,
-    env: {
-      FRONTEND_PORT: port,
-      PORT: bffPort,
-      BFF_URL: `http://127.0.0.1:${bffPort}`,
-      BACKEND_ADDRESS: `127.0.0.1:${backendPort}`,
-      FAKE_HUB_ADDRESS: `127.0.0.1:${hubPort}`,
+  // The stack of `make dev-fake-poc`, but with the frontend as it ships: the production bundle,
+  // served by `vite preview`, whose proxy is the dev server's (vite.config.ts), so the identity
+  // headers are the same. The dev server's unbundled modules and React's development build
+  // made pages load in seconds and reported errors React's production build does not.
+  // Playwright starts the three in parallel and fails the run at once if one exits before it answers.
+  // Outside CI it reuses whatever already answers on the ports, `make dev-fake-poc` included.
+  webServer: [
+    {
+      // The PoC preset (mock/fixtures-poc): the specs use the PoC's site, model and pin names.
+      command: 'make -C ../bff fake-backend',
+      port: Number(backendPort),
+      reuseExistingServer: !process.env.CI,
+      timeout: 180_000,
+      env: {
+        FIXTURES: '../mock/fixtures-poc',
+        BACKEND_ADDRESS: `127.0.0.1:${backendPort}`,
+        FAKE_HUB_ADDRESS: `127.0.0.1:${hubPort}`,
+      },
     },
-  },
+    {
+      command: 'make -C ../bff run-fake',
+      url: `http://127.0.0.1:${bffPort}/healthcheck`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 180_000,
+      env: {
+        PORT: bffPort,
+        BACKEND_ADDRESS: `127.0.0.1:${backendPort}`,
+        FAKE_HUB_ADDRESS: `127.0.0.1:${hubPort}`,
+      },
+    },
+    {
+      command: `pnpm exec vite build && pnpm exec vite preview --host 127.0.0.1 --port ${port} --strictPort`,
+      // An API path, so the run starts once the proxy reaches the BFF and the BFF the fake.
+      url: `${origin}/api/v1/clusters`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 180_000,
+      env: {
+        BFF_URL: `http://127.0.0.1:${bffPort}`,
+        AUTH_TOKEN: 'dev-token',
+        AUTH_USER: 'dev-user',
+      },
+    },
+  ],
 });

@@ -168,6 +168,7 @@ in `bff/` for the flags.
 make lint    # go vet, golangci-lint, buf lint on mock/proto; ESLint, Prettier check, tsc (fix formatting with: cd frontend && pnpm format); make check-generated-api
 make test    # go test -race (in-memory gRPC backend, proto drift test), vitest
 make build   # BFF binary and frontend bundle
+make e2e     # Playwright on the production bundle (vite build, then vite preview with the dev proxy) against the fake backend and BFF of make dev-fake-poc
 ```
 
 CI runs the same plus `make -C bff check-generated` (a fresh generation in a temporary
