@@ -26,6 +26,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -62,6 +63,9 @@ type Config struct {
 	// past it the relay answers 504, or cuts an answer already started. A browser that stops
 	// reading is the server's write timeout's to cut. Zero means 30 seconds.
 	Timeout time.Duration
+	// Logger gets what the proxy reports itself, such as an answer cut while it is copied; nil
+	// uses slog.Default.
+	Logger *slog.Logger
 }
 
 // Relay is an http.Handler for the paths under Prefix.
@@ -109,6 +113,10 @@ func New(cfg Config) (*Relay, error) {
 	}
 	transport.TLSClientConfig = tlsCfg
 
+	logger := cfg.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
 	r := &Relay{target: target, timeout: timeout}
 	r.readPaths, r.queryPaths = allowlist(cfg.Project)
 	r.proxy = &httputil.ReverseProxy{
@@ -116,6 +124,7 @@ func New(cfg Config) (*Relay, error) {
 		Transport:      transport,
 		ModifyResponse: modifyResponse,
 		ErrorHandler:   errorHandler,
+		ErrorLog:       slog.NewLogLogger(logger.Handler(), slog.LevelDebug),
 	}
 	return r, nil
 }

@@ -76,6 +76,7 @@ func run() error {
 			ServerName: cfg.PersesServerName,
 			Insecure:   cfg.PersesInsecure,
 			Timeout:    cfg.PersesTimeout,
+			Logger:     logger,
 		})
 		if err != nil {
 			return err
