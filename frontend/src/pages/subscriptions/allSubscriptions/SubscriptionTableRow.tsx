@@ -134,9 +134,7 @@ export const SubscriptionTableRow: React.FC<Props> = ({
         </Td>
         {expandCell('groups', 3, groups.length)}
         {expandCell('models', 4, subscription.modelRefs.length)}
-        <Td dataLabel={columns[5].label} className="console-number">
-          {subscription.priority ?? EMPTY_VALUE}
-        </Td>
+        <Td dataLabel={columns[5].label}>{subscription.priority ?? EMPTY_VALUE}</Td>
         <Td isActionCell>
           <ActionsColumn
             data-testid="subscription-actions"
