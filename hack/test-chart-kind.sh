@@ -16,7 +16,6 @@
 #
 #   hack/test-chart-kind.sh             # creates kind cluster ai-grid-chart and deletes it after
 #   KEEP_CLUSTER=1 hack/test-chart-kind.sh
-#   CONSOLE_IMAGE=<local image> hack/test-chart-kind.sh   # test that image instead of building one
 #
 # Needs docker, kind, kubectl, helm and openssl. The backend and proxy images are linux/amd64 only;
 # on an arm64 machine they run emulated. kubectl's current context is restored after kind creates
@@ -111,14 +110,9 @@ if [[ -z "${created}" ]]; then
   k -n default delete serviceaccount tester --ignore-not-found >/dev/null
 fi
 
-step "images: the console ${CONSOLE_IMAGE:-from this checkout}, ${BACKEND_IMAGE}, ${PROXY_IMAGE}"
-# Not retried: a build that fails fails the same way again. CI builds it with its layer cache and
-# passes CONSOLE_IMAGE.
-if [[ -n "${CONSOLE_IMAGE:-}" ]]; then
-  docker tag "${CONSOLE_IMAGE}" localhost/ai-grid-provider-console:kind
-else
-  docker build -q -t localhost/ai-grid-provider-console:kind --build-arg CONSOLE_VERSION=kind "${ROOT}" >/dev/null
-fi
+step "images: the console from this checkout, ${BACKEND_IMAGE}, ${PROXY_IMAGE}"
+# Not retried: a build that fails fails the same way again.
+docker build -q -t localhost/ai-grid-provider-console:kind --build-arg CONSOLE_VERSION=kind "${ROOT}" >/dev/null
 retry docker pull -q --platform linux/amd64 "${BACKEND_IMAGE}" >/dev/null
 retry docker pull -q --platform linux/amd64 "${PROXY_IMAGE}" >/dev/null
 # The node's own platform: the debug container runs natively.
