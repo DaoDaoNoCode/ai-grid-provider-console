@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -23,8 +24,10 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
+	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/types/dynamicpb"
 
 	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
@@ -625,6 +628,104 @@ func TestFakeImplementsEveryProtoMethod(t *testing.T) {
 			t.Errorf("intentionallyUnimplemented lists %s, which is not a method of the draft proto", m)
 		case !stubs[m]:
 			t.Errorf("intentionallyUnimplemented lists %s (%q) but the fake now answers it: remove the stale entry", m, reason)
+		}
+	}
+}
+
+// upstreamImage is the backend's real proto as vendored (hack/sync-upstream-proto.sh;
+// refreshed nightly), compiled by buf.
+const upstreamImage = "../../../mock/proto/upstream/image.binpb"
+
+// standIns maps every method of the backend's real ai_grid.v1 to the fake's
+// draft method that stands in for it, or to "" with the reason the fake has
+// none in upstreamWithoutStandIn. TestFakeStandsInForEveryUpstreamMethod
+// fails on an upstream method in neither, so a method the backend adds is
+// noticed the night the vendored copy picks it up.
+var standIns = map[string]string{
+	"/ai_grid.v1.AiGrid/Ping":          "/ai_grid.v1.AiGrid/Ping",
+	"/ai_grid.v1.Clusters/List":        "/ai_grid.v1.ManagedClusters/ListManagedClusters",
+	"/ai_grid.v1.Clusters/Get":         "/ai_grid.v1.ManagedClusters/GetManagedCluster",
+	"/ai_grid.v1.Clusters/Update":      "/ai_grid.v1.ManagedClusters/UpdateManagedCluster",
+	"/ai_grid.v1.Tenants/List":         "/ai_grid.v1.Tenants/ListTenants",
+	"/ai_grid.v1.Tenants/Get":          "/ai_grid.v1.Tenants/GetTenant",
+	"/ai_grid.v1.Tenants/Create":       "/ai_grid.v1.Tenants/CreateTenant",
+	"/ai_grid.v1.Tenants/Update":       "/ai_grid.v1.Tenants/UpdateTenant",
+	"/ai_grid.v1.Tenants/Delete":       "/ai_grid.v1.Tenants/DeleteTenant",
+	"/ai_grid.v1.Models/List":          "/ai_grid.v1.Models/ListModels",
+	"/ai_grid.v1.Models/Get":           "/ai_grid.v1.Models/GetModel",
+	"/ai_grid.v1.Models/Create":        "/ai_grid.v1.Models/CreateModel",
+	"/ai_grid.v1.Models/Update":        "/ai_grid.v1.Models/UpdateModel",
+	"/ai_grid.v1.Models/Delete":        "/ai_grid.v1.Models/DeleteModel",
+	"/ai_grid.v1.Models/ListLocations": "/ai_grid.v1.Models/ListLocations",
+	"/ai_grid.v1.Subscriptions/List":   "/ai_grid.v1.Subscriptions/ListSubscriptions",
+	"/ai_grid.v1.Subscriptions/Get":    "/ai_grid.v1.Subscriptions/GetSubscription",
+	"/ai_grid.v1.Subscriptions/Create": "/ai_grid.v1.Subscriptions/CreateSubscription",
+	"/ai_grid.v1.Subscriptions/Update": "/ai_grid.v1.Subscriptions/UpdateSubscription",
+	"/ai_grid.v1.Subscriptions/Delete": "/ai_grid.v1.Subscriptions/DeleteSubscription",
+}
+
+// upstreamWithoutStandIn lists the backend's methods the fake has no draft
+// method for, with the reason.
+var upstreamWithoutStandIn = map[string]string{
+	"/ai_grid.v1.Clusters/Create":     "the console doesn't create clusters (not in the relay's allowlist, AGENTS.md)",
+	"/ai_grid.v1.Clusters/Delete":     "the console doesn't delete clusters (not in the relay's allowlist, AGENTS.md)",
+	"/ai_grid.v1.Tenants/ListMembers": "the console never lists an organization's members (AGENTS.md, decided 2026-10-23)",
+}
+
+// TestFakeStandsInForEveryUpstreamMethod compares the fake with the
+// backend's real API, which TestFakeImplementsEveryProtoMethod (draft only)
+// and package protodrift (only the messages the BFF uses) don't: every
+// upstream method has a draft method the fake answers, or a listed reason
+// for having none, and neither list names a method the backend doesn't have.
+func TestFakeStandsInForEveryUpstreamMethod(t *testing.T) {
+	raw, err := os.ReadFile(upstreamImage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := &descriptorpb.FileDescriptorSet{}
+	if err := proto.Unmarshal(raw, set); err != nil {
+		t.Fatalf("parse %s: %v", upstreamImage, err)
+	}
+	upstream := map[string]bool{}
+	for _, f := range set.GetFile() {
+		if f.GetPackage() != "ai_grid.v1" {
+			continue
+		}
+		for _, svc := range f.GetService() {
+			for _, m := range svc.GetMethod() {
+				upstream[fmt.Sprintf("/%s.%s/%s", f.GetPackage(), svc.GetName(), m.GetName())] = true
+			}
+		}
+	}
+	if len(upstream) == 0 {
+		t.Fatalf("%s has no ai_grid.v1 services", upstreamImage)
+	}
+
+	s, err := New(&Fixtures{}, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := grpc.NewServer()
+	s.Register(srv)
+	missing, _ := unimplementedMethods(t, srv)
+
+	for _, m := range slices.Sorted(maps.Keys(upstream)) {
+		standIn, mapped := standIns[m]
+		_, without := upstreamWithoutStandIn[m]
+		switch {
+		case mapped && without:
+			t.Errorf("%s is in both standIns and upstreamWithoutStandIn", m)
+		case !mapped && !without:
+			t.Errorf("the backend has %s and the fake has no stand-in for it: map it in standIns, or list it in upstreamWithoutStandIn with the reason", m)
+		case mapped && slices.Contains(missing, standIn):
+			t.Errorf("%s stands in for the backend's %s but the fake answers it Unimplemented", standIn, m)
+		}
+	}
+	for _, list := range []map[string]string{standIns, upstreamWithoutStandIn} {
+		for m := range list {
+			if !upstream[m] {
+				t.Errorf("%s is listed but the backend's API (%s) has no such method: remove the stale entry", m, upstreamImage)
+			}
 		}
 	}
 }
