@@ -323,6 +323,7 @@ const wizardInput = (overrides: Partial<CreateModelRequest> = {}): CreateModelRe
   memory: '4Gi',
   gpuCount: 1,
   runtimeArgs: [],
+  baseRefs: [],
   locations: ['paris', 'madrid'],
   ...overrides,
 });
@@ -343,6 +344,15 @@ describe('toModelCreate', () => {
     expect(body.env).toEqual([{ name: 'VLLM_ADDITIONAL_ARGS', value: '--max-model-len=4096 --enforce-eager' }]);
   });
 
+  it("sends the model server's presets, and an empty image so the preset's image applies", () => {
+    const cpu = ['v3-6-0-kserve-config-llm-template-cpu'];
+    expect(toModelCreate(wizardInput({ baseRefs: cpu, runtimeImage: '' }), 'ns')).toMatchObject({
+      baseRefs: cpu,
+      runtimeImage: '',
+    });
+    expect(toModelCreate(wizardInput(), 'ns').baseRefs).toEqual([]);
+  });
+
   it('omits env without runtime arguments', () => {
     expect(toModelCreate(wizardInput(), 'ns')).not.toHaveProperty('env');
   });
@@ -361,6 +371,7 @@ describe('toModelCreate', () => {
         'cpu',
         'memory',
         'gpuCount',
+        'baseRefs',
         'env',
         'placement',
         'rollout',
@@ -424,6 +435,12 @@ describe('toManagedModel', () => {
   it('reads locations from placement.locations', () => {
     expect(byName('granite-8b-instruct').locations).toEqual(['paris']);
     expect(byName('codellama-13b').locations).toEqual([]);
+  });
+
+  it('reads the presets the model was deployed with, none when absent', () => {
+    const json = { name: 'm', namespace: 'ns', modelUri: 'hf://x', modelName: 'x' };
+    expect(toManagedModel({ ...json, baseRefs: ['custom-preset'] }).baseRefs).toEqual(['custom-preset']);
+    expect(toManagedModel(json).baseRefs).toEqual([]);
   });
 
   it('has no locations without a placement', () => {

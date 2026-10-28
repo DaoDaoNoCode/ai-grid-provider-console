@@ -40,6 +40,7 @@ const input: CreateModelRequest = {
   gpuCount: 0,
   locations: ['site1', 'site2'],
   runtimeArgs: [],
+  baseRefs: [],
 };
 
 /** A user the console couldn't load: the pages show, but without write actions. A viewer

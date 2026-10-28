@@ -231,6 +231,7 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
     memory,
     gpuCount: Number(gpuCount),
     runtimeArgs: filterRuntimeArgsForContainer(runtimeArgs.args),
+    baseRefs: [],
     locations,
   };
   const update = model

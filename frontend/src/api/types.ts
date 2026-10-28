@@ -276,6 +276,8 @@ export type CreateModelRequest = {
   memory: string;
   gpuCount: number;
   runtimeArgs: string[];
+  /** The model server's presets (spec.baseRefs); empty for KServe's default. */
+  baseRefs: string[];
   locations: string[];
 };
 
@@ -295,6 +297,7 @@ export type ApiModelCreate = {
   cpu: string;
   memory: string;
   gpuCount: number;
+  baseRefs: string[];
   env?: EnvVar[];
   placement: ConsolePlacement;
   rollout: { strategy: 'All' };
@@ -344,6 +347,8 @@ export type ApiModel = {
   modelUri: string;
   modelName: string;
   runtimeImage?: string;
+  /** The LLMInferenceServiceConfig presets the model is built on. */
+  baseRefs?: string[];
   replicas?: number;
   /** KEDA scaling; when set, `replicas` is absent and the model autoscales. */
   scaling?: unknown;
@@ -421,6 +426,8 @@ export type ManagedModel = {
   cpu?: string;
   memory?: string;
   gpuCount?: number;
+  /** The LLMInferenceServiceConfig presets the model is built on; empty for KServe's default. */
+  baseRefs: string[];
   env?: EnvVar[];
   /** The annotations as stored; an edit sends them back whole with its changes. */
   annotations?: Record<string, string>;
