@@ -4,7 +4,6 @@ import { App } from '../App';
 import type { Transport } from '@connectrpc/connect';
 import type { TransportWith } from '../api/connect/BackendProvider';
 import type { ConsoleService } from '../api/ConsoleService';
-import { routerProps } from '../router';
 import { transportFor, type ClusterSource } from './connectClusters';
 
 /** A promise the test settles by hand. */
@@ -29,7 +28,7 @@ export const renderAt = (
   transport: Transport | TransportWith = transportFor(service),
 ) =>
   render(
-    <MemoryRouter initialEntries={[path]} {...routerProps}>
+    <MemoryRouter initialEntries={[path]}>
       <App service={service} transport={transport} />
     </MemoryRouter>,
   );

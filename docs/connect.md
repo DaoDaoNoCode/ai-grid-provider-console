@@ -264,11 +264,12 @@ Each one only changes what a dashboard shows in those cases. The exit: drop the 
 syntax, perses/perses#2139). If the integration regresses before then, the fallback is a second
 Query runtime for Perses alone.
 
-The console also renders navigations without React transitions (`frontend/src/router.ts`),
-because React 18 can drop an update that lands mid-render, which left Perses's time-range menu's
-invisible popover blocking the page. That goes with React 19 and Perses 0.56 or later: Perses
-supports React 19 from perses/shared#390 and perses/plugins#889 (merged 2026-10-28, first in
-0.56.0-beta.0).
+Navigations render as React transitions, React Router's default. On React 18 the console turned
+them off (#74): React 18 can drop a class component's update that lands mid-render, which left
+Perses's time-range menu's invisible popover blocking the page. React 19 fixed that
+(facebook/react#24663), so the setting went with the move to React 19 and the Perses 0.56
+prereleases, the first with React 19 support (perses/shared#390, perses/plugins#889).
+`e2e/perses.spec.ts` picks a time range and clicks the page right after, on the real renderer.
 
 ## Testing
 
