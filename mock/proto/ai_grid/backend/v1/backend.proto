@@ -512,8 +512,8 @@ message ModelsDeleteRequest {
 
 message ModelsDeleteResponse {}
 
-message ModelsListLocationsRequest {}
+message ModelsListPlacementClustersRequest {}
 
-message ModelsListLocationsResponse {
-  repeated string locations = 1;
+message ModelsListPlacementClustersResponse {
+  repeated string clusters = 1;
 }

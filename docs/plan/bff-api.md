@@ -758,7 +758,8 @@ What the relay owns is the boundary:
   never its REST gateway, health or reflection on the same port: any other path under the
   prefix is 404 (`unimplemented`). The explicit allowlist permits the existing console
   operations: `AiGrid/Ping`, Clusters List/Get/Update, Tenants CRUD/List, Models CRUD/List
-  and ListLocations, and Subscriptions CRUD/List. Clusters Create/Delete, `Tenants/ListMembers`
+  and ListPlacementClusters, and Subscriptions CRUD/List. Clusters Create/Delete, the
+  deprecated `Models/ListLocations`, `Tenants/ListMembers`
   (the console never lists an organization's members: one organization is one tenant, and the
   provider must not see a company's internals), unknown services and future methods return 404
   until reviewed (AGENTS.md, "Known exceptions"). Only `POST` (Connect unary and streaming calls) and `GET`

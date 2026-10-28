@@ -141,15 +141,16 @@ func (c v1Models) DeleteModel(ctx context.Context, in *aigridv1.DeleteModelReque
 	return &aigridv1.DeleteModelResponse{}, nil
 }
 
-// ListLocations passes the backend's Models/ListLocations through: the names
-// of the members a model can run on (provisioned, Available, role inference
-// or combined), which the console's placement selects by.
+// ListLocations answers the backend's Models/ListPlacementClusters (backend
+// PR 41, which deprecates its ListLocations): the names of the members a model
+// can run on (provisioned, Available, role inference or combined), the values
+// a placement's `name In [...]` takes.
 func (c v1Models) ListLocations(ctx context.Context, _ *aigridv1.ListLocationsRequest, opts ...grpc.CallOption) (*aigridv1.ListLocationsResponse, error) {
-	resp := &backendv1.ModelsListLocationsResponse{}
-	if err := c.conn.Invoke(ctx, methodModelsListLocations, &backendv1.ModelsListLocationsRequest{}, resp, opts...); err != nil {
+	resp := &backendv1.ModelsListPlacementClustersResponse{}
+	if err := c.conn.Invoke(ctx, methodModelsListPlacementClusters, &backendv1.ModelsListPlacementClustersRequest{}, resp, opts...); err != nil {
 		return nil, err
 	}
-	return &aigridv1.ListLocationsResponse{Locations: append([]string{}, resp.GetLocations()...)}, nil
+	return &aigridv1.ListLocationsResponse{Locations: append([]string{}, resp.GetClusters()...)}, nil
 }
 
 // inNamespace answers the draft's NotFound for a model outside the configured

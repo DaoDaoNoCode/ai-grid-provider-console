@@ -668,11 +668,13 @@ var standIns = map[string]string{
 	"/ai_grid.v1.Models/Update":        "/ai_grid.v1.Models/UpdateModel",
 	"/ai_grid.v1.Models/Delete":        "/ai_grid.v1.Models/DeleteModel",
 	"/ai_grid.v1.Models/ListLocations": "/ai_grid.v1.Models/ListLocations",
-	"/ai_grid.v1.Subscriptions/List":   "/ai_grid.v1.Subscriptions/ListSubscriptions",
-	"/ai_grid.v1.Subscriptions/Get":    "/ai_grid.v1.Subscriptions/GetSubscription",
-	"/ai_grid.v1.Subscriptions/Create": "/ai_grid.v1.Subscriptions/CreateSubscription",
-	"/ai_grid.v1.Subscriptions/Update": "/ai_grid.v1.Subscriptions/UpdateSubscription",
-	"/ai_grid.v1.Subscriptions/Delete": "/ai_grid.v1.Subscriptions/DeleteSubscription",
+	// The draft's ListLocations answers what ListPlacementClusters does (the clusters a model can be placed on).
+	"/ai_grid.v1.Models/ListPlacementClusters": "/ai_grid.v1.Models/ListLocations",
+	"/ai_grid.v1.Subscriptions/List":           "/ai_grid.v1.Subscriptions/ListSubscriptions",
+	"/ai_grid.v1.Subscriptions/Get":            "/ai_grid.v1.Subscriptions/GetSubscription",
+	"/ai_grid.v1.Subscriptions/Create":         "/ai_grid.v1.Subscriptions/CreateSubscription",
+	"/ai_grid.v1.Subscriptions/Update":         "/ai_grid.v1.Subscriptions/UpdateSubscription",
+	"/ai_grid.v1.Subscriptions/Delete":         "/ai_grid.v1.Subscriptions/DeleteSubscription",
 }
 
 // upstreamWithoutStandIn lists the backend's methods the fake has no draft

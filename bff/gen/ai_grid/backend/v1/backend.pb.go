@@ -4992,26 +4992,26 @@ func (*ModelsDeleteResponse) Descriptor() ([]byte, []int) {
 	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{80}
 }
 
-type ModelsListLocationsRequest struct {
+type ModelsListPlacementClustersRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ModelsListLocationsRequest) Reset() {
-	*x = ModelsListLocationsRequest{}
+func (x *ModelsListPlacementClustersRequest) Reset() {
+	*x = ModelsListPlacementClustersRequest{}
 	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ModelsListLocationsRequest) String() string {
+func (x *ModelsListPlacementClustersRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ModelsListLocationsRequest) ProtoMessage() {}
+func (*ModelsListPlacementClustersRequest) ProtoMessage() {}
 
-func (x *ModelsListLocationsRequest) ProtoReflect() protoreflect.Message {
+func (x *ModelsListPlacementClustersRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -5023,32 +5023,32 @@ func (x *ModelsListLocationsRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ModelsListLocationsRequest.ProtoReflect.Descriptor instead.
-func (*ModelsListLocationsRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use ModelsListPlacementClustersRequest.ProtoReflect.Descriptor instead.
+func (*ModelsListPlacementClustersRequest) Descriptor() ([]byte, []int) {
 	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{81}
 }
 
-type ModelsListLocationsResponse struct {
+type ModelsListPlacementClustersResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Locations     []string               `protobuf:"bytes,1,rep,name=locations,proto3" json:"locations,omitempty"`
+	Clusters      []string               `protobuf:"bytes,1,rep,name=clusters,proto3" json:"clusters,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ModelsListLocationsResponse) Reset() {
-	*x = ModelsListLocationsResponse{}
+func (x *ModelsListPlacementClustersResponse) Reset() {
+	*x = ModelsListPlacementClustersResponse{}
 	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ModelsListLocationsResponse) String() string {
+func (x *ModelsListPlacementClustersResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ModelsListLocationsResponse) ProtoMessage() {}
+func (*ModelsListPlacementClustersResponse) ProtoMessage() {}
 
-func (x *ModelsListLocationsResponse) ProtoReflect() protoreflect.Message {
+func (x *ModelsListPlacementClustersResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -5060,14 +5060,14 @@ func (x *ModelsListLocationsResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ModelsListLocationsResponse.ProtoReflect.Descriptor instead.
-func (*ModelsListLocationsResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use ModelsListPlacementClustersResponse.ProtoReflect.Descriptor instead.
+func (*ModelsListPlacementClustersResponse) Descriptor() ([]byte, []int) {
 	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{82}
 }
 
-func (x *ModelsListLocationsResponse) GetLocations() []string {
+func (x *ModelsListPlacementClustersResponse) GetClusters() []string {
 	if x != nil {
-		return x.Locations
+		return x.Clusters
 	}
 	return nil
 }
@@ -5472,10 +5472,10 @@ const file_ai_grid_backend_v1_backend_proto_rawDesc = "" +
 	"\x13ModelsDeleteRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12)\n" +
 	"\x10resource_version\x18\x02 \x01(\x05R\x0fresourceVersion\"\x16\n" +
-	"\x14ModelsDeleteResponse\"\x1c\n" +
-	"\x1aModelsListLocationsRequest\";\n" +
-	"\x1bModelsListLocationsResponse\x12\x1c\n" +
-	"\tlocations\x18\x01 \x03(\tR\tlocations*j\n" +
+	"\x14ModelsDeleteResponse\"$\n" +
+	"\"ModelsListPlacementClustersRequest\"A\n" +
+	"#ModelsListPlacementClustersResponse\x12\x1a\n" +
+	"\bclusters\x18\x01 \x03(\tR\bclusters*j\n" +
 	"\x0fConditionStatus\x12 \n" +
 	"\x1cCONDITION_STATUS_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15CONDITION_STATUS_TRUE\x10\x01\x12\x1a\n" +
@@ -5507,103 +5507,103 @@ func file_ai_grid_backend_v1_backend_proto_rawDescGZIP() []byte {
 var file_ai_grid_backend_v1_backend_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
 var file_ai_grid_backend_v1_backend_proto_msgTypes = make([]protoimpl.MessageInfo, 92)
 var file_ai_grid_backend_v1_backend_proto_goTypes = []any{
-	(ConditionStatus)(0),                  // 0: ai_grid.backend.v1.ConditionStatus
-	(ModelRolloutStrategy)(0),             // 1: ai_grid.backend.v1.ModelRolloutStrategy
-	(ModelPhase)(0),                       // 2: ai_grid.backend.v1.ModelPhase
-	(*Metadata)(nil),                      // 3: ai_grid.backend.v1.Metadata
-	(*ManagedCluster)(nil),                // 4: ai_grid.backend.v1.ManagedCluster
-	(*ManagedClusterSpec)(nil),            // 5: ai_grid.backend.v1.ManagedClusterSpec
-	(*ManagedClusterStatus)(nil),          // 6: ai_grid.backend.v1.ManagedClusterStatus
-	(*ClusterGPUs)(nil),                   // 7: ai_grid.backend.v1.ClusterGPUs
-	(*GPUConfiguration)(nil),              // 8: ai_grid.backend.v1.GPUConfiguration
-	(*GPUSharing)(nil),                    // 9: ai_grid.backend.v1.GPUSharing
-	(*GPUNode)(nil),                       // 10: ai_grid.backend.v1.GPUNode
-	(*ManagedClusterCondition)(nil),       // 11: ai_grid.backend.v1.ManagedClusterCondition
-	(*ManagedClusterClaim)(nil),           // 12: ai_grid.backend.v1.ManagedClusterClaim
-	(*ClustersListRequest)(nil),           // 13: ai_grid.backend.v1.ClustersListRequest
-	(*ClustersListResponse)(nil),          // 14: ai_grid.backend.v1.ClustersListResponse
-	(*ClustersGetRequest)(nil),            // 15: ai_grid.backend.v1.ClustersGetRequest
-	(*ClustersGetResponse)(nil),           // 16: ai_grid.backend.v1.ClustersGetResponse
-	(*ClustersUpdateRequest)(nil),         // 17: ai_grid.backend.v1.ClustersUpdateRequest
-	(*ClustersUpdateResponse)(nil),        // 18: ai_grid.backend.v1.ClustersUpdateResponse
-	(*Tenant)(nil),                        // 19: ai_grid.backend.v1.Tenant
-	(*TenantSpec)(nil),                    // 20: ai_grid.backend.v1.TenantSpec
-	(*TenantStatus)(nil),                  // 21: ai_grid.backend.v1.TenantStatus
-	(*TenantsListRequest)(nil),            // 22: ai_grid.backend.v1.TenantsListRequest
-	(*TenantsListResponse)(nil),           // 23: ai_grid.backend.v1.TenantsListResponse
-	(*TenantsGetRequest)(nil),             // 24: ai_grid.backend.v1.TenantsGetRequest
-	(*TenantsGetResponse)(nil),            // 25: ai_grid.backend.v1.TenantsGetResponse
-	(*TenantsCreateRequest)(nil),          // 26: ai_grid.backend.v1.TenantsCreateRequest
-	(*TenantsCreateResponse)(nil),         // 27: ai_grid.backend.v1.TenantsCreateResponse
-	(*TenantsUpdateRequest)(nil),          // 28: ai_grid.backend.v1.TenantsUpdateRequest
-	(*TenantsUpdateResponse)(nil),         // 29: ai_grid.backend.v1.TenantsUpdateResponse
-	(*TenantsDeleteRequest)(nil),          // 30: ai_grid.backend.v1.TenantsDeleteRequest
-	(*TenantsDeleteResponse)(nil),         // 31: ai_grid.backend.v1.TenantsDeleteResponse
-	(*Condition)(nil),                     // 32: ai_grid.backend.v1.Condition
-	(*Subscription)(nil),                  // 33: ai_grid.backend.v1.Subscription
-	(*SubscriptionSpec)(nil),              // 34: ai_grid.backend.v1.SubscriptionSpec
-	(*SubscriptionOrganization)(nil),      // 35: ai_grid.backend.v1.SubscriptionOrganization
-	(*SubscriptionOwner)(nil),             // 36: ai_grid.backend.v1.SubscriptionOwner
-	(*SubscriptionModelRef)(nil),          // 37: ai_grid.backend.v1.SubscriptionModelRef
-	(*TokenRateLimit)(nil),                // 38: ai_grid.backend.v1.TokenRateLimit
-	(*BillingRate)(nil),                   // 39: ai_grid.backend.v1.BillingRate
-	(*TokenMetadata)(nil),                 // 40: ai_grid.backend.v1.TokenMetadata
-	(*GuardrailAttachment)(nil),           // 41: ai_grid.backend.v1.GuardrailAttachment
-	(*SubscriptionStatus)(nil),            // 42: ai_grid.backend.v1.SubscriptionStatus
-	(*ResourceRefStatus)(nil),             // 43: ai_grid.backend.v1.ResourceRefStatus
-	(*TokenRateLimitStatus)(nil),          // 44: ai_grid.backend.v1.TokenRateLimitStatus
-	(*AuthPolicy)(nil),                    // 45: ai_grid.backend.v1.AuthPolicy
-	(*AuthPolicyModelRef)(nil),            // 46: ai_grid.backend.v1.AuthPolicyModelRef
-	(*ModelRegistration)(nil),             // 47: ai_grid.backend.v1.ModelRegistration
-	(*SubscriptionsListRequest)(nil),      // 48: ai_grid.backend.v1.SubscriptionsListRequest
-	(*SubscriptionsListResponse)(nil),     // 49: ai_grid.backend.v1.SubscriptionsListResponse
-	(*SubscriptionsGetRequest)(nil),       // 50: ai_grid.backend.v1.SubscriptionsGetRequest
-	(*SubscriptionsGetResponse)(nil),      // 51: ai_grid.backend.v1.SubscriptionsGetResponse
-	(*SubscriptionsCreateRequest)(nil),    // 52: ai_grid.backend.v1.SubscriptionsCreateRequest
-	(*SubscriptionsCreateResponse)(nil),   // 53: ai_grid.backend.v1.SubscriptionsCreateResponse
-	(*SubscriptionsUpdateRequest)(nil),    // 54: ai_grid.backend.v1.SubscriptionsUpdateRequest
-	(*SubscriptionsUpdateResponse)(nil),   // 55: ai_grid.backend.v1.SubscriptionsUpdateResponse
-	(*SubscriptionsDeleteRequest)(nil),    // 56: ai_grid.backend.v1.SubscriptionsDeleteRequest
-	(*SubscriptionsDeleteResponse)(nil),   // 57: ai_grid.backend.v1.SubscriptionsDeleteResponse
-	(*Model)(nil),                         // 58: ai_grid.backend.v1.Model
-	(*ModelSpec)(nil),                     // 59: ai_grid.backend.v1.ModelSpec
-	(*ModelSource)(nil),                   // 60: ai_grid.backend.v1.ModelSource
-	(*ModelRouter)(nil),                   // 61: ai_grid.backend.v1.ModelRouter
-	(*ModelGatewayRef)(nil),               // 62: ai_grid.backend.v1.ModelGatewayRef
-	(*ModelContainer)(nil),                // 63: ai_grid.backend.v1.ModelContainer
-	(*ModelEnvVar)(nil),                   // 64: ai_grid.backend.v1.ModelEnvVar
-	(*ModelScaling)(nil),                  // 65: ai_grid.backend.v1.ModelScaling
-	(*ModelKedaTrigger)(nil),              // 66: ai_grid.backend.v1.ModelKedaTrigger
-	(*ModelPlacement)(nil),                // 67: ai_grid.backend.v1.ModelPlacement
-	(*ModelLabelSelector)(nil),            // 68: ai_grid.backend.v1.ModelLabelSelector
-	(*ModelLabelSelectorRequirement)(nil), // 69: ai_grid.backend.v1.ModelLabelSelectorRequirement
-	(*ModelRollout)(nil),                  // 70: ai_grid.backend.v1.ModelRollout
-	(*ModelStatus)(nil),                   // 71: ai_grid.backend.v1.ModelStatus
-	(*ModelPlacementStatus)(nil),          // 72: ai_grid.backend.v1.ModelPlacementStatus
-	(*ModelRolloutStatus)(nil),            // 73: ai_grid.backend.v1.ModelRolloutStatus
-	(*ModelsListRequest)(nil),             // 74: ai_grid.backend.v1.ModelsListRequest
-	(*ModelsListResponse)(nil),            // 75: ai_grid.backend.v1.ModelsListResponse
-	(*ModelsGetRequest)(nil),              // 76: ai_grid.backend.v1.ModelsGetRequest
-	(*ModelsGetResponse)(nil),             // 77: ai_grid.backend.v1.ModelsGetResponse
-	(*ModelsCreateRequest)(nil),           // 78: ai_grid.backend.v1.ModelsCreateRequest
-	(*ModelsCreateResponse)(nil),          // 79: ai_grid.backend.v1.ModelsCreateResponse
-	(*ModelsUpdateRequest)(nil),           // 80: ai_grid.backend.v1.ModelsUpdateRequest
-	(*ModelsUpdateResponse)(nil),          // 81: ai_grid.backend.v1.ModelsUpdateResponse
-	(*ModelsDeleteRequest)(nil),           // 82: ai_grid.backend.v1.ModelsDeleteRequest
-	(*ModelsDeleteResponse)(nil),          // 83: ai_grid.backend.v1.ModelsDeleteResponse
-	(*ModelsListLocationsRequest)(nil),    // 84: ai_grid.backend.v1.ModelsListLocationsRequest
-	(*ModelsListLocationsResponse)(nil),   // 85: ai_grid.backend.v1.ModelsListLocationsResponse
-	nil,                                   // 86: ai_grid.backend.v1.Metadata.LabelsEntry
-	nil,                                   // 87: ai_grid.backend.v1.Metadata.AnnotationsEntry
-	nil,                                   // 88: ai_grid.backend.v1.ManagedClusterStatus.CapacityEntry
-	nil,                                   // 89: ai_grid.backend.v1.ManagedClusterStatus.AllocatableEntry
-	nil,                                   // 90: ai_grid.backend.v1.TokenMetadata.LabelsEntry
-	nil,                                   // 91: ai_grid.backend.v1.ModelContainer.RequestsEntry
-	nil,                                   // 92: ai_grid.backend.v1.ModelContainer.LimitsEntry
-	nil,                                   // 93: ai_grid.backend.v1.ModelKedaTrigger.MetadataEntry
-	nil,                                   // 94: ai_grid.backend.v1.ModelLabelSelector.MatchLabelsEntry
-	(*timestamppb.Timestamp)(nil),         // 95: google.protobuf.Timestamp
-	(*fieldmaskpb.FieldMask)(nil),         // 96: google.protobuf.FieldMask
+	(ConditionStatus)(0),                        // 0: ai_grid.backend.v1.ConditionStatus
+	(ModelRolloutStrategy)(0),                   // 1: ai_grid.backend.v1.ModelRolloutStrategy
+	(ModelPhase)(0),                             // 2: ai_grid.backend.v1.ModelPhase
+	(*Metadata)(nil),                            // 3: ai_grid.backend.v1.Metadata
+	(*ManagedCluster)(nil),                      // 4: ai_grid.backend.v1.ManagedCluster
+	(*ManagedClusterSpec)(nil),                  // 5: ai_grid.backend.v1.ManagedClusterSpec
+	(*ManagedClusterStatus)(nil),                // 6: ai_grid.backend.v1.ManagedClusterStatus
+	(*ClusterGPUs)(nil),                         // 7: ai_grid.backend.v1.ClusterGPUs
+	(*GPUConfiguration)(nil),                    // 8: ai_grid.backend.v1.GPUConfiguration
+	(*GPUSharing)(nil),                          // 9: ai_grid.backend.v1.GPUSharing
+	(*GPUNode)(nil),                             // 10: ai_grid.backend.v1.GPUNode
+	(*ManagedClusterCondition)(nil),             // 11: ai_grid.backend.v1.ManagedClusterCondition
+	(*ManagedClusterClaim)(nil),                 // 12: ai_grid.backend.v1.ManagedClusterClaim
+	(*ClustersListRequest)(nil),                 // 13: ai_grid.backend.v1.ClustersListRequest
+	(*ClustersListResponse)(nil),                // 14: ai_grid.backend.v1.ClustersListResponse
+	(*ClustersGetRequest)(nil),                  // 15: ai_grid.backend.v1.ClustersGetRequest
+	(*ClustersGetResponse)(nil),                 // 16: ai_grid.backend.v1.ClustersGetResponse
+	(*ClustersUpdateRequest)(nil),               // 17: ai_grid.backend.v1.ClustersUpdateRequest
+	(*ClustersUpdateResponse)(nil),              // 18: ai_grid.backend.v1.ClustersUpdateResponse
+	(*Tenant)(nil),                              // 19: ai_grid.backend.v1.Tenant
+	(*TenantSpec)(nil),                          // 20: ai_grid.backend.v1.TenantSpec
+	(*TenantStatus)(nil),                        // 21: ai_grid.backend.v1.TenantStatus
+	(*TenantsListRequest)(nil),                  // 22: ai_grid.backend.v1.TenantsListRequest
+	(*TenantsListResponse)(nil),                 // 23: ai_grid.backend.v1.TenantsListResponse
+	(*TenantsGetRequest)(nil),                   // 24: ai_grid.backend.v1.TenantsGetRequest
+	(*TenantsGetResponse)(nil),                  // 25: ai_grid.backend.v1.TenantsGetResponse
+	(*TenantsCreateRequest)(nil),                // 26: ai_grid.backend.v1.TenantsCreateRequest
+	(*TenantsCreateResponse)(nil),               // 27: ai_grid.backend.v1.TenantsCreateResponse
+	(*TenantsUpdateRequest)(nil),                // 28: ai_grid.backend.v1.TenantsUpdateRequest
+	(*TenantsUpdateResponse)(nil),               // 29: ai_grid.backend.v1.TenantsUpdateResponse
+	(*TenantsDeleteRequest)(nil),                // 30: ai_grid.backend.v1.TenantsDeleteRequest
+	(*TenantsDeleteResponse)(nil),               // 31: ai_grid.backend.v1.TenantsDeleteResponse
+	(*Condition)(nil),                           // 32: ai_grid.backend.v1.Condition
+	(*Subscription)(nil),                        // 33: ai_grid.backend.v1.Subscription
+	(*SubscriptionSpec)(nil),                    // 34: ai_grid.backend.v1.SubscriptionSpec
+	(*SubscriptionOrganization)(nil),            // 35: ai_grid.backend.v1.SubscriptionOrganization
+	(*SubscriptionOwner)(nil),                   // 36: ai_grid.backend.v1.SubscriptionOwner
+	(*SubscriptionModelRef)(nil),                // 37: ai_grid.backend.v1.SubscriptionModelRef
+	(*TokenRateLimit)(nil),                      // 38: ai_grid.backend.v1.TokenRateLimit
+	(*BillingRate)(nil),                         // 39: ai_grid.backend.v1.BillingRate
+	(*TokenMetadata)(nil),                       // 40: ai_grid.backend.v1.TokenMetadata
+	(*GuardrailAttachment)(nil),                 // 41: ai_grid.backend.v1.GuardrailAttachment
+	(*SubscriptionStatus)(nil),                  // 42: ai_grid.backend.v1.SubscriptionStatus
+	(*ResourceRefStatus)(nil),                   // 43: ai_grid.backend.v1.ResourceRefStatus
+	(*TokenRateLimitStatus)(nil),                // 44: ai_grid.backend.v1.TokenRateLimitStatus
+	(*AuthPolicy)(nil),                          // 45: ai_grid.backend.v1.AuthPolicy
+	(*AuthPolicyModelRef)(nil),                  // 46: ai_grid.backend.v1.AuthPolicyModelRef
+	(*ModelRegistration)(nil),                   // 47: ai_grid.backend.v1.ModelRegistration
+	(*SubscriptionsListRequest)(nil),            // 48: ai_grid.backend.v1.SubscriptionsListRequest
+	(*SubscriptionsListResponse)(nil),           // 49: ai_grid.backend.v1.SubscriptionsListResponse
+	(*SubscriptionsGetRequest)(nil),             // 50: ai_grid.backend.v1.SubscriptionsGetRequest
+	(*SubscriptionsGetResponse)(nil),            // 51: ai_grid.backend.v1.SubscriptionsGetResponse
+	(*SubscriptionsCreateRequest)(nil),          // 52: ai_grid.backend.v1.SubscriptionsCreateRequest
+	(*SubscriptionsCreateResponse)(nil),         // 53: ai_grid.backend.v1.SubscriptionsCreateResponse
+	(*SubscriptionsUpdateRequest)(nil),          // 54: ai_grid.backend.v1.SubscriptionsUpdateRequest
+	(*SubscriptionsUpdateResponse)(nil),         // 55: ai_grid.backend.v1.SubscriptionsUpdateResponse
+	(*SubscriptionsDeleteRequest)(nil),          // 56: ai_grid.backend.v1.SubscriptionsDeleteRequest
+	(*SubscriptionsDeleteResponse)(nil),         // 57: ai_grid.backend.v1.SubscriptionsDeleteResponse
+	(*Model)(nil),                               // 58: ai_grid.backend.v1.Model
+	(*ModelSpec)(nil),                           // 59: ai_grid.backend.v1.ModelSpec
+	(*ModelSource)(nil),                         // 60: ai_grid.backend.v1.ModelSource
+	(*ModelRouter)(nil),                         // 61: ai_grid.backend.v1.ModelRouter
+	(*ModelGatewayRef)(nil),                     // 62: ai_grid.backend.v1.ModelGatewayRef
+	(*ModelContainer)(nil),                      // 63: ai_grid.backend.v1.ModelContainer
+	(*ModelEnvVar)(nil),                         // 64: ai_grid.backend.v1.ModelEnvVar
+	(*ModelScaling)(nil),                        // 65: ai_grid.backend.v1.ModelScaling
+	(*ModelKedaTrigger)(nil),                    // 66: ai_grid.backend.v1.ModelKedaTrigger
+	(*ModelPlacement)(nil),                      // 67: ai_grid.backend.v1.ModelPlacement
+	(*ModelLabelSelector)(nil),                  // 68: ai_grid.backend.v1.ModelLabelSelector
+	(*ModelLabelSelectorRequirement)(nil),       // 69: ai_grid.backend.v1.ModelLabelSelectorRequirement
+	(*ModelRollout)(nil),                        // 70: ai_grid.backend.v1.ModelRollout
+	(*ModelStatus)(nil),                         // 71: ai_grid.backend.v1.ModelStatus
+	(*ModelPlacementStatus)(nil),                // 72: ai_grid.backend.v1.ModelPlacementStatus
+	(*ModelRolloutStatus)(nil),                  // 73: ai_grid.backend.v1.ModelRolloutStatus
+	(*ModelsListRequest)(nil),                   // 74: ai_grid.backend.v1.ModelsListRequest
+	(*ModelsListResponse)(nil),                  // 75: ai_grid.backend.v1.ModelsListResponse
+	(*ModelsGetRequest)(nil),                    // 76: ai_grid.backend.v1.ModelsGetRequest
+	(*ModelsGetResponse)(nil),                   // 77: ai_grid.backend.v1.ModelsGetResponse
+	(*ModelsCreateRequest)(nil),                 // 78: ai_grid.backend.v1.ModelsCreateRequest
+	(*ModelsCreateResponse)(nil),                // 79: ai_grid.backend.v1.ModelsCreateResponse
+	(*ModelsUpdateRequest)(nil),                 // 80: ai_grid.backend.v1.ModelsUpdateRequest
+	(*ModelsUpdateResponse)(nil),                // 81: ai_grid.backend.v1.ModelsUpdateResponse
+	(*ModelsDeleteRequest)(nil),                 // 82: ai_grid.backend.v1.ModelsDeleteRequest
+	(*ModelsDeleteResponse)(nil),                // 83: ai_grid.backend.v1.ModelsDeleteResponse
+	(*ModelsListPlacementClustersRequest)(nil),  // 84: ai_grid.backend.v1.ModelsListPlacementClustersRequest
+	(*ModelsListPlacementClustersResponse)(nil), // 85: ai_grid.backend.v1.ModelsListPlacementClustersResponse
+	nil,                           // 86: ai_grid.backend.v1.Metadata.LabelsEntry
+	nil,                           // 87: ai_grid.backend.v1.Metadata.AnnotationsEntry
+	nil,                           // 88: ai_grid.backend.v1.ManagedClusterStatus.CapacityEntry
+	nil,                           // 89: ai_grid.backend.v1.ManagedClusterStatus.AllocatableEntry
+	nil,                           // 90: ai_grid.backend.v1.TokenMetadata.LabelsEntry
+	nil,                           // 91: ai_grid.backend.v1.ModelContainer.RequestsEntry
+	nil,                           // 92: ai_grid.backend.v1.ModelContainer.LimitsEntry
+	nil,                           // 93: ai_grid.backend.v1.ModelKedaTrigger.MetadataEntry
+	nil,                           // 94: ai_grid.backend.v1.ModelLabelSelector.MatchLabelsEntry
+	(*timestamppb.Timestamp)(nil), // 95: google.protobuf.Timestamp
+	(*fieldmaskpb.FieldMask)(nil), // 96: google.protobuf.FieldMask
 }
 var file_ai_grid_backend_v1_backend_proto_depIdxs = []int32{
 	95, // 0: ai_grid.backend.v1.Metadata.creation_timestamp:type_name -> google.protobuf.Timestamp

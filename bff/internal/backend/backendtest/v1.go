@@ -67,7 +67,7 @@ type V1 struct {
 	Subscriptions      []*backendv1.Subscription
 	AuthPolicies       []*backendv1.AuthPolicy
 	ModelRegistrations []*backendv1.ModelRegistration
-	// Locations is what Models/ListLocations answers.
+	// Locations is what Models/ListPlacementClusters answers (its clusters).
 	Locations []string
 	// Err makes every call fail with this status.
 	Err error
@@ -119,7 +119,7 @@ func StartV1(t *testing.T, v *V1) *backend.Client {
 		unary(v, "Create", v.createModel),
 		unary(v, "Update", v.updateModel),
 		unary(v, "Delete", v.deleteModel),
-		unary(v, "ListLocations", v.listLocations),
+		unary(v, "ListPlacementClusters", v.listPlacementClusters),
 	}}, v)
 	srv.RegisterService(&grpc.ServiceDesc{ServiceName: "ai_grid.v1.Subscriptions", HandlerType: (*any)(nil), Methods: []grpc.MethodDesc{
 		unary(v, "List", v.listSubscriptions),
@@ -446,8 +446,8 @@ func (v *V1) deleteModel(in *backendv1.ModelsDeleteRequest) (*backendv1.ModelsDe
 	return &backendv1.ModelsDeleteResponse{}, nil
 }
 
-func (v *V1) listLocations(*backendv1.ModelsListLocationsRequest) (*backendv1.ModelsListLocationsResponse, error) {
-	return &backendv1.ModelsListLocationsResponse{Locations: slices.Clone(v.Locations)}, nil
+func (v *V1) listPlacementClusters(*backendv1.ModelsListPlacementClustersRequest) (*backendv1.ModelsListPlacementClustersResponse, error) {
+	return &backendv1.ModelsListPlacementClustersResponse{Clusters: slices.Clone(v.Locations)}, nil
 }
 
 func (v *V1) listSubscriptions(*backendv1.SubscriptionsListRequest) (*backendv1.SubscriptionsListResponse, error) {

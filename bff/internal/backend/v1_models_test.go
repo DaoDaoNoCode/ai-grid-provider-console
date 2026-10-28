@@ -192,13 +192,13 @@ func TestV1ModelOtherPlacement(t *testing.T) {
 	}
 }
 
-// ListLocations passes the backend's Models/ListLocations through: the names of
+// ListLocations calls the backend's Models/ListPlacementClusters: the names of
 // the provisioned, Available inference and combined members, in its order.
 func TestV1ListLocations(t *testing.T) {
 	t.Parallel()
-	conn := &recordingConn{reply: &backendv1.ModelsListLocationsResponse{Locations: []string{"site-a", "site-b"}}}
+	conn := &recordingConn{reply: &backendv1.ModelsListPlacementClustersResponse{Clusters: []string{"site-a", "site-b"}}}
 	got, err := v1Models{conn, modelsNS}.ListLocations(t.Context(), &aigridv1.ListLocationsRequest{})
-	if err != nil || conn.method != methodModelsListLocations {
+	if err != nil || conn.method != methodModelsListPlacementClusters {
 		t.Fatalf("ListLocations sent %s: %v", conn.method, err)
 	}
 	if want := []string{"site-a", "site-b"}; !slices.Equal(got.GetLocations(), want) {
@@ -206,7 +206,7 @@ func TestV1ListLocations(t *testing.T) {
 	}
 
 	// None: an empty list, not null.
-	conn = &recordingConn{reply: &backendv1.ModelsListLocationsResponse{}}
+	conn = &recordingConn{reply: &backendv1.ModelsListPlacementClustersResponse{}}
 	if got, err := (v1Models{conn, modelsNS}).ListLocations(t.Context(), &aigridv1.ListLocationsRequest{}); err != nil || got.GetLocations() == nil {
 		t.Errorf("ListLocations with none got %v, %v; want an empty list", got.GetLocations(), err)
 	}
