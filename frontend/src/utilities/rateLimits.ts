@@ -20,14 +20,14 @@ const UNIT_TO_WINDOW_SUFFIX: Record<RateLimit['unit'], string> = {
   hour: 'h',
 };
 
-const HUMAN_UNIT_TO_RATE_LIMIT: Record<string, RateLimit['unit']> = {
-  second: 'second',
-  seconds: 'second',
-  minute: 'minute',
-  minutes: 'minute',
-  hour: 'hour',
-  hours: 'hour',
-};
+/**
+ * The windows a MaaSSubscription accepts: a whole number from 1 to 9999 and one unit, s, m or h
+ * ("Days (d) are not supported; use hours instead"). This is the CRD's pattern for
+ * spec.modelRefs[].tokenRateLimits[].window (opendatahub-io/models-as-a-service
+ * maas-controller/api/maas/v1alpha1/maassubscription_types.go at 4d71db2, as served by the
+ * dev hub), and the backend refuses any other window on a write.
+ */
+const WINDOW_PATTERN = /^([1-9]\d{0,3})([smh])$/;
 
 export const formatLocaleNumber = (value: number): string => value.toLocaleString('en-US');
 
@@ -37,70 +37,29 @@ export const UNIT_OPTIONS: { value: RateLimit['unit']; label: string }[] = [
   { value: 'second', label: 'second' },
 ];
 
-/**
- * Parses a window string (e.g. "24h", "30m") into a numeric time value and unit.
- * Falls back to { time: 1, unit: 'hour' } for unrecognized formats.
- */
-export const parseWindow = (window: string): { time: number; unit: RateLimit['unit'] } => {
-  const trimmed = window.trim();
-
-  const compactMatch = trimmed.match(/^(\d+)([smh])$/i);
-  if (compactMatch) {
-    const time = parseInt(compactMatch[1], 10);
-    const unit = WINDOW_SUFFIX_TO_UNIT[compactMatch[2].toLowerCase()] ?? 'hour';
-    return { time, unit };
-  }
-
-  const humanMatch = trimmed.match(/^(\d+)\s+(second|minute|hour)s?$/i);
-  if (humanMatch) {
-    const time = parseInt(humanMatch[1], 10);
-    const unit = HUMAN_UNIT_TO_RATE_LIMIT[humanMatch[2].toLowerCase()] ?? 'hour';
-    return { time, unit };
-  }
-
-  const durationMatch = trimmed.match(/^(\d+)([smh])/i);
-  if (durationMatch) {
-    const time = parseInt(durationMatch[1], 10);
-    const unit = WINDOW_SUFFIX_TO_UNIT[durationMatch[2].toLowerCase()] ?? 'hour';
-    return { time, unit };
-  }
-
-  return { time: 1, unit: 'hour' };
+/** Reads a window such as "24h" or "30m"; undefined for anything the CRD does not accept. */
+export const parseWindow = (window: string): { time: number; unit: RateLimit['unit'] } | undefined => {
+  const match = WINDOW_PATTERN.exec(window);
+  return match ? { time: parseInt(match[1], 10), unit: WINDOW_SUFFIX_TO_UNIT[match[2]] } : undefined;
 };
 
-/**
- * Formats a window string (e.g. "24h") into a human-readable form (e.g. "24 hours").
- * Handles pluralization: "1 hour" vs "24 hours".
- */
-const formatWindowTime = (time: number, unit: RateLimit['unit']): string =>
-  `${formatLocaleNumber(time)} ${unit}${time === 1 ? '' : 's'}`;
-
+/** Shows a window as "1 hour" or "24 hours"; a window it cannot read is shown as it is. */
 export const formatWindow = (window: string): string => {
-  const trimmed = window.trim();
-  const parsed = parseWindow(trimmed);
-
-  if (
-    /^(\d+)([smh])$/i.test(trimmed) ||
-    /^(\d+)\s+(second|minute|hour)s?$/i.test(trimmed) ||
-    /^(\d+)([smh])/i.test(trimmed)
-  ) {
-    return formatWindowTime(parsed.time, parsed.unit);
-  }
-
-  // Upstream may already return a human-readable label; locale-format large numbers in-place.
-  return trimmed.replace(/\d+/g, (digits) => {
-    const value = parseInt(digits, 10);
-    return value >= 1000 ? formatLocaleNumber(value) : digits;
-  });
+  const parsed = parseWindow(window);
+  if (!parsed) return window;
+  return `${formatLocaleNumber(parsed.time)} ${parsed.unit}${parsed.time === 1 ? '' : 's'}`;
 };
 
 export const formatTokenRateLimitLine = (limit: number, window: string): string =>
   `${formatLocaleNumber(limit)} / ${formatWindow(window)}`;
 
-/** Converts a BFF TokenRateLimit to the UI's RateLimit form. */
+/**
+ * Converts a BFF TokenRateLimit to the UI's RateLimit form. A window the form cannot read gets no
+ * time, so the form cannot save it until a time is entered.
+ */
 export const toRateLimit = (trl: TokenRateLimit): RateLimit => {
-  const { time, unit } = parseWindow(trl.window);
-  return { count: trl.limit, time, unit };
+  const parsed = parseWindow(trl.window);
+  return { count: trl.limit, time: parsed?.time ?? NaN, unit: parsed?.unit ?? 'hour' };
 };
 
 /** Converts the UI's RateLimit form back to a BFF TokenRateLimit. */

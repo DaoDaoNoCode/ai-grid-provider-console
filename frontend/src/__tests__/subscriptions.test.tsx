@@ -880,6 +880,39 @@ it('asks before Cancel discards the subscription form’s input', async () => {
   expect(await screen.findByTestId('subscriptions-table')).toBeVisible();
 });
 
+it('shows a window the form cannot read as it is, and saves it only once a new time is entered', async () => {
+  const seed = structuredClone(seedSubscriptions()[0]);
+  seed.modelRefs[0] = {
+    ...seed.modelRefs[0],
+    tokenRateLimits: [
+      { limit: 5000, window: '1h' },
+      { limit: 100, window: '2d' },
+    ],
+  };
+  const service = new MockConsoleService();
+  service.subscriptions = [seed];
+  const update = vi.spyOn(service, 'updateSubscription');
+  const user = userEvent.setup();
+  renderAt(`/subscriptions/edit/${seed.name}`, service);
+  const models = await screen.findByTestId('subscription-models-table');
+  await user.click(within(models).getByRole('button', { name: /^5,000 \/ 1 hour\s*100 \/ 2d$/ }));
+  const dialog = screen.getByRole('dialog', { name: 'Edit token limits' });
+  expect(within(dialog).getByText('The console cannot read the saved window "2d"')).toBeVisible();
+  const times = within(dialog).getAllByRole('spinbutton', { name: 'Per' });
+  expect(times.map((input) => (input as HTMLInputElement).value)).toEqual(['1', '']);
+  await user.click(within(dialog).getByTestId('save-rate-limits'));
+  expect(within(dialog).getByText('Time value is required')).toBeVisible();
+  await user.type(times[1], '48');
+  await user.click(within(dialog).getByTestId('save-rate-limits'));
+  expect(dialog).not.toBeInTheDocument();
+  await user.click(screen.getByTestId('update-subscription-button'));
+  await waitFor(() => expect(update).toHaveBeenCalled());
+  expect(update.mock.calls[0][1].modelRefs[0].tokenRateLimits).toEqual([
+    { limit: 5000, window: '1h' },
+    { limit: 100, window: '48h' },
+  ]);
+});
+
 it('keeps Save disabled on an edit until something changes', async () => {
   const user = userEvent.setup();
   renderAt('/subscriptions/edit/engineering', new MockConsoleService());
