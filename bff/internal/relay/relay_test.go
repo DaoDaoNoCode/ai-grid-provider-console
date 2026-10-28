@@ -2,6 +2,7 @@ package relay_test
 
 import (
 	"bufio"
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -608,7 +609,13 @@ func TestStreamsFlushAsTheyCome(t *testing.T) {
 	}))
 	t.Cleanup(front.Close)
 
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, front.URL+"/ai_grid.v1.Clusters/List", strings.NewReader(`{}`))
+	// A relay that holds the first message back fails by never answering while the backend keeps
+	// the stream open, so no event can end the wait: only a clock can. The deadline turns that hang
+	// into a failure and does not decide the outcome otherwise: a relay that flushes delivers both
+	// messages in milliseconds, and the second is sent only after the test reads the first.
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, front.URL+"/ai_grid.v1.Clusters/List", strings.NewReader(`{}`))
 	if err != nil {
 		t.Fatal(err)
 	}
