@@ -460,7 +460,18 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
   const ready = clusters.filter((c) => c.status === 'Ready').length;
   const summary: [label: string, value: string, detail?: string][] = [
     ['Clusters', `${ready}/${clusters.length}`, 'Ready'],
-    ['Sites', String(new Set(clusters.flatMap((c) => (c.site ? [c.site] : []))).size)],
+    // A site is a site name, else the cloud region, else the ai-grid/site label: what the map names.
+    [
+      'Sites',
+      String(
+        new Set(
+          clusters.flatMap((c) => {
+            const site = c.siteName || c.region || c.site;
+            return site ? [site] : [];
+          }),
+        ).size,
+      ),
+    ],
     ['Models', String(relevantModels.length)],
   ];
 

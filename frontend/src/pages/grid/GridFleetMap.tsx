@@ -203,7 +203,8 @@ export const GridFleetMap: React.FC<Props> = ({ clusters, selected, onSelect, ti
           item.appendChild(button);
           list.appendChild(item);
         }
-        marker.bindPopup(list);
+        // Wide enough for "site name · cluster name · status" on one line.
+        marker.bindPopup(list, { minWidth: 240 });
       } else {
         marker.on('click', () => select.current(first.name));
       }
