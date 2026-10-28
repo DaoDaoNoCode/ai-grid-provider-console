@@ -3,8 +3,8 @@
 // packages/maas/frontend/src/app/hooks/useSubscriptionModels.ts
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
 import { useCallback, useState } from 'react';
-import type { MaaSModelRefSummary, TokenRateLimit } from '../api/types';
-import { isSameModel } from '../utilities/authpolicies';
+import type { MaaSModelRefSummary, TokenRateLimit } from '../../../api/types';
+import { isSameModel } from '../../../utilities/authpolicies';
 
 /** A model in the subscription form, with its token limits. */
 export type SubscriptionModelEntry = {

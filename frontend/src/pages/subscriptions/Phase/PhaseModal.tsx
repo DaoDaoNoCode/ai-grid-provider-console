@@ -17,8 +17,8 @@ import {
   Stack,
   StackItem,
 } from '@patternfly/react-core';
-import type { AffectedModel } from '../../utilities/phaseLabelUtils';
-import { getModalAlertProps, getPhaseProps, normalizePhase, PhaseStatus } from '../../utilities/phaseLabelUtils';
+import type { AffectedModel } from '../../../utilities/phaseLabelUtils';
+import { getModalAlertProps, getPhaseProps, normalizePhase, PhaseStatus } from '../../../utilities/phaseLabelUtils';
 import { AffectedModelsTable } from './AffectedModelsTable';
 
 type Props = {

@@ -6,10 +6,10 @@
 // In the shape of the console's other deletes (useDeleteModel, useDeleteOrganization).
 import { useState } from 'react';
 import { Stack, StackItem } from '@patternfly/react-core';
-import { ServiceError } from '../api/ConsoleService';
-import type { SubscriptionsService } from '../api/subscriptions';
-import type { MaaSSubscription } from '../api/types';
-import { DeleteModal } from '../components/DeleteModal';
+import { ServiceError } from '../../../api/ConsoleService';
+import type { SubscriptionsService } from '../../../api/subscriptions';
+import type { MaaSSubscription } from '../../../api/types';
+import { DeleteModal } from '../../../components/DeleteModal';
 
 const deleteErrorOf = (err: unknown) =>
   err instanceof ServiceError && err.isNotImplemented

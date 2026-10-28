@@ -38,8 +38,8 @@ import { SystemAuthenticatedWarning } from '../../../components/SystemAuthentica
 import { TypeaheadSelect } from '../../../components/TypeaheadSelect';
 import { useMaaSGovernanceContext } from '../../../context/useMaaSGovernanceContext';
 import { useConfirmDiscard } from '../../../hooks/useConfirmDiscard';
-import type { SubscriptionModelEntry } from '../../../hooks/useSubscriptionModels';
-import { useSubscriptionModels } from '../../../hooks/useSubscriptionModels';
+import type { SubscriptionModelEntry } from '../hooks/useSubscriptionModels';
+import { useSubscriptionModels } from '../hooks/useSubscriptionModels';
 import { isSameModel } from '../../../utilities/authpolicies';
 import { getSectionUrl } from '../../../utilities/maasGovernanceNavigation';
 import { fieldErrorsOf } from '../../../validation';

@@ -37,7 +37,7 @@ const Help: React.FC<{ error?: string; children?: React.ReactNode }> = ({ error,
     </FormHelperText>
   ) : null;
 
-const ADD_DOMAIN_ID = 'tenant-add-domain';
+const ADD_DOMAIN_ID = 'organization-add-domain';
 
 /** An organization's name and domains, with each error under its own field. */
 export const OrganizationDetailsFields: React.FC<Props> = ({
@@ -67,7 +67,7 @@ export const OrganizationDetailsFields: React.FC<Props> = ({
       document.getElementById(ADD_DOMAIN_ID)?.focus();
       focusDomain.current = undefined;
     } else if (focusDomain.current !== undefined && focusDomain.current < value.domains.length) {
-      document.getElementById(`tenant-domain-${focusDomain.current}`)?.focus();
+      document.getElementById(`organization-domain-${focusDomain.current}`)?.focus();
       focusDomain.current = undefined;
     }
   });
@@ -78,9 +78,9 @@ export const OrganizationDetailsFields: React.FC<Props> = ({
   return (
     <>
       {isNameEditable ? (
-        <FormGroup label="Name" fieldId="tenant-name" isRequired>
+        <FormGroup label="Name" fieldId="organization-name" isRequired>
           <TextInput
-            id="tenant-name"
+            id="organization-name"
             value={value.name}
             isDisabled={isDisabled}
             isRequired
@@ -93,18 +93,18 @@ export const OrganizationDetailsFields: React.FC<Props> = ({
       ) : (
         <ReadOnlyField
           label="Name"
-          fieldId="tenant-name"
+          fieldId="organization-name"
           value={value.name}
           reason="The name can't be changed once the organization exists."
         />
       )}
       <FormSection title="Domains" titleElement="h2">
         {value.domains.map((domain, index) => (
-          <FormGroup key={index} label={`Domain ${index + 1}`} fieldId={`tenant-domain-${index}`} isRequired>
+          <FormGroup key={index} label={`Domain ${index + 1}`} fieldId={`organization-domain-${index}`} isRequired>
             <InputGroup>
               <InputGroupItem isFill>
                 <TextInput
-                  id={`tenant-domain-${index}`}
+                  id={`organization-domain-${index}`}
                   value={domain}
                   isDisabled={isDisabled}
                   isRequired

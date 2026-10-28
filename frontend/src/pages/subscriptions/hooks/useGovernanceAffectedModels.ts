@@ -6,10 +6,10 @@
 // a reference to no model (modelRefStatuses NotFound), and a model whose MaaSModelRef is
 // Pending, Unhealthy or Failed (modelRegistrations, which GET /subscriptions/{name} returns).
 import { useMemo } from 'react';
-import type { MaaSSubscription, ModelRegistration } from '../api/types';
-import { isSameModel } from '../utilities/authpolicies';
-import type { AffectedModel } from '../utilities/phaseLabelUtils';
-import { MODEL_NOT_FOUND_STATUS_MESSAGE, normalizePhase, PhaseStatus } from '../utilities/phaseLabelUtils';
+import type { MaaSSubscription, ModelRegistration } from '../../../api/types';
+import { isSameModel } from '../../../utilities/authpolicies';
+import type { AffectedModel } from '../../../utilities/phaseLabelUtils';
+import { MODEL_NOT_FOUND_STATUS_MESSAGE, normalizePhase, PhaseStatus } from '../../../utilities/phaseLabelUtils';
 
 const AFFECTED_REGISTRATION_PHASES: string[] = [PhaseStatus.PENDING, PhaseStatus.UNHEALTHY, PhaseStatus.FAILED];
 

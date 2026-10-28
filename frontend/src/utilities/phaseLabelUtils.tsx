@@ -8,7 +8,7 @@
 // 3.5), and a Degraded subtext shows the Ready condition's message when there is one.
 import type { AlertProps, ContentProps, LabelProps } from '@patternfly/react-core';
 import { Stack, StackItem } from '@patternfly/react-core';
-import { PhaseApiDetails } from '../components/Phase/PhaseApiDetails';
+import { PhaseApiDetails } from '../pages/subscriptions/Phase/PhaseApiDetails';
 import type { StatusTone } from './status';
 import { statusLabelProps, statusTone } from './status';
 

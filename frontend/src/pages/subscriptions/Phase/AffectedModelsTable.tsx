@@ -4,9 +4,9 @@
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
 import { Flex, FlexItem, Label, Stack, StackItem, Title } from '@patternfly/react-core';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
-import type { AffectedModel } from '../../utilities/phaseLabelUtils';
-import { normalizePhase } from '../../utilities/phaseLabelUtils';
-import { StatusLabel } from '../StatusLabel';
+import type { AffectedModel } from '../../../utilities/phaseLabelUtils';
+import { normalizePhase } from '../../../utilities/phaseLabelUtils';
+import { StatusLabel } from '../../../components/StatusLabel';
 
 type Props = { models: AffectedModel[] };
 

@@ -98,7 +98,7 @@ export const OrganizationConfigurationDetails: React.FC<Props> = ({ organization
     <Flex
       direction={{ default: 'column' }}
       spaceItems={{ default: 'spaceItemsXl' }}
-      data-testid="tenant-configuration-details"
+      data-testid="organization-configuration-details"
     >
       <DetailsSection title="Organization details" onEdit={review ? () => onEditSection?.('details') : undefined}>
         <DetailsList items={detailItems} hideEmpty={review} aria-label="Organization details" />

@@ -45,7 +45,7 @@ test('creates, views, edits and deletes an organization', async ({ page }) => {
   await page.getByRole('button', { name: 'Review', exact: true }).click();
   await page.getByRole('button', { name: 'Save changes' }).click();
   await expect(page.getByText('Organization configuration saved')).toBeVisible();
-  await expect(page.getByTestId('tenant-configuration-details')).toContainText(editedDomain);
+  await expect(page.getByTestId('organization-configuration-details')).toContainText(editedDomain);
 
   // Delete from the organization's page, with the typed confirmation
   await page.getByRole('button', { name: `Actions for ${unique}` }).click();

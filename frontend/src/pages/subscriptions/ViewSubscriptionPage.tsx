@@ -13,13 +13,13 @@ import { MaasModelsSection } from '../../components/MaasModelsSection';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
 import type { GovernanceService } from '../../context/useMaaSGovernanceContext';
 import { useMaaSGovernanceContext } from '../../context/useMaaSGovernanceContext';
-import { useGetSubscriptionInfo } from '../../hooks/useGetSubscriptionInfo';
+import { useGetSubscriptionInfo } from './hooks/useGetSubscriptionInfo';
 import { modelRefsToSummaries } from '../../utilities/authpolicies';
 import { getBackUrl, getSubscriptionEditUrl, subscriptionNotFound } from '../../utilities/maasGovernanceNavigation';
 import { PageStateSection } from '../../components/states/PageStateSection';
-import { PhaseLabel } from '../../components/Phase/PhaseLabel';
-import { getSubscriptionAffectedModels } from '../../hooks/useGovernanceAffectedModels';
-import { useDeleteSubscription } from '../../hooks/useDeleteSubscription';
+import { PhaseLabel } from './Phase/PhaseLabel';
+import { getSubscriptionAffectedModels } from './hooks/useGovernanceAffectedModels';
+import { useDeleteSubscription } from './hooks/useDeleteSubscription';
 import { SubscriptionDetailsSection } from './viewSubscription/SubscriptionDetailsSection';
 import { SubscriptionGroupsSection } from './viewSubscription/SubscriptionGroupsSection';
 

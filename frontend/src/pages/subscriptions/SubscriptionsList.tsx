@@ -20,13 +20,13 @@ import { initialSubscriptionsFilterData, SubscriptionsFilterOptions } from './al
 import type { ModelsState } from './allSubscriptions/ExpandedModelsPanel';
 import { SubscriptionsTable } from './allSubscriptions/SubscriptionsTable';
 import { SubscriptionsToolbar } from './allSubscriptions/SubscriptionsToolbar';
-import { useDeleteSubscription } from '../../hooks/useDeleteSubscription';
+import { useDeleteSubscription } from './hooks/useDeleteSubscription';
 import { useClusterList } from '../clusters/useClusters';
 
 // The clusters name the models' locations' sites, as on the Models page.
 type Props = { service: GovernanceService };
 
-export const SubscriptionsTab: React.FC<Props> = ({ service }) => {
+export const SubscriptionsList: React.FC<Props> = ({ service }) => {
   const {
     subscriptions,
     subscriptionsLoaded: loaded,

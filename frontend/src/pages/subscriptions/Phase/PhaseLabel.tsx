@@ -4,7 +4,7 @@
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
 import { useState } from 'react';
 import { Content, Flex, FlexItem, Label } from '@patternfly/react-core';
-import type { AffectedModel } from '../../utilities/phaseLabelUtils';
+import type { AffectedModel } from '../../../utilities/phaseLabelUtils';
 import {
   getModalSubtitle,
   getPhaseProps,
@@ -12,7 +12,7 @@ import {
   getSubtextProps,
   normalizePhase,
   PhaseStatus,
-} from '../../utilities/phaseLabelUtils';
+} from '../../../utilities/phaseLabelUtils';
 import { PhaseModal } from './PhaseModal';
 
 type Props = {

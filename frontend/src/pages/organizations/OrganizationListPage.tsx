@@ -97,7 +97,7 @@ export const OrganizationListPage: React.FC<Props> = ({ service }) => {
           }
         >
           {(pageRows) => (
-            <Table aria-label="Organizations" data-testid="tenants-table">
+            <Table aria-label="Organizations" data-testid="organizations-table">
               <Thead>
                 <Tr>
                   {columns.map((c, i) => (
@@ -133,7 +133,7 @@ export const OrganizationListPage: React.FC<Props> = ({ service }) => {
                       {canWrite && (
                         <Td isActionCell>
                           <SimpleMenuActions
-                            testId={`tenant-actions-${o.name}`}
+                            testId={`organization-actions-${o.name}`}
                             ariaLabel={`Actions for ${o.name}`}
                             dropdownItems={[
                               {
