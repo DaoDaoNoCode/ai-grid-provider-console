@@ -8,6 +8,8 @@ import { ServiceError } from '../api/ConsoleService';
 import { MockConsoleService, seedClusters } from '../api/MockConsoleService';
 import type { GridCluster } from '../api/types';
 import { renderAt } from './render';
+// The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
+import '../pages/clusters/ClusterDetailsPage';
 
 /** A cluster as today's backend sends it: no claims, capacity or conditions. */
 const bare = (): GridCluster => ({

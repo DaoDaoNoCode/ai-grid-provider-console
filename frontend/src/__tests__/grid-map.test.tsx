@@ -13,11 +13,10 @@ import { MockConsoleService } from '../api/MockConsoleService';
 import { tileLayerConfig } from '../pages/grid/tiles';
 import { serviceOnPr12Json } from './pr12Json';
 import { renderAt } from './render';
+// The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
+import '../pages/grid/GridPage';
 
 // Exercise the page and drawer without a browser map renderer or external tiles.
-// vitest.setup.pages.ts has already loaded the Grid page with the real map, and a mock does not
-// reach a module loaded before it, so this file loads its modules afresh (Vitest's vi.mock docs).
-vi.hoisted(() => vi.resetModules());
 vi.mock('../pages/grid/GridFleetMap', () => ({
   GridFleetMap: ({ clusters, onSelect }: { clusters: Array<{ name: string }>; onSelect: (name: string) => void }) => (
     <div aria-label="AI Grid map of clusters">

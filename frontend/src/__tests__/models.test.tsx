@@ -22,6 +22,11 @@ import { HttpConsoleService } from '../api/HttpConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
 import type { CreateModelRequest, ManagedModel } from '../api/types';
 import { deferred, renderAt } from './render';
+// The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
+import '../pages/models/ModelDetailsPage';
+import '../pages/models/ModelEditPage';
+import '../pages/models/ModelWizard';
+import '../pages/models/ModelsPage';
 
 const input: CreateModelRequest = {
   name: 'widget',

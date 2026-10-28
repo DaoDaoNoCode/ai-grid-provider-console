@@ -17,6 +17,11 @@ import type { ConditionStatus, MaaSSubscription } from '../api/types';
 import { isSameModel } from '../utilities/authpolicies';
 import { serviceOnPr12Json } from './pr12Json';
 import { deferred, renderAt } from './render';
+// The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
+import '../pages/subscriptions/CreateSubscriptionPage';
+import '../pages/subscriptions/EditSubscriptionPage';
+import '../pages/subscriptions/SubscriptionsPage';
+import '../pages/subscriptions/ViewSubscriptionPage';
 
 /** A user the console couldn't load: the pages show, but without write actions. A viewer
  * (isProviderAdmin false) sees no pages at all (App.test.tsx). */

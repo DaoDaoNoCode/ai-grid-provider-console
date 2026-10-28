@@ -5,6 +5,20 @@ import type { InitialEntry, NavigateFunction } from 'react-router-dom';
 import { App } from '../App';
 import { ServiceError } from '../api/ConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
+// The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
+import '../pages/grid/GridPage';
+import '../pages/models/ModelDetailsPage';
+import '../pages/models/ModelEditPage';
+import '../pages/models/ModelWizard';
+import '../pages/models/ModelsPage';
+import '../pages/monitoring/MonitoringPage';
+import '../pages/organizations/OrganizationDetailsPage';
+import '../pages/organizations/OrganizationListPage';
+import '../pages/organizations/OrganizationWizardPage';
+import '../pages/subscriptions/CreateSubscriptionPage';
+import '../pages/subscriptions/EditSubscriptionPage';
+import '../pages/subscriptions/SubscriptionsPage';
+import '../pages/subscriptions/ViewSubscriptionPage';
 
 const at = (path: InitialEntry, service = new MockConsoleService()) =>
   render(

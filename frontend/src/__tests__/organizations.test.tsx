@@ -13,6 +13,10 @@ import { HttpConsoleService } from '../api/HttpConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
 import type { Organization, OrganizationInput } from '../api/types';
 import { deferred, renderAt } from './render';
+// The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
+import '../pages/organizations/OrganizationDetailsPage';
+import '../pages/organizations/OrganizationListPage';
+import '../pages/organizations/OrganizationWizardPage';
 
 const input: Required<OrganizationInput> = {
   name: 'tenant1',
