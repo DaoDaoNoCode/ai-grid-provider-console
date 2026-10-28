@@ -70,7 +70,7 @@ export default defineConfig({
     {
       command: `pnpm exec vite build && pnpm exec vite preview --host 127.0.0.1 --port ${port} --strictPort`,
       // An API path, so the run starts once the proxy reaches the BFF and the BFF the fake.
-      url: `${origin}/api/v1/clusters`,
+      url: `${origin}/api/v1/tenants`,
       reuseExistingServer: !process.env.CI,
       timeout: 180_000,
       env: {

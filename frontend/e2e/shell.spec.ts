@@ -25,9 +25,7 @@ test.describe('on a laptop', () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
   test('a loading page shows its spinner in the middle of the page', async ({ page }) => {
-    // Never answer the clusters requests (Clusters/List over Connect and the BFF's membership), so
-    // the Clusters page stays loading.
-    await page.route('**/api/v1/clusters**', () => undefined);
+    // Never answer Clusters/List over Connect, so the Clusters page stays loading.
     await page.route('**/ai_grid.v1.Clusters/List', () => undefined);
     await page.goto('/clusters');
     const spinner = page.getByRole('progressbar', { name: 'Loading clusters' });
