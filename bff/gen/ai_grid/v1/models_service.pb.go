@@ -638,7 +638,7 @@ func (*ListLocationsRequest) Descriptor() ([]byte, []int) {
 // Response of ListLocations (P7).
 type ListLocationsResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Location label values, unique and sorted.
+	// ManagedCluster names, sorted.
 	Locations     []string `protobuf:"bytes,1,rep,name=locations,proto3" json:"locations,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

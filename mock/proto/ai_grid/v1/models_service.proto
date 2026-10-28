@@ -62,10 +62,13 @@ service Models {
   // the stored version.
   rpc DeleteModel(DeleteModelRequest) returns (DeleteModelResponse);
   // Proposal for the ai-grid-backend owners; implemented in the fake (P7).
-  // The locations a model can be placed on: the `location` labels of the
-  // ManagedClusters that are AI Grid members (`ai-grid/enabled` and
-  // `ai-grid/provisioned` "true") and Available, unique and sorted, read from
-  // the hub as ListManagedClusters reads it (the PoC's eligibleLocations).
+  // The clusters a model can be placed on, as the backend's
+  // Models/ListPlacementClusters answers them: the names of the ManagedClusters
+  // that are AI Grid members (`ai-grid/enabled` and `ai-grid/provisioned`
+  // "true") with `ai-grid/role` inference or combined and Available, sorted.
+  // These are the values a placement's `name In [...]` takes; despite the
+  // method's name they are not `location` labels (a model's
+  // status.placement.locations are).
   rpc ListLocations(ListLocationsRequest) returns (ListLocationsResponse);
 }
 
@@ -175,6 +178,6 @@ message ListLocationsRequest {}
 
 // Response of ListLocations (P7).
 message ListLocationsResponse {
-  // Location label values, unique and sorted.
+  // ManagedCluster names, sorted.
   repeated string locations = 1;
 }

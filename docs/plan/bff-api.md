@@ -99,11 +99,12 @@ in one namespace of its own), so the BFF reports every model in its `--models-na
 answers 404 for a model in any other; against a real backend, set it to the backend's subscription
 namespace (`AI_GRID_SUBSCRIPTION_NAMESPACE`, default `models-as-a-service`), where the backend
 keeps the `MaaSModelRef` that subscriptions name, so a subscription's model references match the
-models. A location is one cluster: `GET /locations` lists the names of the clusters labelled
-`ai-grid/enabled: "true"` from `Clusters` `List`, and the console's placement (the member labels
-plus `location In [...]`) is sent as the ACM `name` label, `name In [...]`, which the backend's git
-mode places by; a read turns it back. Any other placement goes as it is, except claim expressions,
-tolerations and spread constraints, which the backend lacks (501). A list with a filter or an order
+models. `GET /locations` answers `Models/ListPlacementClusters` (backend PR 41): the names of the
+clusters a model can run on. The console places a model by those names, `name In [...]` over the
+ACM `name` label, as the backend's git mode stores it, so a placement goes as it is, except claim
+expressions, tolerations and spread constraints, which the backend lacks (501). A location is the
+value of the `location` label, which a model's `placement.locations` reports; several clusters can
+share one. A list with a filter or an order
 answers 501, because the backend's filter uses its own field names. PATCH sends the draft's mask
 unchanged, with the `If-Match` version and `lock: true`, and DELETE sends the `If-Match` version.
 
@@ -172,7 +173,7 @@ under `/perses/api`, and the Connect relay to the backend's own RPCs under `/ai_
 | DELETE | `/api/v1/models/{namespace}/{name}` | 204; the model is gone at once (the MWRS cascades `Background`, its works drain out of sight) | `Models/DeleteModel` with the `If-Match` version as `resource_version`; 404 when absent, 409 on a stale `If-Match`, 428 without `If-Match`, 412 while a catalog entry, a subscription or an auth policy references the model (on the fake, subscriptions and auth policies block it; catalog entries don't exist yet) |
 | GET | `/api/v1/capabilities` | `{manifestWorkReplicaSetEnabled, observabilityInstalled, acmVersion}` | `AiGrid/GetHubCapabilities`; 501 against a backend without the RPC, which a client reads as "unknown" |
 | GET, POST | `/perses/api/<Perses API path>` | Perses's own answer, status and body unchanged, with only its `Content-Type`, `Content-Encoding`, `Content-Length`, `Vary`, `Cache-Control`, `Date`, `Age` and `Expires` headers; a redirect from Perses is 502 | none; the Monitoring page's relay to the hub's Perses (`PERSES_URL`), see "The Perses relay" |
-| GET | `/api/v1/locations` | `string[]`: the `location` labels a model can be placed on, in the backend's order | `Models/ListLocations` (proposal P7, `mock/proto/README.md`) |
+| GET | `/api/v1/locations` | `string[]`: the names of the clusters a model can be placed on (the values of the placement's `name In [...]`), in the backend's order; despite the path, not `location` labels | `Models/ListLocations` (proposal P7, `mock/proto/README.md`); against the backend, `Models/ListPlacementClusters` |
 | GET | `/api/v1/subscriptions` | `Subscription[]` in the backend's order; takes no query parameters (any is 422 `the subscriptions list takes no query parameters; filter, sort and page it in the client`) | `Subscriptions/ListSubscriptions` |
 | GET | `/api/v1/subscriptions/{name}` | `ETag: "<resourceVersion>"`, `{subscription, authPolicies, meteringMetadata?, modelRegistrations, modelRefs}`: the subscription, the authorization policies that cover its models, `meteringMetadata`, the subscription's `tokenMetadata` again, as the PoC's SubscriptionInfoResponse has it (omitted when the subscription has none), the status of each referenced model's registration, and the referenced models in the `Model` JSON | `Subscriptions/GetSubscription`; 404 with the backend's message when absent |
 | POST | `/api/v1/subscriptions` | 201, `{subscription, authPolicy?}`, `Location: /api/v1/subscriptions/{name}` | `Subscriptions/CreateSubscription` with `createAuthPolicy` from the body; 422 with `fieldErrors` on a bad body (a new subscription without `tokenMetadata.organizationId` is "Select an organization"), 409 on a taken name |

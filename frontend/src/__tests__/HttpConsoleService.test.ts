@@ -101,17 +101,17 @@ describe('HttpConsoleService', () => {
       gpuCount: 0,
       runtimeArgs: [],
       baseRefs: ['v3-6-0-kserve-config-llm-template-cpu'],
-      locations: ['paris'],
+      locations: ['site-paris-1'],
     };
     await expect(service.createModel(input)).resolves.toMatchObject({ name: 'widget', namespace: 'team-models' });
     const post = fetchFn.mock.calls.find(([, init]) => init?.method === 'POST');
     expect(post?.[0]).toBe('/api/v1/models');
-    // PR 12's ModelCreate in the configured namespace, with the PoC's placement.
+    // PR 12's ModelCreate in the configured namespace, placed by cluster name.
     expect(JSON.parse(post?.[1].body)).toMatchObject({
       name: 'widget',
       namespace: 'team-models',
       baseRefs: ['v3-6-0-kserve-config-llm-template-cpu'],
-      placement: { matchExpressions: [{ key: 'location', operator: 'In', values: ['paris'] }] },
+      placement: { matchExpressions: [{ key: 'name', operator: 'In', values: ['site-paris-1'] }] },
     });
     fetchFn.mockImplementation(async () =>
       jsonResponse(200, {

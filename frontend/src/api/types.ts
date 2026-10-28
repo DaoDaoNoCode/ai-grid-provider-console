@@ -308,7 +308,6 @@ export type EnvVar = { name: string; value: string };
 
 /** The placement the console writes: enrolled, provisioned clusters at the chosen locations. */
 export type ConsolePlacement = {
-  matchLabels: Record<string, string>;
   matchExpressions: { key: string; operator: 'In'; values: string[] }[];
 };
 

@@ -324,16 +324,15 @@ const wizardInput = (overrides: Partial<CreateModelRequest> = {}): CreateModelRe
   gpuCount: 1,
   runtimeArgs: [],
   baseRefs: [],
-  locations: ['paris', 'madrid'],
+  locations: ['site-paris-1', 'site-madrid-1'],
   ...overrides,
 });
 
 describe('toModelCreate', () => {
-  it('builds the PoC placement from locations', () => {
+  it("places the model on the chosen clusters by name, as the backend's placement does", () => {
     expect(toModelCreate(wizardInput(), 'ai-grid-models')).toMatchObject({
       placement: {
-        matchLabels: { 'ai-grid/enabled': 'true', 'ai-grid/provisioned': 'true' },
-        matchExpressions: [{ key: 'location', operator: 'In', values: ['paris', 'madrid'] }],
+        matchExpressions: [{ key: 'name', operator: 'In', values: ['site-paris-1', 'site-madrid-1'] }],
       },
       rollout: { strategy: 'All' },
     });
@@ -507,22 +506,22 @@ describe('toManagedModel', () => {
 });
 
 describe('consolePlacementLocations', () => {
-  it('reads the locations of a placement the console wrote', () => {
-    expect(consolePlacementLocations(consolePlacement(['paris', 'madrid']))).toEqual(['paris', 'madrid']);
+  it('reads the clusters of a placement the console wrote', () => {
+    expect(consolePlacementLocations(consolePlacement(['site-a', 'site-b']))).toEqual(['site-a', 'site-b']);
   });
 
   it.each([
     ['a hub-only model', undefined],
     ['cluster sets', { ...consolePlacement(['paris']), clusterSets: ['global'] }],
-    ['other labels', { ...consolePlacement(['paris']), matchLabels: { 'ai-grid/enabled': 'true' } }],
+    ['labels', { ...consolePlacement(['paris']), matchLabels: { 'ai-grid/enabled': 'true' } }],
     [
       'another expression',
-      { ...consolePlacement(['paris']), matchExpressions: [{ key: 'location', operator: 'NotIn', values: ['x'] }] },
+      { ...consolePlacement(['paris']), matchExpressions: [{ key: 'name', operator: 'NotIn', values: ['x'] }] },
     ],
+    ['the location label', { matchExpressions: [{ key: 'location', operator: 'In', values: ['paris'] }] }],
     [
       'a second expression',
       {
-        matchLabels: consolePlacement([]).matchLabels,
         matchExpressions: [
           ...consolePlacement(['paris']).matchExpressions,
           { key: 'zone', operator: 'In', values: ['a'] },

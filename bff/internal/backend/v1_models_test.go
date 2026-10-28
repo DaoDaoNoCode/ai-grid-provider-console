@@ -42,7 +42,8 @@ func v1Model() *backendv1.Model {
 		},
 		Status: &backendv1.ModelStatus{
 			Phase: backendv1.ModelPhase_MODEL_PHASE_PENDING, Reason: "SavedToGit",
-			Placement: &backendv1.ModelPlacementStatus{NumberOfSelectedClusters: 2, SelectedClusters: []string{"site-b", "site-a"}},
+			// Two clusters at one location: locations are `location` labels, not cluster names.
+			Placement: &backendv1.ModelPlacementStatus{NumberOfSelectedClusters: 2, SelectedClusters: []string{"site-b", "site-a"}, Locations: []string{"us-east"}},
 		},
 	}
 }
@@ -65,14 +66,13 @@ func draftModel() *aigridv1.Model {
 				Env: []*aigridv1.EnvVar{{Name: "VLLM_ADDITIONAL_ARGS", Value: "--x"}},
 			},
 			Placement: &aigridv1.Placement{LabelSelector: &aigridv1.LabelSelector{
-				MatchLabels:      map[string]string{labelEnabled: "true", labelProvisioned: "true"},
-				MatchExpressions: []*aigridv1.LabelSelectorRequirement{{Key: "location", Operator: "In", Values: []string{"site-b", "site-a"}}},
+				MatchExpressions: []*aigridv1.LabelSelectorRequirement{{Key: "name", Operator: "In", Values: []string{"site-b", "site-a"}}},
 			}},
 		},
 		Status: &aigridv1.ModelStatus{
 			Phase: aigridv1.ModelPhase_MODEL_PHASE_PENDING, Reason: "SavedToGit",
 			Placement: &aigridv1.PlacementStatus{
-				NumberOfSelectedClusters: 2, Locations: []string{"site-a", "site-b"},
+				NumberOfSelectedClusters: 2, Locations: []string{"us-east"},
 				Decisions: []*aigridv1.ClusterDecision{{ClusterName: "site-a"}, {ClusterName: "site-b"}},
 			},
 		},
@@ -176,7 +176,7 @@ func TestV1ModelWrites(t *testing.T) {
 	}
 }
 
-// Placements other than the console's own pass through in both directions.
+// Any other placement passes through in both directions too.
 func TestV1ModelOtherPlacement(t *testing.T) {
 	t.Parallel()
 	in := &aigridv1.Placement{ClusterSets: []string{"set"}, LabelSelector: &aigridv1.LabelSelector{

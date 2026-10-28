@@ -4413,6 +4413,7 @@ type ModelPlacementStatus struct {
 	NumberOfSelectedClusters int32                  `protobuf:"varint,1,opt,name=number_of_selected_clusters,json=numberOfSelectedClusters,proto3" json:"number_of_selected_clusters,omitempty"`
 	SelectedClusters         []string               `protobuf:"bytes,2,rep,name=selected_clusters,json=selectedClusters,proto3" json:"selected_clusters,omitempty"`
 	Conditions               []*Condition           `protobuf:"bytes,3,rep,name=conditions,proto3" json:"conditions,omitempty"`
+	Locations                []string               `protobuf:"bytes,4,rep,name=locations,proto3" json:"locations,omitempty"`
 	unknownFields            protoimpl.UnknownFields
 	sizeCache                protoimpl.SizeCache
 }
@@ -4464,6 +4465,13 @@ func (x *ModelPlacementStatus) GetSelectedClusters() []string {
 func (x *ModelPlacementStatus) GetConditions() []*Condition {
 	if x != nil {
 		return x.Conditions
+	}
+	return nil
+}
+
+func (x *ModelPlacementStatus) GetLocations() []string {
+	if x != nil {
+		return x.Locations
 	}
 	return nil
 }
@@ -5434,13 +5442,14 @@ const file_ai_grid_backend_v1_backend_proto_rawDesc = "" +
 	"\amessage\x18\x05 \x01(\tR\amessage\x12F\n" +
 	"\tplacement\x18\x06 \x01(\v2(.ai_grid.backend.v1.ModelPlacementStatusR\tplacement\x12@\n" +
 	"\arollout\x18\a \x01(\v2&.ai_grid.backend.v1.ModelRolloutStatusR\arollout\x12/\n" +
-	"\x13observed_generation\x18\b \x01(\x03R\x12observedGeneration\"\xc1\x01\n" +
+	"\x13observed_generation\x18\b \x01(\x03R\x12observedGeneration\"\xdf\x01\n" +
 	"\x14ModelPlacementStatus\x12=\n" +
 	"\x1bnumber_of_selected_clusters\x18\x01 \x01(\x05R\x18numberOfSelectedClusters\x12+\n" +
 	"\x11selected_clusters\x18\x02 \x03(\tR\x10selectedClusters\x12=\n" +
 	"\n" +
 	"conditions\x18\x03 \x03(\v2\x1d.ai_grid.backend.v1.ConditionR\n" +
-	"conditions\"S\n" +
+	"conditions\x12\x1c\n" +
+	"\tlocations\x18\x04 \x03(\tR\tlocations\"S\n" +
 	"\x12ModelRolloutStatus\x12=\n" +
 	"\n" +
 	"conditions\x18\x05 \x03(\v2\x1d.ai_grid.backend.v1.ConditionR\n" +

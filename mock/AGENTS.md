@@ -120,7 +120,7 @@ adds `"meta": {"size", "total", "offset", "limit"}` (`limit` only when the reque
 | PATCH | `/api/v1/models/{namespace}/{name}` | `{replicas?, runtimeImage?, env?, placement? (null removes it), rollout?, labels?, annotations?}` (whole maps) | `Model` after the write, `ETag` |
 | DELETE | `/api/v1/models/{namespace}/{name}` | | 204 |
 | GET | `/api/v1/capabilities` | | `{manifestWorkReplicaSetEnabled, observabilityInstalled, acmVersion}` |
-| GET | `/api/v1/locations` | | `string[]`: the `location` labels of the provisioned, Available AI Grid members, sorted |
+| GET | `/api/v1/locations` | | `string[]`: the names of the provisioned, Available AI Grid members with role inference or combined, sorted, as the backend's `Models/ListPlacementClusters` answers; the wizard places a model with `name In [...]` over them |
 | GET | `/api/v1/subscriptions` | | `Subscription[]` by name |
 | GET | `/api/v1/subscriptions/{name}` | | `{subscription, modelRefs, authPolicies, meteringMetadata?, modelRegistrations}` |
 | POST | `/api/v1/subscriptions` | `{name, displayName?, description?, priority, owner, modelRefs, tokenMetadata?, inferencePriority?, guardrails?, createAuthPolicy?}` | 201, `{subscription, authPolicy?}`, `Location` header |

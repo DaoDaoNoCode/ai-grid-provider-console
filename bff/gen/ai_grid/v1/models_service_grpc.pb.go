@@ -86,10 +86,13 @@ type ModelsClient interface {
 	// the stored version.
 	DeleteModel(ctx context.Context, in *DeleteModelRequest, opts ...grpc.CallOption) (*DeleteModelResponse, error)
 	// Proposal for the ai-grid-backend owners; implemented in the fake (P7).
-	// The locations a model can be placed on: the `location` labels of the
-	// ManagedClusters that are AI Grid members (`ai-grid/enabled` and
-	// `ai-grid/provisioned` "true") and Available, unique and sorted, read from
-	// the hub as ListManagedClusters reads it (the PoC's eligibleLocations).
+	// The clusters a model can be placed on, as the backend's
+	// Models/ListPlacementClusters answers them: the names of the ManagedClusters
+	// that are AI Grid members (`ai-grid/enabled` and `ai-grid/provisioned`
+	// "true") with `ai-grid/role` inference or combined and Available, sorted.
+	// These are the values a placement's `name In [...]` takes; despite the
+	// method's name they are not `location` labels (a model's
+	// status.placement.locations are).
 	ListLocations(ctx context.Context, in *ListLocationsRequest, opts ...grpc.CallOption) (*ListLocationsResponse, error)
 }
 
@@ -209,10 +212,13 @@ type ModelsServer interface {
 	// the stored version.
 	DeleteModel(context.Context, *DeleteModelRequest) (*DeleteModelResponse, error)
 	// Proposal for the ai-grid-backend owners; implemented in the fake (P7).
-	// The locations a model can be placed on: the `location` labels of the
-	// ManagedClusters that are AI Grid members (`ai-grid/enabled` and
-	// `ai-grid/provisioned` "true") and Available, unique and sorted, read from
-	// the hub as ListManagedClusters reads it (the PoC's eligibleLocations).
+	// The clusters a model can be placed on, as the backend's
+	// Models/ListPlacementClusters answers them: the names of the ManagedClusters
+	// that are AI Grid members (`ai-grid/enabled` and `ai-grid/provisioned`
+	// "true") with `ai-grid/role` inference or combined and Available, sorted.
+	// These are the values a placement's `name In [...]` takes; despite the
+	// method's name they are not `location` labels (a model's
+	// status.placement.locations are).
 	ListLocations(context.Context, *ListLocationsRequest) (*ListLocationsResponse, error)
 	mustEmbedUnimplementedModelsServer()
 }

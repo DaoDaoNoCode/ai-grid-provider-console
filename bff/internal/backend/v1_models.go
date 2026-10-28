@@ -3,18 +3,11 @@ package backend
 // Stopgap: the backend's real Models RPCs behind the draft's ModelsClient, so
 // the API handlers are unchanged.
 //
-// Two differences between the APIs shape this adapter:
-//
-//   - The backend's models have an id and no namespace: it keeps every model in
-//     one namespace of its own. The draft's namespace is the BFF's configured
-//     models namespace (--models-namespace), which reads give back and the other
-//     calls require.
-//   - A location is one cluster, and the backend's git mode places a model by
-//     the ACM `name` label (backend PR 29's placement rules). So the backend's
-//     ListLocations answers cluster names, and the console's placement (the member
-//     labels plus `location In [...]`) is sent as `name In [...]`; a read turns
-//     `name In [...]` back into the console's shape. Any other placement is sent
-//     as it is, and the backend decides.
+// The backend's models have an id and no namespace: it keeps every model in one
+// namespace of its own. The draft's namespace is the BFF's configured models
+// namespace (--models-namespace), which reads give back and the other calls
+// require. A placement passes as it is: the console writes the backend's own
+// `name In [...]` over cluster names (backend PR 29's placement rules).
 
 import (
 	"context"
@@ -29,17 +22,6 @@ import (
 
 	backendv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/backend/v1"
 	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
-)
-
-const (
-	// labelClusterName is the label ACM sets on every ManagedCluster to its name.
-	labelClusterName = "name"
-	// labelLocation is the key the console's placement selects locations by.
-	labelLocation = "location"
-	// labelEnabled marks an AI Grid member cluster.
-	labelEnabled = "ai-grid/enabled"
-	// labelProvisioned is the other member label the console's placement carries.
-	labelProvisioned = "ai-grid/provisioned"
 )
 
 type v1Models struct {
@@ -231,35 +213,13 @@ func toV1Placement(p *aigridv1.Placement) (*backendv1.ModelPlacement, error) {
 		return nil, status.Errorf(codes.Unimplemented, "the backend's Models API has no %s", strings.Join(missing, ", "))
 	}
 	out := &backendv1.ModelPlacement{ClusterSets: p.GetClusterSets(), NumberOfClusters: p.NumberOfClusters}
-	sel := p.GetLabelSelector()
-	if clusters, ok := consoleLocations(p); ok {
-		out.LabelSelector = &backendv1.ModelLabelSelector{MatchExpressions: []*backendv1.ModelLabelSelectorRequirement{
-			{Key: labelClusterName, Operator: "In", Values: clusters},
-		}}
-		return out, nil
-	}
-	if sel != nil {
+	if sel := p.GetLabelSelector(); sel != nil {
 		out.LabelSelector = &backendv1.ModelLabelSelector{MatchLabels: sel.GetMatchLabels()}
 		for _, r := range sel.GetMatchExpressions() {
 			out.LabelSelector.MatchExpressions = append(out.LabelSelector.MatchExpressions, &backendv1.ModelLabelSelectorRequirement{Key: r.GetKey(), Operator: r.GetOperator(), Values: r.GetValues()})
 		}
 	}
 	return out, nil
-}
-
-// consoleLocations returns the locations of the console's own placement shape:
-// the member labels and one `location In [...]`, nothing else.
-func consoleLocations(p *aigridv1.Placement) ([]string, bool) {
-	sel := p.GetLabelSelector()
-	labels, exprs := sel.GetMatchLabels(), sel.GetMatchExpressions()
-	if len(p.GetClusterSets()) > 0 || p.NumberOfClusters != nil || len(exprs) != 1 ||
-		len(labels) != 2 || labels[labelEnabled] != "true" || labels[labelProvisioned] != "true" {
-		return nil, false
-	}
-	if e := exprs[0]; e.GetKey() == labelLocation && e.GetOperator() == "In" {
-		return e.GetValues(), true
-	}
-	return nil, false
 }
 
 func (c v1Models) fromV1(m *backendv1.Model) *aigridv1.Model {
@@ -314,31 +274,22 @@ func (c v1Models) fromV1(m *backendv1.Model) *aigridv1.Model {
 	return out
 }
 
-// fromV1Placement turns a lone `name In [...]` back into the console's shape.
+// fromV1Placement maps the placement as the backend stores it.
 func fromV1Placement(p *backendv1.ModelPlacement) *aigridv1.Placement {
 	out := &aigridv1.Placement{ClusterSets: p.GetClusterSets(), NumberOfClusters: p.NumberOfClusters}
 	sel := p.GetLabelSelector()
 	if sel == nil {
 		return out
 	}
-	exprs := sel.GetMatchExpressions()
-	if len(p.GetClusterSets()) == 0 && p.NumberOfClusters == nil && len(sel.GetMatchLabels()) == 0 &&
-		len(exprs) == 1 && exprs[0].GetKey() == labelClusterName && exprs[0].GetOperator() == "In" {
-		out.LabelSelector = &aigridv1.LabelSelector{
-			MatchLabels:      map[string]string{labelEnabled: "true", labelProvisioned: "true"},
-			MatchExpressions: []*aigridv1.LabelSelectorRequirement{{Key: labelLocation, Operator: "In", Values: exprs[0].GetValues()}},
-		}
-		return out
-	}
 	out.LabelSelector = &aigridv1.LabelSelector{MatchLabels: sel.GetMatchLabels()}
-	for _, r := range exprs {
+	for _, r := range sel.GetMatchExpressions() {
 		out.LabelSelector.MatchExpressions = append(out.LabelSelector.MatchExpressions, &aigridv1.LabelSelectorRequirement{Key: r.GetKey(), Operator: r.GetOperator(), Values: r.GetValues()})
 	}
 	return out
 }
 
-// fromV1ModelStatus maps the status; the selected clusters are both the
-// decisions and, a location being a cluster, the locations.
+// fromV1ModelStatus maps the status: the selected clusters are the decisions,
+// and the locations are their `location` labels, as the backend reports them.
 func fromV1ModelStatus(st *backendv1.ModelStatus) *aigridv1.ModelStatus {
 	if st == nil {
 		return nil
@@ -358,7 +309,7 @@ func fromV1ModelStatus(st *backendv1.ModelStatus) *aigridv1.ModelStatus {
 		out.Placement = &aigridv1.PlacementStatus{
 			NumberOfSelectedClusters: ps.GetNumberOfSelectedClusters(),
 			Conditions:               fromV1Conditions(ps.GetConditions()),
-			Locations:                selected,
+			Locations:                ps.GetLocations(),
 		}
 		for _, name := range selected {
 			out.Placement.Decisions = append(out.Placement.Decisions, &aigridv1.ClusterDecision{ClusterName: name})

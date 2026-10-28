@@ -203,10 +203,6 @@ when the RPCs allow it.
   until Models and Subscriptions move to the Connect clients:
   - the models namespace: reads give the BFF's `--models-namespace`, and a model elsewhere is
     NotFound;
-  - the console's placement (the member labels plus `location In [...]`) is sent as
-    `name In [...]`, and a read turns it back. The wizard counts a member as offered when
-    `GET /locations` names either its cluster name (the backend) or its location label (the
-    fake);
   - 501 for `createAuthPolicy: false`, and for a model list with a filter or an order;
   - a model or registration the backend reports as saved to Git (reason `SavedToGit`, no phase)
     keeps that reason, which the UI shows as Saved to Git;
