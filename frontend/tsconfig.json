@@ -21,6 +21,7 @@
     "playwright.config.ts",
     "vite.config.ts",
     "vitest.setup.ts",
+    "vitest.setup.pages.ts",
     "../mock/validation/*.json",
     "../mock/golden/*.json",
     "../mock/examples/*.json"

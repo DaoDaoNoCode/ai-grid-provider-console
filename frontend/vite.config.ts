@@ -116,7 +116,15 @@ export default defineConfig({
     // it. A *.test.ts file that needs the DOM says so with `// @vitest-environment jsdom`.
     projects: [
       { extends: true, test: { name: 'node', environment: 'node', include: ['src/**/*.test.ts'] } },
-      { extends: true, test: { name: 'jsdom', environment: 'jsdom', include: ['src/**/*.test.tsx'] } },
+      {
+        extends: true,
+        test: {
+          name: 'jsdom',
+          environment: 'jsdom',
+          include: ['src/**/*.test.tsx'],
+          setupFiles: ['./vitest.setup.pages.ts'],
+        },
+      },
     ],
   },
 });
