@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httptrace"
@@ -470,60 +471,92 @@ func TestRelayRefuses(t *testing.T) {
 	}
 }
 
-func TestRelayWhenPersesFails(t *testing.T) {
-	// Down: nothing listens at the address.
-	relay, err := New(Config{URL: "http://127.0.0.1:1", Project: project})
+// hangUpListener accepts connections and closes them at once: a Perses that is down, without
+// relying on a port staying unbound while other test binaries run.
+func hangUpListener(t *testing.T) string {
+	t.Helper()
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	rec := serve(relay, httptest.NewRequest(http.MethodGet, Prefix+"/api/v1/projects/ai-grid-monitoring/dashboards", nil), "t")
-	if rec.Code != http.StatusBadGateway {
-		t.Errorf("down: got %d, want 502", rec.Code)
-	}
-	if msg := errorMessage(t, rec); !strings.Contains(msg, "could not be reached") {
-		t.Errorf("down: message %q", msg)
-	}
-
-	// Slow: the response headers don't arrive within the timeout.
-	release := make(chan struct{})
-	slow := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) { <-release }, nil, 50*time.Millisecond)
-	defer close(release)
-	rec = serve(slow, httptest.NewRequest(http.MethodGet, Prefix+"/api/v1/projects/ai-grid-monitoring/dashboards", nil), "t")
-	if rec.Code != http.StatusGatewayTimeout {
-		t.Errorf("slow: got %d %q, want 504", rec.Code, rec.Body)
-	}
-
-	// Slow answer: the headers arrive, the body stalls; the timeout cuts it too.
-	stall := make(chan struct{})
-	defer close(stall)
-	stalls := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"partial":`))
-		w.(http.Flusher).Flush()
-		<-stall
-	}, nil, 50*time.Millisecond)
-	done := make(chan *httptest.ResponseRecorder, 1)
+	t.Cleanup(func() { _ = lis.Close() })
 	go func() {
-		done <- serve(stalls, httptest.NewRequest(http.MethodGet, Prefix+"/api/v1/projects/ai-grid-monitoring/dashboards", nil), "t")
-	}()
-	select {
-	case rec = <-done:
-		if rec.Body.String() != `{"partial":` {
-			t.Errorf("slow answer: body %q", rec.Body)
+		for {
+			conn, err := lis.Accept()
+			if err != nil {
+				return
+			}
+			_ = conn.Close()
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("slow answer: the relay did not cut a stalled body at its timeout")
-	}
+	}()
+	return lis.Addr().String()
+}
 
-	// Untrusted: the certificate isn't signed by the configured CA.
-	other := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
-	defer other.Close()
-	untrusted, err := New(Config{URL: other.URL, Project: project})
-	if err != nil {
-		t.Fatal(err)
-	}
-	rec = serve(untrusted, httptest.NewRequest(http.MethodGet, Prefix+"/api/v1/projects/ai-grid-monitoring/dashboards", nil), "t")
-	if rec.Code != http.StatusBadGateway {
-		t.Errorf("untrusted certificate: got %d, want 502", rec.Code)
-	}
+func TestRelayWhenPersesFails(t *testing.T) {
+	t.Parallel()
+	dashboards := Prefix + "/api/v1/projects/ai-grid-monitoring/dashboards"
+	t.Run("down", func(t *testing.T) {
+		t.Parallel()
+		relay, err := New(Config{URL: "http://" + hangUpListener(t), Project: project})
+		if err != nil {
+			t.Fatal(err)
+		}
+		rec := serve(relay, httptest.NewRequest(http.MethodGet, dashboards, nil), "t")
+		if msg := errorMessage(t, rec); rec.Code != http.StatusBadGateway || !strings.Contains(msg, "could not be reached") {
+			t.Errorf("got %d %q, want 502 could not be reached", rec.Code, msg)
+		}
+	})
+
+	t.Run("slow headers", func(t *testing.T) {
+		t.Parallel()
+		release := make(chan struct{})
+		slow := tlsUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+			select {
+			case <-release:
+			case <-r.Context().Done():
+			}
+		}, nil, 50*time.Millisecond)
+		t.Cleanup(func() { close(release) })
+		if rec := serve(slow, httptest.NewRequest(http.MethodGet, dashboards, nil), "t"); rec.Code != http.StatusGatewayTimeout {
+			t.Errorf("got %d %q, want 504", rec.Code, rec.Body)
+		}
+	})
+
+	t.Run("slow body", func(t *testing.T) {
+		t.Parallel()
+		stall := make(chan struct{})
+		stalls := tlsUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"partial":`))
+			w.(http.Flusher).Flush()
+			select {
+			case <-stall:
+			case <-r.Context().Done():
+			}
+		}, nil, 50*time.Millisecond)
+		t.Cleanup(func() { close(stall) })
+		done := make(chan *httptest.ResponseRecorder, 1)
+		go func() { done <- serve(stalls, httptest.NewRequest(http.MethodGet, dashboards, nil), "t") }()
+		select {
+		case rec := <-done:
+			if rec.Body.String() != `{"partial":` {
+				t.Errorf("body %q, want what Perses sent before it stalled", rec.Body)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("the relay did not cut a stalled body at its timeout")
+		}
+	})
+
+	t.Run("untrusted certificate", func(t *testing.T) {
+		t.Parallel()
+		other := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+		t.Cleanup(other.Close)
+		untrusted, err := New(Config{URL: other.URL, Project: project})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rec := serve(untrusted, httptest.NewRequest(http.MethodGet, dashboards, nil), "t"); rec.Code != http.StatusBadGateway {
+			t.Errorf("got %d, want 502", rec.Code)
+		}
+	})
 }

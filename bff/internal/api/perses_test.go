@@ -24,11 +24,11 @@ const (
 )
 
 // persesUpstream stands in for the hub's Perses and records the Authorization it got.
-func persesUpstream(t *testing.T) (*perses.Relay, *[]string) {
+func persesUpstream(t *testing.T) (*perses.Relay, *recorder) {
 	t.Helper()
-	var auth []string
+	auth := &recorder{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		auth = append(auth, r.Header.Get("Authorization"))
+		auth.add(r.Header.Get("Authorization"))
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`[]`))
 	}))
@@ -38,7 +38,7 @@ func persesUpstream(t *testing.T) (*perses.Relay, *[]string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return relay, &auth
+	return relay, auth
 }
 
 func TestPersesRelayCarriesTheCallersToken(t *testing.T) {
@@ -48,8 +48,8 @@ func TestPersesRelayCarriesTheCallersToken(t *testing.T) {
 	if rec.Code != http.StatusOK || rec.Body.String() != `[]` {
 		t.Fatalf("got %d %q, want Perses's answer", rec.Code, rec.Body)
 	}
-	if len(*auth) != 1 || (*auth)[0] != "Bearer sha256~token" {
-		t.Fatalf("Perses got Authorization %q, want the caller's token from x-forwarded-access-token", *auth)
+	if len(auth.values()) != 1 || auth.values()[0] != "Bearer sha256~token" {
+		t.Fatalf("Perses got Authorization %q, want the caller's token from x-forwarded-access-token", auth.values())
 	}
 }
 
@@ -74,8 +74,8 @@ func TestPersesRelayIsForProviderAdminsOnly(t *testing.T) {
 		t.Errorf("token the hub rejects: got %d, want 401", rec.Code)
 	}
 
-	if len(*auth) != 0 {
-		t.Fatalf("a refused caller reached Perses %d time(s)", len(*auth))
+	if len(auth.values()) != 0 {
+		t.Fatalf("a refused caller reached Perses %d time(s)", len(auth.values()))
 	}
 }
 
@@ -86,7 +86,7 @@ func TestPersesRelayRefusesWrites(t *testing.T) {
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("got %d, want 405", rec.Code)
 	}
-	if len(*auth) != 0 {
+	if len(auth.values()) != 0 {
 		t.Fatalf("a write reached Perses")
 	}
 }
@@ -157,6 +157,7 @@ func TestPersesAnswerCutAtTheTimeout(t *testing.T) {
 	logs := &lockedBuffer{}
 	app := NewApp(testConfig(t), slog.New(slog.NewTextHandler(logs, nil)), backendtest.Start(t, &backendtest.Fake{}), startHub(t, &fakeHub{allowed: true})).WithPerses(relay)
 	srv := httptest.NewServer(app.Handler())
+	t.Cleanup(srv.Close) // also after a failure; Close is idempotent
 
 	in := asUser(http.MethodGet, persesDashboards)
 	// Far past the relay's timeout: if the relay stops cutting the exchange, fail rather than hang.

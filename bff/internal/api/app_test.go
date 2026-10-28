@@ -15,8 +15,10 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -42,21 +44,52 @@ func testConfig(t *testing.T) config.Config {
 }
 
 // fakeHub stands in for the hub API server: it answers every
-// SelfSubjectAccessReview with allowed, or fails with status when set.
+// SelfSubjectAccessReview with allowed, or fails with status when set, and
+// keeps the Authorization of the last review (lastAuth).
 type fakeHub struct {
 	allowed bool
 	status  int
-	auth    string
+
+	mu   sync.Mutex
+	auth string
 }
 
 func (f *fakeHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
 	f.auth = r.Header.Get("Authorization")
+	f.mu.Unlock()
 	if f.status != 0 {
 		http.Error(w, http.StatusText(f.status), f.status)
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
 	_, _ = w.Write([]byte(`{"status":{"allowed":` + strconv.FormatBool(f.allowed) + `}}`))
+}
+
+// lastAuth is the Authorization header of the last access review.
+func (f *fakeHub) lastAuth() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.auth
+}
+
+// recorder keeps strings a test server records, safe for its handlers to add
+// to while the test reads.
+type recorder struct {
+	mu  sync.Mutex
+	got []string
+}
+
+func (r *recorder) add(v string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.got = append(r.got, v)
+}
+
+func (r *recorder) values() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.got)
 }
 
 func startHub(t *testing.T, f *fakeHub) *hub.Client {
@@ -296,8 +329,8 @@ func TestUserFromProxyHeaders(t *testing.T) {
 	if u.Username != "alice" || u.Email != "alice@example.com" || len(u.Groups) != 2 || !u.IsProviderAdmin {
 		t.Fatalf("user = %+v", u)
 	}
-	if h.auth != "Bearer sha256~token" {
-		t.Fatalf("the access review must carry the caller's own token, got %q", h.auth)
+	if h.lastAuth() != "Bearer sha256~token" {
+		t.Fatalf("the access review must carry the caller's own token, got %q", h.lastAuth())
 	}
 
 	rec = serve(newTestAppWithHub(t, cfg, nil, &fakeHub{allowed: false}), asUser(http.MethodGet, "/api/v1/user"))

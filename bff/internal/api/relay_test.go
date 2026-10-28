@@ -21,11 +21,11 @@ import (
 const connectList = "/ai_grid.v1.Clusters/List"
 
 // connectUpstream stands in for the backend's Connect port and records the Authorization it got.
-func connectUpstream(t *testing.T) (*relay.Relay, *[]string) {
+func connectUpstream(t *testing.T) (*relay.Relay, *recorder) {
 	t.Helper()
-	var auth []string
+	auth := &recorder{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		auth = append(auth, r.Header.Get("Authorization"))
+		auth.add(r.Header.Get("Authorization"))
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"size":0,"total":0}`))
 	}))
@@ -38,7 +38,7 @@ func connectUpstream(t *testing.T) (*relay.Relay, *[]string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return r, &auth
+	return r, auth
 }
 
 func connectCall(req *http.Request) *http.Request {
@@ -64,11 +64,11 @@ func TestConnectRelayCarriesTheCallersToken(t *testing.T) {
 	if rec.Code != http.StatusOK || rec.Body.String() != `{"size":0,"total":0}` {
 		t.Fatalf("got %d %q, want the backend's answer", rec.Code, rec.Body)
 	}
-	if len(*auth) != 1 || (*auth)[0] != "Bearer sha256~token" {
-		t.Fatalf("backend got Authorization %q, want the caller's token from x-forwarded-access-token", *auth)
+	if len(auth.values()) != 1 || auth.values()[0] != "Bearer sha256~token" {
+		t.Fatalf("backend got Authorization %q, want the caller's token from x-forwarded-access-token", auth.values())
 	}
-	if hub.auth != "Bearer sha256~token" {
-		t.Fatalf("the provider-admin check was asked with %q", hub.auth)
+	if hub.lastAuth() != "Bearer sha256~token" {
+		t.Fatalf("the provider-admin check was asked with %q", hub.lastAuth())
 	}
 }
 
@@ -109,8 +109,8 @@ func TestConnectRelayIsForProviderAdminsOnly(t *testing.T) {
 			}
 		})
 	}
-	if len(*auth) != 0 {
-		t.Fatalf("a refused caller reached the backend %d time(s)", len(*auth))
+	if len(auth.values()) != 0 {
+		t.Fatalf("a refused caller reached the backend %d time(s)", len(auth.values()))
 	}
 }
 
@@ -130,8 +130,8 @@ func TestConnectRelayRefusalsAfterTheCallerChecks(t *testing.T) {
 	if code, _ := decodeConnectError(t, rec); rec.Code != http.StatusNotFound || code != "unimplemented" {
 		t.Errorf("unclean path: got %d %s", rec.Code, code)
 	}
-	if len(*auth) != 0 {
-		t.Fatalf("a refused call reached the backend %d time(s)", len(*auth))
+	if len(auth.values()) != 0 {
+		t.Fatalf("a refused call reached the backend %d time(s)", len(auth.values()))
 	}
 }
 
