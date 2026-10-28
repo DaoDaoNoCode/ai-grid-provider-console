@@ -12,7 +12,7 @@ dev-fake` still loads PR 12's fixtures in `mock/fixtures/`. The file shapes are 
 | `models.json` | The PoC's three catalog models, `granite-3-8b` (Granite 3.3 8B Instruct), `llama-3-70b` (Llama 3.3 70B Instruct), and `granite-research` (Granite research endpoint), with no description, as CPU models on the hub with no placement: Ready at start, no locations. |
 | `tenants.json` | The three organizations the UAT seeds into the PoC: `acme-robotics`, `globex-research`, and `initech-labs`, with their domains and identity providers, a creation time, and version 1. |
 | `subscriptions.json` | The PoC's subscriptions `engineering`, `data-science`, and `research` with its groups, models, and token limits, and their authorization policies. Each belongs to one organization (`acme-robotics`, `globex-research` and `initech-labs`), as the form requires. All three read Active. |
-| `settings.json` | No latency, speed 1, ManifestWorkReplicaSet gate on. |
+| `settings.json` | No latency, speed 5 (a new subscription reads Degraded for 2 s, not 10 s, so the browser tests don't wait on the clock), ManifestWorkReplicaSet gate on. |
 | `access.json`, `presets.json` | Copies of `mock/fixtures`. |
 
 There's no `scenarios.json`, so nothing changes over time.

@@ -57,8 +57,8 @@ func TestPoCPresetMatchesThePoC(t *testing.T) {
 	checkClustersLookLikeTheHub(t, fx)
 	checkClustersUseOnlyHubStrings(t, fx)
 	checkModelsUseOnlyKnownStrings(t, fx, nil)
-	if fx.Latency.Duration() != 0 || fx.Speed != 1 || fx.ManifestWorkReplicaSetEnabled == nil || !*fx.ManifestWorkReplicaSetEnabled || len(fx.Scenarios) != 0 {
-		t.Errorf("settings: latency %s, speed %v, MWRS %v, %d scenario events; want 0s, 1, true, none", fx.Latency.Duration(), fx.Speed, fx.ManifestWorkReplicaSetEnabled, len(fx.Scenarios))
+	if fx.Latency.Duration() != 0 || fx.Speed != 5 || fx.ManifestWorkReplicaSetEnabled == nil || !*fx.ManifestWorkReplicaSetEnabled || len(fx.Scenarios) != 0 {
+		t.Errorf("settings: latency %s, speed %v, MWRS %v, %d scenario events; want 0s, 5, true, none", fx.Latency.Duration(), fx.Speed, fx.ManifestWorkReplicaSetEnabled, len(fx.Scenarios))
 	}
 
 	s := newPoCServer(t)
