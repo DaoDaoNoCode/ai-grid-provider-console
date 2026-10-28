@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from './zod';
 
 /**
  * Field errors keyed by JSON path, the last message per path, as the PoC keeps them
@@ -119,7 +119,7 @@ export const resourceName = z
   .string()
   .min(1)
   .max(253)
-  .regex(/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/);
+  .regex(/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/, 'Use lowercase letters, numbers, and hyphens.');
 
 // Ported from krisv/ai-grid-cloud-provider-poc shared/model-validation.mjs at 62319b8.
 export const modelNameSchema = resourceName.max(63);
