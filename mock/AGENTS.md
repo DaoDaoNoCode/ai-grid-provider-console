@@ -64,10 +64,10 @@ curl -s -H 'x-forwarded-access-token: dev-token' -H 'x-forwarded-user: dev-user'
   http://127.0.0.1:8080/api/v1/tenants
 ```
 
-`make dev-fake-poc` is the same stack on the PoC preset `fixtures-poc/` (the PoC's four sites, three
-models, three organizations and three subscriptions, no scenario events), for comparing screens with
-the PoC; the browser tests use it. Run the pieces separately with `make dev-fake-backend`, `make dev-bff-fake` and
-`make dev-frontend-fake`.
+The browser tests (`make e2e`) start the same fake on `fixtures-poc/` instead (the PoC's four
+sites, three models, three organizations and three subscriptions, no scenario events, no latency),
+from `frontend/playwright.config.ts`. To run the pieces separately, see
+`docs/dev-setup.md`, "Run the pieces separately".
 
 This fake serves the console's draft over gRPC only, so the Connect relay (`/ai_grid.v1.*`,
 `docs/plan/bff-api.md`, "The Connect relay") has nothing to reach here. For a page built on the

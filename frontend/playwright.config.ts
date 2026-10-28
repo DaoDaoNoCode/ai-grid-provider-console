@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 
-// The stack's ports default to the ones `make dev-fake-poc` documents. Set them when
+// The stack's ports default to the ones `make dev-fake` documents. Set them when
 // another process already holds a default (for example a PoC on :8080); CI keeps the defaults.
 const port = process.env.E2E_FRONTEND_PORT ?? '9000';
 const bffPort = process.env.E2E_BFF_PORT ?? '8080';
@@ -43,12 +43,12 @@ export default defineConfig({
     // cluster to AI Grid and removes it again: one run at a time.
     { name: 'cluster membership', use: { ...browser, baseURL: fakesOrigin }, testMatch: membership, workers: 1 },
   ],
-  // The stack of `make dev-fake-poc`, but with the frontend as it ships: the production bundle,
+  // The stack of `make dev-fake` on the PoC preset, but with the frontend as it ships: the production bundle,
   // served by `vite preview`, whose proxy is the dev server's (vite.config.ts), so the identity
   // headers are the same. The dev server's unbundled modules and React's development build
   // made pages load in seconds and reported errors React's production build does not.
   // Playwright starts the three in parallel and fails the run at once if one exits before it answers.
-  // Outside CI it reuses whatever already answers on the ports, `make dev-fake-poc` included.
+  // Outside CI it reuses whatever already answers on the ports, `make dev-fake` included.
   webServer: [
     {
       // make -C bff fake-backend on the PoC preset (mock/fixtures-poc): the specs use the PoC's

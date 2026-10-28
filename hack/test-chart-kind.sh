@@ -90,7 +90,7 @@ if ! kind get clusters 2>/dev/null | grep -qx "${CLUSTER}"; then
   prev="$(kubectl config current-context 2>/dev/null || true)"
   retry kind_create
   created=1
-  # kind switches kubectl's current context; put it back, so oc and make start keep their hub.
+  # kind switches kubectl's current context; put it back, so oc and make dev-cluster keep their hub.
   [[ -n "${prev}" ]] && kubectl config use-context "${prev}" >/dev/null
 fi
 

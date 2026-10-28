@@ -11,10 +11,9 @@ import (
 	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
 )
 
-// pocFixtures is the preset `make dev-fake-poc` loads: the PoC's four sites
+// pocFixtures is the preset the browser tests load: the PoC's four sites
 // and three models (shared/grid-clusters.mjs seedClusters() and
-// src/services/subscriptions/fixtures.ts at 62319b8), for the visual
-// comparison and the browser tests.
+// src/services/subscriptions/fixtures.ts at 62319b8).
 const pocFixtures = "../../../mock/fixtures-poc"
 
 // pocCluster is what the PoC shows for one of its sites.
