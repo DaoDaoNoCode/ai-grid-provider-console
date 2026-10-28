@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -543,40 +542,6 @@ func TestTenantVersions(t *testing.T) {
 	rec = serve(app, asUser(http.MethodGet, "/api/v1/tenants/t-9"))
 	if rec.Header().Get("ETag") != "" || strings.Contains(rec.Body.String(), "resourceVersion") {
 		t.Errorf("no version: ETag %q, body %s", rec.Header().Get("ETag"), rec.Body.String())
-	}
-}
-
-// The shipped backend's ListTenantsRequest is empty: it drops offset, limit
-// and filter and returns every tenant with no total. Asking it for a filter
-// or a page is 501, never the unfiltered rows as if they were the result.
-func TestTenantFilterAndPagingOnTheShippedBackend(t *testing.T) {
-	var many []*aigridv1.Tenant
-	for i := range 8 {
-		many = append(many, &aigridv1.Tenant{Id: fmt.Sprintf("t-%d", i+1), Name: fmt.Sprintf("org-%d", i+1)})
-	}
-	fake := &backendtest.Fake{Tenants: many, ShippedLists: true}
-	app := newTestApp(t, testConfig(t), fake)
-	for _, q := range []string{"filter=false&limit=5", "filter=" + url.QueryEscape(`this.name == "org-1"`), "limit=5", "offset=3", "offset=1&limit=100"} {
-		rec := serve(app, asUser(http.MethodGet, "/api/v1/tenants?"+q))
-		if rec.Code != http.StatusNotImplemented {
-			t.Errorf("%s on the shipped backend = %d %s, want 501", q, rec.Code, rec.Body.String())
-			continue
-		}
-		if msg := decodeError(t, rec).Error.Message; msg != "the AI Grid backend does not support filtering or paging tenants yet; list them without filter, offset or limit" {
-			t.Errorf("message = %q", msg)
-		}
-	}
-	// No filter and no page (offset=0 is the start anyway): the full list,
-	// with the size as the total because nothing precedes it.
-	for _, q := range []string{"", "?offset=0", "?filter="} {
-		var list []Tenant
-		rec := serve(app, asUser(http.MethodGet, "/api/v1/tenants"+q))
-		if rec.Code != http.StatusOK {
-			t.Fatalf("%q = %d %s", q, rec.Code, rec.Body.String())
-		}
-		if meta := decodeList(t, rec, &list); len(list) != 8 || meta.Size != 8 || total(meta) != 8 {
-			t.Errorf("%q = %d tenants, meta %+v", q, len(list), meta)
-		}
 	}
 }
 

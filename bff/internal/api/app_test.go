@@ -883,10 +883,12 @@ func TestWriteJSONFailureIs500(t *testing.T) {
 	}
 }
 
-// TestGetClusterFallsBackToListOnTheShippedBackend: today's backend has only
-// ListManagedClusters, so GetManagedCluster answers Unimplemented and the
-// detail endpoint must still work by filtering the list.
-func TestGetClusterFallsBackToListOnTheShippedBackend(t *testing.T) {
+// TestGetClusterFallsBackToListOnAnOlderBackend: a backend without
+// GetManagedCluster answers Unimplemented, and the detail endpoint still works
+// by filtering the list. Neither the fake nor the backend (Clusters/Get since
+// its first release) answers that, so this covers fetchCluster's fallback
+// until it is removed (AGENTS.md, "Known exceptions").
+func TestGetClusterFallsBackToListOnAnOlderBackend(t *testing.T) {
 	fake := &backendtest.Fake{
 		Clusters: []*aigridv1.ManagedCluster{{Name: "site-1", HubAcceptsClient: true, Labels: map[string]string{LabelEnabled: "true"}}},
 		Errs:     map[string]error{"GetManagedCluster": backendtest.Status(codes.Unimplemented, "method GetManagedCluster not implemented")},
@@ -914,7 +916,7 @@ func TestGetClusterFallsBackToListOnTheShippedBackend(t *testing.T) {
 	if rec := serve(app, asUser(http.MethodGet, "/api/v1/clusters/site-1")); rec.Code != http.StatusServiceUnavailable || fake.Reached("ListManagedClusters") {
 		t.Errorf("Unavailable = %d, calls %v", rec.Code, fake.Calls)
 	}
-	// A PATCH against the shipped backend is 501: it has no UpdateManagedCluster
+	// A PATCH against such a backend is 501: it has no UpdateManagedCluster
 	// either (and the BFF does not read first).
 	fake.Calls = nil
 	fake.Errs = map[string]error{
@@ -922,7 +924,7 @@ func TestGetClusterFallsBackToListOnTheShippedBackend(t *testing.T) {
 		"UpdateManagedCluster": backendtest.Status(codes.Unimplemented, "method UpdateManagedCluster not implemented"),
 	}
 	if rec := serve(app, withIfMatch(patchRequest("site-1", `{"labels": {}}`), `"1"`)); rec.Code != http.StatusNotImplemented || fake.Reached("GetManagedCluster") {
-		t.Errorf("PATCH on the shipped backend = %d %s", rec.Code, rec.Body.String())
+		t.Errorf("PATCH on an older backend = %d %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -1578,7 +1580,7 @@ func TestSubscriptionRoutes(t *testing.T) {
 		t.Fatalf("delete without If-Match: %d %s, request %v", rec.Code, rec.Body, fake.LastSubscriptionDelete)
 	}
 
-	// The real backend has no Subscriptions service yet: 501 everywhere.
+	// A backend without the Subscriptions service answers Unimplemented: 501 everywhere.
 	fake.Err = status.Error(codes.Unimplemented, "")
 	for _, r := range []struct{ method, path, body, ifMatch string }{
 		{http.MethodGet, "/api/v1/subscriptions", "", ""},
@@ -1588,7 +1590,7 @@ func TestSubscriptionRoutes(t *testing.T) {
 		{http.MethodDelete, "/api/v1/subscriptions/engineering", "", `"1"`},
 	} {
 		if rec := send(r.method, r.path, r.body, r.ifMatch); rec.Code != http.StatusNotImplemented {
-			t.Fatalf("%s %s on the real backend: %d %s", r.method, r.path, rec.Code, rec.Body)
+			t.Fatalf("%s %s without the service: %d %s", r.method, r.path, rec.Code, rec.Body)
 		}
 	}
 }
@@ -1750,69 +1752,6 @@ func TestGridOverviewOmitsUpdatedAtTheBackendDidNotSend(t *testing.T) {
 	decodeData(t, rec, &raw)
 	if _, ok := raw["updatedAt"]; ok {
 		t.Fatalf("updatedAt invented: %s", rec.Body)
-	}
-}
-
-// TestNewRoutesAnswer501OnTheRealBackendShape: the real ai-grid-backend serves
-// only Ping, ListManagedClusters and ListTenants. Every other route of the
-// merged table (PR 12's clusters, tenants and models, and the port's
-// subscriptions and grid overview) reaches its RPC (valid body, JSON content
-// type, If-Match) and answers 501, which the frontend shows as "not available
-// yet". GET /clusters/{name} is not in the list: PR 12 falls back to
-// ListManagedClusters (TestGetClusterFallsBackToListOnTheShippedBackend).
-func TestNewRoutesAnswer501OnTheRealBackendShape(t *testing.T) {
-	fake := &backendtest.Fake{
-		Clusters: []*aigridv1.ManagedCluster{member("site1", "san-francisco")},
-		Tenants:  []*aigridv1.Tenant{{Id: "id-acme", Name: "acme"}},
-	}
-	app := NewApp(testConfig(t), slog.New(slog.DiscardHandler), backendtest.StartRealShape(t, fake), startHub(t, &fakeHub{allowed: true}))
-	send := func(method, path, body, ifMatch string) *httptest.ResponseRecorder {
-		req := asUser(method, path)
-		if body != "" {
-			req.Body = io.NopCloser(strings.NewReader(body))
-			req.Header.Set("Content-Type", "application/json")
-		}
-		if ifMatch != "" {
-			req.Header.Set("If-Match", ifMatch)
-		}
-		return serve(app, req)
-	}
-
-	// The three RPCs it has still work.
-	for _, path := range []string{"/api/v1/clusters", "/api/v1/tenants", "/api/v1/clusters/site1"} {
-		if rec := send(http.MethodGet, path, "", ""); rec.Code != http.StatusOK {
-			t.Fatalf("GET %s: %d %s", path, rec.Code, rec.Body)
-		}
-	}
-
-	subscriptionUpdate := `{"description":"New","priority":7,"owner":{"users":["alice"],"groups":[{"name":"engineering"}]},
-"modelRefs":[{"name":"granite-3-8b","tokenRateLimits":[{"limit":5,"window":"1m"}]}],"tokenMetadata":{"organizationId":"id-acme"}}`
-	routes := []struct{ method, path, body, ifMatch string }{
-		{http.MethodPatch, "/api/v1/clusters/site1", `{"labels":{"ai-grid/enabled":"true"}}`, `"1"`},
-		{http.MethodGet, "/api/v1/tenants/id-acme", "", ""},
-		{http.MethodPost, "/api/v1/tenants", `{"name":"acme-two","domains":["acme-two.example.com"]}`, ""},
-		{http.MethodPatch, "/api/v1/tenants/id-acme", `{"domains":["acme.example.com"]}`, `"1"`},
-		{http.MethodDelete, "/api/v1/tenants/id-acme", "", `"1"`},
-		{http.MethodGet, "/api/v1/models", "", ""},
-		{http.MethodPost, "/api/v1/models", `{"name":"cpu-only","namespace":"ai-grid-models","modelUri":"hf://example-org/cpu-only"}`, ""},
-		{http.MethodGet, "/api/v1/models/ai-grid-models/tiny-llm", "", ""},
-		{http.MethodPatch, "/api/v1/models/ai-grid-models/tiny-llm", `{"replicas":2}`, `"1"`},
-		{http.MethodDelete, "/api/v1/models/ai-grid-models/tiny-llm", "", `"1"`},
-		{http.MethodGet, "/api/v1/capabilities", "", ""},
-		{http.MethodGet, "/api/v1/locations", "", ""},
-		{http.MethodGet, "/api/v1/subscriptions", "", ""},
-		{http.MethodGet, "/api/v1/subscriptions/engineering", "", ""},
-		{http.MethodPost, "/api/v1/subscriptions", validSubscription, ""},
-		{http.MethodPut, "/api/v1/subscriptions/engineering", subscriptionUpdate, `"1"`},
-		{http.MethodDelete, "/api/v1/subscriptions/engineering", "", `"1"`},
-		{http.MethodGet, "/api/v1/grid/overview?range=1h", "", ""},
-		{http.MethodGet, "/api/v1/grid/overview?range=24h&site=brussels&metrics=false", "", ""},
-	}
-	for _, r := range routes {
-		rec := send(r.method, r.path, r.body, r.ifMatch)
-		if rec.Code != http.StatusNotImplemented || decodeError(t, rec).Error.Message != "the AI Grid backend does not support this operation yet" {
-			t.Errorf("%s %s on the real backend: %d %s", r.method, r.path, rec.Code, rec.Body)
-		}
 	}
 }
 

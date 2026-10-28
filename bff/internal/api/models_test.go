@@ -466,22 +466,6 @@ func TestRepeatedModelPatchReachesTheBackend(t *testing.T) {
 	}
 }
 
-func TestModelFilterOnTheShippedBackend(t *testing.T) {
-	fake := &backendtest.Fake{Models: seedModels(), ShippedLists: true}
-	app := newTestApp(t, testConfig(t), fake)
-	for _, q := range []string{"filter=" + url.QueryEscape(`this.metadata.namespace == "team-b"`), "limit=1", "offset=2"} {
-		rec := serve(app, asUser(http.MethodGet, "/api/v1/models?"+q))
-		if rec.Code != http.StatusNotImplemented || !strings.Contains(decodeError(t, rec).Error.Message, "filtering or paging models") {
-			t.Errorf("%s = %d %s, want 501", q, rec.Code, rec.Body.String())
-		}
-	}
-	var list []Model
-	rec := serve(app, asUser(http.MethodGet, "/api/v1/models"))
-	if meta := decodeList(t, rec, &list); rec.Code != http.StatusOK || len(list) != 3 || total(meta) != 3 {
-		t.Errorf("unfiltered = %d, %d models, meta %+v", rec.Code, len(list), meta)
-	}
-}
-
 // Every present field goes in the mask, also for a model whose backend sent
 // no spec: the BFF has nothing to compare with.
 func TestPatchModelSendsEveryPresentField(t *testing.T) {
