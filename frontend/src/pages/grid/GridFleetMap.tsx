@@ -32,6 +32,15 @@ const statusColor: Record<FleetCluster['status'], string> = {
 /** A pin keeps its status colour when selected (the legend's colours); selection shows as a larger ring. */
 const pinColor = (cluster: FleetCluster) => statusColor[cluster.status];
 
+/** Which status a shared pin shows: the worst among its clusters. */
+const statusRank: Record<FleetCluster['status'], number> = { Ready: 0, Unknown: 1, Offline: 2 };
+
+/** "Site name · cluster name": the site's name, else the cloud region, else the cluster's name alone. */
+const pinLabel = (c: FleetCluster) => {
+  const site = c.siteName || c.region || c.site;
+  return site ? `${site} · ${c.name}` : c.name;
+};
+
 const isMapped = (c: FleetCluster) => c.latitude !== undefined && c.longitude !== undefined;
 
 /**
@@ -39,7 +48,9 @@ const isMapped = (c: FleetCluster) => c.latitude !== undefined && c.longitude !=
  * apart from an empty one (the labels treat them differently) and can't mix up field boundaries.
  */
 const pinsSignature = (clusters: FleetCluster[]) =>
-  JSON.stringify(clusters.filter(isMapped).map((c) => [c.name, c.latitude, c.longitude, c.status, c.siteName, c.site]));
+  JSON.stringify(
+    clusters.filter(isMapped).map((c) => [c.name, c.latitude, c.longitude, c.status, c.siteName, c.region, c.site]),
+  );
 
 export const GridFleetMap: React.FC<Props> = ({ clusters, selected, onSelect, tiles, isFiltered }) => {
   const container = useRef<HTMLDivElement>(null);
@@ -137,22 +148,25 @@ export const GridFleetMap: React.FC<Props> = ({ clusters, selected, onSelect, ti
     group.clearLayers();
     const bounds = L.latLngBounds([]);
     const mapped = latestClusters.current.filter(isMapped);
-    mapped.forEach((cluster) => {
-      // Separate co-located cluster pins so each remains selectable.
-      const siblings = mapped
-        .filter((c) => c.latitude === cluster.latitude && c.longitude === cluster.longitude)
-        .sort((a, b) => a.name.localeCompare(b.name));
-      const i = siblings.findIndex((c) => c.name === cluster.name);
-      const angle = (i * 2 * Math.PI) / siblings.length;
-      const offset = siblings.length > 1 ? 0.12 : 0;
-      const latLng: L.LatLngExpression = [
-        cluster.latitude! + Math.sin(angle) * offset,
-        cluster.longitude! + Math.cos(angle) * offset,
-      ];
-      const focused = selected === cluster.name;
-      const color = pinColor(cluster);
+    // Clusters at one position share a pin (two clusters in one cloud region get the region's
+    // position): its colour is the worst status among them, its label names each, and a click
+    // lists them to choose from.
+    const spots = new Map<string, FleetCluster[]>();
+    for (const c of mapped) {
+      const key = `${c.latitude},${c.longitude}`;
+      spots.set(key, [...(spots.get(key) ?? []), c]);
+    }
+    spots.forEach((unsorted) => {
+      const here = [...unsorted].sort((x, y) => x.name.localeCompare(y.name));
+      const [first] = here;
+      const latLng: L.LatLngExpression = [first.latitude!, first.longitude!];
+      const focusedCluster = here.find((c) => c.name === selected);
+      const focused = focusedCluster !== undefined;
+      const worst = here.reduce((w, c) => (statusRank[c.status] > statusRank[w.status] ? c : w), first);
+      const color = pinColor(worst);
+      const shared = here.length > 1;
       const marker = L.circleMarker(latLng, {
-        radius: focused ? 11 : 7,
+        radius: focused ? 11 : shared ? 9 : 7,
         color,
         weight: focused ? 4 : 2,
         fillColor: color,
@@ -160,16 +174,39 @@ export const GridFleetMap: React.FC<Props> = ({ clusters, selected, onSelect, ti
         opacity: 0.85,
         className: focused ? 'fleet-pin fleet-pin--selected' : 'fleet-pin',
       });
-      // A text node avoids interpreting cluster metadata as HTML.
+      // Text nodes avoid interpreting cluster metadata as HTML.
       const tooltip = document.createElement('span');
-      tooltip.textContent = focused
-        ? `${cluster.siteName ?? cluster.site ?? 'Site unassigned'} · ${cluster.name} · ${cluster.status}`
-        : (cluster.siteName ?? cluster.site ?? cluster.name);
+      if (focusedCluster && !shared) {
+        tooltip.textContent = `${pinLabel(focusedCluster)} · ${focusedCluster.status}`;
+      } else if (shared) {
+        tooltip.textContent = `${here.length} clusters here: ${here.map(pinLabel).join(', ')}`;
+      } else {
+        tooltip.textContent = pinLabel(first);
+      }
       // Only the selected pin keeps its label; the others show theirs on hover, so labels don't cover pins.
-      marker
-        .bindTooltip(tooltip, { direction: 'top', opacity: 1, permanent: focused })
-        .on('click', () => select.current(cluster.name))
-        .addTo(group);
+      marker.bindTooltip(tooltip, { direction: 'top', opacity: 1, permanent: focused }).addTo(group);
+      if (shared) {
+        const list = document.createElement('div');
+        list.setAttribute('role', 'list');
+        list.setAttribute('aria-label', `${here.length} clusters here`);
+        for (const c of here) {
+          const item = document.createElement('div');
+          item.setAttribute('role', 'listitem');
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'pf-v6-c-button pf-m-link pf-m-inline';
+          button.textContent = `${pinLabel(c)} · ${c.status}`;
+          button.addEventListener('click', () => {
+            marker.closePopup();
+            select.current(c.name);
+          });
+          item.appendChild(button);
+          list.appendChild(item);
+        }
+        marker.bindPopup(list);
+      } else {
+        marker.on('click', () => select.current(first.name));
+      }
       bounds.extend(latLng);
     });
     const signature = mapped.map((c) => `${c.name}:${c.latitude}:${c.longitude}`).join('|');
@@ -196,9 +233,7 @@ export const GridFleetMap: React.FC<Props> = ({ clusters, selected, onSelect, ti
       )}
       {!clusters.some(isMapped) && (
         <p className="fleet-map__overlay fleet-map__overlay--empty">
-          {isFiltered
-            ? 'No clusters match the search or filter.'
-            : 'No mapped clusters. Add site coordinates to ManagedCluster annotations.'}
+          {isFiltered ? 'No clusters match the search or filter.' : 'No cluster has a map position yet.'}
         </p>
       )}
       <Flex

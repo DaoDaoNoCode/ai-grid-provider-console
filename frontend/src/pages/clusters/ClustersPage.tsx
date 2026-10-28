@@ -32,6 +32,8 @@ import type { MembershipChange } from './MembershipModal';
 import { changeMembership } from './changeMembership';
 import { MembershipModal } from './MembershipModal';
 import { MissingLabel } from './MissingLabel';
+import { ClusterSite } from './ClusterSite';
+import { siteOf } from './site';
 import { gpuCount, membershipAction, statusReason } from './clusterInfo';
 import { capacityText, configurationText, gpuCountText, gpuSharing } from './gpuText';
 import { clusterRoles, roleOf } from './roles';
@@ -46,10 +48,11 @@ import { useClusterList, useMembershipWrites } from './useClusters';
 // cards (UX review). Each name opens the cluster's details page. No Hub column: a cluster the hub
 // hasn't accepted shows Not accepted in the cluster status's tooltip, and Add says why it's
 // disabled (on the real backend the BFF derives that state from spec.hub_accepts_client,
-// bff/internal/backend/v1.go). Site and Region (ai-grid/site and ai-grid/region) are left out:
-// geography is after the MVP, and the console doesn't write either label. The status tooltip adds
-// the ACM state behind Unknown (such as Importing) and the backend's message, which the PoC's three
-// states don't have.
+// the backend's state). Site is where the backend's status.location puts the cluster: the site
+// name a hub admin set, or the cloud region (approximate), with a warning when the coordinate
+// annotations are wrong. It is a column of its own, beside but apart from the AI Grid Location (the
+// location label Add writes). The status tooltip adds the ACM state behind Unknown (such as
+// Importing) and the backend's message, which the PoC's three states don't have.
 
 type Column = {
   /** The header under its group: Name, Status, Location, ... */
@@ -75,6 +78,7 @@ const columns: Column[] = [
     srPrefix: 'Cluster',
     sort: (a, b) => a.status.localeCompare(b.status),
   },
+  { label: 'Site', dataLabel: 'Site', sort: (a, b) => (siteOf(a) ?? '').localeCompare(siteOf(b) ?? '') },
   {
     label: 'Status',
     dataLabel: 'AI Grid status',
@@ -115,7 +119,7 @@ const columns: Column[] = [
 
 /** The header groups over the columns, in order: each spans that many columns. */
 const groups: { label: string; span: number; info?: ThProps['info'] }[] = [
-  { label: 'Cluster', span: 2 },
+  { label: 'Cluster', span: 3 },
   { label: 'AI Grid', span: 3 },
   {
     label: 'GPUs',
@@ -309,8 +313,11 @@ export const ClustersPage: React.FC = () => {
                         <Td dataLabel="Cluster">
                           <Link to={`/clusters/${encodeURIComponent(c.name)}`}>{c.name}</Link>
                         </Td>
-                        <Td dataLabel="Cluster status" hasRightBorder>
+                        <Td dataLabel="Cluster status">
                           <StatusLabel isCompact status={c.status} reason={statusReason(c)} />
+                        </Td>
+                        <Td dataLabel="Site" hasRightBorder>
+                          <ClusterSite cluster={c} testId={`cluster-site-${c.name}`} />
                         </Td>
                         <Td dataLabel="AI Grid status">
                           <StatusLabel isCompact status={c.aiGridEnabled ? c.provisioningStatus : 'Not added'} />

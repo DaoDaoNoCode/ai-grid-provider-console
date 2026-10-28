@@ -135,6 +135,14 @@ regression passing when updating these dependencies.
   name (`placement.selectedClusters` of `GET /api/v1/models`), not by `locations`, the `location`
   labels that several clusters share.
 
+- **Where a cluster is**, read-only (`pages/clusters/ClusterSite.tsx`, `site.ts`): the list's Site
+  column and the cluster page show the site name, else the cloud region marked approximate, and
+  a warning with the backend's `problem` when the annotations are wrong; the cluster page adds
+  the region and the map position with how a hub admin sets it (the backend's README, "Cluster
+  locations"). On the map, clusters at one position share a pin labelled "site name · cluster
+  name" for each, and the list counts the members that aren't on the map, by why. "Region" is
+  the cloud region only: the `ai-grid/region` label isn't read.
+
 Still worded in the page, and backend asks if another client needs them: a provisioning enum
 instead of the Policy's compliance string, and typed `openshift_version`, `console_url`,
 `platform` and `product`.
@@ -199,9 +207,9 @@ const { clients } = fakeClients({
   (`connectClusters.ts`, through `fakeClients`). A test that needs another backend passes its own
   transport (`fakeClients({}).transport` for one without the RPCs).
 - The browser tests of the Clusters pages and the map (`e2e/cluster-membership.spec.ts`,
-  `e2e/clusters.spec.ts`, `e2e/grid.spec.ts`) run against the backend's own fakes on the PoC
-  preset (`hack/backend-fakes.sh`, `make dev-fake-infra` with its `DEV_FIXTURES`), on ports offset
-  from the console's own fake, which the other specs use.
+  `e2e/clusters.spec.ts`, `e2e/grid.spec.ts`) run against the backend's own fakes on its PoC
+  fixtures, which `frontend/playwright.config.ts` starts through `hack/backend-fakes.sh`, on ports
+  offset from the console's own fake, which the other specs use.
 - The fake's answers are type-checked against the generated messages and go through the same
   serialization as the wire, so a fake can't drift from the API the way the hand-written
   `MockConsoleService` could.

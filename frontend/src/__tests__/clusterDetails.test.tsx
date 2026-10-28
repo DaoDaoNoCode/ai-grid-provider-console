@@ -6,6 +6,9 @@ import type { NavigateFunction } from 'react-router-dom';
 import { ServiceError } from '../api/ConsoleService';
 import { MockConsoleService, seedClusters } from '../api/MockConsoleService';
 import type { GridCluster } from '../api/types';
+import { create } from '@bufbuild/protobuf';
+import { fakeClients } from '../api/connect/testing';
+import { ManagedClusterLocationSource, ManagedClusterSchema } from '../gen/ai_grid/v1/managed_cluster_type_pb';
 import { renderAt } from './render';
 // The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
 import '../pages/clusters/ClusterDetailsPage';
@@ -490,4 +493,33 @@ it('says when the hub has no such cluster', async () => {
   renderAt('/clusters/nope', new MockConsoleService());
   expect(await screen.findByRole('heading', { name: 'Cluster not found' })).toBeVisible();
   expect(screen.getByRole('link', { name: 'Go to Clusters' })).toHaveAttribute('href', '/clusters');
+});
+
+it('says where the map puts the cluster, approximate from its cloud region, with how to set it', async () => {
+  const transport = fakeClients({
+    clusters: {
+      get: async () => ({
+        object: create(ManagedClusterSchema, {
+          id: 'in-region',
+          metadata: { name: 'in-region' },
+          status: {
+            location: {
+              latitude: 40.42,
+              longitude: -82.91,
+              source: ManagedClusterLocationSource.CLOUD_REGION,
+              region: 'us-east-2',
+            },
+          },
+        }),
+      }),
+    },
+  }).transport;
+  renderAt('/clusters/in-region', new MockConsoleService(), transport);
+  const position = await screen.findByTestId('cluster-map-position');
+  expect(position).toHaveTextContent('40.42, -82.91 approximate, from the cloud region');
+  expect(within(position).getByRole('link', { name: "How to set a cluster's position" })).toHaveAttribute(
+    'href',
+    'https://github.com/ai-grid-cloud/ai-grid-provider-backend/blob/main/README.md#cluster-locations',
+  );
+  expect(screen.getByTestId('cluster-site')).toHaveTextContent('us-east-2 approximate');
 });

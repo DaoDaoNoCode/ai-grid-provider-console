@@ -42,6 +42,7 @@ import { StatusLabel } from '../../components/StatusLabel';
 import { SubtleText } from '../../components/SubtleText';
 import { modelKey } from '../../utilities/authpolicies';
 import { modelPath } from '../models/modelUtils';
+import { LOCATION_DOCS_URL } from '../clusters/site';
 import { GridFleetMap } from './GridFleetMap';
 import type { TileLayerConfig } from './tiles';
 import './grid-fleet.css';
@@ -50,7 +51,8 @@ import './grid-fleet.css';
 export type FleetCluster = Pick<
   ClusterView,
   'name' | 'status' | 'location' | 'site' | 'siteName' | 'region' | 'latitude' | 'longitude' | 'provisioningStatus'
->;
+> &
+  Partial<Pick<ClusterView, 'locationSource' | 'locationProblem'>>;
 
 /** A cluster by its name, or a model by its modelKey. */
 type Selection = { kind: 'cluster' | 'model'; name: string };
@@ -69,7 +71,7 @@ const matches = (model: ManagedModel, cluster: FleetCluster) => model.selectedCl
 
 const displayName = (model: ManagedModel) => model.displayName ?? model.name;
 
-const siteOf = (cluster: FleetCluster) => cluster.siteName ?? cluster.site ?? cluster.name;
+const siteOf = (cluster: FleetCluster) => cluster.siteName ?? cluster.region ?? cluster.site ?? cluster.name;
 
 const hasCoordinates = (c: FleetCluster) => c.latitude !== undefined && c.longitude !== undefined;
 
@@ -291,8 +293,19 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
             { term: 'Location', value: cluster.location },
             {
               term: 'Coordinates',
-              value: hasCoordinates(cluster) ? `${cluster.latitude}, ${cluster.longitude}` : undefined,
+              value: hasCoordinates(cluster) ? (
+                <>
+                  {cluster.latitude}, {cluster.longitude}
+                  {cluster.locationSource === 'cloud region' && (
+                    <>
+                      {' '}
+                      <SubtleText>approximate, from the cloud region</SubtleText>
+                    </>
+                  )}
+                </>
+              ) : undefined,
             },
+            { term: 'Position problem', value: cluster.locationProblem },
             { term: 'Provisioning', value: <StatusLabel isCompact status={cluster.provisioningStatus} /> },
           ]}
         />
@@ -348,7 +361,10 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
     </EmptyState>
   );
 
-  const withoutCoordinates = clusters.filter((c) => !hasCoordinates(c)).length;
+  // Not on the map: no position (no annotations, no known cloud region), or annotations to fix.
+  const notOnMap = clusters.filter((c) => !hasCoordinates(c));
+  const withProblem = notOnMap.filter((c) => c.locationProblem).length;
+  const withoutPosition = notOnMap.length - withProblem;
 
   const list = (
     <Stack hasGutter>
@@ -407,10 +423,19 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
               );
             })}
       </Stack>
-      {mode === 'cluster' && withoutCoordinates > 0 && (
+      {mode === 'cluster' && notOnMap.length > 0 && (
         <SubtleText>
-          {withoutCoordinates} {withoutCoordinates === 1 ? 'cluster has' : 'clusters have'} no site coordinates, so{' '}
-          {withoutCoordinates === 1 ? 'it is' : 'they are'} listed here but not on the map.
+          {notOnMap.length} {notOnMap.length === 1 ? "cluster isn't" : "clusters aren't"} on the map:{' '}
+          {[
+            withoutPosition && `${withoutPosition} without a position`,
+            withProblem && `${withProblem} with coordinate annotations to fix`,
+          ]
+            .filter(Boolean)
+            .join(', ')}
+          .{' '}
+          <a href={LOCATION_DOCS_URL} target="_blank" rel="noreferrer">
+            How to set a cluster&apos;s position
+          </a>
         </SubtleText>
       )}
     </Stack>

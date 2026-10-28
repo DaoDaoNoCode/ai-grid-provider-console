@@ -15,7 +15,9 @@ import {
   List,
   ListItem,
   PageSection,
+  Stack,
 } from '@patternfly/react-core';
+import { SubtleText } from '../../components/SubtleText';
 import { ExternalLinkAltIcon } from '@patternfly/react-icons';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -52,6 +54,8 @@ import { MissingLabel } from './MissingLabel';
 import { roleOf } from './roles';
 import type { ClusterView } from './clusterView';
 import { useCluster, useMembershipWrites } from './useClusters';
+import { ClusterSite } from './ClusterSite';
+import { isApproximate, LOCATION_DOCS_URL } from './site';
 
 type Props = { service: UserService };
 
@@ -113,12 +117,49 @@ const clusterItems = (c: ClusterView) => [
     ),
     'data-testid': 'cluster-status',
   },
+  { term: 'Site', value: <ClusterSite cluster={c} testId="cluster-site" /> },
+  { term: 'Region', value: c.region },
+  { term: 'Map position', value: <MapPosition cluster={c} />, 'data-testid': 'cluster-map-position' },
   ...(c.openshiftVersion ? [{ term: 'OpenShift version', value: c.openshiftVersion }] : []),
   { term: 'Kubernetes version', value: c.kubernetesVersion },
   { term: 'Platform', value: c.platform },
   { term: 'Product', value: c.product },
   { term: 'Added to the hub', value: c.creationTimestamp && <RelativeTime time={c.creationTimestamp} /> },
 ];
+
+/**
+ * Where the map puts the cluster and from what: the hub admin's annotations, or the cloud region
+ * (approximate); otherwise why it isn't on the map. Without annotations it links to how a hub
+ * admin sets them.
+ */
+const MapPosition: React.FC<{ cluster: ClusterView }> = ({ cluster: c }) => {
+  const how = (
+    <a href={LOCATION_DOCS_URL} target="_blank" rel="noreferrer">
+      How to set a cluster&apos;s position
+    </a>
+  );
+  if (c.latitude === undefined || c.longitude === undefined) {
+    return (
+      <Stack>
+        <span>
+          {c.locationProblem ? 'Not on the map: the coordinate annotations are wrong' : 'Not on the map: no position'}
+        </span>
+        {how}
+      </Stack>
+    );
+  }
+  const at = `${c.latitude}, ${c.longitude}`;
+  return isApproximate(c) ? (
+    <Stack>
+      <span>
+        {at} <SubtleText>approximate, from the cloud region</SubtleText>
+      </span>
+      {how}
+    </Stack>
+  ) : (
+    <span>{at}</span>
+  );
+};
 
 /** Each distinct value once, in order. */
 const distinct = (values: (string | undefined)[]) => [...new Set(values.filter((v): v is string => !!v))];

@@ -13,6 +13,7 @@ import { HttpConsoleService } from '../api/HttpConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
 import { tileLayerConfig } from '../pages/grid/tiles';
 import { serviceOnPr12Json } from './pr12Json';
+import { toManagedCluster } from './connectClusters';
 import { renderAt } from './render';
 // The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
 import '../pages/grid/AiGridPage';
@@ -351,4 +352,31 @@ it("drops the Back trail when a link moves the drawer to something the trail was
   expect(await screen.findByRole('heading', { name: 'site2' })).toBeVisible();
   expect(screen.queryByRole('button', { name: 'Back' })).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Clusters' })).toBeVisible();
+});
+
+it("counts the members that aren't on the map, by why, and links to how to place them", async () => {
+  const service = new MockConsoleService();
+  const [first, second, third] = service.clusters;
+  service.clusters = [
+    first,
+    { ...second, latitude: undefined, longitude: undefined },
+    { ...third, latitude: undefined, longitude: undefined },
+  ];
+  // The mock's clusters carry no problem; one member's annotations are wrong.
+  const clusters = await service.listClusters();
+  const transport = fakeClients({
+    clusters: {
+      list: async () => {
+        const items = clusters.map(toManagedCluster);
+        items[2].status!.location!.problem = 'ai-grid/longitude "4,35" is not a decimal number of degrees';
+        return { items, size: items.length, total: items.length };
+      },
+    },
+  }).transport;
+  renderAt('/ai-grid', service, transport);
+  const note = await screen.findByText(/aren.t on the map/);
+  expect(note).toHaveTextContent(
+    "2 clusters aren't on the map: 1 without a position, 1 with coordinate annotations to fix.",
+  );
+  expect(within(note).getByRole('link', { name: "How to set a cluster's position" })).toBeVisible();
 });

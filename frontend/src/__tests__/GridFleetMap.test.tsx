@@ -1,6 +1,7 @@
 // The map with real Leaflet (review focus 5). grid-map.test.tsx mocks the map, so these
 // cases live in their own file (A31).
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import L from 'leaflet';
 import { seedClusters } from '../api/MockConsoleService';
 import { GridFleetMap } from '../pages/grid/GridFleetMap';
@@ -26,9 +27,7 @@ it('keeps pins when tiles fail', () => {
   ).toBeInTheDocument();
   // Counted on the page after the error, so a pin the error removed fails the test.
   expect(container.querySelectorAll('path.fleet-pin')).toHaveLength(3);
-  expect(
-    screen.queryByText('No mapped clusters. Add site coordinates to ManagedCluster annotations.'),
-  ).not.toBeInTheDocument();
+  expect(screen.queryByText('No cluster has a map position yet.')).not.toBeInTheDocument();
 });
 
 it('labels only the selected pin, which keeps its status colour; the others label on hover', () => {
@@ -110,9 +109,7 @@ it('explains a map without coordinates', () => {
   const unmapped = members.map(({ latitude: _lat, longitude: _lng, ...c }) => c);
   const marker = vi.spyOn(L, 'circleMarker');
   render(<GridFleetMap clusters={unmapped} selected={null} onSelect={() => {}} tiles={tiles} />);
-  expect(
-    screen.getByText('No mapped clusters. Add site coordinates to ManagedCluster annotations.'),
-  ).toBeInTheDocument();
+  expect(screen.getByText('No cluster has a map position yet.')).toBeInTheDocument();
   expect(pinsDrawn(marker)).toBe(0);
 });
 
@@ -132,7 +129,7 @@ it('keeps its pins through a re-render with the same clusters, and redraws when 
   expect(pinsDrawn(marker)).toBe(drawn);
   // The same pin, still on the map, with its label still open.
   expect(pin.isTooltipOpen()).toBe(true);
-  expect(screen.getByText(members[0].siteName ?? members[0].site ?? members[0].name)).toBeInTheDocument();
+  expect(screen.getByText(`${members[0].siteName} · ${members[0].name}`)).toBeInTheDocument();
   // A changed status is a change the pins show.
   rerender(<GridFleetMap clusters={members.map((c, i) => (i ? c : { ...c, status: 'Offline' }))} {...props} />);
   expect(pinsDrawn(marker)).toBe(2 * drawn);
@@ -147,4 +144,35 @@ it('redraws a label when a site name goes from missing to empty', () => {
   // The label falls back to the site only when the name is missing, so an empty name is a change.
   rerender(<GridFleetMap clusters={[{ ...first, siteName: '' }, ...rest]} {...props} />);
   expect(pinsDrawn(marker)).toBe(2 * drawn);
+});
+
+it('gives clusters at one position one pin, which names each and lists them to choose from', async () => {
+  const marker = vi.spyOn(L, 'circleMarker');
+  const onSelect = vi.fn();
+  const [a, b, c] = members;
+  // Two clusters in one cloud region get the region's position.
+  const here = { latitude: 40.42, longitude: -82.91, siteName: undefined, site: undefined, region: 'us-east-2' };
+  render(
+    <GridFleetMap
+      clusters={[{ ...a, ...here }, { ...b, ...here, status: 'Offline' }, c]}
+      selected={null}
+      onSelect={onSelect}
+      tiles={tiles}
+    />,
+  );
+  expect(pinsDrawn(marker)).toBe(2);
+  const shared = marker.mock.results.find((r) => (r.value as L.CircleMarker).getLatLng().lat === 40.42)!
+    .value as L.CircleMarker;
+  // The worst status of the two colours the pin.
+  expect(shared.options.color).toBe('var(--pf-t--global--icon--color--status--danger--default)');
+  act(() => {
+    shared.openTooltip();
+  });
+  expect(screen.getByText(`2 clusters here: us-east-2 · ${a.name}, us-east-2 · ${b.name}`)).toBeInTheDocument();
+  act(() => {
+    shared.openPopup();
+  });
+  const list = await screen.findByRole('list', { name: '2 clusters here' });
+  await userEvent.setup().click(within(list).getByRole('button', { name: `us-east-2 · ${b.name} · Offline` }));
+  expect(onSelect).toHaveBeenCalledWith(b.name);
 });

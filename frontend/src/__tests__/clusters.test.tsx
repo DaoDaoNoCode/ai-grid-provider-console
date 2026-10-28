@@ -8,7 +8,11 @@ import { create } from '@bufbuild/protobuf';
 import { fakeClients } from '../api/connect/testing';
 import { MockConsoleService, seedClusters } from '../api/MockConsoleService';
 import type { GridCluster } from '../api/types';
-import { ManagedClusterSchema, ManagedClusterState } from '../gen/ai_grid/v1/managed_cluster_type_pb';
+import {
+  ManagedClusterLocationSource,
+  ManagedClusterSchema,
+  ManagedClusterState,
+} from '../gen/ai_grid/v1/managed_cluster_type_pb';
 import { renderAt } from './render';
 
 const cluster = (name: string, status: GridCluster['status'], labels: Record<string, string> = {}): GridCluster => {
@@ -559,7 +563,7 @@ it('shows no GPUs for a cluster whose capacity has none, and sorts by GPU count'
   expect(names[0]).toMatch(/^site4/);
 });
 
-it('groups the columns as the details page does, wraps them, and has no Hub, Site or Region column', async () => {
+it('groups the columns as the details page does, wraps them, and has a Site but no Hub or Region column', async () => {
   renderAt('/clusters', serviceWith(hubClusters()));
   const table = await screen.findByTestId('clusters-table');
   const [groups, columns] = within(table).getAllByRole('row').slice(0, 2);
@@ -574,6 +578,7 @@ it('groups the columns as the details page does, wraps them, and has no Hub, Sit
   expect(headers.map((h) => h.textContent)).toEqual([
     'Name',
     'Cluster Status',
+    'Site',
     'AI Grid Status',
     'Location',
     'Role',
@@ -588,9 +593,9 @@ it('groups the columns as the details page does, wraps them, and has no Hub, Sit
   expect(within(columns).getByRole('button', { name: 'AI Grid Status' })).toBeInTheDocument();
   expect(within(columns).getAllByText('Status')).toHaveLength(2);
   expect(within(table).getByRole('columnheader', { name: /^Role/ })).not.toHaveClass('pf-m-hidden');
-  // A cluster the hub hasn't accepted says so under Connection. Site and Region are out of scope
-  // until geography is (after the MVP).
-  for (const name of ['Hub', 'Site', 'Region']) {
+  // A cluster the hub hasn't accepted says so under Connection. Site is where the backend puts the
+  // cluster (its site name, or its cloud region); the cloud region has no column of its own.
+  for (const name of ['Hub', 'Region']) {
     expect(within(table).queryByRole('columnheader', { name })).not.toBeInTheDocument();
   }
   // The OpenShift version is on the details page, leaving room for GPUs and Capacity.
@@ -722,4 +727,60 @@ it('returns focus to the row’s menu button when the dialog it opened closes', 
   await user.click(within(modal).getByRole('button', { name: 'Cancel' }));
   await waitFor(() => expect(screen.queryByTestId('cluster-membership-modal')).not.toBeInTheDocument());
   await waitFor(() => expect(screen.getByRole('button', { name: 'Actions for site4' })).toHaveFocus());
+});
+
+it("shows each cluster's site: its name, the cloud region marked approximate, or what to fix", async () => {
+  const user = userEvent.setup();
+  renderAt(
+    '/clusters',
+    new MockConsoleService(),
+    transportWith(
+      {
+        id: 'named',
+        metadata: { name: 'named' },
+        status: {
+          location: {
+            siteName: 'Columbus DC2',
+            latitude: 39.96,
+            longitude: -83,
+            source: ManagedClusterLocationSource.ANNOTATIONS,
+          },
+        },
+      },
+      {
+        id: 'in-region',
+        metadata: { name: 'in-region' },
+        status: {
+          location: {
+            latitude: 40.42,
+            longitude: -82.91,
+            source: ManagedClusterLocationSource.CLOUD_REGION,
+            region: 'us-east-2',
+          },
+        },
+      },
+      {
+        id: 'wrong',
+        metadata: { name: 'wrong' },
+        status: {
+          location: {
+            source: ManagedClusterLocationSource.NONE,
+            problem: 'ai-grid/latitude "40,7" is not a decimal number of degrees',
+          },
+        },
+      },
+      {
+        id: 'nowhere',
+        metadata: { name: 'nowhere' },
+        status: { location: { source: ManagedClusterLocationSource.NONE } },
+      },
+    ),
+  );
+  expect(await screen.findByTestId('cluster-site-named')).toHaveTextContent(/^Columbus DC2$/);
+  expect(screen.getByTestId('cluster-site-in-region')).toHaveTextContent('us-east-2 approximate');
+  const wrong = screen.getByTestId('cluster-site-wrong');
+  expect(wrong).toHaveTextContent('Position not readable');
+  await user.hover(wrong);
+  expect(await screen.findByText('ai-grid/latitude "40,7" is not a decimal number of degrees')).toBeInTheDocument();
+  expect(within(screen.getByRole('row', { name: /^nowhere / })).getAllByText('—').length).toBeGreaterThan(0);
 });
