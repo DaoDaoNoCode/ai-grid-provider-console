@@ -747,7 +747,7 @@ it('returns focus to the row’s menu button when the dialog it opened closes', 
   await waitFor(() => expect(screen.getByRole('button', { name: 'Actions for site4' })).toHaveFocus());
 });
 
-it("shows each cluster's site: its name, the cloud region marked approximate, or what to fix", async () => {
+it("shows each cluster's site: its name, the cloud region marked as such, or what to fix", async () => {
   const user = userEvent.setup();
   renderAt(
     '/clusters',
@@ -795,7 +795,13 @@ it("shows each cluster's site: its name, the cloud region marked approximate, or
     ),
   );
   expect(await screen.findByTestId('cluster-site-named')).toHaveTextContent(/^Columbus DC2$/);
-  expect(screen.getByTestId('cluster-site-in-region')).toHaveTextContent('us-east-2 approximate');
+  const inRegion = screen.getByTestId('cluster-site-in-region');
+  expect(inRegion).toHaveTextContent('us-east-2 (cloud region)');
+  // What "(cloud region)" means, from the keyboard too.
+  inRegion.focus();
+  expect(await screen.findByRole('tooltip')).toHaveTextContent(
+    'No site is set on this cluster; the map places it by its cloud region.',
+  );
   const wrong = screen.getByTestId('cluster-site-wrong');
   expect(wrong).toHaveTextContent('Position not readable');
   await user.hover(wrong);

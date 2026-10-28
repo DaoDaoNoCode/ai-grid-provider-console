@@ -44,7 +44,7 @@ import { useClusterList, useMembershipWrites } from './useClusters';
 // hasn't accepted shows Not accepted in the cluster status's tooltip, and Add says why it's
 // disabled (on the real backend the BFF derives that state from spec.hub_accepts_client,
 // the backend's state). Site is where the backend's status.location puts the cluster: the site
-// name a hub admin set, or the cloud region (approximate), with a warning when the coordinate
+// name a hub admin set, or the cloud region (marked "(cloud region)"), with a warning when the coordinate
 // annotations are wrong. It is a column of its own, beside but apart from the AI Grid Location (the
 // location label Add writes). The status tooltip adds the ACM state behind Unknown (such as
 // Importing) and the backend's message, which the PoC's three states don't have.

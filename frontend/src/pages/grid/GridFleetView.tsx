@@ -37,6 +37,7 @@ import { StatCard } from '../../components/StatCard';
 import { StatusLabel } from '../../components/StatusLabel';
 import { SubtleText } from '../../components/SubtleText';
 import { NoResultsState } from '../../components/states/NoResultsState';
+import { SiteText } from '../clusters/ClusterSite';
 import { modelKey } from '../../utilities/authpolicies';
 import { modelPath } from '../models/modelUtils';
 import { LOCATION_DOCS_URL } from '../clusters/site';
@@ -296,7 +297,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
                   {cluster.locationSource === 'cloud region' && (
                     <>
                       {' '}
-                      <SubtleText>approximate, from the cloud region</SubtleText>
+                      <SubtleText>from the cloud region</SubtleText>
                     </>
                   )}
                 </>
@@ -387,7 +388,10 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
                   actionLabel={`View ${c.name} details`}
                   onOpen={() => open({ kind: 'cluster', name: c.name })}
                 >
-                  <span>{[siteOf(c), c.location].filter(Boolean).join(' · ')}</span>
+                  <span>
+                    <SiteText text={siteOf(c)} fromCloudRegion={!c.siteName && c.locationSource === 'cloud region'} />
+                    {c.location && ` · ${c.location}`}
+                  </span>
                   <SubtleText>{at.length ? `Models: ${at.map(displayName).join(', ')}` : 'No models'}</SubtleText>
                 </FleetCard>
               );

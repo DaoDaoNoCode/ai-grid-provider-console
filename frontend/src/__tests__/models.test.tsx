@@ -1677,7 +1677,9 @@ describe('the Models list expands every row', () => {
       within(selected)
         .getAllByTestId('model-selected-cluster-row')
         .map((r) => r.textContent),
-    ).toEqual(['us-east · site-bStatus not reported']);
+    ).toEqual(['us-east · site-b']);
+    // The line above says it once; no Status column repeats it on every row.
+    expect(within(selected).queryByRole('columnheader', { name: 'Status' })).not.toBeInTheDocument();
     expect(screen.queryByText('Not placed on any cluster yet')).not.toBeInTheDocument();
   });
 

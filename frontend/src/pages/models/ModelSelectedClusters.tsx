@@ -15,7 +15,10 @@ type Props = {
   siteNames: Map<string, string>;
 };
 
-/** The clusters the placement chose, as ModelLocationsTable names them, each without a status. */
+/**
+ * The clusters the placement chose, as ModelLocationsTable names them. One line says there is no
+ * status per location; the table has no Status column to repeat it on every row.
+ */
 export const ModelSelectedClusters: React.FC<Props> = ({ model, clusters, siteNames }) => {
   const nameOf = (cluster: string) => {
     const location = clusters.find((c) => c.name === cluster)?.location;
@@ -30,16 +33,12 @@ export const ModelSelectedClusters: React.FC<Props> = ({ model, clusters, siteNa
         <Thead>
           <Tr resetOffset>
             <Th>Location</Th>
-            <Th modifier="fitContent">Status</Th>
           </Tr>
         </Thead>
         <Tbody>
           {model.selectedClusters.map((cluster) => (
             <Tr key={cluster} resetOffset data-testid="model-selected-cluster-row">
               <Td dataLabel="Location">{nameOf(cluster)}</Td>
-              <Td dataLabel="Status" modifier="nowrap">
-                <SubtleText>Status not reported</SubtleText>
-              </Td>
             </Tr>
           ))}
         </Tbody>

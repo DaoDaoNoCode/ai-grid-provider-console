@@ -497,7 +497,7 @@ it('says when the hub has no such cluster', async () => {
   expect(screen.getByRole('link', { name: 'Go to Clusters' })).toHaveAttribute('href', '/clusters');
 });
 
-it('says where the map puts the cluster, approximate from its cloud region, with how to set it', async () => {
+it('says where the map puts the cluster, from its cloud region, with how to set it', async () => {
   const transport = fakeClients({
     clusters: {
       get: async () => ({
@@ -518,12 +518,12 @@ it('says where the map puts the cluster, approximate from its cloud region, with
   }).transport;
   renderAt('/clusters/in-region', new MockConsoleService(), transport);
   const position = await screen.findByTestId('cluster-map-position');
-  expect(position).toHaveTextContent('40.42, -82.91 approximate, from the cloud region');
+  expect(position).toHaveTextContent('40.42, -82.91 from the cloud region');
   expect(within(position).getByRole('link', { name: "How to set a cluster's position" })).toHaveAttribute(
     'href',
     'https://github.com/ai-grid-cloud/ai-grid-provider-backend/blob/main/README.md#cluster-locations',
   );
-  expect(screen.getByTestId('cluster-site')).toHaveTextContent('us-east-2 approximate');
+  expect(screen.getByTestId('cluster-site')).toHaveTextContent('us-east-2 (cloud region)');
 });
 
 it('says what to fix when the coordinate annotations are wrong', async () => {
