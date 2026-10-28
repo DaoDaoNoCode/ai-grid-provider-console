@@ -897,12 +897,32 @@ it('shows a window the form cannot read as it is, and saves it only once a new t
   const models = await screen.findByTestId('subscription-models-table');
   await user.click(within(models).getByRole('button', { name: /^5,000 \/ 1 hour\s*100 \/ 2d$/ }));
   const dialog = screen.getByRole('dialog', { name: 'Edit token limits' });
-  expect(within(dialog).getByText('The console cannot read the saved window "2d"')).toBeVisible();
-  const times = within(dialog).getAllByRole('spinbutton', { name: 'Per' });
-  expect(times.map((input) => (input as HTMLInputElement).value)).toEqual(['1', '']);
+  const readable = within(dialog).getByTestId('edit-token-limit-0');
+  const unreadable = within(dialog).getByTestId('edit-token-limit-1');
+  const message = 'Saved as "2d", which MaaS doesn\'t accept. Enter a time from 1 to 9999.';
+  // From the moment the dialog opens, the row with "2d" warns, with its time empty; the other row says nothing.
+  expect(within(readable).getByRole('spinbutton', { name: 'Per' })).toHaveValue(1);
+  expect(within(readable).getByTestId('edit-token-limit-0-helper-text')).toHaveTextContent(/^$/);
+  const time = within(unreadable).getByRole('spinbutton', { name: 'Per' });
+  expect(time).toHaveValue(null);
+  expect(time).not.toBeInvalid();
+  expect(within(unreadable).getByTestId('edit-token-limit-1-helper-text')).toHaveTextContent(
+    `${message}: warning status;`,
+    { normalizeWhitespace: false },
+  );
+  // Save turns the same message into the time's error.
   await user.click(within(dialog).getByTestId('save-rate-limits'));
-  expect(within(dialog).getByText('Time value is required')).toBeVisible();
-  await user.type(times[1], '48');
+  expect(dialog).toBeInTheDocument();
+  expect(time).toBeInvalid();
+  expect(within(unreadable).getByTestId('edit-token-limit-1-helper-text')).toHaveTextContent(
+    `${message}: error status;`,
+    { normalizeWhitespace: false },
+  );
+  expect(within(readable).getByTestId('edit-token-limit-0-helper-text')).toHaveTextContent(/^$/);
+  // A valid time clears it.
+  await user.type(time, '48');
+  expect(time).not.toBeInvalid();
+  expect(within(unreadable).getByTestId('edit-token-limit-1-helper-text')).toHaveTextContent(/^$/);
   await user.click(within(dialog).getByTestId('save-rate-limits'));
   expect(dialog).not.toBeInTheDocument();
   await user.click(screen.getByTestId('update-subscription-button'));

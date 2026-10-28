@@ -28,6 +28,8 @@ type Props = {
   showRemove: boolean;
   countError?: string;
   timeError?: string;
+  /** Shown as a warning on the time while it has no error. */
+  timeWarning?: string;
   countDigitError?: string;
   timeDigitError?: string;
 };
@@ -50,14 +52,18 @@ export const RateLimitRow: React.FC<Props> = ({
   showRemove,
   countError,
   timeError,
+  timeWarning,
   countDigitError,
   timeDigitError,
 }) => {
   const countMessage = countDigitError ?? countError;
   const timeMessage = timeDigitError ?? timeError;
+  let timeValidated = ValidatedOptions.default;
+  if (timeMessage != null) timeValidated = ValidatedOptions.error;
+  else if (timeWarning != null) timeValidated = ValidatedOptions.warning;
 
   return (
-    <Stack hasGutter>
+    <Stack hasGutter data-testid={id}>
       <StackItem>
         <Flex alignItems={{ default: 'alignItemsFlexEnd' }} spaceItems={{ default: 'spaceItemsMd' }}>
           <FormGroup label="Tokens" fieldId={`${id}-count-input`}>
@@ -89,7 +95,7 @@ export const RateLimitRow: React.FC<Props> = ({
           <FormGroup label="Per" fieldId={`${id}-time-input`}>
             <Flex spaceItems={{ default: 'spaceItemsSm' }} flexWrap={{ default: 'nowrap' }}>
               <NumberInput
-                validated={timeMessage != null ? ValidatedOptions.error : ValidatedOptions.default}
+                validated={timeValidated}
                 id={`${id}-time`}
                 data-testid={`${id}-time`}
                 inputName={`${id}-time-input`}
@@ -136,6 +142,9 @@ export const RateLimitRow: React.FC<Props> = ({
           <HelperText>
             {countMessage != null && <HelperTextItem variant="error">{countMessage}</HelperTextItem>}
             {timeMessage != null && <HelperTextItem variant="error">{timeMessage}</HelperTextItem>}
+            {timeMessage == null && timeWarning != null && (
+              <HelperTextItem variant="warning">{timeWarning}</HelperTextItem>
+            )}
           </HelperText>
         </FormHelperText>
       </StackItem>

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { formatTokenRateLimitLine, formatWindow, parseWindow, toRateLimit, toTokenRateLimit } from './rateLimits';
+import {
+  formatTokenRateLimitLine,
+  formatWindow,
+  getSavedWindowMessage,
+  parseWindow,
+  toRateLimit,
+  toTokenRateLimit,
+} from './rateLimits';
 
 // Windows the MaaSSubscription CRD accepts, `^[1-9]\d{0,3}(s|m|h)$`: every unit, both ends of the range.
 const accepted = ['1s', '30s', '9999s', '1m', '5m', '60m', '9999m', '1h', '24h', '100h', '8784h', '9999h'];
@@ -49,10 +56,26 @@ describe('the token limit form', () => {
     expect(toTokenRateLimit(toRateLimit({ limit: 1000, window }))).toEqual({ limit: 1000, window });
   });
 
-  it.each(refused)('leaves the time of %j empty instead of guessing one', (window) => {
+  it.each(refused)('leaves the time of %j empty instead of guessing one, and keeps the window', (window) => {
     const limit = toRateLimit({ limit: 1000, window });
     expect(limit.count).toBe(1000);
     expect(limit.time).toBeNaN();
+    expect(limit.savedWindow).toBe(window);
+  });
+
+  it('names a saved window it cannot read until a valid time replaces it', () => {
+    const limit = toRateLimit({ limit: 1000, window: '1h30m' });
+    const message = 'Saved as "1h30m", which MaaS doesn\'t accept. Enter a time from 1 to 9999.';
+    expect(getSavedWindowMessage(limit)).toBe(message);
+    expect(getSavedWindowMessage({ ...limit, time: 0 })).toBe(message);
+    expect(getSavedWindowMessage({ ...limit, time: 10000 })).toBe(message);
+    expect(getSavedWindowMessage({ ...limit, time: 90 })).toBeUndefined();
+    expect(toTokenRateLimit({ ...limit, time: 90, unit: 'minute' })).toEqual({ limit: 1000, window: '90m' });
+  });
+
+  it('names nothing for a window it reads', () => {
+    expect(toRateLimit({ limit: 1000, window: '1h' })).toEqual({ count: 1000, time: 1, unit: 'hour' });
+    expect(getSavedWindowMessage({ count: 1000, time: NaN, unit: 'hour' })).toBeUndefined();
   });
 });
 

@@ -5,8 +5,11 @@
 import { z } from 'zod';
 import type { TokenRateLimit } from '../api/types';
 
-/** A token limit as the form edits it: count tokens per time unit(s). */
-export type RateLimit = { count: number; time: number; unit: 'hour' | 'minute' | 'second' };
+/**
+ * A token limit as the form edits it: count tokens per time unit(s). savedWindow is the window it
+ * was loaded with when the form could not read it (see toRateLimit).
+ */
+export type RateLimit = { count: number; time: number; unit: 'hour' | 'minute' | 'second'; savedWindow?: string };
 
 const WINDOW_SUFFIX_TO_UNIT: Record<string, RateLimit['unit']> = {
   s: 'second',
@@ -55,12 +58,20 @@ export const formatTokenRateLimitLine = (limit: number, window: string): string 
 
 /**
  * Converts a BFF TokenRateLimit to the UI's RateLimit form. A window the form cannot read gets no
- * time, so the form cannot save it until a time is entered.
+ * time, rather than a guess, and keeps the saved window so the form can name it.
  */
 export const toRateLimit = (trl: TokenRateLimit): RateLimit => {
   const parsed = parseWindow(trl.window);
-  return { count: trl.limit, time: parsed?.time ?? NaN, unit: parsed?.unit ?? 'hour' };
+  return parsed
+    ? { count: trl.limit, time: parsed.time, unit: parsed.unit }
+    : { count: trl.limit, time: NaN, unit: 'hour', savedWindow: trl.window };
 };
+
+/** Names a limit's saved window that the form could not read, while its time is not valid yet. */
+export const getSavedWindowMessage = (limit: RateLimit): string | undefined =>
+  limit.savedWindow !== undefined && getTimeError(limit) !== undefined
+    ? `Saved as "${limit.savedWindow}", which MaaS doesn't accept. Enter a time from 1 to 9999.`
+    : undefined;
 
 /** Converts the UI's RateLimit form back to a BFF TokenRateLimit. */
 export const toTokenRateLimit = (rl: RateLimit): TokenRateLimit => ({
