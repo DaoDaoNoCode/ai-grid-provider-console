@@ -26,6 +26,7 @@ permissions: {}
 jobs:
   prune:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       packages: write
     env:

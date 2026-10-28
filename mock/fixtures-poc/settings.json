@@ -1,6 +1,6 @@
 {
-  "_comment": "No latency and real-time speed, so the browser tests and the screenshots don't wait; the ManifestWorkReplicaSet gate on, so deploying a model to locations works as in the PoC. See mock/fixtures/settings.json for each field.",
+  "_comment": "No latency and five times real time, so the browser tests and the screenshots don't wait: a new subscription is Degraded for 2 s instead of 10 s before Kuadrant accepts its TokenRateLimitPolicy. The ManifestWorkReplicaSet gate on, so deploying a model to locations works as in the PoC. See mock/fixtures/settings.json for each field.",
   "latency": "0s",
-  "speed": 1,
+  "speed": 5,
   "manifestWorkReplicaSetEnabled": true
 }

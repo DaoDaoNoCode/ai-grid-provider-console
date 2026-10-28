@@ -21,28 +21,30 @@ ALL=(--set backend.clusterWrites=true --set backend.git.url=https://github.com/e
 helm lint --strict "${CHART}" >/dev/null
 helm lint --strict "${CHART}" "${ALL[@]}" >/dev/null
 helm template console "${CHART}" -n ai-grid "${ALL[@]}" >/dev/null
-if helm template console "${CHART}" -n ai-grid --set backend.clusterwrites=true >/dev/null 2>&1; then
-  echo "check-chart: a misspelled value (backend.clusterwrites) renders; values.schema.json must refuse it" >&2
-  exit 1
-fi
+# refused <what> helm-template-args...: values.schema.json refuses them. Only the schema's error
+# counts, so a template that fails for another reason doesn't pass for a refusal.
+refused() {
+  local what=$1 out
+  shift
+  if out="$(helm template console "${CHART}" -n ai-grid "$@" 2>&1 >/dev/null)"; then
+    echo "check-chart: ${what} renders; values.schema.json must refuse it" >&2
+    exit 1
+  fi
+  grep -q "values don't meet the specifications of the schema" <<<"${out}" || {
+    echo "check-chart: ${what} fails, but not on values.schema.json: ${out}" >&2
+    exit 1
+  }
+}
+refused "a misspelled value (backend.clusterwrites)" --set backend.clusterwrites=true
 # backend.git.url is https:// without credentials: the backend refuses anything else at start.
 for url in http://github.com/example/catalog.git https://user:token@github.com/example/catalog.git \
   'https://?q=/catalog.git' https://:443/catalog.git https://github.com; do
-  if helm template console "${CHART}" -n ai-grid --set-string "backend.git.url=${url}" >/dev/null 2>&1; then
-    echo "check-chart: backend.git.url=${url} renders; values.schema.json must refuse it" >&2
-    exit 1
-  fi
+  refused "backend.git.url=${url}" --set-string "backend.git.url=${url}"
 done
-if helm template console "${CHART}" -n ai-grid --set-string backend.git.url=https://github.com/example/catalog.git \
-  --set-string backend.git.gridNamespace=Not_A_Namespace >/dev/null 2>&1; then
-  echo "check-chart: backend.git.gridNamespace=Not_A_Namespace renders; values.schema.json must refuse it" >&2
-  exit 1
-fi
-if helm template console "${CHART}" -n ai-grid --set-string backend.git.url=https://github.com/example/catalog.git \
-  --set-string backend.git.modelsNamespace=Not_A_Namespace >/dev/null 2>&1; then
-  echo "check-chart: backend.git.modelsNamespace=Not_A_Namespace renders; values.schema.json must refuse it" >&2
-  exit 1
-fi
+for key in gridNamespace modelsNamespace; do
+  refused "backend.git.${key}=Not_A_Namespace" --set-string backend.git.url=https://github.com/example/catalog.git \
+    --set-string "backend.git.${key}=Not_A_Namespace"
+done
 # backend.git.modelsNamespace sets AI_GRID_MODELS_NAMESPACE; empty leaves the backend's default.
 models_ns() {
   helm template console "${CHART}" -n ai-grid --set-string backend.git.url=https://github.com/example/catalog.git "$@" |
@@ -64,10 +66,7 @@ for url in https://github.com/example/catalog.git https://git.example.com:8443/t
 done
 # The BFF reads the log level case-insensitively (slog.Level), so the schema takes both spellings.
 helm template console "${CHART}" -n ai-grid --set console.logLevel=INFO >/dev/null
-if helm template console "${CHART}" -n ai-grid --set console.logLevel=verbose >/dev/null 2>&1; then
-  echo "check-chart: console.logLevel=verbose renders; values.schema.json must refuse it" >&2
-  exit 1
-fi
+refused "console.logLevel=verbose" --set console.logLevel=verbose
 
 # One line per object, keys sorted, Helm's labels dropped, in a stable order.
 canonical() {

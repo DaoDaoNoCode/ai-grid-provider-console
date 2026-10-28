@@ -3,9 +3,8 @@ import { expect, test } from '@playwright/test';
 // A fixture AI Grid member that is Ready and provisioned (mock/fixtures-poc/managedclusters.json).
 const LOCATION = 'site1';
 
-const unique = `e2e-${Math.random().toString(36).slice(2, 8)}`;
-
 test('deploys a model to a location, edits it in the same wizard, and deletes it', async ({ page }) => {
+  const unique = `e2e-${Math.random().toString(36).slice(2, 8)}`;
   await page.goto('/models');
   await page.getByRole('link', { name: 'Deploy model' }).click();
 

@@ -10,10 +10,21 @@ on:
 permissions:
   contents: read
 
+# A newer push to a pull request cancels the run it supersedes. Every other run (main, tags,
+# manual) gets a group of its own, so it is never cancelled and never queued: GitHub keeps only
+# one pending run per group and cancels it when a newer one arrives, whatever cancel-in-progress
+# says. Every merged commit gets its checks and its image.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# timeout-minutes: about three times the slowest job seen (CI runs of 2026-10), so a hung step
+# fails the job instead of holding a runner for GitHub's default 6 hours.
 jobs:
   bff:
     name: BFF
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: bff
@@ -44,6 +55,7 @@ jobs:
   frontend:
     name: Frontend
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: frontend
@@ -73,10 +85,40 @@ jobs:
       - run: pnpm test
       - run: pnpm build
 
+  # The @playwright/test version frontend/package.json pins, for the Browser tests job's image.
+  playwright-version:
+    name: Playwright version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: frontend/package.json
+          sparse-checkout-cone-mode: false
+      - id: version
+        run: |
+          version=$(jq -r '.devDependencies["@playwright/test"]' frontend/package.json)
+          if ! grep -Eqx '[0-9]+\.[0-9]+\.[0-9]+' <<<"${version}"; then
+            echo "::error file=frontend/package.json::@playwright/test must be an exact x.y.z version, for the Playwright image's tag; got '${version}'"
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+  # Not after BFF and Frontend: it uses nothing they produce, and CI passed requires all three.
   e2e:
     name: Browser tests
     runs-on: ubuntu-latest
-    needs: [bff, frontend]
+    needs: [playwright-version]
+    timeout-minutes: 15
+    # Playwright's image has the browsers and their system libraries, so nothing is installed per
+    # run (the install took 18-525 s). Its tag follows the @playwright/test version in
+    # frontend/package.json, so a Dependabot bump moves both: the image's Playwright must match the
+    # package's, or it can't find its browsers (https://playwright.dev/docs/docker#image-tags), and
+    # Microsoft publishes one image per Playwright release, so a version's tag matches its package.
+    container:
+      image: mcr.microsoft.com/playwright:v${{ needs.playwright-version.outputs.version }}-noble
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
@@ -93,17 +135,9 @@ jobs:
           cache-dependency-path: frontend/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
         working-directory: frontend
-      # The browser download and apt fail now and then on a mirror; three tries before the job does.
-      - name: playwright install --with-deps chromium
+      # make e2e; the image has no make.
+      - run: pnpm e2e
         working-directory: frontend
-        run: |
-          for try in 1 2 3; do
-            pnpm exec playwright install --with-deps chromium && exit 0
-            echo "playwright install failed (try ${try} of 3)"
-            sleep $((try * 15))
-          done
-          exit 1
-      - run: make e2e
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: failure()
         with:
@@ -114,6 +148,7 @@ jobs:
   manifests:
     name: Manifests
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: kustomize build
@@ -123,10 +158,11 @@ jobs:
       - name: PR-image delete logic
         run: hack/test-image-workflows.sh
 
+  # Not after Manifests: it uses nothing that job produces, and CI passed requires both.
   chart:
     name: Helm chart on kind
     runs-on: ubuntu-latest
-    needs: [manifests]
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       # kind, helm and kubectl come with the runner image.
@@ -139,8 +175,9 @@ jobs:
   passed:
     name: CI passed
     if: always()
-    needs: [bff, frontend, e2e, manifests, chart]
+    needs: [bff, frontend, playwright-version, e2e, manifests, chart]
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: every job succeeded
         env:
@@ -157,6 +194,7 @@ jobs:
     needs: [bff, frontend, e2e, manifests, chart]
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     # GITHUB_TOKEN pushes to ghcr.io for this organization's repositories; no stored secret.
     permissions:
       contents: read

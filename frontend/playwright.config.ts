@@ -7,32 +7,67 @@ const bffPort = process.env.E2E_BFF_PORT ?? '8080';
 const backendPort = process.env.E2E_BACKEND_PORT ?? '9090';
 const hubPort = process.env.E2E_HUB_PORT ?? '9091';
 const origin = `http://127.0.0.1:${port}`;
+const browser = { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } };
+const membership = 'cluster-membership.spec.ts';
 
 export default defineConfig({
   testDir: './e2e',
   timeout: 30_000,
   retries: 0,
+  // A test.only left in a commit would otherwise make CI run that one test and pass.
+  forbidOnly: !!process.env.CI,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: origin,
-    viewport: { width: 1440, height: 900 },
     colorScheme: 'light',
     trace: 'retain-on-failure',
+    // Without these an action or a navigation that never completes uses up the whole test
+    // timeout and is reported as a bare test timeout; with them the failure names the line.
+    actionTimeout: 10_000,
+    navigationTimeout: 15_000,
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } } }],
-  webServer: {
-    // The PoC preset (mock/fixtures-poc): the specs use the PoC's site, model and pin names.
-    command: 'make -C .. dev-fake-poc',
-    // Vite answers before the BFF and the fake do, so wait on an API path that only they serve.
-    url: `${origin}/api/v1/clusters`,
-    reuseExistingServer: !process.env.CI,
-    timeout: 180_000,
-    env: {
-      FRONTEND_PORT: port,
-      PORT: bffPort,
-      BFF_URL: `http://127.0.0.1:${bffPort}`,
-      BACKEND_ADDRESS: `127.0.0.1:${backendPort}`,
-      FAKE_HUB_ADDRESS: `127.0.0.1:${hubPort}`,
+  projects: [
+    { name: 'chromium', use: browser, testIgnore: membership },
+    // Every spec but this one leaves the fixtures as it found them, or changes only objects it
+    // created under a name of its own, so they can run side by side. This one adds a fixture
+    // cluster to AI Grid and removes it again: one run at a time.
+    { name: 'cluster membership', use: browser, testMatch: membership, workers: 1 },
+  ],
+  // The stack of `make dev-fake-poc`, but with the frontend as it ships: the production bundle,
+  // served by `vite preview`, whose proxy is the dev server's (vite.config.ts), so the identity
+  // headers are the same. The dev server's unbundled modules and React's development build
+  // made pages load in seconds and reported errors React's production build does not.
+  // Playwright starts the three in parallel and fails the run at once if one exits before it answers.
+  // Outside CI it reuses whatever already answers on the ports, `make dev-fake-poc` included.
+  webServer: [
+    {
+      // make -C bff fake-backend on the PoC preset (mock/fixtures-poc): the specs use the PoC's
+      // site, model and pin names. go run rather than make: CI's Playwright image has no make.
+      command: `go run ./cmd/fake-backend --fixtures=../mock/fixtures-poc --listen-address=127.0.0.1:${backendPort} --hub-address=127.0.0.1:${hubPort}`,
+      cwd: '../bff',
+      port: Number(backendPort),
+      reuseExistingServer: !process.env.CI,
+      timeout: 180_000,
     },
-  },
+    {
+      // make -C bff run-fake.
+      command: `go run ./cmd --port=${bffPort} --backend-address=127.0.0.1:${backendPort} --hub-api-url=http://127.0.0.1:${hubPort} --fake-backend --models-namespace=ai-grid-models`,
+      cwd: '../bff',
+      url: `http://127.0.0.1:${bffPort}/healthcheck`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 180_000,
+    },
+    {
+      command: `pnpm exec vite build && pnpm exec vite preview --host 127.0.0.1 --port ${port} --strictPort`,
+      // An API path, so the run starts once the proxy reaches the BFF and the BFF the fake.
+      url: `${origin}/api/v1/clusters`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 180_000,
+      env: {
+        BFF_URL: `http://127.0.0.1:${bffPort}`,
+        AUTH_TOKEN: 'dev-token',
+        AUTH_USER: 'dev-user',
+      },
+    },
+  ],
 });
