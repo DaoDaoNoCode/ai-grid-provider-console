@@ -1,17 +1,27 @@
-// The backend's Clusters API for page tests, over the clusters of a MockConsoleService: the same
-// clusters answer GET /api/v1/clusters (the BFF's membership and state) and Clusters/List, Get and
-// Update over Connect (fakeClients: the generated messages, serialized as JSON), so a test that
-// changes `service.clusters`, or replaces `listClusters`, `getCluster`, `enrollCluster` or
-// `removeClusterFromGrid`, changes both, as one hub would.
+// The backend's Clusters API for page tests, over the clusters of a MockConsoleService: they answer
+// Clusters/List, Get and Update over Connect (fakeClients: the generated messages, serialized as
+// JSON), so a test that changes `service.clusters`, or replaces `listClusters`, `getCluster`,
+// `enrollCluster` or `removeClusterFromGrid`, changes what the pages read.
 import { create } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
-import { Code, ConnectError, type Transport } from '@connectrpc/connect';
+import { Code, ConnectError } from '@connectrpc/connect';
+import type { TransportWith } from '../api/connect/BackendProvider';
 import { ServiceError } from '../api/ConsoleService';
-import type { ConsoleService } from '../api/ConsoleService';
 import type { GridMembership } from '../api/clusters';
 import { fakeClients, type FakeBackend } from '../api/connect/testing';
 import type { GridCluster } from '../api/types';
-import { ManagedClusterSchema, type ManagedCluster } from '../gen/ai_grid/v1/managed_cluster_type_pb';
+import {
+  ManagedClusterLocationSource,
+  ManagedClusterSchema,
+  ManagedClusterState,
+  type ManagedCluster,
+} from '../gen/ai_grid/v1/managed_cluster_type_pb';
+
+/** The mock's clusters, as the tests' Clusters backend reads them. */
+export type ClusterSource = {
+  listClusters: () => Promise<GridCluster[]>;
+  getCluster: (name: string) => Promise<GridCluster>;
+};
 
 /** The writes a MockConsoleService makes; a service without them refuses Update. */
 type Writes = {
@@ -47,17 +57,37 @@ const call = async <T>(fn: () => Promise<T>) => {
 
 const availableCondition = { Ready: 'True', Offline: 'False', Unknown: '' } as const;
 
-/** A GridCluster as the backend's ManagedCluster: the keys clusterView.ts reads back. */
+/** The backend's lifecycle state for the mock's status and the ACM state behind its Unknown. */
+const stateOf = (c: GridCluster): ManagedClusterState => {
+  switch (c.state) {
+    case 'Pending import':
+      return ManagedClusterState.PENDING_IMPORT;
+    case 'Importing':
+      return ManagedClusterState.IMPORTING;
+    case 'Import failed':
+      return ManagedClusterState.IMPORT_FAILED;
+    case 'Not accepted':
+      return ManagedClusterState.NOT_ACCEPTED;
+    case 'Detaching':
+      return ManagedClusterState.DETACHING;
+  }
+  return {
+    Ready: ManagedClusterState.READY,
+    Offline: ManagedClusterState.OFFLINE,
+    Unknown: ManagedClusterState.UNKNOWN,
+  }[c.status];
+};
+
+/**
+ * A GridCluster as the backend's ManagedCluster: the fields clusterView.ts reads back. The mock's
+ * coordinates are the hub admin's annotations, and its region the cluster's cloud region.
+ */
 export const toManagedCluster = (c: GridCluster): ManagedCluster => {
   const labels: Record<string, string> = { ...c.labels };
   if (c.location) labels.location = c.location;
   if (c.site) labels['ai-grid/site'] = c.site;
-  if (c.region) labels['ai-grid/region'] = c.region;
   if (c.openshiftVersion) labels.openshiftVersion = c.openshiftVersion;
-  const annotations: Record<string, string> = {};
-  if (c.siteName) annotations['ai-grid/site-name'] = c.siteName;
-  if (c.latitude !== undefined) annotations['ai-grid/latitude'] = String(c.latitude);
-  if (c.longitude !== undefined) annotations['ai-grid/longitude'] = String(c.longitude);
+  const mapped = c.latitude !== undefined && c.longitude !== undefined;
   const claims = [
     ['consoleurl.cluster.open-cluster-management.io', c.consoleUrl],
     ['platform.open-cluster-management.io', c.platform],
@@ -71,7 +101,6 @@ export const toManagedCluster = (c: GridCluster): ManagedCluster => {
     metadata: {
       name: c.name,
       labels,
-      annotations,
       version: Number(c.resourceVersion ?? 0),
       ...(c.creationTimestamp ? { creationTimestamp: timestampFromDate(new Date(c.creationTimestamp)) } : {}),
     },
@@ -83,6 +112,15 @@ export const toManagedCluster = (c: GridCluster): ManagedCluster => {
       capacity: capacity ?? {},
       allocatable: c.allocatable ?? {},
       clusterClaims: claims,
+      aiGridMember: c.aiGridEnabled,
+      state: stateOf(c),
+      stateMessage: c.statusMessage ?? '',
+      location: {
+        siteName: c.siteName ?? '',
+        ...(mapped ? { latitude: c.latitude, longitude: c.longitude } : {}),
+        source: mapped ? ManagedClusterLocationSource.ANNOTATIONS : ManagedClusterLocationSource.NONE,
+        region: c.region ?? '',
+      },
       ...(c.gpus
         ? {
             gpus: {
@@ -97,7 +135,7 @@ export const toManagedCluster = (c: GridCluster): ManagedCluster => {
 };
 
 /** Clusters/List, Get and Update over the service's clusters. */
-export const clustersBackend = (service: Pick<ConsoleService, 'listClusters' | 'getCluster'> & Writes) =>
+export const clustersBackend = (service: ClusterSource & Writes) =>
   ({
     list: async () => {
       const items = (await call(() => service.listClusters())).map(toManagedCluster);
@@ -134,6 +172,11 @@ export const clustersBackend = (service: Pick<ConsoleService, 'listClusters' | '
     },
   }) satisfies FakeBackend['clusters'];
 
-/** A Connect transport whose Clusters service is the service's clusters. */
-export const transportFor = (service: Pick<ConsoleService, 'listClusters' | 'getCluster'> & Writes): Transport =>
-  fakeClients({ clusters: clustersBackend(service) }).transport;
+/**
+ * A Connect transport whose Clusters service is the service's clusters, built with the console's
+ * interceptors, so an Unauthenticated answer checks the session as the browser's transport does.
+ */
+export const transportFor =
+  (service: ClusterSource & Writes): TransportWith =>
+  (interceptors) =>
+    fakeClients({ clusters: clustersBackend(service) }, { interceptors }).transport;

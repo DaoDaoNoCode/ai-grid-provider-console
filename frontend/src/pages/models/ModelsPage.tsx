@@ -21,7 +21,6 @@ import {
 } from '@patternfly/react-core';
 import { ExpandableRowContent, Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { ThProps } from '@patternfly/react-table';
-import type { ClustersService } from '../../api/clusters';
 import type { ManagedModel } from '../../api/types';
 import { LoadError } from '../../components/LoadError';
 import { PageHeader } from '../../components/PageHeader';
@@ -39,8 +38,9 @@ import { ModelLocationsTable } from './ModelLocationsTable';
 import { ModelStatusLabel } from './ModelStatus';
 import type { ModelDeleteService } from './useDeleteModel';
 import { useDeleteModel } from './useDeleteModel';
+import { useClusterList } from '../clusters/useClusters';
 
-type Props = { service: ModelDeleteService & Pick<ClustersService, 'listClusters'> };
+type Props = { service: ModelDeleteService };
 
 type Column = { label: string; sort: (a: ManagedModel, b: ManagedModel) => number };
 
@@ -58,7 +58,7 @@ const keyOf = (model: ManagedModel) => `${model.namespace}/${model.name}`;
 export const ModelsPage: React.FC<Props> = ({ service }) => {
   const navigate = useNavigate();
   const [deployments, loaded, error, refresh] = useServiceData<ManagedModel[]>(() => service.listModels(), []);
-  const [clusters] = useServiceData(() => service.listClusters(), [], 0);
+  const { data: clusters } = useClusterList();
   const { user } = useConsoleSession();
   const siteNames = useMemo(() => siteNamesOf(clusters), [clusters]);
   const canWrite = !!user?.isProviderAdmin;

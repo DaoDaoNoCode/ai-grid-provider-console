@@ -1,7 +1,6 @@
 import { Breadcrumb, BreadcrumbItem, PageSection } from '@patternfly/react-core';
 import { Link, useParams } from 'react-router-dom';
 import type { UserService } from '../../api/ConsoleService';
-import type { ClustersService } from '../../api/clusters';
 import type { ModelsService } from '../../api/models';
 import type { ManagedModel } from '../../api/types';
 import { LoadError } from '../../components/LoadError';
@@ -11,7 +10,7 @@ import { useServiceData } from '../../hooks/useServiceData';
 import { modelNotFound, modelPath } from './modelUtils';
 import { ModelWizard } from './ModelWizard';
 
-type Props = { service: ModelsService & UserService & Pick<ClustersService, 'listClusters'> };
+type Props = { service: ModelsService & UserService };
 
 /**
  * Edits a model deployment at /models/:namespace/:name/edit in the deploy wizard. It loads the

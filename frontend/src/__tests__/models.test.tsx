@@ -1556,7 +1556,8 @@ describe('each location of a placed model (proposal P13)', () => {
     const table = await screen.findByTestId('model-works-mistral-7b-instruct');
     expect(screen.getByTestId('model-locations')).toContainElement(table);
     expect(screen.getByTestId('model-locations')).toHaveTextContent('site1');
-    await user.click(within(table).getByRole('button', { name: 'Ready at San Francisco (site1)' }));
+    // The site name comes with the clusters, which answer after the model.
+    await user.click(await within(table).findByRole('button', { name: 'Ready at San Francisco (site1)' }));
     const modal = await screen.findByTestId('deployment-status-modal');
     for (const id of ['applied', 'available', 'workload', 'ready']) {
       expect(within(modal).getByTestId(`deployment-step-${id}`)).toHaveClass('pf-m-success');

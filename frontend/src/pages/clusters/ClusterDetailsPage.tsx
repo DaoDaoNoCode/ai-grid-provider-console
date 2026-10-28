@@ -19,7 +19,7 @@ import {
 import { ExternalLinkAltIcon } from '@patternfly/react-icons';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import type { ClustersService, GridMembership } from '../../api/clusters';
+import type { GridMembership } from '../../api/clusters';
 import type { UserService } from '../../api/ConsoleService';
 import { ServiceError } from '../../api/ConsoleService';
 import type { ClusterGPUs, GPUNode } from '../../gen/ai_grid/v1/managed_cluster_type_pb';
@@ -53,7 +53,7 @@ import { roleOf } from './roles';
 import type { ClusterView } from './clusterView';
 import { useCluster, useMembershipWrites } from './useClusters';
 
-type Props = { service: ClustersService & UserService };
+type Props = { service: UserService };
 
 /** "68 cores, 65 allocatable", or only the capacity when the hub reports no allocatable value. */
 const withAllocatable = (capacity?: string, allocatable?: string) =>
@@ -293,8 +293,8 @@ const Section: React.FC<{ title: string; help?: React.ReactNode; children: React
 export const ClusterDetailsPage: React.FC<Props> = ({ service }) => {
   const { name = '' } = useParams();
   const navigate = useNavigate();
-  const { data: loadedCluster, loaded, error, refresh } = useCluster(service, name);
-  const writes = useMembershipWrites(service);
+  const { data: loadedCluster, loaded, error, refresh } = useCluster(name);
+  const writes = useMembershipWrites();
   const [user] = useServiceData(() => service.getUser(), undefined, 0);
   const [change, setChange] = useState<MembershipChange>();
   // The cluster as Add or Remove returned it, shown until a load started after that change

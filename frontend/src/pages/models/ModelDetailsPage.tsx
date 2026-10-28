@@ -1,6 +1,5 @@
 import { Alert, Breadcrumb, BreadcrumbItem, Flex, List, ListItem, PageSection, Stack } from '@patternfly/react-core';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import type { ClustersService } from '../../api/clusters';
 import { ServiceError } from '../../api/ConsoleService';
 import type { ManagedModel } from '../../api/types';
 import { DetailsList } from '../../components/DetailsList';
@@ -19,8 +18,9 @@ import { PARTIALLY_AVAILABLE, hasModelStatusDetails, modelPhase, modelStatusTitl
 import type { ModelDeleteService } from './useDeleteModel';
 import { useDeleteModel } from './useDeleteModel';
 import { modelServerLabel } from './modelServers';
+import { useClusterList } from '../clusters/useClusters';
 
-type Props = { service: ModelDeleteService & Pick<ClustersService, 'listClusters'> };
+type Props = { service: ModelDeleteService };
 
 /** A model deployment at /models/:namespace/:name: its status explained, its configuration and its locations. */
 export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
@@ -30,7 +30,7 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
     () => service.getModel(namespace, name),
     undefined,
   );
-  const [clusters] = useServiceData(() => service.listClusters(), [], 0);
+  const { data: clusters } = useClusterList();
   const { user } = useConsoleSession();
   // A 404 means the deployment is gone, even when an earlier answer is still held.
   const notFound = error instanceof ServiceError && error.status === 404;

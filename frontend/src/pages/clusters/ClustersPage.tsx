@@ -15,7 +15,7 @@ import {
 import { InnerScrollContainer, Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { ThProps } from '@patternfly/react-table';
 import { Link, useNavigate } from 'react-router-dom';
-import type { ClustersService, GridMembership } from '../../api/clusters';
+import type { GridMembership } from '../../api/clusters';
 import { LoadError } from '../../components/LoadError';
 import { PageHeader } from '../../components/PageHeader';
 import { PageLoading } from '../../components/PageLoading';
@@ -50,8 +50,6 @@ import { useClusterList, useMembershipWrites } from './useClusters';
 // geography is after the MVP, and the console doesn't write either label. The status tooltip adds
 // the ACM state behind Unknown (such as Importing) and the backend's message, which the PoC's three
 // states don't have.
-
-type Props = { service: ClustersService };
 
 type Column = {
   /** The header under its group: Name, Status, Location, ... */
@@ -170,10 +168,10 @@ const membership = (c: ClusterView) => (c.aiGridEnabled ? c.provisioningStatus :
 /** A member's role label, '-' for a member without one, nothing outside AI Grid (sorts first). */
 const memberRole = (c: ClusterView) => (c.aiGridEnabled ? (roleOf(c.labels)?.label ?? '-') : '');
 
-export const ClustersPage: React.FC<Props> = ({ service }) => {
+export const ClustersPage: React.FC = () => {
   const navigate = useNavigate();
-  const { data: clusters, loaded, error, refresh } = useClusterList(service);
-  const writes = useMembershipWrites(service);
+  const { data: clusters, loaded, error, refresh } = useClusterList();
+  const writes = useMembershipWrites();
   const { user } = useConsoleSession();
   const isProviderAdmin = !!user?.isProviderAdmin;
   const [search, setSearch] = useState('');

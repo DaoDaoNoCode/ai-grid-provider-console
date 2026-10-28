@@ -27,7 +27,6 @@ import {
 } from '@patternfly/react-core';
 import type { UserService } from '../../api/ConsoleService';
 import { ServiceError } from '../../api/ConsoleService';
-import type { ClustersService } from '../../api/clusters';
 import type { ModelsService } from '../../api/models';
 import { consolePlacement, consolePlacementLocations, runtimeArgsOf, withRuntimeArgs } from '../../api/adapters';
 import type { CreateModelRequest, ManagedModel, ModelUpdate } from '../../api/types';
@@ -47,9 +46,10 @@ import { RuntimeArgsField } from './fields/RuntimeArgsField';
 import { filterRuntimeArgsForContainer, type RuntimeArgsFieldData } from './fields/runtimeArgs';
 import { locationLabel, modelPath, siteNamesOf } from './modelUtils';
 import { type ModelServer, modelServerLabel, modelServers } from './modelServers';
+import { useClusterList } from '../clusters/useClusters';
 
 type Props = {
-  service: ModelsService & UserService & Pick<ClustersService, 'listClusters'>;
+  service: ModelsService & UserService;
   /** The model to edit; without it the wizard deploys a new one. */
   model?: ManagedModel;
 };
@@ -179,7 +179,7 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
     [],
     0,
   );
-  const [clusters, , , reloadClusters] = useServiceData(() => service.listClusters(), [], 0);
+  const { data: clusters, refresh: reloadClusters } = useClusterList();
   // Site names by location label, for a placement the console didn't write (its model.locations).
   const siteNames = useMemo(() => siteNamesOf(clusters), [clusters]);
   // Site names by cluster name, for the clusters GET /locations offers and the placement takes.

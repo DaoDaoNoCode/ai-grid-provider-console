@@ -185,25 +185,6 @@ describe('HttpConsoleService', () => {
     ]);
   });
 
-  it('requests the full cluster list without paging parameters and maps PR 12 clusters', async () => {
-    const fetchFn = vi.fn().mockResolvedValue(
-      jsonResponse(200, {
-        data: [{ name: 'site-berlin-1', aiGridEnabled: false, provisioned: false, status: 'importing' }],
-        meta: { total: 1 },
-      }),
-    );
-    await expect(new HttpConsoleService(fetchFn).listClusters()).resolves.toEqual([
-      expect.objectContaining({
-        name: 'site-berlin-1',
-        status: 'Unknown',
-        state: 'Importing',
-        provisioningStatus: 'Not provisioned',
-        labels: {},
-      }),
-    ]);
-    expect(fetchFn).toHaveBeenCalledWith('/api/v1/clusters', expect.objectContaining({ method: 'GET' }));
-  });
-
   it('maps the clusters the grid overview embeds', async () => {
     const fetchFn = vi.fn().mockResolvedValue(
       jsonResponse(200, {
@@ -224,7 +205,7 @@ describe('HttpConsoleService', () => {
 
   it('maps network failures to status 0', async () => {
     const service = new HttpConsoleService(vi.fn().mockRejectedValue(new TypeError('offline')));
-    await expect(service.listClusters()).rejects.toMatchObject({ status: 0 });
+    await expect(service.getUser()).rejects.toMatchObject({ status: 0 });
   });
 
   it('sends the version as a quoted If-Match and returns undefined for 204', async () => {

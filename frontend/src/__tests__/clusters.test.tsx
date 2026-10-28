@@ -4,9 +4,11 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ServiceError } from '../api/ConsoleService';
-import { HttpConsoleService } from '../api/HttpConsoleService';
+import { create } from '@bufbuild/protobuf';
+import { fakeClients } from '../api/connect/testing';
 import { MockConsoleService, seedClusters } from '../api/MockConsoleService';
 import type { GridCluster } from '../api/types';
+import { ManagedClusterSchema, ManagedClusterState } from '../gen/ai_grid/v1/managed_cluster_type_pb';
 import { renderAt } from './render';
 
 const cluster = (name: string, status: GridCluster['status'], labels: Record<string, string> = {}): GridCluster => {
@@ -250,9 +252,9 @@ it('keeps the cluster Add returned when a poll replaced the list during the PATC
     renderAt('/clusters', service);
     await add(user, 'cluster-b');
     // A poll answers with the list from before the change; then the reload after Add hangs. Each
-    // load reads the list twice: over Connect (Clusters/List) and from /api/v1 (membership).
+    // load reads the list once, over Connect (Clusters/List).
     await act(() => vi.advanceTimersByTimeAsync(30000));
-    expect(polls).toBe(4);
+    expect(polls).toBe(2);
     service.listClusters = () => new Promise(() => {});
     await act(() => finish());
     expect(await screen.findByText('cluster-b added to AI Grid')).toBeVisible();
@@ -416,22 +418,21 @@ it('shows one pagination, in the toolbar, for a single page', async () => {
   expect(screen.getAllByRole('navigation', { name: /pagination/i })).toHaveLength(1);
 });
 
-// PR 12's cluster JSON through HttpConsoleService, as GET /api/v1/clusters sends it.
-const serviceOnClusterJson = (clusters: unknown[]) => {
-  const service = new MockConsoleService();
-  // A new Response per call: the page reads the list twice, over Connect and from /api/v1.
-  const fetchFn = vi
-    .fn()
-    .mockImplementation(
-      async () => new Response(JSON.stringify({ data: clusters }), { headers: { 'Content-Type': 'application/json' } }),
-    );
-  service.listClusters = () => new HttpConsoleService(fetchFn).listClusters();
-  return service;
-};
+// Clusters/List answering these ManagedClusters, as the backend sends them.
+const transportWith = (...items: Parameters<typeof create<typeof ManagedClusterSchema>>[1][]) =>
+  fakeClients({
+    clusters: {
+      list: async () => ({
+        items: items.map((init) => create(ManagedClusterSchema, init)),
+        size: items.length,
+        total: items.length,
+      }),
+    },
+  }).transport;
 
 it('shows Unknown for a cluster without a status', async () => {
-  // The shipped backend reports no state, so PR 12's BFF omits status.
-  renderAt('/clusters', serviceOnClusterJson([{ name: 'bare', aiGridEnabled: false, provisioned: false }]));
+  // The hub has reported no condition yet: the backend's state is UNSPECIFIED.
+  renderAt('/clusters', new MockConsoleService(), transportWith({ id: 'bare', metadata: { name: 'bare' } }));
   const row = await screen.findByRole('row', { name: /^bare / });
   expect(within(row).getByText('Unknown')).toBeInTheDocument();
   expect(row).not.toHaveTextContent('provisioned');
@@ -441,15 +442,15 @@ it('shows the ACM state for an importing cluster', async () => {
   const user = userEvent.setup();
   renderAt(
     '/clusters',
-    serviceOnClusterJson([
-      {
-        name: 'site-berlin-1',
-        aiGridEnabled: false,
-        provisioned: false,
-        status: 'importing',
-        statusMessage: 'Import of the managed cluster is in progress',
+    new MockConsoleService(),
+    transportWith({
+      id: 'site-berlin-1',
+      metadata: { name: 'site-berlin-1' },
+      status: {
+        state: ManagedClusterState.IMPORTING,
+        stateMessage: 'Import of the managed cluster is in progress',
       },
-    ]),
+    }),
   );
   const row = await screen.findByRole('row', { name: /^site-berlin-1 / });
   // One status line; the state and the message are in its tooltip.

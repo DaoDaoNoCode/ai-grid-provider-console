@@ -5,7 +5,8 @@
 import { useState } from 'react';
 import { Label, Tooltip } from '@patternfly/react-core';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
-import type { GridCluster, ManagedModel, ModelWork } from '../../api/types';
+import type { ManagedModel, ModelWork } from '../../api/types';
+import type { ClusterView } from '../clusters/clusterView';
 import { getPhaseProps } from '../../utilities/phaseLabelUtils';
 import { DeploymentStatusModal } from './DeploymentStatusModal';
 import { locationLabel } from './modelUtils';
@@ -14,7 +15,7 @@ type Props = {
   model: ManagedModel;
   works: ModelWork[];
   /** The hub's clusters, for each work's location. */
-  clusters: GridCluster[];
+  clusters: Pick<ClusterView, 'name' | 'location'>[];
   siteNames: Map<string, string>;
   /** Opens the model's edit page from a location's status; absent for a viewer. */
   onEdit?: () => void;

@@ -18,7 +18,6 @@ import type {
   CreateModelRequest,
   CreateSubscriptionRequest,
   CreateSubscriptionResponse,
-  GridCluster,
   GridOverview,
   GridRange,
   MaaSSubscription,
@@ -51,15 +50,6 @@ export class HttpConsoleService implements ConsoleService {
 
   getConfig(): Promise<ConsoleConfig> {
     return this.request<ConsoleConfig>('GET', '/config');
-  }
-
-  async listClusters(): Promise<GridCluster[]> {
-    const clusters = await this.request<ApiCluster[]>('GET', '/clusters');
-    return clusters.map(toGridCluster);
-  }
-
-  async getCluster(name: string): Promise<GridCluster> {
-    return toGridCluster(await this.request<ApiCluster>('GET', `/clusters/${encodeURIComponent(name)}`));
   }
 
   /**

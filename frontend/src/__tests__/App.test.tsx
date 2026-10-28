@@ -265,7 +265,7 @@ describe('user menu', () => {
 describe('an ended session', () => {
   const expired = () => new ServiceError(401, 'missing x-forwarded-access-token');
   const signOut = '/oauth2/sign_out?rd=%2Fclusters%3Fview%3Dall%23top';
-  /** A service whose user and clusters both answer 401, as an expired token gets. */
+  /** A service whose user, clusters and organizations all answer 401, as an expired token gets. */
   const expiredService = () => {
     const service = new MockConsoleService();
     service.getUser = async () => {
@@ -274,12 +274,20 @@ describe('an ended session', () => {
     service.listClusters = async () => {
       throw expired();
     };
+    service.listOrganizations = async () => {
+      throw expired();
+    };
     return service;
   };
   const fakeNavigation = () => ({ assign: vi.fn<(url: string) => void>(), reload: vi.fn<() => void>() });
-  const renderEnded = (service: MockConsoleService, navigation: Navigation, storage?: () => Storage) =>
+  const renderEnded = (
+    service: MockConsoleService,
+    navigation: Navigation,
+    storage?: () => Storage,
+    path = '/clusters?view=all#top',
+  ) =>
     render(
-      <MemoryRouter initialEntries={['/clusters?view=all#top']}>
+      <MemoryRouter initialEntries={[path]}>
         <TestApp service={service} navigation={navigation} storage={storage} />
       </MemoryRouter>,
     );
@@ -353,13 +361,14 @@ describe('an ended session', () => {
     await waitFor(() => expect(navigation.assign).toHaveBeenCalledWith(signOut));
     first.unmount();
 
-    // Back from the login: the hub accepts the token, so the user loads, but the backend refuses it.
+    // Back from the login: the hub accepts the token, so the user loads, but the BFF refuses a page
+    // call (a call over Connect would ask for the user again first, sessionCheck).
     const service = new MockConsoleService();
-    const clusters = deferred<never>();
-    service.listClusters = () => clusters.promise;
-    renderEnded(service, navigation);
+    const organizations = deferred<never>();
+    service.listOrganizations = () => organizations.promise;
+    renderEnded(service, navigation, undefined, '/organizations');
     await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('dev-user'));
-    await act(async () => clusters.reject(expired()));
+    await act(async () => organizations.reject(expired()));
     expect(await screen.findByRole('heading', { level: 1, name: 'Your session has ended' })).toBeInTheDocument();
     expectFullPage();
     expect(navigation.assign).toHaveBeenCalledTimes(1);
@@ -371,7 +380,8 @@ describe('an ended session', () => {
     const service = expiredService();
     const user = deferred<User>();
     service.getUser = () => user.promise;
-    const first = renderEnded(service, navigation);
+    // A page call to the BFF answers 401 while the user is still loading.
+    const first = renderEnded(service, navigation, undefined, '/organizations');
     expect(await screen.findByRole('heading', { level: 1, name: 'Your session has ended' })).toBeInTheDocument();
     await act(async () => user.resolve(await new MockConsoleService().getUser()));
     await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('dev-user'));
@@ -453,18 +463,20 @@ describe('an ended session', () => {
         </MemoryRouter>,
       );
       expect(await screen.findByRole('row', { name: /^site1 / })).toBeInTheDocument();
+      // The token expires: Clusters/List answers Unauthenticated, and so does /user, which that
+      // makes the console ask again (sessionCheck).
       const poll = vi.spyOn(service, 'listClusters').mockRejectedValue(expired());
+      vi.spyOn(service, 'getUser').mockRejectedValue(expired());
       await act(async () => {
         vi.advanceTimersByTime(30000);
       });
       expect(await screen.findByRole('heading', { level: 1, name: 'Signing you in again…' })).toBeVisible();
-      // A poll reads the list twice: over Connect (Clusters/List) and from /api/v1 (membership).
-      expect(poll).toHaveBeenCalledTimes(2);
+      expect(poll).toHaveBeenCalledTimes(1);
       // Each further poll would only be another 401.
       await act(async () => {
         vi.advanceTimersByTime(120000);
       });
-      expect(poll).toHaveBeenCalledTimes(2);
+      expect(poll).toHaveBeenCalledTimes(1);
       expect(navigation.assign).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
@@ -481,7 +493,11 @@ describe('an ended session', () => {
       </MemoryRouter>,
     );
     expect(await screen.findByRole('row', { name: /^site1 / })).toBeInTheDocument();
+    // The token expires: Clusters/List answers Unauthenticated, and so does /user (sessionCheck).
     service.listClusters = async () => {
+      throw expired();
+    };
+    service.getUser = async () => {
       throw expired();
     };
     await user.click(screen.getByRole('button', { name: 'Refresh' }));

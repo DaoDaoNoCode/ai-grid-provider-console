@@ -65,7 +65,8 @@ const Pages: React.FC<Props> = ({ service }) => (
     <Route path="/" element={<Navigate to="/clusters" replace />} />
     {/* Keyed, so moving between the map and monitoring mounts a fresh page with its own loads. */}
     <Route path="/ai-grid" element={<AiGridPage key="ai-grid" service={service} />} />
-    <Route path="/clusters" element={<ClustersPage service={service} />} />
+    <Route path="/monitoring" element={<MonitoringPage service={service} />} />
+    <Route path="/clusters" element={<ClustersPage />} />
     <Route
       path="/clusters/:name"
       element={
@@ -74,7 +75,6 @@ const Pages: React.FC<Props> = ({ service }) => (
         </ByParams>
       }
     />
-    <Route path="/monitoring" element={<MonitoringPage service={service} />} />
     <Route path="/organizations" element={<OrganizationListPage service={service} />} />
     <Route path="/organizations/create" element={<OrganizationWizardPage service={service} />} />
     <Route
