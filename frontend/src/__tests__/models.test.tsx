@@ -895,9 +895,10 @@ it('keeps an emptied Replicas or GPUs field empty and says it is required', asyn
   await user.click(screen.getByRole('textbox', { name: /^Model name/ }));
   await user.paste('org/widget');
   await user.click(screen.getByRole('button', { name: 'Next' }));
+  await user.selectOptions(screen.getByRole('combobox', { name: 'Model server' }), 'vLLM on NVIDIA GPU');
   for (const name of ['Replicas', 'GPUs']) {
     const field = screen.getByRole('spinbutton', { name });
-    expect(field).toHaveAccessibleDescription(name === 'Replicas' ? 'Between 1 and 99.' : 'Between 0 and 64.');
+    expect(field).toHaveAccessibleDescription(name === 'Replicas' ? 'Between 1 and 99.' : 'Between 1 and 64.');
     await user.clear(field);
     await user.tab();
     // NumberInput would turn the empty field into 0 on blur.
@@ -934,6 +935,113 @@ it("names only the subscriptions that use this model, reading no namespace as th
   await user.click(await screen.findByTestId('model-actions'));
   await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
   expect(await screen.findByTestId('model-references')).toHaveTextContent('widget-users');
+});
+
+describe('the model server', () => {
+  const cpuPreset = 'v3-6-0-kserve-config-llm-template-cpu';
+
+  /** Fills the source step, opens Deployment, and returns the createModel spy. */
+  const openDeployment = async (user: User, service = new MockConsoleService()) => {
+    const create = vi.spyOn(service, 'createModel');
+    renderAt('/models/deploy', service);
+    await user.type(await screen.findByRole('textbox', { name: /Model URI/ }), 'hf://org/widget');
+    await user.type(screen.getByRole('textbox', { name: /^Model name/ }), 'org/widget');
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    return create;
+  };
+
+  /** Picks one location, opens Review and deploys. */
+  const deploy = async (user: User) => {
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    await user.click(await screen.findByRole('combobox', { name: 'Locations' }));
+    await user.click(screen.getByRole('option', { name: site1 }));
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    const review = screen.getByTestId('model-review');
+    await user.click(screen.getByRole('button', { name: 'Deploy' }));
+    return review;
+  };
+
+  it('deploys on the CPU preset by default, and asks for no GPUs', async () => {
+    const user = userEvent.setup();
+    const create = await openDeployment(user);
+    expect(screen.getByRole('combobox', { name: 'Model server' })).toHaveValue('vllm-cpu');
+    expect(screen.queryByRole('spinbutton', { name: 'GPUs' })).not.toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: /Runtime image/ }), 'registry.example/vllm-cpu:test');
+    const review = await deploy(user);
+    expect(review).toHaveTextContent('Model servervLLM on CPU');
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0][0]).toMatchObject({
+      baseRefs: [cpuPreset],
+      runtimeImage: 'registry.example/vllm-cpu:test',
+      gpuCount: 0,
+    });
+  });
+
+  it('refuses a GPU server with no GPUs, and sends no presets for KServe’s default', async () => {
+    const user = userEvent.setup();
+    const create = await openDeployment(user);
+    await user.type(screen.getByRole('textbox', { name: /Runtime image/ }), 'registry.example/vllm-cuda:test');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Model server' }), 'vLLM on NVIDIA GPU');
+    const gpus = screen.getByRole('spinbutton', { name: 'GPUs' });
+    // Switching to a GPU server starts it at one GPU.
+    expect(gpus).toHaveValue(1);
+    await user.clear(gpus);
+    await user.type(gpus, '0');
+    await user.tab();
+    expect(gpus).toHaveAccessibleDescription(/A GPU model server needs at least 1 GPU\./);
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+    fireEvent.change(gpus, { target: { value: '2' } });
+    await deploy(user);
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0][0]).toMatchObject({ baseRefs: [], gpuCount: 2 });
+  });
+
+  it('sends no GPUs after switching back to CPU, even from an emptied GPUs field', async () => {
+    const user = userEvent.setup();
+    const create = await openDeployment(user);
+    await user.type(screen.getByRole('textbox', { name: /Runtime image/ }), 'registry.example/vllm-cpu:test');
+    const server = screen.getByRole('combobox', { name: 'Model server' });
+    await user.selectOptions(server, 'vLLM on NVIDIA GPU');
+    await user.clear(screen.getByRole('spinbutton', { name: 'GPUs' }));
+    await user.selectOptions(server, 'vLLM on CPU');
+    // The hidden field can't hold the step back.
+    expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
+    await deploy(user);
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0][0]).toMatchObject({ baseRefs: [cpuPreset], gpuCount: 0 });
+  });
+
+  it('still refuses an image with spaces', async () => {
+    const user = userEvent.setup();
+    await openDeployment(user);
+    await user.type(screen.getByRole('textbox', { name: /Runtime image/ }), 'bad image');
+    await user.tab();
+    expect(screen.getByRole('textbox', { name: /Runtime image/ })).toHaveAccessibleDescription(
+      /Enter a container image without spaces\./,
+    );
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+  });
+
+  it('shows the server a deployed model runs on, read-only, and presets the console doesn’t offer by name', async () => {
+    const service = new MockConsoleService();
+    service.models[0] = { ...service.models[0], baseRefs: ['custom-preset'] };
+    const user = userEvent.setup();
+    renderAt(`/models/ai-grid-models/${service.models[0].name}/edit`, service);
+    await user.click(
+      within(await screen.findByRole('navigation', { name: 'Wizard steps' })).getByRole('button', {
+        name: 'Deployment',
+      }),
+    );
+    expect(await screen.findByRole('textbox', { name: 'Model server' })).toHaveValue('custom-preset');
+    expect(screen.getByRole('textbox', { name: 'Model server' })).toHaveAttribute('readonly');
+  });
+
+  it("names the model's server on its page", async () => {
+    const service = new MockConsoleService();
+    renderAt(`/models/ai-grid-models/${service.models[0].name}`, service);
+    expect(await screen.findByText('vLLM on CPU')).toBeVisible();
+  });
 });
 
 describe('editing a model deployment', () => {

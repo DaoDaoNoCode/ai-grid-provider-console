@@ -40,3 +40,6 @@ const sameList = (a: readonly string[], b: readonly string[]) =>
 /** The server whose presets are exactly these; undefined for presets the console doesn't offer. */
 export const modelServerOf = (baseRefs: readonly string[] | undefined): ModelServer | undefined =>
   modelServers.find((server) => sameList(server.baseRefs, baseRefs ?? []));
+
+/** A model's server by name, or its presets when the console doesn't offer them. */
+export const modelServerLabel = (baseRefs: readonly string[]) => modelServerOf(baseRefs)?.label ?? baseRefs.join(', ');
