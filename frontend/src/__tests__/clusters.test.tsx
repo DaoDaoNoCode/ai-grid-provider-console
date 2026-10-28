@@ -101,6 +101,9 @@ it('removes a member from AI Grid after a confirmation', async () => {
   expect(modal).toHaveTextContent(
     'Models deployed to it from the Models page are removed from it. OpenShift AI is not uninstalled.',
   );
+  // Destructive, so it asks for the cluster's name typed in, as every delete does.
+  expect(within(modal).getByRole('button', { name: 'Remove' })).toBeDisabled();
+  await user.type(within(modal).getByRole('textbox', { name: 'Type cluster-a to confirm:' }), 'cluster-a');
   await user.click(within(modal).getByRole('button', { name: 'Remove' }));
   expect(await screen.findByText('cluster-a removed from AI Grid')).toBeVisible();
   const removed = service.clusters.find((c) => c.name === 'cluster-a')!;

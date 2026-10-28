@@ -390,6 +390,7 @@ it('removes the cluster from AI Grid', async () => {
   await user.click(await screen.findByRole('button', { name: 'Actions for site1' }));
   await user.click(screen.getByRole('menuitem', { name: 'Remove from AI Grid' }));
   const modal = await screen.findByTestId('cluster-membership-modal');
+  await user.type(within(modal).getByRole('textbox', { name: 'Type site1 to confirm:' }), 'site1');
   await user.click(within(modal).getByRole('button', { name: 'Remove' }));
   expect(await screen.findByText('site1 removed from AI Grid')).toBeVisible();
   expect(screen.getByTestId('cluster-membership')).toHaveTextContent('Not added');
@@ -404,6 +405,7 @@ it('keeps the modal open with the error when the change fails', async () => {
   await user.click(await screen.findByRole('button', { name: 'Actions for site1' }));
   await user.click(screen.getByRole('menuitem', { name: 'Remove from AI Grid' }));
   const modal = await screen.findByTestId('cluster-membership-modal');
+  await user.type(within(modal).getByRole('textbox', { name: 'Type site1 to confirm:' }), 'site1');
   await user.click(within(modal).getByRole('button', { name: 'Remove' }));
   expect(await within(modal).findByText(/the hub refused the change/)).toBeVisible();
   expect(screen.getByTestId('cluster-membership')).toHaveTextContent('Provisioned');

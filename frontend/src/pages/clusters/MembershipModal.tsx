@@ -16,6 +16,7 @@ import {
 } from '@patternfly/react-core';
 import type { ClusterRole, GridMembership } from '../../api/clusters';
 import { ServiceError } from '../../api/ConsoleService';
+import { DeleteModal } from '../../components/DeleteModal';
 import { TypeaheadSelect } from '../../components/TypeaheadSelect';
 import { ClusterChangedError } from './ClusterChangedError';
 import type { ClusterView } from './clusterView';
@@ -101,90 +102,101 @@ export const MembershipModal: React.FC<Props> = ({ cluster, join, onConfirm, onC
     }
   };
 
+  if (!join) {
+    // Removing is destructive: the typed-name confirmation every delete asks for.
+    return (
+      <DeleteModal
+        title={title}
+        deleteName={cluster.name}
+        submitButtonLabel="Remove"
+        deleting={busy}
+        onDelete={() => void confirm()}
+        onClose={() => {
+          if (!busy) onClose();
+        }}
+        error={error === undefined ? undefined : new Error(error)}
+        errorTitle="Unable to remove the cluster"
+        testId="cluster-membership-modal"
+      >
+        <Stack hasGutter>
+          {/* Every cluster but the hub's own also leaves the cross-cluster network (Submariner):
+              ai-grid-env-setup's network Placement selects local-cluster plus the members.
+              A model deployed from the Models page (a ManifestWorkReplicaSet) is removed with the
+              cluster's ManifestWork; models delivered by env-setup's GitOps apps stay. */}
+          <p>
+            {cluster.name === 'local-cluster'
+              ? 'AI Grid stops managing this cluster, and models are no longer placed on it.'
+              : 'AI Grid stops managing this cluster, and models are no longer placed on it. It is also disconnected from the other AI Grid clusters.'}
+          </p>
+          <p>Models deployed to it from the Models page are removed from it. OpenShift AI is not uninstalled.</p>
+        </Stack>
+      </DeleteModal>
+    );
+  }
+
   return (
     <Modal isOpen variant="small" onClose={busy ? undefined : onClose} data-testid="cluster-membership-modal">
-      <ModalHeader title={title} titleIconVariant={join ? undefined : 'warning'} />
+      <ModalHeader title={title} />
       <ModalBody>
         <Stack hasGutter>
-          {join ? (
-            <p>
-              The hub installs AI Grid on the cluster for its role, and model placements can then choose its location.
-            </p>
-          ) : (
-            <>
-              {/* Every cluster but the hub's own also leaves the cross-cluster network (Submariner):
-                  ai-grid-env-setup's network Placement selects local-cluster plus the members.
-                  A model deployed from the Models page (a ManifestWorkReplicaSet) is removed with the
-                  cluster's ManifestWork; models delivered by env-setup's GitOps apps stay. */}
-              <p>
-                {cluster.name === 'local-cluster'
-                  ? 'AI Grid stops managing this cluster, and models are no longer placed on it.'
-                  : 'AI Grid stops managing this cluster, and models are no longer placed on it. It is also disconnected from the other AI Grid clusters.'}
-              </p>
-              <p>Models deployed to it from the Models page are removed from it. OpenShift AI is not uninstalled.</p>
-            </>
-          )}
-          {join && (
-            <Form id="cluster-membership-form" onSubmit={(e) => e.preventDefault()}>
-              <FormGroup label="Location" fieldId="cluster-location" isRequired>
-                <TextInput
-                  id="cluster-location"
-                  value={location}
-                  isRequired
-                  isDisabled={busy}
-                  validated={shownLocationError ? 'error' : 'default'}
-                  aria-describedby="cluster-location-help"
-                  onChange={(_e, value) => setLocation(value)}
-                  onBlur={() => setTouched((t) => ({ ...t, location: true }))}
-                />
-                <FormHelperText>
-                  <HelperText id="cluster-location-help">
-                    <HelperTextItem variant={shownLocationError ? 'error' : 'default'}>
-                      {shownLocationError ??
-                        'The location label that model placements choose clusters by, such as us-east.'}
-                    </HelperTextItem>
-                  </HelperText>
-                </FormHelperText>
-              </FormGroup>
-              <FormGroup label="Role" fieldId="cluster-role" isRequired>
-                <TypeaheadSelect
-                  id="cluster-role"
-                  aria-label="Role"
-                  value={role}
-                  options={clusterRoles}
-                  placeholder="Select a role"
-                  status={shownRoleError ? 'danger' : undefined}
-                  aria-describedby="cluster-role-help"
-                  onChange={(value) => {
-                    setTouched((t) => ({ ...t, role: true }));
-                    setRole(value as ClusterRole);
-                  }}
-                  onBlur={() => setTouched((t) => ({ ...t, role: true }))}
-                />
-                <FormHelperText>
-                  <HelperText id="cluster-role-help">
-                    <HelperTextItem variant={shownRoleError ? 'error' : 'default'}>
-                      {shownRoleError ?? 'Which AI Grid pieces the hub installs on the cluster.'}
-                    </HelperTextItem>
-                  </HelperText>
-                </FormHelperText>
-              </FormGroup>
-            </Form>
-          )}
+          <p>
+            The hub installs AI Grid on the cluster for its role, and model placements can then choose its location.
+          </p>
+          <Form id="cluster-membership-form" onSubmit={(e) => e.preventDefault()}>
+            <FormGroup label="Location" fieldId="cluster-location" isRequired>
+              <TextInput
+                id="cluster-location"
+                value={location}
+                isRequired
+                isDisabled={busy}
+                validated={shownLocationError ? 'error' : 'default'}
+                aria-describedby="cluster-location-help"
+                onChange={(_e, value) => setLocation(value)}
+                onBlur={() => setTouched((t) => ({ ...t, location: true }))}
+              />
+              <FormHelperText>
+                <HelperText id="cluster-location-help">
+                  <HelperTextItem variant={shownLocationError ? 'error' : 'default'}>
+                    {shownLocationError ??
+                      'The location label that model placements choose clusters by, such as us-east.'}
+                  </HelperTextItem>
+                </HelperText>
+              </FormHelperText>
+            </FormGroup>
+            <FormGroup label="Role" fieldId="cluster-role" isRequired>
+              <TypeaheadSelect
+                id="cluster-role"
+                aria-label="Role"
+                value={role}
+                options={clusterRoles}
+                placeholder="Select a role"
+                status={shownRoleError ? 'danger' : undefined}
+                aria-describedby="cluster-role-help"
+                onChange={(value) => {
+                  setTouched((t) => ({ ...t, role: true }));
+                  setRole(value as ClusterRole);
+                }}
+                onBlur={() => setTouched((t) => ({ ...t, role: true }))}
+              />
+              <FormHelperText>
+                <HelperText id="cluster-role-help">
+                  <HelperTextItem variant={shownRoleError ? 'error' : 'default'}>
+                    {shownRoleError ?? 'Which AI Grid pieces the hub installs on the cluster.'}
+                  </HelperTextItem>
+                </HelperText>
+              </FormHelperText>
+            </FormGroup>
+          </Form>
           {error && (
-            <Alert
-              isInline
-              variant="danger"
-              title={join ? 'Unable to add the cluster' : 'Unable to remove the cluster'}
-            >
+            <Alert isInline variant="danger" title="Unable to add the cluster">
               {error}
             </Alert>
           )}
         </Stack>
       </ModalBody>
       <ModalFooter>
-        <Button variant={join ? 'primary' : 'danger'} isLoading={busy} isDisabled={busy} onClick={() => void confirm()}>
-          {join ? 'Add to AI Grid' : 'Remove'}
+        <Button variant="primary" isLoading={busy} isDisabled={busy} onClick={() => void confirm()}>
+          Add to AI Grid
         </Button>
         <Button variant="link" isDisabled={busy} onClick={onClose}>
           Cancel
