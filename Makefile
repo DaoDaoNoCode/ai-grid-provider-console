@@ -38,7 +38,7 @@ generate-api-into = cd frontend && \
 .PHONY: help start dev dev-cluster dev-fake dev-fake-poc dev-forward-backend dev-forward-perses dev-fake-backend dev-bff dev-bff-fake dev-frontend dev-frontend-fake dev-fake-infra dev-fake-infra-backend dev-bff-fake-infra install lint test build e2e image push manifests deploy undeploy chart-check chart-test generate-api check-generated-api
 
 help: ## Show targets
-	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_-]+:.*?##/ { printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
 ##@ Development against the hub from your kubeconfig (run `oc login` first)
 
