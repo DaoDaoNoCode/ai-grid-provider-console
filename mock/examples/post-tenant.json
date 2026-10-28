@@ -1,0 +1,39 @@
+{
+  "request": "POST /api/v1/tenants",
+  "requestBody": {
+    "name": "hooli-cloud",
+    "description": "Hooli, US region",
+    "domains": [
+      "hooli.example.com"
+    ]
+  },
+  "token": "dev-token",
+  "user": "dev-user",
+  "status": 201,
+  "responseHeaders": {
+    "ETag": "\"1\"",
+    "Location": "/api/v1/tenants/00000000-0000-4000-8000-000000000001"
+  },
+  "body": {
+    "data": {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "name": "hooli-cloud",
+      "alias": "hooli-cloud",
+      "enabled": true,
+      "description": "Hooli, US region",
+      "domains": [
+        "hooli.example.com"
+      ],
+      "domainDetails": [
+        {
+          "name": "hooli.example.com",
+          "verified": false,
+          "autoRedirect": false
+        }
+      ],
+      "attributes": {},
+      "resourceVersion": "1",
+      "createTime": "2026-10-15T12:00:00Z"
+    }
+  }
+}

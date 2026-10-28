@@ -190,6 +190,16 @@ when the BFF set them.
 | `get-models.json` | `GET /api/v1/models`, all five models with `meta` |
 | `get-model.json` | `GET /api/v1/models/ai-grid-models/mistral-7b-instruct`, a placed model selected for two sites at the start of its rollout: the first work applied, not yet available |
 | `get-capabilities.json` | `GET /api/v1/capabilities` |
+| `get-subscriptions.json` | `GET /api/v1/subscriptions`, all four subscriptions |
+| `get-subscription.json` | `GET /api/v1/subscriptions/engineering`: the subscription, its models, policies and registrations |
+| `get-grid-overview.json` | `GET /api/v1/grid/overview?range=1h`, the members with the demo metrics |
+| `get-locations.json` | `GET /api/v1/locations`: the fake's answer, `location` label values; the real backend answers cluster names (`bff/internal/backend/v1_models.go`) |
+| `patch-cluster.json` | `PATCH /api/v1/clusters/site-paris-1` with the cluster's `If-Match`: 200 and the new `ETag` |
+| `post-tenant.json` | `POST /api/v1/tenants`: 201 with `Location` and `ETag` |
+| `post-model.json` | `POST /api/v1/models`, an unplaced CPU model: 201 with `Location` and `ETag` |
+| `post-subscription.json` | `POST /api/v1/subscriptions` with `createAuthPolicy`: 201 with `Location`, the subscription and its policy |
+| `put-subscription.json` | `PUT /api/v1/subscriptions/onboarding` with its `If-Match`: 200 and the new `ETag` |
+| `delete-subscription.json` | `DELETE /api/v1/subscriptions/onboarding` with its `If-Match`: 204, no body |
 | `error-401-expired-token.json` | `GET /api/v1/user` with `expired-token` |
 | `error-403-viewer-patch.json` | `PATCH /api/v1/clusters/site-frankfurt-1` with `viewer-token` and the cluster's `If-Match` |
 | `error-404-unknown-cluster.json` | `GET /api/v1/clusters/site-unknown-1` |
@@ -197,7 +207,8 @@ when the BFF set them.
 | `error-428-missing-if-match.json` | `PATCH /api/v1/tenants/{id}` for `acme-robotics` without `If-Match` |
 | `error-415-not-json.json` | `POST /api/v1/tenants` with `Content-Type: text/plain` |
 
-They are produced by `bff/internal/examples/golden_test.go`: the fake backend loaded from
+They are produced by `bff/internal/examples/golden_test.go`, each on a BFF and fake of its
+own, so a write never shows in another file: the fake backend loaded from
 `fixtures/` over an in-memory gRPC connection with its clock frozen at
 2026-10-15T12:00:00Z, no latency, deterministic tenant ids and work names (`g0001`, ...), the
 fake hub over `httptest`, and the real BFF handler. `go test ./...` (and so CI) fails when a

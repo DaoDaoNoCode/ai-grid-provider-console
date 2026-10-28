@@ -1,0 +1,233 @@
+{
+  "request": "PATCH /api/v1/clusters/site-paris-1",
+  "requestHeaders": {
+    "If-Match": "\"48811204\""
+  },
+  "requestBody": {
+    "annotations": {
+      "installer.multicluster.openshift.io/release-version": "2.17.3",
+      "open-cluster-management/created-via": "other",
+      "ai-grid/site-name": "Paris DC1 (main hall)",
+      "ai-grid/latitude": "48.8566",
+      "ai-grid/longitude": "2.3522"
+    }
+  },
+  "token": "dev-token",
+  "user": "dev-user",
+  "status": 200,
+  "responseHeaders": {
+    "ETag": "\"48812792\""
+  },
+  "body": {
+    "data": {
+      "name": "site-paris-1",
+      "aiGridEnabled": true,
+      "provisioned": true,
+      "hubAcceptsClient": true,
+      "location": "paris",
+      "site": "paris-dc1",
+      "region": "europe-west",
+      "openshiftVersion": "4.22.15",
+      "status": "ready",
+      "statusMessage": "Managed cluster is available",
+      "consoleUrl": "https://console-openshift-console.apps.site-paris-1.example.com",
+      "kubernetesVersion": "v1.35.6",
+      "platform": "BareMetal",
+      "product": "OpenShift",
+      "gpuCapacity": 32,
+      "capacity": {
+        "core_worker": "128",
+        "cpu": "192",
+        "ephemeral-storage": "3600Gi",
+        "hugepages-1Gi": "0",
+        "hugepages-2Mi": "0",
+        "memory": "1572864Mi",
+        "nvidia.com/gpu": "32",
+        "pods": "1000",
+        "socket_worker": "8"
+      },
+      "allocatable": {
+        "cpu": "186",
+        "ephemeral-storage": "3300Gi",
+        "hugepages-1Gi": "0",
+        "hugepages-2Mi": "0",
+        "memory": "1540000Mi",
+        "nvidia.com/gpu": "32",
+        "pods": "1000"
+      },
+      "gpus": {
+        "total": 32,
+        "nodeCount": 4,
+        "configurations": [
+          {
+            "vendor": "NVIDIA",
+            "product": "NVIDIA-H200",
+            "memoryMib": 143771,
+            "gpusPerNode": 8,
+            "nodeCount": 4,
+            "sharing": {
+              "strategy": "none",
+              "replicas": 1,
+              "migCapable": true
+            }
+          }
+        ],
+        "nodes": [
+          {
+            "name": "gpu-h200-0.paris.example",
+            "vendor": "NVIDIA",
+            "product": "NVIDIA-H200",
+            "count": 8,
+            "memoryMib": 143771,
+            "family": "hopper",
+            "computeCapability": "9.0",
+            "driverVersion": "580.105.08",
+            "cudaRuntimeVersion": "13.0",
+            "sharing": {
+              "strategy": "none",
+              "replicas": 1,
+              "migCapable": true
+            },
+            "instanceType": "p5en.48xlarge",
+            "ready": true
+          },
+          {
+            "name": "gpu-h200-1.paris.example",
+            "vendor": "NVIDIA",
+            "product": "NVIDIA-H200",
+            "count": 8,
+            "memoryMib": 143771,
+            "family": "hopper",
+            "computeCapability": "9.0",
+            "driverVersion": "580.105.08",
+            "cudaRuntimeVersion": "13.0",
+            "sharing": {
+              "strategy": "none",
+              "replicas": 1,
+              "migCapable": true
+            },
+            "instanceType": "p5en.48xlarge",
+            "ready": true
+          },
+          {
+            "name": "gpu-h200-2.paris.example",
+            "vendor": "NVIDIA",
+            "product": "NVIDIA-H200",
+            "count": 8,
+            "memoryMib": 143771,
+            "family": "hopper",
+            "computeCapability": "9.0",
+            "driverVersion": "580.105.08",
+            "cudaRuntimeVersion": "13.0",
+            "sharing": {
+              "strategy": "none",
+              "replicas": 1,
+              "migCapable": true
+            },
+            "instanceType": "p5en.48xlarge",
+            "ready": true
+          },
+          {
+            "name": "gpu-h200-3.paris.example",
+            "vendor": "NVIDIA",
+            "product": "NVIDIA-H200",
+            "count": 8,
+            "memoryMib": 143771,
+            "family": "hopper",
+            "computeCapability": "9.0",
+            "driverVersion": "580.105.08",
+            "cudaRuntimeVersion": "13.0",
+            "sharing": {
+              "strategy": "none",
+              "replicas": 1,
+              "migCapable": true
+            },
+            "instanceType": "p5en.48xlarge",
+            "ready": true
+          }
+        ]
+      },
+      "creationTimestamp": "2026-10-01T09:00:00Z",
+      "siteName": "Paris DC1 (main hall)",
+      "latitude": 48.8566,
+      "longitude": 2.3522,
+      "addons": {
+        "application-manager": "available",
+        "cert-policy-controller": "available",
+        "cluster-proxy": "available",
+        "config-policy-controller": "available",
+        "governance-policy-framework": "available",
+        "managed-serviceaccount": "available",
+        "work-manager": "available"
+      },
+      "conditions": [
+        {
+          "type": "ManagedClusterImportSucceeded",
+          "status": "True",
+          "reason": "ManagedClusterImported",
+          "message": "Import succeeded",
+          "lastTransitionTime": "2026-10-01T09:00:12Z"
+        },
+        {
+          "type": "HubAcceptedManagedCluster",
+          "status": "True",
+          "reason": "HubClusterAdminAccepted",
+          "message": "Accepted by hub cluster admin",
+          "lastTransitionTime": "2026-10-01T09:00:02Z"
+        },
+        {
+          "type": "ManagedClusterJoined",
+          "status": "True",
+          "reason": "ManagedClusterJoined",
+          "message": "Managed cluster joined",
+          "lastTransitionTime": "2026-10-01T09:00:08Z"
+        },
+        {
+          "type": "ManagedClusterConditionAvailable",
+          "status": "True",
+          "reason": "ManagedClusterAvailable",
+          "message": "Managed cluster is available",
+          "lastTransitionTime": "2026-10-01T09:00:08Z"
+        },
+        {
+          "type": "ManagedClusterConditionClockSynced",
+          "status": "True",
+          "reason": "ManagedClusterClockSynced",
+          "message": "The clock of the managed cluster is synced with the hub.",
+          "lastTransitionTime": "2026-10-01T09:00:08Z"
+        }
+      ],
+      "resourceVersion": "48812792",
+      "labels": {
+        "ai-grid/enabled": "true",
+        "ai-grid/provisioned": "true",
+        "ai-grid/region": "europe-west",
+        "ai-grid/role": "combined",
+        "ai-grid/site": "paris-dc1",
+        "cloud": "BareMetal",
+        "cluster.open-cluster-management.io/clusterset": "default",
+        "clusterID": "3f1c9c3e-8a4b-4e1d-9f0a-2b7d5e6c1a90",
+        "feature.open-cluster-management.io/addon-application-manager": "available",
+        "feature.open-cluster-management.io/addon-cert-policy-controller": "available",
+        "feature.open-cluster-management.io/addon-cluster-proxy": "available",
+        "feature.open-cluster-management.io/addon-config-policy-controller": "available",
+        "feature.open-cluster-management.io/addon-governance-policy-framework": "available",
+        "feature.open-cluster-management.io/addon-managed-serviceaccount": "available",
+        "feature.open-cluster-management.io/addon-work-manager": "available",
+        "location": "paris",
+        "name": "site-paris-1",
+        "openshiftVersion": "4.22.15",
+        "openshiftVersion-major": "4",
+        "openshiftVersion-major-minor": "4.22",
+        "vendor": "OpenShift"
+      },
+      "annotations": {
+        "ai-grid/latitude": "48.8566",
+        "ai-grid/longitude": "2.3522",
+        "ai-grid/site-name": "Paris DC1 (main hall)",
+        "installer.multicluster.openshift.io/release-version": "2.17.3",
+        "open-cluster-management/created-via": "other"
+      }
+    }
+  }
+}

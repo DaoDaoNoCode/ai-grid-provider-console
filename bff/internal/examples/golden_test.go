@@ -69,6 +69,16 @@ var examples = []example{
 	{file: "get-models.json", method: http.MethodGet, path: "/api/v1/models", as: admin},
 	{file: "get-model.json", method: http.MethodGet, path: "/api/v1/models/ai-grid-models/mistral-7b-instruct", as: admin},
 	{file: "get-capabilities.json", method: http.MethodGet, path: "/api/v1/capabilities", as: admin},
+	{file: "get-subscriptions.json", method: http.MethodGet, path: "/api/v1/subscriptions", as: admin},
+	{file: "get-subscription.json", method: http.MethodGet, path: "/api/v1/subscriptions/engineering", as: admin},
+	{file: "get-grid-overview.json", method: http.MethodGet, path: "/api/v1/grid/overview?range=1h", as: admin},
+	{file: "get-locations.json", method: http.MethodGet, path: "/api/v1/locations", as: admin},
+	{file: "patch-cluster.json", method: http.MethodPatch, path: "/api/v1/clusters/site-paris-1", body: `{"annotations": {"installer.multicluster.openshift.io/release-version": "2.17.3", "open-cluster-management/created-via": "other", "ai-grid/site-name": "Paris DC1 (main hall)", "ai-grid/latitude": "48.8566", "ai-grid/longitude": "2.3522"}}`, header: map[string]string{"If-Match": `"48811204"`}, as: admin},
+	{file: "post-tenant.json", method: http.MethodPost, path: "/api/v1/tenants", body: `{"name": "hooli-cloud", "description": "Hooli, US region", "domains": ["hooli.example.com"]}`, as: admin},
+	{file: "post-model.json", method: http.MethodPost, path: "/api/v1/models", body: `{"name": "granite-3b-code", "namespace": "ai-grid-models", "modelUri": "hf://example-org/granite-3b-code", "replicas": 1, "cpu": "4", "memory": "16Gi", "annotations": {"openshift.io/display-name": "Granite 3B Code"}}`, as: admin},
+	{file: "post-subscription.json", method: http.MethodPost, path: "/api/v1/subscriptions", body: `{"name": "support", "displayName": "Support", "description": "Models for the support team.", "priority": 5, "owner": {"groups": [{"name": "support"}]}, "modelRefs": [{"name": "tiny-llm", "namespace": "ai-grid-models", "tokenRateLimits": [{"limit": 1000, "window": "1m"}]}], "tokenMetadata": {"organizationId": "3f1c9a72-5b6e-4d2a-8c01-2d3e4f5a6b7c"}, "createAuthPolicy": true}`, as: admin},
+	{file: "put-subscription.json", method: http.MethodPut, path: "/api/v1/subscriptions/onboarding", body: `{"displayName": "Onboarding", "description": "Trial access for new teams, two weeks.", "priority": 1, "owner": {"groups": [{"name": "onboarding"}]}, "modelRefs": [{"name": "tiny-llm", "namespace": "ai-grid-models", "tokenRateLimits": [{"limit": 2000, "window": "1m"}]}]}`, header: map[string]string{"If-Match": `"1"`}, as: admin},
+	{file: "delete-subscription.json", method: http.MethodDelete, path: "/api/v1/subscriptions/onboarding", header: map[string]string{"If-Match": `"1"`}, as: admin},
 	{file: "error-401-expired-token.json", method: http.MethodGet, path: "/api/v1/user", as: expired},
 	{file: "error-403-viewer-patch.json", method: http.MethodPatch, path: "/api/v1/clusters/site-frankfurt-1", body: `{"labels": {"name": "site-frankfurt-1", "cloud": "BareMetal", "vendor": "OpenShift", "clusterID": "c41e8a77-3b5d-4f60-9c12-345678abcdef", "openshiftVersion": "4.21.9", "openshiftVersion-major": "4", "openshiftVersion-major-minor": "4.21", "cluster.open-cluster-management.io/clusterset": "default", "feature.open-cluster-management.io/addon-application-manager": "unhealthy", "feature.open-cluster-management.io/addon-cert-policy-controller": "available", "feature.open-cluster-management.io/addon-cluster-proxy": "available", "feature.open-cluster-management.io/addon-config-policy-controller": "available", "feature.open-cluster-management.io/addon-governance-policy-framework": "available", "feature.open-cluster-management.io/addon-managed-serviceaccount": "available", "feature.open-cluster-management.io/addon-work-manager": "available", "ai-grid/enabled": "true"}}`, header: map[string]string{"If-Match": `"48809977"`}, as: viewer},
 	{file: "error-404-unknown-cluster.json", method: http.MethodGet, path: "/api/v1/clusters/site-unknown-1", as: admin},
@@ -95,13 +105,15 @@ type golden struct {
 	Body            json.RawMessage   `json:"body,omitempty"`
 }
 
+// TestGoldenResponses renders every example on a BFF and fake of its own,
+// loaded from the fixtures, so a write never changes what another example
+// records.
 func TestGoldenResponses(t *testing.T) {
-	app := newApp(t)
 	want := map[string]bool{}
 	for _, ex := range examples {
 		want[ex.file] = true
 		t.Run(strings.TrimSuffix(ex.file, ".json"), func(t *testing.T) {
-			got := render(t, app, ex)
+			got := render(t, newApp(t), ex)
 			path := filepath.Join(examplesDir, ex.file)
 			if *update {
 				if err := os.WriteFile(path, got, 0o644); err != nil {
