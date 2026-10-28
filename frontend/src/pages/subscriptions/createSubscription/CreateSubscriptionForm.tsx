@@ -79,7 +79,7 @@ const MAX_ID_LENGTH = 56;
 
 const subscriptionFormSchema = z.object({
   priority: z
-    .number({ message: 'Priority is required' })
+    .number({ error: 'Priority is required' })
     .int('Priority must be a whole number')
     .min(MIN_PRIORITY, `Priority must be at least ${MIN_PRIORITY}`)
     .max(MAX_PRIORITY, `Priority must be at most ${MAX_PRIORITY}`),
