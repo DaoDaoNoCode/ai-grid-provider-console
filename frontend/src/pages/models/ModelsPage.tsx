@@ -35,6 +35,7 @@ import { useServiceData } from '../../hooks/useServiceData';
 import { EMPTY_VALUE } from '../../utilities/format';
 import { locationLabel, modelPath, siteNamesOf } from './modelUtils';
 import { ModelLocationsTable } from './ModelLocationsTable';
+import { NotPlaced } from './NotPlaced';
 import { ModelStatusLabel } from './ModelStatus';
 import type { ModelDeleteService } from './useDeleteModel';
 import { useDeleteModel } from './useDeleteModel';
@@ -165,22 +166,19 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
                   const title = deployment.displayName ?? deployment.name;
                   const key = keyOf(deployment);
                   const works = deployment.works ?? [];
-                  const isExpanded = works.length > 0 && expanded.has(key);
+                  const isExpanded = expanded.has(key);
                   return (
                     <Tbody key={key} isExpanded={isExpanded}>
                       <Tr isContentExpanded={isExpanded}>
-                        {works.length > 0 ? (
-                          <Td
-                            expand={{
-                              rowIndex,
-                              isExpanded,
-                              onToggle: () => setRowExpanded(key, !isExpanded),
-                              expandId: `model-locations-toggle-${deployment.name}`,
-                            }}
-                          />
-                        ) : (
-                          <Td />
-                        )}
+                        {/* Every row expands: to its locations, or to why it has none. */}
+                        <Td
+                          expand={{
+                            rowIndex,
+                            isExpanded,
+                            onToggle: () => setRowExpanded(key, !isExpanded),
+                            expandId: `model-locations-toggle-${deployment.name}`,
+                          }}
+                        />
                         <Td dataLabel="Name">
                           <Link to={modelPath(deployment)}>{title}</Link>
                         </Td>
@@ -205,10 +203,7 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
                           <RelativeTime time={deployment.creationTimestamp} />
                         </Td>
                         <Td dataLabel="Status">
-                          <ModelStatusLabel
-                            model={deployment}
-                            onViewLocations={works.length ? () => setRowExpanded(key, true) : undefined}
-                          />
+                          <ModelStatusLabel model={deployment} onViewLocations={() => setRowExpanded(key, true)} />
                         </Td>
                         {canWrite && (
                           <Td isActionCell>
@@ -234,12 +229,12 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
                           </Td>
                         )}
                       </Tr>
-                      {works.length > 0 && (
-                        <Tr isExpanded={isExpanded}>
-                          <Td />
-                          <Td noPadding colSpan={columns.length + (canWrite ? 1 : 0)}>
-                            <ExpandableRowContent>
-                              {isExpanded && (
+                      <Tr isExpanded={isExpanded}>
+                        <Td />
+                        <Td noPadding colSpan={columns.length + (canWrite ? 1 : 0)}>
+                          <ExpandableRowContent>
+                            {isExpanded &&
+                              (works.length > 0 ? (
                                 <div className="pf-v6-u-pb-lg">
                                   <ModelLocationsTable
                                     model={deployment}
@@ -250,11 +245,15 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
                                     isNested
                                   />
                                 </div>
-                              )}
-                            </ExpandableRowContent>
-                          </Td>
-                        </Tr>
-                      )}
+                              ) : (
+                                <NotPlaced
+                                  model={deployment}
+                                  onEdit={canWrite ? () => navigate(`${modelPath(deployment)}/edit`) : undefined}
+                                />
+                              ))}
+                          </ExpandableRowContent>
+                        </Td>
+                      </Tr>
                     </Tbody>
                   );
                 })

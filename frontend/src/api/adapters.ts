@@ -187,6 +187,9 @@ export const toManagedModel = (json: ApiModel): ManagedModel => ({
   resourceVersion: json.resourceVersion ?? '',
   locations: json.placement?.locations ?? [],
   selectedClusters: json.placement?.selectedClusters ?? [],
+  ...(json.placement?.satisfied === false && (json.placement.reason || json.placement.message)
+    ? { placementIssue: { reason: json.placement.reason, message: json.placement.message } }
+    : {}),
   works: json.rollout?.works?.map((work): ModelWork => ({
     cluster: work.cluster,
     phase: phaseOf(work.phase),

@@ -20,6 +20,7 @@ import { consolePlacement } from '../api/adapters';
 import { HttpConsoleService } from '../api/HttpConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
 import type { CreateModelRequest, ManagedModel } from '../api/types';
+import { serviceOnPr12Json } from './pr12Json';
 import { deferred, renderAt } from './render';
 // The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
 import '../pages/models/ModelDetailsPage';
@@ -1435,9 +1436,9 @@ describe('each location of a placed model (proposal P13)', () => {
     const user = userEvent.setup();
     renderAt('/models', serviceOnModelJson(partialFetch()));
     const row = await mistralRow();
-    // A hub model has nothing to expand.
+    // A hub model expands too, to say it isn't placed on any cluster.
     const tiny = (await screen.findByTestId('model-locations-tiny-llm')).closest('tr') as HTMLElement;
-    expect(within(tiny).queryByRole('button', { name: 'Details' })).not.toBeInTheDocument();
+    expect(within(tiny).getByRole('button', { name: 'Details' })).toBeInTheDocument();
 
     expect(within(row).getByTestId('model-phase')).toHaveTextContent('Partially available');
     await user.click(within(row).getByRole('button', { name: 'Details' }));
@@ -1564,5 +1565,66 @@ describe('each location of a placed model (proposal P13)', () => {
     }
     // The ready feedback carries no time of its own.
     expect(within(within(modal).getByTestId('deployment-step-ready')).queryByText(/2026/)).not.toBeInTheDocument();
+  });
+});
+
+describe('the Models list expands every row', () => {
+  /** The row of a model in the list, by its resource name. */
+  const rowOf = async (name: string) =>
+    (await screen.findByTestId(`model-locations-${name}`)).closest('tr') as HTMLElement;
+
+  it('gives every row the expand toggle, named Details, collapsed until clicked', async () => {
+    const user = userEvent.setup();
+    const service = new MockConsoleService();
+    renderAt('/models', service);
+    for (const model of service.models) {
+      const toggle = within(await rowOf(model.name)).getByRole('button', { name: 'Details' });
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    }
+    const toggle = within(await rowOf('llama-3-70b')).getByRole('button', { name: 'Details' });
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('expands a model without locations to say so, with Edit locations for a provider admin', async () => {
+    const user = userEvent.setup();
+    renderAt('/models', new MockConsoleService());
+    await user.click(within(await rowOf('llama-3-70b')).getByRole('button', { name: 'Details' }));
+    const empty = await screen.findByTestId('model-not-placed-llama-3-70b');
+    expect(within(empty).getByRole('heading', { name: 'Not placed on any cluster yet' })).toBeVisible();
+    expect(empty).toHaveTextContent('This model has no locations.');
+    await user.click(within(empty).getByRole('button', { name: 'Edit locations' }));
+    expect(await screen.findByRole('heading', { name: /^Edit / })).toBeVisible();
+  });
+
+  it("shows the placement's reason and message when the backend says it chose no cluster", async () => {
+    const user = userEvent.setup();
+    renderAt('/models', serviceOnPr12Json());
+    await user.click(within(await rowOf('codellama-13b')).getByRole('button', { name: 'Details' }));
+    expect(await screen.findByTestId('model-not-placed-codellama-13b')).toHaveTextContent(
+      'NoManagedClusterMatched: No ManagedCluster matches any of the cluster predicate',
+    );
+  });
+
+  it('offers no Edit locations to a user the console could not load', async () => {
+    const user = userEvent.setup();
+    const service = new MockConsoleService();
+    service.getUser = () => Promise.reject(new ServiceError(500, 'unavailable'));
+    renderAt('/models', service);
+    await user.click(within(await rowOf('llama-3-70b')).getByRole('button', { name: 'Details' }));
+    const empty = await screen.findByTestId('model-not-placed-llama-3-70b');
+    expect(within(empty).queryByRole('button', { name: 'Edit locations' })).not.toBeInTheDocument();
+  });
+
+  it("opens a partially available model's locations from its status, whether or not it has works", async () => {
+    const user = userEvent.setup();
+    const service = new MockConsoleService();
+    service.models = service.models.map((m) =>
+      m.name === 'granite-research' ? { ...m, phase: 'Partially available', works: undefined } : m,
+    );
+    renderAt('/models', service);
+    await user.click(within(await rowOf('granite-research')).getByText('Partially available'));
+    await user.click(await screen.findByRole('button', { name: 'View locations' }));
+    expect(await screen.findByTestId('model-not-placed-granite-research')).toBeVisible();
   });
 });
