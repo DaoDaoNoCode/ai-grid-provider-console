@@ -78,6 +78,7 @@ dev: ## Against a backend you run yourself on BACKEND_ADDRESS (default 127.0.0.1
 	wait
 
 dev-fake: ## Without a cluster, on the console's own fake backend (:9090) and hub (:9091), from mock/fixtures
+	@echo "==> Clusters and the AI Grid map use the backend's API and need make dev-fake-infra"
 	@trap 'kill 0' INT TERM; \
 	$(MAKE) -s dev-fake-backend & \
 	$(MAKE) -s dev-bff-fake & \

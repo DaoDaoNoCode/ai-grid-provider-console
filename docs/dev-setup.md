@@ -7,6 +7,18 @@ repository; the backend never does. It runs where it lives: deployed on the hub,
 repository in a second terminal. The console runs as the user who ran `oc login`: the dev proxy
 sends your name and token the way kube-auth-proxy would, and the BFF forwards them to the backend.
 
+## Which command
+
+| You want | Run |
+|---|---|
+| Fake data, the full console, no cluster | `make dev-fake-infra` |
+| The hub's deployed backend | `oc login`, then `make dev-cluster` |
+| Your own backend on the hub | `oc login`; the backend repository's `make run-hub`, on any branch you have checked out; then `make dev` here |
+
+With `make run-hub`, Organizations need `make run-hub KEYCLOAK=hub`. The last two act on a real
+hub: adding or removing clusters, and organization changes, are real changes to it. `make dev-fake`
+runs the console's own fake, where Clusters and the AI Grid map say the backend is unavailable.
+
 ## Prerequisites
 
 - Go 1.26 or newer, `golangci-lint`
@@ -18,11 +30,6 @@ sends your name and token the way kube-auth-proxy would, and the BFF forwards th
   BFF asks that hub whether you may patch `ManagedClusters` (`isProviderAdmin`), using your token.
 
 ## Run against a real hub
-
-| You want | Terminal 1 | Terminal 2 (this repository) |
-|---|---|---|
-| The console as the hub serves it | (none) | `make dev-cluster` |
-| To change the backend too | the backend repository: run it on `127.0.0.1:9090` against your `oc login` | `make dev` |
 
 ```sh
 oc login https://api.<hub>:6443 ...
@@ -68,18 +75,24 @@ a plain `oc port-forward`, and acts with its ServiceAccount's rights: those the 
 `backend.clusterWrites` is on, as ai-grid-env-setup deploys it. The local BFF's `isProviderAdmin`
 check is a convenience, not a boundary: whoever runs the forward can call the backend without it.
 
-To run your own backend instead, start it in a checkout of the backend repository, then run
-`make dev` here. It uses your kubeconfig (`KUBECONFIG_PATH`) and needs the Keycloak settings
-(`KEYCLOAK_URL`, `KEYCLOAK_REALM`, `KEYCLOAK_ADMIN_USERNAME`, `KEYCLOAK_ADMIN_PASSWORD`):
+To run your own backend instead, on any branch you have checked out, start it with `make run-hub`
+in the backend repository, then run `make dev` here:
 
 ```sh
-# in ai-grid-provider-backend
-KEYCLOAK_ADMIN_USERNAME=... KEYCLOAK_ADMIN_PASSWORD=... \
-  make run LISTEN_ADDRESS=127.0.0.1:9090 HTTP_LISTEN_ADDRESS=127.0.0.1:9092 KEYCLOAK_URL=https://<keycloak>
+# in ai-grid-provider-backend, after oc login
+make run-hub                # gRPC on 127.0.0.1:9090, REST on 127.0.0.1:9092
+make run-hub KEYCLOAK=hub   # the same, with the deployed console's Keycloak, for Organizations
+# in this repository, in a second terminal
+make dev
 ```
 
-Run that way, the backend acts with your `oc login`'s rights, not the deployed ServiceAccount's.
-`BACKEND_ADDRESS` moves the address the BFF dials in both targets.
+`make run-hub` uses your kubeconfig's current context and acts with your `oc login`'s rights, not
+the deployed ServiceAccount's: adding or removing clusters, and with `KEYCLOAK=hub` organization
+changes, are real. It port-forwards ACM Search for cluster GPUs and copies the deployed console's
+Git and namespace settings, but not its Git token: Models and Subscriptions show the hub's
+catalog, and creating or changing one fails. Without `KEYCLOAK=hub`, Organizations fail. Its
+README ("Run the API locally") has the details. `BACKEND_ADDRESS` moves the address the BFF dials
+in both targets (`LISTEN_ADDRESS` moves the backend's).
 
 How the pieces connect:
 
