@@ -54,7 +54,7 @@ help: ## Show this help
 install: ## Install the frontend's dependencies (once, before the targets below)
 	cd frontend && pnpm install
 
-dev-cluster: ## Against the hub of your oc login: its deployed backend (:9090) and Perses (:9445, with PERSES_PROJECT), port-forwarded
+dev-cluster: ## Against the hub of your oc login: the deployed console's backend (:9090; found in any namespace, or NAMESPACE) and Perses (:9445, with PERSES_PROJECT), port-forwarded
 	@BACKEND_ADDRESS=$(BACKEND_ADDRESS) hack/forward-backend.sh --check
 	@trap 'kill 0' INT TERM; \
 	if [ -z "$$PERSES_URL" ] && [ -z "$$PERSES_PROJECT" ]; then \
@@ -99,7 +99,8 @@ generate-api: ## Regenerate frontend/src/gen from the backend's proto at .backen
 # The pieces of the dev targets above, one process each, to run in separate terminals
 # (docs/dev-setup.md, "Run the pieces separately"). They take the same variables.
 
-# dev-cluster: the hub's backend and Perses (NAMESPACE, DEPLOYMENT; PERSES_NAMESPACE, PERSES_SERVICE).
+# dev-cluster: the hub's backend, found by its label unless NAMESPACE is set (NAMESPACE, DEPLOYMENT,
+# SELECTOR: hack/forward-backend.sh), and Perses (PERSES_NAMESPACE, PERSES_SERVICE).
 dev-forward-backend:
 	BACKEND_ADDRESS=$(BACKEND_ADDRESS) hack/forward-backend.sh
 

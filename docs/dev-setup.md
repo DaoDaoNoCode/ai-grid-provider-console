@@ -32,9 +32,12 @@ make dev-cluster   # the hub's backend (forwarded to :9090), its Perses (:9445),
 
 Open http://127.0.0.1:9000. `make dev-cluster` needs the console deployed on the hub (`make deploy`, or
 [ai-grid-env-setup](https://github.com/ai-grid-cloud/ai-grid-env-setup)): it forwards the backend
-container of `ai-grid/ai-grid-provider-console` (`NAMESPACE`, `DEPLOYMENT`) with `oc port-forward`,
-so you see what the deployed console shows, from the same backend build, ServiceAccount, RBAC and
-Keycloak. Writes are real and go through the deployed backend's ServiceAccount, so they work
+container of the console's Deployment with `oc port-forward`. It finds that Deployment in any
+namespace by the label the chart and `manifests/base` give it,
+`app.kubernetes.io/name=ai-grid-provider-console` (`ai-grid` on a hub set up by
+ai-grid-env-setup, elsewhere on others); when there is none, or more than one, it stops and lists
+what it found; set `NAMESPACE` (and `DEPLOYMENT`) to choose it yourself. You see what the
+deployed console shows, from the same backend build, ServiceAccount, RBAC and Keycloak. Writes are real and go through the deployed backend's ServiceAccount, so they work
 exactly where the deployed console's do. On a hub set up by ai-grid-env-setup, which deploys the
 chart with `backend.clusterWrites: true` (`patch` on ManagedClusters for that ServiceAccount),
 Add to AI Grid and Remove change the hub's clusters. With `make deploy` alone, the chart grants

@@ -5,15 +5,19 @@
 # only; `oc port-forward` reaches it there and creates nothing on the cluster (it needs
 # pods/portforward in the namespace). Reconnects when the stream drops or a rollout replaces the pod.
 #
-#   NAMESPACE        namespace of the deployed console (default ai-grid)
-#   DEPLOYMENT       its Deployment (default ai-grid-provider-console)
+#   NAMESPACE        namespace of the deployed console; unset, it is the namespace of the one
+#                    Deployment in the cluster labelled SELECTOR (it stops when there are none or several)
+#   DEPLOYMENT       its Deployment (default: the one found, or ai-grid-provider-console)
+#   SELECTOR         the label that finds it (default app.kubernetes.io/name=ai-grid-provider-console,
+#                    the chart's and manifests/base's)
 #   BACKEND_ADDRESS  local address to listen on (default 127.0.0.1:9090; one loopback address)
 #
 # With --check it only verifies that it can forward (login, permission, a ready pod, a free local
 # port), so make dev-cluster stops before starting the BFF and the frontend when it can't.
 set -euo pipefail
-NAMESPACE="${NAMESPACE:-ai-grid}"
-DEPLOYMENT="${DEPLOYMENT:-ai-grid-provider-console}"
+NAMESPACE="${NAMESPACE:-}"
+DEPLOYMENT="${DEPLOYMENT:-}"
+SELECTOR="${SELECTOR:-app.kubernetes.io/name=ai-grid-provider-console}"
 BACKEND_ADDRESS="${BACKEND_ADDRESS:-127.0.0.1:9090}"
 HOST="${BACKEND_ADDRESS%:*}"
 HOST="${HOST#[}"
@@ -44,6 +48,31 @@ port_taken() {
 }
 
 oc whoami >/dev/null 2>&1 || fail "run oc login first"
+# Hubs deploy the console into different namespaces (ai-grid from ai-grid-env-setup, others
+# elsewhere), so without NAMESPACE it is found by the label every install of it carries.
+if [[ -z "${NAMESPACE}" ]]; then
+  found="$(oc get deployments -A -l "${SELECTOR}" \
+    -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\n"}{end}' 2>/dev/null)" ||
+    fail "can't list Deployments in all namespaces to find the console; set NAMESPACE"
+  case "$(grep -c . <<<"${found}")" in
+    1)
+      NAMESPACE="${found%%/*}"
+      DEPLOYMENT="${DEPLOYMENT:-${found#*/}}"
+      ;;
+    0)
+      echo "forward-backend: no Deployment labelled ${SELECTOR} on $(oc whoami --show-server)." >&2
+      echo "  Deploy the console there (make deploy, or ai-grid-cloud/ai-grid-env-setup), set NAMESPACE" >&2
+      echo "  to where it runs, or run the backend from its own repository on ${BACKEND_ADDRESS} and use make dev." >&2
+      exit 1
+      ;;
+    *)
+      echo "forward-backend: more than one Deployment labelled ${SELECTOR}; set NAMESPACE to one of:" >&2
+      while read -r d; do echo "  ${d}"; done <<<"${found}" >&2
+      exit 1
+      ;;
+  esac
+fi
+DEPLOYMENT="${DEPLOYMENT:-ai-grid-provider-console}"
 if ! oc get deployment "${DEPLOYMENT}" -n "${NAMESPACE}" >/dev/null 2>&1; then
   echo "forward-backend: no ${NAMESPACE}/${DEPLOYMENT} on $(oc whoami --show-server)." >&2
   echo "  Deploy the console there (make deploy, or ai-grid-cloud/ai-grid-env-setup), or run the" >&2
