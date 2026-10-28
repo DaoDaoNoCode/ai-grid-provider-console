@@ -133,7 +133,7 @@ it('removes a model after its name is typed', async () => {
   await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
   await waitFor(() => expect(screen.queryByTestId('model-actions-widget')).not.toBeInTheDocument());
   expect((await service.listModels()).some((m) => m.name === 'widget')).toBe(false);
-}, 20000);
+});
 
 it('leaves the deploy form out of history once the model is deployed, so Back skips it', async () => {
   let navigate: NavigateFunction = () => undefined;
@@ -157,7 +157,7 @@ it('leaves the deploy form out of history once the model is deployed, so Back sk
   expect(await screen.findByText('Model deployed')).toBeVisible();
   await act(async () => navigate(-1));
   expect(await screen.findByRole('heading', { level: 1, name: 'Clusters' })).toBeVisible();
-}, 20000);
+});
 
 /** A model "widget" that subscription "widget-users" uses. */
 const referencedModel = async (service: MockConsoleService) => {
@@ -644,7 +644,7 @@ it("takes only the fake backend's URI schemes and sends the URI trimmed", async 
   await user.click(screen.getByRole('button', { name: 'Deploy' }));
   await waitFor(() => expect(create).toHaveBeenCalled());
   expect(create.mock.calls[0][0].modelUri).toBe('hf://org/widget');
-}, 20000);
+});
 
 describe('a failed background poll', () => {
   // Only the 30-second polls are faked; user-event and findBy keep real timeouts.

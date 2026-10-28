@@ -174,7 +174,7 @@ it('deletes an organization from its page after its name is typed', async () => 
   // The list reloads after the delete; the toast can show before it does.
   expect(await screen.findByText('No organizations yet. Register one to get started.')).toBeVisible();
   expect(await service.listOrganizations()).toEqual([]);
-}, 15000);
+});
 
 it('keeps onboarding input on conflicts and allows cancel without saving', async () => {
   const service = emptyService();

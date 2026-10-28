@@ -286,7 +286,7 @@ describe('administrator subscription flows', () => {
     expect(info.authPolicies.some((p) => p.name === 'test-team-policy')).toBe(true);
     // Before the controller's first reconcile a subscription has no phase.
     expect(info.subscription.phase).toBeUndefined();
-  }, 20000);
+  });
 
   it('edits without losing billing or metering configuration', async () => {
     const service = new MockConsoleService();
@@ -428,7 +428,7 @@ it('requires an organization and shows it in the table', async () => {
   expect(await rowOf('Data science')).toHaveTextContent('retired-org');
   const saved = (await service.getSubscriptionInfo('test-team')).subscription;
   expect(saved.tokenMetadata?.organizationId).toBe('8d2e7b31-0c4f-4a9d-b5e6-7f8a9b0c1d2e');
-}, 20000);
+});
 
 it('hides write actions until it knows the user is a provider admin', async () => {
   const service = unknownUser();
@@ -473,7 +473,7 @@ it('says creating is not available on a backend without subscriptions', async ()
   await user.click(screen.getByTestId('create-subscription-button'));
   expect(await screen.findByText('Creating subscriptions is not available on this backend yet.')).toBeVisible();
   expect(screen.getByText('Failed to create subscription')).toBeVisible();
-}, 20000);
+});
 
 it('shows one pagination, in the toolbar, for a single page', async () => {
   renderAt('/subscriptions', new MockConsoleService());
@@ -661,7 +661,7 @@ describe("model references on PR 12's models", () => {
     expect(create.mock.calls[0][0].modelRefs).toEqual([
       { name: 'granite-8b-instruct', namespace: 'ai-grid-models', tokenRateLimits: [{ limit: 1000, window: '1h' }] },
     ]);
-  }, 20000);
+  });
 
   it('matches references by namespace and name', async () => {
     const service = new MockConsoleService();
