@@ -634,7 +634,7 @@ func TestNotImplementedLogsAtDebugAndFailuresAtError(t *testing.T) {
 		return out
 	}
 
-	shipped := NewApp(testConfig(t), logger, backendtest.StartRealShape(t, &backendtest.Fake{}), startHub(t, &fakeHub{allowed: true}))
+	shipped := NewApp(testConfig(t), logger, backendtest.StartV1(t, &backendtest.V1{}), startHub(t, &fakeHub{allowed: true}))
 	if rec := serve(shipped, asUser(http.MethodGet, "/api/v1/grid/overview")); rec.Code != http.StatusNotImplemented {
 		t.Fatalf("overview on the shipped backend: %d %s, want 501", rec.Code, rec.Body.String())
 	}
