@@ -79,7 +79,7 @@ const MAX_ID_LENGTH = 56;
 
 const subscriptionFormSchema = z.object({
   priority: z
-    .number({ message: 'Required.' })
+    .number({ error: 'Required.' })
     .int('Enter a whole number.')
     .min(MIN_PRIORITY, `Enter a number from ${MIN_PRIORITY} to ${MAX_PRIORITY}.`)
     .max(MAX_PRIORITY, `Enter a number from ${MIN_PRIORITY} to ${MAX_PRIORITY}.`),

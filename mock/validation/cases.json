@@ -1,5 +1,5 @@
 {
-  "_comment": "Validation cases the frontend's zod schemas run (frontend/src/validation/cases.test.ts). Each case names a schema, an input, and the field errors expected (empty when valid): the last message per path, as the PoC keeps (Object.fromEntries over the zod issues). Messages are the PoC's (shared/*-validation.mjs at 62319b8), with 'tenant' read as 'organization'.",
+  "_comment": "Validation cases the frontend's zod schemas run (frontend/src/validation/cases.test.ts). Each case names a schema, an input, and the field errors expected (empty when valid): the last message per path, as the PoC keeps (Object.fromEntries over the zod issues). Messages are the PoC's where its schemas set one (shared/*-validation.mjs at 62319b8, with 'tenant' read as 'organization'), and zod 4's default messages otherwise.",
   "cases": [
     {
       "schema": "organization",
@@ -477,7 +477,7 @@
         }
       },
       "fieldErrors": {
-        "identityProvider.enabled": "Invalid literal value, expected true"
+        "identityProvider.enabled": "Invalid input: expected true"
       }
     },
     {
@@ -511,7 +511,7 @@
         }
       },
       "fieldErrors": {
-        "identityProvider.config": "Unrecognized key(s) in object: 'clientSecret'"
+        "identityProvider.config": "Unrecognized key: \"clientSecret\""
       }
     },
     {
@@ -725,7 +725,7 @@
         ]
       },
       "fieldErrors": {
-        "replicas": "Number must be greater than or equal to 1"
+        "replicas": "Too small: expected number to be >=1"
       }
     },
     {
@@ -751,7 +751,7 @@
         ]
       },
       "fieldErrors": {
-        "replicas": "Number must be less than or equal to 99"
+        "replicas": "Too big: expected number to be <=99"
       }
     },
     {
@@ -777,7 +777,7 @@
         ]
       },
       "fieldErrors": {
-        "gpuCount": "Number must be less than or equal to 64"
+        "gpuCount": "Too big: expected number to be <=64"
       }
     },
     {
@@ -877,7 +877,7 @@
         ]
       },
       "fieldErrors": {
-        "name": "Invalid"
+        "name": "Invalid string: must match pattern /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/"
       }
     },
     {
@@ -903,7 +903,7 @@
         ]
       },
       "fieldErrors": {
-        "replicas": "Expected number, received string"
+        "replicas": "Invalid input: expected number, received string"
       }
     },
     {
@@ -930,7 +930,7 @@
         "namespace": "maas"
       },
       "fieldErrors": {
-        "": "Unrecognized key(s) in object: 'namespace'"
+        "": "Unrecognized key: \"namespace\""
       }
     },
     {
@@ -956,7 +956,7 @@
         ]
       },
       "fieldErrors": {
-        "displayName": "String must contain at least 1 character(s)"
+        "displayName": "Too small: expected string to have >=1 characters"
       }
     },
     {
@@ -966,16 +966,16 @@
         "name": "widget"
       },
       "fieldErrors": {
-        "displayName": "Required",
-        "modelUri": "Required",
-        "runtimeImage": "Required",
-        "replicas": "Required",
-        "cpu": "Required",
-        "memory": "Required",
-        "gpuCount": "Required",
-        "runtimeArgs": "Required",
-        "baseRefs": "Required",
-        "locations": "Required"
+        "displayName": "Invalid input: expected string, received undefined",
+        "modelUri": "Invalid input: expected string, received undefined",
+        "runtimeImage": "Invalid input: expected string, received undefined",
+        "replicas": "Invalid input: expected number, received undefined",
+        "cpu": "Invalid input: expected string, received undefined",
+        "memory": "Invalid input: expected string, received undefined",
+        "gpuCount": "Invalid input: expected number, received undefined",
+        "runtimeArgs": "Invalid input: expected array, received undefined",
+        "baseRefs": "Invalid input: expected array, received undefined",
+        "locations": "Invalid input: expected array, received undefined"
       }
     },
     {
@@ -1055,7 +1055,7 @@
         ]
       },
       "fieldErrors": {
-        "replicas": "Number must be greater than or equal to 1"
+        "replicas": "Invalid input: expected int, received number"
       }
     },
     {
@@ -1109,8 +1109,8 @@
         ]
       },
       "fieldErrors": {
-        "locations.0": "Expected string, received number",
-        "locations.1": "Expected string, received number"
+        "locations.0": "Invalid input: expected string, received number",
+        "locations.1": "Invalid input: expected string, received number"
       }
     },
     {
@@ -1136,7 +1136,7 @@
         ]
       },
       "fieldErrors": {
-        "name": "String must contain at most 63 character(s)"
+        "name": "Too big: expected string to have <=63 characters"
       }
     },
     {
@@ -1226,7 +1226,7 @@
         ]
       },
       "fieldErrors": {
-        "runtimeArgs": "Array must contain at most 64 element(s)"
+        "runtimeArgs": "Too big: expected array to have <=64 items"
       }
     }
   ]
