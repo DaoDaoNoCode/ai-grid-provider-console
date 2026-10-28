@@ -112,7 +112,7 @@ gives plain typed clients.
 
 ### Query v5 and the Monitoring page
 
-Query v5 is pinned for the console and Perses plugins in `pnpm-workspace.yaml`. Perses 0.54
+Query v5 is pinned for the console and Perses plugins in `pnpm-workspace.yaml`. Perses 0.56
 still declares v4 support; `e2e/perses.spec.ts` verifies the actual renderer on v5. Keep that
 regression passing when updating these dependencies.
 
@@ -235,7 +235,7 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
 
 ### Perses on Query v5
 
-Every `@perses-dev` package up to 0.55.0 declares `@tanstack/react-query` `^4.39.1` as its peer;
+Every `@perses-dev` package up to 0.56.0-beta.0 declares `@tanstack/react-query` `^4.39.1` as its peer;
 the `overrides` entry in `frontend/pnpm-workspace.yaml` gives it the console's v5 instead, so
 there is one Query runtime in the app. Perses's built code uses the object syntax v5 requires,
 but three v4 names it still uses mean something else, or nothing, in v5 ([TanStack's migration
