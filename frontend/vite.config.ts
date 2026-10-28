@@ -107,6 +107,10 @@ export default defineConfig({
     // undone before each test, so no file restores them by hand.
     restoreMocks: true,
     unstubGlobals: true,
+    // The same time zone and locale on every machine: the console formats dates, numbers and
+    // relative times in the browser's, and the tests expect UTC and English. Vitest starts its
+    // workers with this environment, so it is set before Node reads it.
+    env: { TZ: 'UTC', LC_ALL: 'en_US.UTF-8' },
     // Playwright specs run with `pnpm e2e`.
     exclude: ['**/node_modules/**', 'e2e/**'],
   },
