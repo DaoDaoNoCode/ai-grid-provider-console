@@ -1,16 +1,10 @@
 {
-  "request": "PATCH /api/v1/clusters/site-paris-1",
+  "request": "PATCH /api/v1/tenants/3f1c9a72-5b6e-4d2a-8c01-2d3e4f5a6b7c",
   "requestHeaders": {
-    "If-Match": "\"48811203\""
+    "If-Match": "\"7\""
   },
   "requestBody": {
-    "annotations": {
-      "installer.multicluster.openshift.io/release-version": "2.17.3",
-      "open-cluster-management/created-via": "other",
-      "ai-grid/site-name": "Paris DC2",
-      "ai-grid/latitude": "48.8566",
-      "ai-grid/longitude": "2.3522"
-    }
+    "description": "Acme Robotics, EU"
   },
   "token": "dev-token",
   "user": "dev-user",
@@ -18,7 +12,7 @@
   "body": {
     "error": {
       "code": "409",
-      "message": "object with identifier 'site-paris-1' has resource version 48811204, the request carries \"48811203\"; fetch it again and retry"
+      "message": "object with identifier '3f1c9a72-5b6e-4d2a-8c01-2d3e4f5a6b7c' has resource version 1, the request carries \"7\"; fetch it again and retry"
     }
   }
 }

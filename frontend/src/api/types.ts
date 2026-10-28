@@ -70,7 +70,7 @@ export type GPUNode = {
 export type ClusterGPUs = { total: number; nodeCount: number; configurations: GPUConfiguration[]; nodes: GPUNode[] };
 
 /**
- * A cluster as the BFF sends it (PR 12's `GridCluster` in bff/internal/api/clusters.go),
+ * A cluster as the BFF sends it (`GridCluster` in bff/internal/api/clusters.go),
  * limited to the fields the console reads. `toGridCluster` in adapters.ts maps it.
  */
 export type ApiCluster = {
@@ -236,7 +236,7 @@ export type Organization = Omit<OrganizationInput, 'identityProvider'> & {
 };
 
 /**
- * A tenant of GET /api/v1/tenants (PR 12's JSON plus the identity provider, proposal P1).
+ * A tenant of GET /api/v1/tenants (the BFF's JSON plus the identity provider, proposal P1).
  * The pages read it through toOrganization.
  */
 export type ApiTenant = {
@@ -282,7 +282,7 @@ export type CreateModelRequest = {
 };
 
 /**
- * The body of POST /api/v1/models: the keys of PR 12's `ModelCreate` (bff/internal/api/models.go)
+ * The body of POST /api/v1/models: the keys of `ModelCreate` (bff/internal/api/models.go)
  * that the wizard sets, and no others. `toModelCreate` in adapters.ts builds it.
  */
 export type ApiModelCreate = {
@@ -308,7 +308,6 @@ export type EnvVar = { name: string; value: string };
 
 /** The placement the console writes: enrolled, provisioned clusters at the chosen locations. */
 export type ConsolePlacement = {
-  matchLabels: Record<string, string>;
   matchExpressions: { key: string; operator: 'In'; values: string[] }[];
 };
 
@@ -336,7 +335,7 @@ export type ModelUpdate = {
 };
 
 /**
- * A model of GET /api/v1/models (PR 12's `Model` in bff/internal/api/models.go), limited to the
+ * A model of GET /api/v1/models (`Model` in bff/internal/api/models.go), limited to the
  * fields the console reads. `toManagedModel` in adapters.ts maps it.
  */
 export type ApiModel = {
@@ -360,8 +359,18 @@ export type ApiModel = {
   phase?: string;
   reason?: string;
   message?: string;
-  /** Absent for a model served on the hub only. `locations` is proposal P8. */
-  placement?: ModelPlacementSpec & { locations?: string[] };
+  /**
+   * Absent for a model served on the hub only. `selectedClusters` are the decided ManagedClusters by
+   * name; `locations` is proposal P8.
+   */
+  placement?: ModelPlacementSpec & {
+    selectedClusters?: string[];
+    locations?: string[];
+    /** `PlacementSatisfied`, with its reason and message. */
+    satisfied?: boolean;
+    reason?: string;
+    message?: string;
+  };
   /** The ManifestWorkReplicaSet's status: `works` is the model on each decided cluster. */
   rollout?: { works?: ApiModelWork[] };
   resourceVersion?: string;
@@ -396,14 +405,14 @@ export type ModelWork = {
   conditions: Condition[];
 };
 
-/** A model deployment: its saved deployment and placement, and PR 12's phase. */
+/** A model deployment: its saved deployment and placement, and the BFF's phase. */
 export type ManagedModel = {
   name: string;
   namespace: string;
   displayName?: string;
   description?: string;
   modelRef: ModelReference;
-  /** PR 12's phase: Pending, Ready or Failed. */
+  /** The BFF's phase: Pending, Ready or Failed. */
   phase?: string;
   endpoint?: string;
   status?: string;
@@ -414,8 +423,15 @@ export type ManagedModel = {
   resourceVersion: string;
   /** The `location` labels of the clusters the placement decided on; empty without one. */
   locations: string[];
+  /**
+   * The clusters the placement decided on, by ManagedCluster name (`placement.selectedClusters`);
+   * empty without one. Unlike `locations`, these name the same clusters on every backend.
+   */
+  selectedClusters: string[];
   /** The model on each cluster it was sent to; absent for a model served on the hub only. */
   works?: ModelWork[];
+  /** Why the placement chose no cluster, when the backend says it isn't satisfied. */
+  placementIssue?: { reason?: string; message?: string };
   modelUri?: string;
   modelName?: string;
   runtimeImage?: string;

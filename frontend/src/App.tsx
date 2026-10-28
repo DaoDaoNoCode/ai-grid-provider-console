@@ -20,7 +20,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import type { Transport } from '@connectrpc/connect';
-import { BackendProvider } from './api/connect/BackendProvider';
+import { BackendProvider, type TransportWith } from './api/connect/BackendProvider';
 import type { ConsoleService } from './api/ConsoleService';
 import { AppRoutes } from './AppRoutes';
 import { FakeBackendBanner } from './components/FakeBackendBanner';
@@ -47,8 +47,11 @@ import {
 
 type Props = {
   service: ConsoleService;
-  /** The backend's API over Connect for every page (Connect Query); a test gives fakeClients' transport. */
-  transport?: Transport;
+  /**
+   * The backend's API over Connect for every page (Connect Query); a test gives fakeClients'
+   * transport, or builds one with the console's interceptors (BackendProvider's TransportWith).
+   */
+  transport?: Transport | TransportWith;
   /** The browser's location and session storage; a test gives its own. */
   navigation?: Navigation;
   storage?: GetStorage;

@@ -16,12 +16,12 @@ import {
 } from '@patternfly/react-core';
 import type { ClusterRole, GridMembership } from '../../api/clusters';
 import { ServiceError } from '../../api/ConsoleService';
-import type { GridCluster } from '../../api/types';
 import { TypeaheadSelect } from '../../components/TypeaheadSelect';
 import { ClusterChangedError } from './ClusterChangedError';
+import type { ClusterView } from './clusterView';
 import { clusterRoles, roleOf } from './roles';
 
-export type MembershipChange = { cluster: GridCluster; join: boolean };
+export type MembershipChange = { cluster: ClusterView; join: boolean };
 
 type Props = MembershipChange & {
   /** Makes the change; the modal closes once it resolves and shows the error if it throws. */
@@ -41,7 +41,7 @@ const locationError = (location: string) => {
 };
 
 /** The cluster's role label when it's one of ours; otherwise combined for the hub itself. */
-const defaultRole = (cluster: GridCluster): ClusterRole | '' => {
+const defaultRole = (cluster: ClusterView): ClusterRole | '' => {
   return roleOf(cluster.labels)?.value ?? (cluster.name === 'local-cluster' ? 'combined' : '');
 };
 

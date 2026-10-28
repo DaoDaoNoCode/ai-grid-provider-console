@@ -1,4 +1,3 @@
-import { toGridCluster } from '../api/adapters';
 import { HttpConsoleService } from '../api/HttpConsoleService';
 
 const jsonResponse = (status: number, body: unknown) =>
@@ -102,17 +101,17 @@ describe('HttpConsoleService', () => {
       gpuCount: 0,
       runtimeArgs: [],
       baseRefs: ['v3-6-0-kserve-config-llm-template-cpu'],
-      locations: ['paris'],
+      locations: ['site-paris-1'],
     };
     await expect(service.createModel(input)).resolves.toMatchObject({ name: 'widget', namespace: 'team-models' });
     const post = fetchFn.mock.calls.find(([, init]) => init?.method === 'POST');
     expect(post?.[0]).toBe('/api/v1/models');
-    // PR 12's ModelCreate in the configured namespace, with the PoC's placement.
+    // The BFF's ModelCreate (bff/internal/api/models.go) in the configured namespace, placed by cluster name.
     expect(JSON.parse(post?.[1].body)).toMatchObject({
       name: 'widget',
       namespace: 'team-models',
       baseRefs: ['v3-6-0-kserve-config-llm-template-cpu'],
-      placement: { matchExpressions: [{ key: 'location', operator: 'In', values: ['paris'] }] },
+      placement: { matchExpressions: [{ key: 'name', operator: 'In', values: ['site-paris-1'] }] },
     });
     fetchFn.mockImplementation(async () =>
       jsonResponse(200, {
@@ -172,7 +171,7 @@ describe('HttpConsoleService', () => {
     );
   });
 
-  it("maps a subscription's referenced models from PR 12's model JSON", async () => {
+  it("maps a subscription's referenced models from the BFF's model JSON", async () => {
     const model = { name: 'granite', namespace: 'ai-grid-models', modelUri: 'hf://x', modelName: 'x', phase: 'ready' };
     const subscription = { name: 'team', resourceVersion: '1', owner: { groups: [] }, modelRefs: [] };
     const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, { data: { subscription, modelRefs: [model] } }));
@@ -184,78 +183,6 @@ describe('HttpConsoleService', () => {
         modelRef: { kind: 'LLMInferenceService', name: 'granite' },
       }),
     ]);
-  });
-
-  it('enrolls a cluster with a JSON PATCH of its whole labels map, role and location at the version it was read', async () => {
-    const fetchFn = vi
-      .fn()
-      .mockResolvedValue(jsonResponse(200, { data: { name: 'site4', aiGridEnabled: true, status: 'ready' } }));
-    const read = toGridCluster({
-      name: 'site4',
-      aiGridEnabled: false,
-      provisioned: false,
-      status: 'ready',
-      resourceVersion: '7',
-      labels: { location: 'sydney' },
-    });
-    await expect(
-      new HttpConsoleService(fetchFn).enrollCluster(read, { location: 'us-east', role: 'combined' }),
-    ).resolves.toMatchObject({
-      aiGridEnabled: true,
-      status: 'Ready',
-    });
-    expect(fetchFn).toHaveBeenCalledWith(
-      '/api/v1/clusters/site4',
-      expect.objectContaining({
-        method: 'PATCH',
-        body: '{"labels":{"location":"us-east","ai-grid/enabled":"true","ai-grid/role":"combined"}}',
-        headers: expect.objectContaining({ 'Content-Type': 'application/json', 'If-Match': '"7"' }),
-      }),
-    );
-  });
-
-  it('removes a cluster from AI Grid by PATCHing its labels without ai-grid/enabled', async () => {
-    const fetchFn = vi
-      .fn()
-      .mockResolvedValue(jsonResponse(200, { data: { name: 'site1', aiGridEnabled: false, status: 'ready' } }));
-    const read = toGridCluster({
-      name: 'site1',
-      aiGridEnabled: true,
-      provisioned: true,
-      status: 'ready',
-      resourceVersion: '4',
-      labels: { location: 'paris', 'ai-grid/enabled': 'true', 'ai-grid/provisioned': 'true' },
-    });
-    await expect(new HttpConsoleService(fetchFn).removeClusterFromGrid(read)).resolves.toMatchObject({
-      aiGridEnabled: false,
-    });
-    expect(fetchFn).toHaveBeenCalledWith(
-      '/api/v1/clusters/site1',
-      expect.objectContaining({
-        method: 'PATCH',
-        body: '{"labels":{"location":"paris","ai-grid/provisioned":"true"}}',
-        headers: expect.objectContaining({ 'If-Match': '"4"' }),
-      }),
-    );
-  });
-
-  it('requests the full cluster list without paging parameters and maps PR 12 clusters', async () => {
-    const fetchFn = vi.fn().mockResolvedValue(
-      jsonResponse(200, {
-        data: [{ name: 'site-berlin-1', aiGridEnabled: false, provisioned: false, status: 'importing' }],
-        meta: { total: 1 },
-      }),
-    );
-    await expect(new HttpConsoleService(fetchFn).listClusters()).resolves.toEqual([
-      expect.objectContaining({
-        name: 'site-berlin-1',
-        status: 'Unknown',
-        state: 'Importing',
-        provisioningStatus: 'Not provisioned',
-        labels: {},
-      }),
-    ]);
-    expect(fetchFn).toHaveBeenCalledWith('/api/v1/clusters', expect.objectContaining({ method: 'GET' }));
   });
 
   it('maps the clusters the grid overview embeds', async () => {
@@ -278,7 +205,7 @@ describe('HttpConsoleService', () => {
 
   it('maps network failures to status 0', async () => {
     const service = new HttpConsoleService(vi.fn().mockRejectedValue(new TypeError('offline')));
-    await expect(service.listClusters()).rejects.toMatchObject({ status: 0 });
+    await expect(service.getUser()).rejects.toMatchObject({ status: 0 });
   });
 
   it('sends the version as a quoted If-Match and returns undefined for 204', async () => {

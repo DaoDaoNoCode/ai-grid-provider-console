@@ -15,7 +15,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file ai_grid/v1/models_service.proto.
  */
 export const file_ai_grid_v1_models_service: GenFile = /*@__PURE__*/
-  fileDesc("Ch9haV9ncmlkL3YxL21vZGVsc19zZXJ2aWNlLnByb3RvEgphaV9ncmlkLnYxIo8BChFNb2RlbHNMaXN0UmVxdWVzdBITCgZvZmZzZXQYASABKAVIAIgBARISCgVsaW1pdBgCIAEoBUgBiAEBEhMKBmZpbHRlchgDIAEoCUgCiAEBEhIKBW9yZGVyGAQgASgJSAOIAQFCCQoHX29mZnNldEIICgZfbGltaXRCCQoHX2ZpbHRlckIICgZfb3JkZXIiUwoSTW9kZWxzTGlzdFJlc3BvbnNlEgwKBHNpemUYASABKAUSDQoFdG90YWwYAiABKAUSIAoFaXRlbXMYAyADKAsyES5haV9ncmlkLnYxLk1vZGVsIh4KEE1vZGVsc0dldFJlcXVlc3QSCgoCaWQYASABKAkiNgoRTW9kZWxzR2V0UmVzcG9uc2USIQoGb2JqZWN0GAEgASgLMhEuYWlfZ3JpZC52MS5Nb2RlbCI4ChNNb2RlbHNDcmVhdGVSZXF1ZXN0EiEKBm9iamVjdBgBIAEoCzIRLmFpX2dyaWQudjEuTW9kZWwiOQoUTW9kZWxzQ3JlYXRlUmVzcG9uc2USIQoGb2JqZWN0GAEgASgLMhEuYWlfZ3JpZC52MS5Nb2RlbCJ3ChNNb2RlbHNVcGRhdGVSZXF1ZXN0EiEKBm9iamVjdBgBIAEoCzIRLmFpX2dyaWQudjEuTW9kZWwSLwoLdXBkYXRlX21hc2sYAiABKAsyGi5nb29nbGUucHJvdG9idWYuRmllbGRNYXNrEgwKBGxvY2sYAyABKAgiOQoUTW9kZWxzVXBkYXRlUmVzcG9uc2USIQoGb2JqZWN0GAEgASgLMhEuYWlfZ3JpZC52MS5Nb2RlbCI7ChNNb2RlbHNEZWxldGVSZXF1ZXN0EgoKAmlkGAEgASgJEhgKEHJlc291cmNlX3ZlcnNpb24YAiABKAUiFgoUTW9kZWxzRGVsZXRlUmVzcG9uc2UiHAoaTW9kZWxzTGlzdExvY2F0aW9uc1JlcXVlc3QiMAobTW9kZWxzTGlzdExvY2F0aW9uc1Jlc3BvbnNlEhEKCWxvY2F0aW9ucxgBIAMoCTK5BQoGTW9kZWxzEl0KBExpc3QSHS5haV9ncmlkLnYxLk1vZGVsc0xpc3RSZXF1ZXN0Gh4uYWlfZ3JpZC52MS5Nb2RlbHNMaXN0UmVzcG9uc2UiFoLT5JMCEBIOL2FwaS92MS9tb2RlbHMSZwoDR2V0EhwuYWlfZ3JpZC52MS5Nb2RlbHNHZXRSZXF1ZXN0Gh0uYWlfZ3JpZC52MS5Nb2RlbHNHZXRSZXNwb25zZSIjgtPkkwIdYgZvYmplY3QSEy9hcGkvdjEvbW9kZWxzL3tpZH0ScwoGQ3JlYXRlEh8uYWlfZ3JpZC52MS5Nb2RlbHNDcmVhdGVSZXF1ZXN0GiAuYWlfZ3JpZC52MS5Nb2RlbHNDcmVhdGVSZXNwb25zZSImgtPkkwIgOgZvYmplY3RiBm9iamVjdCIOL2FwaS92MS9tb2RlbHMSfwoGVXBkYXRlEh8uYWlfZ3JpZC52MS5Nb2RlbHNVcGRhdGVSZXF1ZXN0GiAuYWlfZ3JpZC52MS5Nb2RlbHNVcGRhdGVSZXNwb25zZSIygtPkkwIsOgZvYmplY3RiBm9iamVjdDIaL2FwaS92MS9tb2RlbHMve29iamVjdC5pZH0SaAoGRGVsZXRlEh8uYWlfZ3JpZC52MS5Nb2RlbHNEZWxldGVSZXF1ZXN0GiAuYWlfZ3JpZC52MS5Nb2RlbHNEZWxldGVSZXNwb25zZSIbgtPkkwIVKhMvYXBpL3YxL21vZGVscy97aWR9EoYBCg1MaXN0TG9jYXRpb25zEiYuYWlfZ3JpZC52MS5Nb2RlbHNMaXN0TG9jYXRpb25zUmVxdWVzdBonLmFpX2dyaWQudjEuTW9kZWxzTGlzdExvY2F0aW9uc1Jlc3BvbnNlIiSC0+STAh4SHC9hcGkvdjEvbW9kZWxzOmxpc3RMb2NhdGlvbnNCSlpIZ2l0aHViLmNvbS9vc2FjLXByb2plY3QvYWktZ3JpZC1wcm92aWRlci1iYWNrZW5kL2dlbi9haV9ncmlkL3YxO2FpZ3JpZHYxYgZwcm90bzM", [file_ai_grid_v1_model_type, file_google_api_annotations, file_google_protobuf_field_mask]);
+  fileDesc("Ch9haV9ncmlkL3YxL21vZGVsc19zZXJ2aWNlLnByb3RvEgphaV9ncmlkLnYxIo8BChFNb2RlbHNMaXN0UmVxdWVzdBITCgZvZmZzZXQYASABKAVIAIgBARISCgVsaW1pdBgCIAEoBUgBiAEBEhMKBmZpbHRlchgDIAEoCUgCiAEBEhIKBW9yZGVyGAQgASgJSAOIAQFCCQoHX29mZnNldEIICgZfbGltaXRCCQoHX2ZpbHRlckIICgZfb3JkZXIiUwoSTW9kZWxzTGlzdFJlc3BvbnNlEgwKBHNpemUYASABKAUSDQoFdG90YWwYAiABKAUSIAoFaXRlbXMYAyADKAsyES5haV9ncmlkLnYxLk1vZGVsIh4KEE1vZGVsc0dldFJlcXVlc3QSCgoCaWQYASABKAkiNgoRTW9kZWxzR2V0UmVzcG9uc2USIQoGb2JqZWN0GAEgASgLMhEuYWlfZ3JpZC52MS5Nb2RlbCI4ChNNb2RlbHNDcmVhdGVSZXF1ZXN0EiEKBm9iamVjdBgBIAEoCzIRLmFpX2dyaWQudjEuTW9kZWwiOQoUTW9kZWxzQ3JlYXRlUmVzcG9uc2USIQoGb2JqZWN0GAEgASgLMhEuYWlfZ3JpZC52MS5Nb2RlbCJ3ChNNb2RlbHNVcGRhdGVSZXF1ZXN0EiEKBm9iamVjdBgBIAEoCzIRLmFpX2dyaWQudjEuTW9kZWwSLwoLdXBkYXRlX21hc2sYAiABKAsyGi5nb29nbGUucHJvdG9idWYuRmllbGRNYXNrEgwKBGxvY2sYAyABKAgiOQoUTW9kZWxzVXBkYXRlUmVzcG9uc2USIQoGb2JqZWN0GAEgASgLMhEuYWlfZ3JpZC52MS5Nb2RlbCI7ChNNb2RlbHNEZWxldGVSZXF1ZXN0EgoKAmlkGAEgASgJEhgKEHJlc291cmNlX3ZlcnNpb24YAiABKAUiFgoUTW9kZWxzRGVsZXRlUmVzcG9uc2UiHAoaTW9kZWxzTGlzdExvY2F0aW9uc1JlcXVlc3QiMAobTW9kZWxzTGlzdExvY2F0aW9uc1Jlc3BvbnNlEhEKCWxvY2F0aW9ucxgBIAMoCSIkCiJNb2RlbHNMaXN0UGxhY2VtZW50Q2x1c3RlcnNSZXF1ZXN0IjcKI01vZGVsc0xpc3RQbGFjZW1lbnRDbHVzdGVyc1Jlc3BvbnNlEhAKCGNsdXN0ZXJzGAEgAygJMuUGCgZNb2RlbHMSXQoETGlzdBIdLmFpX2dyaWQudjEuTW9kZWxzTGlzdFJlcXVlc3QaHi5haV9ncmlkLnYxLk1vZGVsc0xpc3RSZXNwb25zZSIWgtPkkwIQEg4vYXBpL3YxL21vZGVscxJnCgNHZXQSHC5haV9ncmlkLnYxLk1vZGVsc0dldFJlcXVlc3QaHS5haV9ncmlkLnYxLk1vZGVsc0dldFJlc3BvbnNlIiOC0+STAh1iBm9iamVjdBITL2FwaS92MS9tb2RlbHMve2lkfRJzCgZDcmVhdGUSHy5haV9ncmlkLnYxLk1vZGVsc0NyZWF0ZVJlcXVlc3QaIC5haV9ncmlkLnYxLk1vZGVsc0NyZWF0ZVJlc3BvbnNlIiaC0+STAiA6Bm9iamVjdGIGb2JqZWN0Ig4vYXBpL3YxL21vZGVscxJ/CgZVcGRhdGUSHy5haV9ncmlkLnYxLk1vZGVsc1VwZGF0ZVJlcXVlc3QaIC5haV9ncmlkLnYxLk1vZGVsc1VwZGF0ZVJlc3BvbnNlIjKC0+STAiw6Bm9iamVjdGIGb2JqZWN0MhovYXBpL3YxL21vZGVscy97b2JqZWN0LmlkfRJoCgZEZWxldGUSHy5haV9ncmlkLnYxLk1vZGVsc0RlbGV0ZVJlcXVlc3QaIC5haV9ncmlkLnYxLk1vZGVsc0RlbGV0ZVJlc3BvbnNlIhuC0+STAhUqEy9hcGkvdjEvbW9kZWxzL3tpZH0SiQEKDUxpc3RMb2NhdGlvbnMSJi5haV9ncmlkLnYxLk1vZGVsc0xpc3RMb2NhdGlvbnNSZXF1ZXN0GicuYWlfZ3JpZC52MS5Nb2RlbHNMaXN0TG9jYXRpb25zUmVzcG9uc2UiJ4gCAYLT5JMCHhIcL2FwaS92MS9tb2RlbHM6bGlzdExvY2F0aW9ucxKmAQoVTGlzdFBsYWNlbWVudENsdXN0ZXJzEi4uYWlfZ3JpZC52MS5Nb2RlbHNMaXN0UGxhY2VtZW50Q2x1c3RlcnNSZXF1ZXN0Gi8uYWlfZ3JpZC52MS5Nb2RlbHNMaXN0UGxhY2VtZW50Q2x1c3RlcnNSZXNwb25zZSIsgtPkkwImEiQvYXBpL3YxL21vZGVsczpsaXN0UGxhY2VtZW50Q2x1c3RlcnNCSlpIZ2l0aHViLmNvbS9vc2FjLXByb2plY3QvYWktZ3JpZC1wcm92aWRlci1iYWNrZW5kL2dlbi9haV9ncmlkL3YxO2FpZ3JpZHYxYgZwcm90bzM", [file_ai_grid_v1_model_type, file_google_api_annotations, file_google_protobuf_field_mask]);
 
 /**
  * @generated from message ai_grid.v1.ModelsListRequest
@@ -248,7 +248,8 @@ export const ModelsDeleteResponseSchema: GenMessage<ModelsDeleteResponse> = /*@_
   messageDesc(file_ai_grid_v1_models_service, 9);
 
 /**
- * Request of ListLocations (P7). Empty.
+ * Request of ListLocations (P7). Empty. ListLocations is deprecated: use
+ * ListPlacementClusters.
  *
  * @generated from message ai_grid.v1.ModelsListLocationsRequest
  */
@@ -263,13 +264,15 @@ export const ModelsListLocationsRequestSchema: GenMessage<ModelsListLocationsReq
   messageDesc(file_ai_grid_v1_models_service, 10);
 
 /**
- * Response of ListLocations (P7).
+ * Response of ListLocations (P7). ListLocations is deprecated: use
+ * ListPlacementClusters.
  *
  * @generated from message ai_grid.v1.ModelsListLocationsResponse
  */
 export type ModelsListLocationsResponse = Message<"ai_grid.v1.ModelsListLocationsResponse"> & {
   /**
-   * Unique sorted names of AI Grid member clusters that are Available.
+   * Despite the name, cluster names, not `location` labels: the same list as
+   * ModelsListPlacementClustersResponse.clusters.
    *
    * @generated from field: repeated string locations = 1;
    */
@@ -282,6 +285,44 @@ export type ModelsListLocationsResponse = Message<"ai_grid.v1.ModelsListLocation
  */
 export const ModelsListLocationsResponseSchema: GenMessage<ModelsListLocationsResponse> = /*@__PURE__*/
   messageDesc(file_ai_grid_v1_models_service, 11);
+
+/**
+ * Request of ListPlacementClusters. Empty.
+ *
+ * @generated from message ai_grid.v1.ModelsListPlacementClustersRequest
+ */
+export type ModelsListPlacementClustersRequest = Message<"ai_grid.v1.ModelsListPlacementClustersRequest"> & {
+};
+
+/**
+ * Describes the message ai_grid.v1.ModelsListPlacementClustersRequest.
+ * Use `create(ModelsListPlacementClustersRequestSchema)` to create a new message.
+ */
+export const ModelsListPlacementClustersRequestSchema: GenMessage<ModelsListPlacementClustersRequest> = /*@__PURE__*/
+  messageDesc(file_ai_grid_v1_models_service, 12);
+
+/**
+ * Response of ListPlacementClusters.
+ *
+ * @generated from message ai_grid.v1.ModelsListPlacementClustersResponse
+ */
+export type ModelsListPlacementClustersResponse = Message<"ai_grid.v1.ModelsListPlacementClustersResponse"> & {
+  /**
+   * Unique sorted ManagedCluster names (metadata.name, which ACM also sets as
+   * the cluster's `name` label): the values a placement's `name In [...]`
+   * takes.
+   *
+   * @generated from field: repeated string clusters = 1;
+   */
+  clusters: string[];
+};
+
+/**
+ * Describes the message ai_grid.v1.ModelsListPlacementClustersResponse.
+ * Use `create(ModelsListPlacementClustersResponseSchema)` to create a new message.
+ */
+export const ModelsListPlacementClustersResponseSchema: GenMessage<ModelsListPlacementClustersResponse> = /*@__PURE__*/
+  messageDesc(file_ai_grid_v1_models_service, 13);
 
 /**
  * Models manage LLMInferenceService deployments in the backend's Git catalog,
@@ -336,18 +377,33 @@ export const Models: GenService<{
     output: typeof ModelsDeleteResponseSchema;
   },
   /**
-   * Locations a model can be placed on: unique sorted names of the
-   * ManagedClusters labelled ai-grid/enabled "true" and ai-grid/role
-   * inference or combined that are Available and Compliant with the ready
-   * Policy (AI_GRID_READY_POLICY). A location is a cluster: the values a
-   * placement's `name In [...]` takes.
+   * Deprecated: use ListPlacementClusters, which answers the same list as
+   * `clusters`. Despite its name, this RPC answers cluster names, not values
+   * of the cluster's `location` label (those are in a model's
+   * status.placement.locations). It is removed once its clients have moved
+   * (docs/API_CONTRACT.md, "Expand, migrate, contract").
    *
    * @generated from rpc ai_grid.v1.Models.ListLocations
+   * @deprecated
    */
   listLocations: {
     methodKind: "unary";
     input: typeof ModelsListLocationsRequestSchema;
     output: typeof ModelsListLocationsResponseSchema;
+  },
+  /**
+   * Clusters a model can be placed on: unique sorted names of the
+   * ManagedClusters labelled ai-grid/enabled "true" and ai-grid/role
+   * inference or combined that are Available and Compliant with the ready
+   * Policy (AI_GRID_READY_POLICY). These are the values a placement's
+   * `name In [...]` takes.
+   *
+   * @generated from rpc ai_grid.v1.Models.ListPlacementClusters
+   */
+  listPlacementClusters: {
+    methodKind: "unary";
+    input: typeof ModelsListPlacementClustersRequestSchema;
+    output: typeof ModelsListPlacementClustersResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_ai_grid_v1_models_service, 0);

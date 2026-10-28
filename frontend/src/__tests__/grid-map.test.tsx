@@ -5,16 +5,19 @@
 import { act, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import type { NavigateFunction } from 'react-router-dom';
-import { App } from '../App';
 import userEvent from '@testing-library/user-event';
+import getModels from '../../../mock/examples/get-models.json';
 import { ServiceError } from '../api/ConsoleService';
+import { fakeClients } from '../api/connect/testing';
 import { HttpConsoleService } from '../api/HttpConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
 import { tileLayerConfig } from '../pages/grid/tiles';
-import { serviceOnPr12Json } from './pr12Json';
+import { serviceOnBffExamples } from './bffExamples';
+import { toManagedCluster } from './connectClusters';
 import { renderAt } from './render';
 // The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
-import '../pages/grid/GridPage';
+import '../pages/grid/AiGridPage';
+import { TestApp } from './TestApp';
 
 // Exercise the page and drawer without a browser map renderer or external tiles.
 vi.mock('../pages/grid/GridFleetMap', () => ({
@@ -29,16 +32,13 @@ vi.mock('../pages/grid/GridFleetMap', () => ({
 
 it('uses the reference map-and-drawer layout and opens cluster details from a pin', async () => {
   const service = new MockConsoleService();
-  // The PoC's browser demo is the only source that sets demo; the BFF never does.
-  const overview = service.getGridOverview;
-  vi.spyOn(service, 'getGridOverview').mockImplementation(async (...args) => ({
-    ...(await overview(...args)),
-    demo: true,
-  }));
+  // The map reads Clusters/List, never the dashboards' overview.
+  const overview = vi.spyOn(service, 'getGridOverview');
   const user = userEvent.setup();
   renderAt('/ai-grid', service);
-  expect(await screen.findByText('Inventory on this page is simulated.')).toBeVisible();
-  expect(screen.getByLabelText('Fleet summary')).toBeVisible();
+  expect(await screen.findByLabelText('Fleet summary')).toBeVisible();
+  expect(screen.queryByText(/simulated/)).not.toBeInTheDocument();
+  expect(overview).not.toHaveBeenCalled();
   await user.click(await screen.findByRole('button', { name: 'Map pin site3' }));
   expect(screen.getByRole('heading', { name: 'site3' })).toBeVisible();
   expect(screen.getByText('50.8503, 4.3517')).toBeVisible();
@@ -77,7 +77,7 @@ it('filters the drawer and map by availability while retaining inventory summari
 it('switches between clusters and models and follows placement cross-links', async () => {
   const service = new MockConsoleService();
   const [model] = service.models;
-  service.models = [{ ...model, locations: ['site3'] }];
+  service.models = [{ ...model, locations: ['site3'], selectedClusters: ['site3'] }];
   const user = userEvent.setup();
   renderAt('/ai-grid', service);
   // A card is one control; its models are links in the cluster's details.
@@ -99,14 +99,57 @@ it('switches between clusters and models and follows placement cross-links', asy
   expect(screen.queryByText('Fleet metrics')).not.toBeInTheDocument();
 });
 
-it("follows placement cross-links on PR 12's model JSON", async () => {
+it("follows placement cross-links on the BFF's example model JSON", async () => {
   const user = userEvent.setup();
-  renderAt('/ai-grid', serviceOnPr12Json());
+  const service = serviceOnBffExamples();
+  // The example overview's clusters, as Clusters/List over Connect (connectClusters.ts).
+  service.listClusters = async () => (await service.getGridOverview('1h')).clusters;
+  renderAt('/ai-grid', service);
   await user.click(await screen.findByRole('button', { name: 'View site-paris-1 details' }));
   await user.click(await screen.findByRole('button', { name: 'Granite 8B Instruct' }));
   expect(screen.getByRole('heading', { name: 'Model configuration' })).toBeVisible();
   await user.click(screen.getByRole('button', { name: 'Paris DC1 · site-paris-1' }));
   expect(screen.getByRole('heading', { name: 'Site and cluster' })).toBeVisible();
+});
+
+it('places a model on the clusters its placement chose, by name, when they share one location', async () => {
+  const user = userEvent.setup();
+  const service = new MockConsoleService();
+  // As on the dev hub: two members, site-a and site-b, both labelled location=us-east, and a model
+  // the backend placed on site-b. Through the BFF's v1 adapter (bff/internal/backend/v1_models.go)
+  // its placement's selectedClusters and locations are both ManagedCluster names.
+  const [first, second] = service.clusters;
+  service.clusters = [
+    { ...first, name: 'site-a', location: 'us-east', siteName: 'Site A' },
+    { ...second, name: 'site-b', location: 'us-east', siteName: 'Site B' },
+  ];
+  const granite = getModels.body.data.find((m) => m.name === 'granite-8b-instruct')!;
+  const placed = {
+    ...granite,
+    placement: { ...granite.placement, selectedClusters: ['site-b'], locations: ['site-b'] },
+  };
+  const http = new HttpConsoleService(
+    (async () =>
+      new Response(JSON.stringify({ data: [placed] }), {
+        headers: { 'Content-Type': 'application/json' },
+      })) as unknown as typeof fetch,
+  );
+  service.listModels = () => http.listModels();
+  renderAt('/ai-grid', service);
+  await user.click(await screen.findByRole('button', { name: 'View site-a details' }));
+  expect(screen.getByText('No models on this cluster.')).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Granite 8B Instruct' })).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Clusters' }));
+  await user.click(screen.getByRole('button', { name: 'View site-b details' }));
+  await user.click(screen.getByRole('button', { name: 'Granite 8B Instruct' }));
+  expect(screen.getByRole('button', { name: 'Site B · site-b' })).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Site A · site-a' })).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Back' }));
+  await user.click(screen.getByRole('button', { name: 'Clusters' }));
+  await user.click(
+    within(screen.getByRole('group', { name: 'Grid object type' })).getByRole('button', { name: 'Models' }),
+  );
+  expect(screen.getByText('Sites: Site B')).toBeVisible();
 });
 
 it('uses the configured tile URL, or none for the bundled land outline', () => {
@@ -116,13 +159,11 @@ it('uses the configured tile URL, or none for the bundled land outline', () => {
   ).toEqual({ url: 'https://tiles.example.com/{z}/{x}/{y}.png', attribution: 'Example tiles' });
 });
 
-it('shows the not-available page, like Models, when the backend has no grid overview', async () => {
+it('shows the not-available page, like Models, when the backend has no Clusters/List', async () => {
   const service = new MockConsoleService();
-  vi.spyOn(service, 'getGridOverview').mockRejectedValue(
-    new ServiceError(501, 'the AI Grid backend does not support this operation yet'),
-  );
-  const clusters = vi.spyOn(service, 'listClusters');
-  renderAt('/ai-grid', service);
+  const overview = vi.spyOn(service, 'getGridOverview');
+  // A backend whose Clusters service has no List: every Clusters method answers Unimplemented.
+  renderAt('/ai-grid', service, fakeClients({}).transport);
   expect(await screen.findByRole('heading', { name: 'AI Grid is not available on this backend yet' })).toBeVisible();
   expect(screen.getByRole('heading', { level: 1, name: 'AI Grid' })).toBeVisible();
   // No map, no summary, and nothing to refresh or switch to.
@@ -130,28 +171,28 @@ it('shows the not-available page, like Models, when the backend has no grid over
   expect(screen.queryByRole('region', { name: 'AI Grid map and drawer' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Refresh' })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'View monitoring' })).not.toBeInTheDocument();
-  // The Clusters list isn't asked for in place of the overview.
-  expect(clusters).not.toHaveBeenCalled();
+  // The dashboards' overview isn't asked for in place of the clusters.
+  expect(overview).not.toHaveBeenCalled();
 });
 
-it('drops the map for the not-available page when a later answer is 501', async () => {
+it('drops the map for the not-available page when a later answer is Unimplemented', async () => {
   const service = new MockConsoleService();
-  const serve = service.getGridOverview.bind(service);
-  vi.spyOn(service, 'getGridOverview')
-    .mockImplementationOnce(serve)
-    .mockRejectedValue(new ServiceError(501, 'the AI Grid backend does not support this operation yet'));
+  const list = service.listClusters;
   const user = userEvent.setup();
   renderAt('/ai-grid', service);
   expect(await screen.findByRole('region', { name: 'AI Grid map and drawer' })).toBeVisible();
+  service.listClusters = () =>
+    Promise.reject(new ServiceError(501, 'the AI Grid backend does not support this operation yet'));
   await user.click(screen.getByRole('button', { name: 'Refresh' }));
   expect(await screen.findByRole('heading', { name: 'AI Grid is not available on this backend yet' })).toBeVisible();
   expect(screen.queryByRole('region', { name: 'AI Grid map and drawer' })).not.toBeInTheDocument();
   expect(screen.queryByRole('region', { name: 'Fleet summary' })).not.toBeInTheDocument();
+  service.listClusters = list;
 });
 
-it('shows the backend error, not the not-available page, when the overview fails otherwise', async () => {
+it('shows the backend error, not the not-available page, when the clusters fail otherwise', async () => {
   const service = new MockConsoleService();
-  vi.spyOn(service, 'getGridOverview').mockRejectedValue(
+  vi.spyOn(service, 'listClusters').mockRejectedValue(
     new ServiceError(503, 'the AI Grid backend is unavailable; try again'),
   );
   renderAt('/ai-grid', service);
@@ -160,69 +201,19 @@ it('shows the backend error, not the not-available page, when the overview fails
   expect(screen.queryByText('AI Grid is not available on this backend yet')).not.toBeInTheDocument();
 });
 
-it('shows the map when the backend leaves the inventory and metrics sources out', async () => {
-  // The BFF omits inventorySource, metricsSource and a metric's status when the backend doesn't set them.
-  const json = {
-    updatedAt: '2026-10-16T12:00:00.000Z',
-    demo: false,
-    clusters: [
-      {
-        name: 'site-paris-1',
-        aiGridEnabled: true,
-        provisioned: true,
-        status: 'ready',
-        latitude: 48.8566,
-        longitude: 2.3522,
-      },
-    ],
-    metrics: [{ key: 'requests', label: 'Requests', unit: 'req/s', points: [] }],
-  };
-  const fetchFn = vi
-    .fn()
-    .mockImplementation(
-      async () => new Response(JSON.stringify({ data: json }), { headers: { 'Content-Type': 'application/json' } }),
-    );
+it('shows only the AI Grid members, and when the console read them', async () => {
   const service = new MockConsoleService();
-  service.getGridOverview = (...args) => new HttpConsoleService(fetchFn).getGridOverview(...args);
   renderAt('/ai-grid', service);
-  expect(await screen.findByRole('button', { name: 'Map pin site-paris-1' })).toBeInTheDocument();
-  expect(screen.queryByText(/Inventory:/)).not.toBeInTheDocument();
+  expect(await screen.findByRole('button', { name: 'View site1 details' })).toBeVisible();
+  // site4 is on the hub with coordinates, but not an AI Grid member.
+  expect(screen.queryByRole('button', { name: 'Map pin site4' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'View site4 details' })).not.toBeInTheDocument();
   expect(screen.getByText(/^Updated/)).toBeVisible();
-});
-
-it('shows the page when the backend sends no updated time', async () => {
-  // The BFF omits updatedAt when the backend doesn't send one.
-  const json = {
-    demo: false,
-    clusters: [
-      {
-        name: 'site-paris-1',
-        aiGridEnabled: true,
-        provisioned: true,
-        status: 'ready',
-        latitude: 48.8566,
-        longitude: 2.3522,
-      },
-    ],
-    metrics: [],
-  };
-  const fetchFn = vi
-    .fn()
-    .mockImplementation(
-      async () => new Response(JSON.stringify({ data: json }), { headers: { 'Content-Type': 'application/json' } }),
-    );
-  const service = new MockConsoleService();
-  service.getGridOverview = (...args) => new HttpConsoleService(fetchFn).getGridOverview(...args);
-  renderAt('/ai-grid', service);
-  expect(await screen.findByRole('button', { name: 'Map pin site-paris-1' })).toBeInTheDocument();
-  // No time to show, so no "Updated" line, and never "Invalid Date".
-  expect(screen.queryByText(/^Updated/)).not.toBeInTheDocument();
-  expect(screen.queryByText(/Invalid Date/)).not.toBeInTheDocument();
 });
 
 it('shows a model by its phase, not "Deployment saved"', async () => {
   const user = userEvent.setup();
-  const service = serviceOnPr12Json();
+  const service = serviceOnBffExamples();
   const [model] = await service.listModels();
   renderAt('/ai-grid', service);
   await user.click(
@@ -241,7 +232,7 @@ it('keeps the map, its selection and its models when a refresh fails', async () 
   expect(screen.getByRole('heading', { name: 'site1' })).toBeVisible();
   expect(screen.getByRole('button', { name: model.displayName })).toBeVisible();
   const failed = new ServiceError(503, 'Service unavailable.');
-  vi.spyOn(service, 'getGridOverview').mockRejectedValue(failed);
+  vi.spyOn(service, 'listClusters').mockRejectedValue(failed);
   vi.spyOn(service, 'listModels').mockRejectedValue(failed);
   await user.click(screen.getByRole('button', { name: 'Refresh' }));
   expect(await screen.findByText('AI Grid clusters could not be loaded')).toBeVisible();
@@ -256,8 +247,8 @@ it("explains, in a help popover, where a cluster's models come from", async () =
   renderAt('/ai-grid', new MockConsoleService());
   await user.click(await screen.findByRole('button', { name: 'Map pin site1' }));
   expect(screen.queryByText(/whose placement chose/)).not.toBeInTheDocument();
-  await user.click(screen.getByRole('button', { name: 'More about models at this location' }));
-  expect(await screen.findByText(/^The models whose placement chose this cluster's location\./)).toBeVisible();
+  await user.click(screen.getByRole('button', { name: 'More about models on this cluster' }));
+  expect(await screen.findByText(/^The models whose placement chose this cluster\./)).toBeVisible();
 });
 
 it('says no clusters match and clears the search and filter', async () => {
@@ -320,7 +311,7 @@ it('keeps the URL in step with the drawer, and clears it when the drawer closes'
   render(
     <MemoryRouter initialEntries={['/ai-grid']}>
       <Probe />
-      <App service={new MockConsoleService()} />
+      <TestApp service={new MockConsoleService()} />
     </MemoryRouter>,
   );
   await user.click(await screen.findByRole('button', { name: 'Map pin site3' }));
@@ -341,7 +332,7 @@ it('closes the drawer when the AI Grid nav link drops the cluster from the URL',
 it("drops the Back trail when a link moves the drawer to something the trail wasn't built for", async () => {
   const service = new MockConsoleService();
   const [model] = service.models;
-  service.models = [{ ...model, locations: ['site3'] }];
+  service.models = [{ ...model, locations: ['site3'], selectedClusters: ['site3'] }];
   let navigate: NavigateFunction = () => undefined;
   const Probe = () => {
     navigate = useNavigate();
@@ -351,7 +342,7 @@ it("drops the Back trail when a link moves the drawer to something the trail was
   render(
     <MemoryRouter initialEntries={['/ai-grid?cluster=site3']}>
       <Probe />
-      <App service={service} />
+      <TestApp service={service} />
     </MemoryRouter>,
   );
   await user.click(await screen.findByRole('button', { name: model.displayName ?? model.name }));
@@ -361,4 +352,31 @@ it("drops the Back trail when a link moves the drawer to something the trail was
   expect(await screen.findByRole('heading', { name: 'site2' })).toBeVisible();
   expect(screen.queryByRole('button', { name: 'Back' })).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Clusters' })).toBeVisible();
+});
+
+it("counts the members that aren't on the map, by why, and links to how to place them", async () => {
+  const service = new MockConsoleService();
+  const [first, second, third] = service.clusters;
+  service.clusters = [
+    first,
+    { ...second, latitude: undefined, longitude: undefined },
+    { ...third, latitude: undefined, longitude: undefined },
+  ];
+  // The mock's clusters carry no problem; one member's annotations are wrong.
+  const clusters = await service.listClusters();
+  const transport = fakeClients({
+    clusters: {
+      list: async () => {
+        const items = clusters.map(toManagedCluster);
+        items[2].status!.location!.problem = 'ai-grid/longitude "4,35" is not a decimal number of degrees';
+        return { items, size: items.length, total: items.length };
+      },
+    },
+  }).transport;
+  renderAt('/ai-grid', service, transport);
+  const note = await screen.findByText(/aren.t on the map/);
+  expect(note).toHaveTextContent(
+    "2 clusters aren't on the map: 1 without a position, 1 with coordinate annotations to fix.",
+  );
+  expect(within(note).getByRole('link', { name: "How to set a cluster's position" })).toBeVisible();
 });

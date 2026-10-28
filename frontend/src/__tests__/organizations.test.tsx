@@ -7,7 +7,6 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
 import type { NavigateFunction } from 'react-router-dom';
-import { App } from '../App';
 import { ServiceError } from '../api/ConsoleService';
 import { HttpConsoleService } from '../api/HttpConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
@@ -17,6 +16,7 @@ import { deferred, renderAt } from './render';
 import '../pages/organizations/OrganizationDetailsPage';
 import '../pages/organizations/OrganizationListPage';
 import '../pages/organizations/OrganizationWizardPage';
+import { TestApp } from './TestApp';
 
 const input: Required<OrganizationInput> = {
   name: 'tenant1',
@@ -380,7 +380,7 @@ it('shows one pagination, in the toolbar, for a single page', async () => {
   expect(screen.getAllByRole('navigation', { name: /pagination/i })).toHaveLength(1);
 });
 
-// PR 12's tenant JSON, as GET /api/v1/tenants/{id} sends it (mock/examples/get-tenant.json), trimmed.
+// The BFF's tenant JSON, as GET /api/v1/tenants/{id} sends it (mock/examples/get-tenant.json), trimmed.
 const tenantJson = {
   id: '3f1c9a72-5b6e-4d2a-8c01-2d3e4f5a6b7c',
   name: 'acme-robotics',
@@ -454,7 +454,7 @@ it('leaves the create form out of history once the organization is created, so B
   render(
     <MemoryRouter initialEntries={['/clusters', '/organizations/create']} initialIndex={1}>
       <CaptureNavigate />
-      <App service={new MockConsoleService()} />
+      <TestApp service={new MockConsoleService()} />
     </MemoryRouter>,
   );
   await user.click(await screen.findByRole('textbox', { name: 'Name' }));
@@ -538,7 +538,7 @@ it.each(['', '/edit'])('loads the other organization when the id in /organizatio
   render(
     <MemoryRouter initialEntries={[`/organizations/${acme.id}${suffix}`]}>
       <Navigator />
-      <App service={service} />
+      <TestApp service={service} />
     </MemoryRouter>,
   );
   const shows = (name: string) =>

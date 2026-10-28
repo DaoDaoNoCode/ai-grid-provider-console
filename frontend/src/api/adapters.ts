@@ -171,7 +171,7 @@ const modelPhaseOf = (phase: string | undefined, reason: string | undefined) =>
   !phase && reason === SAVED_TO_GIT_REASON ? 'Saved to Git' : phaseOf(phase);
 
 /**
- * Maps a model of GET/POST /models to the PoC's ManagedModel. Status is PR 12's phase (Pending
+ * Maps a model of GET/POST /models to the PoC's ManagedModel. Status is the BFF's phase (Pending
  * before the backend reports one, Saved to Git when the backend saved it to Git); locations are the placement's decided locations (P8).
  */
 export const toManagedModel = (json: ApiModel): ManagedModel => ({
@@ -186,6 +186,10 @@ export const toManagedModel = (json: ApiModel): ManagedModel => ({
   creationTimestamp: json.creationTimestamp,
   resourceVersion: json.resourceVersion ?? '',
   locations: json.placement?.locations ?? [],
+  selectedClusters: json.placement?.selectedClusters ?? [],
+  ...(json.placement?.satisfied === false && (json.placement.reason || json.placement.message)
+    ? { placementIssue: { reason: json.placement.reason, message: json.placement.message } }
+    : {}),
   works: json.rollout?.works?.map((work): ModelWork => ({
     cluster: work.cluster,
     phase: phaseOf(work.phase),
@@ -225,19 +229,19 @@ const placementSpecOf = ({
   ...(numberOfClusters !== undefined ? { numberOfClusters } : {}),
 });
 
-/** The labels of the clusters the console places models on: enrolled and provisioned. */
-const consoleMatchLabels = { 'ai-grid/enabled': 'true', 'ai-grid/provisioned': 'true' };
-
-/** The placement the console writes for a set of locations (the PoC's backend/placements.mjs). */
-export const consolePlacement = (locations: string[]): ConsolePlacement => ({
-  matchLabels: { ...consoleMatchLabels },
-  matchExpressions: [{ key: 'location', operator: 'In', values: [...locations] }],
+/**
+ * The placement the console writes for a set of clusters: `name In [...]` over ManagedCluster
+ * names, the backend's own placement (its models_service.proto, ListPlacementClusters). GET
+ * /locations answers the names it takes.
+ */
+export const consolePlacement = (clusters: string[]): ConsolePlacement => ({
+  matchExpressions: [{ key: 'name', operator: 'In', values: [...clusters] }],
 });
 
 /**
- * The locations of a placement the console wrote, or undefined for any other shape (cluster
- * sets, other selectors, a hub-only model). Only the console's own shape can be edited as
- * locations without changing what else the placement selects.
+ * The clusters of a placement the console wrote, or undefined for any other shape (cluster
+ * sets, other selectors, a hub-only model). Only the console's own shape can be edited in the
+ * wizard without changing what else the placement selects.
  */
 export const consolePlacementLocations = (spec: ModelPlacementSpec | undefined): string[] | undefined => {
   if (!spec) return undefined;
@@ -250,17 +254,14 @@ export const consolePlacementLocations = (spec: ModelPlacementSpec | undefined):
     numberOfClusters,
   } = spec;
   const [expression, ...others] = matchExpressions;
-  const sameLabels =
-    Object.keys(matchLabels).length === Object.keys(consoleMatchLabels).length &&
-    Object.entries(consoleMatchLabels).every(([key, value]) => matchLabels[key] === value);
   if (
     clusterSets?.length ||
     claimExpressions?.length ||
     tolerations?.length ||
     numberOfClusters !== undefined ||
-    !sameLabels ||
+    Object.keys(matchLabels).length > 0 ||
     others.length > 0 ||
-    expression?.key !== 'location' ||
+    expression?.key !== 'name' ||
     expression.operator !== 'In'
   ) {
     return undefined;
@@ -305,7 +306,7 @@ export const withRuntimeArgs = (env: EnvVar[] | undefined, args: string[]): EnvV
 };
 
 /**
- * The wizard's input as PR 12's POST /models body, with only the keys the PoC writes. The
+ * The wizard's input as the BFF's POST /models body, with only the keys the PoC writes. The
  * Placement is the PoC's (backend/placements.mjs): enrolled, provisioned clusters at the chosen
  * locations, rolled out to all at once. Runtime arguments go in VLLM_ADDITIONAL_ARGS, as the
  * PoC's deployment does (backend/models.mjs deploymentResources).

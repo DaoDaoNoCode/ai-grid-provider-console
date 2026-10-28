@@ -1,11 +1,11 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { App } from '../App';
 import { MockConsoleService } from '../api/MockConsoleService';
 import { ServiceError } from '../api/ConsoleService';
 import type { ConsoleConfig, User } from '../api/types';
 import { deferred } from './render';
+import { TestApp } from './TestApp';
 import { SIGN_IN_AGAIN_KEY, SIGN_IN_AGAIN_WINDOW_MS, type Navigation } from '../utilities/signInAgain';
 // The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
 import '../pages/grid/GridPage';
@@ -16,7 +16,7 @@ describe('App', () => {
     const service = new MockConsoleService();
     render(
       <MemoryRouter>
-        <App service={service} />
+        <TestApp service={service} />
       </MemoryRouter>,
     );
 
@@ -31,7 +31,7 @@ describe('App', () => {
   it('has one h1, the page heading, first: the masthead title is not a heading', async () => {
     render(
       <MemoryRouter>
-        <App service={new MockConsoleService()} />
+        <TestApp service={new MockConsoleService()} />
       </MemoryRouter>,
     );
     await screen.findByRole('row', { name: /^site1 / });
@@ -45,7 +45,7 @@ describe('App', () => {
     const user = userEvent.setup();
     render(
       <MemoryRouter>
-        <App service={new MockConsoleService()} />
+        <TestApp service={new MockConsoleService()} />
       </MemoryRouter>,
     );
     await screen.findByRole('row', { name: /^site1 / });
@@ -59,7 +59,7 @@ describe('App', () => {
   it('has one h1 on the AI Grid map, which has no visible page heading', async () => {
     render(
       <MemoryRouter initialEntries={['/ai-grid']}>
-        <App service={new MockConsoleService()} />
+        <TestApp service={new MockConsoleService()} />
       </MemoryRouter>,
     );
     expect(await screen.findByRole('heading', { level: 1, name: 'AI Grid' })).toBeInTheDocument();
@@ -72,7 +72,7 @@ describe('App', () => {
     const user = userEvent.setup();
     render(
       <MemoryRouter>
-        <App service={service} />
+        <TestApp service={service} />
       </MemoryRouter>,
     );
     // Not a 401: somebody is signed in, the console just can't say who.
@@ -89,7 +89,7 @@ describe('App', () => {
     const user = userEvent.setup();
     render(
       <MemoryRouter>
-        <App service={service} />
+        <TestApp service={service} />
       </MemoryRouter>,
     );
     await user.click(await screen.findByRole('button', { name: 'User menu: Signing in...' }));
@@ -101,7 +101,7 @@ describe('App', () => {
     const service = new MockConsoleService({ username: 'viewer', groups: [], isProviderAdmin: false });
     render(
       <MemoryRouter>
-        <App service={service} />
+        <TestApp service={service} />
       </MemoryRouter>,
     );
 
@@ -115,7 +115,7 @@ describe('App', () => {
     const user = userEvent.setup();
     render(
       <MemoryRouter initialEntries={['/clusters']}>
-        <App service={service} />
+        <TestApp service={service} />
       </MemoryRouter>,
     );
     expect(
@@ -141,7 +141,7 @@ describe('App', () => {
     service.getConfig = async () => ({ ...config, fakeBackend: true });
     render(
       <MemoryRouter initialEntries={['/clusters']}>
-        <App service={service} />
+        <TestApp service={service} />
       </MemoryRouter>,
     );
     await screen.findByText(/^Fake backend:/);
@@ -155,7 +155,7 @@ describe('App', () => {
     service.getUser = () => Promise.reject(new ServiceError(500, 'unavailable'));
     render(
       <MemoryRouter initialEntries={['/clusters']}>
-        <App service={service} />
+        <TestApp service={service} />
       </MemoryRouter>,
     );
     expect(await screen.findByRole('row', { name: /^site1 / })).toBeInTheDocument();
@@ -166,7 +166,7 @@ describe('App', () => {
   it('navigates to organizations and shows them', async () => {
     render(
       <MemoryRouter>
-        <App service={new MockConsoleService()} />
+        <TestApp service={new MockConsoleService()} />
       </MemoryRouter>,
     );
     fireEvent.click(await screen.findByRole('link', { name: 'Organizations' }));
@@ -183,7 +183,7 @@ describe('App', () => {
     };
     render(
       <MemoryRouter>
-        <App service={service} />
+        <TestApp service={service} />
       </MemoryRouter>,
     );
     fireEvent.click(await screen.findByRole('link', { name: 'Organizations' }));
@@ -199,7 +199,7 @@ describe('App', () => {
     };
     render(
       <MemoryRouter>
-        <App service={service} />
+        <TestApp service={service} />
       </MemoryRouter>,
     );
     fireEvent.click(await screen.findByRole('link', { name: 'Organizations' }));
@@ -214,7 +214,7 @@ describe('user menu', () => {
     const user = userEvent.setup();
     render(
       <MemoryRouter>
-        <App service={new MockConsoleService()} />
+        <TestApp service={new MockConsoleService()} />
       </MemoryRouter>,
     );
     await user.click(await screen.findByRole('button', { name: /dev-user/ }));
@@ -228,7 +228,7 @@ describe('user menu', () => {
     const user = userEvent.setup();
     render(
       <MemoryRouter>
-        <App service={service} />
+        <TestApp service={service} />
       </MemoryRouter>,
     );
     await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('dev-user'));
@@ -244,7 +244,7 @@ describe('user menu', () => {
     const user = userEvent.setup();
     render(
       <MemoryRouter>
-        <App service={service} />
+        <TestApp service={service} />
       </MemoryRouter>,
     );
     await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('dev-user'));
@@ -265,7 +265,7 @@ describe('user menu', () => {
 describe('an ended session', () => {
   const expired = () => new ServiceError(401, 'missing x-forwarded-access-token');
   const signOut = '/oauth2/sign_out?rd=%2Fclusters%3Fview%3Dall%23top';
-  /** A service whose user and clusters both answer 401, as an expired token gets. */
+  /** A service whose user, clusters and organizations all answer 401, as an expired token gets. */
   const expiredService = () => {
     const service = new MockConsoleService();
     service.getUser = async () => {
@@ -274,13 +274,21 @@ describe('an ended session', () => {
     service.listClusters = async () => {
       throw expired();
     };
+    service.listOrganizations = async () => {
+      throw expired();
+    };
     return service;
   };
   const fakeNavigation = () => ({ assign: vi.fn<(url: string) => void>(), reload: vi.fn<() => void>() });
-  const renderEnded = (service: MockConsoleService, navigation: Navigation, storage?: () => Storage) =>
+  const renderEnded = (
+    service: MockConsoleService,
+    navigation: Navigation,
+    storage?: () => Storage,
+    path = '/clusters?view=all#top',
+  ) =>
     render(
-      <MemoryRouter initialEntries={['/clusters?view=all#top']}>
-        <App service={service} navigation={navigation} storage={storage} />
+      <MemoryRouter initialEntries={[path]}>
+        <TestApp service={service} navigation={navigation} storage={storage} />
       </MemoryRouter>,
     );
   /** The page with nothing of the console's pages: no nav, no nav toggle, no page heading. */
@@ -353,13 +361,14 @@ describe('an ended session', () => {
     await waitFor(() => expect(navigation.assign).toHaveBeenCalledWith(signOut));
     first.unmount();
 
-    // Back from the login: the hub accepts the token, so the user loads, but the backend refuses it.
+    // Back from the login: the hub accepts the token, so the user loads, but the BFF refuses a page
+    // call (a call over Connect would ask for the user again first, sessionCheck).
     const service = new MockConsoleService();
-    const clusters = deferred<never>();
-    service.listClusters = () => clusters.promise;
-    renderEnded(service, navigation);
+    const organizations = deferred<never>();
+    service.listOrganizations = () => organizations.promise;
+    renderEnded(service, navigation, undefined, '/organizations');
     await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('dev-user'));
-    await act(async () => clusters.reject(expired()));
+    await act(async () => organizations.reject(expired()));
     expect(await screen.findByRole('heading', { level: 1, name: 'Your session has ended' })).toBeInTheDocument();
     expectFullPage();
     expect(navigation.assign).toHaveBeenCalledTimes(1);
@@ -371,7 +380,8 @@ describe('an ended session', () => {
     const service = expiredService();
     const user = deferred<User>();
     service.getUser = () => user.promise;
-    const first = renderEnded(service, navigation);
+    // A page call to the BFF answers 401 while the user is still loading.
+    const first = renderEnded(service, navigation, undefined, '/organizations');
     expect(await screen.findByRole('heading', { level: 1, name: 'Your session has ended' })).toBeInTheDocument();
     await act(async () => user.resolve(await new MockConsoleService().getUser()));
     await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('dev-user'));
@@ -449,11 +459,14 @@ describe('an ended session', () => {
       const navigation = fakeNavigation();
       render(
         <MemoryRouter initialEntries={['/clusters']}>
-          <App service={service} navigation={navigation} />
+          <TestApp service={service} navigation={navigation} />
         </MemoryRouter>,
       );
       expect(await screen.findByRole('row', { name: /^site1 / })).toBeInTheDocument();
+      // The token expires: Clusters/List answers Unauthenticated, and so does /user, which that
+      // makes the console ask again (sessionCheck).
       const poll = vi.spyOn(service, 'listClusters').mockRejectedValue(expired());
+      vi.spyOn(service, 'getUser').mockRejectedValue(expired());
       await act(async () => {
         vi.advanceTimersByTime(30000);
       });
@@ -476,11 +489,15 @@ describe('an ended session', () => {
     const user = userEvent.setup();
     render(
       <MemoryRouter initialEntries={['/clusters']}>
-        <App service={service} navigation={navigation} />
+        <TestApp service={service} navigation={navigation} />
       </MemoryRouter>,
     );
     expect(await screen.findByRole('row', { name: /^site1 / })).toBeInTheDocument();
+    // The token expires: Clusters/List answers Unauthenticated, and so does /user (sessionCheck).
     service.listClusters = async () => {
+      throw expired();
+    };
+    service.getUser = async () => {
       throw expired();
     };
     await user.click(screen.getByRole('button', { name: 'Refresh' }));

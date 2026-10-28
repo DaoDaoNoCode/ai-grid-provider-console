@@ -12,9 +12,6 @@ func (a *App) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+APIPrefix+"/user", a.getUser)
 	mux.HandleFunc("GET "+APIPrefix+"/config", a.getConfig)
 
-	mux.HandleFunc("GET "+APIPrefix+"/clusters", a.listClusters)
-	mux.HandleFunc("GET "+APIPrefix+"/clusters/{name}", a.getCluster)
-	mux.HandleFunc("PATCH "+APIPrefix+"/clusters/{name}", a.patchCluster)
 	mux.HandleFunc("GET "+APIPrefix+"/tenants", a.listTenants)
 	mux.HandleFunc("POST "+APIPrefix+"/tenants", a.createTenant)
 	mux.HandleFunc("GET "+APIPrefix+"/tenants/{id}", a.getTenant)

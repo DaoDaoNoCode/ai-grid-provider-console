@@ -4,9 +4,15 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ServiceError } from '../api/ConsoleService';
-import { HttpConsoleService } from '../api/HttpConsoleService';
+import { create } from '@bufbuild/protobuf';
+import { fakeClients } from '../api/connect/testing';
 import { MockConsoleService, seedClusters } from '../api/MockConsoleService';
 import type { GridCluster } from '../api/types';
+import {
+  ManagedClusterLocationSource,
+  ManagedClusterSchema,
+  ManagedClusterState,
+} from '../gen/ai_grid/v1/managed_cluster_type_pb';
 import { renderAt } from './render';
 
 const cluster = (name: string, status: GridCluster['status'], labels: Record<string, string> = {}): GridCluster => {
@@ -203,9 +209,11 @@ it('shows the role and location Add wrote while the list reloads', async () => {
   const user = userEvent.setup();
   renderAt('/clusters', service);
   await pick(user, 'cluster-b', 'Add to AI Grid');
-  // The reload after Add hasn't answered yet, so the table still holds the list from before.
-  let answer: () => void = () => {};
-  service.listClusters = () => new Promise((resolve) => (answer = () => resolve(list())));
+  // The reload after Add hasn't answered yet, so the table still holds the list from before. It
+  // reads the list twice (Clusters/List and /api/v1), so every call waits for answer().
+  const waiting: (() => void)[] = [];
+  const answer = () => waiting.splice(0).forEach((go) => go());
+  service.listClusters = () => new Promise((resolve) => waiting.push(() => resolve(list())));
   const modal = await screen.findByTestId('cluster-membership-modal');
   await user.click(within(modal).getByRole('textbox', { name: 'Location' }));
   await user.paste('paris');
@@ -226,7 +234,7 @@ it('shows the role and location Add wrote while the list reloads', async () => {
   answer();
   await waitFor(() =>
     expect(within(screen.getByTestId('clusters-table')).getByRole('row', { name: /^cluster-b / })).toHaveTextContent(
-      'Ingress',
+      'MaaS (ingress)',
     ),
   );
 });
@@ -247,7 +255,8 @@ it('keeps the cluster Add returned when a poll replaced the list during the PATC
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     renderAt('/clusters', service);
     await add(user, 'cluster-b');
-    // A poll answers with the list from before the change; then the reload after Add hangs.
+    // A poll answers with the list from before the change; then the reload after Add hangs. Each
+    // load reads the list once, over Connect (Clusters/List).
     await act(() => vi.advanceTimersByTimeAsync(30000));
     expect(polls).toBe(2);
     service.listClusters = () => new Promise(() => {});
@@ -258,21 +267,21 @@ it('keeps the cluster Add returned when a poll replaced the list during the PATC
     // Refresh while that reload hangs keeps it, and an older reload that answers first (with the
     // list from before Add) doesn't drop it either.
     const before = [cluster('cluster-b', 'Ready', { location: 'site2' })];
-    let older: () => void = () => {};
-    service.listClusters = () => new Promise((resolve) => (older = () => resolve(before)));
+    const olderCalls: (() => void)[] = [];
+    service.listClusters = () => new Promise((resolve) => olderCalls.push(() => resolve(before)));
     await user.click(screen.getByRole('button', { name: 'Refresh' }));
-    let latest: () => void = () => {};
-    service.listClusters = () => new Promise((resolve) => (latest = () => resolve(list())));
+    const latestCalls: (() => void)[] = [];
+    service.listClusters = () => new Promise((resolve) => latestCalls.push(() => resolve(list())));
     await user.click(screen.getByRole('button', { name: 'Refresh' }));
-    await act(async () => older());
+    await act(async () => olderCalls.forEach((go) => go()));
     expect(row()).toHaveTextContent('Inference');
     // The latest reload's answer replaces it: someone changed the role in the meantime.
     service.clusters[0] = {
       ...service.clusters[0],
       labels: { ...service.clusters[0].labels, 'ai-grid/role': 'ingress' },
     };
-    await act(async () => latest());
-    await waitFor(() => expect(row()).toHaveTextContent('Ingress'));
+    await act(async () => latestCalls.forEach((go) => go()));
+    await waitFor(() => expect(row()).toHaveTextContent('MaaS (ingress)'));
   } finally {
     vi.useRealTimers();
   }
@@ -327,7 +336,7 @@ it('shows the role of each member, and warns about a member without one', async 
     ]),
   );
   const table = await screen.findByTestId('clusters-table');
-  expect(within(table).getByRole('row', { name: /^edge-1 / })).toHaveTextContent('Ingress');
+  expect(within(table).getByRole('row', { name: /^edge-1 / })).toHaveTextContent('MaaS (ingress)');
   expect(within(table).getByRole('row', { name: /^gpu-1 / })).toHaveTextContent('Inference');
   const former = within(table).getByRole('row', { name: /^former / });
   expect(former).toHaveTextContent('Not added');
@@ -345,7 +354,7 @@ it('shows the role of each member, and warns about a member without one', async 
       .map((r) => r.querySelector('td')?.textContent);
   const before = names();
   await user.click(within(table).getByRole('button', { name: 'About cluster roles' }));
-  expect(await screen.findByText('Serves models behind an ingress cluster.')).toBeVisible();
+  expect(await screen.findByText('Serves models behind a MaaS (ingress) cluster.')).toBeVisible();
   expect(names()).toEqual(before);
 });
 
@@ -413,21 +422,21 @@ it('shows one pagination, in the toolbar, for a single page', async () => {
   expect(screen.getAllByRole('navigation', { name: /pagination/i })).toHaveLength(1);
 });
 
-// PR 12's cluster JSON through HttpConsoleService, as GET /api/v1/clusters sends it.
-const serviceOnClusterJson = (clusters: unknown[]) => {
-  const service = new MockConsoleService();
-  const fetchFn = vi
-    .fn()
-    .mockResolvedValue(
-      new Response(JSON.stringify({ data: clusters }), { headers: { 'Content-Type': 'application/json' } }),
-    );
-  service.listClusters = () => new HttpConsoleService(fetchFn).listClusters();
-  return service;
-};
+// Clusters/List answering these ManagedClusters, as the backend sends them.
+const transportWith = (...items: Parameters<typeof create<typeof ManagedClusterSchema>>[1][]) =>
+  fakeClients({
+    clusters: {
+      list: async () => ({
+        items: items.map((init) => create(ManagedClusterSchema, init)),
+        size: items.length,
+        total: items.length,
+      }),
+    },
+  }).transport;
 
 it('shows Unknown for a cluster without a status', async () => {
-  // The shipped backend reports no state, so PR 12's BFF omits status.
-  renderAt('/clusters', serviceOnClusterJson([{ name: 'bare', aiGridEnabled: false, provisioned: false }]));
+  // The hub has reported no condition yet: the backend's state is UNSPECIFIED.
+  renderAt('/clusters', new MockConsoleService(), transportWith({ id: 'bare', metadata: { name: 'bare' } }));
   const row = await screen.findByRole('row', { name: /^bare / });
   expect(within(row).getByText('Unknown')).toBeInTheDocument();
   expect(row).not.toHaveTextContent('provisioned');
@@ -437,15 +446,15 @@ it('shows the ACM state for an importing cluster', async () => {
   const user = userEvent.setup();
   renderAt(
     '/clusters',
-    serviceOnClusterJson([
-      {
-        name: 'site-berlin-1',
-        aiGridEnabled: false,
-        provisioned: false,
-        status: 'importing',
-        statusMessage: 'Import of the managed cluster is in progress',
+    new MockConsoleService(),
+    transportWith({
+      id: 'site-berlin-1',
+      metadata: { name: 'site-berlin-1' },
+      status: {
+        state: ManagedClusterState.IMPORTING,
+        stateMessage: 'Import of the managed cluster is in progress',
       },
-    ]),
+    }),
   );
   const row = await screen.findByRole('row', { name: /^site-berlin-1 / });
   // One status line; the state and the message are in its tooltip.
@@ -554,7 +563,7 @@ it('shows no GPUs for a cluster whose capacity has none, and sorts by GPU count'
   expect(names[0]).toMatch(/^site4/);
 });
 
-it('groups the columns as the details page does, wraps them, and has no Hub, Site or Region column', async () => {
+it('groups the columns as the details page does, wraps them, and has a Site but no Hub or Region column', async () => {
   renderAt('/clusters', serviceWith(hubClusters()));
   const table = await screen.findByTestId('clusters-table');
   const [groups, columns] = within(table).getAllByRole('row').slice(0, 2);
@@ -569,6 +578,7 @@ it('groups the columns as the details page does, wraps them, and has no Hub, Sit
   expect(headers.map((h) => h.textContent)).toEqual([
     'Name',
     'Cluster Status',
+    'Site',
     'AI Grid Status',
     'Location',
     'Role',
@@ -583,9 +593,9 @@ it('groups the columns as the details page does, wraps them, and has no Hub, Sit
   expect(within(columns).getByRole('button', { name: 'AI Grid Status' })).toBeInTheDocument();
   expect(within(columns).getAllByText('Status')).toHaveLength(2);
   expect(within(table).getByRole('columnheader', { name: /^Role/ })).not.toHaveClass('pf-m-hidden');
-  // A cluster the hub hasn't accepted says so under Connection. Site and Region are out of scope
-  // until geography is (after the MVP).
-  for (const name of ['Hub', 'Site', 'Region']) {
+  // A cluster the hub hasn't accepted says so under Connection. Site is where the backend puts the
+  // cluster (its site name, or its cloud region); the cloud region has no column of its own.
+  for (const name of ['Hub', 'Region']) {
     expect(within(table).queryByRole('columnheader', { name })).not.toBeInTheDocument();
   }
   // The OpenShift version is on the details page, leaving room for GPUs and Capacity.
@@ -677,7 +687,7 @@ it('shows the location and role someone else set meanwhile instead of sending th
     ),
   ).toBeVisible();
   expect(within(modal).getByRole('textbox', { name: 'Location' })).toHaveValue('eu-west');
-  expect(within(modal).getByRole('combobox', { name: 'Role' })).toHaveValue('Ingress');
+  expect(within(modal).getByRole('combobox', { name: 'Role' })).toHaveValue('MaaS (ingress)');
 
   await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
   expect(await screen.findByText('site4 added to AI Grid')).toBeVisible();
@@ -699,7 +709,7 @@ it('says so when the cluster changed and could not be loaded again', async () =>
   const index = service.clusters.findIndex((c) => c.name === 'site4');
   const before = service.clusters[index];
   service.clusters[index] = { ...before, resourceVersion: String(Number(before.resourceVersion) + 1) };
-  vi.spyOn(service, 'listClusters').mockRejectedValueOnce(new Error('network down'));
+  vi.spyOn(service, 'getCluster').mockRejectedValueOnce(new Error('network down'));
 
   await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
   expect(
@@ -717,4 +727,60 @@ it('returns focus to the row’s menu button when the dialog it opened closes', 
   await user.click(within(modal).getByRole('button', { name: 'Cancel' }));
   await waitFor(() => expect(screen.queryByTestId('cluster-membership-modal')).not.toBeInTheDocument());
   await waitFor(() => expect(screen.getByRole('button', { name: 'Actions for site4' })).toHaveFocus());
+});
+
+it("shows each cluster's site: its name, the cloud region marked approximate, or what to fix", async () => {
+  const user = userEvent.setup();
+  renderAt(
+    '/clusters',
+    new MockConsoleService(),
+    transportWith(
+      {
+        id: 'named',
+        metadata: { name: 'named' },
+        status: {
+          location: {
+            siteName: 'Columbus DC2',
+            latitude: 39.96,
+            longitude: -83,
+            source: ManagedClusterLocationSource.ANNOTATIONS,
+          },
+        },
+      },
+      {
+        id: 'in-region',
+        metadata: { name: 'in-region' },
+        status: {
+          location: {
+            latitude: 40.42,
+            longitude: -82.91,
+            source: ManagedClusterLocationSource.CLOUD_REGION,
+            region: 'us-east-2',
+          },
+        },
+      },
+      {
+        id: 'wrong',
+        metadata: { name: 'wrong' },
+        status: {
+          location: {
+            source: ManagedClusterLocationSource.NONE,
+            problem: 'ai-grid/latitude "40,7" is not a decimal number of degrees',
+          },
+        },
+      },
+      {
+        id: 'nowhere',
+        metadata: { name: 'nowhere' },
+        status: { location: { source: ManagedClusterLocationSource.NONE } },
+      },
+    ),
+  );
+  expect(await screen.findByTestId('cluster-site-named')).toHaveTextContent(/^Columbus DC2$/);
+  expect(screen.getByTestId('cluster-site-in-region')).toHaveTextContent('us-east-2 approximate');
+  const wrong = screen.getByTestId('cluster-site-wrong');
+  expect(wrong).toHaveTextContent('Position not readable');
+  await user.hover(wrong);
+  expect(await screen.findByText('ai-grid/latitude "40,7" is not a decimal number of degrees')).toBeInTheDocument();
+  expect(within(screen.getByRole('row', { name: /^nowhere / })).getAllByText('—').length).toBeGreaterThan(0);
 });

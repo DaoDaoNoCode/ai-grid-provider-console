@@ -1,4 +1,5 @@
-import type { GridCluster, ManagedModel } from '../../api/types';
+import type { ManagedModel } from '../../api/types';
+import type { ClusterView } from '../clusters/clusterView';
 import type { NotFound } from '../../components/LoadError';
 
 /** A model deployment's page. */
@@ -6,7 +7,7 @@ export const modelPath = (model: Pick<ManagedModel, 'namespace' | 'name'>) =>
   `/models/${encodeURIComponent(model.namespace)}/${encodeURIComponent(model.name)}`;
 
 /** Each location's site name, from the first cluster at that location that has one. */
-export const siteNamesOf = (clusters: GridCluster[]): Map<string, string> => {
+export const siteNamesOf = (clusters: Pick<ClusterView, 'location' | 'siteName'>[]): Map<string, string> => {
   const names = new Map<string, string>();
   for (const cluster of clusters) {
     if (cluster.location && cluster.siteName && !names.has(cluster.location)) {

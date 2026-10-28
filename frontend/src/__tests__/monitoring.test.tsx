@@ -3,7 +3,6 @@ import { MemoryRouter } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import type { DashboardResource } from '@perses-dev/client';
 import { vi } from 'vitest';
-import { App } from '../App';
 import { RelayedError, ServiceError } from '../api/ConsoleService';
 import { HttpConsoleService } from '../api/HttpConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
@@ -11,6 +10,7 @@ import { monitoringLinkFor, monitoringTabs } from '../api/monitoring';
 import { renderAt } from './render';
 // The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
 import '../pages/monitoring/MonitoringPage';
+import { TestApp } from './TestApp';
 
 // Perses's charts don't render in jsdom; the page is tested up to the dashboard it hands over.
 // It also renders links as a dashboard's panels would.
@@ -244,7 +244,7 @@ describe('a 401 from the relay', () => {
     const navigation = { assign: vi.fn<(url: string) => void>(), reload: vi.fn<() => void>() };
     render(
       <MemoryRouter initialEntries={['/monitoring']}>
-        <App service={service} navigation={navigation} />
+        <TestApp service={service} navigation={navigation} />
       </MemoryRouter>,
     );
     await screen.findByTestId('perses-dashboard');

@@ -184,7 +184,7 @@ func TestGetOverview(t *testing.T) {
 		}
 	}
 
-	// Members only (PR 12's fixtures: Paris, Madrid and Ashburn; the others
+	// Members only (mock/fixtures: Paris, Madrid and Ashburn; the others
 	// are not), the PoC's sources, metrics ending now.
 	resp, err := s.GetOverview(ctx, &aigridv1.GetOverviewRequest{Range: "6h", IncludeMetrics: true})
 	if err != nil {
@@ -234,7 +234,7 @@ func strptr(s string) *string { return &s }
 
 // TestOverviewRejectsAnUnknownRange: the backend owns the range: anything
 // but 1h, 6h or 24h is the PoC's InvalidArgument, an empty range is 1h, and
-// both sources are always set. It authenticates like PR 12's RPCs.
+// both sources are always set. It authenticates like the fake's other RPCs.
 func TestOverviewRejectsAnUnknownRange(t *testing.T) {
 	t.Parallel()
 	s := newRepoServer(t)

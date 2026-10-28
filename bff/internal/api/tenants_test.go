@@ -528,8 +528,9 @@ func TestTenantVersions(t *testing.T) {
 	if rec := serve(app, asUser(http.MethodDelete, "/api/v1/tenants/t-2")); rec.Code != http.StatusPreconditionRequired || len(fake.Calls) != 0 || len(fake.Tenants) != 2 {
 		t.Errorf("DELETE without If-Match = %d, calls %v", rec.Code, fake.Calls)
 	}
-	// The backend requires a version (PR 16): its InvalidArgument for version
-	// 0 is 422 with its message, on PATCH and on DELETE.
+	// The backend requires a version (errTenantVersionRequired in its
+	// internal/servers/tenants_server.go): its InvalidArgument for version 0 is
+	// 422 with its message, on PATCH and on DELETE.
 	fake.Err = backendtest.Status(codes.InvalidArgument, "lock requires metadata.version")
 	for _, req := range []*http.Request{
 		patchTenant("t-2", "0", `{"description": "x"}`),

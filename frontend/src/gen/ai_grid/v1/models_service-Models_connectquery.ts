@@ -34,12 +34,24 @@ export const update = Models.method.update;
 export const delete$ = Models.method.delete;
 
 /**
- * Locations a model can be placed on: unique sorted names of the
- * ManagedClusters labelled ai-grid/enabled "true" and ai-grid/role
- * inference or combined that are Available and Compliant with the ready
- * Policy (AI_GRID_READY_POLICY). A location is a cluster: the values a
- * placement's `name In [...]` takes.
+ * Deprecated: use ListPlacementClusters, which answers the same list as
+ * `clusters`. Despite its name, this RPC answers cluster names, not values
+ * of the cluster's `location` label (those are in a model's
+ * status.placement.locations). It is removed once its clients have moved
+ * (docs/API_CONTRACT.md, "Expand, migrate, contract").
  *
  * @generated from rpc ai_grid.v1.Models.ListLocations
+ * @deprecated
  */
 export const listLocations = Models.method.listLocations;
+
+/**
+ * Clusters a model can be placed on: unique sorted names of the
+ * ManagedClusters labelled ai-grid/enabled "true" and ai-grid/role
+ * inference or combined that are Available and Compliant with the ready
+ * Policy (AI_GRID_READY_POLICY). These are the values a placement's
+ * `name In [...]` takes.
+ *
+ * @generated from rpc ai_grid.v1.Models.ListPlacementClusters
+ */
+export const listPlacementClusters = Models.method.listPlacementClusters;

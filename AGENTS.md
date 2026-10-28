@@ -13,7 +13,7 @@ decisions before designing anything new:
 
 - [ADR-0001](docs/adr/0001-the-contract-lives-in-the-backend.md): the contract lives in
   `ai-grid-cloud/ai-grid-provider-backend`, reconciled to the OSAC service standards. The
-  draft and fake were copied into the backend by PR #10; their console copies are pending
+  draft and fake were copied into the backend (`ai_grid.draft.v1`, `internal/fakeinfra/draft/`); their console copies are pending
   removal. The vendored upstream copy and drift guard remain, aimed at the real backend.
 - [ADR-0002](docs/adr/0002-connect-end-to-end-with-vanguard-for-rest.md): the browser speaks
   Connect; the backend serves Connect, gRPC and gRPC-Web from one connect-go server, and vanguard
@@ -38,7 +38,7 @@ the code right now; the glossary says which one wins.
 
 There is one provider console per ACM hub ("hub" always means the ACM hub), deployed by this
 repository's Helm chart, for provider admins only: organization users never reach it, and their
-UI is the MaaS consumer portal on each ingress cluster. The console is a React frontend, a thin
+UI is the MaaS consumer portal on each MaaS (ingress) cluster. The console is a React frontend, a thin
 Go BFF (`bff/`) and `ai-grid-provider-backend`, the provider API in its own repository,
 `ai-grid-cloud/ai-grid-provider-backend` (`docs/plan/bff-api.md`). The backend is meant to stand
 on its own: a CLI, GitOps tooling and other UIs will call it without the BFF. So anything
@@ -107,10 +107,14 @@ For maintenance of an existing legacy draft path, follow `mock/proto/README.md` 
 Afterwards run `make -C bff golden` when the BFF's JSON or a fixture changed, and update the
 docs (`docs/plan/bff-api.md`, `mock/AGENTS.md`, `mock/areas/*.md`) in the same change.
 
+Don't name files, identifiers or tests after pull requests or issues; a comment describes the
+behaviour and points at its source (a file, a function or an upstream commit), not a PR number.
+
 ## The backend's own API over Connect
 
 The console is moving to the backend's RPCs, called from the browser over Connect (ADRs 0002
-and 0004). The foundation is in place and wired at the root; no page uses it yet:
+and 0004), through one provider at the app root. The Clusters pages and the AI Grid map read and
+write through it (`docs/connect.md`, "The Clusters area"); the other areas still use `/api/v1`:
 
 - `.backend-api-version` holds the backend commit (one full SHA) whose `proto/` (package
   `ai_grid.v1`, not `ai_grid/draft`) the frontend is generated from. `make generate-api` writes
@@ -173,7 +177,10 @@ when the RPCs allow it.
   one organization is one tenant, and the provider must not see a company's internals (decided
   2026-10-23). A new procedure needs a review and a line in the list. Remove the list once the
   backend authorizes every RPC itself.
-- `toGridCluster` (`bff/internal/api/clusters.go`): `aiGridEnabled` and `provisioned` (the
+- `toGridCluster` (`bff/internal/api/clusters.go`), for the clusters of the Monitoring
+  fallback's `GET /api/v1/grid/overview` only: the Clusters pages, the map and the site names on
+  the Models pages read `Clusters/List`, whose membership, state and location the backend
+  derives (`docs/connect.md`, "The Clusters area"). It derives `aiGridEnabled` and `provisioned` (the
   `ai-grid/enabled` and `ai-grid/provisioned` labels equal to `"true"`; when the backend reports
   `status.provisioning`, `provisioned` is that equal to `"Compliant"` instead, until the backend
   serves a provisioned state), `location`, `site`,
@@ -182,14 +189,8 @@ when the RPCs allow it.
   that do not parse or are out of range left out; `consoleUrl`, `platform` and `product` from
   cluster claims; `gpuCapacity` from `status.capacity["nvidia.com/gpu"]`; `addons` from the
   `feature.open-cluster-management.io/addon-*` labels; the list sorted by name.
-- `fetchCluster`: when `GetManagedCluster` answers `Unimplemented`, the BFF filters
-  `ListManagedClusters` by name and writes its own NotFound message. Neither the fake nor the
-  shipped backend (`mock/proto/upstream/COMMIT`, whose `Clusters/Get` `v1.go` calls) answers
-  that any more, so this only serves an older backend; remove it once none is deployed.
 - The stopgap clients for the backend's current `ai_grid.v1` (`bff/internal/backend/v1.go`),
-  until the console moves to Connect and the backend's contract: `FromV1Cluster` derives the
-  draft's cluster state from `spec.hub_accepts_client`, `status.joined`,
-  `status.available_condition` and the deletion time, and the tenant writes refuse with
+  until the console moves to Connect and the backend's contract: the tenant writes refuse with
   `Unimplemented` the draft fields the backend's `Tenant` lacks. They accept those fields when
   they hold what a read shows (`description: ""`, `enabled: true`, `attributes: {}`), which may
   not be what Keycloak stores (`readBackValue`), and send a PATCH that sets only such fields as
@@ -198,10 +199,6 @@ when the RPCs allow it.
   until Models and Subscriptions move to the Connect clients:
   - the models namespace: reads give the BFF's `--models-namespace`, and a model elsewhere is
     NotFound;
-  - the console's placement (the member labels plus `location In [...]`) is sent as
-    `name In [...]`, and a read turns it back. The wizard counts a member as offered when
-    `GET /locations` names either its cluster name (the backend) or its location label (the
-    fake);
   - 501 for `createAuthPolicy: false`, and for a model list with a filter or an order;
   - a model or registration the backend reports as saved to Git (reason `SavedToGit`, no phase)
     keeps that reason, which the UI shows as Saved to Git;

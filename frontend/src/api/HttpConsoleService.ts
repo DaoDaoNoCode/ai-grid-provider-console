@@ -7,7 +7,6 @@ import {
   toSubscription,
   toSubscriptionInfo,
 } from './adapters';
-import type { GridMembership } from './clusters';
 import type { ConsoleService } from './ConsoleService';
 import { RelayedError, ServiceError } from './ConsoleService';
 import { PERSES_API } from './monitoring';
@@ -19,7 +18,6 @@ import type {
   CreateModelRequest,
   CreateSubscriptionRequest,
   CreateSubscriptionResponse,
-  GridCluster,
   GridOverview,
   GridRange,
   MaaSSubscription,
@@ -52,34 +50,6 @@ export class HttpConsoleService implements ConsoleService {
 
   getConfig(): Promise<ConsoleConfig> {
     return this.request<ConsoleConfig>('GET', '/config');
-  }
-
-  async listClusters(): Promise<GridCluster[]> {
-    const clusters = await this.request<ApiCluster[]>('GET', '/clusters');
-    return clusters.map(toGridCluster);
-  }
-
-  async getCluster(name: string): Promise<GridCluster> {
-    return toGridCluster(await this.request<ApiCluster>('GET', `/clusters/${encodeURIComponent(name)}`));
-  }
-
-  async enrollCluster(cluster: GridCluster, { location, role }: GridMembership): Promise<GridCluster> {
-    // The BFF replaces the labels map as a whole, so send every label read with the cluster.
-    const updated = await this.request<ApiCluster>('PATCH', `/clusters/${encodeURIComponent(cluster.name)}`, {
-      body: { labels: { ...cluster.labels, 'ai-grid/enabled': 'true', 'ai-grid/role': role, location } },
-      ifMatch: cluster.resourceVersion,
-    });
-    return toGridCluster(updated);
-  }
-
-  async removeClusterFromGrid(cluster: GridCluster): Promise<GridCluster> {
-    const labels = { ...cluster.labels };
-    delete labels['ai-grid/enabled'];
-    const updated = await this.request<ApiCluster>('PATCH', `/clusters/${encodeURIComponent(cluster.name)}`, {
-      body: { labels },
-      ifMatch: cluster.resourceVersion,
-    });
-    return toGridCluster(updated);
   }
 
   /**
@@ -154,7 +124,7 @@ export class HttpConsoleService implements ConsoleService {
     return this.request<string[]>('GET', '/locations');
   }
 
-  /** POSTs PR 12's ModelCreate with only the wizard's keys, in the configured models namespace. */
+  /** POSTs the BFF's ModelCreate (bff/internal/api/models.go) with only the wizard's keys, in the configured models namespace. */
   async createModel(input: CreateModelRequest): Promise<ManagedModel> {
     const { modelsNamespace } = await this.getConfig();
     return toManagedModel(
@@ -186,7 +156,7 @@ export class HttpConsoleService implements ConsoleService {
     return (await this.request<MaaSSubscription[]>('GET', '/subscriptions')).map(toSubscription);
   }
 
-  /** The subscription, with its referenced models as PR 12's model JSON mapped by toManagedModel. */
+  /** The subscription, with its referenced models as the BFF's model JSON mapped by toManagedModel. */
   async getSubscriptionInfo(name: string): Promise<SubscriptionInfoResponse> {
     const info = await this.request<Omit<SubscriptionInfoResponse, 'modelRefs'> & { modelRefs?: ApiModel[] }>(
       'GET',

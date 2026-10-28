@@ -99,7 +99,7 @@ Without the frontend:
 make dev-forward-backend   # or your own backend on :9090
 make dev-bff
 hack/api.sh /api/v1/user
-hack/api.sh /api/v1/clusters
+hack/api.sh /api/v1/tenants
 hack/api.sh /api/v1/tenants
 hack/api.sh /api/v1/models          # 501 until the backend ships the Models service
 curl -s http://127.0.0.1:8080/readyz
@@ -137,9 +137,14 @@ fake hub and Keycloak of its own repository (its `make dev-fake`: gRPC, Connect 
 against it without `--fake-backend` (`make dev-bff-fake-infra`), and the frontend as `dev-user`
 with `dev-token` (`make dev-frontend-fake`). It is the stack to try the Connect relay on (the
 browser's `/ai_grid.v1.*` calls, `docs/plan/bff-api.md`, "The Connect relay"): the console's own
-fake serves only the draft over gRPC. Models and Subscriptions run against the backend
-with its local Git catalog. The legacy Grid overview still lacks a real backend RPC and
-shows it as not available.
+fake serves only the draft over gRPC, so the Clusters pages and the AI Grid map, which read the
+backend's API over Connect, work only here (on `make dev-fake` they say the backend is
+unavailable). Models and Subscriptions run against the backend with its local Git catalog. The
+legacy Grid overview (the Monitoring fallback) still lacks a real backend RPC and shows it as
+not available. The browser tests of the Clusters pages and the map run the same backend on its
+PoC fixtures, on offset ports (`frontend/playwright.config.ts` starts it through
+`hack/backend-fakes.sh`).
+The Vite dev server forwards `/ai_grid.v1.*` to the BFF as it does `/api`, in every mode.
 
 The backend is fetched once into `.cache/backend/<sha>` (gitignored; `hack/backend-checkout.sh`),
 the commit only, and built there with Go. To run your own checkout instead, set `BACKEND_DIR`

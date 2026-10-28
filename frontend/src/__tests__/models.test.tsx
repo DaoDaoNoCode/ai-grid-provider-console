@@ -15,18 +15,19 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
 import type { NavigateFunction } from 'react-router-dom';
 import getModels from '../../../mock/examples/get-models.json';
-import { App } from '../App';
 import { ServiceError } from '../api/ConsoleService';
 import { consolePlacement } from '../api/adapters';
 import { HttpConsoleService } from '../api/HttpConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
 import type { CreateModelRequest, ManagedModel } from '../api/types';
+import { serviceOnBffExamples } from './bffExamples';
 import { deferred, renderAt } from './render';
 // The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
 import '../pages/models/ModelDetailsPage';
 import '../pages/models/ModelEditPage';
 import '../pages/models/ModelWizard';
 import '../pages/models/ModelsPage';
+import { TestApp } from './TestApp';
 
 const input: CreateModelRequest = {
   name: 'widget',
@@ -156,7 +157,7 @@ it('leaves the deploy form out of history once the model is deployed, so Back sk
   render(
     <MemoryRouter initialEntries={['/clusters', '/models/deploy']} initialIndex={1}>
       <CaptureNavigate />
-      <App service={new MockConsoleService()} />
+      <TestApp service={new MockConsoleService()} />
     </MemoryRouter>,
   );
   await fillModel(user);
@@ -431,8 +432,8 @@ const jsonResponse = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
 /**
- * A MockConsoleService whose model calls go through HttpConsoleService to PR 12's model JSON
- * (mock/examples/get-models.json), as the BFF answers under PR 12's fixtures.
+ * A MockConsoleService whose model calls go through HttpConsoleService to the BFF's model JSON
+ * (mock/examples/get-models.json), as the BFF answers over the fake's fixtures (mock/fixtures).
  */
 const serviceOnModelJson = (fetchFn: ReturnType<typeof vi.fn>) => {
   const service = new MockConsoleService();
@@ -469,7 +470,7 @@ const modelJsonFetch = () =>
     return jsonResponse(200, { data: getModels.body.data });
   });
 
-it('lists PR 12 models with their locations', async () => {
+it("lists the BFF's example models with their locations", async () => {
   renderAt('/models', serviceOnModelJson(modelJsonFetch()));
   const table = await screen.findByTestId('model-deployments-table');
   expect(table).toHaveTextContent('Granite 8B Instruct');
@@ -1435,9 +1436,9 @@ describe('each location of a placed model (proposal P13)', () => {
     const user = userEvent.setup();
     renderAt('/models', serviceOnModelJson(partialFetch()));
     const row = await mistralRow();
-    // A hub model has nothing to expand.
+    // A hub model expands too, to say it isn't placed on any cluster.
     const tiny = (await screen.findByTestId('model-locations-tiny-llm')).closest('tr') as HTMLElement;
-    expect(within(tiny).queryByRole('button', { name: 'Details' })).not.toBeInTheDocument();
+    expect(within(tiny).getByRole('button', { name: 'Details' })).toBeInTheDocument();
 
     expect(within(row).getByTestId('model-phase')).toHaveTextContent('Partially available');
     await user.click(within(row).getByRole('button', { name: 'Details' }));
@@ -1556,12 +1557,112 @@ describe('each location of a placed model (proposal P13)', () => {
     const table = await screen.findByTestId('model-works-mistral-7b-instruct');
     expect(screen.getByTestId('model-locations')).toContainElement(table);
     expect(screen.getByTestId('model-locations')).toHaveTextContent('site1');
-    await user.click(within(table).getByRole('button', { name: 'Ready at San Francisco (site1)' }));
+    // The site name comes with the clusters, which answer after the model.
+    await user.click(await within(table).findByRole('button', { name: 'Ready at San Francisco (site1)' }));
     const modal = await screen.findByTestId('deployment-status-modal');
     for (const id of ['applied', 'available', 'workload', 'ready']) {
       expect(within(modal).getByTestId(`deployment-step-${id}`)).toHaveClass('pf-m-success');
     }
     // The ready feedback carries no time of its own.
     expect(within(within(modal).getByTestId('deployment-step-ready')).queryByText(/2026/)).not.toBeInTheDocument();
+  });
+});
+
+describe('the Models list expands every row', () => {
+  /** The row of a model in the list, by its resource name. */
+  const rowOf = async (name: string) =>
+    (await screen.findByTestId(`model-locations-${name}`)).closest('tr') as HTMLElement;
+
+  it('gives every row the expand toggle, named Details, collapsed until clicked', async () => {
+    const user = userEvent.setup();
+    const service = new MockConsoleService();
+    renderAt('/models', service);
+    for (const model of service.models) {
+      const toggle = within(await rowOf(model.name)).getByRole('button', { name: 'Details' });
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    }
+    const toggle = within(await rowOf('llama-3-70b')).getByRole('button', { name: 'Details' });
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('expands a model without locations to say so, with Edit locations for a provider admin', async () => {
+    const user = userEvent.setup();
+    renderAt('/models', new MockConsoleService());
+    await user.click(within(await rowOf('llama-3-70b')).getByRole('button', { name: 'Details' }));
+    const empty = await screen.findByTestId('model-not-placed-llama-3-70b');
+    expect(within(empty).getByRole('heading', { name: 'Not placed on any cluster yet' })).toBeVisible();
+    expect(empty).toHaveTextContent('This model has no locations.');
+    await user.click(within(empty).getByRole('button', { name: 'Edit locations' }));
+    expect(await screen.findByRole('heading', { name: /^Edit / })).toBeVisible();
+  });
+
+  it("shows the placement's reason and message when the backend says it chose no cluster", async () => {
+    const user = userEvent.setup();
+    renderAt('/models', serviceOnBffExamples());
+    await user.click(within(await rowOf('codellama-13b')).getByRole('button', { name: 'Details' }));
+    expect(await screen.findByTestId('model-not-placed-codellama-13b')).toHaveTextContent(
+      'NoManagedClusterMatched: No ManagedCluster matches any of the cluster predicate',
+    );
+  });
+
+  it('lists the clusters a git-mode model was placed on, without calling it unplaced', async () => {
+    const user = userEvent.setup();
+    // As the real hub answers it: placed on site-b by name, the placement not reported satisfied,
+    // and no works, because the backend saves the model to Git and Argo CD delivers it.
+    const granite = getModels.body.data.find((m) => m.name === 'granite-8b-instruct')!;
+    const placed = {
+      ...granite,
+      name: 'granite-4-tiny',
+      phase: 'ready',
+      placement: {
+        matchExpressions: [{ key: 'name', operator: 'In', values: ['site-b'] }],
+        selectedClusters: ['site-b'],
+        locations: ['us-east'],
+        satisfied: false,
+        conditions: [],
+      },
+      rollout: { strategy: 'All', rolledOut: false, applied: false, conditions: [], works: [] },
+    };
+    const service = serviceOnModelJson(
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ data: [placed] }), { headers: { 'Content-Type': 'application/json' } }),
+      ),
+    );
+    const [cluster] = service.clusters;
+    service.clusters = [{ ...cluster, name: 'site-b', location: 'us-east', siteName: undefined }];
+    renderAt('/models', service);
+    await user.click(within(await rowOf('granite-4-tiny')).getByRole('button', { name: 'Details' }));
+    const selected = await screen.findByTestId('model-selected-clusters-granite-4-tiny');
+    expect(selected).toHaveTextContent("Status per location isn't reported for this model yet.");
+    expect(
+      within(selected)
+        .getAllByTestId('model-selected-cluster-row')
+        .map((r) => r.textContent),
+    ).toEqual(['us-east · site-bStatus not reported']);
+    expect(screen.queryByText('Not placed on any cluster yet')).not.toBeInTheDocument();
+  });
+
+  it('offers no Edit locations to a user the console could not load', async () => {
+    const user = userEvent.setup();
+    const service = new MockConsoleService();
+    service.getUser = () => Promise.reject(new ServiceError(500, 'unavailable'));
+    renderAt('/models', service);
+    await user.click(within(await rowOf('llama-3-70b')).getByRole('button', { name: 'Details' }));
+    const empty = await screen.findByTestId('model-not-placed-llama-3-70b');
+    expect(within(empty).queryByRole('button', { name: 'Edit locations' })).not.toBeInTheDocument();
+  });
+
+  it("opens a partially available model's locations from its status, whether or not it has works", async () => {
+    const user = userEvent.setup();
+    const service = new MockConsoleService();
+    service.models = service.models.map((m) =>
+      m.name === 'granite-research' ? { ...m, phase: 'Partially available', works: undefined } : m,
+    );
+    renderAt('/models', service);
+    await user.click(within(await rowOf('granite-research')).getByText('Partially available'));
+    await user.click(await screen.findByRole('button', { name: 'View locations' }));
+    expect(await screen.findByTestId('model-not-placed-granite-research')).toBeVisible();
   });
 });

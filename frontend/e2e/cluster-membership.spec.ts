@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-// The fixture cluster that is not yet an AI Grid member (mock/fixtures-poc/managedclusters.json).
+// The fixture cluster that is not yet an AI Grid member (the backend's fixtures/poc/managedclusters.json).
 const ENROLLABLE = 'site4';
 
 // The one spec that changes a fixture object, so it puts it back: it adds site4 to AI Grid and

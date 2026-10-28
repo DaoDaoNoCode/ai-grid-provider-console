@@ -21,7 +21,7 @@ import type {
   SubscriptionInfoResponse,
 } from './types';
 
-// The cluster JSON of GET /api/v1/clusters (mock/examples/get-clusters.json), trimmed.
+// A cluster of GET /api/v1/grid/overview (mock/examples/get-grid-overview.json), trimmed.
 const apiCluster = (overrides: Partial<ApiCluster> = {}): ApiCluster => ({
   name: 'site-paris-1',
   aiGridEnabled: true,
@@ -52,7 +52,7 @@ describe('toGridCluster', () => {
     ['detaching', 'Unknown', 'Detaching'],
     ['notaccepted', 'Unknown', 'Not accepted'],
     [undefined, 'Unknown', undefined],
-  ])('maps PR 12 cluster state %s to the PoC availability %s', (status, availability, state) => {
+  ])("maps the BFF's cluster state %s to the PoC availability %s", (status, availability, state) => {
     const cluster = toGridCluster(apiCluster({ status }));
     expect(cluster.status).toBe(availability);
     expect(cluster.state).toBe(state);
@@ -186,7 +186,7 @@ describe('toSubscription', () => {
 
 describe('toSubscriptionInfo', () => {
   it("picks each policy's Ready condition into its status fields, as the subscription's", () => {
-    // The BFF sends a policy's conditions only (backend PR #40).
+    // The BFF sends a policy's conditions only (the backend's internal/servers/subscription_mapper.go).
     const policy: MaaSAuthPolicy = {
       name: 'team-a-policy',
       phase: 'Active',
@@ -324,16 +324,15 @@ const wizardInput = (overrides: Partial<CreateModelRequest> = {}): CreateModelRe
   gpuCount: 1,
   runtimeArgs: [],
   baseRefs: [],
-  locations: ['paris', 'madrid'],
+  locations: ['site-paris-1', 'site-madrid-1'],
   ...overrides,
 });
 
 describe('toModelCreate', () => {
-  it('builds the PoC placement from locations', () => {
+  it("places the model on the chosen clusters by name, as the backend's placement does", () => {
     expect(toModelCreate(wizardInput(), 'ai-grid-models')).toMatchObject({
       placement: {
-        matchLabels: { 'ai-grid/enabled': 'true', 'ai-grid/provisioned': 'true' },
-        matchExpressions: [{ key: 'location', operator: 'In', values: ['paris', 'madrid'] }],
+        matchExpressions: [{ key: 'name', operator: 'In', values: ['site-paris-1', 'site-madrid-1'] }],
       },
       rollout: { strategy: 'All' },
     });
@@ -428,7 +427,7 @@ describe('toManagedModel', () => {
     ).toBeUndefined();
   });
 
-  // GET /api/v1/models under PR 12's fixtures (mock/examples/get-models.json).
+  // GET /api/v1/models over the fake's fixtures (mock/examples/get-models.json).
   const models = getModels.body.data as unknown as ApiModel[];
   const byName = (name: string) => toManagedModel(models.find((m) => m.name === name)!);
 
@@ -445,6 +444,13 @@ describe('toManagedModel', () => {
 
   it('has no locations without a placement', () => {
     expect(byName('tiny-llm').locations).toEqual([]);
+  });
+
+  it('reads the clusters the placement chose, by name, from placement.selectedClusters', () => {
+    expect(byName('granite-8b-instruct').selectedClusters).toEqual(['site-paris-1']);
+    expect(byName('mistral-7b-instruct').selectedClusters).toEqual(['site-frankfurt-1', 'site-paris-1']);
+    expect(byName('codellama-13b').selectedClusters).toEqual([]);
+    expect(byName('tiny-llm').selectedClusters).toEqual([]);
   });
 
   it('shows the phase with its reason and message', () => {
@@ -500,22 +506,22 @@ describe('toManagedModel', () => {
 });
 
 describe('consolePlacementLocations', () => {
-  it('reads the locations of a placement the console wrote', () => {
-    expect(consolePlacementLocations(consolePlacement(['paris', 'madrid']))).toEqual(['paris', 'madrid']);
+  it('reads the clusters of a placement the console wrote', () => {
+    expect(consolePlacementLocations(consolePlacement(['site-a', 'site-b']))).toEqual(['site-a', 'site-b']);
   });
 
   it.each([
     ['a hub-only model', undefined],
     ['cluster sets', { ...consolePlacement(['paris']), clusterSets: ['global'] }],
-    ['other labels', { ...consolePlacement(['paris']), matchLabels: { 'ai-grid/enabled': 'true' } }],
+    ['labels', { ...consolePlacement(['paris']), matchLabels: { 'ai-grid/enabled': 'true' } }],
     [
       'another expression',
-      { ...consolePlacement(['paris']), matchExpressions: [{ key: 'location', operator: 'NotIn', values: ['x'] }] },
+      { ...consolePlacement(['paris']), matchExpressions: [{ key: 'name', operator: 'NotIn', values: ['x'] }] },
     ],
+    ['the location label', { matchExpressions: [{ key: 'location', operator: 'In', values: ['paris'] }] }],
     [
       'a second expression',
       {
-        matchLabels: consolePlacement([]).matchLabels,
         matchExpressions: [
           ...consolePlacement(['paris']).matchExpressions,
           { key: 'zone', operator: 'In', values: ['a'] },

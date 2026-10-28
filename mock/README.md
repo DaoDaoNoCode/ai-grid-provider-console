@@ -94,7 +94,7 @@ starts the same stack on `fixtures-poc/` instead of `fixtures/`: the PoC's four 
 (`site1` San Francisco, `site2` New York, `site3` Brussels and the unenrolled `site4` Sydney),
 its three models, three organizations and three subscriptions, with no scenario events, so
 nothing changes over time. Organizations that a fixture lists without a version are loaded at
-version "1" (PR 12's loader), so a stale save is refused on every seeded organization.
+version "1" (the fake's fixture loader, `bff/internal/fakebackend`), so a stale save is refused on every seeded organization.
 `fixtures-poc/README.md` lists the files. The browser tests run on
 this preset.
 

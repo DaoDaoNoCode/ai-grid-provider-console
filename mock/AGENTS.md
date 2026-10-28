@@ -9,15 +9,15 @@
 > table on this page all go away. Don't invest in the parts marked for deletion; do read
 > ADR-0001 before adding an RPC.
 >
-> **The backend copy has landed** ([backend PR #10](https://github.com/ai-grid-cloud/ai-grid-provider-backend/pull/10),
-> merged 2026-10-22). It carries the draft as `ai_grid.draft.v1` on its own port, the fake as
+> **The backend copy has landed** (merged 2026-10-22). It carries the draft as `ai_grid.draft.v1` on its own port, the fake as
 > `internal/fakeinfra/draft/`, and the fixtures as `fixtures/draft/{default,poc}`.
 > It is **not** reconciled to OSAC conventions in
 > one step: each area is reshaped and deleted from the draft as the real backend implements it,
 > so the other pages keep working meanwhile. Console cleanup remains pending and removes
 > the draft proto, generated draft code and `bff/internal/fakebackend` from here. Models
-> and Subscriptions have already moved to real backend services (backend PRs #27 and #29);
-> console PR #63 uses them through the existing BFF adapters. The
+> and Subscriptions have already moved to real backend services (the backend's
+> `internal/servers/models_git.go` and `subscriptions_git.go`); the console uses them through the
+> existing BFF adapters. The
 > vendored upstream proto and drift guard remain during migration.
 
 Monitoring uses the hub's Perses dashboards when configured. Its fallback page uses the
@@ -61,7 +61,7 @@ Without the frontend, call the BFF directly:
 
 ```sh
 curl -s -H 'x-forwarded-access-token: dev-token' -H 'x-forwarded-user: dev-user' \
-  http://127.0.0.1:8080/api/v1/clusters
+  http://127.0.0.1:8080/api/v1/tenants
 ```
 
 `make dev-fake-poc` is the same stack on the PoC preset `fixtures-poc/` (the PoC's four sites, three
@@ -106,9 +106,6 @@ adds `"meta": {"size", "total", "offset", "limit"}` (`limit` only when the reque
 |---|---|---|---|
 | GET | `/api/v1/user` | | `{username, email?, groups, isProviderAdmin}` |
 | GET | `/api/v1/config` | | `{gridEndpoint, mapTileUrl, mapTileAttribution, billingUrl, version, modelsNamespace, fakeBackend, monitoring: {enabled, persesProject}}` |
-| GET | `/api/v1/clusters` | | `GridCluster[]` by name |
-| GET | `/api/v1/clusters/{name}` | | `GridCluster`, `ETag` |
-| PATCH | `/api/v1/clusters/{name}` | `{labels?, annotations?}` (whole maps; only `ai-grid/*` keys and the `location` label may change) | `GridCluster` after the write, `ETag` |
 | GET | `/api/v1/tenants?offset=&limit=&filter=` | | `Tenant[]` by name, plus `meta` |
 | GET | `/api/v1/tenants/{id}` | | `Tenant`, `ETag` |
 | POST | `/api/v1/tenants` | `{name, alias?, description?, enabled?, domains?, attributes?, identityProvider?}` | 201, `Tenant`, `Location` and `ETag` headers |
@@ -120,7 +117,7 @@ adds `"meta": {"size", "total", "offset", "limit"}` (`limit` only when the reque
 | PATCH | `/api/v1/models/{namespace}/{name}` | `{replicas?, runtimeImage?, env?, placement? (null removes it), rollout?, labels?, annotations?}` (whole maps) | `Model` after the write, `ETag` |
 | DELETE | `/api/v1/models/{namespace}/{name}` | | 204 |
 | GET | `/api/v1/capabilities` | | `{manifestWorkReplicaSetEnabled, observabilityInstalled, acmVersion}` |
-| GET | `/api/v1/locations` | | `string[]`: the `location` labels of the provisioned, Available AI Grid members, sorted |
+| GET | `/api/v1/locations` | | `string[]`: the names of the provisioned, Available AI Grid members with role inference or combined, sorted, as the backend's `Models/ListPlacementClusters` answers; the wizard places a model with `name In [...]` over them |
 | GET | `/api/v1/subscriptions` | | `Subscription[]` by name |
 | GET | `/api/v1/subscriptions/{name}` | | `{subscription, modelRefs, authPolicies, meteringMetadata?, modelRegistrations}` |
 | POST | `/api/v1/subscriptions` | `{name, displayName?, description?, priority, owner, modelRefs, tokenMetadata?, inferencePriority?, guardrails?, createAuthPolicy?}` | 201, `{subscription, authPolicy?}`, `Location` header |
@@ -183,8 +180,6 @@ when the BFF set them.
 |---|---|
 | `get-user.json` | `GET /api/v1/user` as `dev-user` |
 | `get-config.json` | `GET /api/v1/config` (every setting at its default) |
-| `get-clusters.json` | `GET /api/v1/clusters`, all ten clusters |
-| `get-cluster.json` | `GET /api/v1/clusters/site-paris-1` |
 | `get-tenants.json` | `GET /api/v1/tenants`, all six tenants with `meta` |
 | `get-tenant.json` | `GET /api/v1/tenants/{id}` for `acme-robotics` |
 | `get-models.json` | `GET /api/v1/models`, all five models with `meta` |
@@ -194,16 +189,15 @@ when the BFF set them.
 | `get-subscription.json` | `GET /api/v1/subscriptions/engineering`: the subscription, its models, policies and registrations |
 | `get-grid-overview.json` | `GET /api/v1/grid/overview?range=1h`, the members with the demo metrics |
 | `get-locations.json` | `GET /api/v1/locations`: the fake's answer, `location` label values; the real backend answers cluster names (`bff/internal/backend/v1_models.go`) |
-| `patch-cluster.json` | `PATCH /api/v1/clusters/site-paris-1` with the cluster's `If-Match`: 200 and the new `ETag` |
 | `post-tenant.json` | `POST /api/v1/tenants`: 201 with `Location` and `ETag` |
 | `post-model.json` | `POST /api/v1/models`, an unplaced CPU model: 201 with `Location` and `ETag` |
 | `post-subscription.json` | `POST /api/v1/subscriptions` with `createAuthPolicy`: 201 with `Location`, the subscription and its policy |
 | `put-subscription.json` | `PUT /api/v1/subscriptions/onboarding` with its `If-Match`: 200 and the new `ETag` |
 | `delete-subscription.json` | `DELETE /api/v1/subscriptions/onboarding` with its `If-Match`: 204, no body |
 | `error-401-expired-token.json` | `GET /api/v1/user` with `expired-token` |
-| `error-403-viewer-patch.json` | `PATCH /api/v1/clusters/site-frankfurt-1` with `viewer-token` and the cluster's `If-Match` |
-| `error-404-unknown-cluster.json` | `GET /api/v1/clusters/site-unknown-1` |
-| `error-409-stale-if-match.json` | `PATCH /api/v1/clusters/site-paris-1` with an `If-Match` older than the cluster |
+| `error-403-viewer-patch.json` | `PATCH /api/v1/tenants/{id}` with `viewer-token` and the tenant's `If-Match` |
+| `error-404-unknown-tenant.json` | `GET /api/v1/tenants/unknown-tenant` |
+| `error-409-stale-if-match.json` | `PATCH /api/v1/tenants/{id}` with an `If-Match` that isn't the tenant's version |
 | `error-428-missing-if-match.json` | `PATCH /api/v1/tenants/{id}` for `acme-robotics` without `If-Match` |
 | `error-415-not-json.json` | `POST /api/v1/tenants` with `Content-Type: text/plain` |
 
@@ -331,13 +325,13 @@ is in the gRPC status only).
 | 401 | `AUTH_TOKEN=expired-token` on any `/api/v1` endpoint but `GET /config`: the hub rejects the token in the BFF's provider-admin check (the access review, for `GET /user`), before the BFF's own checks (415, 428, 422, 413). `GET /config` asks neither and answers 200. A request without the token header is 401 on every `/api/v1` path, `/config` included | `the hub rejected the credentials; log in again`, `missing x-forwarded-access-token header` |
 | 403 | `viewer-token` on any `/api/v1` request but `GET /user` and `GET /config`, reads included: the BFF's provider-admin check refuses it before its own checks (415, 428, the body) and before the backend. The backend's own 403 texts are behind that check until the backend authorizes the caller | `this console is only for provider admins, users who may patch ManagedClusters on the hub, and the hub says you are not one` |
 | 404 | an unknown cluster, tenant or model | `object with identifier '<name>' not found` for a cluster, `'<id>'` for a tenant, `'<namespace>/<name>'` for a model |
-| 405 | a known `/api/v1` path with a method it has no route for, such as `POST /api/v1/clusters` | `POST is not allowed on /api/v1/clusters; use GET, HEAD`, with an `Allow` header |
+| 405 | a known `/api/v1` path with a method it has no route for, such as `POST /api/v1/locations` | `POST is not allowed on /api/v1/locations; use GET, HEAD`, with an `Allow` header |
 | 409 | a taken tenant name or alias, or model name; a blank `name` in a tenant PATCH (Keycloak's own answer); an `If-Match` older than the object (also for an update that would change nothing) | `A organization with the same name already exists.`, `... same alias already exists`, the API server's `... already exists` for a model, `object with identifier '<id>' has resource version <v>, the request carries "<v>"; fetch it again and retry` |
 | 412 | `manifestWorkReplicaSetEnabled: false` in `settings.json`, then a model with `placement` (a POST, or a PATCH that adds one); `{"realmMissing": true}` or `{"organizationsDisabled": true}` in `tenants.json` | `ManifestWorkReplicaSet feature gate disabled on hub`; `Keycloak realm "ai-grid": Realm not found.`, `Keycloak realm "ai-grid": Organizations not enabled for this realm.` |
 | 413 | a body over 1 MiB | `request body must not exceed 1048576 bytes` |
 | 415 | a POST, PUT or PATCH without `Content-Type: application/json` (an HTML form, `text/plain`) | `request body must be JSON: send Content-Type: application/json` |
 | 428 | a PATCH, PUT or DELETE without `If-Match`, or with `If-Match: *` | `this write needs an If-Match header: send the ETag that GET answered (the object's resourceVersion), for example If-Match: "42"`, `If-Match: * names no version: ...`: send the `ETag` of the GET the page showed |
-| 422 | a body the BFF rejects (unknown field, such as the removed `aiGridEnabled` or `hubAcceptsClient` or a model's `displayName`, wrong type, trailing content) or that names no field (`the request body names no field to change`), a cluster PATCH that changes a label or annotation outside the console's keys (`label "cluster.open-cluster-management.io/clusterset" cannot be changed through the console; only ai-grid/* labels and annotations and the location label can`), a repeated `filter`, `offset` or `limit`, any query parameter on `GET /api/v1/subscriptions` (`the subscriptions list takes no query parameters; ...`), a `filter` on `GET /api/v1/clusters` (the fake doesn't evaluate one yet), an `ai-grid/latitude` or `ai-grid/longitude` annotation that is not a number in range (`annotation "ai-grid/latitude" must be a number between -90 and 90, got "91"`), a malformed `If-Match`, a list query with the removed `search`, `namespace` or `label`, a `filter` the backend cannot evaluate (`GET /api/v1/models?filter=this.metadata.labels[%22x%22]==%22y%22`: no model has `x`, and the index is not guarded), or a value the backend rejects | `query parameter "search" is not supported; send a CEL filter in "filter"`, `filter <f> is not a valid CEL expression: ...`, `filter <f> failed on '<id>': no such key: <k>`, Keycloak's texts (`Name can not be null`, `Invalid domain format: <d>`, `Cannot change the alias`, `Domain <d> is already linked to organization <o> in realm ai-grid`), the CRD's (`replicas and scaling are mutually exclusive; ...`) and the console's own checks (`spec.rollout requires spec.placement`, `attribute "ai-grid/resource-version" is reserved ...`); Keycloak's `Identity provider with alias '<a>' does not exist in realm ai-grid` exists in the fake but no BFF body can send a domain's identity provider |
+| 422 | a body the BFF rejects (unknown field, such as the removed `aiGridEnabled` or `hubAcceptsClient` or a model's `displayName`, wrong type, trailing content) or that names no field (`the request body names no field to change`), a repeated `filter`, `offset` or `limit`, any query parameter on `GET /api/v1/subscriptions` (`the subscriptions list takes no query parameters; ...`), a malformed `If-Match`, a list query with the removed `search`, `namespace` or `label`, a `filter` the backend cannot evaluate (`GET /api/v1/models?filter=this.metadata.labels[%22x%22]==%22y%22`: no model has `x`, and the index is not guarded), or a value the backend rejects | `query parameter "search" is not supported; send a CEL filter in "filter"`, `filter <f> is not a valid CEL expression: ...`, `filter <f> failed on '<id>': no such key: <k>`, Keycloak's texts (`Name can not be null`, `Invalid domain format: <d>`, `Cannot change the alias`, `Domain <d> is already linked to organization <o> in realm ai-grid`), the CRD's (`replicas and scaling are mutually exclusive; ...`) and the console's own checks (`spec.rollout requires spec.placement`, `attribute "ai-grid/resource-version" is reserved ...`); Keycloak's `Identity provider with alias '<a>' does not exist in realm ai-grid` exists in the fake but no BFF body can send a domain's identity provider |
 | 501 | not reachable through today's endpoints on the fake. The shipped backend answers it for every RPC it lacks: every `/models` endpoint and `/capabilities`; and the BFF answers it for `GET /tenants` and `GET /clusters` with `filter`, and for a tenant write that sets a field the backend's `Tenant` lacks (`identityProvider`, `description`, `attributes`, `enabled: false`, an `alias` other than the name) | `the AI Grid backend does not support this operation yet`, or `the AI Grid backend does not support filtering or paging tenants yet; ...`: show "not available on this backend yet", not an error page |
 | 503 | `{"unavailable": "..."}` in `tenants.json`, then any tenants endpoint as a provider admin (a viewer stays 403, an expired token 401: the token checks come first) | `the AI Grid backend is unavailable; try again` |
 

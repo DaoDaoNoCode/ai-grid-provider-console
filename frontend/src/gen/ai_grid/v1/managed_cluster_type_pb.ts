@@ -2,8 +2,8 @@
 // @generated from file ai_grid/v1/managed_cluster_type.proto (package ai_grid.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Metadata } from "./metadata_type_pb";
 import { file_ai_grid_v1_metadata_type } from "./metadata_type_pb";
 import { file_buf_validate_validate } from "../../buf/validate/validate_pb";
@@ -15,7 +15,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file ai_grid/v1/managed_cluster_type.proto.
  */
 export const file_ai_grid_v1_managed_cluster_type: GenFile = /*@__PURE__*/
-  fileDesc("CiVhaV9ncmlkL3YxL21hbmFnZWRfY2x1c3Rlcl90eXBlLnByb3RvEgphaV9ncmlkLnYxItUBCg5NYW5hZ2VkQ2x1c3RlchI7CgJpZBgBIAEoCUIvukgscioQARg/MiReW2EtejAtOV0oW2EtejAtOS1dezAsNjF9W2EtejAtOV0pPyQSJgoIbWV0YWRhdGEYAiABKAsyFC5haV9ncmlkLnYxLk1ldGFkYXRhEiwKBHNwZWMYAyABKAsyHi5haV9ncmlkLnYxLk1hbmFnZWRDbHVzdGVyU3BlYxIwCgZzdGF0dXMYBCABKAsyIC5haV9ncmlkLnYxLk1hbmFnZWRDbHVzdGVyU3RhdHVzIjAKEk1hbmFnZWRDbHVzdGVyU3BlYxIaChJodWJfYWNjZXB0c19jbGllbnQYASABKAgikAQKFE1hbmFnZWRDbHVzdGVyU3RhdHVzEhEKCWF2YWlsYWJsZRgBIAEoCBIOCgZqb2luZWQYAiABKAgSGwoTYXZhaWxhYmxlX2NvbmRpdGlvbhgDIAEoCRIUCgxwcm92aXNpb25pbmcYBCABKAkSNwoKY29uZGl0aW9ucxgFIAMoCzIjLmFpX2dyaWQudjEuTWFuYWdlZENsdXN0ZXJDb25kaXRpb24SGgoSa3ViZXJuZXRlc192ZXJzaW9uGAYgASgJEkAKCGNhcGFjaXR5GAcgAygLMi4uYWlfZ3JpZC52MS5NYW5hZ2VkQ2x1c3RlclN0YXR1cy5DYXBhY2l0eUVudHJ5EkYKC2FsbG9jYXRhYmxlGAggAygLMjEuYWlfZ3JpZC52MS5NYW5hZ2VkQ2x1c3RlclN0YXR1cy5BbGxvY2F0YWJsZUVudHJ5EjcKDmNsdXN0ZXJfY2xhaW1zGAkgAygLMh8uYWlfZ3JpZC52MS5NYW5hZ2VkQ2x1c3RlckNsYWltEiUKBGdwdXMYCiABKAsyFy5haV9ncmlkLnYxLkNsdXN0ZXJHUFVzGi8KDUNhcGFjaXR5RW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ARoyChBBbGxvY2F0YWJsZUVudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiigEKC0NsdXN0ZXJHUFVzEg0KBXRvdGFsGAEgASgFEhIKCm5vZGVfY291bnQYAiABKAUSNAoOY29uZmlndXJhdGlvbnMYAyADKAsyHC5haV9ncmlkLnYxLkdQVUNvbmZpZ3VyYXRpb24SIgoFbm9kZXMYBCADKAsyEy5haV9ncmlkLnYxLkdQVU5vZGUimwEKEEdQVUNvbmZpZ3VyYXRpb24SDgoGdmVuZG9yGAEgASgJEg8KB3Byb2R1Y3QYAiABKAkSEgoKbWVtb3J5X21pYhgDIAEoAxIVCg1ncHVzX3Blcl9ub2RlGAQgASgFEhIKCm5vZGVfY291bnQYBSABKAUSJwoHc2hhcmluZxgGIAEoCzIWLmFpX2dyaWQudjEuR1BVU2hhcmluZyJbCgpHUFVTaGFyaW5nEhAKCHN0cmF0ZWd5GAEgASgJEhAKCHJlcGxpY2FzGAIgASgFEhMKC21pZ19jYXBhYmxlGAMgASgIEhQKDG1pZ19zdHJhdGVneRgEIAEoCSKMAgoHR1BVTm9kZRIMCgRuYW1lGAEgASgJEg4KBnZlbmRvchgCIAEoCRIPCgdwcm9kdWN0GAMgASgJEg0KBWNvdW50GAQgASgFEhIKCm1lbW9yeV9taWIYBSABKAMSDgoGZmFtaWx5GAYgASgJEhoKEmNvbXB1dGVfY2FwYWJpbGl0eRgHIAEoCRIWCg5kcml2ZXJfdmVyc2lvbhgIIAEoCRIcChRjdWRhX3J1bnRpbWVfdmVyc2lvbhgJIAEoCRInCgdzaGFyaW5nGAogASgLMhYuYWlfZ3JpZC52MS5HUFVTaGFyaW5nEhUKDWluc3RhbmNlX3R5cGUYCyABKAkSDQoFcmVhZHkYDCABKAgikgEKF01hbmFnZWRDbHVzdGVyQ29uZGl0aW9uEgwKBHR5cGUYASABKAkSDgoGc3RhdHVzGAIgASgJEg4KBnJlYXNvbhgDIAEoCRIPCgdtZXNzYWdlGAQgASgJEjgKFGxhc3RfdHJhbnNpdGlvbl90aW1lGAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCIyChNNYW5hZ2VkQ2x1c3RlckNsYWltEgwKBG5hbWUYASABKAkSDQoFdmFsdWUYAiABKAlCSlpIZ2l0aHViLmNvbS9vc2FjLXByb2plY3QvYWktZ3JpZC1wcm92aWRlci1iYWNrZW5kL2dlbi9haV9ncmlkL3YxO2FpZ3JpZHYxYgZwcm90bzM", [file_ai_grid_v1_metadata_type, file_buf_validate_validate, file_google_protobuf_timestamp]);
+  fileDesc("CiVhaV9ncmlkL3YxL21hbmFnZWRfY2x1c3Rlcl90eXBlLnByb3RvEgphaV9ncmlkLnYxItUBCg5NYW5hZ2VkQ2x1c3RlchI7CgJpZBgBIAEoCUIvukgscioQARg/MiReW2EtejAtOV0oW2EtejAtOS1dezAsNjF9W2EtejAtOV0pPyQSJgoIbWV0YWRhdGEYAiABKAsyFC5haV9ncmlkLnYxLk1ldGFkYXRhEiwKBHNwZWMYAyABKAsyHi5haV9ncmlkLnYxLk1hbmFnZWRDbHVzdGVyU3BlYxIwCgZzdGF0dXMYBCABKAsyIC5haV9ncmlkLnYxLk1hbmFnZWRDbHVzdGVyU3RhdHVzIjAKEk1hbmFnZWRDbHVzdGVyU3BlYxIaChJodWJfYWNjZXB0c19jbGllbnQYASABKAgipQUKFE1hbmFnZWRDbHVzdGVyU3RhdHVzEhEKCWF2YWlsYWJsZRgBIAEoCBIOCgZqb2luZWQYAiABKAgSGwoTYXZhaWxhYmxlX2NvbmRpdGlvbhgDIAEoCRIUCgxwcm92aXNpb25pbmcYBCABKAkSNwoKY29uZGl0aW9ucxgFIAMoCzIjLmFpX2dyaWQudjEuTWFuYWdlZENsdXN0ZXJDb25kaXRpb24SGgoSa3ViZXJuZXRlc192ZXJzaW9uGAYgASgJEkAKCGNhcGFjaXR5GAcgAygLMi4uYWlfZ3JpZC52MS5NYW5hZ2VkQ2x1c3RlclN0YXR1cy5DYXBhY2l0eUVudHJ5EkYKC2FsbG9jYXRhYmxlGAggAygLMjEuYWlfZ3JpZC52MS5NYW5hZ2VkQ2x1c3RlclN0YXR1cy5BbGxvY2F0YWJsZUVudHJ5EjcKDmNsdXN0ZXJfY2xhaW1zGAkgAygLMh8uYWlfZ3JpZC52MS5NYW5hZ2VkQ2x1c3RlckNsYWltEiUKBGdwdXMYCiABKAsyFy5haV9ncmlkLnYxLkNsdXN0ZXJHUFVzEhYKDmFpX2dyaWRfbWVtYmVyGAsgASgIEi4KBXN0YXRlGAwgASgOMh8uYWlfZ3JpZC52MS5NYW5hZ2VkQ2x1c3RlclN0YXRlEhUKDXN0YXRlX21lc3NhZ2UYDSABKAkSNAoIbG9jYXRpb24YDiABKAsyIi5haV9ncmlkLnYxLk1hbmFnZWRDbHVzdGVyTG9jYXRpb24aLwoNQ2FwYWNpdHlFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBGjIKEEFsbG9jYXRhYmxlRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASKfAwoWTWFuYWdlZENsdXN0ZXJMb2NhdGlvbhIRCglzaXRlX25hbWUYASABKAkSMAoIbGF0aXR1ZGUYAiABKAFCGbpIFhIUQAEZAAAAAACAVkApAAAAAACAVsBIAIgBARIxCglsb25naXR1ZGUYAyABKAFCGbpIFhIUQAEZAAAAAACAZkApAAAAAACAZsBIAYgBARI4CgZzb3VyY2UYBCABKA4yKC5haV9ncmlkLnYxLk1hbmFnZWRDbHVzdGVyTG9jYXRpb25Tb3VyY2USDwoHcHJvYmxlbRgFIAEoCRIOCgZyZWdpb24YBiABKAk6lgG6SJIBGo8BCittYW5hZ2VkX2NsdXN0ZXJfbG9jYXRpb24uY29vcmRpbmF0ZXNfcGFpcmVkEjVsYXRpdHVkZSBhbmQgbG9uZ2l0dWRlIG11c3QgYmUgYm90aCBzZXQgb3IgYm90aCB1bnNldBopaGFzKHRoaXMubGF0aXR1ZGUpID09IGhhcyh0aGlzLmxvbmdpdHVkZSlCCwoJX2xhdGl0dWRlQgwKCl9sb25naXR1ZGUiigEKC0NsdXN0ZXJHUFVzEg0KBXRvdGFsGAEgASgFEhIKCm5vZGVfY291bnQYAiABKAUSNAoOY29uZmlndXJhdGlvbnMYAyADKAsyHC5haV9ncmlkLnYxLkdQVUNvbmZpZ3VyYXRpb24SIgoFbm9kZXMYBCADKAsyEy5haV9ncmlkLnYxLkdQVU5vZGUimwEKEEdQVUNvbmZpZ3VyYXRpb24SDgoGdmVuZG9yGAEgASgJEg8KB3Byb2R1Y3QYAiABKAkSEgoKbWVtb3J5X21pYhgDIAEoAxIVCg1ncHVzX3Blcl9ub2RlGAQgASgFEhIKCm5vZGVfY291bnQYBSABKAUSJwoHc2hhcmluZxgGIAEoCzIWLmFpX2dyaWQudjEuR1BVU2hhcmluZyJbCgpHUFVTaGFyaW5nEhAKCHN0cmF0ZWd5GAEgASgJEhAKCHJlcGxpY2FzGAIgASgFEhMKC21pZ19jYXBhYmxlGAMgASgIEhQKDG1pZ19zdHJhdGVneRgEIAEoCSKMAgoHR1BVTm9kZRIMCgRuYW1lGAEgASgJEg4KBnZlbmRvchgCIAEoCRIPCgdwcm9kdWN0GAMgASgJEg0KBWNvdW50GAQgASgFEhIKCm1lbW9yeV9taWIYBSABKAMSDgoGZmFtaWx5GAYgASgJEhoKEmNvbXB1dGVfY2FwYWJpbGl0eRgHIAEoCRIWCg5kcml2ZXJfdmVyc2lvbhgIIAEoCRIcChRjdWRhX3J1bnRpbWVfdmVyc2lvbhgJIAEoCRInCgdzaGFyaW5nGAogASgLMhYuYWlfZ3JpZC52MS5HUFVTaGFyaW5nEhUKDWluc3RhbmNlX3R5cGUYCyABKAkSDQoFcmVhZHkYDCABKAgikgEKF01hbmFnZWRDbHVzdGVyQ29uZGl0aW9uEgwKBHR5cGUYASABKAkSDgoGc3RhdHVzGAIgASgJEg4KBnJlYXNvbhgDIAEoCRIPCgdtZXNzYWdlGAQgASgJEjgKFGxhc3RfdHJhbnNpdGlvbl90aW1lGAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCIyChNNYW5hZ2VkQ2x1c3RlckNsYWltEgwKBG5hbWUYASABKAkSDQoFdmFsdWUYAiABKAkq6AIKE01hbmFnZWRDbHVzdGVyU3RhdGUSJQohTUFOQUdFRF9DTFVTVEVSX1NUQVRFX1VOU1BFQ0lGSUVEEAASHwobTUFOQUdFRF9DTFVTVEVSX1NUQVRFX1JFQURZEAESIQodTUFOQUdFRF9DTFVTVEVSX1NUQVRFX09GRkxJTkUQAhIhCh1NQU5BR0VEX0NMVVNURVJfU1RBVEVfVU5LTk9XThADEigKJE1BTkFHRURfQ0xVU1RFUl9TVEFURV9QRU5ESU5HX0lNUE9SVBAEEiMKH01BTkFHRURfQ0xVU1RFUl9TVEFURV9JTVBPUlRJTkcQBRInCiNNQU5BR0VEX0NMVVNURVJfU1RBVEVfSU1QT1JUX0ZBSUxFRBAGEiYKIk1BTkFHRURfQ0xVU1RFUl9TVEFURV9OT1RfQUNDRVBURUQQBxIjCh9NQU5BR0VEX0NMVVNURVJfU1RBVEVfREVUQUNISU5HEAgq3AEKHE1hbmFnZWRDbHVzdGVyTG9jYXRpb25Tb3VyY2USLworTUFOQUdFRF9DTFVTVEVSX0xPQ0FUSU9OX1NPVVJDRV9VTlNQRUNJRklFRBAAEigKJE1BTkFHRURfQ0xVU1RFUl9MT0NBVElPTl9TT1VSQ0VfTk9ORRABEi8KK01BTkFHRURfQ0xVU1RFUl9MT0NBVElPTl9TT1VSQ0VfQU5OT1RBVElPTlMQAhIwCixNQU5BR0VEX0NMVVNURVJfTE9DQVRJT05fU09VUkNFX0NMT1VEX1JFR0lPThADQkpaSGdpdGh1Yi5jb20vb3NhYy1wcm9qZWN0L2FpLWdyaWQtcHJvdmlkZXItYmFja2VuZC9nZW4vYWlfZ3JpZC92MTthaWdyaWR2MWIGcHJvdG8z", [file_ai_grid_v1_metadata_type, file_buf_validate_validate, file_google_protobuf_timestamp]);
 
 /**
  * Hub-side ACM/OCM ManagedCluster inventory object.
@@ -99,7 +99,8 @@ export type ManagedClusterStatus = Message<"ai_grid.v1.ManagedClusterStatus"> & 
 
   /**
    * Raw Available condition status ("True", "False", "Unknown", …). Empty when absent.
-   * Used by the Clusters presentation layer to derive Ready/Offline/Unknown.
+   * The backend derives `state` from it and the other conditions; read
+   * `state` for Ready, Offline or Unknown.
    *
    * @generated from field: string available_condition = 3;
    */
@@ -168,6 +169,41 @@ export type ManagedClusterStatus = Message<"ai_grid.v1.ManagedClusterStatus"> & 
    * @generated from field: ai_grid.v1.ClusterGPUs gpus = 10;
    */
   gpus?: ClusterGPUs | undefined;
+
+  /**
+   * True when the cluster is an AI Grid member: its `ai-grid/enabled` label
+   * is exactly "true", the label selector the hub's AI Grid Placements
+   * match. A cluster joins or leaves the grid through Update, by setting or
+   * removing that label in `metadata.labels`.
+   *
+   * @generated from field: bool ai_grid_member = 11;
+   */
+  aiGridMember: boolean;
+
+  /**
+   * The cluster's lifecycle state, derived from its conditions and its
+   * deletion timestamp in the order the ACM console uses. UNSPECIFIED until
+   * the hub reports any condition.
+   *
+   * @generated from field: ai_grid.v1.ManagedClusterState state = 12;
+   */
+  state: ManagedClusterState;
+
+  /**
+   * The message of the condition that decided `state`, for example "Managed
+   * cluster is available" or "Try to import managed cluster, error: ...".
+   * Empty when that condition has no message or is absent.
+   *
+   * @generated from field: string state_message = 13;
+   */
+  stateMessage: string;
+
+  /**
+   * Where the cluster is, for a map. Always set.
+   *
+   * @generated from field: ai_grid.v1.ManagedClusterLocation location = 14;
+   */
+  location?: ManagedClusterLocation | undefined;
 };
 
 /**
@@ -176,6 +212,80 @@ export type ManagedClusterStatus = Message<"ai_grid.v1.ManagedClusterStatus"> & 
  */
 export const ManagedClusterStatusSchema: GenMessage<ManagedClusterStatus> = /*@__PURE__*/
   messageDesc(file_ai_grid_v1_managed_cluster_type, 2);
+
+/**
+ * Where a cluster is. A hub admin sets it once with the ManagedCluster
+ * annotations `ai-grid/latitude`, `ai-grid/longitude` (decimal degrees) and
+ * `ai-grid/site-name`; see the README, "Cluster locations".
+ *
+ * `latitude` and `longitude` are both set or both unset. Without either
+ * annotation, a cluster in a known cloud region gets approximate
+ * coordinates (source CLOUD_REGION). When the annotations are wrong, the
+ * coordinates are unset, `source` is NONE and `problem` says what to fix:
+ * the backend never falls back to the region past a mistake.
+ *
+ * @generated from message ai_grid.v1.ManagedClusterLocation
+ */
+export type ManagedClusterLocation = Message<"ai_grid.v1.ManagedClusterLocation"> & {
+  /**
+   * `ai-grid/site-name`, surrounding whitespace removed. Kept whether or not
+   * there are coordinates.
+   *
+   * @generated from field: string site_name = 1;
+   */
+  siteName: string;
+
+  /**
+   * Decimal degrees, -90..90. Unset when there are no coordinates; 0 is a
+   * valid latitude.
+   *
+   * @generated from field: optional double latitude = 2;
+   */
+  latitude?: number | undefined;
+
+  /**
+   * Decimal degrees, -180..180. Unset when there are no coordinates; 0 is a
+   * valid longitude.
+   *
+   * @generated from field: optional double longitude = 3;
+   */
+  longitude?: number | undefined;
+
+  /**
+   * Where `latitude` and `longitude` come from.
+   *
+   * @generated from field: ai_grid.v1.ManagedClusterLocationSource source = 4;
+   */
+  source: ManagedClusterLocationSource;
+
+  /**
+   * What is wrong with the coordinate annotations, for a hub admin to fix,
+   * for example `ai-grid/latitude "40,7" is not a decimal number of
+   * degrees, such as 40.7128 or -74.006`. Several problems are joined with
+   * "; ". Empty when there is nothing to fix; missing annotations are not a
+   * problem. Meant to be shown as is; match on it in no code.
+   *
+   * @generated from field: string problem = 5;
+   */
+  problem: string;
+
+  /**
+   * The cloud region the cluster runs in, from its
+   * `region.open-cluster-management.io` claim (for example "us-east-2"), as
+   * a fact whatever `source` is. Empty when the agent reports none, as on
+   * most on-premises clusters.
+   *
+   * @generated from field: string region = 6;
+   */
+  region: string;
+};
+
+/**
+ * Describes the message ai_grid.v1.ManagedClusterLocation.
+ * Use `create(ManagedClusterLocationSchema)` to create a new message.
+ */
+export const ManagedClusterLocationSchema: GenMessage<ManagedClusterLocation> = /*@__PURE__*/
+  messageDesc(file_ai_grid_v1_managed_cluster_type, 3);
 
 /**
  * GPU inventory of one cluster.
@@ -224,7 +334,7 @@ export type ClusterGPUs = Message<"ai_grid.v1.ClusterGPUs"> & {
  * Use `create(ClusterGPUsSchema)` to create a new message.
  */
 export const ClusterGPUsSchema: GenMessage<ClusterGPUs> = /*@__PURE__*/
-  messageDesc(file_ai_grid_v1_managed_cluster_type, 3);
+  messageDesc(file_ai_grid_v1_managed_cluster_type, 4);
 
 /**
  * Nodes that share one GPU configuration.
@@ -283,7 +393,7 @@ export type GPUConfiguration = Message<"ai_grid.v1.GPUConfiguration"> & {
  * Use `create(GPUConfigurationSchema)` to create a new message.
  */
 export const GPUConfigurationSchema: GenMessage<GPUConfiguration> = /*@__PURE__*/
-  messageDesc(file_ai_grid_v1_managed_cluster_type, 4);
+  messageDesc(file_ai_grid_v1_managed_cluster_type, 5);
 
 /**
  * How a node's GPUs are shared or sliced.
@@ -327,7 +437,7 @@ export type GPUSharing = Message<"ai_grid.v1.GPUSharing"> & {
  * Use `create(GPUSharingSchema)` to create a new message.
  */
 export const GPUSharingSchema: GenMessage<GPUSharing> = /*@__PURE__*/
-  messageDesc(file_ai_grid_v1_managed_cluster_type, 5);
+  messageDesc(file_ai_grid_v1_managed_cluster_type, 6);
 
 /**
  * One node with GPUs.
@@ -426,7 +536,7 @@ export type GPUNode = Message<"ai_grid.v1.GPUNode"> & {
  * Use `create(GPUNodeSchema)` to create a new message.
  */
 export const GPUNodeSchema: GenMessage<GPUNode> = /*@__PURE__*/
-  messageDesc(file_ai_grid_v1_managed_cluster_type, 6);
+  messageDesc(file_ai_grid_v1_managed_cluster_type, 7);
 
 /**
  * One `status.conditions[]` entry of a ManagedCluster.
@@ -471,7 +581,7 @@ export type ManagedClusterCondition = Message<"ai_grid.v1.ManagedClusterConditio
  * Use `create(ManagedClusterConditionSchema)` to create a new message.
  */
 export const ManagedClusterConditionSchema: GenMessage<ManagedClusterCondition> = /*@__PURE__*/
-  messageDesc(file_ai_grid_v1_managed_cluster_type, 7);
+  messageDesc(file_ai_grid_v1_managed_cluster_type, 8);
 
 /**
  * One `status.clusterClaims[]` entry of a ManagedCluster.
@@ -495,5 +605,152 @@ export type ManagedClusterClaim = Message<"ai_grid.v1.ManagedClusterClaim"> & {
  * Use `create(ManagedClusterClaimSchema)` to create a new message.
  */
 export const ManagedClusterClaimSchema: GenMessage<ManagedClusterClaim> = /*@__PURE__*/
-  messageDesc(file_ai_grid_v1_managed_cluster_type, 8);
+  messageDesc(file_ai_grid_v1_managed_cluster_type, 9);
+
+/**
+ * Lifecycle state of a ManagedCluster, one per state the ACM console shows.
+ * Checked in this order, the first that applies wins:
+ *
+ *   metadata.deletion_timestamp set                    -> DETACHING
+ *   no conditions at all                               -> UNSPECIFIED
+ *   HubAcceptedManagedCluster not True                 -> NOT_ACCEPTED
+ *   ManagedClusterJoined not True, and
+ *     ManagedClusterImportSucceeded False with reason
+ *       ManagedClusterImporting                        -> IMPORTING
+ *       ManagedClusterImportFailed                     -> IMPORT_FAILED
+ *     otherwise                                        -> PENDING_IMPORT
+ *   ManagedClusterConditionAvailable True              -> READY
+ *   ManagedClusterConditionAvailable False             -> OFFLINE
+ *   otherwise (Unknown or absent)                      -> UNKNOWN
+ *
+ * "Not True" means False or absent. The ACM console's "needs approval" (a
+ * pending CSR) and its hosted-cluster states aren't derived: the backend
+ * reads neither CSRs nor HostedClusters, so such a cluster is PENDING_IMPORT.
+ *
+ * @generated from enum ai_grid.v1.ManagedClusterState
+ */
+export enum ManagedClusterState {
+  /**
+   * The hub has reported no condition yet; a client also reads a state added
+   * after it was built as UNSPECIFIED.
+   *
+   * @generated from enum value: MANAGED_CLUSTER_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Joined and available. ACM console: `ready`.
+   *
+   * @generated from enum value: MANAGED_CLUSTER_STATE_READY = 1;
+   */
+  READY = 1,
+
+  /**
+   * Joined; the agent reports the cluster unavailable (Available False, for
+   * example the kube-apiserver is down). ACM console: `offline`.
+   *
+   * @generated from enum value: MANAGED_CLUSTER_STATE_OFFLINE = 2;
+   */
+  OFFLINE = 2,
+
+  /**
+   * Joined; the hub has no current report (Available Unknown or absent,
+   * usually an expired lease). ACM console: `unknown`.
+   *
+   * @generated from enum value: MANAGED_CLUSTER_STATE_UNKNOWN = 3;
+   */
+  UNKNOWN = 3,
+
+  /**
+   * Accepted, not joined, import not started or not reported. ACM console:
+   * `pendingimport`.
+   *
+   * @generated from enum value: MANAGED_CLUSTER_STATE_PENDING_IMPORT = 4;
+   */
+  PENDING_IMPORT = 4,
+
+  /**
+   * Accepted, not joined, the import controller is applying the klusterlet.
+   * ACM console: `importing`.
+   *
+   * @generated from enum value: MANAGED_CLUSTER_STATE_IMPORTING = 5;
+   */
+  IMPORTING = 5,
+
+  /**
+   * Accepted, not joined, the import failed. ACM console: `importfailed`.
+   *
+   * @generated from enum value: MANAGED_CLUSTER_STATE_IMPORT_FAILED = 6;
+   */
+  IMPORT_FAILED = 6,
+
+  /**
+   * The hub hasn't accepted the cluster (HubAcceptedManagedCluster absent or
+   * False, for example after hub_accepts_client was set to false). ACM
+   * console: `notaccepted`.
+   *
+   * @generated from enum value: MANAGED_CLUSTER_STATE_NOT_ACCEPTED = 7;
+   */
+  NOT_ACCEPTED = 7,
+
+  /**
+   * The ManagedCluster is being deleted and its agent removed. ACM console:
+   * `detaching`.
+   *
+   * @generated from enum value: MANAGED_CLUSTER_STATE_DETACHING = 8;
+   */
+  DETACHING = 8,
+}
+
+/**
+ * Describes the enum ai_grid.v1.ManagedClusterState.
+ */
+export const ManagedClusterStateSchema: GenEnum<ManagedClusterState> = /*@__PURE__*/
+  enumDesc(file_ai_grid_v1_managed_cluster_type, 0);
+
+/**
+ * Where a cluster's coordinates come from.
+ *
+ * @generated from enum ai_grid.v1.ManagedClusterLocationSource
+ */
+export enum ManagedClusterLocationSource {
+  /**
+   * Not reported; a client also reads a source added after it was built as
+   * UNSPECIFIED.
+   *
+   * @generated from enum value: MANAGED_CLUSTER_LOCATION_SOURCE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * No coordinates: no annotations and no known cloud region, or
+   * annotations with a `problem`.
+   *
+   * @generated from enum value: MANAGED_CLUSTER_LOCATION_SOURCE_NONE = 1;
+   */
+  NONE = 1,
+
+  /**
+   * The `ai-grid/latitude` and `ai-grid/longitude` annotations, as the hub
+   * admin set them.
+   *
+   * @generated from enum value: MANAGED_CLUSTER_LOCATION_SOURCE_ANNOTATIONS = 2;
+   */
+  ANNOTATIONS = 2,
+
+  /**
+   * Approximate: the city or area the cloud provider names for `region`,
+   * used when neither annotation is set. Good for a pin on a world map, not
+   * for the data center's position; a UI should say it is approximate.
+   *
+   * @generated from enum value: MANAGED_CLUSTER_LOCATION_SOURCE_CLOUD_REGION = 3;
+   */
+  CLOUD_REGION = 3,
+}
+
+/**
+ * Describes the enum ai_grid.v1.ManagedClusterLocationSource.
+ */
+export const ManagedClusterLocationSourceSchema: GenEnum<ManagedClusterLocationSource> = /*@__PURE__*/
+  enumDesc(file_ai_grid_v1_managed_cluster_type, 1);
 

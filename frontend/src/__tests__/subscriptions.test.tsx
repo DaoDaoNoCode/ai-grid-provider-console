@@ -9,19 +9,19 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
 import type { NavigateFunction } from 'react-router-dom';
-import { App } from '../App';
 import { ServiceError } from '../api/ConsoleService';
 import { HttpConsoleService } from '../api/HttpConsoleService';
 import { MockConsoleService, seedSubscriptions } from '../api/MockConsoleService';
 import type { ConditionStatus, MaaSSubscription } from '../api/types';
 import { isSameModel } from '../utilities/authpolicies';
-import { serviceOnPr12Json } from './pr12Json';
+import { serviceOnBffExamples } from './bffExamples';
 import { deferred, renderAt } from './render';
 // The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
 import '../pages/subscriptions/CreateSubscriptionPage';
 import '../pages/subscriptions/EditSubscriptionPage';
 import '../pages/subscriptions/SubscriptionsPage';
 import '../pages/subscriptions/ViewSubscriptionPage';
+import { TestApp } from './TestApp';
 
 /** A user the console couldn't load: the pages show, but without write actions. A viewer
  * (isProviderAdmin false) sees no pages at all (App.test.tsx). */
@@ -661,7 +661,8 @@ it('shows Saved to Git, not Pending, for a model the backend saved to Git', asyn
 it("shows a policy's Ready message on its status label", async () => {
   const service = new MockConsoleService();
   const info = await service.getSubscriptionInfo('engineering');
-  // The BFF's JSON for a policy: its conditions only, no statusMessage (backend PR #40).
+  // The BFF's JSON for a policy: its conditions only, no statusMessage (the backend's
+  // internal/servers/subscription_mapper.go).
   const body = {
     ...info,
     authPolicies: [
@@ -690,9 +691,9 @@ it("shows a policy's Ready message on its status label", async () => {
   expect(active.closest('[aria-describedby]')).toHaveAccessibleDescription('Ready on site-a');
 });
 
-describe("model references on PR 12's models", () => {
-  it('offers PR 12 models and sends the picked model with its namespace', async () => {
-    const service = serviceOnPr12Json();
+describe("model references on the BFF's example models", () => {
+  it('offers the example models and sends the picked model with its namespace', async () => {
+    const service = serviceOnBffExamples();
     const create = vi.spyOn(service, 'createSubscription');
     const user = userEvent.setup();
     renderAt('/subscriptions/create', service);
@@ -784,7 +785,7 @@ it('leaves the create form out of history once the subscription is created, so B
   render(
     <MemoryRouter initialEntries={['/clusters', '/subscriptions/create']} initialIndex={1}>
       <Navigator />
-      <App service={new MockConsoleService()} />
+      <TestApp service={new MockConsoleService()} />
     </MemoryRouter>,
   );
   await pickOrganization(user, 'acme-robotics');
@@ -804,7 +805,7 @@ it.each(['view', 'edit'])('loads the other subscription when the name in /subscr
   render(
     <MemoryRouter initialEntries={[`/subscriptions/${page}/engineering`]}>
       <Navigator />
-      <App service={new MockConsoleService()} />
+      <TestApp service={new MockConsoleService()} />
     </MemoryRouter>,
   );
   const shows = (name: string) =>

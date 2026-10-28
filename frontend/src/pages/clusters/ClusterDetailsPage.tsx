@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   Alert,
   Breadcrumb,
@@ -15,14 +15,16 @@ import {
   List,
   ListItem,
   PageSection,
+  Stack,
 } from '@patternfly/react-core';
+import { SubtleText } from '../../components/SubtleText';
 import { ExternalLinkAltIcon } from '@patternfly/react-icons';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import type { ClustersService, GridMembership } from '../../api/clusters';
+import type { GridMembership } from '../../api/clusters';
 import type { UserService } from '../../api/ConsoleService';
 import { ServiceError } from '../../api/ConsoleService';
-import type { ClusterGPUs, GPUNode, GridCluster } from '../../api/types';
+import type { ClusterGPUs, GPUNode } from '../../gen/ai_grid/v1/managed_cluster_type_pb';
 import { DetailsList } from '../../components/DetailsList';
 import { DetailsSection } from '../../components/DetailsSection';
 import { TableRowTitleDescription } from '../../components/TableRowTitleDescription';
@@ -50,14 +52,18 @@ import { MembershipModal } from './MembershipModal';
 import { changeMembership } from './changeMembership';
 import { MissingLabel } from './MissingLabel';
 import { roleOf } from './roles';
+import type { ClusterView } from './clusterView';
+import { useCluster, useMembershipWrites } from './useClusters';
+import { ClusterSite } from './ClusterSite';
+import { isApproximate, LOCATION_DOCS_URL } from './site';
 
-type Props = { service: ClustersService & UserService };
+type Props = { service: UserService };
 
 /** "68 cores, 65 allocatable", or only the capacity when the hub reports no allocatable value. */
 const withAllocatable = (capacity?: string, allocatable?: string) =>
   capacity && allocatable && capacity !== allocatable ? `${capacity}, ${allocatable} allocatable` : capacity;
 
-const aiGridItems = (c: GridCluster) => {
+const aiGridItems = (c: ClusterView) => {
   const role = roleOf(c.labels);
   return [
     {
@@ -99,7 +105,7 @@ const aiGridItems = (c: GridCluster) => {
  * ACM sets the OpenShift version only on OpenShift clusters (the version.openshift.io claim), so
  * another product, such as EKS, has no such row rather than an empty one.
  */
-const clusterItems = (c: GridCluster) => [
+const clusterItems = (c: ClusterView) => [
   {
     term: 'Status',
     value: (
@@ -111,12 +117,47 @@ const clusterItems = (c: GridCluster) => [
     ),
     'data-testid': 'cluster-status',
   },
+  { term: 'Site', value: <ClusterSite cluster={c} testId="cluster-site" /> },
+  { term: 'Region', value: c.region },
+  { term: 'Map position', value: <MapPosition cluster={c} />, 'data-testid': 'cluster-map-position' },
   ...(c.openshiftVersion ? [{ term: 'OpenShift version', value: c.openshiftVersion }] : []),
   { term: 'Kubernetes version', value: c.kubernetesVersion },
   { term: 'Platform', value: c.platform },
   { term: 'Product', value: c.product },
   { term: 'Added to the hub', value: c.creationTimestamp && <RelativeTime time={c.creationTimestamp} /> },
 ];
+
+/**
+ * Where the map puts the cluster and from what: the hub admin's annotations, or the cloud region
+ * (approximate); otherwise why it isn't on the map. Without annotations it links to how a hub
+ * admin sets them.
+ */
+const MapPosition: React.FC<{ cluster: ClusterView }> = ({ cluster: c }) => {
+  const how = (
+    <a href={LOCATION_DOCS_URL} target="_blank" rel="noreferrer">
+      How to set a cluster&apos;s position
+    </a>
+  );
+  if (c.latitude === undefined || c.longitude === undefined) {
+    return (
+      <Stack>
+        <span>{c.locationProblem ? `Not on the map: ${c.locationProblem}` : 'Not on the map: no position'}</span>
+        {how}
+      </Stack>
+    );
+  }
+  const at = `${c.latitude}, ${c.longitude}`;
+  return isApproximate(c) ? (
+    <Stack>
+      <span>
+        {at} <SubtleText>approximate, from the cloud region</SubtleText>
+      </span>
+      {how}
+    </Stack>
+  ) : (
+    <span>{at}</span>
+  );
+};
 
 /** Each distinct value once, in order. */
 const distinct = (values: (string | undefined)[]) => [...new Set(values.filter((v): v is string => !!v))];
@@ -131,11 +172,11 @@ const distinct = (values: (string | undefined)[]) => [...new Set(values.filter((
  * nvidia.com/mig-<profile>, and nvidia.com/gpu counts only the GPUs without MIG, so the row says
  * the slices aren't counted. Wording only: the console doesn't count them (review).
  */
-const schedulableGPUs = (c: GridCluster) => {
+const schedulableGPUs = (c: ClusterView) => {
   const schedulable = gpuCount(c);
   const gpus = c.gpus;
   if (schedulable === undefined || !gpus) return schedulable;
-  const mixedMIG = gpus.configurations.some((g) => g.sharing.migStrategy === 'mixed');
+  const mixedMIG = gpus.configurations.some((g) => g.sharing?.migStrategy === 'mixed');
   const notes: string[] = [];
   if (gpus.total !== schedulable) {
     notes.push(gpuCountText(gpus.total));
@@ -150,7 +191,7 @@ const schedulableGPUs = (c: GridCluster) => {
   return notes.length ? `${schedulable} (${notes.join(', ')})` : schedulable;
 };
 
-const capacityItems = (c: GridCluster) => {
+const capacityItems = (c: ClusterView) => {
   const cap = c.capacity ?? {};
   const alloc = c.allocatable ?? {};
   return [
@@ -175,9 +216,9 @@ const gpuItems = (g: ClusterGPUs) => [
               c.product,
               c.memoryMib,
               c.gpusPerNode,
-              c.sharing.strategy,
-              c.sharing.replicas,
-              c.sharing.migStrategy,
+              c.sharing?.strategy,
+              c.sharing?.replicas,
+              c.sharing?.migStrategy,
               i,
             ].join('|')}
           >
@@ -291,49 +332,46 @@ const Section: React.FC<{ title: string; help?: React.ReactNode; children: React
 export const ClusterDetailsPage: React.FC<Props> = ({ service }) => {
   const { name = '' } = useParams();
   const navigate = useNavigate();
-  const [loadedCluster, loaded, error, refresh] = useServiceData<GridCluster | undefined>(
-    () => service.getCluster(name),
-    undefined,
-  );
+  const { data: loadedCluster, loaded, error, refresh } = useCluster(name);
+  const writes = useMembershipWrites();
   const [user] = useServiceData(() => service.getUser(), undefined, 0);
   const [change, setChange] = useState<MembershipChange>();
   // The cluster as Add or Remove returned it, shown until a load started after that change
-  // answers: a slow or failed reload can't bring back the membership (or the version) from before
-  // it. Loads started earlier are dropped by useServiceData, so the next new load is a later one.
-  const [confirmed, setConfirmed] = useState<GridCluster>();
-  const [awaitingReload, setAwaitingReload] = useState(false);
-  const [seen, setSeen] = useState(loadedCluster);
-  if (loadedCluster !== seen) {
-    setSeen(loadedCluster);
-    if (awaitingReload) {
-      setAwaitingReload(false);
-      setConfirmed(undefined);
-    }
-  }
+  // succeeds: a slow or failed reload can't bring back the membership (or the version) from before
+  // it, and neither can a reload started earlier.
+  const [confirmed, setConfirmed] = useState<ClusterView>();
+  const lastReload = useRef(0);
   const cluster = confirmed ?? loadedCluster;
+
+  /** Loads the cluster again; once the newest reload succeeds, it replaces the confirmed one. */
+  const reload = () => {
+    const id = ++lastReload.current;
+    void refresh().then((ok) => {
+      if (ok && id === lastReload.current) setConfirmed(undefined);
+    });
+  };
 
   /** Adds the cluster to AI Grid or removes it, then reloads it; throws for the modal to show. */
   const applyChange = async (change: MembershipChange, membership?: GridMembership) => {
     const { join } = change;
     // A 409 loads the cluster again into the open dialog, as on the Clusters list.
-    const updated = await changeMembership(service, change, membership, {
-      reload: (clusterName) => service.getCluster(clusterName),
+    const updated = await changeMembership(writes, change, membership, {
+      reload: writes.loadCluster,
       onConflict: (current) => {
         if (current) {
           setChange((open) => (open?.cluster.name === current.name ? { ...open, cluster: current } : open));
         }
-        void refresh();
+        reload();
       },
     });
     setConfirmed(updated);
-    setAwaitingReload(true);
     setChange(undefined);
     // Replace, so the notice doesn't add a second entry for this page to the browser's history.
     navigate('.', {
       replace: true,
       state: { notice: `${updated.name} ${join ? 'added to' : 'removed from'} AI Grid` },
     });
-    void refresh();
+    reload();
   };
 
   const notFound = error instanceof ServiceError && error.status === 404;
@@ -375,7 +413,7 @@ export const ClusterDetailsPage: React.FC<Props> = ({ service }) => {
       );
     }
     if (error && !cluster) {
-      return <LoadError subject="Clusters" error={error} onRetry={() => void refresh()} />;
+      return <LoadError subject="Clusters" error={error} onRetry={reload} />;
     }
     if (!cluster) {
       return null;

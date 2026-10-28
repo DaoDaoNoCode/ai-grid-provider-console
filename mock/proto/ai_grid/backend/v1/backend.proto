@@ -1,14 +1,13 @@
-// Stopgap: the messages of the backend's real ai_grid.v1 Clusters, Tenants, Subscriptions and
-// Models services, copied from ai-grid-provider-backend proto/ai_grid/v1 (clusters and
-// tenants at 8c1a1bc, PR 16, with the cluster status details and GPUs from PR 33; subscriptions
-// and models at PR 27's merge ref 3428d8d)
-// (clusters_service, condition_type, managed_cluster_type, metadata_type, model_type,
-// models_service, subscription_type, subscriptions_service, tenant_type, tenants_service), so
+// Stopgap: the messages of the backend's real ai_grid.v1 Tenants, Subscriptions and Models
+// services, copied from ai-grid-provider-backend proto/ai_grid/v1 (tenants at 8c1a1bc,
+// subscriptions and models at 3428d8d, ListPlacementClusters at 71bb8cc)
+// (condition_type, metadata_type, model_type, models_service, subscription_type,
+// subscriptions_service, tenant_type, tenants_service), so
 // the BFF can call those RPCs. Fields the BFF doesn't use are
 // left out. Field numbers, names and types are unchanged; the validation and HTTP
 // options are dropped. The package is renamed because the draft in ../../v1 declares the same
 // message names in ai_grid.v1: protobuf is wire-compatible across package names, and the BFF
-// calls the real method paths (/ai_grid.v1.Clusters/List ...) itself (bff/internal/backend/v1.go).
+// calls the real method paths (/ai_grid.v1.Tenants/List ...) itself (bff/internal/backend/v1.go).
 syntax = "proto3";
 
 package ai_grid.backend.v1;
@@ -27,112 +26,6 @@ message Metadata {
   map<string, string> labels = 6;
   map<string, string> annotations = 7;
   int32 version = 8;
-}
-
-message ManagedCluster {
-  string id = 1;
-  Metadata metadata = 2;
-  ManagedClusterSpec spec = 3;
-  ManagedClusterStatus status = 4;
-}
-
-message ManagedClusterSpec {
-  bool hub_accepts_client = 1;
-}
-
-message ManagedClusterStatus {
-  bool available = 1;
-  bool joined = 2;
-  string available_condition = 3;
-  string provisioning = 4;
-  repeated ManagedClusterCondition conditions = 5;
-  string kubernetes_version = 6;
-  map<string, string> capacity = 7;
-  map<string, string> allocatable = 8;
-  repeated ManagedClusterClaim cluster_claims = 9;
-  ClusterGPUs gpus = 10;
-}
-
-message ClusterGPUs {
-  int32 total = 1;
-  int32 node_count = 2;
-  repeated GPUConfiguration configurations = 3;
-  repeated GPUNode nodes = 4;
-}
-
-message GPUConfiguration {
-  string vendor = 1;
-  string product = 2;
-  int64 memory_mib = 3;
-  int32 gpus_per_node = 4;
-  int32 node_count = 5;
-  GPUSharing sharing = 6;
-}
-
-message GPUSharing {
-  string strategy = 1;
-  int32 replicas = 2;
-  bool mig_capable = 3;
-  string mig_strategy = 4;
-}
-
-message GPUNode {
-  string name = 1;
-  string vendor = 2;
-  string product = 3;
-  int32 count = 4;
-  int64 memory_mib = 5;
-  string family = 6;
-  string compute_capability = 7;
-  string driver_version = 8;
-  string cuda_runtime_version = 9;
-  GPUSharing sharing = 10;
-  string instance_type = 11;
-  bool ready = 12;
-}
-
-message ManagedClusterCondition {
-  string type = 1;
-  string status = 2;
-  string reason = 3;
-  string message = 4;
-  google.protobuf.Timestamp last_transition_time = 5;
-}
-
-message ManagedClusterClaim {
-  string name = 1;
-  string value = 2;
-}
-
-message ClustersListRequest {
-  optional int32 offset = 1;
-  optional int32 limit = 2;
-  optional string filter = 3;
-  optional string order = 4;
-}
-
-message ClustersListResponse {
-  int32 size = 1;
-  int32 total = 2;
-  repeated ManagedCluster items = 3;
-}
-
-message ClustersGetRequest {
-  string id = 1;
-}
-
-message ClustersGetResponse {
-  ManagedCluster object = 1;
-}
-
-message ClustersUpdateRequest {
-  ManagedCluster object = 1;
-  google.protobuf.FieldMask update_mask = 2;
-  bool lock = 3;
-}
-
-message ClustersUpdateResponse {
-  ManagedCluster object = 1;
 }
 
 message Tenant {
@@ -462,6 +355,7 @@ message ModelPlacementStatus {
   int32 number_of_selected_clusters = 1;
   repeated string selected_clusters = 2;
   repeated Condition conditions = 3;
+  repeated string locations = 4;
 }
 
 message ModelRolloutStatus {
@@ -512,8 +406,8 @@ message ModelsDeleteRequest {
 
 message ModelsDeleteResponse {}
 
-message ModelsListLocationsRequest {}
+message ModelsListPlacementClustersRequest {}
 
-message ModelsListLocationsResponse {
-  repeated string locations = 1;
+message ModelsListPlacementClustersResponse {
+  repeated string clusters = 1;
 }

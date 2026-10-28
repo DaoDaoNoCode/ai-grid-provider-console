@@ -1,4 +1,3 @@
-import type { ClustersService } from './clusters';
 import type { GridService } from './grid';
 import type { ModelsService } from './models';
 import type { MonitoringService } from './monitoring';
@@ -17,14 +16,7 @@ export interface UserService {
  * use an in-memory one.
  */
 export interface ConsoleService
-  extends
-    ClustersService,
-    OrganizationsService,
-    ModelsService,
-    SubscriptionsService,
-    GridService,
-    MonitoringService,
-    UserService {
+  extends OrganizationsService, ModelsService, SubscriptionsService, GridService, MonitoringService, UserService {
   getConfig(): Promise<ConsoleConfig>;
 }
 

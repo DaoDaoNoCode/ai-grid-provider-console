@@ -57,22 +57,18 @@ import (
 // recorded fields after its call returned: the answer orders them.
 type Fake struct {
 	aigridv1.UnimplementedAiGridServer
-	aigridv1.UnimplementedManagedClustersServer
 	aigridv1.UnimplementedTenantsServer
 	aigridv1.UnimplementedGridServer
 	aigridv1.UnimplementedModelsServer
 	aigridv1.UnimplementedCatalogItemsServer
 	aigridv1.UnimplementedSubscriptionsServer
 
-	Clusters   []*aigridv1.ManagedCluster
-	Tenants    []*aigridv1.Tenant
-	Err        error
-	Errs       map[string]error
-	Calls      []string
-	Metadata   metadata.MD
-	LastUpdate *aigridv1.UpdateManagedClusterRequest
-	// LastListClusters keeps the last ListManagedClusters request.
-	LastListClusters *aigridv1.ListManagedClustersRequest
+	Clusters []*aigridv1.ManagedCluster
+	Tenants  []*aigridv1.Tenant
+	Err      error
+	Errs     map[string]error
+	Calls    []string
+	Metadata metadata.MD
 
 	LastListTenants  *aigridv1.ListTenantsRequest
 	LastCreateTenant *aigridv1.CreateTenantRequest
@@ -146,92 +142,6 @@ func (f *Fake) Ping(ctx context.Context, req *aigridv1.PingRequest) (*aigridv1.P
 		return nil, err
 	}
 	return &aigridv1.PingResponse{Message: "pong " + req.GetName()}, nil
-}
-
-// ListManagedClusters implements ManagedClusters.
-func (f *Fake) ListManagedClusters(ctx context.Context, req *aigridv1.ListManagedClustersRequest) (*aigridv1.ListManagedClustersResponse, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if err := f.begin(ctx, "ListManagedClusters"); err != nil {
-		return nil, err
-	}
-	f.LastListClusters = req
-	if req.GetFilter() != "" {
-		return nil, status.Error(codes.InvalidArgument, "filter is not supported by this server yet")
-	}
-	sorted := slices.Clone(f.Clusters)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].GetName() < sorted[j].GetName() })
-	total := len(sorted)
-	page := sorted[min(int(req.GetOffset()), total):]
-	if req.Limit != nil && int(req.GetLimit()) < len(page) {
-		page = page[:req.GetLimit()]
-	}
-	return &aigridv1.ListManagedClustersResponse{Clusters: page, Size: int32(len(page)), Total: int32(total)}, nil
-}
-
-// GetManagedCluster implements ManagedClusters with the backend's NotFound message.
-func (f *Fake) GetManagedCluster(ctx context.Context, req *aigridv1.GetManagedClusterRequest) (*aigridv1.GetManagedClusterResponse, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if err := f.begin(ctx, "GetManagedCluster"); err != nil {
-		return nil, err
-	}
-	c := f.find(req.GetName())
-	if c == nil {
-		return nil, status.Errorf(codes.NotFound, "object with identifier '%s' not found", req.GetName())
-	}
-	return &aigridv1.GetManagedClusterResponse{Object: proto.Clone(c).(*aigridv1.ManagedCluster)}, nil
-}
-
-// UpdateManagedCluster implements ManagedClusters: mask paths `labels` and
-// `annotations` (the fake also refuses keys outside the console's; this
-// stand-in does not); `lock` compares `resource_version`
-// and answers Aborted on a mismatch; an update that changes nothing keeps
-// the version.
-func (f *Fake) UpdateManagedCluster(ctx context.Context, req *aigridv1.UpdateManagedClusterRequest) (*aigridv1.UpdateManagedClusterResponse, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.LastUpdate = req
-	if err := f.begin(ctx, "UpdateManagedCluster"); err != nil {
-		return nil, err
-	}
-	c := f.find(req.GetObject().GetName())
-	if c == nil {
-		return nil, status.Errorf(codes.NotFound, "object with identifier '%s' not found", req.GetObject().GetName())
-	}
-	if req.GetLock() && req.GetObject().GetResourceVersion() != c.GetResourceVersion() {
-		return nil, status.Errorf(codes.Aborted, "object with identifier '%s' has resource version %s, the request carries %q", c.GetName(), c.GetResourceVersion(), req.GetObject().GetResourceVersion())
-	}
-	next := proto.Clone(c).(*aigridv1.ManagedCluster)
-	for _, p := range req.GetUpdateMask().GetPaths() {
-		switch p {
-		case "labels":
-			next.Labels = maps.Clone(req.GetObject().GetLabels())
-		case "annotations":
-			next.Annotations = maps.Clone(req.GetObject().GetAnnotations())
-		default:
-			return nil, status.Errorf(codes.InvalidArgument, "update_mask path %q is not supported", p)
-		}
-	}
-	if proto.Equal(next, c) {
-		return &aigridv1.UpdateManagedClusterResponse{Object: c}, nil
-	}
-	c.Labels, c.Annotations = next.Labels, next.Annotations
-	rv, err := strconv.Atoi(c.GetResourceVersion())
-	if err != nil {
-		rv = 0 // a fixture without a numeric version starts counting here
-	}
-	c.ResourceVersion = strconv.Itoa(rv + 1)
-	return &aigridv1.UpdateManagedClusterResponse{Object: c}, nil
-}
-
-func (f *Fake) find(name string) *aigridv1.ManagedCluster {
-	for _, c := range f.Clusters {
-		if c.GetName() == name {
-			return c
-		}
-	}
-	return nil
 }
 
 // ListTenants implements Tenants: name order, `offset`/`limit` paging and
@@ -741,7 +651,6 @@ func Start(t *testing.T, fake *Fake) *backend.Client {
 	t.Helper()
 	srv := grpc.NewServer()
 	aigridv1.RegisterAiGridServer(srv, fake)
-	aigridv1.RegisterManagedClustersServer(srv, fake)
 	aigridv1.RegisterTenantsServer(srv, fake)
 	aigridv1.RegisterGridServer(srv, fake)
 	aigridv1.RegisterModelsServer(srv, fake)

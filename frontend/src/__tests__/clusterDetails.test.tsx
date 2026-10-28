@@ -3,13 +3,16 @@ import { vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
 import type { NavigateFunction } from 'react-router-dom';
-import { App } from '../App';
 import { ServiceError } from '../api/ConsoleService';
 import { MockConsoleService, seedClusters } from '../api/MockConsoleService';
 import type { GridCluster } from '../api/types';
+import { create } from '@bufbuild/protobuf';
+import { fakeClients } from '../api/connect/testing';
+import { ManagedClusterLocationSource, ManagedClusterSchema } from '../gen/ai_grid/v1/managed_cluster_type_pb';
 import { renderAt } from './render';
 // The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
 import '../pages/clusters/ClusterDetailsPage';
+import { TestApp } from './TestApp';
 
 /** A cluster as today's backend sends it: no claims, capacity or conditions. */
 const bare = (): GridCluster => ({
@@ -43,7 +46,7 @@ it('shows a member: AI Grid, the cluster, its capacity and GPUs', async () => {
 
   expect(screen.getByTestId('cluster-membership')).toHaveTextContent('Provisioned');
   const aiGrid = details('AI Grid membership');
-  expect(aiGrid).toHaveTextContent('Combined: Takes tenant traffic and serves models.');
+  expect(aiGrid).toHaveTextContent('Combined: A MaaS (ingress) cluster that also serves models.');
   expect(aiGrid).toHaveTextContent('site1');
   // The same order as the list's AI Grid columns: status, location, role (UX review).
   expect(
@@ -358,7 +361,7 @@ it('keeps one history entry for the page after a change, so Back leaves it', asy
   render(
     <MemoryRouter initialEntries={['/clusters', '/clusters/site4']} initialIndex={1}>
       <Navigator />
-      <App service={new MockConsoleService()} />
+      <TestApp service={new MockConsoleService()} />
     </MemoryRouter>,
   );
   await addSite4(user);
@@ -394,7 +397,7 @@ it('removes the cluster from AI Grid', async () => {
 it('keeps the modal open with the error when the change fails', async () => {
   const user = userEvent.setup();
   const service = new MockConsoleService();
-  service.removeClusterFromGrid = () => Promise.reject(new ServiceError(500, 'the hub refused the change'));
+  service.removeClusterFromGrid = () => Promise.reject(new ServiceError(403, 'the hub refused the change'));
   renderAt('/clusters/site1', service);
   await user.click(await screen.findByRole('button', { name: 'Actions for site1' }));
   await user.click(screen.getByRole('menuitem', { name: 'Remove from AI Grid' }));
@@ -471,7 +474,7 @@ it('shows the location and role someone else set meanwhile instead of sending th
     ),
   ).toBeVisible();
   expect(within(modal).getByRole('textbox', { name: 'Location' })).toHaveValue('eu-west');
-  expect(within(modal).getByRole('combobox', { name: 'Role' })).toHaveValue('Ingress');
+  expect(within(modal).getByRole('combobox', { name: 'Role' })).toHaveValue('MaaS (ingress)');
 });
 
 it('offers Retry when the cluster could not be loaded', async () => {
@@ -490,4 +493,57 @@ it('says when the hub has no such cluster', async () => {
   renderAt('/clusters/nope', new MockConsoleService());
   expect(await screen.findByRole('heading', { name: 'Cluster not found' })).toBeVisible();
   expect(screen.getByRole('link', { name: 'Go to Clusters' })).toHaveAttribute('href', '/clusters');
+});
+
+it('says where the map puts the cluster, approximate from its cloud region, with how to set it', async () => {
+  const transport = fakeClients({
+    clusters: {
+      get: async () => ({
+        object: create(ManagedClusterSchema, {
+          id: 'in-region',
+          metadata: { name: 'in-region' },
+          status: {
+            location: {
+              latitude: 40.42,
+              longitude: -82.91,
+              source: ManagedClusterLocationSource.CLOUD_REGION,
+              region: 'us-east-2',
+            },
+          },
+        }),
+      }),
+    },
+  }).transport;
+  renderAt('/clusters/in-region', new MockConsoleService(), transport);
+  const position = await screen.findByTestId('cluster-map-position');
+  expect(position).toHaveTextContent('40.42, -82.91 approximate, from the cloud region');
+  expect(within(position).getByRole('link', { name: "How to set a cluster's position" })).toHaveAttribute(
+    'href',
+    'https://github.com/ai-grid-cloud/ai-grid-provider-backend/blob/main/README.md#cluster-locations',
+  );
+  expect(screen.getByTestId('cluster-site')).toHaveTextContent('us-east-2 approximate');
+});
+
+it('says what to fix when the coordinate annotations are wrong', async () => {
+  const transport = fakeClients({
+    clusters: {
+      get: async () => ({
+        object: create(ManagedClusterSchema, {
+          id: 'wrong',
+          metadata: { name: 'wrong' },
+          status: {
+            location: {
+              source: ManagedClusterLocationSource.NONE,
+              problem: 'ai-grid/latitude "39,96" is not a decimal number of degrees',
+              region: 'us-east-2',
+            },
+          },
+        }),
+      }),
+    },
+  }).transport;
+  renderAt('/clusters/wrong', new MockConsoleService(), transport);
+  expect(await screen.findByTestId('cluster-map-position')).toHaveTextContent(
+    'Not on the map: ai-grid/latitude "39,96" is not a decimal number of degrees',
+  );
 });

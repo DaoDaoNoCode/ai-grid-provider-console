@@ -18,5 +18,5 @@ var Schemas = map[string]func(json.RawMessage) map[string]string{
 
 // FrontendOnly are the schemas in mock/validation/cases.json that only the
 // frontend's zod rules run: organizations and models are validated by the
-// backend that owns them (PR 12's fake), not by this package.
+// backend that owns them (bff/internal/fakebackend), not by this package.
 var FrontendOnly = []string{"organization", "model"}

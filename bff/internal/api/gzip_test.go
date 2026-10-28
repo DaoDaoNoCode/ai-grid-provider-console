@@ -54,9 +54,9 @@ func TestGzipCompressesJSONAndAssets(t *testing.T) {
 	t.Parallel()
 	fake := &backendtest.Fake{}
 	for i := range 20 {
-		c := proto.Clone(richCluster()).(*aigridv1.ManagedCluster)
-		c.Name = fmt.Sprintf("site-%02d", i)
-		fake.Clusters = append(fake.Clusters, c)
+		c := proto.Clone(seedTenants()[1]).(*aigridv1.Tenant)
+		c.Id, c.Name = fmt.Sprintf("t-%02d", i), fmt.Sprintf("tenant-%02d", i)
+		fake.Tenants = append(fake.Tenants, c)
 	}
 	dir := t.TempDir()
 	js := []byte(strings.Repeat("export const answer = 42;\n", 200))
@@ -73,14 +73,14 @@ func TestGzipCompressesJSONAndAssets(t *testing.T) {
 	cfg.StaticAssetsDir = dir
 	app := newTestApp(t, cfg, fake)
 
-	plain := serve(app, asUser(http.MethodGet, "/api/v1/clusters"))
+	plain := serve(app, asUser(http.MethodGet, "/api/v1/tenants"))
 	if plain.Code != http.StatusOK || plain.Body.Len() < gzipMinSize {
 		t.Fatalf("list: %d, %d bytes", plain.Code, plain.Body.Len())
 	}
 	if plain.Header().Get("Content-Encoding") != "" || plain.Header().Get("Vary") != "Accept-Encoding" {
 		t.Fatalf("a client without gzip: headers %v", plain.Header())
 	}
-	zipped := serve(app, withGzip(asUser(http.MethodGet, "/api/v1/clusters")))
+	zipped := serve(app, withGzip(asUser(http.MethodGet, "/api/v1/tenants")))
 	if zipped.Header().Get("Content-Encoding") != "gzip" || zipped.Header().Get("Vary") != "Accept-Encoding" || zipped.Header().Get("Content-Length") != "" {
 		t.Fatalf("list with gzip: headers %v", zipped.Header())
 	}

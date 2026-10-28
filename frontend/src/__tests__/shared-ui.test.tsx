@@ -1,8 +1,8 @@
 // Small shared pieces: status labels, short lists and chart ticks.
 import { render, screen, within } from '@testing-library/react';
+import { TestApp } from './TestApp';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { App } from '../App';
 import { MockConsoleService } from '../api/MockConsoleService';
 import { OverflowList } from '../components/OverflowList';
 import { PageErrorBoundary } from '../components/PageErrorBoundary';
@@ -70,7 +70,7 @@ it('offers Log out while the console configuration is still loading', async () =
   const user = userEvent.setup();
   render(
     <MemoryRouter>
-      <App service={service} />
+      <TestApp service={service} />
     </MemoryRouter>,
   );
   await user.click(await screen.findByRole('button', { name: /dev-user/ }));

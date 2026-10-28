@@ -27,7 +27,6 @@ import {
 } from '@patternfly/react-core';
 import type { UserService } from '../../api/ConsoleService';
 import { ServiceError } from '../../api/ConsoleService';
-import type { ClustersService } from '../../api/clusters';
 import type { ModelsService } from '../../api/models';
 import { consolePlacement, consolePlacementLocations, runtimeArgsOf, withRuntimeArgs } from '../../api/adapters';
 import type { CreateModelRequest, ManagedModel, ModelUpdate } from '../../api/types';
@@ -47,9 +46,10 @@ import { RuntimeArgsField } from './fields/RuntimeArgsField';
 import { filterRuntimeArgsForContainer, type RuntimeArgsFieldData } from './fields/runtimeArgs';
 import { locationLabel, modelPath, siteNamesOf } from './modelUtils';
 import { type ModelServer, modelServerLabel, modelServers } from './modelServers';
+import { useClusterList } from '../clusters/useClusters';
 
 type Props = {
-  service: ModelsService & UserService & Pick<ClustersService, 'listClusters'>;
+  service: ModelsService & UserService;
   /** The model to edit; without it the wizard deploys a new one. */
   model?: ManagedModel;
 };
@@ -179,17 +179,17 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
     [],
     0,
   );
-  const [clusters, , , reloadClusters] = useServiceData(() => service.listClusters(), [], 0);
+  const { data: clusters, refresh: reloadClusters } = useClusterList();
+  // Site names by location label, for a placement the console didn't write (its model.locations).
   const siteNames = useMemo(() => siteNamesOf(clusters), [clusters]);
-  // AI Grid members whose location can't be chosen yet: not Ready, not provisioned, or unlabeled.
-  // A member is listed when GET /locations offers its name (the backend's locations are cluster
-  // names) or its location label (the fake's locations are labels).
-  const unavailableMembers = clusters.filter(
-    (c) =>
-      c.aiGridEnabled &&
-      !availableLocations.includes(c.name) &&
-      !(c.location && availableLocations.includes(c.location)),
-  ).length;
+  // Site names by cluster name, for the clusters GET /locations offers and the placement takes.
+  const clusterSiteNames = useMemo(
+    () => new Map(clusters.flatMap((c) => (c.siteName ? [[c.name, c.siteName] as const] : []))),
+    [clusters],
+  );
+  // AI Grid members GET /locations doesn't offer yet: not Ready, not provisioned, or not a cluster
+  // that serves models (role inference or combined).
+  const unavailableMembers = clusters.filter((c) => c.aiGridEnabled && !availableLocations.includes(c.name)).length;
   const [locations, setLocations] = useState<string[]>(start.locations);
   // True from entering the Locations step until its locations reload answers; Next waits for it.
   const [reloadingLocations, setReloadingLocations] = useState(false);
@@ -405,18 +405,18 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
           noSelectedOptionsMessage="Select at least one location."
           errorMessage={
             locationsChanged
-              ? goneLocationsError(goneLocations.map((location) => locationLabel(location, siteNames)))
+              ? goneLocationsError(goneLocations.map((location) => locationLabel(location, clusterSiteNames)))
               : undefined
           }
           value={[
             ...availableLocations.map((location) => ({
               id: location,
-              name: locationLabel(location, siteNames),
+              name: locationLabel(location, clusterSiteNames),
               selected: locations.includes(location),
             })),
             ...goneLocations.map((location) => ({
               id: location,
-              name: locationLabel(location, siteNames),
+              name: locationLabel(location, clusterSiteNames),
               selected: true,
               chipOnly: true,
             })),
@@ -428,9 +428,9 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
           isDisabled={saving}
         />
         <Help>
-          The model runs on the AI Grid clusters at each location you choose.
+          The model runs on each AI Grid cluster you choose.
           {unavailableMembers > 0 &&
-            ` ${unavailableMembers} AI Grid ${unavailableMembers === 1 ? 'cluster isn’t' : 'clusters aren’t'} listed because ${unavailableMembers === 1 ? 'it isn’t' : 'they aren’t'} Ready and provisioned with a location.`}
+            ` ${unavailableMembers} AI Grid ${unavailableMembers === 1 ? 'cluster isn’t' : 'clusters aren’t'} listed because ${unavailableMembers === 1 ? 'it isn’t' : 'they aren’t'} Ready and provisioned, or ${unavailableMembers === 1 ? 'doesn’t' : 'don’t'} serve models.`}
         </Help>
       </FormGroup>
     );
@@ -484,7 +484,7 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
       items: [
         {
           term: 'Locations',
-          value: locationsEditable ? locations.map((l) => locationLabel(l, siteNames)).join(', ') : placedAt(),
+          value: locationsEditable ? locations.map((l) => locationLabel(l, clusterSiteNames)).join(', ') : placedAt(),
         },
       ],
     },

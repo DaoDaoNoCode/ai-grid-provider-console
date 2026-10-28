@@ -7,8 +7,8 @@ how a call travels, where the types come from, how a page uses them, how to test
 when the API has to change. The backend's side of the same rules is its
 `docs/API_CONTRACT.md`.
 
-The foundation is in place and no page uses it yet. Areas move one at a time (Clusters, then
-Organizations, then Models and Subscriptions); each move deletes that area's draft RPCs, fake data,
+The Clusters area (the list, a cluster's page, Add and Remove) and the AI Grid map are on it; the
+other areas move one at a time (Organizations, then Models and Subscriptions); each move deletes that area's draft RPCs, fake data,
 BFF handlers and hand-written frontend types. When the last one moves, `mock/proto`, `bff/gen`, the
 console's fake backend and `frontend/src/api`'s hand-written layer go.
 
@@ -109,8 +109,43 @@ gives plain typed clients.
 
 Query v5 is pinned for the console and Perses plugins in `pnpm-workspace.yaml`. Perses 0.54
 still declares v4 support; `e2e/perses.spec.ts` verifies the actual renderer on v5. Keep that
-regression passing when updating these dependencies. No existing page is migrated by this
-foundation change.
+regression passing when updating these dependencies.
+
+### The Clusters area
+
+- **Reads.** `useClusterList` and `useCluster` (`frontend/src/pages/clusters/useClusters.ts`) call
+  `Clusters/List` and `Clusters/Get` with Connect Query, polling every 30 s as the other pages do,
+  with no retries (the page offers Retry). `toClusterView` (`clusterView.ts`) is the thin selector
+  layer ADR-0002 allows: the backend decides what a cluster is, and the page words it:
+  `status.ai_grid_member` (membership), `status.state` and `state_message` (Ready, Offline, or
+  Unknown with the ACM state behind it), `status.location` (site name, coordinates, where they
+  come from, what is wrong with them, the cloud region), `provisioning` `Compliant` as
+  Provisioned, the `location`, `ai-grid/site`, `ai-grid/role` and `openshiftVersion` labels, the
+  claims `ManagedClusterStatus.cluster_claims` names, and `capacity["nvidia.com/gpu"]` as a number.
+  The GPU sections read `status.gpus` as generated. The Models and Subscriptions pages take their
+  site names from the same list.
+- **Writes.** Add and Remove call `Clusters/Update` (in the relay's allowlist): the labels map as
+  read with `ai-grid/enabled`, `ai-grid/role` and `location` set (or `ai-grid/enabled` dropped),
+  `update_mask: metadata.labels`, `metadata.version` with `lock: true`. Aborted is the conflict
+  the dialog already handles, and the answer's `ai_grid_member` confirms the change. The BFF has
+  no `/api/v1/clusters` routes any more.
+- **The map** (`pages/grid/AiGridPage.tsx`) shows the members among the same list, placed where
+  `status.location` says; `Grid/GetOverview`, which the backend doesn't have, serves only the
+  Monitoring fallback now. It links a member to the models whose placement chose it by cluster
+  name (`placement.selectedClusters` of `GET /api/v1/models`), not by `locations`, the `location`
+  labels that several clusters share.
+
+- **Where a cluster is**, read-only (`pages/clusters/ClusterSite.tsx`, `site.ts`): the list's Site
+  column and the cluster page show the site name, else the cloud region marked approximate, and
+  a warning with the backend's `problem` when the annotations are wrong; the cluster page adds
+  the region and the map position with how a hub admin sets it (the backend's README, "Cluster
+  locations"). On the map, clusters at one position share a pin labelled "site name · cluster
+  name" for each, and the list counts the members that aren't on the map, by why. "Region" is
+  the cloud region only: the `ai-grid/region` label isn't read.
+
+Still worded in the page, and backend asks if another client needs them: a provisioning enum
+instead of the Policy's compliance string, and typed `openshift_version`, `console_url`,
+`platform` and `product`.
 
 ### Perses on Query v5
 
@@ -167,6 +202,14 @@ const { clients } = fakeClients({
   `<BackendProvider transport={transport} checkSession={vi.fn()}>` with the `transport` that
   `fakeClients` returns; a test of the whole console renders `<App service={...} transport={transport} />`
   (`frontend/src/__tests__/backend-root.test.tsx`).
+- Page tests render through `renderAt` or `TestApp` (`frontend/src/__tests__`), which give `App`
+  a transport whose Clusters service answers from the test's `MockConsoleService`
+  (`connectClusters.ts`, through `fakeClients`). A test that needs another backend passes its own
+  transport (`fakeClients({}).transport` for one without the RPCs).
+- The browser tests of the Clusters pages and the map (`e2e/cluster-membership.spec.ts`,
+  `e2e/clusters.spec.ts`, `e2e/grid.spec.ts`) run against the backend's own fakes on its PoC
+  fixtures, which `frontend/playwright.config.ts` starts through `hack/backend-fakes.sh`, on ports
+  offset from the console's own fake, which the other specs use.
 - The fake's answers are type-checked against the generated messages and go through the same
   serialization as the wire, so a fake can't drift from the API the way the hand-written
   `MockConsoleService` could.
@@ -198,7 +241,6 @@ const { clients } = fakeClients({
 
 ## Not built yet
 
-- No page uses Connect Query yet: the provider is at the root, and each area moves on its own.
 - A nightly job that proposes moving the pin to the backend's newest `main` and runs typecheck and
   tests (the pattern OSAC uses for its UI).
 - Connect GET: no backend method is marked free of side effects yet, so every call is a POST.

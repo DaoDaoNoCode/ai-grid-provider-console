@@ -29,8 +29,7 @@ import (
 const fleetModelsNamespace = backendtest.V1ModelsNamespace
 
 // backendShape is one backend the BFF can be dialed to, seeded with the
-// fleet: cluster site-1 at version 9 labelled location=paris; tenant t-1
-// "acme" at version 3; model tiny-llm at version 7 with one replica;
+// fleet: tenant t-1 "acme" at version 3; model tiny-llm at version 7 with one replica;
 // subscription team-a at version 2; and the location site-1. start fails
 // every call with err when it is set, and returns the client and the
 // incoming metadata of the last call.
@@ -42,9 +41,7 @@ type backendShape struct {
 var backendShapes = []backendShape{
 	{"draft", func(t *testing.T, err error) (*backend.Client, func() metadata.MD) {
 		fake := &backendtest.Fake{
-			Err: err,
-			Clusters: []*aigridv1.ManagedCluster{{Name: "site-1", ResourceVersion: "9", HubAcceptsClient: true,
-				Labels: map[string]string{LabelEnabled: "true", LabelLocation: "paris"}}},
+			Err:     err,
 			Tenants: []*aigridv1.Tenant{{Id: "t-1", Name: "acme", Domains: []string{"acme.example.com"}, ResourceVersion: "3"}},
 			Models: []*aigridv1.Model{{Name: "tiny-llm", Metadata: &aigridv1.ObjectMeta{Namespace: fleetModelsNamespace, ResourceVersion: "7"},
 				Spec: &aigridv1.ModelSpec{Replicas: proto.Int32(1), Model: &aigridv1.ModelSource{Uri: "hf://example-org/tiny-llm"}}}},
@@ -58,8 +55,6 @@ var backendShapes = []backendShape{
 	{"v1", func(t *testing.T, err error) (*backend.Client, func() metadata.MD) {
 		v1 := &backendtest.V1{
 			Err: err,
-			Clusters: []*backendv1.ManagedCluster{{Id: "site-1", Spec: &backendv1.ManagedClusterSpec{HubAcceptsClient: true},
-				Metadata: &backendv1.Metadata{Version: 9, Labels: map[string]string{LabelEnabled: "true", LabelLocation: "paris"}}}},
 			Tenants: []*backendv1.Tenant{{Id: "t-1", Metadata: &backendv1.Metadata{Name: "acme", Version: 3},
 				Spec: &backendv1.TenantSpec{Domains: []string{"acme.example.com"}}}},
 			Models: []*backendv1.Model{{Id: "tiny-llm", Metadata: &backendv1.Metadata{Name: "tiny-llm", Version: 7},
@@ -96,31 +91,6 @@ func wantStatus(t *testing.T, what string, rec *httptest.ResponseRecorder, want 
 	if got := rec.Header().Get("ETag"); wantETag != "" && got != wantETag {
 		t.Fatalf("%s: ETag %s, want %s", what, got, wantETag)
 	}
-}
-
-func TestClustersOnEveryBackend(t *testing.T) {
-	t.Parallel()
-	onEveryBackend(t, func(t *testing.T, app *App) {
-		var list []GridCluster
-		rec := serve(app, asUser(http.MethodGet, "/api/v1/clusters"))
-		wantStatus(t, "list", rec, http.StatusOK, "")
-		if meta := decodeList(t, rec, &list); len(list) != 1 || list[0].Name != "site-1" || !list[0].AIGridEnabled || list[0].Location != "paris" || total(meta) != 1 {
-			t.Fatalf("list: %+v, meta %+v; want site-1 in paris, total 1", list, meta)
-		}
-
-		wantStatus(t, "get", serve(app, asUser(http.MethodGet, "/api/v1/clusters/site-1")), http.StatusOK, `"9"`)
-		wantStatus(t, "get unknown", serve(app, asUser(http.MethodGet, "/api/v1/clusters/missing")), http.StatusNotFound, "")
-
-		move := `{"labels": {"ai-grid/enabled": "true", "location": "rome"}}`
-		wantStatus(t, "stale patch", serve(app, withIfMatch(patchRequest("site-1", move), `"3"`)), http.StatusConflict, "")
-		wantStatus(t, "patch", serve(app, withIfMatch(patchRequest("site-1", move), `"9"`)), http.StatusOK, `"10"`)
-		var one GridCluster
-		rec = serve(app, asUser(http.MethodGet, "/api/v1/clusters/site-1"))
-		wantStatus(t, "get after patch", rec, http.StatusOK, `"10"`)
-		if decodeData(t, rec, &one); one.Location != "rome" {
-			t.Fatalf("location after patch: %q, want rome", one.Location)
-		}
-	})
 }
 
 func TestTenantsOnEveryBackend(t *testing.T) {
@@ -246,7 +216,7 @@ func TestIdentityAndErrorsOnEveryBackend(t *testing.T) {
 			t.Parallel()
 			client, md := shape.start(t, nil)
 			app := NewApp(testConfig(t), slog.New(slog.DiscardHandler), client, startHub(t, &fakeHub{allowed: true}))
-			wantStatus(t, "list", serve(app, asUser(http.MethodGet, "/api/v1/clusters")), http.StatusOK, "")
+			wantStatus(t, "list", serve(app, asUser(http.MethodGet, "/api/v1/tenants")), http.StatusOK, "")
 			got := md()
 			for key, want := range map[string]string{
 				backend.MetaAuthorization: "Bearer sha256~token",
@@ -278,7 +248,7 @@ func TestIdentityAndErrorsOnEveryBackend(t *testing.T) {
 				t.Run(tc.code.String(), func(t *testing.T) {
 					client, _ := shape.start(t, backendtest.Status(tc.code, "backend said no"))
 					app := NewApp(testConfig(t), slog.New(slog.DiscardHandler), client, startHub(t, &fakeHub{allowed: true}))
-					for _, path := range []string{"/api/v1/clusters", "/api/v1/tenants", "/api/v1/models", "/api/v1/subscriptions"} {
+					for _, path := range []string{"/api/v1/tenants", "/api/v1/models", "/api/v1/subscriptions"} {
 						rec := serve(app, asUser(http.MethodGet, path))
 						if msg := decodeError(t, rec).Error.Message; rec.Code != tc.want || (msg == "backend said no") != tc.keep {
 							t.Errorf("GET %s: %d %q, want %d (backend's message kept: %v)", path, rec.Code, msg, tc.want, tc.keep)
@@ -292,8 +262,8 @@ func TestIdentityAndErrorsOnEveryBackend(t *testing.T) {
 
 // The backend has no Grid service and no capabilities (a method it doesn't
 // serve answers Unimplemented without reaching a handler), and the adapters
-// refuse with 501 what its API cannot carry, before any call: a cluster or
-// model filter, a subscription without its auth policy, and
+// refuse with 501 what its API cannot carry, before any call: a model
+// filter, a subscription without its auth policy, and
 // tenant fields its Tenant lacks.
 func TestV1BackendAnswers501ForWhatItLacks(t *testing.T) {
 	t.Parallel()
@@ -301,7 +271,6 @@ func TestV1BackendAnswers501ForWhatItLacks(t *testing.T) {
 		{http.MethodGet, "/api/v1/grid/overview?range=1h", "", ""},
 		{http.MethodGet, "/api/v1/grid/overview?range=24h&site=brussels&metrics=false", "", ""},
 		{http.MethodGet, "/api/v1/capabilities", "", ""},
-		{http.MethodGet, "/api/v1/clusters?filter=" + url.QueryEscape(`this.labels["ai-grid/enabled"] == "true"`), "", ""},
 		{http.MethodGet, "/api/v1/models?filter=" + url.QueryEscape(`this.name == "tiny-llm"`), "", ""},
 		{http.MethodPost, "/api/v1/subscriptions", strings.Replace(validSubscription, `"createAuthPolicy":true`, `"createAuthPolicy":false`, 1), ""},
 		{http.MethodPost, "/api/v1/tenants", `{"name": "globex", "description": "Globex Corp."}`, ""},

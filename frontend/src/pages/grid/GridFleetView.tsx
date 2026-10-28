@@ -33,7 +33,8 @@ import {
 } from '@patternfly/react-core';
 import { AngleLeftIcon, SearchIcon } from '@patternfly/react-icons';
 import { Link, useSearchParams } from 'react-router-dom';
-import type { GridCluster, ManagedModel } from '../../api/types';
+import type { ManagedModel } from '../../api/types';
+import type { ClusterView } from '../clusters/clusterView';
 import { DetailsList } from '../../components/DetailsList';
 import { DetailsSection } from '../../components/DetailsSection';
 import { StatCard } from '../../components/StatCard';
@@ -41,31 +42,41 @@ import { StatusLabel } from '../../components/StatusLabel';
 import { SubtleText } from '../../components/SubtleText';
 import { modelKey } from '../../utilities/authpolicies';
 import { modelPath } from '../models/modelUtils';
+import { LOCATION_DOCS_URL } from '../clusters/site';
 import { GridFleetMap } from './GridFleetMap';
 import type { TileLayerConfig } from './tiles';
 import './grid-fleet.css';
+
+/** What the map and its drawer show of a cluster (clusterView.ts). */
+export type FleetCluster = Pick<
+  ClusterView,
+  'name' | 'status' | 'location' | 'site' | 'siteName' | 'region' | 'latitude' | 'longitude' | 'provisioningStatus'
+> &
+  Partial<Pick<ClusterView, 'locationSource' | 'locationProblem'>>;
 
 /** A cluster by its name, or a model by its modelKey. */
 type Selection = { kind: 'cluster' | 'model'; name: string };
 
 type Props = {
-  clusters: GridCluster[];
+  clusters: FleetCluster[];
   models: ManagedModel[];
   modelsError?: string;
   tiles: TileLayerConfig | null | undefined;
 };
 
-const matches = (model: ManagedModel, cluster: GridCluster) =>
-  Boolean(cluster.location && model.locations.includes(cluster.location));
+// A model is on the clusters its placement chose, by name: on the backend a model's `locations`
+// are cluster names (bff/internal/backend/v1_models.go), on the console's fake `location` labels
+// that several clusters can share, but `selectedClusters` are the decided clusters on both.
+const matches = (model: ManagedModel, cluster: FleetCluster) => model.selectedClusters.includes(cluster.name);
 
 const displayName = (model: ManagedModel) => model.displayName ?? model.name;
 
-const siteOf = (cluster: GridCluster) => cluster.siteName ?? cluster.site ?? cluster.name;
+const siteOf = (cluster: FleetCluster) => cluster.siteName ?? cluster.region ?? cluster.site ?? cluster.name;
 
-const hasCoordinates = (c: GridCluster) => c.latitude !== undefined && c.longitude !== undefined;
+const hasCoordinates = (c: FleetCluster) => c.latitude !== undefined && c.longitude !== undefined;
 
 /** The availability filter: All, then each cluster status by the word the labels use. */
-const availabilityFilters: GridCluster['status'][] = ['Ready', 'Offline', 'Unknown'];
+const availabilityFilters: FleetCluster['status'][] = ['Ready', 'Offline', 'Unknown'];
 
 /** A link can open the drawer on a cluster (?cluster=<name>) or a model (?model=<namespace/name>). */
 const selectionFrom = (params: URLSearchParams): Selection | null => {
@@ -138,8 +149,8 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
 
   const selectedCluster = selection?.kind === 'cluster' ? clusters.find((c) => c.name === selection.name) : undefined;
   const selectedModel = selection?.kind === 'model' ? models.find((m) => modelKey(m) === selection.name) : undefined;
-  const relevantModels = models.filter((m) => m.locations.length === 0 || clusters.some((c) => matches(m, c)));
-  const modelsAt = (cluster: GridCluster) => models.filter((m) => matches(m, cluster));
+  const relevantModels = models.filter((m) => m.selectedClusters.length === 0 || clusters.some((c) => matches(m, c)));
+  const modelsAt = (cluster: FleetCluster) => models.filter((m) => matches(m, cluster));
   const clustersOf = (model: ManagedModel) => clusters.filter((c) => matches(model, c));
   const query = search.toLowerCase();
   const visibleClusters = clusters.filter(
@@ -195,11 +206,13 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
         ))}
       </Flex>
     ) : (
-      <SubtleText>{model.locations.length ? 'No AI Grid cluster at its locations.' : 'No locations yet.'}</SubtleText>
+      <SubtleText>
+        {model.selectedClusters.length ? 'None of its clusters is in AI Grid.' : 'No clusters yet.'}
+      </SubtleText>
     );
   };
 
-  const modelLinks = (cluster: GridCluster) => {
+  const modelLinks = (cluster: FleetCluster) => {
     const assigned = modelsAt(cluster);
     return assigned.length ? (
       <Flex
@@ -214,7 +227,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
         ))}
       </Flex>
     ) : (
-      <SubtleText>{modelsError ? 'Model assignments unavailable.' : 'No models at this location.'}</SubtleText>
+      <SubtleText>{modelsError ? 'Model assignments unavailable.' : 'No models on this cluster.'}</SubtleText>
     );
   };
 
@@ -268,7 +281,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
       </Flex>
     );
 
-  const clusterDetails = (cluster: GridCluster) => (
+  const clusterDetails = (cluster: FleetCluster) => (
     <Stack hasGutter>
       <DetailsSection title="Site and cluster" headingLevel="h3">
         <DetailsList
@@ -280,17 +293,28 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
             { term: 'Location', value: cluster.location },
             {
               term: 'Coordinates',
-              value: hasCoordinates(cluster) ? `${cluster.latitude}, ${cluster.longitude}` : undefined,
+              value: hasCoordinates(cluster) ? (
+                <>
+                  {cluster.latitude}, {cluster.longitude}
+                  {cluster.locationSource === 'cloud region' && (
+                    <>
+                      {' '}
+                      <SubtleText>approximate, from the cloud region</SubtleText>
+                    </>
+                  )}
+                </>
+              ) : undefined,
             },
+            { term: 'Position problem', value: cluster.locationProblem },
             { term: 'Provisioning', value: <StatusLabel isCompact status={cluster.provisioningStatus} /> },
           ]}
         />
       </DetailsSection>
       <DetailsSection
-        title="Models at this location"
+        title="Models on this cluster"
         headingLevel="h3"
         count={modelsAt(cluster).length}
-        help="The models whose placement chose this cluster's location. A model listed here may still be starting."
+        help="The models whose placement chose this cluster. A model listed here may still be starting."
       >
         {modelLinks(cluster)}
       </DetailsSection>
@@ -316,7 +340,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
         title="Sites and clusters"
         headingLevel="h3"
         count={clustersOf(model).length}
-        help="The AI Grid clusters at the locations this model's placement chose. They are where it should run, not proof that it is serving there."
+        help="The AI Grid clusters this model's placement chose. They are where it should run, not proof that it is serving there."
       >
         {clusterLinks(model)}
       </DetailsSection>
@@ -337,7 +361,10 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
     </EmptyState>
   );
 
-  const withoutCoordinates = clusters.filter((c) => !hasCoordinates(c)).length;
+  // Not on the map: no position (no annotations, no known cloud region), or annotations to fix.
+  const notOnMap = clusters.filter((c) => !hasCoordinates(c));
+  const withProblem = notOnMap.filter((c) => c.locationProblem).length;
+  const withoutPosition = notOnMap.length - withProblem;
 
   const list = (
     <Stack hasGutter>
@@ -396,10 +423,19 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
               );
             })}
       </Stack>
-      {mode === 'cluster' && withoutCoordinates > 0 && (
+      {mode === 'cluster' && notOnMap.length > 0 && (
         <SubtleText>
-          {withoutCoordinates} {withoutCoordinates === 1 ? 'cluster has' : 'clusters have'} no site coordinates, so{' '}
-          {withoutCoordinates === 1 ? 'it is' : 'they are'} listed here but not on the map.
+          {notOnMap.length} {notOnMap.length === 1 ? "cluster isn't" : "clusters aren't"} on the map:{' '}
+          {[
+            withoutPosition && `${withoutPosition} without a position`,
+            withProblem && `${withProblem} with coordinate annotations to fix`,
+          ]
+            .filter(Boolean)
+            .join(', ')}
+          .{' '}
+          <a href={LOCATION_DOCS_URL} target="_blank" rel="noreferrer">
+            How to set a cluster&apos;s position
+          </a>
         </SubtleText>
       )}
     </Stack>
@@ -424,7 +460,18 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
   const ready = clusters.filter((c) => c.status === 'Ready').length;
   const summary: [label: string, value: string, detail?: string][] = [
     ['Clusters', `${ready}/${clusters.length}`, 'Ready'],
-    ['Sites', String(new Set(clusters.flatMap((c) => (c.site ? [c.site] : []))).size)],
+    // A site is a site name, else the cloud region, else the ai-grid/site label: what the map names.
+    [
+      'Sites',
+      String(
+        new Set(
+          clusters.flatMap((c) => {
+            const site = c.siteName || c.region || c.site;
+            return site ? [site] : [];
+          }),
+        ).size,
+      ),
+    ],
     ['Models', String(relevantModels.length)],
   ];
 

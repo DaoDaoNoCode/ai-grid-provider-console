@@ -1,7 +1,7 @@
 // How the Clusters pages word a cluster's GPUs. Presentation only: the counts, the configurations
 // and the sharing come from the backend's GPU inventory (ACM Search and GPU Feature Discovery's
 // labels), and nothing here decides what they mean.
-import type { ClusterGPUs, GPUConfiguration, GPUSharing } from '../../api/types';
+import type { ClusterGPUs, GPUConfiguration, GPUSharing } from '../../gen/ai_grid/v1/managed_cluster_type_pb';
 
 const MIG_SUFFIX = /-MIG-([^-]+)$/;
 const SHARED_SUFFIX = /-SHARED$/;
@@ -19,8 +19,8 @@ export const gpuModel = (product: string) =>
 /** The MIG profile in a MIG product, such as "3g.20gb" in "NVIDIA-A100-SXM4-40GB-MIG-3g.20gb". */
 export const migProfile = (product: string) => product.match(MIG_SUFFIX)?.[1];
 
-/** Memory per GPU from MiB, one decimal dropped when zero: 23034 MiB as "22.5 GiB". */
-export const gpuMemory = (mib: number) => (mib > 0 ? `${Math.round((mib / 1024) * 10) / 10} GiB` : undefined);
+/** Memory per GPU from MiB (an int64), one decimal dropped when zero: 23034 MiB as "22.5 GiB". */
+export const gpuMemory = (mib: bigint) => (mib > 0n ? `${Math.round((Number(mib) / 1024) * 10) / 10} GiB` : undefined);
 
 /** GPU Feature Discovery's family as a name: "ada-lovelace" as "Ada Lovelace". */
 export const gpuArchitecture = (family?: string) =>
@@ -30,8 +30,8 @@ export const gpuArchitecture = (family?: string) =>
     .join(' ');
 
 /** How the GPUs are shared, or nothing when they aren't: "Time-sliced ×4", "MPS ×2", "MIG 3g.20gb". */
-export const gpuSharing = (sharing: GPUSharing, product: string): string | undefined => {
-  switch (sharing.strategy) {
+export const gpuSharing = (sharing: GPUSharing | undefined, product: string): string | undefined => {
+  switch (sharing?.strategy) {
     case 'time-slicing':
       return `Time-sliced ×${sharing.replicas}`;
     case 'mps':

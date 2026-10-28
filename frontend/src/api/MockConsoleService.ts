@@ -36,7 +36,6 @@ import {
   createModelSchema,
   createSubscriptionSchema,
   fieldErrorsOf,
-  locationSchema,
   organizationInputSchema,
   updateSubscriptionSchema,
 } from '../validation';
@@ -235,10 +234,29 @@ export class MockConsoleService implements ConsoleService {
         this.clusters
           .filter(
             (c) =>
-              c.aiGridEnabled && c.provisioned && c.status === 'Ready' && locationSchema.safeParse(c.location).success,
+              c.aiGridEnabled &&
+              c.provisioned &&
+              c.status === 'Ready' &&
+              ['inference', 'combined'].includes(c.labels?.['ai-grid/role'] ?? ''),
           )
-          .map((c) => c.location as string),
+          .map((c) => c.name),
       ),
+    ].sort();
+
+  /**
+   * The fake backend's decision for the console's placement, `name In [...]`
+   * (bff/internal/fakebackend/placement.go): the clusters of those names, sorted.
+   */
+  private decidedClusters = (names: string[]): string[] =>
+    this.clusters
+      .filter((c) => names.includes(c.name))
+      .map((c) => c.name)
+      .sort();
+
+  /** The decided clusters' `location` labels, unique and sorted, as the fake reports them (P8). */
+  private decidedLocations = (names: string[]): string[] =>
+    [
+      ...new Set(this.clusters.filter((c) => names.includes(c.name) && c.location).map((c) => c.location as string)),
     ].sort();
 
   createModel = async (input: CreateModelRequest): Promise<ManagedModel> => {
@@ -263,7 +281,8 @@ export class MockConsoleService implements ConsoleService {
       phase: 'Pending',
       creationTimestamp: new Date().toISOString(),
       resourceVersion: '1',
-      locations: [...input.locations],
+      locations: this.decidedLocations(input.locations),
+      selectedClusters: this.decidedClusters(input.locations),
       modelUri: input.modelUri.trim(),
       modelName: input.modelName.trim(),
       runtimeImage: input.runtimeImage.trim(),
@@ -326,7 +345,8 @@ export class MockConsoleService implements ConsoleService {
     }
     if (update.placement && locations) {
       model.placementSpec = structuredClone(update.placement);
-      model.locations = [...locations];
+      model.locations = this.decidedLocations(locations);
+      model.selectedClusters = this.decidedClusters(locations);
     }
     model.resourceVersion = String(Number(model.resourceVersion) + 1);
     return structuredClone(model);
@@ -716,6 +736,8 @@ export const seedModels = (): ManagedModel[] =>
       : {}),
     resourceVersion: '1',
     locations,
+    // The seed clusters' location label is their name, and site1 is a provisioned member.
+    selectedClusters: [...locations],
     modelUri: `hf://example-org/${name}`,
     modelName: `example-org/${name}`,
     runtimeImage: 'quay.io/example/vllm:v1',

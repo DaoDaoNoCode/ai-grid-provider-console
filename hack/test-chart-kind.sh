@@ -8,7 +8,8 @@
 #      hack/deploy.sh does it (hack/chart-takeover.sh);
 #   2. helm install: the pod is ready, the proxy refuses a caller without a token, accepts a
 #      ServiceAccount token (TokenReview) and drops the identity headers a caller forges, the BFF answers isProviderAdmin from the cluster's access
-#      review and lists ManagedClusters through the backend; only the proxy listens off loopback;
+#      review, and Clusters/List over the relay lists ManagedClusters through the backend; only
+#      the proxy listens off loopback;
 #   3. helm upgrade with backend.clusterWrites: the backend may label ManagedClusters ai-grid/*, and
 #      the admission policy refuses its other changes;
 #   4. helm uninstall removes the cluster-scoped objects.
@@ -37,7 +38,7 @@ PORT="${LOCAL_PORT:-18443}"
 # The proxy has no version tag newer than August, so it is latest as of 2026-10-27 (built
 # 2026-10-16 from opendatahub-io/kube-auth-proxy b2d77d8). busybox runs netstat for step 2.
 BACKEND_PIN="$(cat "${ROOT}/.backend-api-version")"
-BACKEND_IMAGE="${BACKEND_IMAGE:-ghcr.io/ai-grid-cloud/ai-grid-provider-backend:sha-7316e682332ce8085108f969d40579b8e3269d41@sha256:c81b73637ff4542a28c3a2c710f1b3bf0571feec1c487f96b90fd68eb6ff3a31}"
+BACKEND_IMAGE="${BACKEND_IMAGE:-ghcr.io/ai-grid-cloud/ai-grid-provider-backend:sha-71bb8cc526a342b1554a6a36617d58ea42954281@sha256:a6bef1c62bb3c6a7cd8eab1ddfdb2a11a74b9239efe7503907d0ec70b3bc328d}"
 PROXY_IMAGE="${PROXY_IMAGE:-quay.io/opendatahub/odh-kube-auth-proxy@sha256:1a5f6e220362aa2077026bb7e3091c38f80aac861fa060b08045e58e783d5bc5}"
 BUSYBOX_IMAGE=docker.io/library/busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
 ROUTE_CRD=https://raw.githubusercontent.com/openshift/api/a9b3f04dd8db4c20aacca607afeff8ddbc25d863/route/v1/zz_generated.crd-manifests/routes.crd.yaml
@@ -285,8 +286,10 @@ spec: { hubAcceptsClient: true }
 YAML
 expect 200 "with patch on ManagedClusters the caller is a provider admin" "${auth[@]}" "${u}/api/v1/user"
 grep -q '"isProviderAdmin":true' "${TMP}/body" || fail "isProviderAdmin should be true: $(cat "${TMP}/body")"
-expect 200 "the backend lists ManagedClusters with its ServiceAccount" "${auth[@]}" "${u}/api/v1/clusters"
-grep -q '"name":"site-a"' "${TMP}/body" || fail "site-a missing: $(cat "${TMP}/body")"
+# What the Clusters pages call: Clusters/List over the relay.
+list=(-X POST -H "Content-Type: application/json" -H "Connect-Protocol-Version: 1" -d '{}')
+expect 200 "the backend lists ManagedClusters with its ServiceAccount" "${auth[@]}" "${list[@]}" "${u}/ai_grid.v1.Clusters/List"
+grep -q '"id":"site-a"' "${TMP}/body" || fail "site-a missing: $(cat "${TMP}/body")"
 expect 503 "Models wait for the Git clone, which can't reach git.invalid" "${auth[@]}" "${u}/api/v1/models"
 expect 200 "a provider admin's Connect call reaches the backend through the relay" "${auth[@]}" "${connect[@]}" "${u}/ai_grid.v1.AiGrid/Ping"
 expect 200 "the frontend is served" "${auth[@]}" "${u}/"

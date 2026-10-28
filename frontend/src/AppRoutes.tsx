@@ -12,7 +12,7 @@ import { ClustersPage } from './pages/clusters/ClustersPage';
 const ClusterDetailsPage = lazy(() =>
   import('./pages/clusters/ClusterDetailsPage').then((m) => ({ default: m.ClusterDetailsPage })),
 );
-const GridPage = lazy(() => import('./pages/grid/GridPage').then((m) => ({ default: m.GridPage })));
+const AiGridPage = lazy(() => import('./pages/grid/AiGridPage').then((m) => ({ default: m.AiGridPage })));
 const MonitoringPage = lazy(() =>
   import('./pages/monitoring/MonitoringPage').then((m) => ({ default: m.MonitoringPage })),
 );
@@ -64,9 +64,9 @@ const Pages: React.FC<Props> = ({ service }) => (
   <Routes>
     <Route path="/" element={<Navigate to="/clusters" replace />} />
     {/* Keyed, so moving between the map and monitoring mounts a fresh page with its own loads. */}
-    <Route path="/ai-grid" element={<GridPage key="ai-grid" service={service} />} />
+    <Route path="/ai-grid" element={<AiGridPage key="ai-grid" service={service} />} />
     <Route path="/monitoring" element={<MonitoringPage service={service} />} />
-    <Route path="/clusters" element={<ClustersPage service={service} />} />
+    <Route path="/clusters" element={<ClustersPage />} />
     <Route
       path="/clusters/:name"
       element={

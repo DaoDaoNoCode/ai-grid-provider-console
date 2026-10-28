@@ -37,15 +37,12 @@ and the key check run first), bumps `resource_version` on a real write, and answ
 `PermissionDenied` with the API server's forbidden message for a token `access.json` denies.
 Every RPC but `Ping` needs `authorization` metadata (`Unauthenticated` otherwise).
 
-BFF: `GET /api/v1/clusters/{name}` uses the Get RPC and sends the `resourceVersion` as the
-`ETag`; `PATCH /api/v1/clusters/{name}` takes `labels` and `annotations` (whole maps) and
-sends them in one Update RPC, with the present fields as the mask and
-`lock: true` on the `If-Match` version the client must send (a stale tab gets 409; no `If-Match`
-is 428); it does not read the cluster first and neither merges, compares nor validates the maps
-(a body that names no field is 422); `GridCluster` exposes
-`status`, `statusMessage`, `consoleUrl`, `kubernetesVersion`, `platform`, `product`,
-`gpuCapacity`, `capacity`, `allocatable`, `gpus`, `creationTimestamp`, `siteName`, `latitude`,
-`longitude`, `addons`, `conditions`, `resourceVersion`.
+BFF: no cluster routes any more. The fake's ManagedClusters service stands in for the backend's
+`Clusters` List, Get and Update (`fakebackend_test.go`, standIns), and its clusters feed the
+Monitoring fallback's `GET /api/v1/grid/overview`, whose `GridCluster` exposes `status`,
+`statusMessage`, `consoleUrl`, `kubernetesVersion`, `platform`, `product`, `gpuCapacity`,
+`capacity`, `allocatable`, `gpus`, `creationTimestamp`, `siteName`, `latitude`, `longitude`,
+`addons`, `conditions`, `resourceVersion`.
 
 GPUs: the draft's `ManagedClusterStatus.gpus` (`ClusterGPUs`, the backend's field 10) is each
 cluster's GPU inventory. The real backend reads it from ACM Search (search-v2's `search` query for
@@ -61,11 +58,16 @@ malformed or negative count read as 0 and the total capped at the largest int32.
 configurations (product, memory, GPUs per node and sharing, MIG capability included), most nodes
 first, then by product, then most GPUs per node. A cluster without GPU nodes has no `gpus`.
 
-UI: the Clusters page (`frontend/src/pages/clusters/ClustersPage.tsx`) lists every
+UI: the Clusters pages and the map read the backend's `Clusters/List` and `Clusters/Get` over
+Connect and write `Clusters/Update` (`docs/connect.md`, "The Clusters area"), with the
+membership, the lifecycle state and the location the backend derives. So they run on the backend's own fakes (`make dev-fake-infra`), not on this fake, whose
+draft the relay can't reach. The Clusters page (`frontend/src/pages/clusters/ClustersPage.tsx`) lists every
 ManagedCluster under nested column headers that match the details page's cards: **Cluster** (name,
-the hub's connection status), **AI Grid** (status, with "Not added" outside it, location, role) and
-**GPUs** (capacity, "4 nodes, 32 GPUs", or "8 GPUs" from the BFF's `gpuCapacity` (its count of
-`capacity["nvidia.com/gpu"]`, the console's only parser of it) when the backend has no inventory; configuration, "NVIDIA H200, 8 GPUs/node", with ", Time-sliced ×4",
+the hub's connection status), **AI Grid** (status, with "Not added" outside it, location, role: Combined, MaaS (ingress), the
+cluster tenants send requests to, or Inference; the `ai-grid/role` values stay `combined`,
+`ingress` and `inference`) and
+**GPUs** (capacity, "4 nodes, 32 GPUs", or "8 GPUs" from `capacity["nvidia.com/gpu"]` read as a
+plain integer, as the BFF's `gpuCapacity` reads it, when the backend has no inventory; configuration, "NVIDIA H200, 8 GPUs/node", with ", Time-sliced ×4",
 ", MPS ×2" or ", MIG 3g.20gb" when shared, and "+N more" for more configurations), as provider-admin
 feedback asks (the OpenShift version is on the details page, to leave the list room). The actions
 column sticks to the table's right edge, so a narrow window scrolls the table under it instead of
@@ -83,8 +85,10 @@ sharing, instance type, status), with the same Add and Remove actions. Add-ons a
 conditions are left out: UX found them not needed there. The wording of products, memory, architecture and sharing is
 presentation only (`pages/clusters/gpuText.ts`). The real backend's cluster status details (Kubernetes version, capacity, allocatable and
 claims) fill the same sections; against a backend without them those parts say
-so instead of showing zeros. The map belongs to the grid overview area; Placement
-recomputation and ManifestWorkReplicaSet belong to the models area (`mock/areas/models.md`).
+so instead of showing zeros. The map (`/ai-grid`) shows the members among the same
+`Clusters/List`, placed by their `ai-grid/latitude` and `ai-grid/longitude` annotations; on the
+dev hub no member has them yet, so it shows no pins there. Placement recomputation and
+ManifestWorkReplicaSet belong to the models area (`mock/areas/models.md`).
 
 Backend ask: ship the draft's `GetManagedCluster`, `UpdateManagedCluster` and richer
 message (`mock/proto/ai_grid/v1/managed_cluster*.proto`), with the state derived server-side.

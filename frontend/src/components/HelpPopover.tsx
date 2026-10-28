@@ -2,7 +2,7 @@ import { Button, Popover } from '@patternfly/react-core';
 import { OutlinedQuestionCircleIcon } from '@patternfly/react-icons';
 
 type Props = {
-  /** What the help is about, for the button's accessible name, for example "Models at this location". */
+  /** What the help is about, for the button's accessible name, for example "Models on this cluster". */
   topic: string;
   children: React.ReactNode;
 };
