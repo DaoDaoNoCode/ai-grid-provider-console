@@ -1,4 +1,6 @@
 import {
+  Alert,
+  AlertActionLink,
   Masthead,
   MastheadBrand,
   MastheadContent,
@@ -10,6 +12,7 @@ import {
   NavList,
   Page,
   PageContext,
+  PageSection,
   PageSidebar,
   PageSidebarBody,
   PageToggleButton,
@@ -23,6 +26,7 @@ import { Link, useLocation } from 'react-router-dom';
 import type { Transport } from '@connectrpc/connect';
 import { BackendProvider, type TransportWith } from './api/connect/BackendProvider';
 import type { ConsoleService } from './api/ConsoleService';
+import { ServiceError } from './api/ConsoleService';
 import { AppRoutes } from './AppRoutes';
 import { FakeBackendBanner } from './components/FakeBackendBanner';
 import { NoticeToast } from './components/NoticeToast';
@@ -133,7 +137,7 @@ export const App: React.FC<Props> = ({
   );
   const sessionEnded = ended !== undefined;
   // Loaded once here and given to every page through the session context.
-  const [user, userLoaded, userError] = useServiceData(() => service.getUser(), undefined, 0);
+  const [user, userLoaded, userError, reloadUser] = useServiceData(() => service.getUser(), undefined, 0);
   const [config, , configError] = useServiceData(() => service.getConfig(), undefined, 0);
   // Only the config says whether a login proxy runs: the fake backend has none. Without it (it
   // failed to load, for whatever reason) the console can't tell, so it doesn't redirect on its own
@@ -244,7 +248,24 @@ export const App: React.FC<Props> = ({
   ) : notAdmin ? (
     <ProviderAdminsOnly username={user.username} canSignOut={canSignOut} />
   ) : (
-    <AppRoutes service={service} />
+    <>
+      {userError && !(userError instanceof ServiceError && userError.isUnauthenticated) && (
+        // Without the user the console can't tell a provider admin, so the pages hide what changes
+        // data: say so, rather than look read-only for no reason.
+        <PageSection hasBodyWrapper={false} className="pf-v6-u-pb-0">
+          <Alert
+            isInline
+            variant="warning"
+            title="Unable to load your access"
+            actionLinks={<AlertActionLink onClick={() => void reloadUser()}>Retry</AlertActionLink>}
+            data-testid="user-load-error"
+          >
+            Actions that change data are hidden until the console knows you are a provider admin. {userError.message}
+          </Alert>
+        </PageSection>
+      )}
+      <AppRoutes service={service} />
+    </>
   );
 
   return (
