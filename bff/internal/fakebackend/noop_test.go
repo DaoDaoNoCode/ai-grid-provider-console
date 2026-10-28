@@ -18,6 +18,7 @@ import (
 // its stored resource_version, as the API server answers an unchanged update.
 
 func TestUnchangedClusterUpdateIsNotWritten(t *testing.T) {
+	t.Parallel()
 	// A cluster as the hub keeps it: with the default clusterset label the
 	// webhook would otherwise add on the first write.
 	c := readyCluster("a")
@@ -73,6 +74,7 @@ func TestUnchangedClusterUpdateIsNotWritten(t *testing.T) {
 // The coordinate annotations are the backend's convention (a console
 // proposal, not API-server behaviour): present means a number in range.
 func TestClusterCoordinatesAreChecked(t *testing.T) {
+	t.Parallel()
 	s := newServer(t, &Fixtures{Clusters: []*aigridv1.ManagedCluster{readyCluster("a")}})
 	ctx := authed(context.Background())
 	update := func(annotations map[string]string) (*aigridv1.ManagedCluster, error) {
@@ -108,6 +110,7 @@ func TestClusterCoordinatesAreChecked(t *testing.T) {
 }
 
 func TestUnchangedModelUpdateIsNotWritten(t *testing.T) {
+	t.Parallel()
 	s, advance := modelServer(t, &Fixtures{Clusters: []*aigridv1.ManagedCluster{enrolled("site-a")}})
 	ctx := authed(context.Background())
 	createModel(t, s, hubModel("hub"))
@@ -135,6 +138,7 @@ func TestUnchangedModelUpdateIsNotWritten(t *testing.T) {
 }
 
 func TestUnchangedTenantUpdateIsNotPut(t *testing.T) {
+	t.Parallel()
 	s := tenantServer(t)
 	ctx := authed(context.Background())
 	update := func(obj *aigridv1.Tenant, paths ...string) (*aigridv1.Tenant, error) {

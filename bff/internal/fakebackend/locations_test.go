@@ -28,6 +28,7 @@ func gridMember(name, location string) *aigridv1.ManagedCluster {
 // Available, unique and sorted; a cluster the scenario takes offline drops
 // out.
 func TestListLocationsOnScenarioState(t *testing.T) {
+	t.Parallel()
 	notProvisioned := gridMember("berlin-1", "berlin")
 	notProvisioned.Labels[LabelAIGridProvisioned] = "false"
 	notMember := gridMember("oslo-1", "oslo")
@@ -65,6 +66,7 @@ func TestListLocationsOnScenarioState(t *testing.T) {
 // Available, provisioned member at start (Madrid's lease recovers at 300s,
 // Ashburn isn't provisioned).
 func TestListLocationsFromTheFixtures(t *testing.T) {
+	t.Parallel()
 	s := newRepoServer(t)
 	resp, err := s.ListLocations(authed(context.Background()), &aigridv1.ListLocationsRequest{})
 	if err != nil || !slices.Equal(resp.GetLocations(), []string{"paris"}) {
@@ -74,6 +76,7 @@ func TestListLocationsFromTheFixtures(t *testing.T) {
 
 // TestConsoleLabelsMatchTheBFF: the fake and the BFF name the same labels.
 func TestConsoleLabelsMatchTheBFF(t *testing.T) {
+	t.Parallel()
 	for fake, bff := range map[string]string{
 		LabelAIGridEnabled: api.LabelEnabled, LabelAIGridProvisioned: api.LabelProvisioned, LabelLocation: api.LabelLocation,
 		LabelAIGridSite: api.LabelSite, LabelAIGridRegion: api.LabelRegion,
@@ -89,6 +92,7 @@ func TestConsoleLabelsMatchTheBFF(t *testing.T) {
 // sorted; a decided cluster without one adds nothing, and a model without a
 // placement has none.
 func TestPlacementReportsLocations(t *testing.T) {
+	t.Parallel()
 	located := func(name, location string) *aigridv1.ManagedCluster {
 		c := enrolled(name)
 		if location != "" {

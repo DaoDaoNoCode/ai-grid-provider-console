@@ -13,6 +13,7 @@ import (
 )
 
 func TestDialValidation(t *testing.T) {
+	t.Parallel()
 	if _, err := backend.Dial(backend.Config{}); err == nil {
 		t.Fatal("empty address accepted")
 	}
@@ -37,6 +38,7 @@ func TestDialValidation(t *testing.T) {
 }
 
 func TestForwardsIdentity(t *testing.T) {
+	t.Parallel()
 	fake := &backendtest.Fake{}
 	client := backendtest.Start(t, fake)
 
@@ -70,6 +72,7 @@ func TestForwardsIdentity(t *testing.T) {
 // header with an accented name used to fail every RPC. The BFF percent-encodes
 // the identity values, and plain percent-decoding gives them back.
 func TestForwardsNonASCIIIdentity(t *testing.T) {
+	t.Parallel()
 	fake := &backendtest.Fake{}
 	client := backendtest.Start(t, fake)
 
@@ -114,6 +117,7 @@ func TestForwardsNonASCIIIdentity(t *testing.T) {
 }
 
 func TestEncodeMetadataValue(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"":                       "",
 		"alice":                  "alice",

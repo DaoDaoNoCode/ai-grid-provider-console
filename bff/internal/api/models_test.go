@@ -79,6 +79,7 @@ func seedModels() []*aigridv1.Model {
 }
 
 func TestListModels(t *testing.T) {
+	t.Parallel()
 	fake := &backendtest.Fake{Models: seedModels()}
 	app := newTestApp(t, testConfig(t), fake)
 	var list []Model
@@ -161,6 +162,7 @@ func TestListModels(t *testing.T) {
 }
 
 func TestGetModel(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t, testConfig(t), &backendtest.Fake{Models: seedModels()})
 	var m Model
 	rec := serve(app, asUser(http.MethodGet, "/api/v1/models/team-b/other"))
@@ -178,6 +180,7 @@ func TestGetModel(t *testing.T) {
 }
 
 func TestCreateModel(t *testing.T) {
+	t.Parallel()
 	fake := &backendtest.Fake{Models: seedModels()}
 	app := newTestApp(t, testConfig(t), fake)
 	body := `{"name": "mistral-7b", "namespace": "ai-grid-models", "modelUri": "oci://registry.example.com/models/mistral:v0.3", "modelName": "example-org/mistral-7b",
@@ -284,6 +287,7 @@ func TestCreateModel(t *testing.T) {
 }
 
 func TestPatchModel(t *testing.T) {
+	t.Parallel()
 	fake := &backendtest.Fake{Models: seedModels()}
 	app := newTestApp(t, testConfig(t), fake)
 	const tiny = "/api/v1/models/ai-grid-models/tiny-llm"
@@ -367,6 +371,7 @@ func TestPatchModel(t *testing.T) {
 }
 
 func TestDeleteModel(t *testing.T) {
+	t.Parallel()
 	fake := &backendtest.Fake{Models: seedModels()}
 	app := newTestApp(t, testConfig(t), fake)
 	rec := serve(app, withIfMatch(asUser(http.MethodDelete, "/api/v1/models/team-b/other"), `"3"`))
@@ -384,6 +389,7 @@ func TestDeleteModel(t *testing.T) {
 }
 
 func TestCapabilities(t *testing.T) {
+	t.Parallel()
 	fake := &backendtest.Fake{}
 	app := newTestApp(t, testConfig(t), fake)
 	rec := serve(app, asUser(http.MethodGet, "/api/v1/capabilities"))
@@ -406,6 +412,7 @@ func TestCapabilities(t *testing.T) {
 }
 
 func TestModelFromTodaysShapes(t *testing.T) {
+	t.Parallel()
 	// A model without status, scaling or router renders with empty collections
 	// and the name as model name, never nulls.
 	m := toModel(&aigridv1.Model{Name: "bare", Metadata: &aigridv1.ObjectMeta{Namespace: "ns"}, Spec: &aigridv1.ModelSpec{Model: &aigridv1.ModelSource{Uri: "hf://x"}}})
@@ -421,6 +428,7 @@ func TestModelFromTodaysShapes(t *testing.T) {
 }
 
 func TestModelVersions(t *testing.T) {
+	t.Parallel()
 	fake := &backendtest.Fake{Models: seedModels()}
 	app := newTestApp(t, testConfig(t), fake)
 	const path = "/api/v1/models/ai-grid-models/tiny-llm"
@@ -458,6 +466,7 @@ func TestModelVersions(t *testing.T) {
 // Resending what the page loaded goes to the backend with every present
 // path; the backend sees that nothing changes and keeps the version.
 func TestRepeatedModelPatchReachesTheBackend(t *testing.T) {
+	t.Parallel()
 	fake := &backendtest.Fake{Models: seedModels()}
 	app := newTestApp(t, testConfig(t), fake)
 	rec := serve(app, withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/models/ai-grid-models/tiny-llm", `{"replicas": 1, "env": [{"name": "VLLM_CPU_KVCACHE_SPACE", "value": "8"}], "labels": {"ai-grid/family": "tiny"}}`), `"7"`))
@@ -469,6 +478,7 @@ func TestRepeatedModelPatchReachesTheBackend(t *testing.T) {
 // Every present field goes in the mask, also for a model whose backend sent
 // no spec: the BFF has nothing to compare with.
 func TestPatchModelSendsEveryPresentField(t *testing.T) {
+	t.Parallel()
 	fake := &backendtest.Fake{Models: []*aigridv1.Model{{Name: "bare", Metadata: &aigridv1.ObjectMeta{Namespace: "ns", ResourceVersion: "1"}}}}
 	app := newTestApp(t, testConfig(t), fake)
 	rec := serve(app, withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/models/ns/bare", `{"replicas": 1, "runtimeImage": "img", "env": [], "placement": null, "rollout": {}, "labels": {}, "annotations": {}}`), `"1"`))
@@ -480,6 +490,7 @@ func TestPatchModelSendsEveryPresentField(t *testing.T) {
 // The display name and description travel as annotations on create too,
 // so a client sets them one way on both POST and PATCH.
 func TestCreateModelTakesNoDisplayNameField(t *testing.T) {
+	t.Parallel()
 	fake := &backendtest.Fake{Models: seedModels()}
 	app := newTestApp(t, testConfig(t), fake)
 	for _, field := range []string{"displayName", "description"} {
@@ -494,6 +505,7 @@ func TestCreateModelTakesNoDisplayNameField(t *testing.T) {
 // TestModelWithoutSpec: a model the backend sends without a spec (as a
 // subscription's referenced model can be) maps instead of panicking into a 500.
 func TestModelWithoutSpec(t *testing.T) {
+	t.Parallel()
 	got := toModel(&aigridv1.Model{Name: "bare", Metadata: &aigridv1.ObjectMeta{Namespace: "ai-grid-models"}})
 	if got.Name != "bare" || got.Replicas != nil {
 		t.Fatalf("model %+v", got)
@@ -502,6 +514,7 @@ func TestModelWithoutSpec(t *testing.T) {
 
 // TestListLocations: GET /api/v1/locations passes ListLocations through.
 func TestListLocations(t *testing.T) {
+	t.Parallel()
 	fake := &backendtest.Fake{Locations: []string{"madrid", "paris"}}
 	app := newTestApp(t, testConfig(t), fake)
 	rec := serve(app, asUser(http.MethodGet, "/api/v1/locations"))
@@ -517,6 +530,7 @@ func TestListLocations(t *testing.T) {
 // Each work's phase, reason and message, and a partially available model,
 // pass through as the backend derived them (proposal P13).
 func TestModelWorkPhasesPassThrough(t *testing.T) {
+	t.Parallel()
 	m := &aigridv1.Model{
 		Name:     "m",
 		Metadata: &aigridv1.ObjectMeta{Namespace: "ai-grid-models"},

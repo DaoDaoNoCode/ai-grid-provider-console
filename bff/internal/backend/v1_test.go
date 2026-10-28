@@ -35,6 +35,7 @@ func (c *recordingConn) NewStream(context.Context, *grpc.StreamDesc, string, ...
 }
 
 func TestV1UpdateSendsMetadataPathsAndVersion(t *testing.T) {
+	t.Parallel()
 	conn := &recordingConn{reply: &backendv1.ClustersUpdateResponse{Object: &backendv1.ManagedCluster{
 		Id: "site1", Metadata: &backendv1.Metadata{Version: 8}, Spec: &backendv1.ManagedClusterSpec{HubAcceptsClient: true},
 	}}}
@@ -65,6 +66,7 @@ func TestV1UpdateSendsMetadataPathsAndVersion(t *testing.T) {
 }
 
 func TestFromV1ClusterState(t *testing.T) {
+	t.Parallel()
 	accepted := &backendv1.ManagedClusterSpec{HubAcceptsClient: true}
 	for _, tc := range []struct {
 		name string
@@ -84,6 +86,7 @@ func TestFromV1ClusterState(t *testing.T) {
 }
 
 func TestV1ListClustersForwardsPage(t *testing.T) {
+	t.Parallel()
 	conn := &recordingConn{reply: &backendv1.ClustersListResponse{Size: 1, Total: 3, Items: []*backendv1.ManagedCluster{{Id: "site2"}}}}
 	resp, err := v1Clusters{conn}.ListManagedClusters(context.Background(), &aigridv1.ListManagedClustersRequest{Offset: proto.Int32(1), Limit: proto.Int32(1)})
 	if err != nil {
@@ -108,6 +111,7 @@ func TestV1ListClustersForwardsPage(t *testing.T) {
 // GET /api/v1/clusters/{name} on the real backend: Clusters/Get by id, the
 // answer mapped like a listed cluster, and the backend's error as it is.
 func TestV1GetCluster(t *testing.T) {
+	t.Parallel()
 	conn := &recordingConn{reply: &backendv1.ClustersGetResponse{Object: &backendv1.ManagedCluster{
 		Id: "site1", Metadata: &backendv1.Metadata{Version: 4, Labels: map[string]string{"ai-grid/enabled": "true"}},
 	}}}
@@ -131,6 +135,7 @@ func TestV1GetCluster(t *testing.T) {
 }
 
 func TestFromV1ClusterDetails(t *testing.T) {
+	t.Parallel()
 	changed := timestamppb.New(time.Date(2026, 10, 21, 4, 1, 2, 0, time.UTC))
 	mc := &backendv1.ManagedCluster{Id: "site-a", Spec: &backendv1.ManagedClusterSpec{HubAcceptsClient: true}, Status: &backendv1.ManagedClusterStatus{
 		Joined: true, Available: true, AvailableCondition: "True",
@@ -182,6 +187,7 @@ func TestFromV1ClusterDetails(t *testing.T) {
 }
 
 func TestV1ListTenantsForwardsPageAndFilter(t *testing.T) {
+	t.Parallel()
 	conn := &recordingConn{reply: &backendv1.TenantsListResponse{Size: 1, Total: 3, Items: []*backendv1.Tenant{{Id: "t2"}}}}
 	resp, err := v1Tenants{conn}.ListTenants(context.Background(), &aigridv1.ListTenantsRequest{Offset: proto.Int32(1), Limit: proto.Int32(1)})
 	if err != nil {
@@ -205,6 +211,7 @@ func TestV1ListTenantsForwardsPageAndFilter(t *testing.T) {
 }
 
 func TestV1TenantWrites(t *testing.T) {
+	t.Parallel()
 	created := timestamppb.New(time.Date(2026, 10, 22, 0, 0, 0, 0, time.UTC))
 	stored := &backendv1.Tenant{Id: "t1", Metadata: &backendv1.Metadata{Name: "org1", Version: 4, CreationTimestamp: created}, Spec: &backendv1.TenantSpec{Domains: []string{"org1.example.com"}}}
 	ctx := context.Background()
@@ -270,6 +277,7 @@ func TestV1TenantWrites(t *testing.T) {
 
 // Fields the backend's Tenant lacks are refused before any call, not dropped.
 func TestV1TenantFieldsNotInBackend(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	conn := &recordingConn{}
 	_, err := v1Tenants{conn}.CreateTenant(ctx, &aigridv1.CreateTenantRequest{Object: &aigridv1.Tenant{
@@ -315,6 +323,7 @@ func (c *methodConn) NewStream(context.Context, *grpc.StreamDesc, string, ...grp
 
 // GetTenant answers with the backend's error as is: both target backends have Get, so there is no list fallback.
 func TestV1GetTenantNoListFallback(t *testing.T) {
+	t.Parallel()
 	conn := &methodConn{errs: map[string]error{methodTenantsGet: status.Error(codes.Unimplemented, "unknown method Get")}}
 	if _, err := (v1Tenants{conn}).GetTenant(context.Background(), &aigridv1.GetTenantRequest{Id: "t2"}); status.Code(err) != codes.Unimplemented || len(conn.called) != 1 {
 		t.Fatalf("GetTenant on Unimplemented: %v after %v, want Unimplemented and no list", err, conn.called)
@@ -323,6 +332,7 @@ func TestV1GetTenantNoListFallback(t *testing.T) {
 
 // Description, enabled and attributes pass when they hold what a read gives back.
 func TestV1UpdateTenantReadBackValues(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	stored := &backendv1.Tenant{Id: "t1", Metadata: &backendv1.Metadata{Name: "org1", Version: 4}}
 	newConn := func() *methodConn {
@@ -389,6 +399,7 @@ func TestV1UpdateTenantReadBackValues(t *testing.T) {
 
 // A negative If-Match version is a bad request, refused before any call.
 func TestV1TenantNegativeVersion(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	conn := &recordingConn{}
 	_, err := v1Tenants{conn}.UpdateTenant(ctx, &aigridv1.UpdateTenantRequest{
@@ -404,6 +415,7 @@ func TestV1TenantNegativeVersion(t *testing.T) {
 
 // Every GPU field the backend sends reaches the draft, and none is dropped or renumbered.
 func TestFromV1GPUs(t *testing.T) {
+	t.Parallel()
 	sharing := &backendv1.GPUSharing{Strategy: "time-slicing", Replicas: 4, MigCapable: true, MigStrategy: "single"}
 	in := &backendv1.ClusterGPUs{
 		Total:     2,

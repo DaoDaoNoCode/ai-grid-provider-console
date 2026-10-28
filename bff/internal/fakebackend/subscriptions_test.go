@@ -88,6 +88,7 @@ func policyNames(t *testing.T, s *Server, sub string) []string {
 }
 
 func TestSubscriptionFixtures(t *testing.T) {
+	t.Parallel()
 	s := newRepoServer(t)
 	list, err := s.ListSubscriptions(authed(context.Background()), &aigridv1.ListSubscriptionsRequest{})
 	if err != nil {
@@ -158,6 +159,7 @@ func TestSubscriptionFixtures(t *testing.T) {
 }
 
 func TestSubscriptionCreateMakesManagedPolicy(t *testing.T) {
+	t.Parallel()
 	s := newRepoServer(t)
 	ctx := authed(context.Background())
 	resp, err := s.CreateSubscription(ctx, &aigridv1.CreateSubscriptionRequest{Object: teamA(), CreateAuthPolicy: true})
@@ -221,6 +223,7 @@ func TestSubscriptionCreateMakesManagedPolicy(t *testing.T) {
 }
 
 func TestSubscriptionDeleteRemovesOnlyManagedPolicy(t *testing.T) {
+	t.Parallel()
 	s := newRepoServer(t)
 	ctx := authed(context.Background())
 	if _, err := s.CreateSubscription(ctx, &aigridv1.CreateSubscriptionRequest{Object: teamA(), CreateAuthPolicy: true}); err != nil {
@@ -276,6 +279,7 @@ func info(t *testing.T, s *Server, name string) *aigridv1.Subscription {
 }
 
 func TestSubscriptionUpdatePreservesUnknownFields(t *testing.T) {
+	t.Parallel()
 	s := newRepoServer(t)
 	ctx := authed(context.Background())
 	eng := info(t, s, "engineering")
@@ -346,6 +350,7 @@ func TestSubscriptionUpdatePreservesUnknownFields(t *testing.T) {
 }
 
 func TestSubscriptionRejectsStaleVersion(t *testing.T) {
+	t.Parallel()
 	s := newRepoServer(t)
 	ctx := authed(context.Background())
 	stale := info(t, s, "engineering")
@@ -372,6 +377,7 @@ func TestSubscriptionRejectsStaleVersion(t *testing.T) {
 // TestSubscriptionUpdateClearsDescription: the edit form sends no description
 // when the user clears it, and the PoC backend stores "" (backend/api.mjs:90).
 func TestSubscriptionUpdateClearsDescription(t *testing.T) {
+	t.Parallel()
 	s := newRepoServer(t)
 	edit := info(t, s, "engineering")
 	edit.Description = ""
@@ -389,6 +395,7 @@ func TestSubscriptionUpdateClearsDescription(t *testing.T) {
 // models, so a field sent empty is cleared; an update that changes nothing
 // keeps the stored version.
 func TestSubscriptionUpdateReplacesTheObject(t *testing.T) {
+	t.Parallel()
 	s := newRepoServer(t)
 	ctx := authed(context.Background())
 	eng := info(t, s, "engineering")
@@ -417,6 +424,7 @@ func TestSubscriptionUpdateReplacesTheObject(t *testing.T) {
 // groups and models to the <name>-policy create made, so access follows the
 // subscription (1:1, Cloud Provider Working Group, 2026-10-16).
 func TestSubscriptionUpdateKeepsTheManagedPolicyInStep(t *testing.T) {
+	t.Parallel()
 	s := newRepoServer(t)
 	ctx := authed(context.Background())
 	resp, err := s.CreateSubscription(ctx, &aigridv1.CreateSubscriptionRequest{Object: teamA(), CreateAuthPolicy: true})
@@ -441,6 +449,7 @@ func TestSubscriptionUpdateKeepsTheManagedPolicyInStep(t *testing.T) {
 // of the same name in another namespace is another model, so it keeps none
 // of the stored reference's billing rate.
 func TestSubscriptionUpdateMergesModelRefsByNamespace(t *testing.T) {
+	t.Parallel()
 	s := newRepoServer(t)
 	edit := info(t, s, "engineering")
 	edit.ModelRefs[0].Namespace, edit.ModelRefs[0].BillingRatePerToken = "team-b", nil
@@ -457,6 +466,7 @@ func TestSubscriptionUpdateMergesModelRefsByNamespace(t *testing.T) {
 // without a namespace reads back with the default one, so a client never
 // sees a bare name that could stand for a model in any namespace.
 func TestSubscriptionModelRefsReadWithTheirNamespace(t *testing.T) {
+	t.Parallel()
 	s := newRepoServer(t)
 	sub := teamA()
 	sub.ModelRefs[0].Namespace = ""
@@ -473,6 +483,7 @@ func TestSubscriptionModelRefsReadWithTheirNamespace(t *testing.T) {
 // display name and group names as the PoC's zod schemas do, and stores the
 // trimmed values; a display name of only spaces is the PoC's message.
 func TestSubscriptionsAreNormalizedBeforeValidation(t *testing.T) {
+	t.Parallel()
 	s := newRepoServer(t)
 	ctx := authed(context.Background())
 	in := teamA()
@@ -511,6 +522,7 @@ func TestSubscriptionsAreNormalizedBeforeValidation(t *testing.T) {
 // subscription RPC needs a bearer token, and a token the hub denies (a
 // viewer) reads but can't create, update or delete.
 func TestSubscriptionsNeedAProviderAdminToWrite(t *testing.T) {
+	t.Parallel()
 	s := newRepoServer(t)
 	viewer := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer viewer-token", "x-forwarded-user", "viewer"))
 	anon := context.Background()
@@ -552,6 +564,7 @@ func TestSubscriptionsNeedAProviderAdminToWrite(t *testing.T) {
 // without a namespace is to ai-grid-models, and one in another namespace
 // doesn't count.
 func TestDeleteModelReferencedBySubscription(t *testing.T) {
+	t.Parallel()
 	s := newRepoServer(t)
 	ctx := authed(context.Background())
 	_, err := s.DeleteModel(ctx, &aigridv1.DeleteModelRequest{Namespace: "ai-grid-models", Name: "granite-8b-instruct"})
@@ -589,6 +602,7 @@ func TestDeleteModelReferencedBySubscription(t *testing.T) {
 // reference's namespace (its models had none); the backend checks P6's
 // namespace as a namespace name instead.
 func TestModelRefNamespaceIsANamespaceName(t *testing.T) {
+	t.Parallel()
 	s := newRepoServer(t)
 	bad := teamA()
 	bad.ModelRefs[0].Namespace = "Team_B"
@@ -661,6 +675,7 @@ func listed(t *testing.T, s *Server, name string) *aigridv1.Subscription {
 }
 
 func TestSubscriptionLifecycle(t *testing.T) {
+	t.Parallel()
 	for _, speed := range []float64{1, 10} {
 		s, now := clockServer(t, speed)
 		at := func(seconds float64) { *now = fixedNow.Add(time.Duration(seconds / speed * float64(time.Second))) }
@@ -705,6 +720,7 @@ func TestSubscriptionLifecycle(t *testing.T) {
 }
 
 func TestSubscriptionPhaseFromModelRefs(t *testing.T) {
+	t.Parallel()
 	s, now := clockServer(t, 1)
 	ctx := authed(context.Background())
 	partial := teamA()
@@ -746,6 +762,7 @@ func TestSubscriptionPhaseFromModelRefs(t *testing.T) {
 }
 
 func TestTokenRateLimitsAreCountedPerModel(t *testing.T) {
+	t.Parallel()
 	s, now := clockServer(t, 1)
 	sub := teamA()
 	limit := []*aigridv1.TokenRateLimit{{Limit: 10, Window: "1m"}}
@@ -769,6 +786,7 @@ func TestTokenRateLimitsAreCountedPerModel(t *testing.T) {
 }
 
 func TestAuthPolicyLifecycle(t *testing.T) {
+	t.Parallel()
 	s, now := clockServer(t, 1)
 	resp, err := s.CreateSubscription(authed(context.Background()), &aigridv1.CreateSubscriptionRequest{Object: teamA(), CreateAuthPolicy: true})
 	if err != nil {
@@ -814,6 +832,7 @@ func TestAuthPolicyLifecycle(t *testing.T) {
 // TestAuthPolicyPhaseFromModelRefs: as deriveAuthPolicyPhase, a policy whose
 // models are all missing is Failed and one with some missing is Degraded.
 func TestAuthPolicyPhaseFromModelRefs(t *testing.T) {
+	t.Parallel()
 	s := newRepoServer(t)
 	for sub, want := range map[string][3]string{
 		"engineering":  {"Active", "Reconciled", "successfully reconciled"},
@@ -841,6 +860,7 @@ func TestAuthPolicyPhaseFromModelRefs(t *testing.T) {
 }
 
 func TestManagedPolicyDescription(t *testing.T) {
+	t.Parallel()
 	s := newRepoServer(t)
 	in := teamA()
 	in.Description = "Models for team A."
@@ -879,6 +899,7 @@ func regCondition(conds []*aigridv1.Condition, typ string) *aigridv1.Condition {
 }
 
 func TestModelRegistrationPairing(t *testing.T) {
+	t.Parallel()
 	s, now := clockServer(t, 1)
 	ctx := authed(context.Background())
 	*now = fixedNow.Add(2 * time.Second)
@@ -939,6 +960,7 @@ func TestModelRegistrationPairing(t *testing.T) {
 }
 
 func TestDeleteModelReferencedByAuthPolicy(t *testing.T) {
+	t.Parallel()
 	s := newRepoServer(t)
 	s.mu.Lock()
 	s.authPolicies["coders"] = &aigridv1.AuthPolicy{Name: "coders", ModelRefs: policyRefs("codellama-13b"), SubjectGroups: []string{"coders"}}
@@ -950,6 +972,7 @@ func TestDeleteModelReferencedByAuthPolicy(t *testing.T) {
 }
 
 func TestSubscriptionCRDMessages(t *testing.T) {
+	t.Parallel()
 	s := newRepoServer(t)
 	ctx := authed(context.Background())
 	for name, tc := range map[string]struct {
@@ -986,6 +1009,7 @@ func policyRefs(names ...string) []*aigridv1.AuthPolicyModelRef {
 // reference's namespace, so it covers its own subscription, pairs the model
 // in that namespace, and blocks deleting that model only.
 func TestManagedPolicyKeepsTheModelNamespace(t *testing.T) {
+	t.Parallel()
 	s := newRepoServer(t)
 	ctx := authed(context.Background())
 	s.mu.Lock()
@@ -1025,6 +1049,7 @@ func TestManagedPolicyKeepsTheModelNamespace(t *testing.T) {
 // models namespace on each reference that names none, as a subscription does,
 // whether the policy is a fixture or a managed mirror.
 func TestPolicyModelRefsCarryTheDefaultNamespace(t *testing.T) {
+	t.Parallel()
 	s := newRepoServer(t)
 	ctx := authed(context.Background())
 	in := teamA()

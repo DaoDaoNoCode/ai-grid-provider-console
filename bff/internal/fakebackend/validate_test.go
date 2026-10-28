@@ -9,6 +9,7 @@ import (
 )
 
 func TestInvalidCarriesFieldViolations(t *testing.T) {
+	t.Parallel()
 	fields := map[string]string{
 		"name":                           "Use lowercase letters, numbers, and hyphens.",
 		"identityProvider.config.issuer": "Enter a valid HTTP or HTTPS URL.",

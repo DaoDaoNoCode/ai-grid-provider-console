@@ -14,6 +14,7 @@ func lookup(values map[string]string) func(string) (string, bool) {
 }
 
 func TestParseDefaults(t *testing.T) {
+	t.Parallel()
 	cfg, err := Parse([]string{"--hub-api-url=https://hub.example:6443"}, lookup(nil))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -33,6 +34,7 @@ func TestParseDefaults(t *testing.T) {
 }
 
 func TestParseInClusterDefaults(t *testing.T) {
+	t.Parallel()
 	env := map[string]string{"KUBERNETES_SERVICE_HOST": "10.0.0.1", "KUBERNETES_SERVICE_PORT": "443"}
 	cfg, err := Parse(nil, lookup(env))
 	if err != nil {
@@ -53,6 +55,7 @@ func TestParseInClusterDefaults(t *testing.T) {
 }
 
 func TestParseEnvThenFlags(t *testing.T) {
+	t.Parallel()
 	env := map[string]string{"PORT": "9000", "BACKEND_ADDRESS": "from-env:1", "LOG_LEVEL": "debug", "BACKEND_TIMEOUT": "3s", "HUB_API_URL": "https://hub.example", "BIND_ADDRESS": "0.0.0.0", "MODELS_NAMESPACE": "team-models"}
 	cfg, err := Parse([]string{"--backend-address=from-flag:2"}, lookup(env))
 	if err != nil {
@@ -79,6 +82,7 @@ func TestParseEnvThenFlags(t *testing.T) {
 }
 
 func TestParsePerses(t *testing.T) {
+	t.Parallel()
 	hub := "--hub-api-url=https://hub.example"
 	cfg, err := Parse([]string{hub}, lookup(nil))
 	if err != nil {
@@ -122,6 +126,7 @@ func TestParsePerses(t *testing.T) {
 // An environment value that doesn't parse fails like the same flag value,
 // instead of leaving the default in place (PORT=8o80 used to serve on 8080).
 func TestParseRejectsBadEnvValues(t *testing.T) {
+	t.Parallel()
 	hub := "--hub-api-url=https://hub.example"
 	cases := []struct {
 		key, value string
@@ -156,6 +161,7 @@ func TestParseRejectsBadEnvValues(t *testing.T) {
 // A flag on the command line wins over its environment variable, even one that
 // does not parse: only a bad value that would be used is an error.
 func TestParseFlagOverridesBadEnvValue(t *testing.T) {
+	t.Parallel()
 	hub := "--hub-api-url=https://hub.example"
 	cases := []struct {
 		key, value, flag string
@@ -186,6 +192,7 @@ func TestParseFlagOverridesBadEnvValue(t *testing.T) {
 }
 
 func TestParseRejectsBadInput(t *testing.T) {
+	t.Parallel()
 	hub := "--hub-api-url=https://hub.example"
 	cases := [][]string{
 		{"--port=0", hub},

@@ -73,6 +73,7 @@ func draftSub() *aigridv1.Subscription {
 }
 
 func TestV1SubscriptionReads(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	conn := &recordingConn{reply: &backendv1.SubscriptionsListResponse{Items: []*backendv1.Subscription{v1Sub()}}}
 	list, err := v1Subscriptions{conn}.ListSubscriptions(ctx, &aigridv1.ListSubscriptionsRequest{})
@@ -139,6 +140,7 @@ func TestV1SubscriptionReads(t *testing.T) {
 }
 
 func TestV1SubscriptionCreate(t *testing.T) {
+	t.Parallel()
 	conn := &recordingConn{reply: &backendv1.SubscriptionsCreateResponse{Object: v1Sub(), AuthPolicy: &backendv1.AuthPolicy{Id: "gold-policy"}}}
 	in := draftSub()
 	got, err := v1Subscriptions{conn}.CreateSubscription(context.Background(), &aigridv1.CreateSubscriptionRequest{Object: in, CreateAuthPolicy: true})
@@ -178,6 +180,7 @@ func TestV1SubscriptionCreate(t *testing.T) {
 }
 
 func TestV1SubscriptionUpdate(t *testing.T) {
+	t.Parallel()
 	conn := &methodConn{replies: map[string]proto.Message{
 		methodSubscriptionsGet:    &backendv1.SubscriptionsGetResponse{Object: v1Sub()},
 		methodSubscriptionsUpdate: &backendv1.SubscriptionsUpdateResponse{Object: v1Sub()},
@@ -220,6 +223,7 @@ func TestV1SubscriptionUpdate(t *testing.T) {
 }
 
 func TestV1SubscriptionDelete(t *testing.T) {
+	t.Parallel()
 	conn := &recordingConn{reply: &backendv1.SubscriptionsDeleteResponse{}}
 	if _, err := (v1Subscriptions{conn}).DeleteSubscription(context.Background(), &aigridv1.DeleteSubscriptionRequest{Name: "gold", ResourceVersion: "12"}); err != nil {
 		t.Fatal(err)

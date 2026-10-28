@@ -45,6 +45,7 @@ var (
 // TestDeriveState walks the ACM console's derivation with the exact condition
 // inputs for each of the eight states (plus "no conditions").
 func TestDeriveState(t *testing.T) {
+	t.Parallel()
 	detaching := withConditions(cond(CondImportSucceeded, cFalse, ReasonDetaching, MessageDetaching), accepted, joined, available, clockSynced)
 	detaching.DeletionTimestamp = timestamppb.Now()
 	denied := withConditions(cond(CondHubAccepted, cFalse, ReasonHubDenied, MessageHubDenied), joined, available)
@@ -82,6 +83,7 @@ func TestDeriveState(t *testing.T) {
 }
 
 func TestReadsRecomputeStateFromConditions(t *testing.T) {
+	t.Parallel()
 	// A fixture that claims to be AVAILABLE while its conditions say offline.
 	c := withConditions(imported, accepted, joined, cond(CondAvailable, cFalse, ReasonAPIServerUnavail, "The kube-apiserver is not ok, status code: 500, x"))
 	c.Status.State = aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_AVAILABLE
@@ -123,6 +125,7 @@ func readyCluster(name string) *aigridv1.ManagedCluster {
 }
 
 func TestRequiresAuthorizationExceptPing(t *testing.T) {
+	t.Parallel()
 	s := newServer(t, &Fixtures{Clusters: []*aigridv1.ManagedCluster{readyCluster("a")}})
 	anon := context.Background()
 	if _, err := s.Ping(anon, &aigridv1.PingRequest{Name: "probe"}); err != nil {
@@ -156,6 +159,7 @@ func TestRequiresAuthorizationExceptPing(t *testing.T) {
 // answers the BFF's access review for the same token (access.json), so a
 // viewer cannot enrol a cluster and an expired token is Unauthenticated.
 func TestUpdateHonoursHubRBAC(t *testing.T) {
+	t.Parallel()
 	access := Access{DefaultAllowed: true, DeniedTokens: []string{"viewer-token"}, RejectedTokens: []string{"expired-token"}}
 	s := newServer(t, &Fixtures{Clusters: []*aigridv1.ManagedCluster{readyCluster("a")}, Access: access})
 	as := func(token, user string) context.Context {
@@ -221,6 +225,7 @@ func TestUpdateHonoursHubRBAC(t *testing.T) {
 }
 
 func TestSetConditionKeepsTransitionTimeWhenStatusUnchanged(t *testing.T) {
+	t.Parallel()
 	c := readyCluster("a")
 	first := findCondition(c, CondAvailable).GetLastTransitionTime().AsTime()
 	later := first.Add(time.Hour)
@@ -238,6 +243,7 @@ func TestSetConditionKeepsTransitionTimeWhenStatusUnchanged(t *testing.T) {
 }
 
 func TestConcurrentLockedUpdatesAdmitOne(t *testing.T) {
+	t.Parallel()
 	s := newServer(t, &Fixtures{Clusters: []*aigridv1.ManagedCluster{readyCluster("a")}})
 	ctx := authed(context.Background())
 	const n = 8
@@ -272,6 +278,7 @@ func TestConcurrentLockedUpdatesAdmitOne(t *testing.T) {
 }
 
 func TestUpdateDetachingClusterKeepsState(t *testing.T) {
+	t.Parallel()
 	c := readyCluster("a")
 	c.DeletionTimestamp = timestamppb.New(time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC))
 	setCondition(c, time.Now(), CondImportSucceeded, cFalse, ReasonDetaching, MessageDetaching)
@@ -288,6 +295,7 @@ func TestUpdateDetachingClusterKeepsState(t *testing.T) {
 }
 
 func TestGetManagedClusterNotFound(t *testing.T) {
+	t.Parallel()
 	s := newServer(t, &Fixtures{Clusters: []*aigridv1.ManagedCluster{readyCluster("a")}})
 	_, err := s.GetManagedCluster(authed(context.Background()), &aigridv1.GetManagedClusterRequest{Name: "nope"})
 	if status.Code(err) != codes.NotFound || status.Convert(err).Message() != "object with identifier 'nope' not found" {
@@ -296,6 +304,7 @@ func TestGetManagedClusterNotFound(t *testing.T) {
 }
 
 func TestListPaging(t *testing.T) {
+	t.Parallel()
 	s := newServer(t, &Fixtures{Clusters: []*aigridv1.ManagedCluster{readyCluster("c"), readyCluster("a"), readyCluster("b")}})
 	ctx := authed(context.Background())
 	resp, err := s.ListManagedClusters(ctx, &aigridv1.ListManagedClustersRequest{Offset: proto.Int32(1), Limit: proto.Int32(1)})
@@ -314,6 +323,7 @@ func TestListPaging(t *testing.T) {
 }
 
 func TestUpdateManagedCluster(t *testing.T) {
+	t.Parallel()
 	ctx := authed(context.Background())
 	update := func(s *Server, req *aigridv1.UpdateManagedClusterRequest) (*aigridv1.ManagedCluster, error) {
 		resp, err := s.UpdateManagedCluster(ctx, req)
@@ -454,6 +464,7 @@ func importingCluster(name string, created time.Time) *aigridv1.ManagedCluster {
 }
 
 func TestScenarioImport(t *testing.T) {
+	t.Parallel()
 	start := time.Date(2026, 10, 15, 10, 0, 0, 0, time.UTC)
 	// A cluster whose `cloud` label someone removed: autodetect fills it only
 	// while it reads auto-detect, so it stays absent.
@@ -555,6 +566,7 @@ func TestScenarioImport(t *testing.T) {
 }
 
 func TestScenarioLeaseAndDetach(t *testing.T) {
+	t.Parallel()
 	start := time.Date(2026, 10, 15, 11, 0, 0, 0, time.UTC)
 	fx := &Fixtures{
 		Clusters: []*aigridv1.ManagedCluster{readyCluster("madrid"), readyCluster("lyon"), readyCluster("ashburn"), readyCluster("frankfurt")},
@@ -676,6 +688,7 @@ func TestScenarioLeaseAndDetach(t *testing.T) {
 // managedclusteraddons still in the namespace and how many carry a
 // finalizer, or reports the namespace clean when none are left.
 func TestDetachingEventAddsDeleting(t *testing.T) {
+	t.Parallel()
 	withAddons := readyCluster("a")
 	withAddons.Labels[LabelAddonPrefix+"config-policy-controller"] = AddonAvailable
 	bare := readyCluster("b")
@@ -704,6 +717,7 @@ func TestDetachingEventAddsDeleting(t *testing.T) {
 }
 
 func TestScenariosAreValidated(t *testing.T) {
+	t.Parallel()
 	if _, err := New(&Fixtures{Clusters: []*aigridv1.ManagedCluster{readyCluster("a")}, Scenarios: []ScenarioEvent{{Cluster: "a", Event: "explode"}}}, nil); err == nil {
 		t.Error("unknown event must fail at load")
 	}

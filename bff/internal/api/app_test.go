@@ -153,6 +153,7 @@ func serve(app *App, req *http.Request) *httptest.ResponseRecorder {
 }
 
 func TestHealthcheckNeedsNoToken(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t, testConfig(t), nil)
 	rec := serve(app, httptest.NewRequest(http.MethodGet, "/healthcheck", nil))
 	if rec.Code != http.StatusOK {
@@ -168,6 +169,7 @@ func TestHealthcheckNeedsNoToken(t *testing.T) {
 }
 
 func TestReadyzReflectsBackend(t *testing.T) {
+	t.Parallel()
 	fake := &backendtest.Fake{}
 	app := newTestApp(t, testConfig(t), fake)
 	if rec := serve(app, httptest.NewRequest(http.MethodGet, "/readyz", nil)); rec.Code != http.StatusOK {
@@ -184,6 +186,7 @@ func TestReadyzReflectsBackend(t *testing.T) {
 }
 
 func TestAPIRequiresToken(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t, testConfig(t), nil)
 	rec := serve(app, httptest.NewRequest(http.MethodGet, "/api/v1/clusters", nil))
 	if rec.Code != http.StatusUnauthorized {
@@ -195,6 +198,7 @@ func TestAPIRequiresToken(t *testing.T) {
 }
 
 func TestUnknownAPIPathIsJSON404(t *testing.T) {
+	t.Parallel()
 	rec := serve(newTestApp(t, testConfig(t), nil), asUser(http.MethodGet, "/api/v1/nope"))
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d", rec.Code)
@@ -207,6 +211,7 @@ func TestUnknownAPIPathIsJSON404(t *testing.T) {
 // A known path asked with a method it has no route for is 405 with Allow and
 // the JSON error shape, not the unknown-path 404.
 func TestWrongMethodIsJSON405(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t, testConfig(t), nil)
 	cases := map[string]string{
 		"POST /api/v1/clusters":                 "GET, HEAD",
@@ -235,6 +240,7 @@ func TestWrongMethodIsJSON405(t *testing.T) {
 // HEAD is GET without the body: open on /user and /config like GET, so the
 // provider-admin check doesn't refuse a viewer's HEAD that its GET passes.
 func TestHeadUserAndConfigAreOpenLikeGet(t *testing.T) {
+	t.Parallel()
 	denied := newTestAppWithHub(t, testConfig(t), nil, &fakeHub{allowed: false})
 	if rec := serve(denied, asUser(http.MethodHead, "/api/v1/config")); rec.Code != http.StatusOK {
 		t.Errorf("HEAD /config by a non-admin: %d", rec.Code)
@@ -252,6 +258,7 @@ func TestHeadUserAndConfigAreOpenLikeGet(t *testing.T) {
 // tenants and models refuse a repeated offset or limit as they refuse a
 // repeated filter.
 func TestListQueryParameters(t *testing.T) {
+	t.Parallel()
 	fake := &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{{Name: "site-1", ResourceVersion: "1"}}}
 	app := newTestApp(t, testConfig(t), fake)
 	for _, path := range []string{
@@ -278,6 +285,7 @@ func TestListQueryParameters(t *testing.T) {
 // The clusters list forwards offset and limit as the request's page and
 // `filter` as sent; meta carries the backend's total over the whole list.
 func TestListClustersPages(t *testing.T) {
+	t.Parallel()
 	fake := &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{
 		{Name: "site-3", ResourceVersion: "1"}, {Name: "site-1", ResourceVersion: "1"}, {Name: "site-2", ResourceVersion: "1"},
 	}}
@@ -321,6 +329,7 @@ func TestListClustersPages(t *testing.T) {
 }
 
 func TestUserFromProxyHeaders(t *testing.T) {
+	t.Parallel()
 	cfg := testConfig(t)
 	h := &fakeHub{allowed: true}
 	var u User
@@ -353,6 +362,7 @@ func TestUserFromProxyHeaders(t *testing.T) {
 // A proxy header with a name outside ASCII (an OpenShift group `équipe-ops`)
 // used to make every backend call 502: grpc-go refuses such metadata values.
 func TestNonASCIIIdentityReachesTheBackend(t *testing.T) {
+	t.Parallel()
 	fake := &backendtest.Fake{Tenants: []*aigridv1.Tenant{{Id: "t-1", Name: "acme"}}}
 	app := newTestApp(t, testConfig(t), fake)
 	req := asUser(http.MethodGet, "/api/v1/tenants")
@@ -371,6 +381,7 @@ func TestNonASCIIIdentityReachesTheBackend(t *testing.T) {
 }
 
 func TestOnlyProviderAdminsReachTheAPI(t *testing.T) {
+	t.Parallel()
 	cfg := testConfig(t)
 	patch := func() *http.Request {
 		return withIfMatch(patchRequest("site-1", `{"labels":{"ai-grid/enabled":"true"}}`), `"7"`)
@@ -406,6 +417,7 @@ func TestOnlyProviderAdminsReachTheAPI(t *testing.T) {
 }
 
 func TestConfigEndpoint(t *testing.T) {
+	t.Parallel()
 	cfg := testConfig(t)
 	cfg.GridEndpoint = "https://grid.example.com"
 	var out ConsoleConfig
@@ -416,6 +428,7 @@ func TestConfigEndpoint(t *testing.T) {
 }
 
 func TestClustersFromBackend(t *testing.T) {
+	t.Parallel()
 	fake := &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{
 		{Name: "site-1", HubAcceptsClient: true, Labels: map[string]string{LabelEnabled: "true", LabelProvisioned: "true", LabelLocation: "brussels", LabelSite: "brussels-dc1", LabelRegion: "europe-west"}},
 		{Name: "local-cluster", HubAcceptsClient: true, Labels: map[string]string{LabelOpenShiftVersion: "4.22.15"}},
@@ -457,6 +470,7 @@ func TestClustersFromBackend(t *testing.T) {
 // The backend's GPU inventory reaches the browser as it was sent: nothing
 // derived in the BFF, and no "gpus" for a cluster the backend has none for.
 func TestClusterGPUsPassThrough(t *testing.T) {
+	t.Parallel()
 	sharing := &aigridv1.GPUSharing{Strategy: "time-slicing", Replicas: 4}
 	fake := &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{
 		{Name: "gpu", ResourceVersion: "1", Status: &aigridv1.ManagedClusterStatus{
@@ -488,6 +502,7 @@ func TestClusterGPUsPassThrough(t *testing.T) {
 }
 
 func TestTenantsFromBackend(t *testing.T) {
+	t.Parallel()
 	fake := &backendtest.Fake{Tenants: []*aigridv1.Tenant{
 		{Id: "2", Name: "tenant-b", Domains: []string{"b.example.com"}},
 		{Id: "1", Name: "tenant-a"},
@@ -504,6 +519,7 @@ func TestTenantsFromBackend(t *testing.T) {
 }
 
 func TestBackendErrorsMapToHTTP(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		code codes.Code
 		want int
@@ -533,6 +549,7 @@ func TestBackendErrorsMapToHTTP(t *testing.T) {
 // A hub slower than the access review's timeout is the hub's failure (502
 // with the hub message), not the backend's 504; a slow backend stays 504.
 func TestSlowHubIs502AndSlowBackendIs504(t *testing.T) {
+	t.Parallel()
 	release := make(chan struct{})
 	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
@@ -568,6 +585,7 @@ func TestSlowHubIs502AndSlowBackendIs504(t *testing.T) {
 // request and which admin, so an audit can tell who changed what; the token
 // never reaches the log.
 func TestLogsNameTheRequestAndTheUser(t *testing.T) {
+	t.Parallel()
 	var logs bytes.Buffer
 	fake := &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{{Name: "site-1", ResourceVersion: "7"}}}
 	app := NewApp(testConfig(t), slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo})), backendtest.Start(t, fake), startHub(t, &fakeHub{allowed: true}))
@@ -606,6 +624,7 @@ func TestLogsNameTheRequestAndTheUser(t *testing.T) {
 // The kubelet's probes log at Debug when they succeed (thousands of lines a
 // day); a failed probe is still a request line at Info.
 func TestSuccessfulProbesLogAtDebug(t *testing.T) {
+	t.Parallel()
 	var logs bytes.Buffer
 	fake := &backendtest.Fake{}
 	app := NewApp(testConfig(t), slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo})), backendtest.Start(t, fake), startHub(t, &fakeHub{allowed: true}))
@@ -625,6 +644,7 @@ func TestSuccessfulProbesLogAtDebug(t *testing.T) {
 }
 
 func TestPanicBecomes500(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t, testConfig(t), nil)
 	h := app.recoverPanic(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic("boom") }))
 	rec := httptest.NewRecorder()
@@ -635,6 +655,7 @@ func TestPanicBecomes500(t *testing.T) {
 }
 
 func TestAbortedAnswerIsNotA500(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t, testConfig(t), nil)
 	h := app.recoverPanic(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic(http.ErrAbortHandler) }))
 	rec := httptest.NewRecorder()
@@ -651,6 +672,7 @@ func TestAbortedAnswerIsNotA500(t *testing.T) {
 }
 
 func TestClassify(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		err  error
 		want int
@@ -673,6 +695,7 @@ func TestClassify(t *testing.T) {
 }
 
 func TestSPAHandler(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	must := func(err error) {
 		if err != nil {
@@ -777,6 +800,7 @@ func richCluster() *aigridv1.ManagedCluster {
 }
 
 func TestGridClusterCarriesTheDerivedFields(t *testing.T) {
+	t.Parallel()
 	fake := &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{richCluster()}}
 	app := newTestApp(t, testConfig(t), fake)
 
@@ -825,6 +849,7 @@ func TestGridClusterCarriesTheDerivedFields(t *testing.T) {
 // TestConditionWithoutTransitionTimeIsOmitted: an unset proto timestamp is
 // the Unix epoch through AsTime; the JSON must not present 1970 as observed.
 func TestConditionWithoutTransitionTimeIsOmitted(t *testing.T) {
+	t.Parallel()
 	mc := richCluster()
 	mc.Status.Conditions = append(mc.Status.Conditions, &aigridv1.Condition{Type: "Deleting", Status: aigridv1.ConditionStatus_CONDITION_STATUS_FALSE, Reason: proto.String("ResourceRemaining")})
 	app := newTestApp(t, testConfig(t), &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{mc}})
@@ -860,6 +885,7 @@ func TestConditionWithoutTransitionTimeIsOmitted(t *testing.T) {
 // TestCoordinatesMustBeFinite: ParseFloat accepts NaN and Inf, which JSON
 // cannot encode; one such annotation must not break the list or the detail.
 func TestCoordinatesMustBeFinite(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		in   string
 		want *float64
@@ -904,6 +930,7 @@ func ptr(f float64) *float64 { return &f }
 // TestWriteJSONFailureIs500: encoding happens before the status is committed,
 // so a value JSON cannot carry is an error response, not a 200 with no body.
 func TestWriteJSONFailureIs500(t *testing.T) {
+	t.Parallel()
 	rec := httptest.NewRecorder()
 	writeData(rec, http.StatusOK, math.NaN())
 	if rec.Code != http.StatusInternalServerError || decodeError(t, rec).Error.Code != "500" {
@@ -922,6 +949,7 @@ func TestWriteJSONFailureIs500(t *testing.T) {
 // its first release) answers that, so this covers fetchCluster's fallback
 // until it is removed (AGENTS.md, "Known exceptions").
 func TestGetClusterFallsBackToListOnAnOlderBackend(t *testing.T) {
+	t.Parallel()
 	fake := &backendtest.Fake{
 		Clusters: []*aigridv1.ManagedCluster{{Name: "site-1", HubAcceptsClient: true, Labels: map[string]string{LabelEnabled: "true"}}},
 		Errs:     map[string]error{"GetManagedCluster": backendtest.Status(codes.Unimplemented, "method GetManagedCluster not implemented")},
@@ -962,6 +990,7 @@ func TestGetClusterFallsBackToListOnAnOlderBackend(t *testing.T) {
 }
 
 func TestStateStrings(t *testing.T) {
+	t.Parallel()
 	cases := map[aigridv1.ManagedClusterState]string{
 		aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_UNSPECIFIED:    "",
 		aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_AVAILABLE:      "ready",
@@ -1012,6 +1041,7 @@ func patchRequest(name, body string) *http.Request {
 }
 
 func TestPatchCluster(t *testing.T) {
+	t.Parallel()
 	site := func() *backendtest.Fake {
 		return &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{{Name: "site-1", ResourceVersion: "7",
 			Labels:      map[string]string{"name": "site-1", LabelEnabled: "false"},
@@ -1183,6 +1213,7 @@ func TestPatchCluster(t *testing.T) {
 // which a browser sends without a CORS preflight, cannot create or change
 // anything.
 func TestWritesRequireJSONContentType(t *testing.T) {
+	t.Parallel()
 	writes := []struct{ method, path, body string }{
 		{http.MethodPost, "/api/v1/tenants", `{"name": "evil"}`},
 		{http.MethodPatch, "/api/v1/tenants/t-1", `{"enabled": false}`},
@@ -1235,6 +1266,7 @@ func TestWritesRequireJSONContentType(t *testing.T) {
 // comes first (TestWritesRequireJSONContentType sends no If-Match and gets
 // 415), the 428 next, the body decoding last.
 func TestWritesRequireIfMatch(t *testing.T) {
+	t.Parallel()
 	const want = `this write needs an If-Match header: send the ETag that GET answered (the object's resourceVersion), for example If-Match: "42"`
 	writes := []struct{ method, path, body string }{
 		{http.MethodPatch, "/api/v1/clusters/site-1", `{"labels": {"ai-grid/enabled": "true"}}`},
@@ -1261,6 +1293,7 @@ func TestWritesRequireIfMatch(t *testing.T) {
 }
 
 func TestClusterETagAndIfMatch(t *testing.T) {
+	t.Parallel()
 	fresh := func() *backendtest.Fake {
 		return &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{{Name: "site-1", ResourceVersion: "9", Labels: map[string]string{LabelLocation: "paris"}}}}
 	}
@@ -1317,6 +1350,7 @@ func TestClusterETagAndIfMatch(t *testing.T) {
 }
 
 func TestListMeta(t *testing.T) {
+	t.Parallel()
 	n := func(v int) *int { return &v }
 	for _, tc := range []struct {
 		name          string
@@ -1339,6 +1373,7 @@ func TestListMeta(t *testing.T) {
 }
 
 func TestFieldErrorsReachTheBody(t *testing.T) {
+	t.Parallel()
 	st := status.New(codes.InvalidArgument, "The organization is invalid.")
 	st, _ = st.WithDetails(&errdetails.BadRequest{FieldViolations: []*errdetails.BadRequest_FieldViolation{
 		{Field: "identityProvider.config.issuer", Description: "Enter a valid HTTP or HTTPS URL."},
@@ -1358,6 +1393,7 @@ func TestFieldErrorsReachTheBody(t *testing.T) {
 // Field violations on any status other than InvalidArgument stay in the log;
 // the browser gets the mapped message only.
 func TestFieldErrorsOnlyForInvalidArgument(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		code codes.Code
 		want int
@@ -1389,6 +1425,7 @@ func TestFieldErrorsOnlyForInvalidArgument(t *testing.T) {
 }
 
 func TestConfigReportsFakeBackend(t *testing.T) {
+	t.Parallel()
 	cfg := testConfig(t)
 	cfg.FakeBackend = true
 	app := newTestApp(t, cfg, &backendtest.Fake{})
@@ -1402,6 +1439,7 @@ func TestConfigReportsFakeBackend(t *testing.T) {
 // TestConfigReportsModelsNamespace: /config names the namespace the console
 // creates models in, MODELS_NAMESPACE.
 func TestConfigReportsModelsNamespace(t *testing.T) {
+	t.Parallel()
 	cfg := testConfig(t)
 	cfg.ModelsNamespace = "team-models"
 	var got ConsoleConfig
@@ -1424,6 +1462,7 @@ const validSubscription = `{"name":"team-a","displayName":" Team A ","descriptio
 // call and before the If-Match check, so the PUT here sends none. PR 12's
 // TestWritesRequireJSONContentType covers its own routes.
 func TestSubscriptionWritesRequireJSONContentType(t *testing.T) {
+	t.Parallel()
 	for _, r := range []struct{ method, path string }{
 		{http.MethodPost, "/api/v1/subscriptions"},
 		{http.MethodPut, "/api/v1/subscriptions/engineering"},
@@ -1451,6 +1490,7 @@ func TestSubscriptionWritesRequireJSONContentType(t *testing.T) {
 // `createAuthPolicy`, so strict decoding refuses them instead of ignoring
 // them.
 func TestSubscriptionUpdateRefusesCreateFields(t *testing.T) {
+	t.Parallel()
 	fake := &backendtest.Fake{Subscriptions: []*aigridv1.Subscription{{Name: "team-a", ResourceVersion: "1"}}}
 	app := newTestApp(t, testConfig(t), fake)
 	for _, field := range []string{`"name":"team-a"`, `"createAuthPolicy":true`} {
@@ -1462,6 +1502,7 @@ func TestSubscriptionUpdateRefusesCreateFields(t *testing.T) {
 }
 
 func TestSubscriptionRoutes(t *testing.T) {
+	t.Parallel()
 	ts := timestamppb.New(time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC))
 	rate := "0.000002"
 	granite := &aigridv1.Model{Name: "granite-3-8b", Metadata: &aigridv1.ObjectMeta{Namespace: "ai-grid-models", ResourceVersion: "1"}, Spec: &aigridv1.ModelSpec{}}
@@ -1632,6 +1673,7 @@ func TestSubscriptionRoutes(t *testing.T) {
 // with a blank display name reaches the backend unchanged, and the backend's
 // InvalidArgument with a BadRequest comes back as 422 with its fieldErrors.
 func TestBFFForwardsWhatItDecodes(t *testing.T) {
+	t.Parallel()
 	st, err := status.New(codes.InvalidArgument, "String must contain at least 1 character(s)").WithDetails(&errdetails.BadRequest{
 		FieldViolations: []*errdetails.BadRequest_FieldViolation{{Field: "displayName", Description: "String must contain at least 1 character(s)"}},
 	})
@@ -1674,6 +1716,7 @@ func member(name, site string) *aigridv1.ManagedCluster {
 }
 
 func TestGridOverview(t *testing.T) {
+	t.Parallel()
 	msg := "No enrolled clusters match this selection."
 	fake := &backendtest.Fake{
 		Clusters: []*aigridv1.ManagedCluster{member("site3", "brussels"), member("site1", "san-francisco"),
@@ -1763,6 +1806,7 @@ func TestGridOverview(t *testing.T) {
 // BFF leaves those points out and keeps the rest; the series' status stays
 // the backend's (thin-BFF rule).
 func TestGridOverviewDropsNonFinitePoints(t *testing.T) {
+	t.Parallel()
 	got := toGridOverview(&aigridv1.GetOverviewResponse{Metrics: []*aigridv1.Metric{{Key: "requests", Status: aigridv1.MetricStatus_METRIC_STATUS_OK,
 		Points: []*aigridv1.MetricPoint{{Timestamp: 1, Value: math.NaN()}, {Timestamp: 2, Value: 3}, {Timestamp: 3, Value: math.Inf(1)}, {Timestamp: 4, Value: math.Inf(-1)}}}}})
 	if m := got.Metrics[0]; !reflect.DeepEqual(m.Points, []MetricPoint{{Timestamp: 2, Value: 3}}) || m.Status != "ok" {
@@ -1776,6 +1820,7 @@ func TestGridOverviewDropsNonFinitePoints(t *testing.T) {
 // TestGridOverviewOmitsUpdatedAtTheBackendDidNotSend: the BFF doesn't invent
 // an updated time (thin-BFF rule); the key is left out.
 func TestGridOverviewOmitsUpdatedAtTheBackendDidNotSend(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t, testConfig(t), &backendtest.Fake{OverviewTime: nil})
 	rec := serve(app, asUser(http.MethodGet, "/api/v1/grid/overview"))
 	if rec.Code != http.StatusOK {
@@ -1792,6 +1837,7 @@ func TestGridOverviewOmitsUpdatedAtTheBackendDidNotSend(t *testing.T) {
 // backend reports it, under the CRD's names, with no derived reason or
 // status message.
 func TestSubscriptionStatusMapsOneToOne(t *testing.T) {
+	t.Parallel()
 	at := timestamppb.New(time.Date(2026, 10, 16, 9, 0, 1, 0, time.UTC))
 	sub := &aigridv1.Subscription{
 		Name: "team-a", Phase: "Degraded", ResourceVersion: "1",

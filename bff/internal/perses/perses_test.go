@@ -23,6 +23,7 @@ import (
 const project = "ai-grid-monitoring"
 
 func TestAllowed(t *testing.T) {
+	t.Parallel()
 	relay, err := New(Config{URL: "https://perses.example.svc:8080", Project: project})
 	if err != nil {
 		t.Fatal(err)
@@ -83,6 +84,7 @@ func TestAllowed(t *testing.T) {
 
 // The project is matched as written: a dot in its name is a dot, not any character.
 func TestAllowedMatchesTheProjectAsWritten(t *testing.T) {
+	t.Parallel()
 	relay, err := New(Config{URL: "https://perses.example.svc:8080", Project: "ai.grid"})
 	if err != nil {
 		t.Fatal(err)
@@ -96,6 +98,7 @@ func TestAllowedMatchesTheProjectAsWritten(t *testing.T) {
 }
 
 func TestNewValidates(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	notPEM := filepath.Join(dir, "ca.txt")
 	if err := os.WriteFile(notPEM, []byte("not a certificate"), 0o600); err != nil {
@@ -178,6 +181,7 @@ func errorMessage(t *testing.T, rec *httptest.ResponseRecorder) string {
 }
 
 func TestRelayForwardsTheCallersTokenAndNothingElseOfTheirs(t *testing.T) {
+	t.Parallel()
 	calls := make(chan upstreamCall, 1)
 	relay := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -217,6 +221,7 @@ func TestRelayForwardsTheCallersTokenAndNothingElseOfTheirs(t *testing.T) {
 }
 
 func TestRelayPassesPersesErrorsThrough(t *testing.T) {
+	t.Parallel()
 	relay := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
@@ -231,6 +236,7 @@ func TestRelayPassesPersesErrorsThrough(t *testing.T) {
 // An answer a browser could render, such as an HTML error page from a datasource, stays inert on
 // the console's origin, whatever headers Perses sent.
 func TestRelayAnswersCannotRunAsAPage(t *testing.T) {
+	t.Parallel()
 	relay := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.Header().Set("Content-Security-Policy", "script-src *")
@@ -249,6 +255,7 @@ func TestRelayAnswersCannotRunAsAPage(t *testing.T) {
 // datasource would only open the answers to other sites, a Basic challenge would make the browser
 // ask for a password on the console's origin, and a Refresh or Link would send it elsewhere.
 func TestRelayPassesOnlyTheHeadersAnAnswerNeeds(t *testing.T) {
+	t.Parallel()
 	relay := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
@@ -282,6 +289,7 @@ func TestRelayPassesOnlyTheHeadersAnAnswerNeeds(t *testing.T) {
 
 // A cacheable answer keeps what a cache needs to tell how old it already is.
 func TestRelayKeepsTheAgeOfACachedAnswer(t *testing.T) {
+	t.Parallel()
 	relay := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Cache-Control", "max-age=60")
 		w.Header().Set("Age", "59")
@@ -300,6 +308,7 @@ func TestRelayKeepsTheAgeOfACachedAnswer(t *testing.T) {
 // ReverseProxy forwards a 1xx and the trailers outside ModifyResponse; neither reaches the browser.
 // Over real connections, since a recorder sees neither the way a browser would.
 func TestRelayDropsInformationalAnswersAndTrailers(t *testing.T) {
+	t.Parallel()
 	relay := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Link", "<https://attacker.example/x.js>; rel=preload; as=script")
 		w.WriteHeader(http.StatusEarlyHints)
@@ -349,6 +358,7 @@ func TestRelayDropsInformationalAnswersAndTrailers(t *testing.T) {
 // A redirect from Perses never reaches the browser, whatever its status: it answers 502 instead,
 // without the Location.
 func TestRelayRefusesRedirects(t *testing.T) {
+	t.Parallel()
 	for _, code := range []int{http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther, http.StatusNotModified, http.StatusTemporaryRedirect, http.StatusPermanentRedirect} {
 		relay := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Location", "https://attacker.example/")
@@ -373,6 +383,7 @@ func TestRelayRefusesRedirects(t *testing.T) {
 // A browser that accepts gzip gets Perses's compressed answer as it was sent; a client that
 // doesn't gets it uncompressed.
 func TestRelayPassesCompressedAnswersThrough(t *testing.T) {
+	t.Parallel()
 	const plain = `{"status":"success","data":{"resultType":"matrix","result":[]}}`
 	var compressed bytes.Buffer
 	zw := gzip.NewWriter(&compressed)
@@ -411,6 +422,7 @@ func TestRelayPassesCompressedAnswersThrough(t *testing.T) {
 }
 
 func TestRelayQueriesWithTheFormThePrometheusPluginSends(t *testing.T) {
+	t.Parallel()
 	calls := make(chan upstreamCall, 1)
 	relay := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"status":"success"}`))
@@ -442,6 +454,7 @@ func TestRelayQueriesWithTheFormThePrometheusPluginSends(t *testing.T) {
 }
 
 func TestRelayRefuses(t *testing.T) {
+	t.Parallel()
 	calls := make(chan upstreamCall, 1)
 	relay := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) {}, calls, 0)
 	for _, tc := range []struct {

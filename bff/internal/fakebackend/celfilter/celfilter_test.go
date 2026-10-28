@@ -14,6 +14,7 @@ import (
 )
 
 func TestEmptyFilterMatchesEverything(t *testing.T) {
+	t.Parallel()
 	for _, src := range []string{"", "  \n"} {
 		f, err := Compile(src, &aigridv1.Tenant{})
 		if err != nil || f != nil {
@@ -26,6 +27,7 @@ func TestEmptyFilterMatchesEverything(t *testing.T) {
 }
 
 func TestNowIsTheCallersTime(t *testing.T) {
+	t.Parallel()
 	f, err := Compile(`now == timestamp("2026-10-15T12:00:00Z")`, &aigridv1.Model{})
 	if err != nil {
 		t.Fatal(err)
@@ -39,6 +41,7 @@ func TestNowIsTheCallersTime(t *testing.T) {
 
 // A dyn result the checker cannot type is checked at run time.
 func TestDynResultMustBeABool(t *testing.T) {
+	t.Parallel()
 	f, err := Compile(`dyn(this.name)`, &aigridv1.Tenant{})
 	if err != nil {
 		t.Fatal(err)
@@ -54,6 +57,7 @@ func TestDynResultMustBeABool(t *testing.T) {
 // CostLimit, which would take a million interpreted steps (seconds under the
 // race detector) to reach.
 func TestCostLimitStopsARunawayFilter(t *testing.T) {
+	t.Parallel()
 	tenant := func(domains int) *aigridv1.Tenant {
 		tn := &aigridv1.Tenant{}
 		for i := range domains {
@@ -78,6 +82,7 @@ func TestCostLimitStopsARunawayFilter(t *testing.T) {
 // A List whose caller went away stops evaluating with the context's code,
 // not InvalidArgument: the filter is not at fault.
 func TestMatchStopsWhenTheContextEnds(t *testing.T) {
+	t.Parallel()
 	f, err := Compile(`this.name.contains("a")`, &aigridv1.Tenant{})
 	if err != nil {
 		t.Fatal(err)

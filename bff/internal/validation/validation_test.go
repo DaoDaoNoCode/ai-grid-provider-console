@@ -18,6 +18,7 @@ type validationCase struct {
 // TestSharedValidationCases runs mock/validation/cases.json, the cases the
 // frontend's zod schemas also run (frontend/src/validation/cases.test.ts).
 func TestSharedValidationCases(t *testing.T) {
+	t.Parallel()
 	raw, err := os.ReadFile("../../../mock/validation/cases.json")
 	if err != nil {
 		t.Fatal(err)

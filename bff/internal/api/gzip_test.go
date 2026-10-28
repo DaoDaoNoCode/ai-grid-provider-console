@@ -51,6 +51,7 @@ func assertPlain(t *testing.T, what string, rec *httptest.ResponseRecorder, want
 }
 
 func TestGzipCompressesJSONAndAssets(t *testing.T) {
+	t.Parallel()
 	fake := &backendtest.Fake{}
 	for i := range 20 {
 		c := proto.Clone(richCluster()).(*aigridv1.ManagedCluster)
@@ -127,6 +128,7 @@ func TestGzipCompressesJSONAndAssets(t *testing.T) {
 }
 
 func TestGzipLeavesOtherAnswersAlone(t *testing.T) {
+	t.Parallel()
 	big := bytes.Repeat([]byte("a"), 4*gzipMinSize)
 	cases := []struct {
 		name    string
@@ -213,6 +215,7 @@ func TestGzipLeavesOtherAnswersAlone(t *testing.T) {
 // an answer) delivers the first part, decodable, before it finishes: through
 // the request log's recorder and the gzip writer, as in App.Handler.
 func TestGzipStreamsFlushedParts(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t, testConfig(t), nil)
 	release := make(chan struct{})
 	first, second := `{"part":1}`, `{"part":2}`
@@ -268,6 +271,7 @@ func TestGzipStreamsFlushedParts(t *testing.T) {
 }
 
 func TestAcceptsGzip(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		accept []string // one entry per Accept-Encoding line
 		want   bool
@@ -321,6 +325,7 @@ func panicChain(t *testing.T, h http.HandlerFunc) (http.Handler, *lockedBuffer) 
 // A panic before anything reached the connection (no status yet, or a short
 // body still held) is the clean JSON 500 recoverPanic writes, never gzipped.
 func TestGzipPanicBeforeTheAnswerIsA500(t *testing.T) {
+	t.Parallel()
 	cases := map[string]http.HandlerFunc{
 		"before any write": func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
@@ -354,6 +359,7 @@ func TestGzipPanicBeforeTheAnswerIsA500(t *testing.T) {
 // with the stack of the handler that panicked, and a gzip stream gets no trailer,
 // so the client sees it cut rather than complete.
 func TestGzipPanicAfterTheAnswerStartedAborts(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		gzipped bool
@@ -416,6 +422,7 @@ func TestGzipPanicAfterTheAnswerStartedAborts(t *testing.T) {
 // The relay aborting a compressed answer (Perses went away mid-answer) is not
 // a panic to log: http.ErrAbortHandler passes through as it is.
 func TestGzipAbortAfterCompressionIsNotLogged(t *testing.T) {
+	t.Parallel()
 	chain, logs := panicChain(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"partial":`))

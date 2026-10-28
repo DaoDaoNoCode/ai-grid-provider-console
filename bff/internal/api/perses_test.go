@@ -42,6 +42,7 @@ func persesUpstream(t *testing.T) (*perses.Relay, *recorder) {
 }
 
 func TestPersesRelayCarriesTheCallersToken(t *testing.T) {
+	t.Parallel()
 	relay, auth := persesUpstream(t)
 	app := newTestApp(t, testConfig(t), nil).WithPerses(relay)
 	rec := serve(app, asUser(http.MethodGet, persesDashboards))
@@ -56,6 +57,7 @@ func TestPersesRelayCarriesTheCallersToken(t *testing.T) {
 // The relay sits behind the same checks as /api/v1: a caller without a token, and one the hub
 // doesn't call a provider admin, never reach Perses.
 func TestPersesRelayIsForProviderAdminsOnly(t *testing.T) {
+	t.Parallel()
 	relay, auth := persesUpstream(t)
 
 	app := newTestApp(t, testConfig(t), nil).WithPerses(relay)
@@ -80,6 +82,7 @@ func TestPersesRelayIsForProviderAdminsOnly(t *testing.T) {
 }
 
 func TestPersesRelayRefusesWrites(t *testing.T) {
+	t.Parallel()
 	relay, auth := persesUpstream(t)
 	app := newTestApp(t, testConfig(t), nil).WithPerses(relay)
 	rec := serve(app, asUser(http.MethodDelete, persesDashboards+"/d"))
@@ -92,6 +95,7 @@ func TestPersesRelayRefusesWrites(t *testing.T) {
 }
 
 func TestMonitoringOffWithoutPerses(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t, testConfig(t), nil)
 	rec := serve(app, asUser(http.MethodGet, persesDashboards))
 	if rec.Code != http.StatusNotFound {
@@ -108,6 +112,7 @@ func TestMonitoringOffWithoutPerses(t *testing.T) {
 }
 
 func TestConfigReportsMonitoring(t *testing.T) {
+	t.Parallel()
 	relay, _ := persesUpstream(t)
 	cfg := testConfig(t)
 	cfg.PersesProject = persesProject
@@ -141,6 +146,7 @@ func (b *lockedBuffer) String() string {
 // connection at its timeout. The browser gets no answer (the bytes were still in the server's
 // buffer) or a truncated one, never a 500 written over it, and the request is still logged.
 func TestPersesAnswerCutAtTheTimeout(t *testing.T) {
+	t.Parallel()
 	stall := make(chan struct{})
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

@@ -57,6 +57,7 @@ func decodeConnectError(t *testing.T, rec *httptest.ResponseRecorder) (code, mes
 }
 
 func TestConnectRelayCarriesTheCallersToken(t *testing.T) {
+	t.Parallel()
 	r, auth := connectUpstream(t)
 	hub := &fakeHub{allowed: true}
 	app := newTestAppWithHub(t, testConfig(t), nil, hub).WithRelay(r)
@@ -76,6 +77,7 @@ func TestConnectRelayCarriesTheCallersToken(t *testing.T) {
 // without a token, one the hub rejects, and one it doesn't call a provider admin never reach the
 // backend.
 func TestConnectRelayIsForProviderAdminsOnly(t *testing.T) {
+	t.Parallel()
 	r, auth := connectUpstream(t)
 	for _, tc := range []struct {
 		name     string
@@ -116,6 +118,7 @@ func TestConnectRelayIsForProviderAdminsOnly(t *testing.T) {
 
 // The relay's own refusals come after the caller checks, as a 405 on /api/v1 does.
 func TestConnectRelayRefusalsAfterTheCallerChecks(t *testing.T) {
+	t.Parallel()
 	r, auth := connectUpstream(t)
 	viewer := newTestAppWithHub(t, testConfig(t), nil, &fakeHub{allowed: false}).WithRelay(r)
 	if rec := serve(viewer, asUser(http.MethodDelete, connectList)); rec.Code != http.StatusForbidden {
@@ -136,6 +139,7 @@ func TestConnectRelayRefusalsAfterTheCallerChecks(t *testing.T) {
 }
 
 func TestConnectRelayOffWithoutOne(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t, testConfig(t), nil)
 	rec := serve(app, connectCall(asUser(http.MethodPost, connectList)))
 	if code, _ := decodeConnectError(t, rec); rec.Code != http.StatusNotFound || code != "unimplemented" {
@@ -145,6 +149,7 @@ func TestConnectRelayOffWithoutOne(t *testing.T) {
 
 // The JSON API keeps its own envelope next to the relay.
 func TestAPIErrorsKeepTheirEnvelopeWithTheRelay(t *testing.T) {
+	t.Parallel()
 	r, _ := connectUpstream(t)
 	app := newTestAppWithHub(t, testConfig(t), nil, &fakeHub{allowed: false}).WithRelay(r)
 	rec := serve(app, asUser(http.MethodGet, "/api/v1/clusters"))
@@ -192,6 +197,7 @@ func browserCall(t *testing.T, ctx context.Context, front *httptest.Server, path
 // backend flushes them, and the browser going away cancels the backend's call. The relay tells a
 // stream by its content type, and the pinned API has no streaming RPC, so an allowed path carries it.
 func TestConnectStreamThroughTheBFFFlushesAndCancels(t *testing.T) {
+	t.Parallel()
 	canceled := make(chan struct{})
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/connect+json")
@@ -234,6 +240,7 @@ func TestConnectStreamThroughTheBFFFlushesAndCancels(t *testing.T) {
 
 // A unary answer of 1 KiB or more is gzipped by the BFF's middleware, as any JSON answer.
 func TestConnectUnaryAnswerIsCompressed(t *testing.T) {
+	t.Parallel()
 	answer := `{"items":[` + strings.Repeat(`{"id":"site-paris-1"},`, 100) + `{"id":"x"}]}`
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

@@ -142,6 +142,7 @@ func connectError(t *testing.T, rec *httptest.ResponseRecorder) (code, message s
 }
 
 func TestRelaysTheCallUnchanged(t *testing.T) {
+	t.Parallel()
 	srv, got := connectBackend(t)
 	r := relayTo(t, srv)
 
@@ -175,6 +176,7 @@ func TestRelaysTheCallUnchanged(t *testing.T) {
 
 // The backend's own errors (a Connect error, its status) reach the browser as it sent them.
 func TestRelaysTheBackendsErrors(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -190,6 +192,7 @@ func TestRelaysTheBackendsErrors(t *testing.T) {
 // Whatever the browser sends about who it is stays behind: the backend gets the caller as the BFF
 // read it from the proxy headers, encoded as on every gRPC call (backend.EncodeMetadataValue).
 func TestForwardsOnlyTheCallersIdentity(t *testing.T) {
+	t.Parallel()
 	srv, got := connectBackend(t)
 	r := newRelay(t, backend.Config{Address: strings.TrimPrefix(srv.URL, "http://")},
 		headers.Token, headers.User, headers.Email, headers.Groups, "X-Remote-User")
@@ -248,6 +251,7 @@ func TestForwardsOnlyTheCallersIdentity(t *testing.T) {
 // A name outside printable ASCII is percent-encoded, each group on its own, as for gRPC metadata;
 // an identity without email or groups sends neither, not the forged ones.
 func TestIdentityEncodingAndMissingFields(t *testing.T) {
+	t.Parallel()
 	srv, got := connectBackend(t)
 	r := relayTo(t, srv)
 
@@ -288,6 +292,7 @@ func TestIdentityEncodingAndMissingFields(t *testing.T) {
 }
 
 func TestNoIdentityIsRefused(t *testing.T) {
+	t.Parallel()
 	srv, got := connectBackend(t)
 	req := httptest.NewRequest(http.MethodPost, list, strings.NewReader(`{}`))
 	req.Header.Set("Authorization", "Bearer sha256~forged")
@@ -301,6 +306,7 @@ func TestNoIdentityIsRefused(t *testing.T) {
 }
 
 func TestOnlyPostAndGet(t *testing.T) {
+	t.Parallel()
 	srv, got := connectBackend(t)
 	r := relayTo(t, srv)
 	for _, method := range []string{http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodHead, http.MethodOptions, "TRACE", "CONNECT"} {
@@ -324,6 +330,7 @@ func TestOnlyPostAndGet(t *testing.T) {
 // not its REST gateway, health or reflection on the same port, nor a path it would clean or decode
 // into another.
 func TestOnlyProcedurePaths(t *testing.T) {
+	t.Parallel()
 	srv, got := connectBackend(t)
 	r := relayTo(t, srv)
 	for _, target := range []string{
@@ -355,6 +362,7 @@ func TestOnlyProcedurePaths(t *testing.T) {
 }
 
 func TestBodyLimit(t *testing.T) {
+	t.Parallel()
 	srv, got := connectBackend(t)
 	r := relayTo(t, srv)
 
@@ -478,6 +486,7 @@ func TestResponseHeaderTimeout(t *testing.T) {
 // Only the Connect protocol passes: gRPC, gRPC-Web (which the backend serves on the same port)
 // and any other body are 415 before the backend is called.
 func TestOnlyConnectContentTypes(t *testing.T) {
+	t.Parallel()
 	srv, got := connectBackend(t)
 	r := relayTo(t, srv)
 	for _, ct := range []string{
@@ -509,6 +518,7 @@ func TestOnlyConnectContentTypes(t *testing.T) {
 // can't set a cookie for the console's origin, open it to other sites or speak for its security
 // headers.
 func TestRelaysOnlyTheResponseHeadersAClientNeeds(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		h := w.Header()
 		for k, v := range map[string]string{
@@ -692,6 +702,7 @@ func otherCA(t *testing.T) string {
 // loopback or with Insecure, TLS verified against BACKEND_CA_FILE (and BACKEND_SERVER_NAME)
 // otherwise, and not at all in plaintext across the network.
 func TestTLSSelection(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name    string
 		cfg     backend.Config
@@ -768,6 +779,7 @@ func TestTLSSelection(t *testing.T) {
 
 // The BFF's own refusals on the relay's paths are Connect errors the browser's client can read.
 func TestWriteError(t *testing.T) {
+	t.Parallel()
 	for status, want := range map[int]string{
 		http.StatusUnauthorized:        "unauthenticated",
 		http.StatusForbidden:           "permission_denied",
@@ -790,6 +802,7 @@ func TestWriteError(t *testing.T) {
 }
 
 func TestUnreviewedProceduresStayBehindTheBoundary(t *testing.T) {
+	t.Parallel()
 	srv, got := connectBackend(t)
 	r := relayTo(t, srv)
 	for _, path := range []string{
@@ -812,6 +825,7 @@ func TestUnreviewedProceduresStayBehindTheBoundary(t *testing.T) {
 }
 
 func TestRefusesCompressedRequests(t *testing.T) {
+	t.Parallel()
 	srv, got := connectBackend(t)
 	r := relayTo(t, srv)
 	for _, tc := range []struct {

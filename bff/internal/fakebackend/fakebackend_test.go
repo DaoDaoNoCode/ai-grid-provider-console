@@ -38,6 +38,7 @@ import (
 const repoFixtures = "../../../mock/fixtures"
 
 func TestRepoFixturesLoad(t *testing.T) {
+	t.Parallel()
 	fx, err := Load(repoFixtures)
 	if err != nil {
 		t.Fatal(err)
@@ -119,6 +120,7 @@ var knownConditions = map[string]map[string][]string{
 var knownAddonValues = map[string]bool{AddonAvailable: true, AddonUnhealthy: true, AddonUnreachable: true}
 
 func TestRepoFixturesUseOnlyHubStrings(t *testing.T) {
+	t.Parallel()
 	fx, err := Load(repoFixtures)
 	if err != nil {
 		t.Fatal(err)
@@ -208,6 +210,7 @@ func checkClustersUseOnlyHubStrings(t *testing.T, fx *Fixtures) {
 // seeded in, recomputed from its conditions, so a fixture edit that changes a
 // state is noticed.
 func TestRepoFixturesCoverEveryState(t *testing.T) {
+	t.Parallel()
 	fx, err := Load(repoFixtures)
 	if err != nil {
 		t.Fatal(err)
@@ -272,6 +275,7 @@ func TestRepoFixturesCoverEveryState(t *testing.T) {
 }
 
 func TestLoadRejectsBadFixtures(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	write := func(name, body string) {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
@@ -334,6 +338,7 @@ func TestLoadRejectsBadFixtures(t *testing.T) {
 // empty backend that allows everyone; an empty directory, by contrast, is a
 // valid, deliberately empty backend.
 func TestLoadRequiresTheDirectory(t *testing.T) {
+	t.Parallel()
 	missing := filepath.Join(t.TempDir(), "fixturez")
 	if _, err := Load(missing); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("nonexistent directory should fail with ErrNotExist, got %v", err)
@@ -363,6 +368,7 @@ func authed(ctx context.Context) context.Context {
 // TestNewCopiesTheFixtures: New must not keep the caller's pointers, or a
 // later change to fx would alter the served state without the server's lock.
 func TestNewCopiesTheFixtures(t *testing.T) {
+	t.Parallel()
 	fx := &Fixtures{
 		Clusters: []*aigridv1.ManagedCluster{{Name: "a", Labels: map[string]string{"name": "a"}}},
 		Tenants:  []*aigridv1.Tenant{{Id: "4c1d2e3f-5a6b-4c7d-8e9f-0a1b2c3d4e5f", Name: "t-corp", Domains: []string{"t.example.com"}}},
@@ -415,6 +421,7 @@ func dialServer(t *testing.T, srv *grpc.Server) *grpc.ClientConn {
 }
 
 func TestServerBehavesLikeTheBackend(t *testing.T) {
+	t.Parallel()
 	fx := &Fixtures{
 		Clusters: []*aigridv1.ManagedCluster{
 			{Name: "zeta", Labels: map[string]string{"name": "zeta"}, HubAcceptsClient: true},
@@ -466,6 +473,7 @@ func TestServerBehavesLikeTheBackend(t *testing.T) {
 // TestShutdownClosesOpenStreams: a health Watch never ends on its own, so an
 // unbounded GracefulStop would keep Serve (and the process) alive forever.
 func TestShutdownClosesOpenStreams(t *testing.T) {
+	t.Parallel()
 	s, err := New(&Fixtures{}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
@@ -505,6 +513,7 @@ func TestShutdownClosesOpenStreams(t *testing.T) {
 }
 
 func TestLatencyHonoursCancellation(t *testing.T) {
+	t.Parallel()
 	s, _ := New(&Fixtures{Latency: Duration{d: time.Second}}, slog.New(slog.DiscardHandler))
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
@@ -515,6 +524,7 @@ func TestLatencyHonoursCancellation(t *testing.T) {
 }
 
 func TestHubAccessReview(t *testing.T) {
+	t.Parallel()
 	h := NewHub(Access{DefaultAllowed: true, DeniedTokens: []string{"viewer"}, RejectedTokens: []string{"expired"}}, slog.New(slog.DiscardHandler))
 	srv := httptest.NewServer(h.Handler())
 	defer srv.Close()
@@ -604,6 +614,7 @@ var intentionallyUnimplemented = map[string]string{
 // Unimplemented. It also fails when a listed method starts answering, so the
 // allowlist cannot go stale.
 func TestFakeImplementsEveryProtoMethod(t *testing.T) {
+	t.Parallel()
 	s, err := New(&Fixtures{}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
@@ -678,6 +689,7 @@ var upstreamWithoutStandIn = map[string]string{
 // upstream method has a draft method the fake answers, or a listed reason
 // for having none, and neither list names a method the backend doesn't have.
 func TestFakeStandsInForEveryUpstreamMethod(t *testing.T) {
+	t.Parallel()
 	raw, err := os.ReadFile(upstreamImage)
 	if err != nil {
 		t.Fatal(err)
@@ -795,6 +807,7 @@ func unimplementedMethods(t *testing.T, srv *grpc.Server) (missing, called []str
 // only from the generated stubs registers every service and method of the
 // draft, and the check still reports every method as missing.
 func TestUnimplementedMethodsCatchesStubs(t *testing.T) {
+	t.Parallel()
 	srv := grpc.NewServer()
 	aigridv1.RegisterAiGridServer(srv, aigridv1.UnimplementedAiGridServer{})
 	aigridv1.RegisterManagedClustersServer(srv, aigridv1.UnimplementedManagedClustersServer{})

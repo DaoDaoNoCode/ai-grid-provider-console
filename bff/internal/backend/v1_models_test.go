@@ -81,6 +81,7 @@ func draftModel() *aigridv1.Model {
 }
 
 func TestV1ModelReads(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	conn := &recordingConn{reply: &backendv1.ModelsListResponse{Size: 1, Total: 4, Items: []*backendv1.Model{v1Model()}}}
 	list, err := v1Models{conn, modelsNS}.ListModels(ctx, &aigridv1.ListModelsRequest{Offset: proto.Int32(3), Limit: proto.Int32(1)})
@@ -107,6 +108,7 @@ func TestV1ModelReads(t *testing.T) {
 // The draft's filter and order use its own field names, which the backend's
 // List doesn't have; a model in another namespace can't be in this backend.
 func TestV1ModelRefusals(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	c := v1Models{&recordingConn{}, modelsNS}
 	if _, err := c.ListModels(ctx, &aigridv1.ListModelsRequest{Filter: proto.String("true")}); status.Code(err) != codes.Unimplemented {
@@ -131,6 +133,7 @@ func TestV1ModelRefusals(t *testing.T) {
 }
 
 func TestV1ModelWrites(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	in := draftModel()
 	in.Status, in.Metadata.ResourceVersion = nil, ""
@@ -176,6 +179,7 @@ func TestV1ModelWrites(t *testing.T) {
 
 // Placements other than the console's own pass through in both directions.
 func TestV1ModelOtherPlacement(t *testing.T) {
+	t.Parallel()
 	in := &aigridv1.Placement{ClusterSets: []string{"set"}, LabelSelector: &aigridv1.LabelSelector{
 		MatchLabels:      map[string]string{"region": "east"},
 		MatchExpressions: []*aigridv1.LabelSelectorRequirement{{Key: "location", Operator: "In", Values: []string{"a"}}},
@@ -192,6 +196,7 @@ func TestV1ModelOtherPlacement(t *testing.T) {
 // ListLocations passes the backend's Models/ListLocations through: the names of
 // the provisioned, Available inference and combined members, in its order.
 func TestV1ListLocations(t *testing.T) {
+	t.Parallel()
 	conn := &recordingConn{reply: &backendv1.ModelsListLocationsResponse{Locations: []string{"site-a", "site-b"}}}
 	got, err := v1Models{conn, modelsNS}.ListLocations(context.Background(), &aigridv1.ListLocationsRequest{})
 	if err != nil || conn.method != methodModelsListLocations {

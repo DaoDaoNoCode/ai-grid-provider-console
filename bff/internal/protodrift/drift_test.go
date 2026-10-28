@@ -76,6 +76,7 @@ var calls = []struct {
 // TestCallsMatchTheBFF fails when the BFF calls a backend method that calls doesn't list,
 // or stops calling one it does: the method paths in bff/internal/backend/v1.go, plus Ping.
 func TestCallsMatchTheBFF(t *testing.T) {
+	t.Parallel()
 	src, err := os.ReadFile("../backend/v1.go")
 	if err != nil {
 		t.Fatal(err)
@@ -129,6 +130,7 @@ func copyFile() protoreflect.FileDescriptor {
 }
 
 func TestUpstreamCommitIsRecorded(t *testing.T) {
+	t.Parallel()
 	raw, err := os.ReadFile(filepath.Join(upstreamDir, "COMMIT"))
 	if err != nil {
 		t.Fatal(err)
@@ -153,6 +155,7 @@ func TestUpstreamCommitIsRecorded(t *testing.T) {
 // TestCopyMatchesUpstream is the test that fails the day the backend changes a message or
 // RPC the BFF uses.
 func TestCopyMatchesUpstream(t *testing.T) {
+	t.Parallel()
 	c := &checker{upstream: upstreamFiles(t, readImage(t))}
 	c.check(copyFile())
 	for _, diff := range c.diffs {
@@ -330,6 +333,7 @@ func typeName(f protoreflect.FieldDescriptor) string {
 // TestDriftIsDetected guards the guard: each kind of change the backend could make is
 // applied to a copy of the vendored image, and the comparison must report it.
 func TestDriftIsDetected(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		mutate func(t *testing.T, set *descriptorpb.FileDescriptorSet)
