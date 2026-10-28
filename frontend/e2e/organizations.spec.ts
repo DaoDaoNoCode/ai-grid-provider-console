@@ -1,11 +1,10 @@
 import { expect, test } from '@playwright/test';
 
-const unique = `e2e-${Math.random().toString(36).slice(2, 8)}`;
-const domain = `${unique}.example.com`;
-const editedDomain = `edited-${unique}.example.com`;
-const issuer = `https://idp.${domain}/realms/main`;
-
 test('creates, views, edits and deletes an organization', async ({ page }) => {
+  const unique = `e2e-${Math.random().toString(36).slice(2, 8)}`;
+  const domain = `${unique}.example.com`;
+  const editedDomain = `edited-${unique}.example.com`;
+  const issuer = `https://idp.${domain}/realms/main`;
   await page.goto('/organizations');
   await page.getByRole('link', { name: 'Create organization' }).click();
 
