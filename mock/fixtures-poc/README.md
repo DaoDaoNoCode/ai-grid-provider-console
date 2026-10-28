@@ -2,8 +2,8 @@
 
 The data the PoC (`krisv/ai-grid-cloud-provider-poc` at `62319b8`) shows, in the fake
 backend's fixture format, so the console and the PoC can be compared screen by screen and
-the browser tests find the PoC's names. `make dev-fake-poc` loads this directory; `make
-dev-fake` still loads the default fixtures in `mock/fixtures/`. The file shapes are the ones
+the browser tests find the PoC's names. The browser tests load this directory
+(`frontend/playwright.config.ts`); `make dev-fake` loads the default fixtures in `mock/fixtures/`. The file shapes are the ones
 `mock/fixtures/README.md` describes.
 
 | File | What it seeds |

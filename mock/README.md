@@ -89,8 +89,8 @@ the masthead:
 | `AUTH_TOKEN=viewer-token AUTH_USER=viewer make dev-fake` | A signed-in user who isn't a provider admin |
 | `AUTH_TOKEN=expired-token AUTH_USER=expired make dev-fake` | A rejected token: `/api/v1/user` returns `401` |
 
-To compare the console with the PoC screen by screen, run `make dev-fake-poc`. It
-starts the same stack on `fixtures-poc/` instead of `fixtures/`: the PoC's four sites
+The browser tests (`make e2e`) start the same fake on `fixtures-poc/` instead of `fixtures/`,
+from `frontend/playwright.config.ts`: the PoC's four sites
 (`site1` San Francisco, `site2` New York, `site3` Brussels and the unenrolled `site4` Sydney),
 its three models, three organizations and three subscriptions, with no scenario events, so
 nothing changes over time. Organizations that a fixture lists without a version are loaded at
@@ -98,8 +98,8 @@ version "1" (the fake's fixture loader, `bff/internal/fakebackend`), so a stale 
 `fixtures-poc/README.md` lists the files. The browser tests run on
 this preset.
 
-To run the pieces separately, use `make dev-fake-backend`, `make dev-bff-fake` and
-`make dev-frontend-fake`. `bff/cmd/fake-backend` reads `mock/fixtures` and serves:
+To run the pieces separately, see `docs/dev-setup.md`, "Run the pieces separately".
+`bff/cmd/fake-backend` reads `mock/fixtures` and serves:
 
 - the `ai_grid.v1` gRPC services on `127.0.0.1:9090`, with health and reflection registered
   like the real server, a per-RPC latency that honours cancellation, and each call logged

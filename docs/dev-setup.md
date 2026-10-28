@@ -21,20 +21,23 @@ sends your name and token the way kube-auth-proxy would, and the BFF forwards th
 
 | You want | Terminal 1 | Terminal 2 (this repository) |
 |---|---|---|
-| The console as the hub serves it | (none) | `make start` (same as `make dev-cluster`) |
+| The console as the hub serves it | (none) | `make dev-cluster` |
 | To change the backend too | the backend repository: run it on `127.0.0.1:9090` against your `oc login` | `make dev` |
 
 ```sh
 oc login https://api.<hub>:6443 ...
-make install     # once: frontend dependencies
-make start       # the hub's backend (forwarded to :9090), its Perses (:9445), BFF on :8080, frontend on :9000
+make install       # once: frontend dependencies
+make dev-cluster   # the hub's backend (forwarded to :9090), its Perses (:9445), BFF on :8080, frontend on :9000
 ```
 
-Open http://127.0.0.1:9000. `make start` needs the console deployed on the hub (`make deploy`, or
+Open http://127.0.0.1:9000. `make dev-cluster` needs the console deployed on the hub (`make deploy`, or
 [ai-grid-env-setup](https://github.com/ai-grid-cloud/ai-grid-env-setup)): it forwards the backend
-container of `ai-grid/ai-grid-provider-console` (`NAMESPACE`, `DEPLOYMENT`) with `oc port-forward`,
-so you see what the deployed console shows, from the same backend build, ServiceAccount, RBAC and
-Keycloak. Writes are real and go through the deployed backend's ServiceAccount, so they work
+container of the console's Deployment with `oc port-forward`. It finds that Deployment in any
+namespace by the label the chart and `manifests/base` give it,
+`app.kubernetes.io/name=ai-grid-provider-console` (`ai-grid` on a hub set up by
+ai-grid-env-setup, elsewhere on others); when there is none, or more than one, it stops and lists
+what it found; set `NAMESPACE` (and `DEPLOYMENT`) to choose it yourself. You see what the
+deployed console shows, from the same backend build, ServiceAccount, RBAC and Keycloak. Writes are real and go through the deployed backend's ServiceAccount, so they work
 exactly where the deployed console's do. On a hub set up by ai-grid-env-setup, which deploys the
 chart with `backend.clusterWrites: true` (`patch` on ManagedClusters for that ServiceAccount),
 Add to AI Grid and Remove change the hub's clusters. With `make deploy` alone, the chart grants
@@ -42,19 +45,19 @@ only `get`, `list` and `watch` (unless `HELM_ARGS="--set backend.clusterWrites=t
 are refused (403). Organization create, update and delete go to the backend's Tenants RPCs and
 change the hub's Keycloak; one that sets a field the backend's tenant doesn't have answers 501.
 Before it starts
-anything, `make start` checks your login, `pods/portforward` in the namespace, an available pod
+anything, `make dev-cluster` checks your login, `pods/portforward` in the namespace, an available pod
 and a free local port. The forward listens on one loopback address only, reconnects when a rollout
 replaces the pod, and creates nothing on the cluster. Pages whose RPCs the backend doesn't serve
 yet say "not available on this backend yet".
 
 For the Monitoring page, set `PERSES_PROJECT` to the Perses project whose `dashboard-*` objects are
-the tabs (the relay reads only that project; without it Monitoring stays off). `make start` then
+the tabs (the relay reads only that project; without it Monitoring stays off). `make dev-cluster` then
 also forwards the hub's Perses
 (`openshift-cluster-observability-operator/perses`, `PERSES_NAMESPACE`, `PERSES_SERVICE`) to
 `127.0.0.1:9445` (`PERSES_ADDRESS`, `hack/forward-perses.sh`) and points the BFF at it, verifying
 its certificate with the hub's service CA (`hack/service-ca.sh`). That forward grants nothing:
 Perses checks the token the BFF forwards, yours. When the Service is missing, your login may not
-port-forward there or the CA can't be read, `make start` says why and runs with Monitoring off
+port-forward there or the CA can't be read, `make dev-cluster` says why and runs with Monitoring off
 (`PERSES_CA_FILE` you set yourself is used instead of the cluster's). A `PERSES_URL` you set
 yourself wins, and no forward starts.
 
@@ -84,7 +87,7 @@ How the pieces connect:
 2. The BFF listens on `127.0.0.1:8080`, dials `BACKEND_ADDRESS` (plaintext) and forwards the
    caller's token as `authorization` metadata (`bff/internal/backend`). For `/api/v1/user` it posts
    a `SelfSubjectAccessReview` to `HUB_API_URL` with the caller's token (`bff/internal/hub`);
-   `make dev-bff` sets it from `oc whoami --show-server`, and `HUB_CA_FILE` from the kubeconfig's
+   `make dev-cluster` and `make dev` set it from `oc whoami --show-server`, and `HUB_CA_FILE` from the kubeconfig's
    cluster CA (`hack/hub-ca.sh`). A login made with `--insecure-skip-tls-verify` stores no CA, so
    then the CA comes from the cluster's `kube-root-ca.crt` ConfigMap. Plaintext `http://` is
    accepted for loopback only.
@@ -93,7 +96,7 @@ How the pieces connect:
    re-read, so a new `oc login` is picked up without restarting. `AUTH_GROUPS` adds a
    groups header, which the BFF only forwards to the backend.
 
-Without the frontend:
+Without the frontend, run two of the pieces (below, "Run the pieces separately"):
 
 ```sh
 make dev-forward-backend   # or your own backend on :9090
@@ -134,8 +137,8 @@ make dev-fake-infra   # the backend at .backend-api-version on its fake hub and 
 This runs the real `ai-grid-provider-backend`, at the commit in `.backend-api-version`, on the
 fake hub and Keycloak of its own repository (its `make dev-fake`: gRPC, Connect and gRPC-Web on
 :9090, the fake hub on :9091, REST on :9092, Keycloak on :9093, its draft fake on :9094), the BFF
-against it without `--fake-backend` (`make dev-bff-fake-infra`), and the frontend as `dev-user`
-with `dev-token` (`make dev-frontend-fake`). It is the stack to try the Connect relay on (the
+against it without `--fake-backend`, and the frontend as `dev-user` with `dev-token`, as in
+`make dev-fake`. It is the stack to try the Connect relay on (the
 browser's `/ai_grid.v1.*` calls, `docs/plan/bff-api.md`, "The Connect relay"): the console's own
 fake serves only the draft over gRPC, so the Clusters pages and the AI Grid map, which read the
 backend's API over Connect, work only here (on `make dev-fake` they say the backend is
@@ -150,8 +153,47 @@ The backend is fetched once into `.cache/backend/<sha>` (gitignored; `hack/backe
 the commit only, and built there with Go. To run your own checkout instead, set `BACKEND_DIR`
 (`make dev-fake-infra BACKEND_DIR=../ai-grid-provider-backend`); a checkout at another commit is
 run with a warning, as the frontend's generated types are those of the pinned one. It uses the
-same ports as `make dev-fake`, so run one or the other. `make dev-fake-infra-backend` runs the
-backend part alone.
+same ports as `make dev-fake`, so run one or the other.
+
+## Ports
+
+Every dev target takes the same variables, on the command line or in the environment, when
+another process holds a default port:
+
+| Variable | Default | What listens there |
+|---|---|---|
+| `FRONTEND_PORT` | `9000` | the Vite dev server |
+| `BFF_PORT` | `8080` | the BFF; the Vite dev server proxies to it |
+| `BACKEND_ADDRESS` | `127.0.0.1:9090` | the backend's gRPC: forwarded from the hub, yours, or a fake |
+| `FAKE_HUB_ADDRESS` | `127.0.0.1:9091` | the fake hub's access review (`make dev-fake`, `make dev-fake-infra`) |
+| `PERSES_ADDRESS` | `127.0.0.1:9445` | the hub's Perses, forwarded (`make dev-cluster`) |
+
+`make dev-fake-infra` hands `BACKEND_ADDRESS` and `FAKE_HUB_ADDRESS` to the backend's own `make
+dev-fake` as `DEV_GRPC_PORT` and `DEV_HUB_PORT`; its other ports are its own variables,
+`DEV_HTTP_PORT` (9092), `DEV_KEYCLOAK_PORT` (9093) and `DEV_DRAFT_PORT` (9094). For example:
+
+```sh
+make dev-fake-infra FRONTEND_PORT=19000 BFF_PORT=18080 BACKEND_ADDRESS=127.0.0.1:19090 \
+  FAKE_HUB_ADDRESS=127.0.0.1:19091 DEV_HTTP_PORT=19092 DEV_KEYCLOAK_PORT=19093 DEV_DRAFT_PORT=19094
+```
+
+## Run the pieces separately
+
+Each dev target starts its processes in one terminal. To restart one without the others, or to
+read one's log alone, run its pieces in terminals of their own, with the same variables. They
+are not in `make help`:
+
+| Target | Its pieces, one per terminal |
+|---|---|
+| `make dev-cluster` | `make dev-forward-backend`, `make dev-bff`, `make dev-frontend`; for Monitoring also `make dev-forward-perses`, and the BFF started with `PERSES_PROJECT`, `PERSES_URL=https://127.0.0.1:9445`, `PERSES_SERVER_NAME=perses.openshift-cluster-observability-operator.svc` and `PERSES_CA_FILE=$(hack/service-ca.sh)` |
+| `make dev` | your backend, `make dev-bff`, `make dev-frontend` |
+| `make dev-fake` | `make dev-fake-backend`, `make dev-bff-fake`, `make dev-frontend-fake` |
+| `make dev-fake-infra` | `make dev-fake-infra-backend`, `make dev-bff-fake-infra`, `make dev-frontend-fake` |
+
+`make dev-frontend` sends your `oc whoami -t`; `make dev-frontend-fake` sends `dev-token` as
+`dev-user` (`AUTH_TOKEN`, `AUTH_USER`). `make dev-bff` needs a backend that serves its real API
+(the hub's, yours, or `make dev-fake-infra-backend`); against the console's own fake it answers
+501, so pair `make dev-fake-backend` with `make dev-bff-fake`.
 
 ## BFF settings
 
@@ -173,7 +215,7 @@ in `bff/` for the flags.
 make lint    # go vet, golangci-lint, buf lint on mock/proto; ESLint, Prettier check, tsc (fix formatting with: cd frontend && pnpm format); make check-generated-api
 make test    # go test -race (in-memory gRPC backend, proto drift test), vitest
 make build   # BFF binary and frontend bundle
-make e2e     # Playwright on the production bundle (vite build, then vite preview with the dev proxy) against the fake backend and BFF of make dev-fake-poc
+make e2e     # Playwright on the production bundle (vite build, then vite preview with the dev proxy) against a fake backend and BFF of its own on mock/fixtures-poc (frontend/playwright.config.ts)
 ```
 
 CI runs the same plus `make -C bff check-generated` (a fresh generation in a temporary
