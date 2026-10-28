@@ -16,6 +16,7 @@
 #
 #   hack/test-chart-kind.sh             # creates kind cluster ai-grid-chart and deletes it after
 #   KEEP_CLUSTER=1 hack/test-chart-kind.sh
+#   CONSOLE_IMAGE=<local image> hack/test-chart-kind.sh   # test that image instead of building one
 #
 # Needs docker, kind, kubectl, helm and openssl. The backend and proxy images are linux/amd64 only;
 # on an arm64 machine they run emulated. kubectl's current context is restored after kind creates
@@ -29,8 +30,17 @@ NS=ai-grid
 NAME=ai-grid-provider-console
 SA="system:serviceaccount:${NS}:${NAME}"
 PORT="${LOCAL_PORT:-18443}"
-BACKEND_IMAGE="${BACKEND_IMAGE:-ghcr.io/ai-grid-cloud/ai-grid-provider-backend:latest}"
-PROXY_IMAGE="${PROXY_IMAGE:-quay.io/opendatahub/odh-kube-auth-proxy:latest}"
+# The images the test runs, by digest, so a push to another repository can't change a result
+# (backend:latest started to require a Git URL and failed main's CI, run 40544192631). The backend
+# is the build of the commit in .backend-api-version, the API the console is generated from; when
+# that file moves, take the digest of its sha-<commit> tag:
+#   skopeo inspect --raw docker://ghcr.io/ai-grid-cloud/ai-grid-provider-backend:sha-<commit> | skopeo manifest-digest /dev/stdin
+# The proxy has no version tag newer than August, so it is latest as of 2026-10-27 (built
+# 2026-10-16 from opendatahub-io/kube-auth-proxy b2d77d8). busybox runs netstat for step 2.
+BACKEND_PIN="$(cat "${ROOT}/.backend-api-version")"
+BACKEND_IMAGE="${BACKEND_IMAGE:-ghcr.io/ai-grid-cloud/ai-grid-provider-backend:sha-7316e682332ce8085108f969d40579b8e3269d41@sha256:c81b73637ff4542a28c3a2c710f1b3bf0571feec1c487f96b90fd68eb6ff3a31}"
+PROXY_IMAGE="${PROXY_IMAGE:-quay.io/opendatahub/odh-kube-auth-proxy@sha256:1a5f6e220362aa2077026bb7e3091c38f80aac861fa060b08045e58e783d5bc5}"
+BUSYBOX_IMAGE=docker.io/library/busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
 ROUTE_CRD=https://raw.githubusercontent.com/openshift/api/a9b3f04dd8db4c20aacca607afeff8ddbc25d863/route/v1/zz_generated.crd-manifests/routes.crd.yaml
 CLUSTER_CRD=https://raw.githubusercontent.com/open-cluster-management-io/api/7b34437afbd76433695b6eb2d17735cd1de25df9/cluster/v1/0000_00_clusters.open-cluster-management.io_managedclusters.crd.yaml
 
@@ -50,6 +60,11 @@ retry() {
   done
   return 1
 }
+
+if [[ "${BACKEND_IMAGE}" == ghcr.io/ai-grid-cloud/ai-grid-provider-backend:sha-* &&
+  "${BACKEND_IMAGE}" != *":sha-${BACKEND_PIN}@"* ]]; then
+  fail "BACKEND_IMAGE is not the build of .backend-api-version (${BACKEND_PIN}): ${BACKEND_IMAGE}"
+fi
 
 TMP="$(mktemp -d)"
 created=
@@ -84,14 +99,35 @@ retry k apply -f "${ROUTE_CRD}" -f "${CLUSTER_CRD}" >/dev/null
 k wait --for=condition=Established --timeout=60s \
   crd/routes.route.openshift.io crd/managedclusters.cluster.open-cluster-management.io >/dev/null
 
-step "images: the console from this checkout, ${BACKEND_IMAGE}, ${PROXY_IMAGE}"
-retry docker build -q -t localhost/ai-grid-provider-console:kind --build-arg CONSOLE_VERSION=kind "${ROOT}" >/dev/null
+# A cluster kept from an earlier run (KEEP_CLUSTER=1) still has its release, namespace, test
+# ManagedCluster and the tester's role, and the checks would fail on them: start from what a new
+# cluster has.
+if [[ -z "${created}" ]]; then
+  step "reusing kind cluster ${CLUSTER}: removing what an earlier run left"
+  helm --kube-context "${CTX}" uninstall console -n "${NS}" --ignore-not-found --wait >/dev/null
+  k delete namespace "${NS}" --ignore-not-found --wait >/dev/null
+  k delete managedcluster site-a --ignore-not-found >/dev/null
+  k delete clusterrolebinding,clusterrole tester-managedclusters --ignore-not-found >/dev/null
+  k -n default delete serviceaccount tester --ignore-not-found >/dev/null
+fi
+
+step "images: the console ${CONSOLE_IMAGE:-from this checkout}, ${BACKEND_IMAGE}, ${PROXY_IMAGE}"
+# Not retried: a build that fails fails the same way again. CI builds it with its layer cache and
+# passes CONSOLE_IMAGE.
+if [[ -n "${CONSOLE_IMAGE:-}" ]]; then
+  docker tag "${CONSOLE_IMAGE}" localhost/ai-grid-provider-console:kind
+else
+  docker build -q -t localhost/ai-grid-provider-console:kind --build-arg CONSOLE_VERSION=kind "${ROOT}" >/dev/null
+fi
 retry docker pull -q --platform linux/amd64 "${BACKEND_IMAGE}" >/dev/null
 retry docker pull -q --platform linux/amd64 "${PROXY_IMAGE}" >/dev/null
+# The node's own platform: the debug container runs natively.
+retry docker pull -q "${BUSYBOX_IMAGE}" >/dev/null
 docker tag "${BACKEND_IMAGE}" localhost/ai-grid-backend:kind
 docker tag "${PROXY_IMAGE}" localhost/kube-auth-proxy:kind
+docker tag "${BUSYBOX_IMAGE}" localhost/busybox:kind
 kind load docker-image --name "${CLUSTER}" localhost/ai-grid-provider-console:kind \
-  localhost/ai-grid-backend:kind localhost/kube-auth-proxy:kind >/dev/null
+  localhost/ai-grid-backend:kind localhost/kube-auth-proxy:kind localhost/busybox:kind >/dev/null
 IMAGES=(--set images.console.repository=localhost/ai-grid-provider-console --set images.console.tag=kind
   --set images.backend.repository=localhost/ai-grid-backend --set images.backend.tag=kind
   --set images.authProxy.repository=localhost/kube-auth-proxy --set images.authProxy.tag=kind)
@@ -121,12 +157,33 @@ k -n "${NS}" create secret generic ai-grid-backend-keycloak --dry-run=client -o 
 k -n "${NS}" create secret generic ai-grid-backend-git --dry-run=client -o yaml \
   --from-literal=token=placeholder | k apply -f - >/dev/null
 
+# What the pods say, for a rollout that failed: their state and events, and the logs of every
+# container, those of the instance before the last restart included.
+dump_pods() {
+  local sel=app.kubernetes.io/name="${NAME}"
+  k -n "${NS}" get pods >&2
+  k -n "${NS}" describe pods >&2
+  echo "--- logs of the containers' previous instances" >&2
+  k -n "${NS}" logs -l "${sel}" --all-containers --prefix --previous --tail=100 >&2 || true
+  echo "--- logs" >&2
+  k -n "${NS}" logs -l "${sel}" --all-containers --prefix --tail=100 >&2 || true
+}
+# Waits up to 300s for the Deployment, and stops early once a container has restarted 3 times:
+# a crash loop never becomes ready, and its backoff would use up the whole wait.
 rollout() {
-  k -n "${NS}" rollout status "deploy/${NAME}" --timeout=300s >/dev/null || {
-    k -n "${NS}" get pods >&2
-    k -n "${NS}" describe pods >&2
-    fail "the console pod did not become ready"
-  }
+  local deadline=$((SECONDS + 300)) restarts
+  until k -n "${NS}" rollout status "deploy/${NAME}" --timeout=10s >/dev/null 2>&1; do
+    restarts="$(k -n "${NS}" get pods -l app.kubernetes.io/name="${NAME}" \
+      -o jsonpath='{range .items[*].status.containerStatuses[*]}{.restartCount}{"\n"}{end}' | sort -n | tail -1)"
+    if ((${restarts:-0} >= 3)); then
+      dump_pods
+      fail "a console container is crash looping (${restarts} restarts)"
+    fi
+    if ((SECONDS >= deadline)); then
+      dump_pods
+      fail "the console pod did not become ready in 300s"
+    fi
+  done
 }
 forward() {
   [[ -n "${pf}" ]] && kill "${pf}" 2>/dev/null || true
@@ -174,7 +231,7 @@ base_install
 KUBECTL=kubectl KUBE_CONTEXT="${CTX}" "${ROOT}/hack/chart-takeover.sh" console "${NS}" "${VALUES[@]}" \
   --set route.host=console.apps.example.com >/dev/null
 helm --kube-context "${CTX}" upgrade --install console "${CHART}" -n "${NS}" "${VALUES[@]}" \
-  --set route.host=console.apps.example.com --wait --timeout 300s >/dev/null || fail "helm does not take over manifests/base"
+  --set route.host=console.apps.example.com >/dev/null || fail "helm does not take over manifests/base"
 rollout
 [[ "$(k -n "${NS}" get route "${NAME}" -o jsonpath='{.spec.host}')" == console.apps.example.com ]] ||
   fail "the taken-over Route lacks the chart's host"
@@ -184,7 +241,7 @@ pass "a Helm release takes over manifests/base in place"
 helm --kube-context "${CTX}" uninstall console -n "${NS}" --wait >/dev/null
 
 step "2. helm install"
-helm --kube-context "${CTX}" install console "${CHART}" -n "${NS}" "${VALUES[@]}" --wait --timeout 300s >/dev/null
+helm --kube-context "${CTX}" install console "${CHART}" -n "${NS}" "${VALUES[@]}" >/dev/null
 rollout
 forward
 u="https://127.0.0.1:${PORT}"
@@ -235,12 +292,16 @@ cat >"${TMP}/debug.json" <<'JSON'
 {"securityContext": {"runAsNonRoot": true, "runAsUser": 65534, "allowPrivilegeEscalation": false,
   "capabilities": {"drop": ["ALL"]}, "seccompProfile": {"type": "RuntimeDefault"}}}
 JSON
-k -n "${NS}" debug "${pod}" -c listeners --image=busybox:1.36 --custom="${TMP}/debug.json" -- netstat -ltn >/dev/null
+k -n "${NS}" debug "${pod}" -c listeners --image=localhost/busybox:kind --image-pull-policy=Never \
+  --custom="${TMP}/debug.json" -- netstat -ltn >/dev/null
+state=
 for _ in $(seq 1 60); do
   state="$(k -n "${NS}" get pod "${pod}" -o jsonpath='{.status.ephemeralContainerStatuses[?(@.name=="listeners")].state.terminated.reason}')"
   [[ -n "${state}" ]] && break
   sleep 2
 done
+[[ -n "${state}" ]] || fail "the listeners debug container did not finish in 120s: $(k -n "${NS}" get pod "${pod}" \
+  -o jsonpath='{.status.ephemeralContainerStatuses[?(@.name=="listeners")].state}')"
 listeners="$(k -n "${NS}" logs "${pod}" -c listeners | awk '/LISTEN/ {print $4}' | sort)"
 while read -r addr; do echo "    listening: ${addr}"; done <<<"${listeners}"
 for addr in 127.0.0.1:8080 127.0.0.1:9090 127.0.0.1:8081; do
@@ -252,11 +313,17 @@ pass "only the proxy's :8443 listens off loopback"
 
 step "3. helm upgrade with backend.clusterWrites"
 helm --kube-context "${CTX}" upgrade console "${CHART}" -n "${NS}" "${VALUES[@]}" \
-  --set backend.clusterWrites=true --wait --timeout 300s >/dev/null
+  --set backend.clusterWrites=true >/dev/null
+rollout
+loaded=
 for _ in $(seq 1 30); do # the policy takes a moment to load
-  k label managedcluster site-a policy-probe=1 --as="${SA}" --dry-run=server >/dev/null 2>&1 || break
+  if ! k label managedcluster site-a policy-probe=1 --as="${SA}" --dry-run=server >/dev/null 2>&1; then
+    loaded=1
+    break
+  fi
   sleep 2
 done
+[[ -n "${loaded}" ]] || fail "the admission policy did not refuse a label in 60s: it did not load"
 k label managedcluster site-a ai-grid/enabled=true --as="${SA}" >/dev/null || fail "the backend may not set ai-grid/enabled"
 pass "the backend may set ai-grid/enabled"
 k label managedcluster site-a location=eu-west --overwrite --as="${SA}" >/dev/null || fail "the backend may not set location"
