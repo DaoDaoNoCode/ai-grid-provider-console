@@ -442,10 +442,9 @@ func TestUnaryTimeout(t *testing.T) {
 // starts, so once that call has timed out the stream has outlived the timeout, and it still gets
 // its whole answer when the backend sends it.
 func TestStreamOutlivesTheUnaryTimeout(t *testing.T) {
-	t.Parallel()
+	// Not parallel: the stream's headers must arrive within the 100 ms timeout.
 	for _, ct := range []string{"application/connect+json", "application/connect+proto"} {
 		t.Run(ct, func(t *testing.T) {
-			t.Parallel()
 			srv, streaming, release := stallingBackend(t)
 			r := newRelay(t, backend.Config{Address: strings.TrimPrefix(srv.URL, "http://"), Timeout: 100 * time.Millisecond})
 			stream := asCaller(t, http.MethodPost, list, strings.NewReader(`{}`), http.Header{"Content-Type": {ct}})

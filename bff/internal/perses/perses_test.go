@@ -505,7 +505,7 @@ func hangUpListener(t *testing.T) string {
 }
 
 func TestRelayWhenPersesFails(t *testing.T) {
-	t.Parallel()
+	// Not parallel with the package's other tests, see "slow body".
 	dashboards := Prefix + "/api/v1/projects/ai-grid-monitoring/dashboards"
 	t.Run("down", func(t *testing.T) {
 		t.Parallel()
@@ -535,7 +535,7 @@ func TestRelayWhenPersesFails(t *testing.T) {
 	})
 
 	t.Run("slow body", func(t *testing.T) {
-		t.Parallel()
+		// Not parallel: the headers must arrive within the 50 ms timeout, TLS handshake included.
 		stall := make(chan struct{})
 		stalls := tlsUpstream(t, func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")

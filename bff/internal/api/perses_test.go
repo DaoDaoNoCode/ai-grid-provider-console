@@ -146,7 +146,7 @@ func (b *lockedBuffer) String() string {
 // connection at its timeout. The browser gets no answer (the bytes were still in the server's
 // buffer) or a truncated one, never a 500 written over it, and the request is still logged.
 func TestPersesAnswerCutAtTheTimeout(t *testing.T) {
-	t.Parallel()
+	// Not parallel: the headers must arrive within the 100 ms timeout.
 	stall := make(chan struct{})
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
