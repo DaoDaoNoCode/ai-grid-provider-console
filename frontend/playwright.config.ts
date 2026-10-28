@@ -12,12 +12,17 @@ export default defineConfig({
   testDir: './e2e',
   timeout: 30_000,
   retries: 0,
+  // A test.only left in a commit would otherwise make CI run that one test and pass.
+  forbidOnly: !!process.env.CI,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: origin,
-    viewport: { width: 1440, height: 900 },
     colorScheme: 'light',
     trace: 'retain-on-failure',
+    // Without these an action or a navigation that never completes uses up the whole test
+    // timeout and is reported as a bare test timeout; with them the failure names the line.
+    actionTimeout: 10_000,
+    navigationTimeout: 15_000,
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } } }],
   webServer: {
