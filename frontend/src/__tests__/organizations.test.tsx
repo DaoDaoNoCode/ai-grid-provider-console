@@ -72,7 +72,7 @@ const requiredIdp: [string, string][] = [
   ['Token URL', 'https://idp.example.com/token'],
 ];
 
-it('onboards organization details then IdP, saves only after review, supports details/edit/delete and orders navigation', async () => {
+it('onboards organization details then IdP, saves only after review and orders navigation', async () => {
   const service = emptyService();
   const user = userEvent.setup();
   renderAt('/organizations', service);
@@ -124,6 +124,14 @@ it('onboards organization details then IdP, saves only after review, supports de
   expect(table).toHaveTextContent('tenant1.example.com');
   expect(await screen.findByText('Organization and identity provider saved')).toBeVisible();
   expect(service.organizations[0].identityProvider?.config.clientSecretSecret.name).toBe('tenant1-secret');
+});
+
+it('opens an organization from the list and edits its identity provider', async () => {
+  const service = emptyService();
+  await service.createOrganization(input);
+  const user = userEvent.setup();
+  renderAt('/organizations', service);
+  const table = await screen.findByTestId('tenants-table');
   await user.click(within(table).getByRole('link', { name: 'tenant1' }));
   expect(await screen.findByTestId('tenant-configuration-details')).toHaveTextContent(
     'https://sso.example.com/tenant1',
@@ -145,6 +153,15 @@ it('onboards organization details then IdP, saves only after review, supports de
   await saveEdit(user);
   expect(await screen.findByText('Organization configuration saved')).toBeVisible();
   expect(await screen.findByTestId('tenant-configuration-details')).toHaveTextContent('Updated SSO');
+});
+
+it('deletes an organization from its page after its name is typed', async () => {
+  const service = emptyService();
+  await service.createOrganization(input);
+  const user = userEvent.setup();
+  renderAt('/organizations', service);
+  await user.click(within(await screen.findByTestId('tenants-table')).getByRole('link', { name: 'tenant1' }));
+  expect(await screen.findByRole('heading', { name: 'tenant1' })).toBeVisible();
   await user.click(screen.getByTestId('organization-actions'));
   await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
   const modal = await screen.findByTestId('delete-tenant-modal');

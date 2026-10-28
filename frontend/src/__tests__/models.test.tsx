@@ -72,7 +72,7 @@ const site1 = 'San Francisco (site1)';
 const site2 = 'New York (site2)';
 const site3 = 'Brussels (site3)';
 
-it('walks the deployment wizard, selects locations, saves the model and removes it', async () => {
+it('walks the deployment wizard, selects locations and saves the model', async () => {
   const service = new MockConsoleService();
   const user = userEvent.setup();
   renderAt('/models', service);
@@ -114,8 +114,14 @@ it('walks the deployment wizard, selects locations, saves the model and removes 
     modelRef: { kind: 'LLMInferenceService', name: 'widget' },
     locations: ['site1', 'site2'],
   });
+});
 
-  await user.click(screen.getByTestId('model-actions-widget'));
+it('removes a model after its name is typed', async () => {
+  const service = new MockConsoleService();
+  await service.createModel(input);
+  const user = userEvent.setup();
+  renderAt('/models', service);
+  await user.click(await screen.findByTestId('model-actions-widget'));
   await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
   const dialog = await screen.findByTestId('delete-deployment-modal');
   expect(dialog).toHaveTextContent('Delete model deployment?');
