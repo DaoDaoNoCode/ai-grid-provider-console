@@ -105,6 +105,31 @@ func TestV1ListClustersForwardsPage(t *testing.T) {
 	}
 }
 
+// GET /api/v1/clusters/{name} on the real backend: Clusters/Get by id, the
+// answer mapped like a listed cluster, and the backend's error as it is.
+func TestV1GetCluster(t *testing.T) {
+	conn := &recordingConn{reply: &backendv1.ClustersGetResponse{Object: &backendv1.ManagedCluster{
+		Id: "site1", Metadata: &backendv1.Metadata{Version: 4, Labels: map[string]string{"ai-grid/enabled": "true"}},
+	}}}
+	resp, err := v1Clusters{conn}.GetManagedCluster(t.Context(), &aigridv1.GetManagedClusterRequest{Name: "site1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (&backendv1.ClustersGetRequest{Id: "site1"}); conn.method != methodClustersGet || !proto.Equal(conn.req.(proto.Message), want) {
+		t.Fatalf("sent %s %v, want %s %v", conn.method, conn.req, methodClustersGet, want)
+	}
+	got := resp.GetObject()
+	if got.GetName() != "site1" || got.GetResourceVersion() != "4" || got.GetLabels()["ai-grid/enabled"] != "true" {
+		t.Fatalf("got name %q, version %q, labels %v; want site1 at 4 with ai-grid/enabled", got.GetName(), got.GetResourceVersion(), got.GetLabels())
+	}
+
+	missing := &methodConn{errs: map[string]error{methodClustersGet: status.Error(codes.NotFound, `ManagedCluster "site9" not found`)}}
+	_, err = v1Clusters{missing}.GetManagedCluster(t.Context(), &aigridv1.GetManagedClusterRequest{Name: "site9"})
+	if status.Code(err) != codes.NotFound || len(missing.called) != 1 {
+		t.Fatalf("unknown cluster: %v after %v, want the backend's NotFound from one call", err, missing.called)
+	}
+}
+
 func TestFromV1ClusterDetails(t *testing.T) {
 	changed := timestamppb.New(time.Date(2026, 10, 21, 4, 1, 2, 0, time.UTC))
 	mc := &backendv1.ManagedCluster{Id: "site-a", Spec: &backendv1.ManagedClusterSpec{HubAcceptsClient: true}, Status: &backendv1.ManagedClusterStatus{
