@@ -984,7 +984,7 @@ func TestTenantIdentityProviderRoundTrips(t *testing.T) {
 		t.Errorf("updated = %v", updated.GetObject())
 	}
 	_, err = s.UpdateTenant(ctx, &aigridv1.UpdateTenantRequest{Object: &aigridv1.Tenant{Id: id}, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{PathIdentityProvider}}})
-	if fieldViolations(err)["identityProvider"] != "Invalid input: expected object, received undefined" {
+	if fieldViolations(err)["identityProvider"] != "Required." {
 		t.Errorf("identity_provider in the mask without a value: %v", err)
 	}
 	if created, err := s.CreateTenant(ctx, &aigridv1.CreateTenantRequest{Object: &aigridv1.Tenant{Name: "no-idp"}}); err != nil || created.GetObject().GetIdentityProvider() != nil {
@@ -1078,17 +1078,17 @@ func TestIdentityProviderIsValidatedAndTrimmed(t *testing.T) {
 		"empty secret reference": {with(func(p *aigridv1.IdentityProvider) { p.Config.ClientSecretSecretName = "" }),
 			map[string]string{"identityProvider.config.clientSecretSecret.name": "Enter a valid secret reference name."}},
 		"disabled identity provider": {with(func(p *aigridv1.IdentityProvider) { p.Enabled = proto.Bool(false) }),
-			map[string]string{"identityProvider.enabled": "Invalid input: expected true"}},
+			map[string]string{"identityProvider.enabled": "Only true is allowed."}},
 		"long title and description": {with(func(p *aigridv1.IdentityProvider) {
 			p.Title, p.Description = strings.Repeat("t", 254), strings.Repeat("d", 4001)
 		}), map[string]string{
-			"identityProvider.title":       "Too big: expected string to have <=253 characters",
-			"identityProvider.description": "Too big: expected string to have <=4000 characters",
+			"identityProvider.title":       "Enter at most 253 characters.",
+			"identityProvider.description": "Enter at most 4000 characters.",
 		}},
 		"long scopes": {with(func(p *aigridv1.IdentityProvider) { p.Config.DefaultScopes = strings.Repeat("s", 2049) }),
-			map[string]string{"identityProvider.config.defaultScopes": "Too big: expected string to have <=2048 characters"}},
+			map[string]string{"identityProvider.config.defaultScopes": "Enter at most 2048 characters."}},
 		"no config": {with(func(p *aigridv1.IdentityProvider) { p.Config = nil }),
-			map[string]string{"identityProvider.config": "Invalid input: expected object, received undefined"}},
+			map[string]string{"identityProvider.config": "Required."}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := create(tc.idp)

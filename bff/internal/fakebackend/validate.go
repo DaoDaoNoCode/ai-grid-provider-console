@@ -46,18 +46,18 @@ func joinMessages(fields map[string]string) string {
 
 // The PoC's identity-provider rules, from its identityProviderSchema and
 // oidcConfigSchema (krisv/ai-grid-cloud-provider-poc
-// shared/tenant-validation.mjs at 62319b8), with zod 4's default messages where
-// the PoC sets none. Paths are the console's JSON paths under
+// shared/tenant-validation.mjs at 62319b8), with the console's wording
+// (frontend/src/validation/zod.ts) where the PoC sets no message. Paths are the console's JSON paths under
 // `identityProvider`, the shape the BFF translates from (proposal P1).
 const (
 	pathIdP          = "identityProvider"
-	msgNoObject      = "Invalid input: expected object, received undefined"
+	msgNoObject      = "Required."
 	msgClientID      = "Client ID is required."
 	msgSecretMissing = "Client secret reference is required."
 	msgSecretName    = "Enter a valid secret reference name."
 	msgURL           = "Enter a valid HTTP or HTTPS URL."
 	msgHTTP          = "Use HTTP or HTTPS."
-	msgIdPDisabled   = "Invalid input: expected true"
+	msgIdPDisabled   = "Only true is allowed."
 )
 
 var (
@@ -153,10 +153,10 @@ func trimmed(errs map[string]string, path, s string, n int) string {
 	return s
 }
 
-// maxLen is zod's .max(n) with its default message.
+// maxLen is zod's .max(n) with the console's message.
 func maxLen(errs map[string]string, path, s string, n int) {
 	if len(utf16.Encode([]rune(s))) > n {
-		errs[path] = "Too big: expected string to have <=" + strconv.Itoa(n) + " characters"
+		errs[path] = "Enter at most " + strconv.Itoa(n) + " characters."
 	}
 }
 

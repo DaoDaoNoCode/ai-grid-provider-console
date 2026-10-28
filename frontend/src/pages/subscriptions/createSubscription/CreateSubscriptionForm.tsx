@@ -19,7 +19,7 @@ import {
   TextInput,
 } from '@patternfly/react-core';
 import { create, type MessageInitShape } from '@bufbuild/protobuf';
-import { z } from 'zod';
+import { z } from '../../../validation/zod';
 import { describeError } from '../../../api/connect/errors';
 import { SYSTEM_AUTHENTICATED_GROUP } from '../../../api/types';
 import { AddModelsModal } from '../../../components/AddModelsModal';
