@@ -108,6 +108,17 @@ export default defineConfig(({ command }) => ({
   build: {
     outDir: 'dist',
     sourcemap: true,
+    rollupOptions: {
+      treeshake: {
+        // @perses-dev/components, unlike Perses's other packages, doesn't declare "sideEffects": false.
+        // So Rollup follows every import its index reaches, used or not, and keeps the top-level code
+        // of what they import: the YAML editor's yaml and @lezer/yaml (about 36 kB gzipped in the
+        // Monitoring chunk), which the console never shows. Its modules have no side effects of their
+        // own (its fonts come from @fontsource, which this leaves alone). Remove this once Perses
+        // declares it.
+        moduleSideEffects: (id) => !id.includes('/@perses-dev/components/'),
+      },
+    },
   },
   test: {
     globals: true,
