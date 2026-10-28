@@ -543,6 +543,7 @@
         "runtimeArgs": [
           "--max-model-len=8192"
         ],
+        "baseRefs": [],
         "locations": [
           "site1",
           "site2"
@@ -567,6 +568,7 @@
         "runtimeArgs": [
           "--max-model-len=8192"
         ],
+        "baseRefs": [],
         "locations": [
           "site1",
           "site2"
@@ -593,6 +595,7 @@
         "runtimeArgs": [
           "--max-model-len=8192"
         ],
+        "baseRefs": [],
         "locations": [
           "site1",
           "site2"
@@ -619,6 +622,7 @@
         "runtimeArgs": [
           "--max-model-len=8192"
         ],
+        "baseRefs": [],
         "locations": [
           "site1",
           "site2"
@@ -645,6 +649,7 @@
         "runtimeArgs": [
           "--max-model-len=8192"
         ],
+        "baseRefs": [],
         "locations": [
           "site1",
           "site2"
@@ -669,6 +674,7 @@
         "runtimeArgs": [
           "--max-model-len=8192"
         ],
+        "baseRefs": [],
         "locations": [
           "site1",
           "site2"
@@ -693,6 +699,7 @@
         "runtimeArgs": [
           "--max-model-len=8192"
         ],
+        "baseRefs": [],
         "locations": [
           "site1",
           "site2"
@@ -719,6 +726,7 @@
         "runtimeArgs": [
           "--max-model-len=8192"
         ],
+        "baseRefs": [],
         "locations": [
           "site1",
           "site2"
@@ -745,6 +753,7 @@
         "runtimeArgs": [
           "--max-model-len=8192"
         ],
+        "baseRefs": [],
         "locations": [
           "site1",
           "site2"
@@ -771,6 +780,7 @@
         "runtimeArgs": [
           "--max-model-len=8192"
         ],
+        "baseRefs": [],
         "locations": [
           "site1",
           "site2"
@@ -797,6 +807,7 @@
         "runtimeArgs": [
           "--max-model-len=8192"
         ],
+        "baseRefs": [],
         "locations": []
       },
       "fieldErrors": {
@@ -820,6 +831,7 @@
         "runtimeArgs": [
           "--max-model-len=8192"
         ],
+        "baseRefs": [],
         "locations": [
           "bad location"
         ]
@@ -845,6 +857,7 @@
         "runtimeArgs": [
           "--max-model-len=8192"
         ],
+        "baseRefs": [],
         "locations": [
           "site1",
           "site1"
@@ -871,6 +884,7 @@
         "runtimeArgs": [
           "--max-model-len=8192"
         ],
+        "baseRefs": [],
         "locations": [
           "site1",
           "site2"
@@ -897,6 +911,7 @@
         "runtimeArgs": [
           "--max-model-len=8192"
         ],
+        "baseRefs": [],
         "locations": [
           "site1",
           "site2"
@@ -923,6 +938,7 @@
         "runtimeArgs": [
           "--max-model-len=8192"
         ],
+        "baseRefs": [],
         "locations": [
           "site1",
           "site2"
@@ -950,6 +966,7 @@
         "runtimeArgs": [
           "--max-model-len=8192"
         ],
+        "baseRefs": [],
         "locations": [
           "site1",
           "site2"
@@ -976,6 +993,7 @@
         "memory": "Required",
         "gpuCount": "Required",
         "runtimeArgs": "Required",
+        "baseRefs": "Required",
         "locations": "Required"
       }
     },
@@ -996,6 +1014,7 @@
         "runtimeArgs": [
           "--max-model-len=8192"
         ],
+        "baseRefs": [],
         "locations": [
           "site1",
           "site2"
@@ -1003,6 +1022,35 @@
       },
       "fieldErrors": {
         "runtimeImage": "Enter a container image without spaces."
+      }
+    },
+    {
+      "schema": "model",
+      "name": "empty preset name",
+      "input": {
+        "name": "granite-3-8b",
+        "displayName": "Granite 3.3 8B Instruct",
+        "description": "Enterprise language model",
+        "modelUri": "hf://example-org/granite-8b-instruct",
+        "modelName": "example-org/granite-8b-instruct",
+        "runtimeImage": "registry.example.com/vllm/vllm-openai:v0.11.0",
+        "replicas": 1,
+        "cpu": "2",
+        "memory": "4Gi",
+        "gpuCount": 1,
+        "runtimeArgs": [
+          "--max-model-len=8192"
+        ],
+        "baseRefs": [
+          ""
+        ],
+        "locations": [
+          "site1",
+          "site2"
+        ]
+      },
+      "fieldErrors": {
+        "baseRefs.0": "Enter a preset name."
       }
     },
     {
@@ -1022,6 +1070,7 @@
         "runtimeArgs": [
           "--max-model-len=8192"
         ],
+        "baseRefs": [],
         "locations": [
           "site1",
           "site2"
@@ -1048,6 +1097,7 @@
         "runtimeArgs": [
           "--max-model-len=8192"
         ],
+        "baseRefs": [],
         "locations": [
           "bad location",
           "bad location"
@@ -1076,6 +1126,7 @@
         "runtimeArgs": [
           "--max-model-len=8192"
         ],
+        "baseRefs": [],
         "locations": [
           1,
           1
@@ -1103,6 +1154,7 @@
         "runtimeArgs": [
           "--max-model-len=8192"
         ],
+        "baseRefs": [],
         "locations": [
           "site1",
           "site2"
@@ -1193,6 +1245,7 @@
           "--arg63",
           "--arg64"
         ],
+        "baseRefs": [],
         "locations": [
           "site1",
           "site2"

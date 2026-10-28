@@ -272,6 +272,7 @@ export class MockConsoleService implements ConsoleService {
       cpu: input.cpu,
       memory: input.memory,
       gpuCount: input.gpuCount,
+      baseRefs: [...input.baseRefs],
       env: withRuntimeArgs([], input.runtimeArgs),
       annotations: {
         ...(input.displayName.trim() ? { 'openshift.io/display-name': input.displayName.trim() } : {}),
@@ -723,6 +724,7 @@ export const seedModels = (): ManagedModel[] =>
     cpu: '2',
     memory: '4Gi',
     gpuCount: 0,
+    baseRefs: ['v3-6-0-kserve-config-llm-template-cpu'],
     env: [],
     annotations: {
       'openshift.io/display-name': displayName,

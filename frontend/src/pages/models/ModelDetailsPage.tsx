@@ -18,6 +18,7 @@ import { ModelStatusDetails, ModelStatusLabel } from './ModelStatus';
 import { PARTIALLY_AVAILABLE, hasModelStatusDetails, modelPhase, modelStatusTitle } from './modelStatusInfo';
 import type { ModelDeleteService } from './useDeleteModel';
 import { useDeleteModel } from './useDeleteModel';
+import { modelServerLabel } from './modelServers';
 
 type Props = { service: ModelDeleteService & Pick<ClustersService, 'listClusters'> };
 
@@ -67,6 +68,7 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
               { term: 'Description', value: model.description },
               { term: 'Model', value: model.modelName ?? model.modelRef.name },
               { term: 'Model URI', value: model.modelUri },
+              { term: 'Model server', value: modelServerLabel(model.baseRefs) || undefined },
               { term: 'Runtime image', value: model.runtimeImage },
               { term: 'Replicas', value: model.replicas },
               { term: 'Endpoint', value: model.endpoint },

@@ -15,6 +15,8 @@ import {
   Form,
   FormGroup,
   FormHelperText,
+  FormSelect,
+  FormSelectOption,
   HelperText,
   HelperTextItem,
   PageSection,
@@ -44,6 +46,7 @@ import { createModelSchema, fieldMessage } from '../../validation';
 import { RuntimeArgsField } from './fields/RuntimeArgsField';
 import { filterRuntimeArgsForContainer, type RuntimeArgsFieldData } from './fields/runtimeArgs';
 import { locationLabel, modelPath, siteNamesOf } from './modelUtils';
+import { type ModelServer, modelServerLabel, modelServers } from './modelServers';
 
 type Props = {
   service: ModelsService & UserService & Pick<ClustersService, 'listClusters'>;
@@ -209,6 +212,18 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
   const [cpu, setCpu] = useState(start.cpu);
   const [memory, setMemory] = useState(start.memory);
   const [gpuCount, setGpuCount] = useState(start.gpuCount);
+  // A deployed model keeps its presets; the choice is only made when deploying.
+  // No default: the grid's sites can be GPU or CPU-only clusters, so the user picks one.
+  const [serverId, setServerId] = useState<ModelServer['id'] | ''>('');
+  const server = modelServers.find((s) => s.id === serverId);
+  const chooseServer = (id: ModelServer['id']) => {
+    setServerId(id);
+    // A GPU server starts at one GPU (none is what crash-loops); a CPU server hides the field,
+    // so it goes back to its default rather than keep a value nobody can see or fix.
+    if (!modelServers.find((s) => s.id === id)?.usesGpus) setGpuCount(defaults.gpuCount);
+    else if (gpuCount === defaults.gpuCount || gpuCount === '') setGpuCount('1');
+  };
+  const usesGpus = editing || Boolean(server?.usesGpus);
   const [runtimeArgs, setRuntimeArgs] = useState<RuntimeArgsFieldData>({
     enabled: start.runtimeArgs.length > 0,
     args: start.runtimeArgs,
@@ -229,8 +244,10 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
     replicas: Number(replicas),
     cpu,
     memory,
-    gpuCount: Number(gpuCount),
+    // A CPU server asks for no GPUs, whatever the hidden field last held.
+    gpuCount: usesGpus ? Number(gpuCount) : 0,
     runtimeArgs: filterRuntimeArgsForContainer(runtimeArgs.args),
+    baseRefs: model ? model.baseRefs : (server?.baseRefs ?? []),
     locations,
   };
   const update = model
@@ -243,6 +260,7 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
       cpu !== defaults.cpu ||
       memory !== defaults.memory ||
       gpuCount !== defaults.gpuCount ||
+      serverId !== '' ||
       runtimeArgs.enabled ||
       locations.length > 0;
   const detailsPath = model ? modelPath(model) : '';
@@ -262,7 +280,12 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
   const replicasError = shownError('replicas', replicas, Number);
   const cpuError = shownError('cpu', cpu);
   const memoryError = shownError('memory', memory);
-  const gpuCountError = shownError('gpuCount', gpuCount, Number);
+  // KServe's GPU preset with no GPUs is what crash-loops on a CPU-only node.
+  const gpusMissing = !editing && Boolean(server?.usesGpus) && gpuCount !== '' && Number(gpuCount) < 1;
+  const serverError = !editing && touched.has('server') && !server ? 'Required.' : undefined;
+  const gpuCountError =
+    shownError('gpuCount', gpuCount, Number) ??
+    (touched.has('gpuCount') && gpusMissing ? 'A GPU model server needs at least 1 GPU.' : undefined);
   // A deployed model's source, name and resources are fixed, so only what an edit can change is checked.
   const sourceValid =
     editing || createModelSchema.pick({ modelUri: true, modelName: true }).safeParse({ modelUri, modelName }).success;
@@ -277,8 +300,10 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
       (!replicasEditable ||
         replicas === start.replicas ||
         (replicas !== '' && createModelSchema.shape.replicas.safeParse(input.replicas).success))
-    : replicas !== '' &&
+    : server !== undefined &&
+      replicas !== '' &&
       gpuCount !== '' &&
+      !gpusMissing &&
       createModelSchema.omit({ locations: true }).strip().safeParse(input).success;
   // An edit that keeps the locations doesn't depend on which locations are offered right now.
   const locationsChanged = !editing || !sameSet(locations, start.locations);
@@ -411,6 +436,24 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
     );
   };
 
+  // A hint only, from the GPU counts the clusters list already carries: a GPU server on a cluster
+  // with no GPUs never schedules, and a CPU server on a GPU cluster leaves its GPUs unused.
+  const serverMismatch = (() => {
+    if (editing || !server) return undefined;
+    const chosen = clusters.filter(
+      (c) => c.aiGridEnabled && (locations.includes(c.name) || (c.location && locations.includes(c.location))),
+    );
+    const mismatched = chosen
+      .filter((c) => c.gpuCapacity !== undefined && (server.usesGpus ? c.gpuCapacity === 0 : c.gpuCapacity > 0))
+      .map((c) => c.name)
+      .sort();
+    if (mismatched.length === 0) return undefined;
+    const names = mismatched.join(', ');
+    return server.usesGpus
+      ? `${names} ${mismatched.length === 1 ? 'reports' : 'report'} no GPUs, so ${server.label} can't run there.`
+      : `${names} ${mismatched.length === 1 ? 'has' : 'have'} GPUs that ${server.label} doesn't use.`;
+  })();
+
   const review = [
     {
       title: 'Source',
@@ -426,11 +469,12 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
       items: [
         { term: 'Deployment name', value: nameDescData.name },
         { term: 'Description', value: nameDescData.description },
+        { term: 'Model server', value: modelServerLabel(input.baseRefs) },
         { term: 'Runtime image', value: runtimeImage },
         { term: 'Replicas', value: replicasEditable ? replicas : 'Autoscaled' },
         { term: 'CPU', value: cpu },
         { term: 'Memory', value: memory },
-        { term: 'GPUs', value: gpuCount },
+        { term: 'GPUs', value: String(input.gpuCount) },
         { term: 'Additional runtime arguments', value: input.runtimeArgs.join(' ') },
       ],
     },
@@ -556,6 +600,34 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
                 nameLabel="Deployment name"
                 nameHelperText={editing ? undefined : 'Choose a resource name of at most 63 characters.'}
               />
+              {editing ? (
+                <ReadOnlyField
+                  label="Model server"
+                  fieldId="model-server"
+                  value={modelServerLabel(input.baseRefs)}
+                  reason={fixedReason.resources}
+                />
+              ) : (
+                <FormGroup label="Model server" fieldId="model-server" isRequired>
+                  <FormSelect
+                    id="model-server"
+                    aria-describedby="model-server-help"
+                    value={serverId}
+                    onChange={(_event, value) => chooseServer(value as ModelServer['id'])}
+                    onBlur={() => touch('server')}
+                    validated={serverError ? 'error' : 'default'}
+                    isRequired
+                  >
+                    <FormSelectOption isPlaceholder isDisabled value="" label="Select a model server" />
+                    {modelServers.map((s) => (
+                      <FormSelectOption key={s.id} value={s.id} label={s.label} />
+                    ))}
+                  </FormSelect>
+                  <Help id="model-server-help" error={serverError}>
+                    {server?.description ?? 'Choose the build that matches the hardware of the clusters you deploy to.'}
+                  </Help>
+                </FormGroup>
+              )}
               <FormGroup label="Runtime image" fieldId="runtime-image" isRequired>
                 <TextInput
                   id="runtime-image"
@@ -567,7 +639,8 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
                   isRequired
                 />
                 <Help id="runtime-image-help" error={runtimeImageError}>
-                  Container image for the serving runtime.
+                  Container image for the serving runtime. It must match the model server, such as a vLLM CPU image for
+                  vLLM on CPU.
                 </Help>
               </FormGroup>
               {replicasEditable ? (
@@ -647,22 +720,24 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
                       For example 4Gi or 512Mi.
                     </Help>
                   </FormGroup>
-                  <FormGroup label="GPUs" fieldId="deployment-gpus" isRequired>
-                    <CountInput
-                      id="deployment-gpus"
-                      label="GPUs"
-                      min={0}
-                      max={64}
-                      value={gpuCount}
-                      onChange={setGpuCount}
-                      onBlur={() => touch('gpuCount')}
-                      describedBy="deployment-gpus-help"
-                      validated={gpuCountError ? 'error' : 'default'}
-                    />
-                    <Help id="deployment-gpus-help" error={gpuCountError}>
-                      Between 0 and 64.
-                    </Help>
-                  </FormGroup>
+                  {usesGpus && (
+                    <FormGroup label="GPUs" fieldId="deployment-gpus" isRequired>
+                      <CountInput
+                        id="deployment-gpus"
+                        label="GPUs"
+                        min={1}
+                        max={64}
+                        value={gpuCount}
+                        onChange={setGpuCount}
+                        onBlur={() => touch('gpuCount')}
+                        describedBy="deployment-gpus-help"
+                        validated={gpuCountError ? 'error' : 'default'}
+                      />
+                      <Help id="deployment-gpus-help" error={gpuCountError}>
+                        Between 1 and 64.
+                      </Help>
+                    </FormGroup>
+                  )}
                 </>
               )}
               <ExpandableSection toggleText="Advanced settings" isIndented>
@@ -678,6 +753,9 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
             id={steps.review}
             isDisabled={!sourceValid || !deploymentValid || !locationsValid || saving}
           >
+            {serverMismatch && (
+              <Alert isInline variant="warning" title={serverMismatch} data-testid="model-server-mismatch" />
+            )}
             <ReviewStep sections={review} />
           </WizardStep>
         </Wizard>

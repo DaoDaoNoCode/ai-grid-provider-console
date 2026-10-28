@@ -245,6 +245,7 @@ export const createModelSchema = z
     memory: z.string().regex(/^[1-9]\d*(?:Mi|Gi|Ti)$/, 'Enter memory such as 4Gi or 512Mi.'),
     gpuCount: z.number().int().min(0).max(64),
     runtimeArgs: z.array(z.string().max(4096)).max(64),
+    baseRefs: z.array(z.string().min(1, 'Enter a preset name.').max(253)).max(8),
     locations: locationsSchema.refine((values) => values.length > 0, 'Select at least one location.'),
   })
   .strict();
