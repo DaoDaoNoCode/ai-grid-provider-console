@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RelayDatasourceApi } from './persesDatasourceApi';
 
 const datasource = (name: string, isDefault = false) => ({
@@ -13,8 +13,6 @@ const answer = (body: unknown, status = 200) => {
   vi.stubGlobal('fetch', fetchFn);
   return fetchFn;
 };
-
-afterEach(() => vi.unstubAllGlobals());
 
 describe('RelayDatasourceApi', () => {
   // A fresh API per test: each has its own cache.

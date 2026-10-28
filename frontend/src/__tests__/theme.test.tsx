@@ -39,8 +39,6 @@ const expectChoice = (name: string) => {
 };
 
 afterEach(() => {
-  vi.unstubAllGlobals();
-  vi.restoreAllMocks();
   localStorage.clear();
   document.documentElement.classList.remove(DARK_THEME_CLASS);
 });

@@ -103,6 +103,10 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./vitest.setup.ts'],
     css: false,
+    // Every test starts with the real functions and globals: spies (vi.spyOn) and vi.stubGlobal are
+    // undone before each test, so no file restores them by hand.
+    restoreMocks: true,
+    unstubGlobals: true,
     // Playwright specs run with `pnpm e2e`.
     exclude: ['**/node_modules/**', 'e2e/**'],
   },

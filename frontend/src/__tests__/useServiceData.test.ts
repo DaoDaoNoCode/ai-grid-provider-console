@@ -104,7 +104,6 @@ describe('in a hidden tab', () => {
 
   afterEach(() => {
     vi.useRealTimers();
-    vi.restoreAllMocks();
   });
 
   it('skips polls while the tab is hidden and asks again when it shows after the interval', async () => {
