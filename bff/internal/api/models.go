@@ -207,8 +207,12 @@ type ModelPlacement struct {
 	PlacementSpec
 	// SelectedClusters are the PlacementDecision's clusters, in name order.
 	SelectedClusters []string `json:"selectedClusters"`
-	// Locations are the decided clusters' `location` labels (P8), as the
-	// backend reports them.
+	// Locations are the decided cluster names: fromV1ModelStatus
+	// (internal/backend/v1_models.go) fills them from the backend's
+	// selected_clusters, a location being a cluster, and does not read the
+	// backend's placement.locations, which holds the decided clusters'
+	// `location` label values (P8). Only the fake (--fake-backend) still
+	// reports those label values here.
 	Locations []string `json:"locations"`
 	// Satisfied is `PlacementSatisfied`; Reason and Message are its reason and message.
 	Satisfied  bool               `json:"satisfied"`

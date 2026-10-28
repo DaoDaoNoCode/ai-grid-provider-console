@@ -19,6 +19,8 @@ import {
 } from '@patternfly/react-core';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import type { Transport } from '@connectrpc/connect';
+import { BackendProvider } from './api/connect/BackendProvider';
 import type { ConsoleService } from './api/ConsoleService';
 import { AppRoutes } from './AppRoutes';
 import { FakeBackendBanner } from './components/FakeBackendBanner';
@@ -45,6 +47,8 @@ import {
 
 type Props = {
   service: ConsoleService;
+  /** The backend's API over Connect for every page (Connect Query); a test gives fakeClients' transport. */
+  transport?: Transport;
   /** The browser's location and session storage; a test gives its own. */
   navigation?: Navigation;
   storage?: GetStorage;
@@ -64,7 +68,12 @@ const sections: { path: string; label: string; exact?: boolean }[] = [
   { path: '/subscriptions', label: 'Subscriptions' },
 ];
 
-export const App: React.FC<Props> = ({ service: given, navigation = browserNavigation, storage = browserStorage }) => {
+export const App: React.FC<Props> = ({
+  service: given,
+  transport,
+  navigation = browserNavigation,
+  storage = browserStorage,
+}) => {
   // Any call answered 401 means the session has ended. As the OpenShift console does (handle401 in
   // openshift/console frontend/public/module/auth.ts), the console then goes through the login
   // again, once per page load, unless it has just come back from the login and been refused again.
@@ -215,25 +224,27 @@ export const App: React.FC<Props> = ({ service: given, navigation = browserNavig
   return (
     <ThemeProvider>
       <ConsoleSessionContext.Provider value={session}>
-        <Page
-          isContentFilled
-          masthead={header}
-          sidebar={fullPage ? undefined : sidebar}
-          banner={<FakeBackendBanner />}
-          mainContainerId={MAIN_ID}
-          skipToContent={<SkipToContent href={`#${MAIN_ID}`}>Skip to content</SkipToContent>}
-        >
-          <NoticeToast />
-          {content}
-          <AboutConsoleModal
-            isOpen={aboutOpen}
-            onClose={() => setAboutOpen(false)}
-            config={config}
-            configError={configError}
-            user={user}
-            userError={userError}
-          />
-        </Page>
+        <BackendProvider transport={transport} checkSession={checkSession}>
+          <Page
+            isContentFilled
+            masthead={header}
+            sidebar={fullPage ? undefined : sidebar}
+            banner={<FakeBackendBanner />}
+            mainContainerId={MAIN_ID}
+            skipToContent={<SkipToContent href={`#${MAIN_ID}`}>Skip to content</SkipToContent>}
+          >
+            <NoticeToast />
+            {content}
+            <AboutConsoleModal
+              isOpen={aboutOpen}
+              onClose={() => setAboutOpen(false)}
+              config={config}
+              configError={configError}
+              user={user}
+              userError={userError}
+            />
+          </Page>
+        </BackendProvider>
       </ConsoleSessionContext.Provider>
     </ThemeProvider>
   );

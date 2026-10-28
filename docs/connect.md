@@ -55,22 +55,38 @@ page ── generated client ──► kube-auth-proxy ──► BFF relay ─�
 
 ## Using it in a page
 
-```ts
-import { Code, ConnectError } from '@connectrpc/connect';
-import { createConsoleClients } from '../api/connect/clients';
-import { createConsoleTransport } from '../api/connect/transport';
+`App` wraps every page in `BackendProvider` (`frontend/src/api/connect/BackendProvider.tsx`): the
+Connect transport to the console's origin, which calls the console's `checkSession` on
+Unauthenticated, and a Query v5 `QueryClient`. A page needs no provider of its own; it calls the
+generated Connect Query descriptors (`frontend/src/gen/ai_grid/v1/*_connectquery.ts`, one export
+per RPC) with the hooks from `@connectrpc/connect-query`:
+
+```tsx
+import { createConnectQueryKey, useMutation, useQuery } from '@connectrpc/connect-query';
+import { useQueryClient } from '@tanstack/react-query';
+import { Clusters } from '../gen/ai_grid/v1/clusters_service_pb';
+import { list, update } from '../gen/ai_grid/v1/clusters_service-Clusters_connectquery';
 import { describeError } from '../api/connect/errors';
 
-const { clusters } = createConsoleClients(createConsoleTransport({ checkSession }));
+const queryClient = useQueryClient();
+const clusters = useQuery(list, { limit: 50 }, { refetchInterval: 30_000 });
+const save = useMutation(update, {
+  // Refetch every Clusters query once the write lands.
+  onSuccess: () =>
+    queryClient.invalidateQueries({ queryKey: createConnectQueryKey({ schema: Clusters, cardinality: undefined }) }),
+});
 
-const { items, total } = await clusters.list({ limit: 50 });
-
-await clusters.update({
+save.mutate({
   object: { id: c.id, metadata: { labels: next, version: c.metadata?.version } },
   updateMask: { paths: ['metadata.labels'] },
   lock: true, // the backend answers Aborted if someone changed it since c was read
 });
+// clusters.error and save.error are ConnectErrors: describeError(error) gives the page's state.
 ```
+
+`frontend/src/api/connect/BackendProvider.test.tsx` runs this pattern against a fake. Outside a
+component (a one-off call, a script), `createConsoleClients(createConsoleTransport({ checkSession }))`
+gives plain typed clients.
 
 - **Errors.** `describeError` and `toServiceError` (`errors.ts`) turn a `ConnectError` into the
   states the pages already show: NotFound, Aborted (a conflict: reload and say so),
@@ -89,18 +105,7 @@ await clusters.update({
 - **Unknown fields** in an answer from a newer backend are ignored, so the console keeps working
   until the pin moves.
 
-### Connect Query in a migrating page
-
-Wrap the area in `BackendProvider` from `frontend/src/api/connect/BackendProvider.tsx`,
-passing `useConsoleSession().checkSession`. It provides the session-aware transport and a
-Query v5 cache. Tests can pass the transport from `fakeClients`. For example:
-
-```ts
-import { useQuery } from '@connectrpc/connect-query';
-import { list } from '../gen/ai_grid/v1/clusters_service-Clusters_connectquery';
-
-const clusters = useQuery(list, { limit: 50 }, { refetchInterval: 30_000 });
-```
+### Query v5 and the Monitoring page
 
 Query v5 is pinned for the console and Perses plugins in `pnpm-workspace.yaml`. Perses 0.54
 still declares v4 support; `e2e/perses.spec.ts` verifies the actual renderer on v5. Keep that
@@ -137,6 +142,12 @@ Each one only changes what a dashboard shows in those cases. The exit: drop the 
 syntax, perses/perses#2139). If the integration regresses before then, the fallback is a second
 Query runtime for Perses alone.
 
+The console also renders navigations without React transitions (`frontend/src/router.ts`),
+because React 18 can drop an update that lands mid-render, which left Perses's time-range menu's
+invisible popover blocking the page. That goes with React 19 and Perses 0.56 or later: Perses
+supports React 19 from perses/shared#390 and perses/plugins#889 (merged 2026-10-28, first in
+0.56.0-beta.0).
+
 ## Testing
 
 `fakeClients` (`testing.ts`) gives typed clients over an in-memory backend
@@ -152,6 +163,10 @@ const { clients } = fakeClients({
 ```
 
 - A method left out answers Unimplemented, like an RPC the backend doesn't have.
+- A component test wraps the page in
+  `<BackendProvider transport={transport} checkSession={vi.fn()}>` with the `transport` that
+  `fakeClients` returns; a test of the whole console renders `<App service={...} transport={transport} />`
+  (`frontend/src/__tests__/backend-root.test.tsx`).
 - The fake's answers are type-checked against the generated messages and go through the same
   serialization as the wire, so a fake can't drift from the API the way the hand-written
   `MockConsoleService` could.
@@ -183,8 +198,7 @@ const { clients } = fakeClients({
 
 ## Not built yet
 
-- No page uses the clients; `createConsoleTransport` is wired into the app with the first area
-  that moves.
+- No page uses Connect Query yet: the provider is at the root, and each area moves on its own.
 - A nightly job that proposes moving the pin to the backend's newest `main` and runs typecheck and
   tests (the pattern OSAC uses for its UI).
 - Connect GET: no backend method is marked free of side effects yet, so every call is a POST.

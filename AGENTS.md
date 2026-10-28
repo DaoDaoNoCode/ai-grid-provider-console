@@ -94,9 +94,12 @@ and Argo CD delivery; their draft implementations have been removed from the bac
    that repository's `docs/API_CONTRACT.md`.
 2. Move `.backend-api-version` to a backend commit that has it and run `make generate-api`;
    commit `frontend/src/gen` with the change. Never edit generated files or repeat their types.
-3. Build the page on the generated Connect Query descriptors and `frontend/src/api/connect`
-   (transport, provider and errors), test it with `fakeClients`, and try `make dev-fake-infra`.
-   While backend authorization is pending, review any new procedure against the relay allowlist.
+3. Build the page with `useQuery` and `useMutation` from `@connectrpc/connect-query` on the
+   generated descriptors (`frontend/src/gen/ai_grid/v1/*_connectquery.ts`); `App` already
+   provides the transport and the query cache (`BackendProvider`). Show errors with
+   `describeError`, test with `fakeClients`' transport, and try `make dev-fake-infra`
+   (`docs/connect.md`, "Using it in a page"). While backend authorization is pending, review any
+   new procedure against the relay allowlist.
 
 For maintenance of an existing legacy draft path, follow `mock/proto/README.md` and
 [mock/AGENTS.md](mock/AGENTS.md). Retire those paths as their pages migrate.
@@ -107,7 +110,7 @@ docs (`docs/plan/bff-api.md`, `mock/AGENTS.md`, `mock/areas/*.md`) in the same c
 ## The backend's own API over Connect
 
 The console is moving to the backend's RPCs, called from the browser over Connect (ADRs 0002
-and 0004). The foundation is in place; no page uses it yet:
+and 0004). The foundation is in place and wired at the root; no page uses it yet:
 
 - `.backend-api-version` holds the backend commit (one full SHA) whose `proto/` (package
   `ai_grid.v1`, not `ai_grid/draft`) the frontend is generated from. `make generate-api` writes
@@ -115,7 +118,8 @@ and 0004). The foundation is in place; no page uses it yet:
   differs). To move to a newer backend, change the SHA and regenerate in the same change.
 - `frontend/src/api/connect`: `createConsoleTransport` (Connect JSON to the console's origin; on
   Unauthenticated it calls the console's `checkSession`), `createConsoleClients` (typed clients
-  per service), `BackendProvider` (Connect Query and a Query v5 cache), `describeError` and
+  per service), `BackendProvider` (the transport and a Query v5 cache for Connect Query, which
+  `App` wraps around every page), `describeError` and
   `toServiceError` (a ConnectError as the UI states the pages already show), and `fakeClients`
   in `testing.ts` (typed in-memory fakes for tests).
 - `make dev-fake-infra` runs the backend at that commit on its own fake hub and Keycloak (its

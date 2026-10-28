@@ -233,7 +233,7 @@ and `@connectrpc/protoc-gen-connect-query`, pinned the same way, for the Connect
 `make generate-api` also generates `google/rpc/error_details.proto` from googleapis at the commit
 the backend's `buf.lock` pins, for the `BadRequest` field violations in the backend's errors.
 `frontend/src/api/connect` has the transport, the clients, the error mapping, `BackendProvider`
-(which an area wraps itself in when it moves to Connect Query) and a fake for tests; `docs/connect.md` is the how-to.
+(which `App` wraps around every page) and a fake for tests; `docs/connect.md` is the how-to.
 
 ## Deploy to a cluster
 

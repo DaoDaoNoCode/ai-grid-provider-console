@@ -591,6 +591,49 @@ func TestSuccessfulProbesLogAtDebug(t *testing.T) {
 	}
 }
 
+// A 501 is an expected answer from a backend that lacks the RPC (the shipped
+// one has no Grid service): the frontend shows "not available on this backend
+// yet", so the detail logs at Debug, as a 4xx does, not at Error on every page
+// load. A backend failure still logs at Error. Either way the request line
+// stays at Info.
+func TestNotImplementedLogsAtDebugAndFailuresAtError(t *testing.T) {
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	lines := func(level string) []string {
+		var out []string
+		for line := range strings.SplitSeq(logs.String(), "\n") {
+			if strings.Contains(line, "level="+level+" ") {
+				out = append(out, line)
+			}
+		}
+		return out
+	}
+
+	shipped := NewApp(testConfig(t), logger, backendtest.StartRealShape(t, &backendtest.Fake{}), startHub(t, &fakeHub{allowed: true}))
+	if rec := serve(shipped, asUser(http.MethodGet, "/api/v1/grid/overview")); rec.Code != http.StatusNotImplemented {
+		t.Fatalf("overview on the shipped backend: %d %s, want 501", rec.Code, rec.Body.String())
+	}
+	if got := lines("ERROR"); len(got) != 0 {
+		t.Errorf("a 501 logged at Error:\n%s", strings.Join(got, "\n"))
+	}
+	if got := lines("DEBUG"); len(got) != 1 || !strings.Contains(got[0], "status=501") || !strings.Contains(got[0], "code = Unimplemented") {
+		t.Errorf("Debug lines = %q, want one with status=501 and the backend's error", got)
+	}
+	if got := lines("INFO"); len(got) != 1 || !strings.Contains(got[0], "msg=request ") || !strings.Contains(got[0], "status=501") {
+		t.Errorf("Info lines = %q, want the request line with status=501", got)
+	}
+
+	logs.Reset()
+	fake := &backendtest.Fake{Err: backendtest.Status(codes.Internal, "boom")}
+	failing := NewApp(testConfig(t), logger, backendtest.Start(t, fake), startHub(t, &fakeHub{allowed: true}))
+	if rec := serve(failing, asUser(http.MethodGet, "/api/v1/grid/overview")); rec.Code != http.StatusBadGateway {
+		t.Fatalf("overview on a failing backend: %d %s, want 502", rec.Code, rec.Body.String())
+	}
+	if got := lines("ERROR"); len(got) != 1 || !strings.Contains(got[0], `msg="request failed"`) || !strings.Contains(got[0], "status=502") {
+		t.Errorf("Error lines = %q, want one request failed with status=502", got)
+	}
+}
+
 func TestPanicBecomes500(t *testing.T) {
 	app := newTestApp(t, testConfig(t), nil)
 	h := app.recoverPanic(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic("boom") }))

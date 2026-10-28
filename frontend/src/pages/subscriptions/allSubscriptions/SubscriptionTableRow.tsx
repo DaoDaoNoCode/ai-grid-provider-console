@@ -7,7 +7,8 @@
 // open the row's groups or its models with their locations and token limits (compound expansion).
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Tooltip } from '@patternfly/react-core';
+import { MenuToggle, Tooltip } from '@patternfly/react-core';
+import { RhUiEllipsisVerticalFillIcon } from '@patternfly/react-icons';
 import { ActionsColumn, ExpandableRowContent, TableText, Tbody, Td, Tr } from '@patternfly/react-table';
 import type { IAction } from '@patternfly/react-table';
 import type { MaaSSubscription, ManagedModel } from '../../../api/types';
@@ -133,11 +134,26 @@ export const SubscriptionTableRow: React.FC<Props> = ({
         </Td>
         {expandCell('groups', 3, groups.length)}
         {expandCell('models', 4, subscription.modelRefs.length)}
-        <Td dataLabel={columns[5].label} className="console-number">
-          {subscription.priority ?? EMPTY_VALUE}
-        </Td>
+        <Td dataLabel={columns[5].label}>{subscription.priority ?? EMPTY_VALUE}</Td>
         <Td isActionCell>
-          <ActionsColumn data-testid="subscription-actions" isDisabled={deleting} items={actions} />
+          <ActionsColumn
+            data-testid="subscription-actions"
+            isDisabled={deleting}
+            items={actions}
+            // PatternFly's own toggle is named "Kebab toggle"; name it after the row, as the other
+            // lists do. Otherwise the same toggle as PatternFly's.
+            actionsToggle={({ onToggle, isOpen, isDisabled, toggleRef }) => (
+              <MenuToggle
+                ref={toggleRef}
+                aria-label={`Actions for ${title}`}
+                onClick={onToggle}
+                isExpanded={isOpen}
+                isDisabled={isDisabled}
+                variant="plain"
+                icon={<RhUiEllipsisVerticalFillIcon />}
+              />
+            )}
+          />
         </Td>
       </Tr>
       <Tr isExpanded={expanded === 'groups'} id={panelId('groups')}>

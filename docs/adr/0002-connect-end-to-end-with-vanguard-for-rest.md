@@ -83,8 +83,8 @@ Console [PR #63](https://github.com/ai-grid-cloud/ai-grid-provider-console/pull/
 Models and Subscriptions RPCs behind the existing BFF JSON API. The browser still uses that
 API for these pages. [PR #70](https://github.com/ai-grid-cloud/ai-grid-provider-console/pull/70)
 added the shared Connect relay with its procedure allowlist, the clients and Connect Query
-descriptors generated from a pinned backend commit, and the Connect Query provider. No page
-used them yet; pages migrate area by area.
+descriptors generated from a pinned backend commit, and the Connect Query provider at the app
+root. No page used them yet; pages migrate area by area.
 
 ## The frontend
 

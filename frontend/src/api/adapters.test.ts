@@ -8,9 +8,18 @@ import {
   toModelCreate,
   toOrganization,
   toSubscription,
+  toSubscriptionInfo,
   withRuntimeArgs,
 } from './adapters';
-import type { ApiCluster, ApiModel, ApiTenant, CreateModelRequest, MaaSSubscription } from './types';
+import type {
+  ApiCluster,
+  ApiModel,
+  ApiTenant,
+  CreateModelRequest,
+  MaaSAuthPolicy,
+  MaaSSubscription,
+  SubscriptionInfoResponse,
+} from './types';
 
 // The cluster JSON of GET /api/v1/clusters (mock/examples/get-clusters.json), trimmed.
 const apiCluster = (overrides: Partial<ApiCluster> = {}): ApiCluster => ({
@@ -172,6 +181,48 @@ describe('toSubscription', () => {
   it('leaves a subscription the controller has not reconciled without a phase', () => {
     expect(toSubscription({ ...base, conditions: [] }).phase).toBeUndefined();
     expect(toSubscription(base).phase).toBeUndefined();
+  });
+});
+
+describe('toSubscriptionInfo', () => {
+  it("picks each policy's Ready condition into its status fields, as the subscription's", () => {
+    // The BFF sends a policy's conditions only (backend PR #40).
+    const policy: MaaSAuthPolicy = {
+      name: 'team-a-policy',
+      phase: 'Active',
+      modelRefs: [{ name: 'granite-8b-instruct' }],
+      subjects: { groups: [{ name: 'team-a' }] },
+      conditions: [
+        { type: 'ConflictingAuthPolicy', status: 'False', reason: 'NoConflict' },
+        {
+          type: 'Ready',
+          status: 'True',
+          reason: 'Reconciled',
+          message: 'Ready on site-a',
+          lastTransitionTime: '2026-10-16T09:00:01Z',
+        },
+      ],
+    };
+    const info = toSubscriptionInfo({ subscription: base, modelRefs: [], authPolicies: [policy] });
+    expect(info.authPolicies).toEqual([
+      {
+        ...policy,
+        status: 'True',
+        reason: 'Reconciled',
+        statusMessage: 'Ready on site-a',
+        conditionType: 'Ready',
+        lastTransitionTime: '2026-10-16T09:00:01Z',
+      },
+    ]);
+  });
+
+  it('leaves a policy without a Ready condition, and a missing list, as they are', () => {
+    const policy: MaaSAuthPolicy = { name: 'p', modelRefs: [], subjects: {} };
+    expect(toSubscriptionInfo({ subscription: base, modelRefs: [], authPolicies: [policy] }).authPolicies).toEqual([
+      policy,
+    ]);
+    const missing = { subscription: base, modelRefs: [] } as unknown as SubscriptionInfoResponse;
+    expect(toSubscriptionInfo(missing).authPolicies).toBeUndefined();
   });
 });
 

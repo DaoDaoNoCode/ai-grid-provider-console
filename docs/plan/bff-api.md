@@ -614,6 +614,9 @@ read (never the token). The lines a handler writes about a change (`cluster upda
 `tenant created`, `model deleted`, `subscription updated`, ...) and `request failed` carry the
 same `id` and `user`, so the log says which admin changed what. A successful `/readyz` or
 `/healthcheck` logs at Debug; a failed one stays at Info (and `backend not ready` at Warn).
+`request failed` (Error) is for a 5xx other than 501. A 501, which a backend without the RPC
+or option answers and the frontend shows as not available yet, logs its detail at Debug, as a
+4xx does (`request rejected`); its `request` line still says `status=501`.
 
 ### The BFF is thin
 
