@@ -2,7 +2,6 @@ package relay_test
 
 import (
 	"bufio"
-	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -13,6 +12,7 @@ import (
 	"io"
 	"log/slog"
 	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -387,77 +387,91 @@ func TestBodyLimit(t *testing.T) {
 	}
 }
 
-// stallingBackend answers after 300ms: a unary call (and a stream sent with X-Stall-Headers)
-// with nothing before then, a stream with its headers at once and its body after.
-func stallingBackend(t *testing.T) *httptest.Server {
+// stallingBackend holds every call until release is called or the call is cancelled: a unary
+// call (and a stream sent with X-Stall-Headers) with nothing sent, any other stream with its
+// headers sent, after which it says so on streaming. A released call answers `{}`.
+func stallingBackend(t *testing.T) (srv *httptest.Server, streaming <-chan struct{}, release func()) {
 	t.Helper()
-	release := make(chan struct{})
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		wait := func() bool {
-			select {
-			case <-release:
-			case <-r.Context().Done():
-				return false
-			case <-time.After(300 * time.Millisecond):
-			}
-			return true
-		}
+	opened := make(chan struct{}, 1)
+	released := make(chan struct{})
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ct := r.Header.Get("Content-Type")
 		if strings.HasPrefix(ct, "application/connect+") && r.Header.Get("X-Stall-Headers") == "" {
 			w.Header().Set("Content-Type", ct)
 			w.WriteHeader(http.StatusOK)
 			w.(http.Flusher).Flush()
+			opened <- struct{}{}
 		}
-		if !wait() {
+		select {
+		case <-released:
+		case <-r.Context().Done():
 			return
 		}
 		w.Header().Set("Content-Type", ct)
 		_, _ = w.Write([]byte(`{}`))
 	}))
+	release = sync.OnceFunc(func() { close(released) })
 	t.Cleanup(srv.Close)
-	t.Cleanup(func() { close(release) })
-	return srv
+	t.Cleanup(release) // before Close, which waits for the handlers
+	return srv, opened, release
 }
 
-// A unary call is cut at the backend timeout with 504; a stream whose headers came isn't.
+// A unary call is cut at the backend timeout with 504.
 func TestUnaryTimeout(t *testing.T) {
-	srv := stallingBackend(t)
+	t.Parallel()
+	srv, _, _ := stallingBackend(t)
 	r := newRelay(t, backend.Config{Address: strings.TrimPrefix(srv.URL, "http://"), Timeout: 100 * time.Millisecond})
-
 	for _, method := range []string{http.MethodPost, http.MethodGet} {
-		start := time.Now()
 		rec := serve(r, asCaller(t, method, list, strings.NewReader(`{}`), nil))
 		if code, _ := connectError(t, rec); rec.Code != http.StatusGatewayTimeout || code != "deadline_exceeded" {
-			t.Fatalf("%s unary: got %d %s, want 504 deadline_exceeded", method, rec.Code, code)
-		}
-		if d := time.Since(start); d > 250*time.Millisecond {
-			t.Errorf("%s unary: answered after %s, want about the 100ms timeout", method, d)
+			t.Errorf("%s unary: got %d %s, want 504 deadline_exceeded", method, rec.Code, code)
 		}
 	}
+}
 
+// A stream whose headers came isn't cut at the unary timeout. It is open before a unary call
+// starts, so once that call has timed out the stream has outlived the timeout, and it still gets
+// its whole answer when the backend sends it.
+func TestStreamOutlivesTheUnaryTimeout(t *testing.T) {
+	t.Parallel()
 	for _, ct := range []string{"application/connect+json", "application/connect+proto"} {
-		rec := serve(r, asCaller(t, http.MethodPost, list, strings.NewReader(`{}`), http.Header{"Content-Type": {ct}}))
-		if rec.Code != http.StatusOK || rec.Body.String() != `{}` {
-			t.Errorf("%s: got %d %q, want the stream's whole answer after the unary timeout", ct, rec.Code, rec.Body)
-		}
+		t.Run(ct, func(t *testing.T) {
+			t.Parallel()
+			srv, streaming, release := stallingBackend(t)
+			r := newRelay(t, backend.Config{Address: strings.TrimPrefix(srv.URL, "http://"), Timeout: 100 * time.Millisecond})
+			stream := asCaller(t, http.MethodPost, list, strings.NewReader(`{}`), http.Header{"Content-Type": {ct}})
+			done := make(chan *httptest.ResponseRecorder, 1)
+			go func() { done <- serve(r, stream) }()
+			select {
+			case <-streaming:
+			case rec := <-done:
+				t.Fatalf("the stream ended before the backend sent its headers: %d %q", rec.Code, rec.Body)
+			}
+
+			rec := serve(r, asCaller(t, http.MethodPost, list, strings.NewReader(`{}`), nil))
+			if code, _ := connectError(t, rec); rec.Code != http.StatusGatewayTimeout || code != "deadline_exceeded" {
+				t.Fatalf("unary call next to the stream: got %d %s, want 504 deadline_exceeded", rec.Code, code)
+			}
+			release()
+			if rec := <-done; rec.Code != http.StatusOK || rec.Body.String() != `{}` {
+				t.Errorf("stream: got %d %q, want the whole answer after the unary timeout", rec.Code, rec.Body)
+			}
+		})
 	}
 }
 
 // A backend that sends no headers can't hold a call, a stream included: past the backend timeout
 // the relay answers 504 (the transport's ResponseHeaderTimeout).
 func TestResponseHeaderTimeout(t *testing.T) {
-	srv := stallingBackend(t)
+	t.Parallel()
+	srv, _, _ := stallingBackend(t)
 	r := newRelay(t, backend.Config{Address: strings.TrimPrefix(srv.URL, "http://"), Timeout: 100 * time.Millisecond})
-	start := time.Now()
 	rec := serve(r, asCaller(t, http.MethodPost, list, strings.NewReader(`{}`), http.Header{
 		"Content-Type":    {"application/connect+json"},
 		"X-Stall-Headers": {"1"},
 	}))
 	if code, _ := connectError(t, rec); rec.Code != http.StatusGatewayTimeout || code != "deadline_exceeded" {
 		t.Fatalf("stream without headers: got %d %s %q, want 504 deadline_exceeded", rec.Code, code, rec.Body)
-	}
-	if d := time.Since(start); d > 250*time.Millisecond {
-		t.Errorf("answered after %s, want about the 100ms timeout", d)
 	}
 }
 
@@ -557,15 +571,22 @@ func TestRelaysOnlyTheResponseHeadersAClientNeeds(t *testing.T) {
 // no streaming RPC and the relay passes only allowed procedures; it tells a stream by its content
 // type, so an allowed path carries one here.
 func TestStreamsFlushAsTheyCome(t *testing.T) {
-	release := make(chan struct{})
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	t.Parallel()
+	released := make(chan struct{})
+	release := sync.OnceFunc(func() { close(released) })
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/connect+json")
 		_, _ = w.Write([]byte("first\n"))
 		w.(http.Flusher).Flush()
-		<-release
+		select {
+		case <-released:
+		case <-r.Context().Done():
+			return
+		}
 		_, _ = w.Write([]byte("second\n"))
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
+	t.Cleanup(release) // a failed read must not leave the handler waiting: Close waits for it
 	r := relayTo(t, srv)
 	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		id, err := headers.Extract(req.Header)
@@ -575,11 +596,9 @@ func TestStreamsFlushAsTheyCome(t *testing.T) {
 		}
 		r.ServeHTTP(w, req.WithContext(identity.WithIdentity(req.Context(), id)))
 	}))
-	defer front.Close()
+	t.Cleanup(front.Close)
 
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, front.URL+"/ai_grid.v1.Clusters/List", strings.NewReader(`{}`))
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, front.URL+"/ai_grid.v1.Clusters/List", strings.NewReader(`{}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -592,21 +611,40 @@ func TestStreamsFlushAsTheyCome(t *testing.T) {
 	defer func() { _ = resp.Body.Close() }()
 	lines := bufio.NewReader(resp.Body)
 	if line, err := lines.ReadString('\n'); err != nil || line != "first\n" {
-		t.Fatalf("first message: %q %v", line, err)
+		t.Fatalf("first message: got %q, %v; want %q", line, err, "first\n")
 	}
-	close(release)
+	release()
 	if line, err := lines.ReadString('\n'); err != nil || line != "second\n" {
-		t.Fatalf("second message: %q %v", line, err)
+		t.Fatalf("second message: got %q, %v; want %q", line, err, "second\n")
 	}
 }
 
+// hangUpListener accepts connections and closes them at once: a backend that is down, without
+// relying on a closed port staying free while other test binaries run.
+func hangUpListener(t *testing.T) string {
+	t.Helper()
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = lis.Close() })
+	go func() {
+		for {
+			conn, err := lis.Accept()
+			if err != nil {
+				return
+			}
+			_ = conn.Close()
+		}
+	}()
+	return lis.Addr().String()
+}
+
 func TestBackendUnreachable(t *testing.T) {
-	srv := httptest.NewServer(http.NotFoundHandler())
-	addr := strings.TrimPrefix(srv.URL, "http://")
-	srv.Close()
-	rec := serve(newRelay(t, backend.Config{Address: addr}), asCaller(t, http.MethodPost, list, strings.NewReader(`{}`), nil))
+	t.Parallel()
+	rec := serve(newRelay(t, backend.Config{Address: hangUpListener(t)}), asCaller(t, http.MethodPost, list, strings.NewReader(`{}`), nil))
 	if code, msg := connectError(t, rec); rec.Code != http.StatusBadGateway || code != "unavailable" || msg != "the AI Grid backend could not be reached; try again" {
-		t.Fatalf("got %d %s %q", rec.Code, code, msg)
+		t.Fatalf("got %d %s %q, want 502 unavailable", rec.Code, code, msg)
 	}
 }
 
