@@ -81,28 +81,23 @@ it('offers a reload when a page fails to load, and tries again on another page',
   vi.spyOn(console, 'error').mockImplementation(() => {});
   const reload = vi.fn();
   vi.stubGlobal('location', { ...window.location, reload });
-  try {
-    // What React.lazy throws when a page's chunk is gone after a redeploy.
-    const Missing = () => {
-      throw new TypeError('Failed to fetch dynamically imported module: /assets/ModelsPage-abc123.js');
-    };
-    const user = userEvent.setup();
-    const { rerender } = render(
-      <PageErrorBoundary resetKey="/models">
-        <Missing />
-      </PageErrorBoundary>,
-    );
-    expect(screen.getByRole('heading', { level: 1, name: 'This page could not be loaded' })).toBeVisible();
-    await user.click(screen.getByRole('button', { name: 'Reload' }));
-    expect(reload).toHaveBeenCalled();
-    rerender(
-      <PageErrorBoundary resetKey="/clusters">
-        <p>Clusters</p>
-      </PageErrorBoundary>,
-    );
-    expect(screen.getByText('Clusters')).toBeVisible();
-  } finally {
-    vi.unstubAllGlobals();
-    vi.restoreAllMocks();
-  }
+  // What React.lazy throws when a page's chunk is gone after a redeploy.
+  const Missing = () => {
+    throw new TypeError('Failed to fetch dynamically imported module: /assets/ModelsPage-abc123.js');
+  };
+  const user = userEvent.setup();
+  const { rerender } = render(
+    <PageErrorBoundary resetKey="/models">
+      <Missing />
+    </PageErrorBoundary>,
+  );
+  expect(screen.getByRole('heading', { level: 1, name: 'This page could not be loaded' })).toBeVisible();
+  await user.click(screen.getByRole('button', { name: 'Reload' }));
+  expect(reload).toHaveBeenCalled();
+  rerender(
+    <PageErrorBoundary resetKey="/clusters">
+      <p>Clusters</p>
+    </PageErrorBoundary>,
+  );
+  expect(screen.getByText('Clusters')).toBeVisible();
 });

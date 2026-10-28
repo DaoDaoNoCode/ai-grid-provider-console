@@ -8,8 +8,6 @@ import { GridFleetMap } from '../pages/grid/GridFleetMap';
 const tiles = { url: 'https://tiles.example.com/{z}/{x}/{y}.png', attribution: 'Example tiles' };
 const members = seedClusters().filter((c) => c.aiGridEnabled);
 
-afterEach(() => vi.restoreAllMocks());
-
 /** How many pins the map drew. */
 const pinsDrawn = (marker: { mock: { calls: unknown[] } }) => marker.mock.calls.length;
 

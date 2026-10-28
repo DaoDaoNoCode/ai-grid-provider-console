@@ -22,11 +22,6 @@ beforeEach(() => {
   vi.stubGlobal('location', { ...window.location, reload });
 });
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-  vi.restoreAllMocks();
-});
-
 describe('isDynamicImportError', () => {
   it.each([
     ['Chrome', new TypeError('Failed to fetch dynamically imported module: https://hub/assets/ModelsPage-abc.js')],

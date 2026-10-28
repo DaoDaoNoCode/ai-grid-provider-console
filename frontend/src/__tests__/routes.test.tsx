@@ -5,6 +5,20 @@ import type { InitialEntry, NavigateFunction } from 'react-router-dom';
 import { App } from '../App';
 import { ServiceError } from '../api/ConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
+// The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
+import '../pages/grid/GridPage';
+import '../pages/models/ModelDetailsPage';
+import '../pages/models/ModelEditPage';
+import '../pages/models/ModelWizard';
+import '../pages/models/ModelsPage';
+import '../pages/monitoring/MonitoringPage';
+import '../pages/organizations/OrganizationDetailsPage';
+import '../pages/organizations/OrganizationListPage';
+import '../pages/organizations/OrganizationWizardPage';
+import '../pages/subscriptions/CreateSubscriptionPage';
+import '../pages/subscriptions/EditSubscriptionPage';
+import '../pages/subscriptions/SubscriptionsPage';
+import '../pages/subscriptions/ViewSubscriptionPage';
 
 const at = (path: InitialEntry, service = new MockConsoleService()) =>
   render(
@@ -70,11 +84,15 @@ describe('routes', () => {
   const subs = 'Subscriptions are not available on this backend yet';
   /** The deploy wizard loads locations up front but shows them on its third step. */
   const toLocationsStep = async (user: ReturnType<typeof userEvent.setup>) => {
-    await user.type(await screen.findByRole('textbox', { name: /Model URI/ }), 'hf://org/widget');
-    await user.type(screen.getByRole('textbox', { name: /^Model name/ }), 'org/widget');
+    await user.click(await screen.findByRole('textbox', { name: /Model URI/ }));
+    await user.paste('hf://org/widget');
+    await user.click(screen.getByRole('textbox', { name: /^Model name/ }));
+    await user.paste('org/widget');
     await user.click(screen.getByRole('button', { name: 'Next' }));
-    await user.type(await screen.findByTestId('model-name-desc-name'), 'Widget');
-    await user.type(screen.getByRole('textbox', { name: /Runtime image/ }), 'registry.example/runtime:test');
+    await user.click(await screen.findByTestId('model-name-desc-name'));
+    await user.paste('Widget');
+    await user.click(screen.getByRole('textbox', { name: /Runtime image/ }));
+    await user.paste('registry.example/runtime:test');
     await user.click(screen.getByRole('button', { name: 'Next' }));
     await user.click(screen.getByRole('button', { name: 'Next' }));
   };

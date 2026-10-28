@@ -7,6 +7,9 @@ import { ServiceError } from '../api/ConsoleService';
 import { MockConsoleService, seedOrganizations } from '../api/MockConsoleService';
 import { serviceOnPr12Json } from './pr12Json';
 import { renderAt } from './render';
+// The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
+import '../pages/grid/GridPage';
+import '../pages/monitoring/MonitoringPage';
 
 /** The mock with the PoC test's two organizations. */
 const withOrganizations = () => {

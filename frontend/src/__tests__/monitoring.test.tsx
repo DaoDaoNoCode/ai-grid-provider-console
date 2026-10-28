@@ -9,6 +9,8 @@ import { HttpConsoleService } from '../api/HttpConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
 import { monitoringLinkFor, monitoringTabs } from '../api/monitoring';
 import { renderAt } from './render';
+// The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
+import '../pages/monitoring/MonitoringPage';
 
 // Perses's charts don't render in jsdom; the page is tested up to the dashboard it hands over.
 // It also renders links as a dashboard's panels would.

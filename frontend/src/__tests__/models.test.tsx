@@ -22,6 +22,11 @@ import { HttpConsoleService } from '../api/HttpConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
 import type { CreateModelRequest, ManagedModel } from '../api/types';
 import { deferred, renderAt } from './render';
+// The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
+import '../pages/models/ModelDetailsPage';
+import '../pages/models/ModelEditPage';
+import '../pages/models/ModelWizard';
+import '../pages/models/ModelsPage';
 
 const input: CreateModelRequest = {
   name: 'widget',
@@ -51,16 +56,19 @@ type User = ReturnType<typeof userEvent.setup>;
 const nameDeployment = async (user: User, name: string) => {
   const field = await screen.findByTestId('model-name-desc-name');
   await user.clear(field);
-  await user.type(field, name);
+  await user.paste(name);
 };
 
 /** Fills the source and deployment steps and moves on to Locations. */
 const fillModel = async (user: User) => {
-  await user.type(await screen.findByRole('textbox', { name: /Model URI/ }), 'hf://org/widget');
-  await user.type(screen.getByRole('textbox', { name: /^Model name/ }), 'org/widget');
+  await user.click(await screen.findByRole('textbox', { name: /Model URI/ }));
+  await user.paste('hf://org/widget');
+  await user.click(screen.getByRole('textbox', { name: /^Model name/ }));
+  await user.paste('org/widget');
   await user.click(screen.getByRole('button', { name: 'Next' }));
   await nameDeployment(user, 'Widget');
-  await user.type(screen.getByRole('textbox', { name: /Runtime image/ }), 'registry.example/runtime:test');
+  await user.click(screen.getByRole('textbox', { name: /Runtime image/ }));
+  await user.paste('registry.example/runtime:test');
   await user.click(screen.getByRole('button', { name: 'Next' }));
 };
 
@@ -69,7 +77,7 @@ const site1 = 'San Francisco (site1)';
 const site2 = 'New York (site2)';
 const site3 = 'Brussels (site3)';
 
-it('walks the deployment wizard, selects locations, saves the model and removes it', async () => {
+it('walks the deployment wizard, selects locations and saves the model', async () => {
   const service = new MockConsoleService();
   const user = userEvent.setup();
   renderAt('/models', service);
@@ -111,19 +119,26 @@ it('walks the deployment wizard, selects locations, saves the model and removes 
     modelRef: { kind: 'LLMInferenceService', name: 'widget' },
     locations: ['site1', 'site2'],
   });
+});
 
-  await user.click(screen.getByTestId('model-actions-widget'));
+it('removes a model after its name is typed', async () => {
+  const service = new MockConsoleService();
+  await service.createModel(input);
+  const user = userEvent.setup();
+  renderAt('/models', service);
+  await user.click(await screen.findByTestId('model-actions-widget'));
   await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
   const dialog = await screen.findByTestId('delete-deployment-modal');
   expect(dialog).toHaveTextContent('Delete model deployment?');
   // The backend also refuses while an authorization policy references the model.
   expect(dialog).toHaveTextContent('Remove references from subscriptions and authorization policies first.');
   expect(within(dialog).getByRole('button', { name: 'Delete' })).toBeDisabled();
-  await user.type(within(dialog).getByTestId('delete-modal-input'), 'Widget');
+  await user.click(within(dialog).getByTestId('delete-modal-input'));
+  await user.paste('Widget');
   await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
   await waitFor(() => expect(screen.queryByTestId('model-actions-widget')).not.toBeInTheDocument());
   expect((await service.listModels()).some((m) => m.name === 'widget')).toBe(false);
-}, 20000);
+});
 
 it('leaves the deploy form out of history once the model is deployed, so Back skips it', async () => {
   let navigate: NavigateFunction = () => undefined;
@@ -147,7 +162,7 @@ it('leaves the deploy form out of history once the model is deployed, so Back sk
   expect(await screen.findByText('Model deployed')).toBeVisible();
   await act(async () => navigate(-1));
   expect(await screen.findByRole('heading', { level: 1, name: 'Clusters' })).toBeVisible();
-}, 20000);
+});
 
 /** A model "widget" that subscription "widget-users" uses. */
 const referencedModel = async (service: MockConsoleService) => {
@@ -194,7 +209,8 @@ it('leaves Delete to the backend when the subscriptions fail to load, and keeps 
   renderAt('/models', service);
   await user.click(await screen.findByTestId('model-actions-widget'));
   await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
-  await user.type(await screen.findByTestId('delete-modal-input'), 'Widget');
+  await user.click(await screen.findByTestId('delete-modal-input'));
+  await user.paste('Widget');
   await user.click(within(screen.getByTestId('delete-deployment-modal')).getByRole('button', { name: 'Delete' }));
   expect(await screen.findByTestId('delete-model-error-message-alert')).toHaveTextContent('Remove this model');
   expect(screen.getByTestId('delete-deployment-modal')).toBeVisible();
@@ -531,7 +547,8 @@ it('deletes by namespace and name with If-Match', async () => {
   renderAt('/models', serviceOnModelJson(fetchFn));
   await user.click(await screen.findByTestId('model-actions-granite-8b-instruct'));
   await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
-  await user.type(screen.getByTestId('delete-modal-input'), 'Granite 8B Instruct');
+  await user.click(screen.getByTestId('delete-modal-input'));
+  await user.paste('Granite 8B Instruct');
   await user.click(within(screen.getByTestId('delete-deployment-modal')).getByRole('button', { name: 'Delete' }));
   await waitFor(() => expect(screen.queryByTestId('delete-deployment-modal')).not.toBeInTheDocument());
   const call = fetchFn.mock.calls.find(([, init]) => init?.method === 'DELETE');
@@ -543,8 +560,10 @@ it("shows the Model URI rule's message once the user leaves an invalid URI", asy
   const user = userEvent.setup();
   renderAt('/models/deploy', new MockConsoleService());
   const uri = await screen.findByRole('textbox', { name: /Model URI/ });
-  await user.type(screen.getByRole('textbox', { name: /^Model name/ }), 'org/widget');
-  await user.type(uri, 'https:///123.com');
+  await user.click(screen.getByRole('textbox', { name: /^Model name/ }));
+  await user.paste('org/widget');
+  await user.click(uri);
+  await user.paste('https:///123.com');
   expect(screen.queryByText('Enter a model URI using hf, oci, s3 or pvc.')).not.toBeInTheDocument();
   await user.tab();
   expect(screen.getByText('Enter a model URI using hf, oci, s3 or pvc.')).toBeVisible();
@@ -552,7 +571,7 @@ it("shows the Model URI rule's message once the user leaves an invalid URI", asy
   expect(uri).toHaveAccessibleDescription(/^Enter a model URI using hf, oci, s3 or pvc\./);
   expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
   await user.clear(uri);
-  await user.type(uri, 'hf://org/widget');
+  await user.paste('hf://org/widget');
   expect(screen.queryByText('Enter a model URI using hf, oci, s3 or pvc.')).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
 });
@@ -562,7 +581,8 @@ it('says a required field is required once the user leaves it empty', async () =
   renderAt('/models/deploy', new MockConsoleService());
   const uri = await screen.findByRole('textbox', { name: /Model URI/ });
   const name = screen.getByRole('textbox', { name: /^Model name/ });
-  await user.type(name, 'org/widget');
+  await user.click(name);
+  await user.paste('org/widget');
   await user.clear(name);
   await user.tab();
   expect(name).toHaveAttribute('aria-invalid', 'true');
@@ -573,14 +593,17 @@ it('says a required field is required once the user leaves it empty', async () =
 it('says why the deployment step cannot continue when the CPU is invalid', async () => {
   const user = userEvent.setup();
   renderAt('/models/deploy', new MockConsoleService());
-  await user.type(await screen.findByRole('textbox', { name: /Model URI/ }), 'hf://org/widget');
-  await user.type(screen.getByRole('textbox', { name: /^Model name/ }), 'org/widget');
+  await user.click(await screen.findByRole('textbox', { name: /Model URI/ }));
+  await user.paste('hf://org/widget');
+  await user.click(screen.getByRole('textbox', { name: /^Model name/ }));
+  await user.paste('org/widget');
   await user.click(screen.getByRole('button', { name: 'Next' }));
   await nameDeployment(user, 'Widget');
-  await user.type(screen.getByRole('textbox', { name: /Runtime image/ }), 'registry.example/runtime:test');
+  await user.click(screen.getByRole('textbox', { name: /Runtime image/ }));
+  await user.paste('registry.example/runtime:test');
   const cpu = screen.getByRole('textbox', { name: /^CPU/ });
   await user.clear(cpu);
-  await user.type(cpu, '2 cores');
+  await user.paste('2 cores');
   await user.tab();
   expect(screen.getByText('Enter positive CPU cores or millicores, for example 2 or 500m.')).toBeVisible();
   expect(cpu).toHaveAttribute('aria-invalid', 'true');
@@ -607,14 +630,17 @@ it("takes only the fake backend's URI schemes and sends the URI trimmed", async 
   const user = userEvent.setup();
   renderAt('/models/deploy', service);
   const uri = await screen.findByRole('textbox', { name: /Model URI/ });
-  await user.type(screen.getByRole('textbox', { name: /^Model name/ }), 'org/widget');
-  await user.type(uri, 'https://models.example.com/widget');
+  await user.click(screen.getByRole('textbox', { name: /^Model name/ }));
+  await user.paste('org/widget');
+  await user.click(uri);
+  await user.paste('https://models.example.com/widget');
   expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
   await user.clear(uri);
-  await user.type(uri, ' hf://org/widget ');
+  await user.paste(' hf://org/widget ');
   await user.click(screen.getByRole('button', { name: 'Next' }));
   await nameDeployment(user, 'Widget');
-  await user.type(screen.getByRole('textbox', { name: /Runtime image/ }), 'registry.example/runtime:test');
+  await user.click(screen.getByRole('textbox', { name: /Runtime image/ }));
+  await user.paste('registry.example/runtime:test');
   await user.click(screen.getByRole('button', { name: 'Next' }));
   await user.click(await screen.findByRole('combobox', { name: 'Locations' }));
   await user.click(screen.getByRole('option', { name: site1 }));
@@ -623,7 +649,7 @@ it("takes only the fake backend's URI schemes and sends the URI trimmed", async 
   await user.click(screen.getByRole('button', { name: 'Deploy' }));
   await waitFor(() => expect(create).toHaveBeenCalled());
   expect(create.mock.calls[0][0].modelUri).toBe('hf://org/widget');
-}, 20000);
+});
 
 describe('a failed background poll', () => {
   // Only the 30-second polls are faked; user-event and findBy keep real timeouts.
@@ -655,7 +681,8 @@ describe('a background poll during the delete dialog', () => {
     await user.click(await screen.findByTestId('model-actions-granite-research'));
     await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
     const dialog = await screen.findByTestId('delete-deployment-modal');
-    await user.type(within(dialog).getByTestId('delete-modal-input'), 'Granite research endpoint');
+    await user.click(within(dialog).getByTestId('delete-modal-input'));
+    await user.paste('Granite research endpoint');
     service.models[2] = { ...service.models[2], resourceVersion: `${service.models[2].resourceVersion}1` };
     const poll = vi.spyOn(service, 'listModels');
     await act(async () => {
@@ -676,7 +703,8 @@ it('reloads the model after a stale delete, so a retry succeeds', async () => {
   await user.click(await screen.findByTestId('model-actions-granite-research'));
   await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
   const dialog = await screen.findByTestId('delete-deployment-modal');
-  await user.type(within(dialog).getByTestId('delete-modal-input'), 'Granite research endpoint');
+  await user.click(within(dialog).getByTestId('delete-modal-input'));
+  await user.paste('Granite research endpoint');
   service.models[2] = { ...service.models[2], resourceVersion: `${service.models[2].resourceVersion}1` };
   await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
   expect(await screen.findByText('This model changed. Reload it before deleting.')).toBeVisible();
@@ -692,7 +720,8 @@ it('keeps the delete dialog busy until the reloaded model is in, and says when t
   await user.click(await screen.findByTestId('model-actions-granite-research'));
   await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
   const dialog = await screen.findByTestId('delete-deployment-modal');
-  await user.type(within(dialog).getByTestId('delete-modal-input'), 'Granite research endpoint');
+  await user.click(within(dialog).getByTestId('delete-modal-input'));
+  await user.paste('Granite research endpoint');
   service.models[2] = { ...service.models[2], resourceVersion: `${service.models[2].resourceVersion}1` };
   const deleteSpy = vi.spyOn(service, 'deleteModel');
   const reload = deferred<ManagedModel>();
@@ -719,11 +748,14 @@ it('keeps the delete dialog busy until the reloaded model is in, and says when t
 it('takes a display name longer than a resource name', async () => {
   const user = userEvent.setup();
   renderAt('/models/deploy', new MockConsoleService());
-  await user.type(await screen.findByRole('textbox', { name: /Model URI/ }), 'hf://org/widget');
-  await user.type(screen.getByRole('textbox', { name: /^Model name/ }), 'org/widget');
+  await user.click(await screen.findByRole('textbox', { name: /Model URI/ }));
+  await user.paste('hf://org/widget');
+  await user.click(screen.getByRole('textbox', { name: /^Model name/ }));
+  await user.paste('org/widget');
   await user.click(screen.getByRole('button', { name: 'Next' }));
   await nameDeployment(user, 'W'.repeat(70));
-  await user.type(screen.getByRole('textbox', { name: /Runtime image/ }), 'registry.example/runtime:test');
+  await user.click(screen.getByRole('textbox', { name: /Runtime image/ }));
+  await user.paste('registry.example/runtime:test');
   expect(screen.getByText('w'.repeat(63))).toBeVisible();
   expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
 });
@@ -732,8 +764,10 @@ it('starts the deployment name from the model name, and keeps a name the user ty
   const user = userEvent.setup();
   renderAt('/models/deploy', new MockConsoleService());
   expect(await screen.findByRole('button', { name: 'Back' })).toBeDisabled();
-  await user.type(screen.getByRole('textbox', { name: /Model URI/ }), 'hf://org/widget');
-  await user.type(screen.getByRole('textbox', { name: /^Model name/ }), 'org/widget');
+  await user.click(screen.getByRole('textbox', { name: /Model URI/ }));
+  await user.paste('hf://org/widget');
+  await user.click(screen.getByRole('textbox', { name: /^Model name/ }));
+  await user.paste('org/widget');
   await user.click(screen.getByRole('button', { name: 'Next' }));
   expect(await screen.findByTestId('model-name-desc-name')).toHaveValue('widget');
   await nameDeployment(user, 'My widget');
@@ -745,8 +779,10 @@ it('starts the deployment name from the model name, and keeps a name the user ty
 it('folds the runtime arguments away under Advanced settings, with no dead controls', async () => {
   const user = userEvent.setup();
   renderAt('/models/deploy', new MockConsoleService());
-  await user.type(await screen.findByRole('textbox', { name: /Model URI/ }), 'hf://org/widget');
-  await user.type(screen.getByRole('textbox', { name: /^Model name/ }), 'org/widget');
+  await user.click(await screen.findByRole('textbox', { name: /Model URI/ }));
+  await user.paste('hf://org/widget');
+  await user.click(screen.getByRole('textbox', { name: /^Model name/ }));
+  await user.paste('org/widget');
   await user.click(screen.getByRole('button', { name: 'Next' }));
   const args = await screen.findByTestId('runtime-args-textarea');
   expect(args).not.toBeVisible();
@@ -763,7 +799,8 @@ it('asks before Cancel discards the wizard input', async () => {
   await user.click(await screen.findByRole('button', { name: 'Cancel' }));
   expect(await screen.findByTestId('model-deployments-table')).toBeVisible();
   await user.click(screen.getByRole('link', { name: 'Deploy model' }));
-  await user.type(await screen.findByRole('textbox', { name: /Model URI/ }), 'hf://org/widget');
+  await user.click(await screen.findByRole('textbox', { name: /Model URI/ }));
+  await user.paste('hf://org/widget');
   await user.click(screen.getByRole('button', { name: 'Cancel' }));
   const discard = await screen.findByTestId('discard-changes-modal');
   await user.click(within(discard).getByRole('button', { name: 'Keep editing' }));
@@ -792,7 +829,8 @@ it('deletes a model from its page and returns to the list', async () => {
   await user.click(await screen.findByTestId('model-actions'));
   await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
   const dialog = await screen.findByTestId('delete-deployment-modal');
-  await user.type(within(dialog).getByTestId('delete-modal-input'), 'Granite research endpoint');
+  await user.click(within(dialog).getByTestId('delete-modal-input'));
+  await user.paste('Granite research endpoint');
   await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
   expect(await screen.findByText('Model deployment deleted')).toBeVisible();
   expect(await screen.findByTestId('model-deployments-table')).not.toHaveTextContent('Granite research endpoint');
@@ -822,10 +860,13 @@ it('takes only whole numbers in the number fields, so the shown and sent counts 
   const create = vi.spyOn(service, 'createModel');
   const user = userEvent.setup();
   renderAt('/models/deploy', service);
-  await user.type(await screen.findByRole('textbox', { name: /Model URI/ }), 'hf://org/widget');
-  await user.type(screen.getByRole('textbox', { name: /^Model name/ }), 'org/widget');
+  await user.click(await screen.findByRole('textbox', { name: /Model URI/ }));
+  await user.paste('hf://org/widget');
+  await user.click(screen.getByRole('textbox', { name: /^Model name/ }));
+  await user.paste('org/widget');
   await user.click(screen.getByRole('button', { name: 'Next' }));
-  await user.type(screen.getByRole('textbox', { name: /Runtime image/ }), 'registry.example/runtime:test');
+  await user.click(screen.getByRole('textbox', { name: /Runtime image/ }));
+  await user.paste('registry.example/runtime:test');
   const replicas = screen.getByRole('spinbutton', { name: 'Replicas' });
   // 1e1 and 1.5 would show as 1 but parse as 10 and 1.5: they're refused.
   fireEvent.change(replicas, { target: { value: '1e1' } });
@@ -848,8 +889,10 @@ it('takes only whole numbers in the number fields, so the shown and sent counts 
 it('keeps an emptied Replicas or GPUs field empty and says it is required', async () => {
   const user = userEvent.setup();
   renderAt('/models/deploy', new MockConsoleService());
-  await user.type(await screen.findByRole('textbox', { name: /Model URI/ }), 'hf://org/widget');
-  await user.type(screen.getByRole('textbox', { name: /^Model name/ }), 'org/widget');
+  await user.click(await screen.findByRole('textbox', { name: /Model URI/ }));
+  await user.paste('hf://org/widget');
+  await user.click(screen.getByRole('textbox', { name: /^Model name/ }));
+  await user.paste('org/widget');
   await user.click(screen.getByRole('button', { name: 'Next' }));
   for (const name of ['Replicas', 'GPUs']) {
     const field = screen.getByRole('spinbutton', { name });
@@ -921,7 +964,7 @@ describe('editing a model deployment', () => {
     expect(screen.getByRole('textbox', { name: 'GPUs' })).toHaveAttribute('readonly');
     const replicas = screen.getByRole('spinbutton', { name: 'Replicas' });
     await user.clear(replicas);
-    await user.type(replicas, '3');
+    await user.paste('3');
 
     await openStep(user, 'Locations');
     await user.click(await screen.findByRole('combobox', { name: 'Locations' }));
@@ -952,9 +995,10 @@ describe('editing a model deployment', () => {
     await openStep(user, 'Deployment');
     const description = await screen.findByRole('textbox', { name: 'Description' });
     await user.clear(description);
-    await user.type(description, 'Updated description');
+    await user.paste('Updated description');
     await user.click(screen.getByRole('button', { name: 'Advanced settings' }));
-    await user.type(screen.getByRole('textbox', { name: 'Additional runtime arguments' }), '--enforce-eager');
+    await user.click(screen.getByRole('textbox', { name: 'Additional runtime arguments' }));
+    await user.paste('--enforce-eager');
     await openStep(user, 'Review');
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
     await waitFor(() => expect(update).toHaveBeenCalled());
@@ -984,7 +1028,7 @@ describe('editing a model deployment', () => {
     await openStep(user, 'Deployment');
     const description = await screen.findByRole('textbox', { name: 'Description' });
     await user.clear(description);
-    await user.type(description, 'new');
+    await user.paste('new');
     await openStep(user, 'Review');
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
     await waitFor(() => expect(update).toHaveBeenCalled());
@@ -1035,7 +1079,7 @@ describe('editing a model deployment', () => {
     await openStep(user, 'Deployment');
     const replicas = screen.getByRole('spinbutton', { name: 'Replicas' });
     await user.clear(replicas);
-    await user.type(replicas, '2');
+    await user.paste('2');
     await openStep(user, 'Review');
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
     await waitFor(() => expect(update).toHaveBeenCalled());
@@ -1049,7 +1093,7 @@ describe('editing a model deployment', () => {
     await openStep(user, 'Deployment');
     const replicas = await screen.findByRole('spinbutton', { name: 'Replicas' });
     await user.clear(replicas);
-    await user.type(replicas, '4');
+    await user.paste('4');
     // Another tab saves first.
     service.models[0].resourceVersion = '9';
     await openStep(user, 'Review');
@@ -1076,7 +1120,7 @@ describe('editing a model deployment', () => {
     await openStep(user, 'Deployment');
     const description = await screen.findByRole('textbox', { name: 'Description' });
     await user.clear(description);
-    await user.type(description, 'Still on site1');
+    await user.paste('Still on site1');
     await openStep(user, 'Review');
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
     await waitFor(() => expect(update).toHaveBeenCalled());
@@ -1094,7 +1138,8 @@ describe('editing a model deployment', () => {
     renderAt(`/models/ai-grid-models/${service.models[0].name}/edit`, service);
     await openStep(user, 'Deployment');
     const description = await screen.findByRole('textbox', { name: 'Description' });
-    await user.type(description, ' (edited)');
+    await user.click(description);
+    await user.paste(' (edited)');
     await openStep(user, 'Review');
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
     await waitFor(() => expect(update).toHaveBeenCalled());
@@ -1129,7 +1174,8 @@ describe('editing a model deployment', () => {
     await openStep(user, 'Deployment');
     await user.clear(await screen.findByRole('textbox', { name: 'Description' }));
     await user.click(screen.getByRole('button', { name: 'Advanced settings' }));
-    await user.type(screen.getByRole('textbox', { name: 'Additional runtime arguments' }), '--enforce-eager');
+    await user.click(screen.getByRole('textbox', { name: 'Additional runtime arguments' }));
+    await user.paste('--enforce-eager');
     await openStep(user, 'Review');
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
     expect(await screen.findByText('spec.main.image: Invalid value')).toBeVisible();

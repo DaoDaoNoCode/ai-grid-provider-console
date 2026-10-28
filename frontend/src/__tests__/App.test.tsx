@@ -7,6 +7,9 @@ import { ServiceError } from '../api/ConsoleService';
 import type { ConsoleConfig, User } from '../api/types';
 import { deferred } from './render';
 import { SIGN_IN_AGAIN_KEY, SIGN_IN_AGAIN_WINDOW_MS, type Navigation } from '../utilities/signInAgain';
+// The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
+import '../pages/grid/GridPage';
+import '../pages/organizations/OrganizationListPage';
 
 describe('App', () => {
   it('shows the signed-in user and the clusters from the service', async () => {

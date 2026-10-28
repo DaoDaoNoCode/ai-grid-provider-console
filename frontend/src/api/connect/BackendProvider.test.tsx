@@ -32,17 +32,13 @@ it('checks the session when its default transport gets an unauthenticated respon
       headers: { 'Content-Type': 'application/json' },
     }),
   );
-  try {
-    const wrapper = ({ children }: PropsWithChildren) => (
-      <BackendProvider checkSession={checkSession}>{children}</BackendProvider>
-    );
-    const { result } = renderHook(() => useQuery(list, {}, { retry: false }), { wrapper });
-    await waitFor(() => expect(result.current.error?.code).toBe(Code.Unauthenticated));
-    expect(checkSession).toHaveBeenCalledTimes(1);
-    expect(fetch.mock.calls[0][0]).toBe(`${window.location.origin}/ai_grid.v1.Clusters/List`);
-  } finally {
-    fetch.mockRestore();
-  }
+  const wrapper = ({ children }: PropsWithChildren) => (
+    <BackendProvider checkSession={checkSession}>{children}</BackendProvider>
+  );
+  const { result } = renderHook(() => useQuery(list, {}, { retry: false }), { wrapper });
+  await waitFor(() => expect(result.current.error?.code).toBe(Code.Unauthenticated));
+  expect(checkSession).toHaveBeenCalledTimes(1);
+  expect(fetch.mock.calls[0][0]).toBe(`${window.location.origin}/ai_grid.v1.Clusters/List`);
 });
 
 // The pattern docs/connect.md shows for a page: read with useQuery, write with useMutation, and

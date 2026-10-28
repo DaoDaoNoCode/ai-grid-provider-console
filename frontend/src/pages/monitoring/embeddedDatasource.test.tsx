@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import type { DashboardResource } from '@perses-dev/client';
 import { DatasourceStoreProvider } from '@perses-dev/dashboards';
 import { PluginRegistry, useDatasourceStore } from '@perses-dev/plugin-system';
-import { afterEach, expect, it, vi } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { RelayDatasourceApi } from './persesDatasourceApi';
 
 // The datasource lookup needs no plugin (the plugin packages don't load under vitest).
@@ -11,8 +11,6 @@ const pluginLoader = {
   getInstalledPlugins: () => Promise.resolve([]),
   importPluginModule: () => Promise.resolve({}),
 };
-
-afterEach(() => vi.unstubAllGlobals());
 
 // A dashboard that defines its own datasource, as a dashboard author may.
 const dashboard = {

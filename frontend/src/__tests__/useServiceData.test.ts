@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+// jsdom: renders the hook and fakes document.hidden.
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { useServiceData } from '../hooks/useServiceData';
 
@@ -104,7 +106,6 @@ describe('in a hidden tab', () => {
 
   afterEach(() => {
     vi.useRealTimers();
-    vi.restoreAllMocks();
   });
 
   it('skips polls while the tab is hidden and asks again when it shows after the interval', async () => {

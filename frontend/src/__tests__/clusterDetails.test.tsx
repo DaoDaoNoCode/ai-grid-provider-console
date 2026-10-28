@@ -8,6 +8,8 @@ import { ServiceError } from '../api/ConsoleService';
 import { MockConsoleService, seedClusters } from '../api/MockConsoleService';
 import type { GridCluster } from '../api/types';
 import { renderAt } from './render';
+// The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
+import '../pages/clusters/ClusterDetailsPage';
 
 /** A cluster as today's backend sends it: no claims, capacity or conditions. */
 const bare = (): GridCluster => ({
@@ -409,7 +411,7 @@ const openAddSite4 = async (user: ReturnType<typeof userEvent.setup>) => {
   const modal = await screen.findByTestId('cluster-membership-modal');
   const location = within(modal).getByRole('textbox', { name: 'Location' });
   await user.clear(location);
-  await user.type(location, 'us-east');
+  await user.paste('us-east');
   await user.click(within(modal).getByRole('combobox', { name: 'Role' }));
   await user.click(await screen.findByRole('option', { name: /Inference/ }));
   return modal;

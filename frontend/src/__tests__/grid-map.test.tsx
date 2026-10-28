@@ -13,6 +13,8 @@ import { MockConsoleService } from '../api/MockConsoleService';
 import { tileLayerConfig } from '../pages/grid/tiles';
 import { serviceOnPr12Json } from './pr12Json';
 import { renderAt } from './render';
+// The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
+import '../pages/grid/GridPage';
 
 // Exercise the page and drawer without a browser map renderer or external tiles.
 vi.mock('../pages/grid/GridFleetMap', () => ({
@@ -261,7 +263,8 @@ it("explains, in a help popover, where a cluster's models come from", async () =
 it('says no clusters match and clears the search and filter', async () => {
   const user = userEvent.setup();
   renderAt('/ai-grid', new MockConsoleService());
-  await user.type(await screen.findByRole('textbox', { name: 'Search grid clusters' }), 'zzz');
+  await user.click(await screen.findByRole('textbox', { name: 'Search grid clusters' }));
+  await user.paste('zzz');
   expect(screen.getByText('No clusters match')).toBeVisible();
   await user.click(screen.getByRole('button', { name: 'Clear all filters' }));
   expect(screen.getByRole('button', { name: 'View site1 details' })).toBeVisible();
