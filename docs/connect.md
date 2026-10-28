@@ -235,8 +235,9 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
 
 ### Perses on Query v5
 
-Every `@perses-dev` package up to 0.56.0-beta.0 declares `@tanstack/react-query` `^4.39.1` as its peer;
-the `overrides` entry in `frontend/pnpm-workspace.yaml` gives it the console's v5 instead, so
+The `@perses-dev` packages that use Query (dashboards, explore, plugin-system, and the Prometheus
+and Loki plugins) declare `@tanstack/react-query` `^4.39.1` as their peer, up to 0.56.0-beta.0;
+the `overrides` entry in `frontend/pnpm-workspace.yaml` gives them the console's v5 instead, so
 there is one Query runtime in the app. Perses's built code uses the object syntax v5 requires,
 but three v4 names it still uses mean something else, or nothing, in v5 ([TanStack's migration
 guide](https://tanstack.com/query/v5/docs/framework/react/guides/migrating-to-v5)):
