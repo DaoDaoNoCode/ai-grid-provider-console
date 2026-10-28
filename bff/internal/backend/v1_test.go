@@ -79,9 +79,11 @@ func TestFromV1ClusterState(t *testing.T) {
 		{"offline", &backendv1.ManagedCluster{Spec: accepted, Status: &backendv1.ManagedClusterStatus{Joined: true, AvailableCondition: "False"}}, aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_UNAVAILABLE},
 		{"unknown", &backendv1.ManagedCluster{Spec: accepted, Status: &backendv1.ManagedClusterStatus{Joined: true}}, aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_UNKNOWN},
 	} {
-		if got := FromV1Cluster(tc.mc).GetStatus().GetState(); got != tc.want {
-			t.Errorf("%s: state %v, want %v", tc.name, got, tc.want)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			if got := FromV1Cluster(tc.mc).GetStatus().GetState(); got != tc.want {
+				t.Errorf("state %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 

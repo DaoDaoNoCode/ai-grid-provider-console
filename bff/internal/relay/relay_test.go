@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -787,17 +788,21 @@ func TestWriteError(t *testing.T) {
 		http.StatusInternalServerError: "internal",
 		http.StatusTeapot:              "unknown",
 	} {
-		rec := httptest.NewRecorder()
-		relay.WriteError(rec, status, "why")
-		if code, msg := connectError(t, rec); rec.Code != status || code != want || msg != "why" {
-			t.Errorf("%d: got %d %s %q, want %s", status, rec.Code, code, msg, want)
-		}
-		if rec.Header().Get("Cache-Control") != "no-store" || rec.Header().Get("X-Content-Type-Options") != "nosniff" {
-			t.Errorf("%d: headers %v", status, rec.Header())
-		}
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			relay.WriteError(rec, status, "why")
+			if code, msg := connectError(t, rec); rec.Code != status || code != want || msg != "why" {
+				t.Errorf("got %d %s %q, want %d %s %q", rec.Code, code, msg, status, want, "why")
+			}
+			if cc, nosniff := rec.Header().Get("Cache-Control"), rec.Header().Get("X-Content-Type-Options"); cc != "no-store" || nosniff != "nosniff" {
+				t.Errorf("Cache-Control %q, X-Content-Type-Options %q; want no-store and nosniff", cc, nosniff)
+			}
+		})
 	}
-	if !relay.Handles("/ai_grid.v1.Clusters/List") || relay.Handles("/api/v1/clusters") || relay.Handles("/ai_grid.draft.v1.Models/List") {
-		t.Error("Handles")
+	for path, want := range map[string]bool{"/ai_grid.v1.Clusters/List": true, "/api/v1/clusters": false, "/ai_grid.draft.v1.Models/List": false} {
+		if got := relay.Handles(path); got != want {
+			t.Errorf("Handles(%q) = %v, want %v", path, got, want)
+		}
 	}
 }
 

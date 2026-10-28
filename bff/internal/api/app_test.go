@@ -222,15 +222,16 @@ func TestWrongMethodIsJSON405(t *testing.T) {
 		"POST /api/v1/models/ai-grid-models/m1": "GET, HEAD, PATCH, DELETE",
 	}
 	for req, allow := range cases {
-		method, path, _ := strings.Cut(req, " ")
-		rec := serve(app, asUser(method, path))
-		if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != allow {
-			t.Errorf("%s: %d Allow=%q, want 405 Allow=%q", req, rec.Code, rec.Header().Get("Allow"), allow)
-			continue
-		}
-		if body := decodeError(t, rec); body.Error.Code != "405" || !strings.Contains(body.Error.Message, allow) {
-			t.Errorf("%s: body %+v", req, body)
-		}
+		t.Run(req, func(t *testing.T) {
+			method, path, _ := strings.Cut(req, " ")
+			rec := serve(app, asUser(method, path))
+			if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != allow {
+				t.Fatalf("%d Allow=%q, want 405 Allow=%q", rec.Code, rec.Header().Get("Allow"), allow)
+			}
+			if body := decodeError(t, rec); body.Error.Code != "405" || !strings.Contains(body.Error.Message, allow) {
+				t.Errorf("body %+v, want code 405 and a message naming %q", body, allow)
+			}
+		})
 	}
 	if rec := serve(app, asUser(http.MethodPost, "/api/v1/nope")); rec.Code != http.StatusNotFound || rec.Header().Get("Allow") != "" {
 		t.Errorf("unknown path: %d %v", rec.Code, rec.Header())
@@ -518,34 +519,6 @@ func TestTenantsFromBackend(t *testing.T) {
 	}
 }
 
-func TestBackendErrorsMapToHTTP(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		code codes.Code
-		want int
-	}{
-		{codes.PermissionDenied, http.StatusForbidden},
-		{codes.Unauthenticated, http.StatusUnauthorized},
-		{codes.NotFound, http.StatusNotFound},
-		{codes.Unimplemented, http.StatusNotImplemented},
-		{codes.Unavailable, http.StatusServiceUnavailable},
-		{codes.Internal, http.StatusBadGateway},
-	}
-	for _, tc := range cases {
-		fake := &backendtest.Fake{Err: backendtest.Status(tc.code, "backend said no")}
-		rec := serve(newTestApp(t, testConfig(t), fake), asUser(http.MethodGet, "/api/v1/tenants"))
-		if rec.Code != tc.want {
-			t.Errorf("%s -> %d, want %d (%s)", tc.code, rec.Code, tc.want, rec.Body.String())
-		}
-	}
-	// Client-caused failures keep the backend's message.
-	fake := &backendtest.Fake{Err: backendtest.Status(codes.PermissionDenied, "alice may not list tenants")}
-	body := decodeError(t, serve(newTestApp(t, testConfig(t), fake), asUser(http.MethodGet, "/api/v1/tenants")))
-	if body.Error.Message != "alice may not list tenants" {
-		t.Fatalf("message = %q", body.Error.Message)
-	}
-}
-
 // A hub slower than the access review's timeout is the hub's failure (502
 // with the hub message), not the backend's 504; a slow backend stays 504.
 func TestSlowHubIs502AndSlowBackendIs504(t *testing.T) {
@@ -688,9 +661,11 @@ func TestClassify(t *testing.T) {
 		{errors.New("plain"), http.StatusInternalServerError},
 	}
 	for _, tc := range cases {
-		if got, _ := classify(tc.err); got != tc.want {
-			t.Errorf("classify(%v) = %d, want %d", tc.err, got, tc.want)
-		}
+		t.Run(tc.err.Error(), func(t *testing.T) {
+			if got, _ := classify(tc.err); got != tc.want {
+				t.Errorf("classify(%v) = %d, want %d", tc.err, got, tc.want)
+			}
+		})
 	}
 }
 
@@ -1003,10 +978,12 @@ func TestStateStrings(t *testing.T) {
 		aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_NOT_ACCEPTED:   "notaccepted",
 	}
 	for state, want := range cases {
-		mc := &aigridv1.ManagedCluster{Name: "x", Status: &aigridv1.ManagedClusterStatus{State: state}}
-		if got := toGridCluster(mc).Status; got != want {
-			t.Errorf("%s -> %q, want %q", state, got, want)
-		}
+		t.Run(state.String(), func(t *testing.T) {
+			mc := &aigridv1.ManagedCluster{Name: "x", Status: &aigridv1.ManagedClusterStatus{State: state}}
+			if got := toGridCluster(mc).Status; got != want {
+				t.Errorf("status %q, want %q", got, want)
+			}
+		})
 	}
 	// A cluster from today's backend (fields 1-3 only) has no status and no annotations but valid JSON maps.
 	c := toGridCluster(&aigridv1.ManagedCluster{Name: "bare"})

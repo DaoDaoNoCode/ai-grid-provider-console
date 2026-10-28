@@ -130,61 +130,61 @@ func TestGzipCompressesJSONAndAssets(t *testing.T) {
 func TestGzipLeavesOtherAnswersAlone(t *testing.T) {
 	t.Parallel()
 	big := bytes.Repeat([]byte("a"), 4*gzipMinSize)
+	// want is the body the client must get, uncompressed.
 	cases := []struct {
 		name    string
 		handler http.HandlerFunc
 		accept  string
+		want    []byte
 	}{
 		{"already encoded", func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Content-Encoding", "br")
 			_, _ = w.Write(big)
-		}, "gzip"},
+		}, "gzip", big},
 		{"not compressible", func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "font/woff2")
 			_, _ = w.Write(big)
-		}, "gzip"},
+		}, "gzip", big},
 		{"no content type", func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("X-Content-Type-Options", "nosniff")
 			_, _ = w.Write(big)
-		}, "gzip"},
+		}, "gzip", big},
 		{"gzip refused with q=0", func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(big)
-		}, "br, gzip;q=0"},
+		}, "br, gzip;q=0", big},
 		{"no Accept-Encoding", func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(big)
-		}, ""},
+		}, "", big},
 		{"small, written in parts", func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "text/css")
 			_, _ = w.Write(big[:100])
 			_, _ = w.Write(big[:100])
-		}, "gzip"},
+		}, "gzip", big[:200]},
 		{"small with a length", func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "text/css")
 			w.Header().Set("Content-Length", "100")
 			_, _ = w.Write(big[:100])
-		}, "gzip"},
+		}, "gzip", big[:100]},
 	}
 	for _, tc := range cases {
-		req := httptest.NewRequest(http.MethodGet, "/x", nil)
-		if tc.accept != "" {
-			req.Header.Set("Accept-Encoding", tc.accept)
-		}
-		rec := httptest.NewRecorder()
-		compress(tc.handler).ServeHTTP(rec, req)
-		want := big
-		if strings.HasPrefix(tc.name, "small") {
-			want = big[:100]
-			if tc.name == "small, written in parts" {
-				want = big[:200]
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/x", nil)
+			if tc.accept != "" {
+				req.Header.Set("Accept-Encoding", tc.accept)
 			}
-		}
-		assertPlain(t, tc.name, rec, want)
-		if tc.name == "already encoded" && rec.Header().Get("Content-Encoding") != "br" {
-			t.Errorf("already encoded: Content-Encoding = %q", rec.Header().Get("Content-Encoding"))
-		}
+			rec := httptest.NewRecorder()
+			compress(tc.handler).ServeHTTP(rec, req)
+			assertPlain(t, tc.name, rec, tc.want)
+		})
+	}
+	// The handler's own encoding is kept.
+	rec := httptest.NewRecorder()
+	compress(cases[0].handler).ServeHTTP(rec, withGzip(httptest.NewRequest(http.MethodGet, "/x", nil)))
+	if got := rec.Header().Get("Content-Encoding"); got != "br" {
+		t.Errorf("already encoded: Content-Encoding %q, want br", got)
 	}
 
 	for _, code := range []int{http.StatusNoContent, http.StatusNotModified} {
@@ -200,7 +200,7 @@ func TestGzipLeavesOtherAnswersAlone(t *testing.T) {
 	}
 
 	// A long compressible answer with a status other than 200 keeps it.
-	rec := httptest.NewRecorder()
+	rec = httptest.NewRecorder()
 	compress(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnprocessableEntity)
