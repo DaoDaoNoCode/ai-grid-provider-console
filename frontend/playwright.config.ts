@@ -41,27 +41,21 @@ export default defineConfig({
   // Outside CI it reuses whatever already answers on the ports, `make dev-fake-poc` included.
   webServer: [
     {
-      // The PoC preset (mock/fixtures-poc): the specs use the PoC's site, model and pin names.
-      command: 'make -C ../bff fake-backend',
+      // make -C bff fake-backend on the PoC preset (mock/fixtures-poc): the specs use the PoC's
+      // site, model and pin names. go run rather than make: CI's Playwright image has no make.
+      command: `go run ./cmd/fake-backend --fixtures=../mock/fixtures-poc --listen-address=127.0.0.1:${backendPort} --hub-address=127.0.0.1:${hubPort}`,
+      cwd: '../bff',
       port: Number(backendPort),
       reuseExistingServer: !process.env.CI,
       timeout: 180_000,
-      env: {
-        FIXTURES: '../mock/fixtures-poc',
-        BACKEND_ADDRESS: `127.0.0.1:${backendPort}`,
-        FAKE_HUB_ADDRESS: `127.0.0.1:${hubPort}`,
-      },
     },
     {
-      command: 'make -C ../bff run-fake',
+      // make -C bff run-fake.
+      command: `go run ./cmd --port=${bffPort} --backend-address=127.0.0.1:${backendPort} --hub-api-url=http://127.0.0.1:${hubPort} --fake-backend --models-namespace=ai-grid-models`,
+      cwd: '../bff',
       url: `http://127.0.0.1:${bffPort}/healthcheck`,
       reuseExistingServer: !process.env.CI,
       timeout: 180_000,
-      env: {
-        PORT: bffPort,
-        BACKEND_ADDRESS: `127.0.0.1:${backendPort}`,
-        FAKE_HUB_ADDRESS: `127.0.0.1:${hubPort}`,
-      },
     },
     {
       command: `pnpm exec vite build && pnpm exec vite preview --host 127.0.0.1 --port ${port} --strictPort`,

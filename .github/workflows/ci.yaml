@@ -73,10 +73,18 @@ jobs:
       - run: pnpm test
       - run: pnpm build
 
+  # Not after BFF and Frontend: it uses nothing they produce, and CI passed requires all three.
   e2e:
     name: Browser tests
     runs-on: ubuntu-latest
-    needs: [bff, frontend]
+    # Playwright's image has the browsers and their system libraries, so nothing is installed per
+    # run (the install took 18-525 s). Its version must be the one frontend/pnpm-lock.yaml has for
+    # @playwright/test: Dependabot bumps the package but not this image, and with a different
+    # version Playwright stops on a browser it can't find. Update the tag and the digest
+    # (the image index's, from `skopeo inspect --raw ... | skopeo manifest-digest /dev/stdin`)
+    # together with the package.
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
@@ -93,17 +101,9 @@ jobs:
           cache-dependency-path: frontend/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
         working-directory: frontend
-      # The browser download and apt fail now and then on a mirror; three tries before the job does.
-      - name: playwright install --with-deps chromium
+      # make e2e; the image has no make.
+      - run: pnpm e2e
         working-directory: frontend
-        run: |
-          for try in 1 2 3; do
-            pnpm exec playwright install --with-deps chromium && exit 0
-            echo "playwright install failed (try ${try} of 3)"
-            sleep $((try * 15))
-          done
-          exit 1
-      - run: make e2e
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: failure()
         with:
