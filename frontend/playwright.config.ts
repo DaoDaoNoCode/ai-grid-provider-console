@@ -7,6 +7,8 @@ const bffPort = process.env.E2E_BFF_PORT ?? '8080';
 const backendPort = process.env.E2E_BACKEND_PORT ?? '9090';
 const hubPort = process.env.E2E_HUB_PORT ?? '9091';
 const origin = `http://127.0.0.1:${port}`;
+const browser = { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } };
+const membership = 'cluster-membership.spec.ts';
 
 export default defineConfig({
   testDir: './e2e',
@@ -24,7 +26,13 @@ export default defineConfig({
     actionTimeout: 10_000,
     navigationTimeout: 15_000,
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } } }],
+  projects: [
+    { name: 'chromium', use: browser, testIgnore: membership },
+    // Every spec but this one leaves the fixtures as it found them, or changes only objects it
+    // created under a name of its own, so they can run side by side. This one adds a fixture
+    // cluster to AI Grid and removes it again: one run at a time.
+    { name: 'cluster membership', use: browser, testMatch: membership, workers: 1 },
+  ],
   // The stack of `make dev-fake-poc`, but with the frontend as it ships: the production bundle,
   // served by `vite preview`, whose proxy is the dev server's (vite.config.ts), so the identity
   // headers are the same. The dev server's unbundled modules and React's development build
