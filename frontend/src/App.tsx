@@ -9,6 +9,7 @@ import {
   NavItem,
   NavList,
   Page,
+  PageContext,
   PageSidebar,
   PageSidebarBody,
   PageToggleButton,
@@ -17,7 +18,7 @@ import {
   ToolbarContent,
   ToolbarItem,
 } from '@patternfly/react-core';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import type { Transport } from '@connectrpc/connect';
 import { BackendProvider, type TransportWith } from './api/connect/BackendProvider';
@@ -55,6 +56,43 @@ type Props = {
   /** The browser's location and session storage; a test gives its own. */
   navigation?: Navigation;
   storage?: GetStorage;
+};
+
+/**
+ * The nav toggle, from PatternFly's managed sidebar (Page isManagedSidebar): it opens and closes the
+ * sidebar, and its name says which it will do.
+ */
+const NavToggle: React.FC = () => {
+  const { isSidebarOpen } = useContext(PageContext);
+  return (
+    <PageToggleButton
+      isHamburgerButton
+      aria-label={isSidebarOpen ? 'Collapse navigation' : 'Expand navigation'}
+      aria-controls="console-sidebar"
+    />
+  );
+};
+
+/** The sections. On a phone or a narrow window the sidebar covers the page, so choosing one closes it. */
+const SectionsNav: React.FC<{ pathname: string }> = ({ pathname }) => {
+  const { isMobile, isSidebarOpen, onSidebarToggle } = useContext(PageContext);
+  return (
+    <Nav aria-label="Console sections">
+      <NavList>
+        {sections.map((s) => (
+          <NavItem
+            key={s.path}
+            isActive={s.exact ? pathname === s.path : pathname.startsWith(s.path)}
+            onClick={() => {
+              if (isMobile && isSidebarOpen) onSidebarToggle();
+            }}
+          >
+            <Link to={s.path}>{s.label}</Link>
+          </NavItem>
+        ))}
+      </NavList>
+    </Nav>
+  );
 };
 
 /** The page's main region, where Skip to content goes. */
@@ -143,7 +181,6 @@ export const App: React.FC<Props> = ({
   const notAdmin = user?.isProviderAdmin === false;
   const fullPage = sessionEnd !== undefined || notAdmin;
   const canSignOut = config?.fakeBackend !== true;
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [aboutOpen, setAboutOpen] = useState(false);
 
   const header = (
@@ -155,13 +192,7 @@ export const App: React.FC<Props> = ({
       <MastheadMain className="pf-v6-u-align-self-center">
         {!fullPage && (
           <MastheadToggle>
-            <PageToggleButton
-              isHamburgerButton
-              isSidebarOpen={sidebarOpen}
-              onSidebarToggle={() => setSidebarOpen((open) => !open)}
-              aria-label={sidebarOpen ? 'Collapse navigation' : 'Expand navigation'}
-              aria-controls="console-sidebar"
-            />
+            <NavToggle />
           </MastheadToggle>
         )}
         <MastheadBrand>
@@ -194,17 +225,9 @@ export const App: React.FC<Props> = ({
   );
 
   const sidebar = (
-    <PageSidebar id="console-sidebar" isSidebarOpen={sidebarOpen}>
+    <PageSidebar id="console-sidebar">
       <PageSidebarBody>
-        <Nav aria-label="Console sections">
-          <NavList>
-            {sections.map((s) => (
-              <NavItem key={s.path} isActive={s.exact ? pathname === s.path : pathname.startsWith(s.path)}>
-                <Link to={s.path}>{s.label}</Link>
-              </NavItem>
-            ))}
-          </NavList>
-        </Nav>
+        <SectionsNav pathname={pathname} />
       </PageSidebarBody>
     </PageSidebar>
   );
@@ -229,6 +252,9 @@ export const App: React.FC<Props> = ({
       <ConsoleSessionContext.Provider value={session}>
         <BackendProvider transport={transport} checkSession={checkSession}>
           <Page
+            // PatternFly runs the sidebar: open on a desktop, closed on a phone or a narrow window (below
+            // xl), where the toggle opens it over the page.
+            isManagedSidebar
             isContentFilled
             masthead={header}
             sidebar={fullPage ? undefined : sidebar}

@@ -179,6 +179,23 @@ describe('routes', () => {
     expect(screen.getByRole('button', { name: 'Expand navigation' })).toHaveAttribute('aria-expanded', 'false');
   });
 
+  it('opens the navigation over a narrow window, and closes it after a section is chosen', async () => {
+    window.innerWidth = 400;
+    try {
+      const user = userEvent.setup();
+      at('/clusters', new MockConsoleService());
+      const toggle = await screen.findByRole('button', { name: 'Expand navigation' });
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      await user.click(toggle);
+      expect(screen.getByRole('button', { name: 'Collapse navigation' })).toHaveAttribute('aria-expanded', 'true');
+      await user.click(screen.getByRole('link', { name: 'Models' }));
+      expect(await screen.findByRole('heading', { level: 1, name: 'Models' })).toBeVisible();
+      expect(screen.getByRole('button', { name: 'Expand navigation' })).toHaveAttribute('aria-expanded', 'false');
+    } finally {
+      window.innerWidth = 1280;
+    }
+  });
+
   it('shows the fake-backend banner only in fake mode', async () => {
     const fake = new MockConsoleService();
     fake.config = { ...fake.config, fakeBackend: true };
