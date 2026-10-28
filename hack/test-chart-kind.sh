@@ -8,7 +8,8 @@
 #      hack/deploy.sh does it (hack/chart-takeover.sh);
 #   2. helm install: the pod is ready, the proxy refuses a caller without a token, accepts a
 #      ServiceAccount token (TokenReview) and drops the identity headers a caller forges, the BFF answers isProviderAdmin from the cluster's access
-#      review and lists ManagedClusters through the backend; only the proxy listens off loopback;
+#      review, and Clusters/List over the relay lists ManagedClusters through the backend; only
+#      the proxy listens off loopback;
 #   3. helm upgrade with backend.clusterWrites: the backend may label ManagedClusters ai-grid/*, and
 #      the admission policy refuses its other changes;
 #   4. helm uninstall removes the cluster-scoped objects.
@@ -285,8 +286,10 @@ spec: { hubAcceptsClient: true }
 YAML
 expect 200 "with patch on ManagedClusters the caller is a provider admin" "${auth[@]}" "${u}/api/v1/user"
 grep -q '"isProviderAdmin":true' "${TMP}/body" || fail "isProviderAdmin should be true: $(cat "${TMP}/body")"
-expect 200 "the backend lists ManagedClusters with its ServiceAccount" "${auth[@]}" "${u}/api/v1/clusters"
-grep -q '"name":"site-a"' "${TMP}/body" || fail "site-a missing: $(cat "${TMP}/body")"
+# What the Clusters pages call: Clusters/List over the relay.
+list=(-X POST -H "Content-Type: application/json" -H "Connect-Protocol-Version: 1" -d '{}')
+expect 200 "the backend lists ManagedClusters with its ServiceAccount" "${auth[@]}" "${list[@]}" "${u}/ai_grid.v1.Clusters/List"
+grep -q '"id":"site-a"' "${TMP}/body" || fail "site-a missing: $(cat "${TMP}/body")"
 expect 503 "Models wait for the Git clone, which can't reach git.invalid" "${auth[@]}" "${u}/api/v1/models"
 expect 200 "a provider admin's Connect call reaches the backend through the relay" "${auth[@]}" "${connect[@]}" "${u}/ai_grid.v1.AiGrid/Ping"
 expect 200 "the frontend is served" "${auth[@]}" "${u}/"
