@@ -32,3 +32,6 @@ overrides:
   # GHSA-w74x-v6f9-j3xg (URI scheme spoofing): @perses-dev/plugin-system 0.56.0-beta.0 pins
   # fast-uri 3.1.8. Drop this once the Perses release in use depends on fast-uri 3.1.9 or later.
   'fast-uri@<3.1.9': 3.1.9
+  # GHSA-6pq8-jhm2-2vcw (qs.stringify denial of service): @perses-dev/explore 0.56.0-beta.0 pins
+  # qs 6.16.0. Drop this once the Perses release in use depends on qs 6.16.1 or later.
+  'qs@>=6.7.0 <6.16.1': 6.16.1
