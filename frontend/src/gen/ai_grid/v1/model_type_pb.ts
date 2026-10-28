@@ -119,7 +119,13 @@ export type ModelSpec = Message<"ai_grid.v1.ModelSpec"> & {
   /**
    * Where to deploy. Required: names at least one cluster by the ACM `name`
    * label (`name In [...]` or a `name` match label); the model is listed in
-   * each named cluster's index in the Git catalog.
+   * each named cluster's index in the Git catalog. A cluster that a create or
+   * update adds must be a ManagedCluster on the hub, or the call is
+   * InvalidArgument naming it, with a google.rpc.ResourceInfo detail per
+   * unknown cluster (resource_type
+   * `type.googleapis.com/ai_grid.v1.ManagedCluster`, resource_name the
+   * cluster); Models/ListPlacementClusters lists the clusters a model can run
+   * on.
    *
    * @generated from field: ai_grid.v1.ModelPlacement placement = 8;
    */
@@ -587,7 +593,8 @@ export type ModelPlacementStatus = Message<"ai_grid.v1.ModelPlacementStatus"> & 
   numberOfSelectedClusters: number;
 
   /**
-   * Selected cluster names.
+   * Selected cluster names (ManagedCluster names): the values of the
+   * placement's `name In [...]`, as ListPlacementClusters answers them.
    *
    * @generated from field: repeated string selected_clusters = 2;
    */
@@ -601,8 +608,11 @@ export type ModelPlacementStatus = Message<"ai_grid.v1.ModelPlacementStatus"> & 
   conditions: Condition[];
 
   /**
-   * Unique sorted `location` labels of decided clusters (P8). A decided
-   * cluster without a location label adds nothing. Output only.
+   * Unique sorted values of the `location` label of the selected clusters
+   * (P8): where they are, not which clusters they are. Several clusters can
+   * share one location, so these are not cluster names and a placement can't
+   * name them; use selected_clusters for that. A selected cluster without a
+   * location label adds nothing. Output only.
    *
    * @generated from field: repeated string locations = 4;
    */

@@ -168,7 +168,8 @@ export type ClustersUpdateRequest = Message<"ai_grid.v1.ClustersUpdateRequest"> 
    * and the location label, so one on the hub but left out is removed. Other
    * keys may be sent back as read; adding or changing one is InvalidArgument,
    * and so is an ai-grid/latitude or ai-grid/longitude annotation that isn't
-   * a number within -90..90 or -180..180.
+   * a plain decimal number (no exponent, no comma, no N/S/E/W) within
+   * -90..90 or -180..180, the values status.location reads.
    *
    * @generated from field: ai_grid.v1.ManagedCluster object = 1;
    */
