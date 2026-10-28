@@ -9,15 +9,15 @@
 > table on this page all go away. Don't invest in the parts marked for deletion; do read
 > ADR-0001 before adding an RPC.
 >
-> **The backend copy has landed** ([backend PR #10](https://github.com/ai-grid-cloud/ai-grid-provider-backend/pull/10),
-> merged 2026-10-22). It carries the draft as `ai_grid.draft.v1` on its own port, the fake as
+> **The backend copy has landed** (merged 2026-10-22). It carries the draft as `ai_grid.draft.v1` on its own port, the fake as
 > `internal/fakeinfra/draft/`, and the fixtures as `fixtures/draft/{default,poc}`.
 > It is **not** reconciled to OSAC conventions in
 > one step: each area is reshaped and deleted from the draft as the real backend implements it,
 > so the other pages keep working meanwhile. Console cleanup remains pending and removes
 > the draft proto, generated draft code and `bff/internal/fakebackend` from here. Models
-> and Subscriptions have already moved to real backend services (backend PRs #27 and #29);
-> console PR #63 uses them through the existing BFF adapters. The
+> and Subscriptions have already moved to real backend services (the backend's
+> `internal/servers/models_git.go` and `subscriptions_git.go`); the console uses them through the
+> existing BFF adapters. The
 > vendored upstream proto and drift guard remain during migration.
 
 Monitoring uses the hub's Perses dashboards when configured. Its fallback page uses the

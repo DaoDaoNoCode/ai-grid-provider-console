@@ -121,23 +121,23 @@ evaluates before paging (the fake in memory, `bff/internal/fakebackend/celfilter
 The PoC port added the shapes below to the draft. **Each is a proposal for the backend owners**,
 implemented in the fake so the console works today and not agreed with anyone: the owners settle
 each one, field number included, when the backend work on that area starts. A field's header
-comment in the draft says the same. Proposals the port first made and PR 12 later covered
-(the tenant version, the delete preconditions) are PR 12's and are described above.
+comment in the draft says the same. Proposals the port first made and the fake later covered
+(the tenant version, the delete preconditions) are the fake's and are described above.
 
 | Id | Proposal | What the fake implements |
 |---|---|---|
 | P1 | `Tenant.identity_provider = 11`, with the port's `IdentityProvider` and `OidcConfig` messages | Validates the provider with the PoC's rules on create and on an update whose mask names `identity_provider` (`BadRequest` violations under `identityProvider.*`), trims and stores it. An organization without one is accepted. The check runs after the version check, so a stale update is `Aborted` whatever else is wrong |
 | P3 | `Tenant.create_time = 12`, output only | Stamps the time at create and keeps it out of `attributes`, as the backend would in the attribute `ai-grid/create-time`; an organization created some other way has none, and the console shows "—" |
 | P6 | `ModelSubscriptionRef.namespace = 8` | The namespace of the referenced model; empty means the console's models namespace (`ai-grid-models`). Pairing with auth policies, status and the delete guard all use namespace and name |
-| P7 | `Models.ListLocations`, `ListLocationsResponse.locations = 1` | The names of the clusters that are AI Grid members (`ai-grid/enabled` and `ai-grid/provisioned` both `true`) with `ai-grid/role` inference or combined and Available, sorted: what the backend's `Models/ListPlacementClusters` answers (backend PR 41), the values of a placement's `name In [...]` |
+| P7 | `Models.ListLocations`, `ListLocationsResponse.locations = 1` | The names of the clusters that are AI Grid members (`ai-grid/enabled` and `ai-grid/provisioned` both `true`) with `ai-grid/role` inference or combined and Available, sorted: what the backend's `Models/ListPlacementClusters` answers (`internal/servers/models_server.go`), the values of a placement's `name In [...]` |
 | P8 | So far `PlacementStatus.locations = 4` | The `location` labels of the decided clusters, unique and sorted; a decided cluster without the label adds nothing |
-| P11 | The bodies of `subscriptions_service.proto` and `Grid/GetOverview`, which filled the placeholders | Subscriptions: create, read, update and delete with the CRD's rules and `BadRequest` field violations, `If-Match` as `resource_version` (set means checked, `Aborted` when stale). The overview: the PoC's metric contract with a deterministic demo generator, `range` limited to `1h`, `6h` and `24h`, a metric status per series, and the cluster inventory read from PR 12's cluster state |
+| P11 | The bodies of `subscriptions_service.proto` and `Grid/GetOverview`, which filled the placeholders | Subscriptions: create, read, update and delete with the CRD's rules and `BadRequest` field violations, `If-Match` as `resource_version` (set means checked, `Aborted` when stale). The overview: the PoC's metric contract with a deterministic demo generator, `range` limited to `1h`, `6h` and `24h`, a metric status per series, and the cluster inventory read from the fake's cluster state |
 | P13 | `ModelPhase.MODEL_PHASE_PARTIALLY_AVAILABLE = 4`, and `ManifestWorkStatus.phase = 7`, `reason = 8` and `message = 9`, output only | Each work's phase on its cluster: READY when the spoke's `ready` feedback is True; FAILED when `Applied` is False or `Degraded` is True, with that condition's reason and message, Applied first; otherwise PENDING, with no reason before the agent reports, else `Available`'s reason and message while it is not True, else `Progressing`'s. A placed model with some works READY and others not reads PARTIALLY_AVAILABLE, reason `PartiallyAvailable`, message "<n> of <m> clusters are serving the model.", after READY and before FAILED. The console's Models page lists each cluster's phase under the model (the UX team's "models per cluster" design) |
 | P12 | The MaaS status the research implies (`mock/research/models-maas.md` 8.1). `Subscription.phase = 10` is `Active`, `Degraded`, `Failed` or `Invalid`, and empty until the first reconcile (the controller never writes `Pending`), fields 11 and 12 are `reserved`, and `conditions = 16`, `model_ref_statuses = 17` and `token_rate_limit_statuses = 18` are new. `AuthPolicy` gains `conditions = 7` and `model_refs = 8` (`AuthPolicyModelRef {name, namespace}`, replacing the reserved bare names in 5). New messages `ResourceRefStatus`, `TokenRateLimitStatus` and `ModelRegistration`, and `GetSubscriptionResponse.model_registrations = 4`. All output only | The controller's phases, conditions, reasons and messages, word for word, derived on every read; the timing is in `mock/README.md`, area 4. A model ref with a namespace pairs with a policy that names the same namespace |
 
-P2, P4 and P5 were dropped: PR 12 covers them (`Tenant.resource_version`,
+P2, P4 and P5 were dropped: the fake covers them (`Tenant.resource_version`,
 `DeleteTenantRequest.resource_version` and `DeleteModelRequest.resource_version`). P10 (map-key
-field masks) was dropped: PR 17 settled on whole maps. P9 (cluster `grid` fields) and the rest
+field masks) was dropped: the fake settled on whole maps. P9 (cluster `grid` fields) and the rest
 of P8 are not in the draft yet.
 
 ## Working with the backend team

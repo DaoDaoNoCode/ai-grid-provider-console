@@ -1,14 +1,13 @@
-// Stopgap: the messages of the backend's real ai_grid.v1 Clusters, Tenants, Subscriptions and
-// Models services, copied from ai-grid-provider-backend proto/ai_grid/v1 (clusters and
-// tenants at 8c1a1bc, PR 16, with the cluster status details and GPUs from PR 33; subscriptions
-// and models at PR 27's merge ref 3428d8d)
-// (clusters_service, condition_type, managed_cluster_type, metadata_type, model_type,
-// models_service, subscription_type, subscriptions_service, tenant_type, tenants_service), so
+// Stopgap: the messages of the backend's real ai_grid.v1 Tenants, Subscriptions and Models
+// services, copied from ai-grid-provider-backend proto/ai_grid/v1 (tenants at 8c1a1bc,
+// subscriptions and models at 3428d8d, ListPlacementClusters at 71bb8cc)
+// (condition_type, metadata_type, model_type, models_service, subscription_type,
+// subscriptions_service, tenant_type, tenants_service), so
 // the BFF can call those RPCs. Fields the BFF doesn't use are
 // left out. Field numbers, names and types are unchanged; the validation and HTTP
 // options are dropped. The package is renamed because the draft in ../../v1 declares the same
 // message names in ai_grid.v1: protobuf is wire-compatible across package names, and the BFF
-// calls the real method paths (/ai_grid.v1.Clusters/List ...) itself (bff/internal/backend/v1.go).
+// calls the real method paths (/ai_grid.v1.Tenants/List ...) itself (bff/internal/backend/v1.go).
 syntax = "proto3";
 
 package ai_grid.backend.v1;

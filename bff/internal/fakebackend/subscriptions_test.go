@@ -517,7 +517,7 @@ func TestSubscriptionsAreNormalizedBeforeValidation(t *testing.T) {
 	}
 }
 
-// TestSubscriptionsNeedAProviderAdminToWrite: like PR 12's RPCs, every
+// TestSubscriptionsNeedAProviderAdminToWrite: like the fake's other RPCs, every
 // subscription RPC needs a bearer token, and a token the hub denies (a
 // viewer) reads but can't create, update or delete.
 func TestSubscriptionsNeedAProviderAdminToWrite(t *testing.T) {

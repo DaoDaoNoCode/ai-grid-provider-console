@@ -12,7 +12,7 @@ import { fakeClients } from '../api/connect/testing';
 import { HttpConsoleService } from '../api/HttpConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
 import { tileLayerConfig } from '../pages/grid/tiles';
-import { serviceOnPr12Json } from './pr12Json';
+import { serviceOnBffExamples } from './bffExamples';
 import { toManagedCluster } from './connectClusters';
 import { renderAt } from './render';
 // The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
@@ -99,10 +99,10 @@ it('switches between clusters and models and follows placement cross-links', asy
   expect(screen.queryByText('Fleet metrics')).not.toBeInTheDocument();
 });
 
-it("follows placement cross-links on PR 12's model JSON", async () => {
+it("follows placement cross-links on the BFF's example model JSON", async () => {
   const user = userEvent.setup();
-  const service = serviceOnPr12Json();
-  // PR 12's clusters, as Clusters/List over Connect (connectClusters.ts).
+  const service = serviceOnBffExamples();
+  // The example overview's clusters, as Clusters/List over Connect (connectClusters.ts).
   service.listClusters = async () => (await service.getGridOverview('1h')).clusters;
   renderAt('/ai-grid', service);
   await user.click(await screen.findByRole('button', { name: 'View site-paris-1 details' }));
@@ -213,7 +213,7 @@ it('shows only the AI Grid members, and when the console read them', async () =>
 
 it('shows a model by its phase, not "Deployment saved"', async () => {
   const user = userEvent.setup();
-  const service = serviceOnPr12Json();
+  const service = serviceOnBffExamples();
   const [model] = await service.listModels();
   renderAt('/ai-grid', service);
   await user.click(

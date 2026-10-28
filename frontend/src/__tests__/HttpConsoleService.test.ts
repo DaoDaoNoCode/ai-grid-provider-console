@@ -106,7 +106,7 @@ describe('HttpConsoleService', () => {
     await expect(service.createModel(input)).resolves.toMatchObject({ name: 'widget', namespace: 'team-models' });
     const post = fetchFn.mock.calls.find(([, init]) => init?.method === 'POST');
     expect(post?.[0]).toBe('/api/v1/models');
-    // PR 12's ModelCreate in the configured namespace, placed by cluster name.
+    // The BFF's ModelCreate (bff/internal/api/models.go) in the configured namespace, placed by cluster name.
     expect(JSON.parse(post?.[1].body)).toMatchObject({
       name: 'widget',
       namespace: 'team-models',
@@ -171,7 +171,7 @@ describe('HttpConsoleService', () => {
     );
   });
 
-  it("maps a subscription's referenced models from PR 12's model JSON", async () => {
+  it("maps a subscription's referenced models from the BFF's model JSON", async () => {
     const model = { name: 'granite', namespace: 'ai-grid-models', modelUri: 'hf://x', modelName: 'x', phase: 'ready' };
     const subscription = { name: 'team', resourceVersion: '1', owner: { groups: [] }, modelRefs: [] };
     const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, { data: { subscription, modelRefs: [model] } }));

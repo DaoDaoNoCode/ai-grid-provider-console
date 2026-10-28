@@ -71,18 +71,20 @@ backend pages by; it doesn't evaluate `filter` yet and counts every cluster in `
 filtered cluster list answers 501 without calling it. The tenant list forwards `offset`, `limit` and `filter`; the
 backend pages but doesn't evaluate `filter` yet, so a filtered list answers 501. A tenant write
 sends `name` as `metadata.name` and `domains` as `spec.domains` (mask paths likewise), and the
-`If-Match` version as `metadata.version` with `lock: true`. Backend PR 16 requires a version:
+`If-Match` version as `metadata.version` with `lock: true`. The backend requires a version
+(`internal/servers/tenants_server.go`):
 every tenant reads as version 1 or more, and an update or delete at version 0 is `InvalidArgument`
 (422, with the backend's message). A write that sets a field the backend's `Tenant` lacks
 (`description`, `enabled: false`, `attributes`, `identityProvider`) answers 501 before any call,
 and so does an `alias`: on create, one other than the name; on PATCH, any alias. A
-PATCH that leaves only no-op fields sends the mask `id`, which backend PR 16 answers with the
+PATCH that leaves only no-op fields sends the mask `id`, which the backend answers with the
 stored tenant after checking the version, writing nothing. DELETE sends the `If-Match` version as
-`TenantsDeleteRequest.version` (backend PR 16). The backend refuses a change to a label or annotation
+`TenantsDeleteRequest.version`. The backend refuses a change to a label or annotation
 outside `ai-grid/*` and the `location` label, and a bad coordinate, with `InvalidArgument` (422),
 after it checks the version: a stale one is `Aborted` (409) whatever the labels.
 
-Subscriptions follow backend PR 27 (vendored at its merge ref until it merges). The organization
+Subscriptions follow the backend's `internal/servers/subscriptions_server.go` and
+`subscription_mapper.go`. The organization
 (`tokenMetadata.organizationId` in the JSON) is sent as `spec.organization.id`, which the backend
 keeps immutable (422 on a change); the display name and description travel as the
 `openshift.io/display-name` and `openshift.io/description` annotations, and the billing rate as
@@ -94,12 +96,12 @@ reports a MaaS registration for in `modelRefs`, with that registration's phase (
 Failed, Invalid or Unhealthy, else Pending); a model without one shows as not found. DELETE sends
 the `If-Match` version, so a stale one is 409.
 
-Models follow backend PR 27 too. The backend's models have an `id` and no namespace (it keeps them
+Models follow the backend's `internal/servers/models_server.go` and `models_git.go`. Its models have an `id` and no namespace (it keeps them
 in one namespace of its own), so the BFF reports every model in its `--models-namespace` and
 answers 404 for a model in any other; against a real backend, set it to the backend's subscription
 namespace (`AI_GRID_SUBSCRIPTION_NAMESPACE`, default `models-as-a-service`), where the backend
 keeps the `MaaSModelRef` that subscriptions name, so a subscription's model references match the
-models. `GET /locations` answers `Models/ListPlacementClusters` (backend PR 41): the names of the
+models. `GET /locations` answers `Models/ListPlacementClusters` (`internal/servers/models_server.go`): the names of the
 clusters a model can run on. The console places a model by those names, `name In [...]` over the
 ACM `name` label, as the backend's git mode stores it, so a placement goes as it is, except claim
 expressions, tolerations and spread constraints, which the backend lacks (501). A location is the
@@ -114,7 +116,7 @@ unchanged, with the `If-Match` version and `lock: true`, and DELETE sends the `I
 |---|---|---|
 | Language | Go, standard library `net/http` router, `google.golang.org/grpc` client against the draft `ai_grid.v1` package generated in `bff/gen` from `mock/proto`. No `client-go`, no backend module dependency. | The BFF reads nothing from the hub; its one Kubernetes call is a `SelfSubjectAccessReview` over plain HTTPS (`internal/hub`). One dependency less to keep in step with the hub. Compiling against the draft lets the BFF, the fake and the UI move ahead of the backend; the drift test keeps the draft honest against the vendored backend proto. |
 | Identity | kube-auth-proxy authenticates the browser and sets `x-forwarded-user`, `x-forwarded-email`, `x-forwarded-groups` and `x-forwarded-access-token`. The BFF reads them (`internal/identity`) and forwards the token as `authorization: Bearer` plus the user, email and groups as gRPC metadata on every RPC (`internal/backend`): `x-forwarded-user`, `x-forwarded-email` and `x-forwarded-groups` (the groups joined with `,`). gRPC metadata values must be printable ASCII, and an OpenShift user or group name need not be, so the BFF percent-encodes each value (each group on its own, before the join): `%` and every byte outside 0x20–0x7E become `%XX` with upper-case hex, and nothing else changes, so an ASCII value without `%` is sent byte for byte (`équipe-ops` is sent as `%C3%A9quipe-ops`, `100%` as `100%25`). The proposed decoding, not yet agreed with the backend team: split the groups on `,`, then percent-decode each value (Go: `url.PathUnescape`, which leaves `+` alone) to get the UTF-8 name back. The fake does so where it reads the user; the shipped backend doesn't decode yet, so it sees a non-ASCII name still encoded (an ASCII name without `%`, the usual case, is unchanged either way). These values are advisory: the backend authorizes with `authorization` only. The draft proto's `AiGrid/GetCurrentUser` is the RPC that will return the backend's view of the caller. | The backend decides what the caller may do, and the BFF has no credential of its own. Until the backend authorizes the caller, the BFF makes one decision itself: only a provider admin (see `isProviderAdmin`) reaches `/api/v1` beyond `GET /user` and `GET /config`, and others get 403 (`AGENTS.md`, known exceptions). The proxy's provider can change (OpenShift OAuth today, a Keycloak realm later) without touching the BFF. |
-| `isProviderAdmin` | The hub's answer to a `SelfSubjectAccessReview` for `patch` on `managedclusters`, asked with the caller's own token (`HUB_API_URL`, in-cluster by default). | The user's RBAC decides, not a console setting, as PR 1 did (review of 2026-10-15). The UI uses it to show or hide actions, and until the backend authorizes the caller the BFF also refuses non-admins on `/api/v1` with it (see Identity). A `GetCurrentUser` RPC can take this over once the backend acts as the caller. |
+| `isProviderAdmin` | The hub's answer to a `SelfSubjectAccessReview` for `patch` on `managedclusters`, asked with the caller's own token (`HUB_API_URL`, in-cluster by default). | The user's RBAC decides, not a console setting (review of 2026-10-15). The UI uses it to show or hide actions, and until the backend authorizes the caller the BFF also refuses non-admins on `/api/v1` with it (see Identity). A `GetCurrentUser` RPC can take this over once the backend acts as the caller. |
 | Login in development | The Vite dev server and `hack/api.sh` set the same headers from `oc whoami` and `oc whoami -t`. `make start` forwards the backend of the console deployed on the hub (`hack/forward-backend.sh`); `make dev` uses one run from the backend repository with `--kubeconfig`. | Any developer who has run `oc login` works against a real hub. |
 | Deployment | One pod: kube-auth-proxy (:8443), bff on `127.0.0.1:8080`, ai-grid-backend on `127.0.0.1:9090`. The BFF dials the backend in plaintext over loopback; plaintext to any other address is refused unless `BACKEND_INSECURE=true`. The kubelet probes `/readyz` through the proxy (`--skip-auth-route=^/readyz$`); neither the BFF nor the backend has a probe of its own. The rollout strategy is `Recreate`: the backend serializes each organization's writes with in-process locks (ai-grid-cloud/ai-grid-provider-backend#16), which hold only with one backend, so an upgrade stops the pod before the new one starts and the console is unavailable until it's ready. That covers rollouts only, not a pod deleted by hand or evicted. Client-side `kubectl apply` and `helm upgrade` switch an existing Deployment to `Recreate`; server-side apply refuses it while the defaulted `rollingUpdate` is there. | Nothing on the pod network can reach the BFF with forged identity headers or the backend at all. When the backend gets its own Deployment, set `BACKEND_ADDRESS` to its Service and `BACKEND_CA_FILE` to its serving CA. |
 | Cluster labels | `ai-grid/enabled`, `ai-grid/role` (`combined`, `ingress` or `inference`: what the hub installs on a member; the Clusters table shows it, `ingress` as "MaaS (ingress)", the clusters tenants send requests to), `ai-grid/provisioned`, `location`, `ai-grid/site`, `ai-grid/region`, and ACM's `openshiftVersion`. | The POC's conventions (site and region were added to the POC on 2026-10-14) so that Placements written by either tool select the same clusters. The BFF derives fields from the labels the backend returns. |

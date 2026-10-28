@@ -70,7 +70,7 @@ export type GPUNode = {
 export type ClusterGPUs = { total: number; nodeCount: number; configurations: GPUConfiguration[]; nodes: GPUNode[] };
 
 /**
- * A cluster as the BFF sends it (PR 12's `GridCluster` in bff/internal/api/clusters.go),
+ * A cluster as the BFF sends it (`GridCluster` in bff/internal/api/clusters.go),
  * limited to the fields the console reads. `toGridCluster` in adapters.ts maps it.
  */
 export type ApiCluster = {
@@ -236,7 +236,7 @@ export type Organization = Omit<OrganizationInput, 'identityProvider'> & {
 };
 
 /**
- * A tenant of GET /api/v1/tenants (PR 12's JSON plus the identity provider, proposal P1).
+ * A tenant of GET /api/v1/tenants (the BFF's JSON plus the identity provider, proposal P1).
  * The pages read it through toOrganization.
  */
 export type ApiTenant = {
@@ -282,7 +282,7 @@ export type CreateModelRequest = {
 };
 
 /**
- * The body of POST /api/v1/models: the keys of PR 12's `ModelCreate` (bff/internal/api/models.go)
+ * The body of POST /api/v1/models: the keys of `ModelCreate` (bff/internal/api/models.go)
  * that the wizard sets, and no others. `toModelCreate` in adapters.ts builds it.
  */
 export type ApiModelCreate = {
@@ -335,7 +335,7 @@ export type ModelUpdate = {
 };
 
 /**
- * A model of GET /api/v1/models (PR 12's `Model` in bff/internal/api/models.go), limited to the
+ * A model of GET /api/v1/models (`Model` in bff/internal/api/models.go), limited to the
  * fields the console reads. `toManagedModel` in adapters.ts maps it.
  */
 export type ApiModel = {
@@ -405,14 +405,14 @@ export type ModelWork = {
   conditions: Condition[];
 };
 
-/** A model deployment: its saved deployment and placement, and PR 12's phase. */
+/** A model deployment: its saved deployment and placement, and the BFF's phase. */
 export type ManagedModel = {
   name: string;
   namespace: string;
   displayName?: string;
   description?: string;
   modelRef: ModelReference;
-  /** PR 12's phase: Pending, Ready or Failed. */
+  /** The BFF's phase: Pending, Ready or Failed. */
   phase?: string;
   endpoint?: string;
   status?: string;

@@ -3,7 +3,7 @@
 The data the PoC (`krisv/ai-grid-cloud-provider-poc` at `62319b8`) shows, in the fake
 backend's fixture format, so the console and the PoC can be compared screen by screen and
 the browser tests find the PoC's names. `make dev-fake-poc` loads this directory; `make
-dev-fake` still loads PR 12's fixtures in `mock/fixtures/`. The file shapes are the ones
+dev-fake` still loads the default fixtures in `mock/fixtures/`. The file shapes are the ones
 `mock/fixtures/README.md` describes.
 
 | File | What it seeds |
@@ -18,6 +18,6 @@ dev-fake` still loads PR 12's fixtures in `mock/fixtures/`. The file shapes are 
 There's no `scenarios.json`, so nothing changes over time.
 
 `bff/internal/fakebackend/preset_test.go` checks this directory against the PoC and runs
-PR 12's fixture checks on it, and `TestDemoMetricsMatchThePoC` checks that its members are
-the input of `mock/golden/demo-metrics.json`. This directory mirrors the PoC at `62319b8` and the port's fixtures from before the rebase onto PR 12; when
+the default fixtures' checks on it, and `TestDemoMetricsMatchThePoC` checks that its members are
+the input of `mock/golden/demo-metrics.json`. This directory mirrors the PoC at `62319b8` and the port's fixtures from before the fake's own fixtures replaced them; when
 it changes, keep the organizations and subscriptions in step with those two sources. All names, ids, and hosts are fictional.

@@ -124,7 +124,7 @@ export class HttpConsoleService implements ConsoleService {
     return this.request<string[]>('GET', '/locations');
   }
 
-  /** POSTs PR 12's ModelCreate with only the wizard's keys, in the configured models namespace. */
+  /** POSTs the BFF's ModelCreate (bff/internal/api/models.go) with only the wizard's keys, in the configured models namespace. */
   async createModel(input: CreateModelRequest): Promise<ManagedModel> {
     const { modelsNamespace } = await this.getConfig();
     return toManagedModel(
@@ -156,7 +156,7 @@ export class HttpConsoleService implements ConsoleService {
     return (await this.request<MaaSSubscription[]>('GET', '/subscriptions')).map(toSubscription);
   }
 
-  /** The subscription, with its referenced models as PR 12's model JSON mapped by toManagedModel. */
+  /** The subscription, with its referenced models as the BFF's model JSON mapped by toManagedModel. */
   async getSubscriptionInfo(name: string): Promise<SubscriptionInfoResponse> {
     const info = await this.request<Omit<SubscriptionInfoResponse, 'modelRefs'> & { modelRefs?: ApiModel[] }>(
       'GET',

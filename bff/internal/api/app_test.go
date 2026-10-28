@@ -1092,10 +1092,10 @@ const validSubscription = `{"name":"team-a","displayName":" Team A ","descriptio
 "createAuthPolicy":true}`
 
 // TestSubscriptionWritesRequireJSONContentType: the subscription writes get
-// PR 12's 415 for a body that isn't declared JSON (what a cross-site form or
+// the BFF's 415 for a body that isn't declared JSON (what a cross-site form or
 // a text/plain fetch sends without a CORS preflight), before any backend
-// call and before the If-Match check, so the PUT here sends none. PR 12's
-// TestWritesRequireJSONContentType covers its own routes.
+// call and before the If-Match check, so the PUT here sends none.
+// TestWritesRequireJSONContentType covers the other routes.
 func TestSubscriptionWritesRequireJSONContentType(t *testing.T) {
 	t.Parallel()
 	for _, r := range []struct{ method, path string }{

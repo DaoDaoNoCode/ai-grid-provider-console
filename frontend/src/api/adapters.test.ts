@@ -52,7 +52,7 @@ describe('toGridCluster', () => {
     ['detaching', 'Unknown', 'Detaching'],
     ['notaccepted', 'Unknown', 'Not accepted'],
     [undefined, 'Unknown', undefined],
-  ])('maps PR 12 cluster state %s to the PoC availability %s', (status, availability, state) => {
+  ])("maps the BFF's cluster state %s to the PoC availability %s", (status, availability, state) => {
     const cluster = toGridCluster(apiCluster({ status }));
     expect(cluster.status).toBe(availability);
     expect(cluster.state).toBe(state);
@@ -186,7 +186,7 @@ describe('toSubscription', () => {
 
 describe('toSubscriptionInfo', () => {
   it("picks each policy's Ready condition into its status fields, as the subscription's", () => {
-    // The BFF sends a policy's conditions only (backend PR #40).
+    // The BFF sends a policy's conditions only (the backend's internal/servers/subscription_mapper.go).
     const policy: MaaSAuthPolicy = {
       name: 'team-a-policy',
       phase: 'Active',
@@ -427,7 +427,7 @@ describe('toManagedModel', () => {
     ).toBeUndefined();
   });
 
-  // GET /api/v1/models under PR 12's fixtures (mock/examples/get-models.json).
+  // GET /api/v1/models over the fake's fixtures (mock/examples/get-models.json).
   const models = getModels.body.data as unknown as ApiModel[];
   const byName = (name: string) => toManagedModel(models.find((m) => m.name === name)!);
 

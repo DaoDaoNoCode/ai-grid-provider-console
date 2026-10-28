@@ -17,7 +17,7 @@ the backend running from a local checkout.
 Owner: the backend team ([ai-grid-provider-backend](https://github.com/ai-grid-cloud/ai-grid-provider-backend)). Everything that touches the hub, Keycloak or metrics.
 
 1. Done: the backend's CI publishes `ghcr.io/ai-grid-cloud/ai-grid-provider-backend`
-   (`sha-<commit>`, `latest` and `pr-<number>`, backend PR 8), and the console's chart runs it
+   (`sha-<commit>`, `latest` and `pr-<number>`, its `.github/workflows/publish-image.yml`), and the console's chart runs it
    with its Keycloak settings in Secret `ai-grid-backend-keycloak` (`hack/deploy.sh`,
    ai-grid-env-setup's `bootstrap/60-console.sh`). Still open: a dedicated Keycloak service
    account with only the roles the Tenants RPCs need, in place of the admin login.
@@ -29,8 +29,8 @@ Owner: the backend team ([ai-grid-provider-backend](https://github.com/ai-grid-c
    Keycloak stays on a service credential used only after a provider-admin check.
 3. Grow `ManagedCluster`: Available condition as `status`, the `consoleurl` claim,
    annotations (`ai-grid/site-name`, `ai-grid/latitude`, `ai-grid/longitude`).
-   `UpdateManagedCluster` for enrol and location is done (`Clusters/Update`, backend PR 1,
-   with the version precondition in PR 12), shipped before item 2: see item 5, "RBAC".
+   `UpdateManagedCluster` for enrol and location is done (`Clusters/Update`, with the version
+   precondition, the backend's `internal/servers/clusters_server.go`), shipped before item 2: see item 5, "RBAC".
 4. `Grid/GetOverview` with the POC's metric contract (`docs/grid-monitoring.md` in the POC):
    Thanos query_range for request rate, 5xx rate, p95 latency and GPU utilisation scoped by
    `cluster`, explicit `metricsSource: demo` when Thanos is not configured. Verify the real
@@ -60,9 +60,9 @@ Owner: the backend team ([ai-grid-provider-backend](https://github.com/ai-grid-c
      presets); and, if the backend creates the `ManagedClusterSetBinding` itself, `create`
      on `managedclustersetbindings` plus `create` on `managedclustersets/bind` for the
      bound set.
-6. Done: tenant create, update and delete on Keycloak Organizations (`Tenants`, backend PR 3,
-   with the version precondition in PR 16), which the BFF maps for the organizations page
-   (console PR 42); ai-grid-env-setup's `bootstrap/35-keycloak.sh` creates the `ai-grid`
+6. Done: tenant create, update and delete on Keycloak Organizations (`Tenants`, with the
+   version precondition, the backend's `internal/servers/tenants_server.go`), which the BFF maps
+   for the organizations page (`bff/internal/api/tenants.go`); ai-grid-env-setup's `bootstrap/35-keycloak.sh` creates the `ai-grid`
    realm on the dev hub's Keycloak (`grid-sso`).
 
 ## BFF (this repo, `bff/`)
@@ -78,8 +78,7 @@ Owner: console team. A handler per RPC, nothing else.
    `BACKEND_CA_FILE` to its serving CA, a NetworkPolicy, and drop the backend container and
    its ClusterRole from `manifests/`.
 3. Done: ai-grid-env-setup deploys the console's Helm chart on the dev hub with Argo CD
-   (`apps/console`, the chart and CI-built images pinned to console `main` at the merge of
-   PR 41), with login through the Route.
+   (`apps/console`, the chart and CI-built images pinned to a console `main` commit), with login through the Route.
 4. If the auth setup changes to a Keycloak realm (open question for the OIDC
    integration owners), switch the proxy provider in `manifests/` and the header names in
    `config`; nothing else changes.
@@ -105,7 +104,7 @@ Owner: console team.
 | Auth setup for AI Grid: OpenShift OAuth as deployed here, or a Keycloak realm shared with tenants? | the OIDC integration owners | Decides the kube-auth-proxy provider; the dev hub already has Keycloak in `grid-sso` |
 | Are Keycloak Organizations the tenant model, or will the tenant layer defined with Swati's team look different? | Swati's team, the backend team | The backend's `ListTenants` already assumes Organizations |
 | Which Thanos (ACM observability or user-workload monitoring) and which metric names? | the observability owners, Praxis team | Unblocks `GetOverview` with real data; the POC's names are assumptions |
-| Does the backend repository move to `osac-project`? (Its image is published to `ghcr.io/ai-grid-cloud/ai-grid-provider-backend` by its CI, backend PR 8.) | the backend team | Decides the import path the console switches to when it drops the draft proto in `mock/proto`, and where the chart's backend image comes from |
+| Does the backend repository move to `osac-project`? (Its image is published to `ghcr.io/ai-grid-cloud/ai-grid-provider-backend` by its CI, `.github/workflows/publish-image.yml`.) | the backend team | Decides the import path the console switches to when it drops the draft proto in `mock/proto`, and where the chart's backend image comes from |
 | Is there a cost or spend view for AI Grid at all? | Myriam Fentanes, Jenny Yi, Daniele Zonca | Decides whether `billingUrl` ever points anywhere |
 
 ## Shared rules

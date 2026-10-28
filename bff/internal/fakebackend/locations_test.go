@@ -65,7 +65,7 @@ func TestListLocationsOnScenarioState(t *testing.T) {
 	}
 }
 
-// TestListLocationsFromTheFixtures: under PR 12's fixtures only site-paris-1 is
+// TestListLocationsFromTheFixtures: under mock/fixtures only site-paris-1 is
 // an Available, provisioned inference or combined member at start
 // (site-madrid-1 is an ingress cluster, site-ashburn-1 isn't provisioned).
 func TestListLocationsFromTheFixtures(t *testing.T) {

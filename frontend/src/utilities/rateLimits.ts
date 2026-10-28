@@ -91,7 +91,7 @@ export const exceedsTokenLimit = (n: number): boolean => !Number.isNaN(n) && Mat
  * TokenRateLimitPolicy (maxWindowSeconds and validateTokenRateLimit in
  * opendatahub-io/models-as-a-service maas-controller/pkg/controller/maas/maassubscription_controller.go
  * at 4d71db2), so the backend refuses it on a write (maxTokenWindowSeconds in
- * ai-grid-provider-backend internal/servers/subscription_mapper.go, PR #40). Only hours can
+ * ai-grid-provider-backend internal/servers/subscription_mapper.go). Only hours can
  * reach it: 9999m and 9999s are shorter.
  */
 export const MAX_WINDOW_HOURS = 8_784;

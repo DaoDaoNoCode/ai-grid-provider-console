@@ -171,7 +171,7 @@ const modelPhaseOf = (phase: string | undefined, reason: string | undefined) =>
   !phase && reason === SAVED_TO_GIT_REASON ? 'Saved to Git' : phaseOf(phase);
 
 /**
- * Maps a model of GET/POST /models to the PoC's ManagedModel. Status is PR 12's phase (Pending
+ * Maps a model of GET/POST /models to the PoC's ManagedModel. Status is the BFF's phase (Pending
  * before the backend reports one, Saved to Git when the backend saved it to Git); locations are the placement's decided locations (P8).
  */
 export const toManagedModel = (json: ApiModel): ManagedModel => ({
@@ -306,7 +306,7 @@ export const withRuntimeArgs = (env: EnvVar[] | undefined, args: string[]): EnvV
 };
 
 /**
- * The wizard's input as PR 12's POST /models body, with only the keys the PoC writes. The
+ * The wizard's input as the BFF's POST /models body, with only the keys the PoC writes. The
  * Placement is the PoC's (backend/placements.mjs): enrolled, provisioned clusters at the chosen
  * locations, rolled out to all at once. Runtime arguments go in VLLM_ADDITIONAL_ARGS, as the
  * PoC's deployment does (backend/models.mjs deploymentResources).

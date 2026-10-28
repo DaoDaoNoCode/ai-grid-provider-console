@@ -20,7 +20,7 @@ import { consolePlacement } from '../api/adapters';
 import { HttpConsoleService } from '../api/HttpConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
 import type { CreateModelRequest, ManagedModel } from '../api/types';
-import { serviceOnPr12Json } from './pr12Json';
+import { serviceOnBffExamples } from './bffExamples';
 import { deferred, renderAt } from './render';
 // The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
 import '../pages/models/ModelDetailsPage';
@@ -432,8 +432,8 @@ const jsonResponse = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
 /**
- * A MockConsoleService whose model calls go through HttpConsoleService to PR 12's model JSON
- * (mock/examples/get-models.json), as the BFF answers under PR 12's fixtures.
+ * A MockConsoleService whose model calls go through HttpConsoleService to the BFF's model JSON
+ * (mock/examples/get-models.json), as the BFF answers over the fake's fixtures (mock/fixtures).
  */
 const serviceOnModelJson = (fetchFn: ReturnType<typeof vi.fn>) => {
   const service = new MockConsoleService();
@@ -470,7 +470,7 @@ const modelJsonFetch = () =>
     return jsonResponse(200, { data: getModels.body.data });
   });
 
-it('lists PR 12 models with their locations', async () => {
+it("lists the BFF's example models with their locations", async () => {
   renderAt('/models', serviceOnModelJson(modelJsonFetch()));
   const table = await screen.findByTestId('model-deployments-table');
   expect(table).toHaveTextContent('Granite 8B Instruct');
@@ -1599,7 +1599,7 @@ describe('the Models list expands every row', () => {
 
   it("shows the placement's reason and message when the backend says it chose no cluster", async () => {
     const user = userEvent.setup();
-    renderAt('/models', serviceOnPr12Json());
+    renderAt('/models', serviceOnBffExamples());
     await user.click(within(await rowOf('codellama-13b')).getByRole('button', { name: 'Details' }));
     expect(await screen.findByTestId('model-not-placed-codellama-13b')).toHaveTextContent(
       'NoManagedClusterMatched: No ManagedCluster matches any of the cluster predicate',

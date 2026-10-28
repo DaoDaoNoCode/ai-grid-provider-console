@@ -13,7 +13,7 @@ decisions before designing anything new:
 
 - [ADR-0001](docs/adr/0001-the-contract-lives-in-the-backend.md): the contract lives in
   `ai-grid-cloud/ai-grid-provider-backend`, reconciled to the OSAC service standards. The
-  draft and fake were copied into the backend by PR #10; their console copies are pending
+  draft and fake were copied into the backend (`ai_grid.draft.v1`, `internal/fakeinfra/draft/`); their console copies are pending
   removal. The vendored upstream copy and drift guard remain, aimed at the real backend.
 - [ADR-0002](docs/adr/0002-connect-end-to-end-with-vanguard-for-rest.md): the browser speaks
   Connect; the backend serves Connect, gRPC and gRPC-Web from one connect-go server, and vanguard
@@ -106,6 +106,9 @@ For maintenance of an existing legacy draft path, follow `mock/proto/README.md` 
 
 Afterwards run `make -C bff golden` when the BFF's JSON or a fixture changed, and update the
 docs (`docs/plan/bff-api.md`, `mock/AGENTS.md`, `mock/areas/*.md`) in the same change.
+
+Don't name files, identifiers or tests after pull requests or issues; a comment describes the
+behaviour and points at its source (a file, a function or an upstream commit), not a PR number.
 
 ## The backend's own API over Connect
 

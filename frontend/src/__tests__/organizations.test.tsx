@@ -380,7 +380,7 @@ it('shows one pagination, in the toolbar, for a single page', async () => {
   expect(screen.getAllByRole('navigation', { name: /pagination/i })).toHaveLength(1);
 });
 
-// PR 12's tenant JSON, as GET /api/v1/tenants/{id} sends it (mock/examples/get-tenant.json), trimmed.
+// The BFF's tenant JSON, as GET /api/v1/tenants/{id} sends it (mock/examples/get-tenant.json), trimmed.
 const tenantJson = {
   id: '3f1c9a72-5b6e-4d2a-8c01-2d3e4f5a6b7c',
   name: 'acme-robotics',

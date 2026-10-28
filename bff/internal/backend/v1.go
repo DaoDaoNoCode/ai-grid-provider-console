@@ -125,8 +125,8 @@ func (c v1Tenants) CreateTenant(ctx context.Context, in *aigridv1.CreateTenantRe
 var tenantPaths = map[string]string{"name": "metadata.name", "domains": "spec.domains"}
 
 // UpdateTenant sends the draft's name and domains paths as the backend's, and
-// the If-Match version as metadata.version with lock. The backend (PR 16)
-// requires a version: every tenant reads as 1 or more, and 0 is
+// the If-Match version as metadata.version with lock. The backend requires a
+// version (errTenantVersionRequired, internal/servers/tenants_server.go): every tenant reads as 1 or more, and 0 is
 // InvalidArgument (422). Description, enabled and attributes pass when they
 // hold what a read gives back (empty, true, none), as on create; other values,
 // and any alias (the backend can't say which one Keycloak keeps after a
@@ -170,7 +170,7 @@ func (c v1Tenants) UpdateTenant(ctx context.Context, in *aigridv1.UpdateTenantRe
 	return &aigridv1.UpdateTenantResponse{Object: FromV1Tenant(resp.GetObject())}, nil
 }
 
-// DeleteTenant sends the If-Match version, which the backend (PR 16) checks;
+// DeleteTenant sends the If-Match version, which the backend checks;
 // it answers 0 with InvalidArgument (422).
 func (c v1Tenants) DeleteTenant(ctx context.Context, in *aigridv1.DeleteTenantRequest, opts ...grpc.CallOption) (*aigridv1.DeleteTenantResponse, error) {
 	version, err := v1Version(in.GetResourceVersion())

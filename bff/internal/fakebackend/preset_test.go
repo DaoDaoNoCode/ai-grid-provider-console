@@ -47,7 +47,7 @@ func newPoCServer(t *testing.T) *Server {
 
 // TestPoCPresetMatchesThePoC: the preset seeds what the PoC shows at
 // 62319b8, so a difference in the visual comparison comes from code, not
-// data, and it passes the checks PR 12's fixtures pass.
+// data, and it passes the checks the default fixtures (mock/fixtures) pass.
 func TestPoCPresetMatchesThePoC(t *testing.T) {
 	t.Parallel()
 	fx, err := Load(pocFixtures)

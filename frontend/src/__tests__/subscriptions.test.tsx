@@ -14,7 +14,7 @@ import { HttpConsoleService } from '../api/HttpConsoleService';
 import { MockConsoleService, seedSubscriptions } from '../api/MockConsoleService';
 import type { ConditionStatus, MaaSSubscription } from '../api/types';
 import { isSameModel } from '../utilities/authpolicies';
-import { serviceOnPr12Json } from './pr12Json';
+import { serviceOnBffExamples } from './bffExamples';
 import { deferred, renderAt } from './render';
 // The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
 import '../pages/subscriptions/CreateSubscriptionPage';
@@ -661,7 +661,8 @@ it('shows Saved to Git, not Pending, for a model the backend saved to Git', asyn
 it("shows a policy's Ready message on its status label", async () => {
   const service = new MockConsoleService();
   const info = await service.getSubscriptionInfo('engineering');
-  // The BFF's JSON for a policy: its conditions only, no statusMessage (backend PR #40).
+  // The BFF's JSON for a policy: its conditions only, no statusMessage (the backend's
+  // internal/servers/subscription_mapper.go).
   const body = {
     ...info,
     authPolicies: [
@@ -690,9 +691,9 @@ it("shows a policy's Ready message on its status label", async () => {
   expect(active.closest('[aria-describedby]')).toHaveAccessibleDescription('Ready on site-a');
 });
 
-describe("model references on PR 12's models", () => {
-  it('offers PR 12 models and sends the picked model with its namespace', async () => {
-    const service = serviceOnPr12Json();
+describe("model references on the BFF's example models", () => {
+  it('offers the example models and sends the picked model with its namespace', async () => {
+    const service = serviceOnBffExamples();
     const create = vi.spyOn(service, 'createSubscription');
     const user = userEvent.setup();
     renderAt('/subscriptions/create', service);

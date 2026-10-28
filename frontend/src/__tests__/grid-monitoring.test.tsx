@@ -5,7 +5,7 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ServiceError } from '../api/ConsoleService';
 import { MockConsoleService, seedOrganizations } from '../api/MockConsoleService';
-import { serviceOnPr12Json } from './pr12Json';
+import { serviceOnBffExamples } from './bffExamples';
 import { renderAt } from './render';
 // The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
 import '../pages/grid/GridPage';
@@ -186,9 +186,9 @@ it('loads organization usage when opened from the map', async () => {
   expect(within(usage).getByRole('link', { name: 'acme-robotics' })).toBeVisible();
 });
 
-it("lists PR 12's models with their target sites", async () => {
+it("lists the BFF's example models with their target sites", async () => {
   const user = userEvent.setup();
-  renderAt('/monitoring', serviceOnPr12Json());
+  renderAt('/monitoring', serviceOnBffExamples());
   await user.click(await screen.findByRole('tab', { name: 'Models' }));
   const table = screen.getByRole('grid', { name: 'Model deployments' });
   const granite = within(table).getByText('Granite 8B Instruct').closest('tr')!;

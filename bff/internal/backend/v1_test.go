@@ -207,7 +207,7 @@ func TestV1UpdateTenantReadBackValues(t *testing.T) {
 	}
 
 	// Only no-op fields at a version: one Update whose mask names only id,
-	// which PR 16 answers without writing, checking the version (an empty
+	// which the backend answers without writing, checking the version (an empty
 	// mask would rewrite name and domains).
 	conn = newConn()
 	got, err := update(conn, "4", &aigridv1.Tenant{Enabled: proto.Bool(true)}, "description", "enabled")

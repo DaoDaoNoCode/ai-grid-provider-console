@@ -1,5 +1,5 @@
-// Where a cluster is, as the backend's status.location says (backend PR 42): what the Clusters
-// pages and the map share.
+// Where a cluster is, as the backend's status.location says (its
+// internal/servers/managed_cluster_location.go): what the Clusters pages and the map share.
 import type { ClusterView } from './clusterView';
 
 /** How a hub admin sets a cluster's position and site name: the backend's README. */

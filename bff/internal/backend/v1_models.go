@@ -7,7 +7,8 @@ package backend
 // namespace of its own. The draft's namespace is the BFF's configured models
 // namespace (--models-namespace), which reads give back and the other calls
 // require. A placement passes as it is: the console writes the backend's own
-// `name In [...]` over cluster names (backend PR 29's placement rules).
+// `name In [...]` over cluster names (the backend's git-mode placement on the
+// `name` label, internal/servers/models_git.go).
 
 import (
 	"context"
@@ -123,8 +124,8 @@ func (c v1Models) DeleteModel(ctx context.Context, in *aigridv1.DeleteModelReque
 	return &aigridv1.DeleteModelResponse{}, nil
 }
 
-// ListLocations answers the backend's Models/ListPlacementClusters (backend
-// PR 41, which deprecates its ListLocations): the names of the members a model
+// ListLocations answers the backend's Models/ListPlacementClusters
+// (internal/servers/models_server.go; its ListLocations is deprecated): the names of the members a model
 // can run on (provisioned, Available, role inference or combined), the values
 // a placement's `name In [...]` takes.
 func (c v1Models) ListLocations(ctx context.Context, _ *aigridv1.ListLocationsRequest, opts ...grpc.CallOption) (*aigridv1.ListLocationsResponse, error) {
