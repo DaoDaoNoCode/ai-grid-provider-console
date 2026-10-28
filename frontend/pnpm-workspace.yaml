@@ -29,3 +29,6 @@ minimumReleaseAgeExclude:
 # `isLoading`. Drop this override once the @perses-dev packages declare Query v5.
 overrides:
   '@tanstack/react-query': 5.105.0
+  # GHSA-w74x-v6f9-j3xg (URI scheme spoofing): @perses-dev/plugin-system 0.56.0-beta.0 pins
+  # fast-uri 3.1.8. Drop this once the Perses release in use depends on fast-uri 3.1.9 or later.
+  'fast-uri@<3.1.9': 3.1.9
