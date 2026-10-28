@@ -141,10 +141,9 @@ fake serves only the draft over gRPC, so the Clusters pages and the AI Grid map,
 backend's API over Connect, work only here (on `make dev-fake` they say the backend is
 unavailable). Models and Subscriptions run against the backend with its local Git catalog. The
 legacy Grid overview (the Monitoring fallback) still lacks a real backend RPC and shows it as
-not available. `make dev-fake-infra DEV_FIXTURES=fixtures/poc DEV_DRAFT_FIXTURES=fixtures/draft/poc` runs the same
-on the backend's PoC preset, the stack the browser tests of the Clusters pages and the map use (on
-offset ports, through `hack/backend-fakes.sh`, `frontend/playwright.config.ts`), and
-`DEV_FIXTURES=fixtures/locations` on its cluster location cases.
+not available. The browser tests of the Clusters pages and the map run the same backend on its
+PoC fixtures, on offset ports (`frontend/playwright.config.ts` starts it through
+`hack/backend-fakes.sh`).
 The Vite dev server forwards `/ai_grid.v1.*` to the BFF as it does `/api`, in every mode.
 
 The backend is fetched once into `.cache/backend/<sha>` (gitignored; `hack/backend-checkout.sh`),

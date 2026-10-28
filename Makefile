@@ -96,9 +96,6 @@ dev-frontend-fake: ## Run the Vite dev server as dev-user with a fixture token (
 
 ##@ Development on the backend's own fakes (the real backend at .backend-api-version on a fake hub and Keycloak)
 
-# The backend's presets go as its variables: make dev-fake-infra DEV_FIXTURES=fixtures/poc
-# DEV_DRAFT_FIXTURES=fixtures/draft/poc is the PoC's sites (the browser tests' stack), and
-# DEV_FIXTURES=fixtures/locations its cluster location cases.
 dev-fake-infra: ## The backend at .backend-api-version on its fake hub and Keycloak (:9090-:9094), the BFF against it on :8080 (not --fake-backend; it relays /ai_grid.v1.*) and the frontend on :9000; no oc login needed
 	@BACKEND_DIR='$(BACKEND_DIR)' BACKEND_REPO='$(BACKEND_REPO)' hack/backend-checkout.sh >/dev/null
 	@trap 'kill 0' INT TERM; \
