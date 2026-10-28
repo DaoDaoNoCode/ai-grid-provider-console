@@ -61,7 +61,7 @@ const steps = {
   review: 'summary-step',
 } as const;
 
-const defaults = { replicas: '1', cpu: '2', memory: '4Gi', gpuCount: '0', server: 'vllm-cpu' as ModelServer['id'] };
+const defaults = { replicas: '1', cpu: '2', memory: '4Gi', gpuCount: '0' };
 
 const DISPLAY_NAME = 'openshift.io/display-name';
 const DESCRIPTION = 'openshift.io/description';
@@ -213,8 +213,9 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
   const [memory, setMemory] = useState(start.memory);
   const [gpuCount, setGpuCount] = useState(start.gpuCount);
   // A deployed model keeps its presets; the choice is only made when deploying.
-  const [serverId, setServerId] = useState<ModelServer['id']>(defaults.server);
-  const server = modelServers.find((s) => s.id === serverId) ?? modelServers[0];
+  // No default: the grid's sites can be GPU or CPU-only clusters, so the user picks one.
+  const [serverId, setServerId] = useState<ModelServer['id'] | ''>('');
+  const server = modelServers.find((s) => s.id === serverId);
   const chooseServer = (id: ModelServer['id']) => {
     setServerId(id);
     // A GPU server starts at one GPU (none is what crash-loops); a CPU server hides the field,
@@ -222,7 +223,7 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
     if (!modelServers.find((s) => s.id === id)?.usesGpus) setGpuCount(defaults.gpuCount);
     else if (gpuCount === defaults.gpuCount || gpuCount === '') setGpuCount('1');
   };
-  const usesGpus = editing || server.usesGpus;
+  const usesGpus = editing || Boolean(server?.usesGpus);
   const [runtimeArgs, setRuntimeArgs] = useState<RuntimeArgsFieldData>({
     enabled: start.runtimeArgs.length > 0,
     args: start.runtimeArgs,
@@ -246,7 +247,7 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
     // A CPU server asks for no GPUs, whatever the hidden field last held.
     gpuCount: usesGpus ? Number(gpuCount) : 0,
     runtimeArgs: filterRuntimeArgsForContainer(runtimeArgs.args),
-    baseRefs: model ? model.baseRefs : server.baseRefs,
+    baseRefs: model ? model.baseRefs : (server?.baseRefs ?? []),
     locations,
   };
   const update = model
@@ -259,7 +260,7 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
       cpu !== defaults.cpu ||
       memory !== defaults.memory ||
       gpuCount !== defaults.gpuCount ||
-      serverId !== defaults.server ||
+      serverId !== '' ||
       runtimeArgs.enabled ||
       locations.length > 0;
   const detailsPath = model ? modelPath(model) : '';
@@ -280,7 +281,8 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
   const cpuError = shownError('cpu', cpu);
   const memoryError = shownError('memory', memory);
   // KServe's GPU preset with no GPUs is what crash-loops on a CPU-only node.
-  const gpusMissing = !editing && server.usesGpus && gpuCount !== '' && Number(gpuCount) < 1;
+  const gpusMissing = !editing && Boolean(server?.usesGpus) && gpuCount !== '' && Number(gpuCount) < 1;
+  const serverError = !editing && touched.has('server') && !server ? 'Required.' : undefined;
   const gpuCountError =
     shownError('gpuCount', gpuCount, Number) ??
     (touched.has('gpuCount') && gpusMissing ? 'A GPU model server needs at least 1 GPU.' : undefined);
@@ -298,7 +300,8 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
       (!replicasEditable ||
         replicas === start.replicas ||
         (replicas !== '' && createModelSchema.shape.replicas.safeParse(input.replicas).success))
-    : replicas !== '' &&
+    : server !== undefined &&
+      replicas !== '' &&
       gpuCount !== '' &&
       !gpusMissing &&
       createModelSchema.omit({ locations: true }).strip().safeParse(input).success;
@@ -432,6 +435,24 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
       </FormGroup>
     );
   };
+
+  // A hint only, from the GPU counts the clusters list already carries: a GPU server on a cluster
+  // with no GPUs never schedules, and a CPU server on a GPU cluster leaves its GPUs unused.
+  const serverMismatch = (() => {
+    if (editing || !server) return undefined;
+    const chosen = clusters.filter(
+      (c) => c.aiGridEnabled && (locations.includes(c.name) || (c.location && locations.includes(c.location))),
+    );
+    const mismatched = chosen
+      .filter((c) => c.gpuCapacity !== undefined && (server.usesGpus ? c.gpuCapacity === 0 : c.gpuCapacity > 0))
+      .map((c) => c.name)
+      .sort();
+    if (mismatched.length === 0) return undefined;
+    const names = mismatched.join(', ');
+    return server.usesGpus
+      ? `${names} ${mismatched.length === 1 ? 'reports' : 'report'} no GPUs, so ${server.label} can't run there.`
+      : `${names} ${mismatched.length === 1 ? 'has' : 'have'} GPUs that ${server.label} doesn't use.`;
+  })();
 
   const review = [
     {
@@ -593,13 +614,18 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
                     aria-describedby="model-server-help"
                     value={serverId}
                     onChange={(_event, value) => chooseServer(value as ModelServer['id'])}
+                    onBlur={() => touch('server')}
+                    validated={serverError ? 'error' : 'default'}
                     isRequired
                   >
+                    <FormSelectOption isPlaceholder isDisabled value="" label="Select a model server" />
                     {modelServers.map((s) => (
                       <FormSelectOption key={s.id} value={s.id} label={s.label} />
                     ))}
                   </FormSelect>
-                  <Help id="model-server-help">{server.description}</Help>
+                  <Help id="model-server-help" error={serverError}>
+                    {server?.description ?? 'Choose the build that matches the hardware of the clusters you deploy to.'}
+                  </Help>
                 </FormGroup>
               )}
               <FormGroup label="Runtime image" fieldId="runtime-image" isRequired>
@@ -727,6 +753,9 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
             id={steps.review}
             isDisabled={!sourceValid || !deploymentValid || !locationsValid || saving}
           >
+            {serverMismatch && (
+              <Alert isInline variant="warning" title={serverMismatch} data-testid="model-server-mismatch" />
+            )}
             <ReviewStep sections={review} />
           </WizardStep>
         </Wizard>

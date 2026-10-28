@@ -93,6 +93,7 @@ describe('routes', () => {
     await user.paste('Widget');
     await user.click(screen.getByRole('textbox', { name: /Runtime image/ }));
     await user.paste('registry.example/runtime:test');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Model server' }), 'vLLM on CPU');
     await user.click(screen.getByRole('button', { name: 'Next' }));
     await user.click(screen.getByRole('button', { name: 'Next' }));
   };

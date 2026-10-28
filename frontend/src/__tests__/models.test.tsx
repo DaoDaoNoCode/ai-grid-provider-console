@@ -60,6 +60,10 @@ const nameDeployment = async (user: User, name: string) => {
   await user.paste(name);
 };
 
+/** Picks the Deployment step's model server, which has no default. */
+const chooseServer = async (user: User, label = 'vLLM on CPU') =>
+  user.selectOptions(screen.getByRole('combobox', { name: 'Model server' }), label);
+
 /** Fills the source and deployment steps and moves on to Locations. */
 const fillModel = async (user: User) => {
   await user.click(await screen.findByRole('textbox', { name: /Model URI/ }));
@@ -70,6 +74,7 @@ const fillModel = async (user: User) => {
   await nameDeployment(user, 'Widget');
   await user.click(screen.getByRole('textbox', { name: /Runtime image/ }));
   await user.paste('registry.example/runtime:test');
+  await chooseServer(user);
   await user.click(screen.getByRole('button', { name: 'Next' }));
 };
 
@@ -99,7 +104,7 @@ it('walks the deployment wizard, selects locations and saves the model', async (
   await user.keyboard('{Escape}');
   expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
   await user.click(screen.getByRole('button', { name: 'Next' }));
-  const review = screen.getByTestId('model-review');
+  const review = await screen.findByTestId('model-review');
   expect(review).toHaveTextContent(`${site1}, ${site2}`);
   // Empty optional fields are left out of the review.
   expect(review).not.toHaveTextContent('Additional runtime arguments');
@@ -301,7 +306,7 @@ it('keeps a chosen location the reload no longer offers, and says to remove it',
   expect(screen.queryByText(/no longer available/)).not.toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'Next' }));
   // An exact match: the review lists site1 alone.
-  expect(within(screen.getByTestId('model-review')).getByText(site1)).toBeVisible();
+  expect(within(await screen.findByTestId('model-review')).getByText(site1)).toBeVisible();
 });
 
 it('keeps Next disabled until the Locations reload answers', async () => {
@@ -602,6 +607,7 @@ it('says why the deployment step cannot continue when the CPU is invalid', async
   await nameDeployment(user, 'Widget');
   await user.click(screen.getByRole('textbox', { name: /Runtime image/ }));
   await user.paste('registry.example/runtime:test');
+  await chooseServer(user);
   const cpu = screen.getByRole('textbox', { name: /^CPU/ });
   await user.clear(cpu);
   await user.paste('2 cores');
@@ -642,6 +648,7 @@ it("takes only the fake backend's URI schemes and sends the URI trimmed", async 
   await nameDeployment(user, 'Widget');
   await user.click(screen.getByRole('textbox', { name: /Runtime image/ }));
   await user.paste('registry.example/runtime:test');
+  await chooseServer(user);
   await user.click(screen.getByRole('button', { name: 'Next' }));
   await user.click(await screen.findByRole('combobox', { name: 'Locations' }));
   await user.click(screen.getByRole('option', { name: site1 }));
@@ -757,6 +764,7 @@ it('takes a display name longer than a resource name', async () => {
   await nameDeployment(user, 'W'.repeat(70));
   await user.click(screen.getByRole('textbox', { name: /Runtime image/ }));
   await user.paste('registry.example/runtime:test');
+  await chooseServer(user);
   expect(screen.getByText('w'.repeat(63))).toBeVisible();
   expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
 });
@@ -868,6 +876,7 @@ it('takes only whole numbers in the number fields, so the shown and sent counts 
   await user.click(screen.getByRole('button', { name: 'Next' }));
   await user.click(screen.getByRole('textbox', { name: /Runtime image/ }));
   await user.paste('registry.example/runtime:test');
+  await chooseServer(user);
   const replicas = screen.getByRole('spinbutton', { name: 'Replicas' });
   // 1e1 and 1.5 would show as 1 but parse as 10 and 1.5: they're refused.
   fireEvent.change(replicas, { target: { value: '1e1' } });
@@ -881,7 +890,7 @@ it('takes only whole numbers in the number fields, so the shown and sent counts 
   await user.click(screen.getByRole('option', { name: site1 }));
   await user.keyboard('{Escape}');
   await user.click(screen.getByRole('button', { name: 'Next' }));
-  expect(screen.getByTestId('model-review')).toHaveTextContent('Replicas3');
+  expect(await screen.findByTestId('model-review')).toHaveTextContent('Replicas3');
   await user.click(screen.getByRole('button', { name: 'Deploy' }));
   await waitFor(() => expect(create).toHaveBeenCalled());
   expect(create.mock.calls[0][0].replicas).toBe(3);
@@ -950,24 +959,34 @@ describe('the model server', () => {
     return create;
   };
 
-  /** Picks one location, opens Review and deploys. */
-  const deploy = async (user: User) => {
+  /** Picks one location if none is picked yet, opens Review and, unless told not to, deploys. */
+  const deploy = async (user: User, { submit = true } = {}) => {
     await user.click(screen.getByRole('button', { name: 'Next' }));
-    await user.click(await screen.findByRole('combobox', { name: 'Locations' }));
-    await user.click(screen.getByRole('option', { name: site1 }));
-    await user.keyboard('{Escape}');
+    const locations = await screen.findByRole('combobox', { name: 'Locations' });
+    if (!screen.queryByText(site1)) {
+      await user.click(locations);
+      await user.click(screen.getByRole('option', { name: site1 }));
+      await user.keyboard('{Escape}');
+    }
     await user.click(screen.getByRole('button', { name: 'Next' }));
-    const review = screen.getByTestId('model-review');
-    await user.click(screen.getByRole('button', { name: 'Deploy' }));
+    const review = await screen.findByTestId('model-review');
+    if (submit) await user.click(screen.getByRole('button', { name: 'Deploy' }));
     return review;
   };
 
-  it('deploys on the CPU preset by default, and asks for no GPUs', async () => {
+  it('has no default server: the step waits for a choice, then deploys on the CPU preset with no GPUs', async () => {
     const user = userEvent.setup();
     const create = await openDeployment(user);
-    expect(screen.getByRole('combobox', { name: 'Model server' })).toHaveValue('vllm-cpu');
+    const server = screen.getByRole('combobox', { name: 'Model server' });
+    expect(server).toHaveValue('');
     expect(screen.queryByRole('spinbutton', { name: 'GPUs' })).not.toBeInTheDocument();
     await user.type(screen.getByRole('textbox', { name: /Runtime image/ }), 'registry.example/vllm-cpu:test');
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+    server.focus();
+    await user.tab();
+    expect(server).toHaveAccessibleDescription(/Required\./);
+    await chooseServer(user);
+    expect(screen.queryByRole('spinbutton', { name: 'GPUs' })).not.toBeInTheDocument();
     const review = await deploy(user);
     expect(review).toHaveTextContent('Model servervLLM on CPU');
     await waitFor(() => expect(create).toHaveBeenCalled());
@@ -976,6 +995,23 @@ describe('the model server', () => {
       runtimeImage: 'registry.example/vllm-cpu:test',
       gpuCount: 0,
     });
+  });
+
+  it('warns on Review when a chosen location doesn’t match the server’s hardware', async () => {
+    const user = userEvent.setup();
+    await openDeployment(user);
+    await user.type(screen.getByRole('textbox', { name: /Runtime image/ }), 'registry.example/vllm-cpu:test');
+    await chooseServer(user);
+    // The mock's member clusters each report 16 GPUs.
+    await deploy(user, { submit: false });
+    expect(await screen.findByTestId('model-server-mismatch')).toHaveTextContent(/GPUs that vLLM on CPU doesn.t use/);
+    await user.click(
+      within(screen.getByRole('navigation', { name: 'Wizard steps' })).getByRole('button', { name: 'Deployment' }),
+    );
+    await chooseServer(user, 'vLLM on NVIDIA GPU');
+    await deploy(user, { submit: false });
+    await screen.findByTestId('model-review');
+    expect(screen.queryByTestId('model-server-mismatch')).not.toBeInTheDocument();
   });
 
   it('refuses a GPU server with no GPUs, and sends no presets for KServe’s default', async () => {
@@ -1264,7 +1300,7 @@ describe('editing a model deployment', () => {
     await openStep(user, 'Deployment');
     expect(await screen.findByRole('textbox', { name: 'Replicas' })).toHaveValue('Autoscaled');
     await openStep(user, 'Review');
-    expect(within(screen.getByTestId('model-review')).getByText('Autoscaled')).toBeVisible();
+    expect(within(await screen.findByTestId('model-review')).getByText('Autoscaled')).toBeVisible();
   });
 
   it('sends the edit through the BFF, keeping other annotations and env, and keeps input on a 422', async () => {

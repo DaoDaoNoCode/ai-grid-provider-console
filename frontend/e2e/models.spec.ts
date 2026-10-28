@@ -16,6 +16,8 @@ test('deploys a model to a location, edits it in the same wizard, and deletes it
   // Deployment: the name starts from the model's.
   await expect(page.getByRole('textbox', { name: /^Deployment name/ })).toHaveValue(unique);
   await page.getByRole('textbox', { name: /^Runtime image/ }).fill('quay.io/example/runtime:latest');
+  // The model server has no default.
+  await page.getByRole('combobox', { name: 'Model server' }).selectOption({ label: 'vLLM on CPU' });
   await page.getByRole('button', { name: 'Next' }).click();
 
   // Locations: options read "<site name> (<location>)".
