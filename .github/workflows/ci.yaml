@@ -83,19 +83,40 @@ jobs:
       - run: pnpm test
       - run: pnpm build
 
+  # The @playwright/test version frontend/package.json pins, for the Browser tests job's image.
+  playwright-version:
+    name: Playwright version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: frontend/package.json
+          sparse-checkout-cone-mode: false
+      - id: version
+        run: |
+          version=$(jq -r '.devDependencies["@playwright/test"]' frontend/package.json)
+          if ! grep -Eqx '[0-9]+\.[0-9]+\.[0-9]+' <<<"${version}"; then
+            echo "::error file=frontend/package.json::@playwright/test must be an exact x.y.z version, for the Playwright image's tag; got '${version}'"
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
   # Not after BFF and Frontend: it uses nothing they produce, and CI passed requires all three.
   e2e:
     name: Browser tests
     runs-on: ubuntu-latest
+    needs: [playwright-version]
     timeout-minutes: 15
     # Playwright's image has the browsers and their system libraries, so nothing is installed per
-    # run (the install took 18-525 s). Its version must be the one frontend/pnpm-lock.yaml has for
-    # @playwright/test: Dependabot bumps the package but not this image, and with a different
-    # version Playwright stops on a browser it can't find. Update the tag and the digest
-    # (the image index's, from `skopeo inspect --raw ... | skopeo manifest-digest /dev/stdin`)
-    # together with the package.
+    # run (the install took 18-525 s). Its tag follows the @playwright/test version in
+    # frontend/package.json, so a Dependabot bump moves both: the image's Playwright must match the
+    # package's, or it can't find its browsers (https://playwright.dev/docs/docker#image-tags), and
+    # Microsoft publishes one image per Playwright release, so a version's tag matches its package.
     container:
-      image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea
+      image: mcr.microsoft.com/playwright:v${{ needs.playwright-version.outputs.version }}-noble
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
@@ -152,7 +173,7 @@ jobs:
   passed:
     name: CI passed
     if: always()
-    needs: [bff, frontend, e2e, manifests, chart]
+    needs: [bff, frontend, playwright-version, e2e, manifests, chart]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
