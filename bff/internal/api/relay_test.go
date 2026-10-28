@@ -21,11 +21,11 @@ import (
 const connectList = "/ai_grid.v1.Clusters/List"
 
 // connectUpstream stands in for the backend's Connect port and records the Authorization it got.
-func connectUpstream(t *testing.T) (*relay.Relay, *[]string) {
+func connectUpstream(t *testing.T) (*relay.Relay, *recorder) {
 	t.Helper()
-	var auth []string
+	auth := &recorder{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		auth = append(auth, r.Header.Get("Authorization"))
+		auth.add(r.Header.Get("Authorization"))
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"size":0,"total":0}`))
 	}))
@@ -38,7 +38,7 @@ func connectUpstream(t *testing.T) (*relay.Relay, *[]string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return r, &auth
+	return r, auth
 }
 
 func connectCall(req *http.Request) *http.Request {
@@ -57,6 +57,7 @@ func decodeConnectError(t *testing.T, rec *httptest.ResponseRecorder) (code, mes
 }
 
 func TestConnectRelayCarriesTheCallersToken(t *testing.T) {
+	t.Parallel()
 	r, auth := connectUpstream(t)
 	hub := &fakeHub{allowed: true}
 	app := newTestAppWithHub(t, testConfig(t), nil, hub).WithRelay(r)
@@ -64,11 +65,11 @@ func TestConnectRelayCarriesTheCallersToken(t *testing.T) {
 	if rec.Code != http.StatusOK || rec.Body.String() != `{"size":0,"total":0}` {
 		t.Fatalf("got %d %q, want the backend's answer", rec.Code, rec.Body)
 	}
-	if len(*auth) != 1 || (*auth)[0] != "Bearer sha256~token" {
-		t.Fatalf("backend got Authorization %q, want the caller's token from x-forwarded-access-token", *auth)
+	if len(auth.values()) != 1 || auth.values()[0] != "Bearer sha256~token" {
+		t.Fatalf("backend got Authorization %q, want the caller's token from x-forwarded-access-token", auth.values())
 	}
-	if hub.auth != "Bearer sha256~token" {
-		t.Fatalf("the provider-admin check was asked with %q", hub.auth)
+	if hub.lastAuth() != "Bearer sha256~token" {
+		t.Fatalf("the provider-admin check was asked with %q", hub.lastAuth())
 	}
 }
 
@@ -76,6 +77,7 @@ func TestConnectRelayCarriesTheCallersToken(t *testing.T) {
 // without a token, one the hub rejects, and one it doesn't call a provider admin never reach the
 // backend.
 func TestConnectRelayIsForProviderAdminsOnly(t *testing.T) {
+	t.Parallel()
 	r, auth := connectUpstream(t)
 	for _, tc := range []struct {
 		name     string
@@ -109,13 +111,14 @@ func TestConnectRelayIsForProviderAdminsOnly(t *testing.T) {
 			}
 		})
 	}
-	if len(*auth) != 0 {
-		t.Fatalf("a refused caller reached the backend %d time(s)", len(*auth))
+	if len(auth.values()) != 0 {
+		t.Fatalf("a refused caller reached the backend %d time(s)", len(auth.values()))
 	}
 }
 
 // The relay's own refusals come after the caller checks, as a 405 on /api/v1 does.
 func TestConnectRelayRefusalsAfterTheCallerChecks(t *testing.T) {
+	t.Parallel()
 	r, auth := connectUpstream(t)
 	viewer := newTestAppWithHub(t, testConfig(t), nil, &fakeHub{allowed: false}).WithRelay(r)
 	if rec := serve(viewer, asUser(http.MethodDelete, connectList)); rec.Code != http.StatusForbidden {
@@ -130,12 +133,13 @@ func TestConnectRelayRefusalsAfterTheCallerChecks(t *testing.T) {
 	if code, _ := decodeConnectError(t, rec); rec.Code != http.StatusNotFound || code != "unimplemented" {
 		t.Errorf("unclean path: got %d %s", rec.Code, code)
 	}
-	if len(*auth) != 0 {
-		t.Fatalf("a refused call reached the backend %d time(s)", len(*auth))
+	if len(auth.values()) != 0 {
+		t.Fatalf("a refused call reached the backend %d time(s)", len(auth.values()))
 	}
 }
 
 func TestConnectRelayOffWithoutOne(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t, testConfig(t), nil)
 	rec := serve(app, connectCall(asUser(http.MethodPost, connectList)))
 	if code, _ := decodeConnectError(t, rec); rec.Code != http.StatusNotFound || code != "unimplemented" {
@@ -145,6 +149,7 @@ func TestConnectRelayOffWithoutOne(t *testing.T) {
 
 // The JSON API keeps its own envelope next to the relay.
 func TestAPIErrorsKeepTheirEnvelopeWithTheRelay(t *testing.T) {
+	t.Parallel()
 	r, _ := connectUpstream(t)
 	app := newTestAppWithHub(t, testConfig(t), nil, &fakeHub{allowed: false}).WithRelay(r)
 	rec := serve(app, asUser(http.MethodGet, "/api/v1/clusters"))
@@ -192,6 +197,7 @@ func browserCall(t *testing.T, ctx context.Context, front *httptest.Server, path
 // backend flushes them, and the browser going away cancels the backend's call. The relay tells a
 // stream by its content type, and the pinned API has no streaming RPC, so an allowed path carries it.
 func TestConnectStreamThroughTheBFFFlushesAndCancels(t *testing.T) {
+	t.Parallel()
 	canceled := make(chan struct{})
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/connect+json")
@@ -234,6 +240,7 @@ func TestConnectStreamThroughTheBFFFlushesAndCancels(t *testing.T) {
 
 // A unary answer of 1 KiB or more is gzipped by the BFF's middleware, as any JSON answer.
 func TestConnectUnaryAnswerIsCompressed(t *testing.T) {
+	t.Parallel()
 	answer := `{"items":[` + strings.Repeat(`{"id":"site-paris-1"},`, 100) + `{"id":"x"}]}`
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

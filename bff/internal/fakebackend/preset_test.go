@@ -1,7 +1,6 @@
 package fakebackend
 
 import (
-	"context"
 	"log/slog"
 	"slices"
 	"testing"
@@ -50,6 +49,7 @@ func newPoCServer(t *testing.T) *Server {
 // 62319b8, so a difference in the visual comparison comes from code, not
 // data, and it passes the checks PR 12's fixtures pass.
 func TestPoCPresetMatchesThePoC(t *testing.T) {
+	t.Parallel()
 	fx, err := Load(pocFixtures)
 	if err != nil {
 		t.Fatal(err)
@@ -62,7 +62,7 @@ func TestPoCPresetMatchesThePoC(t *testing.T) {
 	}
 
 	s := newPoCServer(t)
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 
 	clusters, err := s.ListManagedClusters(ctx, &aigridv1.ListManagedClustersRequest{})
 	if err != nil {
@@ -159,8 +159,9 @@ func TestPoCPresetMatchesThePoC(t *testing.T) {
 // TestPoCPresetEnrollsSite4AsProvisioning: as in the PoC, enrolling site4
 // makes it a member that is not provisioned, so it isn't a location yet.
 func TestPoCPresetEnrollsSite4AsProvisioning(t *testing.T) {
+	t.Parallel()
 	s := newPoCServer(t)
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	site4, err := s.GetManagedCluster(ctx, &aigridv1.GetManagedClusterRequest{Name: "site4"})
 	if err != nil {
 		t.Fatal(err)

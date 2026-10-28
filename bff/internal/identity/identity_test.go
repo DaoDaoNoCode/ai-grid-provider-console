@@ -1,7 +1,6 @@
 package identity
 
 import (
-	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -10,6 +9,7 @@ import (
 var headers = Headers{User: "x-forwarded-user", Email: "x-forwarded-email", Groups: "x-forwarded-groups", Token: "x-forwarded-access-token"}
 
 func TestExtract(t *testing.T) {
+	t.Parallel()
 	h := http.Header{}
 	h.Set("X-Forwarded-Access-Token", "sha256~abc")
 	h.Set("X-Forwarded-User", "alice")
@@ -33,6 +33,7 @@ func TestExtract(t *testing.T) {
 }
 
 func TestExtractErrors(t *testing.T) {
+	t.Parallel()
 	cases := map[string]http.Header{
 		"missing":    {},
 		"whitespace": {"X-Forwarded-Access-Token": {"a b"}},
@@ -54,10 +55,11 @@ func TestExtractErrors(t *testing.T) {
 }
 
 func TestContext(t *testing.T) {
-	if _, ok := FromContext(context.Background()); ok {
+	t.Parallel()
+	if _, ok := FromContext(t.Context()); ok {
 		t.Fatal("empty context reported an identity")
 	}
-	ctx := WithIdentity(context.Background(), Identity{Username: "bob", token: "t"})
+	ctx := WithIdentity(t.Context(), Identity{Username: "bob", token: "t"})
 	id, ok := FromContext(ctx)
 	if !ok || id.Username != "bob" {
 		t.Fatalf("round trip failed: %v %v", id, ok)

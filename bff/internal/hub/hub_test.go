@@ -1,7 +1,6 @@
 package hub
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -62,9 +61,10 @@ func newClient(t *testing.T, f *fakeHub) *Client {
 }
 
 func TestCanISendsTokenAndAttributes(t *testing.T) {
+	t.Parallel()
 	f := &fakeHub{t: t, allowed: true}
 	c := newClient(t, f)
-	ok, err := c.CanI(context.Background(), "sha256~abc", ProviderAdminCheck)
+	ok, err := c.CanI(t.Context(), "sha256~abc", ProviderAdminCheck)
 	if err != nil || !ok {
 		t.Fatalf("CanI = %v, %v", ok, err)
 	}
@@ -80,8 +80,9 @@ func TestCanISendsTokenAndAttributes(t *testing.T) {
 // the hub receives it: comparing against ProviderAdminCheck alone would pass
 // whatever the constant says, and the provider-admin gate is this question.
 func TestProviderAdminCheckIsPatchOnManagedClusters(t *testing.T) {
+	t.Parallel()
 	f := &fakeHub{t: t, allowed: true}
-	if _, err := newClient(t, f).CanI(context.Background(), "tok", ProviderAdminCheck); err != nil {
+	if _, err := newClient(t, f).CanI(t.Context(), "tok", ProviderAdminCheck); err != nil {
 		t.Fatal(err)
 	}
 	if f.gotRaw == nil {
@@ -106,23 +107,25 @@ func TestProviderAdminCheckIsPatchOnManagedClusters(t *testing.T) {
 }
 
 func TestCanIDenied(t *testing.T) {
+	t.Parallel()
 	c := newClient(t, &fakeHub{t: t, allowed: false})
-	ok, err := c.CanI(context.Background(), "tok", ProviderAdminCheck)
+	ok, err := c.CanI(t.Context(), "tok", ProviderAdminCheck)
 	if err != nil || ok {
 		t.Fatalf("CanI = %v, %v, want false", ok, err)
 	}
 }
 
 func TestCanIErrors(t *testing.T) {
+	t.Parallel()
 	c := newClient(t, &fakeHub{t: t, status: http.StatusUnauthorized})
-	if _, err := c.CanI(context.Background(), "expired", ProviderAdminCheck); !errors.Is(err, ErrUnauthorized) {
+	if _, err := c.CanI(t.Context(), "expired", ProviderAdminCheck); !errors.Is(err, ErrUnauthorized) {
 		t.Errorf("401 should map to ErrUnauthorized, got %v", err)
 	}
-	if _, err := c.CanI(context.Background(), "", ProviderAdminCheck); !errors.Is(err, ErrUnauthorized) {
+	if _, err := c.CanI(t.Context(), "", ProviderAdminCheck); !errors.Is(err, ErrUnauthorized) {
 		t.Errorf("empty token should be ErrUnauthorized, got %v", err)
 	}
 	c = newClient(t, &fakeHub{t: t, status: http.StatusInternalServerError})
-	if _, err := c.CanI(context.Background(), "tok", ProviderAdminCheck); err == nil || strings.Contains(err.Error(), "tok") {
+	if _, err := c.CanI(t.Context(), "tok", ProviderAdminCheck); err == nil || strings.Contains(err.Error(), "tok") {
 		t.Errorf("5xx should fail without leaking the token, got %v", err)
 	}
 }
@@ -130,6 +133,7 @@ func TestCanIErrors(t *testing.T) {
 // A page's parallel access reviews reuse open connections instead of opening
 // new ones past the default two per host.
 func TestNewKeepsConnectionsForParallelReviews(t *testing.T) {
+	t.Parallel()
 	c, err := New(Config{URL: "https://api.example.com"})
 	if err != nil {
 		t.Fatal(err)
@@ -140,6 +144,7 @@ func TestNewKeepsConnectionsForParallelReviews(t *testing.T) {
 }
 
 func TestNewValidates(t *testing.T) {
+	t.Parallel()
 	if _, err := New(Config{}); err == nil {
 		t.Error("empty URL should fail")
 	}

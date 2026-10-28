@@ -3,10 +3,10 @@ package perses
 import (
 	"bytes"
 	"compress/gzip"
-	"context"
 	"encoding/json"
 	"encoding/pem"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httptrace"
@@ -22,6 +22,7 @@ import (
 const project = "ai-grid-monitoring"
 
 func TestAllowed(t *testing.T) {
+	t.Parallel()
 	relay, err := New(Config{URL: "https://perses.example.svc:8080", Project: project})
 	if err != nil {
 		t.Fatal(err)
@@ -82,6 +83,7 @@ func TestAllowed(t *testing.T) {
 
 // The project is matched as written: a dot in its name is a dot, not any character.
 func TestAllowedMatchesTheProjectAsWritten(t *testing.T) {
+	t.Parallel()
 	relay, err := New(Config{URL: "https://perses.example.svc:8080", Project: "ai.grid"})
 	if err != nil {
 		t.Fatal(err)
@@ -95,6 +97,7 @@ func TestAllowedMatchesTheProjectAsWritten(t *testing.T) {
 }
 
 func TestNewValidates(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	notPEM := filepath.Join(dir, "ca.txt")
 	if err := os.WriteFile(notPEM, []byte("not a certificate"), 0o600); err != nil {
@@ -177,6 +180,7 @@ func errorMessage(t *testing.T, rec *httptest.ResponseRecorder) string {
 }
 
 func TestRelayForwardsTheCallersTokenAndNothingElseOfTheirs(t *testing.T) {
+	t.Parallel()
 	calls := make(chan upstreamCall, 1)
 	relay := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -216,6 +220,7 @@ func TestRelayForwardsTheCallersTokenAndNothingElseOfTheirs(t *testing.T) {
 }
 
 func TestRelayPassesPersesErrorsThrough(t *testing.T) {
+	t.Parallel()
 	relay := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
@@ -230,6 +235,7 @@ func TestRelayPassesPersesErrorsThrough(t *testing.T) {
 // An answer a browser could render, such as an HTML error page from a datasource, stays inert on
 // the console's origin, whatever headers Perses sent.
 func TestRelayAnswersCannotRunAsAPage(t *testing.T) {
+	t.Parallel()
 	relay := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.Header().Set("Content-Security-Policy", "script-src *")
@@ -248,6 +254,7 @@ func TestRelayAnswersCannotRunAsAPage(t *testing.T) {
 // datasource would only open the answers to other sites, a Basic challenge would make the browser
 // ask for a password on the console's origin, and a Refresh or Link would send it elsewhere.
 func TestRelayPassesOnlyTheHeadersAnAnswerNeeds(t *testing.T) {
+	t.Parallel()
 	relay := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
@@ -281,6 +288,7 @@ func TestRelayPassesOnlyTheHeadersAnAnswerNeeds(t *testing.T) {
 
 // A cacheable answer keeps what a cache needs to tell how old it already is.
 func TestRelayKeepsTheAgeOfACachedAnswer(t *testing.T) {
+	t.Parallel()
 	relay := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Cache-Control", "max-age=60")
 		w.Header().Set("Age", "59")
@@ -299,6 +307,7 @@ func TestRelayKeepsTheAgeOfACachedAnswer(t *testing.T) {
 // ReverseProxy forwards a 1xx and the trailers outside ModifyResponse; neither reaches the browser.
 // Over real connections, since a recorder sees neither the way a browser would.
 func TestRelayDropsInformationalAnswersAndTrailers(t *testing.T) {
+	t.Parallel()
 	relay := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Link", "<https://attacker.example/x.js>; rel=preload; as=script")
 		w.WriteHeader(http.StatusEarlyHints)
@@ -320,7 +329,7 @@ func TestRelayDropsInformationalAnswersAndTrailers(t *testing.T) {
 		informational = append(informational, code)
 		return nil
 	}}
-	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(context.Background(), trace),
+	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(t.Context(), trace),
 		http.MethodGet, front.URL+Prefix+"/api/v1/projects/ai-grid-monitoring/dashboards", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -348,6 +357,7 @@ func TestRelayDropsInformationalAnswersAndTrailers(t *testing.T) {
 // A redirect from Perses never reaches the browser, whatever its status: it answers 502 instead,
 // without the Location.
 func TestRelayRefusesRedirects(t *testing.T) {
+	t.Parallel()
 	for _, code := range []int{http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther, http.StatusNotModified, http.StatusTemporaryRedirect, http.StatusPermanentRedirect} {
 		relay := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Location", "https://attacker.example/")
@@ -372,6 +382,7 @@ func TestRelayRefusesRedirects(t *testing.T) {
 // A browser that accepts gzip gets Perses's compressed answer as it was sent; a client that
 // doesn't gets it uncompressed.
 func TestRelayPassesCompressedAnswersThrough(t *testing.T) {
+	t.Parallel()
 	const plain = `{"status":"success","data":{"resultType":"matrix","result":[]}}`
 	var compressed bytes.Buffer
 	zw := gzip.NewWriter(&compressed)
@@ -410,6 +421,7 @@ func TestRelayPassesCompressedAnswersThrough(t *testing.T) {
 }
 
 func TestRelayQueriesWithTheFormThePrometheusPluginSends(t *testing.T) {
+	t.Parallel()
 	calls := make(chan upstreamCall, 1)
 	relay := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"status":"success"}`))
@@ -441,6 +453,7 @@ func TestRelayQueriesWithTheFormThePrometheusPluginSends(t *testing.T) {
 }
 
 func TestRelayRefuses(t *testing.T) {
+	t.Parallel()
 	calls := make(chan upstreamCall, 1)
 	relay := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) {}, calls, 0)
 	for _, tc := range []struct {
@@ -470,60 +483,92 @@ func TestRelayRefuses(t *testing.T) {
 	}
 }
 
-func TestRelayWhenPersesFails(t *testing.T) {
-	// Down: nothing listens at the address.
-	relay, err := New(Config{URL: "http://127.0.0.1:1", Project: project})
+// hangUpListener accepts connections and closes them at once: a Perses that is down, without
+// relying on a port staying unbound while other test binaries run.
+func hangUpListener(t *testing.T) string {
+	t.Helper()
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	rec := serve(relay, httptest.NewRequest(http.MethodGet, Prefix+"/api/v1/projects/ai-grid-monitoring/dashboards", nil), "t")
-	if rec.Code != http.StatusBadGateway {
-		t.Errorf("down: got %d, want 502", rec.Code)
-	}
-	if msg := errorMessage(t, rec); !strings.Contains(msg, "could not be reached") {
-		t.Errorf("down: message %q", msg)
-	}
-
-	// Slow: the response headers don't arrive within the timeout.
-	release := make(chan struct{})
-	slow := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) { <-release }, nil, 50*time.Millisecond)
-	defer close(release)
-	rec = serve(slow, httptest.NewRequest(http.MethodGet, Prefix+"/api/v1/projects/ai-grid-monitoring/dashboards", nil), "t")
-	if rec.Code != http.StatusGatewayTimeout {
-		t.Errorf("slow: got %d %q, want 504", rec.Code, rec.Body)
-	}
-
-	// Slow answer: the headers arrive, the body stalls; the timeout cuts it too.
-	stall := make(chan struct{})
-	defer close(stall)
-	stalls := tlsUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"partial":`))
-		w.(http.Flusher).Flush()
-		<-stall
-	}, nil, 50*time.Millisecond)
-	done := make(chan *httptest.ResponseRecorder, 1)
+	t.Cleanup(func() { _ = lis.Close() })
 	go func() {
-		done <- serve(stalls, httptest.NewRequest(http.MethodGet, Prefix+"/api/v1/projects/ai-grid-monitoring/dashboards", nil), "t")
-	}()
-	select {
-	case rec = <-done:
-		if rec.Body.String() != `{"partial":` {
-			t.Errorf("slow answer: body %q", rec.Body)
+		for {
+			conn, err := lis.Accept()
+			if err != nil {
+				return
+			}
+			_ = conn.Close()
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("slow answer: the relay did not cut a stalled body at its timeout")
-	}
+	}()
+	return lis.Addr().String()
+}
 
-	// Untrusted: the certificate isn't signed by the configured CA.
-	other := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
-	defer other.Close()
-	untrusted, err := New(Config{URL: other.URL, Project: project})
-	if err != nil {
-		t.Fatal(err)
-	}
-	rec = serve(untrusted, httptest.NewRequest(http.MethodGet, Prefix+"/api/v1/projects/ai-grid-monitoring/dashboards", nil), "t")
-	if rec.Code != http.StatusBadGateway {
-		t.Errorf("untrusted certificate: got %d, want 502", rec.Code)
-	}
+func TestRelayWhenPersesFails(t *testing.T) {
+	// Not parallel with the package's other tests, see "slow body".
+	dashboards := Prefix + "/api/v1/projects/ai-grid-monitoring/dashboards"
+	t.Run("down", func(t *testing.T) {
+		t.Parallel()
+		relay, err := New(Config{URL: "http://" + hangUpListener(t), Project: project})
+		if err != nil {
+			t.Fatal(err)
+		}
+		rec := serve(relay, httptest.NewRequest(http.MethodGet, dashboards, nil), "t")
+		if msg := errorMessage(t, rec); rec.Code != http.StatusBadGateway || !strings.Contains(msg, "could not be reached") {
+			t.Errorf("got %d %q, want 502 could not be reached", rec.Code, msg)
+		}
+	})
+
+	t.Run("slow headers", func(t *testing.T) {
+		t.Parallel()
+		release := make(chan struct{})
+		slow := tlsUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+			select {
+			case <-release:
+			case <-r.Context().Done():
+			}
+		}, nil, 50*time.Millisecond)
+		t.Cleanup(func() { close(release) })
+		if rec := serve(slow, httptest.NewRequest(http.MethodGet, dashboards, nil), "t"); rec.Code != http.StatusGatewayTimeout {
+			t.Errorf("got %d %q, want 504", rec.Code, rec.Body)
+		}
+	})
+
+	t.Run("slow body", func(t *testing.T) {
+		// Not parallel: the headers must arrive within the 50 ms timeout, TLS handshake included.
+		stall := make(chan struct{})
+		stalls := tlsUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"partial":`))
+			w.(http.Flusher).Flush()
+			select {
+			case <-stall:
+			case <-r.Context().Done():
+			}
+		}, nil, 50*time.Millisecond)
+		t.Cleanup(func() { close(stall) })
+		done := make(chan *httptest.ResponseRecorder, 1)
+		go func() { done <- serve(stalls, httptest.NewRequest(http.MethodGet, dashboards, nil), "t") }()
+		select {
+		case rec := <-done:
+			if rec.Body.String() != `{"partial":` {
+				t.Errorf("body %q, want what Perses sent before it stalled", rec.Body)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("the relay did not cut a stalled body at its timeout")
+		}
+	})
+
+	t.Run("untrusted certificate", func(t *testing.T) {
+		t.Parallel()
+		other := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+		t.Cleanup(other.Close)
+		untrusted, err := New(Config{URL: other.URL, Project: project})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rec := serve(untrusted, httptest.NewRequest(http.MethodGet, dashboards, nil), "t"); rec.Code != http.StatusBadGateway {
+			t.Errorf("got %d, want 502", rec.Code)
+		}
+	})
 }

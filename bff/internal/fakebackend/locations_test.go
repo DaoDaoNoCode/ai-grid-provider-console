@@ -1,7 +1,6 @@
 package fakebackend
 
 import (
-	"context"
 	"slices"
 	"testing"
 	"time"
@@ -28,6 +27,7 @@ func gridMember(name, location string) *aigridv1.ManagedCluster {
 // Available, unique and sorted; a cluster the scenario takes offline drops
 // out.
 func TestListLocationsOnScenarioState(t *testing.T) {
+	t.Parallel()
 	notProvisioned := gridMember("berlin-1", "berlin")
 	notProvisioned.Labels[LabelAIGridProvisioned] = "false"
 	notMember := gridMember("oslo-1", "oslo")
@@ -43,7 +43,7 @@ func TestListLocationsOnScenarioState(t *testing.T) {
 	s.SetClock(func() time.Time { return now })
 	list := func() []string {
 		t.Helper()
-		resp, err := s.ListLocations(authed(context.Background()), &aigridv1.ListLocationsRequest{})
+		resp, err := s.ListLocations(authed(t.Context()), &aigridv1.ListLocationsRequest{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -56,7 +56,7 @@ func TestListLocationsOnScenarioState(t *testing.T) {
 	if got := list(); !slices.Equal(got, []string{"paris"}) {
 		t.Fatalf("after madrid lost its lease: %v", got)
 	}
-	if _, err := s.ListLocations(context.Background(), &aigridv1.ListLocationsRequest{}); status.Code(err) != codes.Unauthenticated {
+	if _, err := s.ListLocations(t.Context(), &aigridv1.ListLocationsRequest{}); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("anonymous: %v", err)
 	}
 }
@@ -65,8 +65,9 @@ func TestListLocationsOnScenarioState(t *testing.T) {
 // Available, provisioned member at start (Madrid's lease recovers at 300s,
 // Ashburn isn't provisioned).
 func TestListLocationsFromTheFixtures(t *testing.T) {
+	t.Parallel()
 	s := newRepoServer(t)
-	resp, err := s.ListLocations(authed(context.Background()), &aigridv1.ListLocationsRequest{})
+	resp, err := s.ListLocations(authed(t.Context()), &aigridv1.ListLocationsRequest{})
 	if err != nil || !slices.Equal(resp.GetLocations(), []string{"paris"}) {
 		t.Fatalf("locations %v %v", resp, err)
 	}
@@ -74,6 +75,7 @@ func TestListLocationsFromTheFixtures(t *testing.T) {
 
 // TestConsoleLabelsMatchTheBFF: the fake and the BFF name the same labels.
 func TestConsoleLabelsMatchTheBFF(t *testing.T) {
+	t.Parallel()
 	for fake, bff := range map[string]string{
 		LabelAIGridEnabled: api.LabelEnabled, LabelAIGridProvisioned: api.LabelProvisioned, LabelLocation: api.LabelLocation,
 		LabelAIGridSite: api.LabelSite, LabelAIGridRegion: api.LabelRegion,
@@ -89,6 +91,7 @@ func TestConsoleLabelsMatchTheBFF(t *testing.T) {
 // sorted; a decided cluster without one adds nothing, and a model without a
 // placement has none.
 func TestPlacementReportsLocations(t *testing.T) {
+	t.Parallel()
 	located := func(name, location string) *aigridv1.ManagedCluster {
 		c := enrolled(name)
 		if location != "" {

@@ -146,6 +146,10 @@ func New(cfg Config) (*Relay, error) {
 		Transport:      transport,
 		ModifyResponse: modifyResponse,
 		ErrorHandler:   r.errorHandler,
+		// What the proxy reports itself, such as an answer cut while it is
+		// copied (the browser or the backend went away), goes to the relay's
+		// logger instead of the log package.
+		ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelDebug),
 	}
 	return r, nil
 }

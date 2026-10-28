@@ -1,0 +1,1569 @@
+{
+  "request": "GET /api/v1/grid/overview?range=1h",
+  "token": "dev-token",
+  "user": "dev-user",
+  "status": 200,
+  "body": {
+    "data": {
+      "updatedAt": "2026-10-15T12:00:00.000Z",
+      "inventorySource": "acm",
+      "demo": false,
+      "metricsSource": "demo",
+      "clusters": [
+        {
+          "name": "site-ashburn-1",
+          "aiGridEnabled": true,
+          "provisioned": false,
+          "hubAcceptsClient": true,
+          "location": "ashburn",
+          "site": "ashburn-dc1",
+          "region": "us-east",
+          "openshiftVersion": "4.22.15",
+          "status": "offline",
+          "statusMessage": "The kube-apiserver is not ok, status code: 503, the server is currently unable to handle the request",
+          "consoleUrl": "https://console-openshift-console.apps.site-ashburn-1.example.com",
+          "kubernetesVersion": "v1.35.6",
+          "platform": "AWS",
+          "product": "OpenShift",
+          "gpuCapacity": 8,
+          "capacity": {
+            "core_worker": "48",
+            "cpu": "64",
+            "ephemeral-storage": "3600Gi",
+            "hugepages-1Gi": "0",
+            "hugepages-2Mi": "0",
+            "memory": "524288Mi",
+            "nvidia.com/gpu": "8",
+            "pods": "750",
+            "socket_worker": "2"
+          },
+          "allocatable": {
+            "cpu": "61",
+            "ephemeral-storage": "3300Gi",
+            "hugepages-1Gi": "0",
+            "hugepages-2Mi": "0",
+            "memory": "515000Mi",
+            "nvidia.com/gpu": "8",
+            "pods": "750"
+          },
+          "gpus": {
+            "total": 2,
+            "nodeCount": 2,
+            "configurations": [
+              {
+                "vendor": "NVIDIA",
+                "product": "NVIDIA-L4-SHARED",
+                "memoryMib": 23034,
+                "gpusPerNode": 1,
+                "nodeCount": 2,
+                "sharing": {
+                  "strategy": "time-slicing",
+                  "replicas": 4,
+                  "migCapable": false
+                }
+              }
+            ],
+            "nodes": [
+              {
+                "name": "gpu-l4-0.ashburn.example",
+                "vendor": "NVIDIA",
+                "product": "NVIDIA-L4-SHARED",
+                "count": 1,
+                "memoryMib": 23034,
+                "family": "ada-lovelace",
+                "computeCapability": "8.9",
+                "driverVersion": "580.105.08",
+                "cudaRuntimeVersion": "13.0",
+                "sharing": {
+                  "strategy": "time-slicing",
+                  "replicas": 4,
+                  "migCapable": false
+                },
+                "instanceType": "g6.xlarge",
+                "ready": true
+              },
+              {
+                "name": "gpu-l4-1.ashburn.example",
+                "vendor": "NVIDIA",
+                "product": "NVIDIA-L4-SHARED",
+                "count": 1,
+                "memoryMib": 23034,
+                "family": "ada-lovelace",
+                "computeCapability": "8.9",
+                "driverVersion": "580.105.08",
+                "cudaRuntimeVersion": "13.0",
+                "sharing": {
+                  "strategy": "time-slicing",
+                  "replicas": 4,
+                  "migCapable": false
+                },
+                "instanceType": "g6.xlarge",
+                "ready": true
+              }
+            ]
+          },
+          "creationTimestamp": "2026-09-28T16:45:00Z",
+          "siteName": "Ashburn DC1",
+          "latitude": 39.0438,
+          "longitude": -77.4874,
+          "addons": {
+            "application-manager": "available",
+            "cert-policy-controller": "available",
+            "cluster-proxy": "available",
+            "config-policy-controller": "available",
+            "governance-policy-framework": "available",
+            "managed-serviceaccount": "available",
+            "work-manager": "available"
+          },
+          "conditions": [
+            {
+              "type": "ManagedClusterImportSucceeded",
+              "status": "True",
+              "reason": "ManagedClusterImported",
+              "message": "Import succeeded",
+              "lastTransitionTime": "2026-09-28T16:47:44Z"
+            },
+            {
+              "type": "HubAcceptedManagedCluster",
+              "status": "True",
+              "reason": "HubClusterAdminAccepted",
+              "message": "Accepted by hub cluster admin",
+              "lastTransitionTime": "2026-09-28T16:45:02Z"
+            },
+            {
+              "type": "ManagedClusterJoined",
+              "status": "True",
+              "reason": "ManagedClusterJoined",
+              "message": "Managed cluster joined",
+              "lastTransitionTime": "2026-09-28T16:47:31Z"
+            },
+            {
+              "type": "ManagedClusterConditionAvailable",
+              "status": "False",
+              "reason": "ManagedClusterKubeAPIServerUnavailable",
+              "message": "The kube-apiserver is not ok, status code: 503, the server is currently unable to handle the request",
+              "lastTransitionTime": "2026-10-15T11:42:17Z"
+            },
+            {
+              "type": "ManagedClusterConditionClockSynced",
+              "status": "True",
+              "reason": "ManagedClusterClockSynced",
+              "message": "The clock of the managed cluster is synced with the hub.",
+              "lastTransitionTime": "2026-09-28T16:47:31Z"
+            }
+          ],
+          "resourceVersion": "48812610",
+          "labels": {
+            "ai-grid/enabled": "true",
+            "ai-grid/provisioned": "false",
+            "ai-grid/region": "us-east",
+            "ai-grid/role": "inference",
+            "ai-grid/site": "ashburn-dc1",
+            "cloud": "Amazon",
+            "cluster.open-cluster-management.io/clusterset": "default",
+            "clusterID": "9e3f5b21-7d8a-4c93-b0e4-56789abcdef0",
+            "feature.open-cluster-management.io/addon-application-manager": "available",
+            "feature.open-cluster-management.io/addon-cert-policy-controller": "available",
+            "feature.open-cluster-management.io/addon-cluster-proxy": "available",
+            "feature.open-cluster-management.io/addon-config-policy-controller": "available",
+            "feature.open-cluster-management.io/addon-governance-policy-framework": "available",
+            "feature.open-cluster-management.io/addon-managed-serviceaccount": "available",
+            "feature.open-cluster-management.io/addon-work-manager": "available",
+            "location": "ashburn",
+            "name": "site-ashburn-1",
+            "openshiftVersion": "4.22.15",
+            "openshiftVersion-major": "4",
+            "openshiftVersion-major-minor": "4.22",
+            "vendor": "OpenShift"
+          },
+          "annotations": {
+            "ai-grid/latitude": "39.0438",
+            "ai-grid/longitude": "-77.4874",
+            "ai-grid/site-name": "Ashburn DC1",
+            "installer.multicluster.openshift.io/release-version": "2.17.3",
+            "open-cluster-management/created-via": "other"
+          }
+        },
+        {
+          "name": "site-madrid-1",
+          "aiGridEnabled": true,
+          "provisioned": true,
+          "hubAcceptsClient": true,
+          "location": "madrid",
+          "site": "madrid-dc1",
+          "region": "europe-south",
+          "openshiftVersion": "4.21.9",
+          "status": "unknown",
+          "statusMessage": "Registration agent stopped updating its lease.",
+          "consoleUrl": "https://console-openshift-console.apps.site-madrid-1.example.com",
+          "kubernetesVersion": "v1.34.3",
+          "platform": "AWS",
+          "product": "OpenShift",
+          "gpuCapacity": 4,
+          "capacity": {
+            "core_worker": "32",
+            "cpu": "48",
+            "ephemeral-storage": "3600Gi",
+            "hugepages-1Gi": "0",
+            "hugepages-2Mi": "0",
+            "memory": "196608Mi",
+            "nvidia.com/gpu": "4",
+            "pods": "750",
+            "socket_worker": "2"
+          },
+          "allocatable": {
+            "cpu": "45",
+            "ephemeral-storage": "3300Gi",
+            "hugepages-1Gi": "0",
+            "hugepages-2Mi": "0",
+            "memory": "190000Mi",
+            "nvidia.com/gpu": "4",
+            "pods": "750"
+          },
+          "gpus": {
+            "total": 4,
+            "nodeCount": 1,
+            "configurations": [
+              {
+                "vendor": "NVIDIA",
+                "product": "NVIDIA-A100-SXM4-40GB-MIG-3g.20gb",
+                "memoryMib": 19968,
+                "gpusPerNode": 4,
+                "nodeCount": 1,
+                "sharing": {
+                  "strategy": "mig",
+                  "replicas": 1,
+                  "migCapable": true,
+                  "migStrategy": "single"
+                }
+              }
+            ],
+            "nodes": [
+              {
+                "name": "gpu-a100-0.madrid.example",
+                "vendor": "NVIDIA",
+                "product": "NVIDIA-A100-SXM4-40GB-MIG-3g.20gb",
+                "count": 4,
+                "memoryMib": 19968,
+                "family": "ampere",
+                "computeCapability": "8.0",
+                "driverVersion": "580.105.08",
+                "cudaRuntimeVersion": "13.0",
+                "sharing": {
+                  "strategy": "mig",
+                  "replicas": 1,
+                  "migCapable": true,
+                  "migStrategy": "single"
+                },
+                "instanceType": "p4d.24xlarge",
+                "ready": true
+              }
+            ]
+          },
+          "creationTimestamp": "2026-09-20T08:00:00Z",
+          "siteName": "Madrid DC1",
+          "latitude": 40.4168,
+          "longitude": -3.7038,
+          "addons": {
+            "application-manager": "unreachable",
+            "cert-policy-controller": "unreachable",
+            "cluster-proxy": "unreachable",
+            "config-policy-controller": "unreachable",
+            "governance-policy-framework": "unreachable",
+            "managed-serviceaccount": "unreachable",
+            "work-manager": "unreachable"
+          },
+          "conditions": [
+            {
+              "type": "ManagedClusterImportSucceeded",
+              "status": "True",
+              "reason": "ManagedClusterImported",
+              "message": "Import succeeded",
+              "lastTransitionTime": "2026-09-20T08:00:12Z"
+            },
+            {
+              "type": "HubAcceptedManagedCluster",
+              "status": "True",
+              "reason": "HubClusterAdminAccepted",
+              "message": "Accepted by hub cluster admin",
+              "lastTransitionTime": "2026-09-20T08:00:02Z"
+            },
+            {
+              "type": "ManagedClusterJoined",
+              "status": "True",
+              "reason": "ManagedClusterJoined",
+              "message": "Managed cluster joined",
+              "lastTransitionTime": "2026-09-20T08:00:08Z"
+            },
+            {
+              "type": "ManagedClusterConditionAvailable",
+              "status": "Unknown",
+              "reason": "ManagedClusterLeaseUpdateStopped",
+              "message": "Registration agent stopped updating its lease.",
+              "lastTransitionTime": "2026-10-15T11:05:00Z"
+            },
+            {
+              "type": "ManagedClusterConditionClockSynced",
+              "status": "True",
+              "reason": "ManagedClusterClockSynced",
+              "message": "The clock of the managed cluster is synced with the hub.",
+              "lastTransitionTime": "2026-09-20T08:00:08Z"
+            }
+          ],
+          "resourceVersion": "48812499",
+          "labels": {
+            "ai-grid-mock/fail-apply": "mistral-7b-instruct",
+            "ai-grid/enabled": "true",
+            "ai-grid/provisioned": "true",
+            "ai-grid/region": "europe-south",
+            "ai-grid/role": "ingress",
+            "ai-grid/site": "madrid-dc1",
+            "cloud": "Amazon",
+            "cluster.open-cluster-management.io/clusterset": "default",
+            "clusterID": "9b2d4f60-1e3a-4c7b-8d9e-0a1b2c3d4e5f",
+            "feature.open-cluster-management.io/addon-application-manager": "unreachable",
+            "feature.open-cluster-management.io/addon-cert-policy-controller": "unreachable",
+            "feature.open-cluster-management.io/addon-cluster-proxy": "unreachable",
+            "feature.open-cluster-management.io/addon-config-policy-controller": "unreachable",
+            "feature.open-cluster-management.io/addon-governance-policy-framework": "unreachable",
+            "feature.open-cluster-management.io/addon-managed-serviceaccount": "unreachable",
+            "feature.open-cluster-management.io/addon-work-manager": "unreachable",
+            "location": "madrid",
+            "name": "site-madrid-1",
+            "openshiftVersion": "4.21.9",
+            "openshiftVersion-major": "4",
+            "openshiftVersion-major-minor": "4.21",
+            "vendor": "OpenShift"
+          },
+          "annotations": {
+            "ai-grid/latitude": "40.4168",
+            "ai-grid/longitude": "-3.7038",
+            "ai-grid/site-name": "Madrid DC1",
+            "installer.multicluster.openshift.io/release-version": "2.17.3",
+            "open-cluster-management/created-via": "other"
+          }
+        },
+        {
+          "name": "site-paris-1",
+          "aiGridEnabled": true,
+          "provisioned": true,
+          "hubAcceptsClient": true,
+          "location": "paris",
+          "site": "paris-dc1",
+          "region": "europe-west",
+          "openshiftVersion": "4.22.15",
+          "status": "ready",
+          "statusMessage": "Managed cluster is available",
+          "consoleUrl": "https://console-openshift-console.apps.site-paris-1.example.com",
+          "kubernetesVersion": "v1.35.6",
+          "platform": "BareMetal",
+          "product": "OpenShift",
+          "gpuCapacity": 32,
+          "capacity": {
+            "core_worker": "128",
+            "cpu": "192",
+            "ephemeral-storage": "3600Gi",
+            "hugepages-1Gi": "0",
+            "hugepages-2Mi": "0",
+            "memory": "1572864Mi",
+            "nvidia.com/gpu": "32",
+            "pods": "1000",
+            "socket_worker": "8"
+          },
+          "allocatable": {
+            "cpu": "186",
+            "ephemeral-storage": "3300Gi",
+            "hugepages-1Gi": "0",
+            "hugepages-2Mi": "0",
+            "memory": "1540000Mi",
+            "nvidia.com/gpu": "32",
+            "pods": "1000"
+          },
+          "gpus": {
+            "total": 32,
+            "nodeCount": 4,
+            "configurations": [
+              {
+                "vendor": "NVIDIA",
+                "product": "NVIDIA-H200",
+                "memoryMib": 143771,
+                "gpusPerNode": 8,
+                "nodeCount": 4,
+                "sharing": {
+                  "strategy": "none",
+                  "replicas": 1,
+                  "migCapable": true
+                }
+              }
+            ],
+            "nodes": [
+              {
+                "name": "gpu-h200-0.paris.example",
+                "vendor": "NVIDIA",
+                "product": "NVIDIA-H200",
+                "count": 8,
+                "memoryMib": 143771,
+                "family": "hopper",
+                "computeCapability": "9.0",
+                "driverVersion": "580.105.08",
+                "cudaRuntimeVersion": "13.0",
+                "sharing": {
+                  "strategy": "none",
+                  "replicas": 1,
+                  "migCapable": true
+                },
+                "instanceType": "p5en.48xlarge",
+                "ready": true
+              },
+              {
+                "name": "gpu-h200-1.paris.example",
+                "vendor": "NVIDIA",
+                "product": "NVIDIA-H200",
+                "count": 8,
+                "memoryMib": 143771,
+                "family": "hopper",
+                "computeCapability": "9.0",
+                "driverVersion": "580.105.08",
+                "cudaRuntimeVersion": "13.0",
+                "sharing": {
+                  "strategy": "none",
+                  "replicas": 1,
+                  "migCapable": true
+                },
+                "instanceType": "p5en.48xlarge",
+                "ready": true
+              },
+              {
+                "name": "gpu-h200-2.paris.example",
+                "vendor": "NVIDIA",
+                "product": "NVIDIA-H200",
+                "count": 8,
+                "memoryMib": 143771,
+                "family": "hopper",
+                "computeCapability": "9.0",
+                "driverVersion": "580.105.08",
+                "cudaRuntimeVersion": "13.0",
+                "sharing": {
+                  "strategy": "none",
+                  "replicas": 1,
+                  "migCapable": true
+                },
+                "instanceType": "p5en.48xlarge",
+                "ready": true
+              },
+              {
+                "name": "gpu-h200-3.paris.example",
+                "vendor": "NVIDIA",
+                "product": "NVIDIA-H200",
+                "count": 8,
+                "memoryMib": 143771,
+                "family": "hopper",
+                "computeCapability": "9.0",
+                "driverVersion": "580.105.08",
+                "cudaRuntimeVersion": "13.0",
+                "sharing": {
+                  "strategy": "none",
+                  "replicas": 1,
+                  "migCapable": true
+                },
+                "instanceType": "p5en.48xlarge",
+                "ready": true
+              }
+            ]
+          },
+          "creationTimestamp": "2026-10-01T09:00:00Z",
+          "siteName": "Paris DC1",
+          "latitude": 48.8566,
+          "longitude": 2.3522,
+          "addons": {
+            "application-manager": "available",
+            "cert-policy-controller": "available",
+            "cluster-proxy": "available",
+            "config-policy-controller": "available",
+            "governance-policy-framework": "available",
+            "managed-serviceaccount": "available",
+            "work-manager": "available"
+          },
+          "conditions": [
+            {
+              "type": "ManagedClusterImportSucceeded",
+              "status": "True",
+              "reason": "ManagedClusterImported",
+              "message": "Import succeeded",
+              "lastTransitionTime": "2026-10-01T09:00:12Z"
+            },
+            {
+              "type": "HubAcceptedManagedCluster",
+              "status": "True",
+              "reason": "HubClusterAdminAccepted",
+              "message": "Accepted by hub cluster admin",
+              "lastTransitionTime": "2026-10-01T09:00:02Z"
+            },
+            {
+              "type": "ManagedClusterJoined",
+              "status": "True",
+              "reason": "ManagedClusterJoined",
+              "message": "Managed cluster joined",
+              "lastTransitionTime": "2026-10-01T09:00:08Z"
+            },
+            {
+              "type": "ManagedClusterConditionAvailable",
+              "status": "True",
+              "reason": "ManagedClusterAvailable",
+              "message": "Managed cluster is available",
+              "lastTransitionTime": "2026-10-01T09:00:08Z"
+            },
+            {
+              "type": "ManagedClusterConditionClockSynced",
+              "status": "True",
+              "reason": "ManagedClusterClockSynced",
+              "message": "The clock of the managed cluster is synced with the hub.",
+              "lastTransitionTime": "2026-10-01T09:00:08Z"
+            }
+          ],
+          "resourceVersion": "48811204",
+          "labels": {
+            "ai-grid/enabled": "true",
+            "ai-grid/provisioned": "true",
+            "ai-grid/region": "europe-west",
+            "ai-grid/role": "combined",
+            "ai-grid/site": "paris-dc1",
+            "cloud": "BareMetal",
+            "cluster.open-cluster-management.io/clusterset": "default",
+            "clusterID": "3f1c9c3e-8a4b-4e1d-9f0a-2b7d5e6c1a90",
+            "feature.open-cluster-management.io/addon-application-manager": "available",
+            "feature.open-cluster-management.io/addon-cert-policy-controller": "available",
+            "feature.open-cluster-management.io/addon-cluster-proxy": "available",
+            "feature.open-cluster-management.io/addon-config-policy-controller": "available",
+            "feature.open-cluster-management.io/addon-governance-policy-framework": "available",
+            "feature.open-cluster-management.io/addon-managed-serviceaccount": "available",
+            "feature.open-cluster-management.io/addon-work-manager": "available",
+            "location": "paris",
+            "name": "site-paris-1",
+            "openshiftVersion": "4.22.15",
+            "openshiftVersion-major": "4",
+            "openshiftVersion-major-minor": "4.22",
+            "vendor": "OpenShift"
+          },
+          "annotations": {
+            "ai-grid/latitude": "48.8566",
+            "ai-grid/longitude": "2.3522",
+            "ai-grid/site-name": "Paris DC1",
+            "installer.multicluster.openshift.io/release-version": "2.17.3",
+            "open-cluster-management/created-via": "other"
+          }
+        }
+      ],
+      "metrics": [
+        {
+          "key": "requests",
+          "label": "Gateway request rate",
+          "unit": "req/s",
+          "status": "ok",
+          "points": [
+            {
+              "timestamp": 1792062000,
+              "value": 180.034
+            },
+            {
+              "timestamp": 1792062060,
+              "value": 132.103
+            },
+            {
+              "timestamp": 1792062120,
+              "value": 111.304
+            },
+            {
+              "timestamp": 1792062180,
+              "value": 96.654
+            },
+            {
+              "timestamp": 1792062240,
+              "value": 107.437
+            },
+            {
+              "timestamp": 1792062300,
+              "value": 174.202
+            },
+            {
+              "timestamp": 1792062360,
+              "value": 108.945
+            },
+            {
+              "timestamp": 1792062420,
+              "value": 131.873
+            },
+            {
+              "timestamp": 1792062480,
+              "value": 89.511
+            },
+            {
+              "timestamp": 1792062540,
+              "value": 8.08
+            },
+            {
+              "timestamp": 1792062600,
+              "value": 95.536
+            },
+            {
+              "timestamp": 1792062660,
+              "value": 94.077
+            },
+            {
+              "timestamp": 1792062720,
+              "value": 38.208
+            },
+            {
+              "timestamp": 1792062780,
+              "value": 67.216
+            },
+            {
+              "timestamp": 1792062840,
+              "value": 53.49
+            },
+            {
+              "timestamp": 1792062900,
+              "value": 122.815
+            },
+            {
+              "timestamp": 1792062960,
+              "value": 174.838
+            },
+            {
+              "timestamp": 1792063020,
+              "value": 124.026
+            },
+            {
+              "timestamp": 1792063080,
+              "value": 163.688
+            },
+            {
+              "timestamp": 1792063140,
+              "value": 93.756
+            },
+            {
+              "timestamp": 1792063200,
+              "value": 158.546
+            },
+            {
+              "timestamp": 1792063260,
+              "value": 35.076
+            },
+            {
+              "timestamp": 1792063320,
+              "value": 158.738
+            },
+            {
+              "timestamp": 1792063380,
+              "value": 9.773
+            },
+            {
+              "timestamp": 1792063440,
+              "value": 129.512
+            },
+            {
+              "timestamp": 1792063500,
+              "value": 53.969
+            },
+            {
+              "timestamp": 1792063560,
+              "value": 173.473
+            },
+            {
+              "timestamp": 1792063620,
+              "value": 173.3
+            },
+            {
+              "timestamp": 1792063680,
+              "value": 81.154
+            },
+            {
+              "timestamp": 1792063740,
+              "value": 46.669
+            },
+            {
+              "timestamp": 1792063800,
+              "value": 151.808
+            },
+            {
+              "timestamp": 1792063860,
+              "value": 160.577
+            },
+            {
+              "timestamp": 1792063920,
+              "value": 192.259
+            },
+            {
+              "timestamp": 1792063980,
+              "value": 36.009
+            },
+            {
+              "timestamp": 1792064040,
+              "value": 102.178
+            },
+            {
+              "timestamp": 1792064100,
+              "value": 129.361
+            },
+            {
+              "timestamp": 1792064160,
+              "value": 345.932
+            },
+            {
+              "timestamp": 1792064220,
+              "value": 68.857
+            },
+            {
+              "timestamp": 1792064280,
+              "value": 36.605
+            },
+            {
+              "timestamp": 1792064340,
+              "value": 74.997
+            },
+            {
+              "timestamp": 1792064400,
+              "value": 39.655
+            },
+            {
+              "timestamp": 1792064460,
+              "value": 94.555
+            },
+            {
+              "timestamp": 1792064520,
+              "value": 97.903
+            },
+            {
+              "timestamp": 1792064580,
+              "value": 526.664
+            },
+            {
+              "timestamp": 1792064640,
+              "value": 171.344
+            },
+            {
+              "timestamp": 1792064700,
+              "value": 94.646
+            },
+            {
+              "timestamp": 1792064760,
+              "value": 37.57
+            },
+            {
+              "timestamp": 1792064820,
+              "value": 172.601
+            },
+            {
+              "timestamp": 1792064880,
+              "value": 177.274
+            },
+            {
+              "timestamp": 1792064940,
+              "value": 158.174
+            },
+            {
+              "timestamp": 1792065000,
+              "value": 34.681
+            },
+            {
+              "timestamp": 1792065060,
+              "value": 119.645
+            },
+            {
+              "timestamp": 1792065120,
+              "value": 198.823
+            },
+            {
+              "timestamp": 1792065180,
+              "value": 101.263
+            },
+            {
+              "timestamp": 1792065240,
+              "value": 27.701
+            },
+            {
+              "timestamp": 1792065300,
+              "value": 62.376
+            },
+            {
+              "timestamp": 1792065360,
+              "value": 85.533
+            },
+            {
+              "timestamp": 1792065420,
+              "value": 20.675
+            },
+            {
+              "timestamp": 1792065480,
+              "value": 146.076
+            },
+            {
+              "timestamp": 1792065540,
+              "value": 100.206
+            },
+            {
+              "timestamp": 1792065600,
+              "value": 126.862
+            }
+          ]
+        },
+        {
+          "key": "errors",
+          "label": "Gateway error rate",
+          "unit": "req/s",
+          "status": "ok",
+          "points": [
+            {
+              "timestamp": 1792062000,
+              "value": 0.418
+            },
+            {
+              "timestamp": 1792062060,
+              "value": 0.195
+            },
+            {
+              "timestamp": 1792062120,
+              "value": 0.21
+            },
+            {
+              "timestamp": 1792062180,
+              "value": 0.141
+            },
+            {
+              "timestamp": 1792062240,
+              "value": 0.109
+            },
+            {
+              "timestamp": 1792062300,
+              "value": 0.358
+            },
+            {
+              "timestamp": 1792062360,
+              "value": 0.228
+            },
+            {
+              "timestamp": 1792062420,
+              "value": 0.239
+            },
+            {
+              "timestamp": 1792062480,
+              "value": 0.17
+            },
+            {
+              "timestamp": 1792062540,
+              "value": 0.01
+            },
+            {
+              "timestamp": 1792062600,
+              "value": 0.107
+            },
+            {
+              "timestamp": 1792062660,
+              "value": 0.105
+            },
+            {
+              "timestamp": 1792062720,
+              "value": 0.081
+            },
+            {
+              "timestamp": 1792062780,
+              "value": 0.137
+            },
+            {
+              "timestamp": 1792062840,
+              "value": 0.092
+            },
+            {
+              "timestamp": 1792062900,
+              "value": 0.136
+            },
+            {
+              "timestamp": 1792062960,
+              "value": 0.256
+            },
+            {
+              "timestamp": 1792063020,
+              "value": 0.158
+            },
+            {
+              "timestamp": 1792063080,
+              "value": 0.184
+            },
+            {
+              "timestamp": 1792063140,
+              "value": 0.133
+            },
+            {
+              "timestamp": 1792063200,
+              "value": 0.281
+            },
+            {
+              "timestamp": 1792063260,
+              "value": 0.052
+            },
+            {
+              "timestamp": 1792063320,
+              "value": 0.273
+            },
+            {
+              "timestamp": 1792063380,
+              "value": 0.013
+            },
+            {
+              "timestamp": 1792063440,
+              "value": 0.271
+            },
+            {
+              "timestamp": 1792063500,
+              "value": 0.115
+            },
+            {
+              "timestamp": 1792063560,
+              "value": 0.269
+            },
+            {
+              "timestamp": 1792063620,
+              "value": 0.204
+            },
+            {
+              "timestamp": 1792063680,
+              "value": 0.185
+            },
+            {
+              "timestamp": 1792063740,
+              "value": 0.105
+            },
+            {
+              "timestamp": 1792063800,
+              "value": 0.262
+            },
+            {
+              "timestamp": 1792063860,
+              "value": 0.378
+            },
+            {
+              "timestamp": 1792063920,
+              "value": 0.438
+            },
+            {
+              "timestamp": 1792063980,
+              "value": 0.047
+            },
+            {
+              "timestamp": 1792064040,
+              "value": 0.159
+            },
+            {
+              "timestamp": 1792064100,
+              "value": 0.168
+            },
+            {
+              "timestamp": 1792064160,
+              "value": 4.687
+            },
+            {
+              "timestamp": 1792064220,
+              "value": 0.114
+            },
+            {
+              "timestamp": 1792064280,
+              "value": 0.057
+            },
+            {
+              "timestamp": 1792064340,
+              "value": 0.111
+            },
+            {
+              "timestamp": 1792064400,
+              "value": 0.055
+            },
+            {
+              "timestamp": 1792064460,
+              "value": 0.128
+            },
+            {
+              "timestamp": 1792064520,
+              "value": 0.105
+            },
+            {
+              "timestamp": 1792064580,
+              "value": 14.482
+            },
+            {
+              "timestamp": 1792064640,
+              "value": 0.504
+            },
+            {
+              "timestamp": 1792064700,
+              "value": 0.143
+            },
+            {
+              "timestamp": 1792064760,
+              "value": 0.048
+            },
+            {
+              "timestamp": 1792064820,
+              "value": 0.286
+            },
+            {
+              "timestamp": 1792064880,
+              "value": 0.473
+            },
+            {
+              "timestamp": 1792064940,
+              "value": 0.213
+            },
+            {
+              "timestamp": 1792065000,
+              "value": 0.06
+            },
+            {
+              "timestamp": 1792065060,
+              "value": 0.249
+            },
+            {
+              "timestamp": 1792065120,
+              "value": 0.506
+            },
+            {
+              "timestamp": 1792065180,
+              "value": 0.158
+            },
+            {
+              "timestamp": 1792065240,
+              "value": 0.056
+            },
+            {
+              "timestamp": 1792065300,
+              "value": 0.132
+            },
+            {
+              "timestamp": 1792065360,
+              "value": 0.108
+            },
+            {
+              "timestamp": 1792065420,
+              "value": 0.042
+            },
+            {
+              "timestamp": 1792065480,
+              "value": 0.296
+            },
+            {
+              "timestamp": 1792065540,
+              "value": 0.134
+            },
+            {
+              "timestamp": 1792065600,
+              "value": 0.152
+            }
+          ]
+        },
+        {
+          "key": "latency",
+          "label": "Gateway p95 latency",
+          "unit": "ms",
+          "status": "ok",
+          "points": [
+            {
+              "timestamp": 1792062000,
+              "value": 155.182
+            },
+            {
+              "timestamp": 1792062060,
+              "value": 126.841
+            },
+            {
+              "timestamp": 1792062120,
+              "value": 113.61
+            },
+            {
+              "timestamp": 1792062180,
+              "value": 111.301
+            },
+            {
+              "timestamp": 1792062240,
+              "value": 120.208
+            },
+            {
+              "timestamp": 1792062300,
+              "value": 134.164
+            },
+            {
+              "timestamp": 1792062360,
+              "value": 118.232
+            },
+            {
+              "timestamp": 1792062420,
+              "value": 118.239
+            },
+            {
+              "timestamp": 1792062480,
+              "value": 111.976
+            },
+            {
+              "timestamp": 1792062540,
+              "value": 81.101
+            },
+            {
+              "timestamp": 1792062600,
+              "value": 113.229
+            },
+            {
+              "timestamp": 1792062660,
+              "value": 121.914
+            },
+            {
+              "timestamp": 1792062720,
+              "value": 102.387
+            },
+            {
+              "timestamp": 1792062780,
+              "value": 104.175
+            },
+            {
+              "timestamp": 1792062840,
+              "value": 95.084
+            },
+            {
+              "timestamp": 1792062900,
+              "value": 113.489
+            },
+            {
+              "timestamp": 1792062960,
+              "value": 135.458
+            },
+            {
+              "timestamp": 1792063020,
+              "value": 120.554
+            },
+            {
+              "timestamp": 1792063080,
+              "value": 135.78
+            },
+            {
+              "timestamp": 1792063140,
+              "value": 112.221
+            },
+            {
+              "timestamp": 1792063200,
+              "value": 134.096
+            },
+            {
+              "timestamp": 1792063260,
+              "value": 97.463
+            },
+            {
+              "timestamp": 1792063320,
+              "value": 131.633
+            },
+            {
+              "timestamp": 1792063380,
+              "value": 105.254
+            },
+            {
+              "timestamp": 1792063440,
+              "value": 118.724
+            },
+            {
+              "timestamp": 1792063500,
+              "value": 95.835
+            },
+            {
+              "timestamp": 1792063560,
+              "value": 136.343
+            },
+            {
+              "timestamp": 1792063620,
+              "value": 136.043
+            },
+            {
+              "timestamp": 1792063680,
+              "value": 102.463
+            },
+            {
+              "timestamp": 1792063740,
+              "value": 86.748
+            },
+            {
+              "timestamp": 1792063800,
+              "value": 131.313
+            },
+            {
+              "timestamp": 1792063860,
+              "value": 142.484
+            },
+            {
+              "timestamp": 1792063920,
+              "value": 157.388
+            },
+            {
+              "timestamp": 1792063980,
+              "value": 93.374
+            },
+            {
+              "timestamp": 1792064040,
+              "value": 114.715
+            },
+            {
+              "timestamp": 1792064100,
+              "value": 128.569
+            },
+            {
+              "timestamp": 1792064160,
+              "value": 339.655
+            },
+            {
+              "timestamp": 1792064220,
+              "value": 122.043
+            },
+            {
+              "timestamp": 1792064280,
+              "value": 84.034
+            },
+            {
+              "timestamp": 1792064340,
+              "value": 98.068
+            },
+            {
+              "timestamp": 1792064400,
+              "value": 93.077
+            },
+            {
+              "timestamp": 1792064460,
+              "value": 112.238
+            },
+            {
+              "timestamp": 1792064520,
+              "value": 116.301
+            },
+            {
+              "timestamp": 1792064580,
+              "value": 584.147
+            },
+            {
+              "timestamp": 1792064640,
+              "value": 171.46
+            },
+            {
+              "timestamp": 1792064700,
+              "value": 109.119
+            },
+            {
+              "timestamp": 1792064760,
+              "value": 83.679
+            },
+            {
+              "timestamp": 1792064820,
+              "value": 144.443
+            },
+            {
+              "timestamp": 1792064880,
+              "value": 159.724
+            },
+            {
+              "timestamp": 1792064940,
+              "value": 132.556
+            },
+            {
+              "timestamp": 1792065000,
+              "value": 83.515
+            },
+            {
+              "timestamp": 1792065060,
+              "value": 114.332
+            },
+            {
+              "timestamp": 1792065120,
+              "value": 158.661
+            },
+            {
+              "timestamp": 1792065180,
+              "value": 114.591
+            },
+            {
+              "timestamp": 1792065240,
+              "value": 88.425
+            },
+            {
+              "timestamp": 1792065300,
+              "value": 95.971
+            },
+            {
+              "timestamp": 1792065360,
+              "value": 106.926
+            },
+            {
+              "timestamp": 1792065420,
+              "value": 83.838
+            },
+            {
+              "timestamp": 1792065480,
+              "value": 135.47
+            },
+            {
+              "timestamp": 1792065540,
+              "value": 112.721
+            },
+            {
+              "timestamp": 1792065600,
+              "value": 116.477
+            }
+          ]
+        },
+        {
+          "key": "gpu",
+          "label": "GPU utilization",
+          "unit": "%",
+          "status": "ok",
+          "points": [
+            {
+              "timestamp": 1792062000,
+              "value": 64.841
+            },
+            {
+              "timestamp": 1792062060,
+              "value": 52.865
+            },
+            {
+              "timestamp": 1792062120,
+              "value": 41.833
+            },
+            {
+              "timestamp": 1792062180,
+              "value": 40.604
+            },
+            {
+              "timestamp": 1792062240,
+              "value": 45.899
+            },
+            {
+              "timestamp": 1792062300,
+              "value": 57.688
+            },
+            {
+              "timestamp": 1792062360,
+              "value": 43.513
+            },
+            {
+              "timestamp": 1792062420,
+              "value": 46.267
+            },
+            {
+              "timestamp": 1792062480,
+              "value": 40.038
+            },
+            {
+              "timestamp": 1792062540,
+              "value": 20.421
+            },
+            {
+              "timestamp": 1792062600,
+              "value": 42.424
+            },
+            {
+              "timestamp": 1792062660,
+              "value": 46.472
+            },
+            {
+              "timestamp": 1792062720,
+              "value": 34.479
+            },
+            {
+              "timestamp": 1792062780,
+              "value": 33.433
+            },
+            {
+              "timestamp": 1792062840,
+              "value": 27.504
+            },
+            {
+              "timestamp": 1792062900,
+              "value": 39.862
+            },
+            {
+              "timestamp": 1792062960,
+              "value": 57.673
+            },
+            {
+              "timestamp": 1792063020,
+              "value": 44.859
+            },
+            {
+              "timestamp": 1792063080,
+              "value": 58.475
+            },
+            {
+              "timestamp": 1792063140,
+              "value": 41.249
+            },
+            {
+              "timestamp": 1792063200,
+              "value": 56.44
+            },
+            {
+              "timestamp": 1792063260,
+              "value": 30.344
+            },
+            {
+              "timestamp": 1792063320,
+              "value": 55.284
+            },
+            {
+              "timestamp": 1792063380,
+              "value": 37.281
+            },
+            {
+              "timestamp": 1792063440,
+              "value": 45.358
+            },
+            {
+              "timestamp": 1792063500,
+              "value": 29.432
+            },
+            {
+              "timestamp": 1792063560,
+              "value": 58.781
+            },
+            {
+              "timestamp": 1792063620,
+              "value": 57.974
+            },
+            {
+              "timestamp": 1792063680,
+              "value": 33.669
+            },
+            {
+              "timestamp": 1792063740,
+              "value": 22.655
+            },
+            {
+              "timestamp": 1792063800,
+              "value": 54.363
+            },
+            {
+              "timestamp": 1792063860,
+              "value": 62.616
+            },
+            {
+              "timestamp": 1792063920,
+              "value": 65.401
+            },
+            {
+              "timestamp": 1792063980,
+              "value": 28.751
+            },
+            {
+              "timestamp": 1792064040,
+              "value": 41.675
+            },
+            {
+              "timestamp": 1792064100,
+              "value": 53.75
+            },
+            {
+              "timestamp": 1792064160,
+              "value": 98
+            },
+            {
+              "timestamp": 1792064220,
+              "value": 48.941
+            },
+            {
+              "timestamp": 1792064280,
+              "value": 22.243
+            },
+            {
+              "timestamp": 1792064340,
+              "value": 30.472
+            },
+            {
+              "timestamp": 1792064400,
+              "value": 27.301
+            },
+            {
+              "timestamp": 1792064460,
+              "value": 39.678
+            },
+            {
+              "timestamp": 1792064520,
+              "value": 42.576
+            },
+            {
+              "timestamp": 1792064580,
+              "value": 98
+            },
+            {
+              "timestamp": 1792064640,
+              "value": 70.679
+            },
+            {
+              "timestamp": 1792064700,
+              "value": 38.206
+            },
+            {
+              "timestamp": 1792064760,
+              "value": 21.127
+            },
+            {
+              "timestamp": 1792064820,
+              "value": 64.839
+            },
+            {
+              "timestamp": 1792064880,
+              "value": 67.279
+            },
+            {
+              "timestamp": 1792064940,
+              "value": 53.071
+            },
+            {
+              "timestamp": 1792065000,
+              "value": 22.477
+            },
+            {
+              "timestamp": 1792065060,
+              "value": 42.271
+            },
+            {
+              "timestamp": 1792065120,
+              "value": 67.633
+            },
+            {
+              "timestamp": 1792065180,
+              "value": 42.738
+            },
+            {
+              "timestamp": 1792065240,
+              "value": 22.646
+            },
+            {
+              "timestamp": 1792065300,
+              "value": 30.946
+            },
+            {
+              "timestamp": 1792065360,
+              "value": 36.6
+            },
+            {
+              "timestamp": 1792065420,
+              "value": 19.677
+            },
+            {
+              "timestamp": 1792065480,
+              "value": 57.195
+            },
+            {
+              "timestamp": 1792065540,
+              "value": 43.055
+            },
+            {
+              "timestamp": 1792065600,
+              "value": 43.796
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -62,6 +61,7 @@ func total(meta ListMeta) int {
 }
 
 func TestListTenantsPagesAndFilters(t *testing.T) {
+	t.Parallel()
 	fake := &backendtest.Fake{Tenants: seedTenants()}
 	app := newTestApp(t, testConfig(t), fake)
 
@@ -178,6 +178,7 @@ func TestListTenantsPagesAndFilters(t *testing.T) {
 }
 
 func TestTenantFromTodaysBackend(t *testing.T) {
+	t.Parallel()
 	// Fields 1-3 only: alias stays empty (after a rename Keycloak keeps the
 	// old one, so the name would be wrong), details are derived and an
 	// absent `enabled` reads as enabled (Keycloak's default), never as disabled.
@@ -200,6 +201,7 @@ func TestTenantFromTodaysBackend(t *testing.T) {
 }
 
 func TestGetTenant(t *testing.T) {
+	t.Parallel()
 	app := newTestApp(t, testConfig(t), &backendtest.Fake{Tenants: seedTenants()})
 	var tn Tenant
 	rec := serve(app, asUser(http.MethodGet, "/api/v1/tenants/t-2"))
@@ -217,6 +219,7 @@ func TestGetTenant(t *testing.T) {
 }
 
 func TestCreateTenant(t *testing.T) {
+	t.Parallel()
 	t.Run("201 with Location", func(t *testing.T) {
 		fake := &backendtest.Fake{Tenants: seedTenants()}
 		app := newTestApp(t, testConfig(t), fake)
@@ -302,6 +305,7 @@ func patchTenant(id, version, body string) *http.Request {
 }
 
 func TestPatchTenant(t *testing.T) {
+	t.Parallel()
 	t.Run("present fields become the mask", func(t *testing.T) {
 		fake := &backendtest.Fake{Tenants: seedTenants()}
 		app := newTestApp(t, testConfig(t), fake)
@@ -412,6 +416,7 @@ func TestPatchTenant(t *testing.T) {
 // TestTenantCarriesTheBackendsCreateTime: createTime is the backend's (P3),
 // omitted when it sends none.
 func TestTenantCarriesTheBackendsCreateTime(t *testing.T) {
+	t.Parallel()
 	created := time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC)
 	raw, err := json.Marshal(toTenant(&aigridv1.Tenant{Id: "t-1", ResourceVersion: "4", CreateTime: timestamppb.New(created)}))
 	if err != nil {
@@ -430,6 +435,7 @@ func TestTenantCarriesTheBackendsCreateTime(t *testing.T) {
 }
 
 func TestDeleteTenant(t *testing.T) {
+	t.Parallel()
 	fake := &backendtest.Fake{Tenants: seedTenants()}
 	app := newTestApp(t, testConfig(t), fake)
 	rec := serve(app, withIfMatch(asUser(http.MethodDelete, "/api/v1/tenants/t-3"), `"1"`))
@@ -466,6 +472,7 @@ func TestDeleteTenant(t *testing.T) {
 }
 
 func TestTenantVersions(t *testing.T) {
+	t.Parallel()
 	tenants := seedTenants()
 	tenants[1].ResourceVersion = "4" // acme-robotics, t-1
 	fake := &backendtest.Fake{Tenants: tenants}
@@ -546,40 +553,6 @@ func TestTenantVersions(t *testing.T) {
 	}
 }
 
-// The shipped backend's ListTenantsRequest is empty: it drops offset, limit
-// and filter and returns every tenant with no total. Asking it for a filter
-// or a page is 501, never the unfiltered rows as if they were the result.
-func TestTenantFilterAndPagingOnTheShippedBackend(t *testing.T) {
-	var many []*aigridv1.Tenant
-	for i := range 8 {
-		many = append(many, &aigridv1.Tenant{Id: fmt.Sprintf("t-%d", i+1), Name: fmt.Sprintf("org-%d", i+1)})
-	}
-	fake := &backendtest.Fake{Tenants: many, ShippedLists: true}
-	app := newTestApp(t, testConfig(t), fake)
-	for _, q := range []string{"filter=false&limit=5", "filter=" + url.QueryEscape(`this.name == "org-1"`), "limit=5", "offset=3", "offset=1&limit=100"} {
-		rec := serve(app, asUser(http.MethodGet, "/api/v1/tenants?"+q))
-		if rec.Code != http.StatusNotImplemented {
-			t.Errorf("%s on the shipped backend = %d %s, want 501", q, rec.Code, rec.Body.String())
-			continue
-		}
-		if msg := decodeError(t, rec).Error.Message; msg != "the AI Grid backend does not support filtering or paging tenants yet; list them without filter, offset or limit" {
-			t.Errorf("message = %q", msg)
-		}
-	}
-	// No filter and no page (offset=0 is the start anyway): the full list,
-	// with the size as the total because nothing precedes it.
-	for _, q := range []string{"", "?offset=0", "?filter="} {
-		var list []Tenant
-		rec := serve(app, asUser(http.MethodGet, "/api/v1/tenants"+q))
-		if rec.Code != http.StatusOK {
-			t.Fatalf("%q = %d %s", q, rec.Code, rec.Body.String())
-		}
-		if meta := decodeList(t, rec, &list); len(list) != 8 || meta.Size != 8 || total(meta) != 8 {
-			t.Errorf("%q = %d tenants, meta %+v", q, len(list), meta)
-		}
-	}
-}
-
 // idpJSON is an identity provider in the console's JSON, the PoC's shape.
 const idpJSON = `{"title": "Acme SSO", "description": "Acme employees sign in here.", "enabled": true, "config": {"clientId": "ai-grid", "clientSecretSecret": {"name": "acme-oidc-client"}, "issuer": "https://sso.example.com/realms/acme", "authorizationUrl": "https://sso.example.com/realms/acme/auth", "tokenUrl": "https://sso.example.com/realms/acme/token", "defaultScopes": "openid", "userInfoUrl": "", "jwksUrl": "https://sso.example.com/realms/acme/certs", "logoutUrl": "", "validateSignature": false}}`
 
@@ -587,6 +560,7 @@ const idpJSON = `{"title": "Acme SSO", "description": "Acme employees sign in he
 // from POST to the backend and back, and a PATCH of only identityProvider
 // masks only identity_provider, so the domains stay.
 func TestTenantIdentityProviderRoundTrips(t *testing.T) {
+	t.Parallel()
 	fake := &backendtest.Fake{Tenants: seedTenants()}
 	app := newTestApp(t, testConfig(t), fake)
 	rec := serve(app, jsonRequest(http.MethodPost, "/api/v1/tenants", `{"name": "wayne-aerospace", "domains": ["wayne-aero.example.com"], "identityProvider": `+idpJSON+`}`))
@@ -634,6 +608,7 @@ func TestTenantIdentityProviderRoundTrips(t *testing.T) {
 // identityProvider doesn't name it in the mask, and a tenant without one
 // has no identityProvider key.
 func TestPatchWithoutIdentityProviderKeepsIt(t *testing.T) {
+	t.Parallel()
 	fake := &backendtest.Fake{Tenants: seedTenants()}
 	app := newTestApp(t, testConfig(t), fake)
 	if rec := serve(app, asUser(http.MethodGet, "/api/v1/tenants/t-1")); strings.Contains(rec.Body.String(), `"identityProvider":`) {

@@ -1,7 +1,6 @@
 package backend
 
 import (
-	"context"
 	"slices"
 	"testing"
 	"time"
@@ -81,7 +80,8 @@ func draftModel() *aigridv1.Model {
 }
 
 func TestV1ModelReads(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	conn := &recordingConn{reply: &backendv1.ModelsListResponse{Size: 1, Total: 4, Items: []*backendv1.Model{v1Model()}}}
 	list, err := v1Models{conn, modelsNS}.ListModels(ctx, &aigridv1.ListModelsRequest{Offset: proto.Int32(3), Limit: proto.Int32(1)})
 	if err != nil || conn.method != methodModelsList {
@@ -107,7 +107,8 @@ func TestV1ModelReads(t *testing.T) {
 // The draft's filter and order use its own field names, which the backend's
 // List doesn't have; a model in another namespace can't be in this backend.
 func TestV1ModelRefusals(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	c := v1Models{&recordingConn{}, modelsNS}
 	if _, err := c.ListModels(ctx, &aigridv1.ListModelsRequest{Filter: proto.String("true")}); status.Code(err) != codes.Unimplemented {
 		t.Errorf("List with a filter: %v, want Unimplemented", err)
@@ -131,7 +132,8 @@ func TestV1ModelRefusals(t *testing.T) {
 }
 
 func TestV1ModelWrites(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	in := draftModel()
 	in.Status, in.Metadata.ResourceVersion = nil, ""
 	want := v1Model()
@@ -176,6 +178,7 @@ func TestV1ModelWrites(t *testing.T) {
 
 // Placements other than the console's own pass through in both directions.
 func TestV1ModelOtherPlacement(t *testing.T) {
+	t.Parallel()
 	in := &aigridv1.Placement{ClusterSets: []string{"set"}, LabelSelector: &aigridv1.LabelSelector{
 		MatchLabels:      map[string]string{"region": "east"},
 		MatchExpressions: []*aigridv1.LabelSelectorRequirement{{Key: "location", Operator: "In", Values: []string{"a"}}},
@@ -192,8 +195,9 @@ func TestV1ModelOtherPlacement(t *testing.T) {
 // ListLocations passes the backend's Models/ListLocations through: the names of
 // the provisioned, Available inference and combined members, in its order.
 func TestV1ListLocations(t *testing.T) {
+	t.Parallel()
 	conn := &recordingConn{reply: &backendv1.ModelsListLocationsResponse{Locations: []string{"site-a", "site-b"}}}
-	got, err := v1Models{conn, modelsNS}.ListLocations(context.Background(), &aigridv1.ListLocationsRequest{})
+	got, err := v1Models{conn, modelsNS}.ListLocations(t.Context(), &aigridv1.ListLocationsRequest{})
 	if err != nil || conn.method != methodModelsListLocations {
 		t.Fatalf("ListLocations sent %s: %v", conn.method, err)
 	}
@@ -203,7 +207,7 @@ func TestV1ListLocations(t *testing.T) {
 
 	// None: an empty list, not null.
 	conn = &recordingConn{reply: &backendv1.ModelsListLocationsResponse{}}
-	if got, err := (v1Models{conn, modelsNS}).ListLocations(context.Background(), &aigridv1.ListLocationsRequest{}); err != nil || got.GetLocations() == nil {
+	if got, err := (v1Models{conn, modelsNS}).ListLocations(t.Context(), &aigridv1.ListLocationsRequest{}); err != nil || got.GetLocations() == nil {
 		t.Errorf("ListLocations with none got %v, %v; want an empty list", got.GetLocations(), err)
 	}
 }

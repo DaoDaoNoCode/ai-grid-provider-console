@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -23,8 +24,10 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
+	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/types/dynamicpb"
 
 	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
@@ -35,6 +38,7 @@ import (
 const repoFixtures = "../../../mock/fixtures"
 
 func TestRepoFixturesLoad(t *testing.T) {
+	t.Parallel()
 	fx, err := Load(repoFixtures)
 	if err != nil {
 		t.Fatal(err)
@@ -116,6 +120,7 @@ var knownConditions = map[string]map[string][]string{
 var knownAddonValues = map[string]bool{AddonAvailable: true, AddonUnhealthy: true, AddonUnreachable: true}
 
 func TestRepoFixturesUseOnlyHubStrings(t *testing.T) {
+	t.Parallel()
 	fx, err := Load(repoFixtures)
 	if err != nil {
 		t.Fatal(err)
@@ -205,6 +210,7 @@ func checkClustersUseOnlyHubStrings(t *testing.T, fx *Fixtures) {
 // seeded in, recomputed from its conditions, so a fixture edit that changes a
 // state is noticed.
 func TestRepoFixturesCoverEveryState(t *testing.T) {
+	t.Parallel()
 	fx, err := Load(repoFixtures)
 	if err != nil {
 		t.Fatal(err)
@@ -241,7 +247,7 @@ func TestRepoFixturesCoverEveryState(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.SetClock(func() time.Time { return time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC) }) // before any scenario fires
-	resp, err := s.ListManagedClusters(authed(context.Background()), &aigridv1.ListManagedClustersRequest{})
+	resp, err := s.ListManagedClusters(authed(t.Context()), &aigridv1.ListManagedClustersRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,6 +275,7 @@ func TestRepoFixturesCoverEveryState(t *testing.T) {
 }
 
 func TestLoadRejectsBadFixtures(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	write := func(name, body string) {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
@@ -331,6 +338,7 @@ func TestLoadRejectsBadFixtures(t *testing.T) {
 // empty backend that allows everyone; an empty directory, by contrast, is a
 // valid, deliberately empty backend.
 func TestLoadRequiresTheDirectory(t *testing.T) {
+	t.Parallel()
 	missing := filepath.Join(t.TempDir(), "fixturez")
 	if _, err := Load(missing); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("nonexistent directory should fail with ErrNotExist, got %v", err)
@@ -360,6 +368,7 @@ func authed(ctx context.Context) context.Context {
 // TestNewCopiesTheFixtures: New must not keep the caller's pointers, or a
 // later change to fx would alter the served state without the server's lock.
 func TestNewCopiesTheFixtures(t *testing.T) {
+	t.Parallel()
 	fx := &Fixtures{
 		Clusters: []*aigridv1.ManagedCluster{{Name: "a", Labels: map[string]string{"name": "a"}}},
 		Tenants:  []*aigridv1.Tenant{{Id: "4c1d2e3f-5a6b-4c7d-8e9f-0a1b2c3d4e5f", Name: "t-corp", Domains: []string{"t.example.com"}}},
@@ -373,7 +382,7 @@ func TestNewCopiesTheFixtures(t *testing.T) {
 	fx.Tenants[0].Name = "changed"
 	fx.Tenants[0].Domains[0] = "changed.example.com"
 
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	clusters, err := s.ListManagedClusters(ctx, &aigridv1.ListManagedClustersRequest{})
 	if err != nil {
 		t.Fatal(err)
@@ -412,6 +421,7 @@ func dialServer(t *testing.T, srv *grpc.Server) *grpc.ClientConn {
 }
 
 func TestServerBehavesLikeTheBackend(t *testing.T) {
+	t.Parallel()
 	fx := &Fixtures{
 		Clusters: []*aigridv1.ManagedCluster{
 			{Name: "zeta", Labels: map[string]string{"name": "zeta"}, HubAcceptsClient: true},
@@ -424,7 +434,7 @@ func TestServerBehavesLikeTheBackend(t *testing.T) {
 		t.Fatal(err)
 	}
 	conn := dial(t, s)
-	ctx := metadata.AppendToOutgoingContext(context.Background(), "x-forwarded-user", "alice", "authorization", "Bearer t")
+	ctx := metadata.AppendToOutgoingContext(t.Context(), "x-forwarded-user", "alice", "authorization", "Bearer t")
 
 	pong, err := aigridv1.NewAiGridClient(conn).Ping(ctx, &aigridv1.PingRequest{Name: "bff"})
 	if err != nil || pong.GetMessage() != "Hello, bff!" {
@@ -436,13 +446,13 @@ func TestServerBehavesLikeTheBackend(t *testing.T) {
 	}
 	// Over gRPC the client always gets its own decoded objects, so the copy
 	// guarantee is checked on the Server directly: mutate a response, list again.
-	direct, err := s.ListManagedClusters(authed(context.Background()), &aigridv1.ListManagedClustersRequest{})
+	direct, err := s.ListManagedClusters(authed(t.Context()), &aigridv1.ListManagedClustersRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	direct.GetClusters()[0].Labels["mutated"] = "yes"
 	direct.GetClusters()[0].Name = "mutated"
-	again, err := s.ListManagedClusters(authed(context.Background()), &aigridv1.ListManagedClustersRequest{})
+	again, err := s.ListManagedClusters(authed(t.Context()), &aigridv1.ListManagedClustersRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -463,13 +473,14 @@ func TestServerBehavesLikeTheBackend(t *testing.T) {
 // TestShutdownClosesOpenStreams: a health Watch never ends on its own, so an
 // unbounded GracefulStop would keep Serve (and the process) alive forever.
 func TestShutdownClosesOpenStreams(t *testing.T) {
+	t.Parallel()
 	s, err := New(&Fixtures{}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
 	s.stopTimeout = 100 * time.Millisecond
 	lis := bufconn.Listen(1 << 20)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	served := make(chan error, 1)
 	go func() { served <- s.serve(ctx, lis) }()
@@ -479,7 +490,7 @@ func TestShutdownClosesOpenStreams(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = conn.Close() }()
-	watch, err := healthv1.NewHealthClient(conn).Watch(context.Background(), &healthv1.HealthCheckRequest{})
+	watch, err := healthv1.NewHealthClient(conn).Watch(t.Context(), &healthv1.HealthCheckRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -502,8 +513,9 @@ func TestShutdownClosesOpenStreams(t *testing.T) {
 }
 
 func TestLatencyHonoursCancellation(t *testing.T) {
+	t.Parallel()
 	s, _ := New(&Fixtures{Latency: Duration{d: time.Second}}, slog.New(slog.DiscardHandler))
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
 	defer cancel()
 	_, err := s.Ping(ctx, &aigridv1.PingRequest{})
 	if status.Code(err) != codes.DeadlineExceeded {
@@ -512,6 +524,7 @@ func TestLatencyHonoursCancellation(t *testing.T) {
 }
 
 func TestHubAccessReview(t *testing.T) {
+	t.Parallel()
 	h := NewHub(Access{DefaultAllowed: true, DeniedTokens: []string{"viewer"}, RejectedTokens: []string{"expired"}}, slog.New(slog.DiscardHandler))
 	srv := httptest.NewServer(h.Handler())
 	defer srv.Close()
@@ -601,6 +614,7 @@ var intentionallyUnimplemented = map[string]string{
 // Unimplemented. It also fails when a listed method starts answering, so the
 // allowlist cannot go stale.
 func TestFakeImplementsEveryProtoMethod(t *testing.T) {
+	t.Parallel()
 	s, err := New(&Fixtures{}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
@@ -625,6 +639,105 @@ func TestFakeImplementsEveryProtoMethod(t *testing.T) {
 			t.Errorf("intentionallyUnimplemented lists %s, which is not a method of the draft proto", m)
 		case !stubs[m]:
 			t.Errorf("intentionallyUnimplemented lists %s (%q) but the fake now answers it: remove the stale entry", m, reason)
+		}
+	}
+}
+
+// upstreamImage is the backend's real proto as vendored (hack/sync-upstream-proto.sh;
+// refreshed nightly), compiled by buf.
+const upstreamImage = "../../../mock/proto/upstream/image.binpb"
+
+// standIns maps every method of the backend's real ai_grid.v1 to the fake's
+// draft method that stands in for it, or to "" with the reason the fake has
+// none in upstreamWithoutStandIn. TestFakeStandsInForEveryUpstreamMethod
+// fails on an upstream method in neither, so a method the backend adds is
+// noticed the night the vendored copy picks it up.
+var standIns = map[string]string{
+	"/ai_grid.v1.AiGrid/Ping":          "/ai_grid.v1.AiGrid/Ping",
+	"/ai_grid.v1.Clusters/List":        "/ai_grid.v1.ManagedClusters/ListManagedClusters",
+	"/ai_grid.v1.Clusters/Get":         "/ai_grid.v1.ManagedClusters/GetManagedCluster",
+	"/ai_grid.v1.Clusters/Update":      "/ai_grid.v1.ManagedClusters/UpdateManagedCluster",
+	"/ai_grid.v1.Tenants/List":         "/ai_grid.v1.Tenants/ListTenants",
+	"/ai_grid.v1.Tenants/Get":          "/ai_grid.v1.Tenants/GetTenant",
+	"/ai_grid.v1.Tenants/Create":       "/ai_grid.v1.Tenants/CreateTenant",
+	"/ai_grid.v1.Tenants/Update":       "/ai_grid.v1.Tenants/UpdateTenant",
+	"/ai_grid.v1.Tenants/Delete":       "/ai_grid.v1.Tenants/DeleteTenant",
+	"/ai_grid.v1.Models/List":          "/ai_grid.v1.Models/ListModels",
+	"/ai_grid.v1.Models/Get":           "/ai_grid.v1.Models/GetModel",
+	"/ai_grid.v1.Models/Create":        "/ai_grid.v1.Models/CreateModel",
+	"/ai_grid.v1.Models/Update":        "/ai_grid.v1.Models/UpdateModel",
+	"/ai_grid.v1.Models/Delete":        "/ai_grid.v1.Models/DeleteModel",
+	"/ai_grid.v1.Models/ListLocations": "/ai_grid.v1.Models/ListLocations",
+	"/ai_grid.v1.Subscriptions/List":   "/ai_grid.v1.Subscriptions/ListSubscriptions",
+	"/ai_grid.v1.Subscriptions/Get":    "/ai_grid.v1.Subscriptions/GetSubscription",
+	"/ai_grid.v1.Subscriptions/Create": "/ai_grid.v1.Subscriptions/CreateSubscription",
+	"/ai_grid.v1.Subscriptions/Update": "/ai_grid.v1.Subscriptions/UpdateSubscription",
+	"/ai_grid.v1.Subscriptions/Delete": "/ai_grid.v1.Subscriptions/DeleteSubscription",
+}
+
+// upstreamWithoutStandIn lists the backend's methods the fake has no draft
+// method for, with the reason.
+var upstreamWithoutStandIn = map[string]string{
+	"/ai_grid.v1.Clusters/Create":     "the console doesn't create clusters (not in the relay's allowlist, AGENTS.md)",
+	"/ai_grid.v1.Clusters/Delete":     "the console doesn't delete clusters (not in the relay's allowlist, AGENTS.md)",
+	"/ai_grid.v1.Tenants/ListMembers": "the console never lists an organization's members (AGENTS.md, decided 2026-10-23)",
+}
+
+// TestFakeStandsInForEveryUpstreamMethod compares the fake with the
+// backend's real API, which TestFakeImplementsEveryProtoMethod (draft only)
+// and package protodrift (only the messages the BFF uses) don't: every
+// upstream method has a draft method the fake answers, or a listed reason
+// for having none, and neither list names a method the backend doesn't have.
+func TestFakeStandsInForEveryUpstreamMethod(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile(upstreamImage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := &descriptorpb.FileDescriptorSet{}
+	if err := proto.Unmarshal(raw, set); err != nil {
+		t.Fatalf("parse %s: %v", upstreamImage, err)
+	}
+	upstream := map[string]bool{}
+	for _, f := range set.GetFile() {
+		if f.GetPackage() != "ai_grid.v1" {
+			continue
+		}
+		for _, svc := range f.GetService() {
+			for _, m := range svc.GetMethod() {
+				upstream[fmt.Sprintf("/%s.%s/%s", f.GetPackage(), svc.GetName(), m.GetName())] = true
+			}
+		}
+	}
+	if len(upstream) == 0 {
+		t.Fatalf("%s has no ai_grid.v1 services", upstreamImage)
+	}
+
+	s, err := New(&Fixtures{}, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := grpc.NewServer()
+	s.Register(srv)
+	missing, _ := unimplementedMethods(t, srv)
+
+	for _, m := range slices.Sorted(maps.Keys(upstream)) {
+		standIn, mapped := standIns[m]
+		_, without := upstreamWithoutStandIn[m]
+		switch {
+		case mapped && without:
+			t.Errorf("%s is in both standIns and upstreamWithoutStandIn", m)
+		case !mapped && !without:
+			t.Errorf("the backend has %s and the fake has no stand-in for it: map it in standIns, or list it in upstreamWithoutStandIn with the reason", m)
+		case mapped && slices.Contains(missing, standIn):
+			t.Errorf("%s stands in for the backend's %s but the fake answers it Unimplemented", standIn, m)
+		}
+	}
+	for _, list := range []map[string]string{standIns, upstreamWithoutStandIn} {
+		for m := range list {
+			if !upstream[m] {
+				t.Errorf("%s is listed but the backend's API (%s) has no such method: remove the stale entry", m, upstreamImage)
+			}
 		}
 	}
 }
@@ -676,7 +789,7 @@ func unimplementedMethods(t *testing.T, srv *grpc.Server) (missing, called []str
 			t.Fatalf("%s is a streaming method; extend unimplementedMethods to call it", full)
 		}
 		called = append(called, full)
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer test-token", "x-forwarded-user", "test-user")
 		err := conn.Invoke(ctx, full, dynamicpb.NewMessage(m.Input()), dynamicpb.NewMessage(m.Output()))
 		cancel()
@@ -694,6 +807,7 @@ func unimplementedMethods(t *testing.T, srv *grpc.Server) (missing, called []str
 // only from the generated stubs registers every service and method of the
 // draft, and the check still reports every method as missing.
 func TestUnimplementedMethodsCatchesStubs(t *testing.T) {
+	t.Parallel()
 	srv := grpc.NewServer()
 	aigridv1.RegisterAiGridServer(srv, aigridv1.UnimplementedAiGridServer{})
 	aigridv1.RegisterManagedClustersServer(srv, aigridv1.UnimplementedManagedClustersServer{})

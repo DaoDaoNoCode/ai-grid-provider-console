@@ -1,7 +1,6 @@
 package fakebackend
 
 import (
-	"context"
 	"log/slog"
 	"math"
 	"testing"
@@ -20,6 +19,7 @@ const hubL4Labels = "node-role.kubernetes.io/gpu=; node-role.kubernetes.io/worke
 	"nvidia.com/gpu.sharing-strategy=none; nvidia.com/mig.capable=false; nvidia.com/mps.capable=false"
 
 func TestGPUNodeReadsGFDLabels(t *testing.T) {
+	t.Parallel()
 	got, ok := gpuNode(SearchNode{
 		Cluster: "site-a", Name: "node-a", Label: hubL4Labels,
 		Condition: "DiskPressure=False; MemoryPressure=False; PIDPressure=False; Ready=True",
@@ -45,6 +45,7 @@ func TestGPUNodeReadsGFDLabels(t *testing.T) {
 }
 
 func TestGPUSharing(t *testing.T) {
+	t.Parallel()
 	for name, tc := range map[string]struct {
 		labels string
 		want   *aigridv1.GPUSharing
@@ -66,6 +67,7 @@ func TestGPUSharing(t *testing.T) {
 }
 
 func TestClusterGPUsGroupsConfigurations(t *testing.T) {
+	t.Parallel()
 	l40s := func(name string) *aigridv1.GPUNode {
 		return &aigridv1.GPUNode{Name: name, Vendor: "NVIDIA", Product: "NVIDIA-L40S", Count: 2, MemoryMib: 46068,
 			Sharing: &aigridv1.GPUSharing{Strategy: "none", Replicas: 1}}
@@ -98,6 +100,7 @@ func TestClusterGPUsGroupsConfigurations(t *testing.T) {
 
 // The fixtures give each GPU cluster an inventory that matches its capacity, and none to the rest.
 func TestFixtureClustersCarryGPUs(t *testing.T) {
+	t.Parallel()
 	fx, err := Load(repoFixtures)
 	if err != nil {
 		t.Fatal(err)
@@ -116,7 +119,7 @@ func TestFixtureClustersCarryGPUs(t *testing.T) {
 		"site-frankfurt-1": {8, 3, 2, "NVIDIA-L40S"},
 		"local-cluster":    {1, 1, 1, "NVIDIA-L4"},
 	} {
-		resp, err := s.GetManagedCluster(authed(context.Background()), &aigridv1.GetManagedClusterRequest{Name: name})
+		resp, err := s.GetManagedCluster(authed(t.Context()), &aigridv1.GetManagedClusterRequest{Name: name})
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
@@ -127,7 +130,7 @@ func TestFixtureClustersCarryGPUs(t *testing.T) {
 		}
 	}
 	for _, name := range []string{"site-lisbon-1", "site-berlin-1", "edge-lyon-2"} {
-		resp, err := s.GetManagedCluster(authed(context.Background()), &aigridv1.GetManagedClusterRequest{Name: name})
+		resp, err := s.GetManagedCluster(authed(t.Context()), &aigridv1.GetManagedClusterRequest{Name: name})
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
@@ -141,6 +144,7 @@ func TestFixtureClustersCarryGPUs(t *testing.T) {
 // internal/servers/cluster_gpus.go); each case is one place the two used to
 // differ.
 func TestGPUDerivationMatchesTheBackend(t *testing.T) {
+	t.Parallel()
 	labels := func(extra string) string {
 		return "nvidia.com/gpu.present=true; nvidia.com/gpu.product=NVIDIA-L4; nvidia.com/gpu.count=1; " + extra
 	}

@@ -57,6 +57,7 @@ func mustCode(t *testing.T, err error, want codes.Code, wantMsg string) {
 // TestRepoTenantFixturesLookLikeKeycloak proves the shipped tenants.json is a
 // realm Keycloak could hold and covers the shapes the UI must render.
 func TestRepoTenantFixturesLookLikeKeycloak(t *testing.T) {
+	t.Parallel()
 	fx, err := Load(repoFixtures)
 	if err != nil {
 		t.Fatal(err)
@@ -111,6 +112,7 @@ func TestRepoTenantFixturesLookLikeKeycloak(t *testing.T) {
 }
 
 func TestSeedRejectsWhatKeycloakWouldReject(t *testing.T) {
+	t.Parallel()
 	ok := func(tn ...*aigridv1.Tenant) error {
 		_, err := New(&Fixtures{Tenants: tn}, slog.New(slog.DiscardHandler))
 		return err
@@ -140,6 +142,7 @@ func TestSeedRejectsWhatKeycloakWouldReject(t *testing.T) {
 // TestValidateDomainUsesKeycloakMessages pins Organizations.validateDomain
 // (26.8.0) branch for branch, on canonical (trimmed, lower-case) input.
 func TestValidateDomainUsesKeycloakMessages(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"":                                       MsgDomainEmpty,
 		"   ":                                    MsgDomainEmpty,
@@ -195,6 +198,7 @@ func TestValidateDomainUsesKeycloakMessages(t *testing.T) {
 // lower-cases before anything looks at the name, so messages print the
 // canonical form and case variants collapse.
 func TestNormalizeDomainsCanonicalisesFirst(t *testing.T) {
+	t.Parallel()
 	tn := &aigridv1.Tenant{Domains: []string{" Acme.Example.com ", "ACME.example.COM", "*.Acme.Example.ORG"}}
 	if err := normalizeDomains(tn); err != nil {
 		t.Fatal(err)
@@ -222,6 +226,7 @@ func TestNormalizeDomainsCanonicalisesFirst(t *testing.T) {
 }
 
 func TestValidateAliasUsesKeycloakMessages(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"acme": "", "acme-robotics_2": "", "acme robotics": MsgEmptySpace, "acme\trobotics": MsgEmptySpace, "a\vb": MsgEmptySpace,
 		"acme/eu": "Character '/' not allowed.", "a@b": "Character '@' not allowed.", `a\b`: `Character '\' not allowed.`,
@@ -242,8 +247,9 @@ func TestValidateAliasUsesKeycloakMessages(t *testing.T) {
 }
 
 func TestListTenants(t *testing.T) {
+	t.Parallel()
 	s := tenantServer(t)
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	list := func(req *aigridv1.ListTenantsRequest) *aigridv1.ListTenantsResponse {
 		t.Helper()
 		resp, err := s.ListTenants(ctx, req)
@@ -375,8 +381,9 @@ func tenantNames(resp *aigridv1.ListTenantsResponse) []string {
 }
 
 func TestGetTenant(t *testing.T) {
+	t.Parallel()
 	s := tenantServer(t)
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	got, err := s.GetTenant(ctx, &aigridv1.GetTenantRequest{Id: idGlobex})
 	if err != nil || got.GetObject().GetName() != "globex-research" || got.GetObject().GetAlias() != "globex" {
 		t.Fatalf("get = %v, %v", got, err)
@@ -388,7 +395,8 @@ func TestGetTenant(t *testing.T) {
 }
 
 func TestCreateTenant(t *testing.T) {
-	ctx := authed(context.Background())
+	t.Parallel()
+	ctx := authed(t.Context())
 	create := func(s *Server, obj *aigridv1.Tenant) (*aigridv1.Tenant, error) {
 		resp, err := s.CreateTenant(ctx, &aigridv1.CreateTenantRequest{Object: obj})
 		return resp.GetObject(), err
@@ -515,7 +523,8 @@ func TestCreateTenant(t *testing.T) {
 }
 
 func TestUpdateTenant(t *testing.T) {
-	ctx := authed(context.Background())
+	t.Parallel()
+	ctx := authed(t.Context())
 	mask := func(paths ...string) *fieldmaskpb.FieldMask { return &fieldmaskpb.FieldMask{Paths: paths} }
 	update := func(s *Server, obj *aigridv1.Tenant, m *fieldmaskpb.FieldMask) (*aigridv1.Tenant, error) {
 		resp, err := s.UpdateTenant(ctx, &aigridv1.UpdateTenantRequest{Object: obj, UpdateMask: m})
@@ -657,10 +666,11 @@ func TestUpdateTenant(t *testing.T) {
 // as the field nor as the attribute the backend keeps it in, and a seeded
 // organization without one has none.
 func TestTenantCreateTime(t *testing.T) {
+	t.Parallel()
 	s := tenantServer(t)
 	now := time.Date(2026, 10, 16, 9, 30, 0, 0, time.UTC)
 	s.SetClock(func() time.Time { return now })
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	created, err := s.CreateTenant(ctx, &aigridv1.CreateTenantRequest{Object: &aigridv1.Tenant{Name: "hooli",
 		CreateTime: timestamppb.New(time.Date(2001, 1, 1, 0, 0, 0, 0, time.UTC)), Attributes: map[string]string{"tier": "gold"}}})
 	if err != nil {
@@ -687,8 +697,9 @@ func TestTenantCreateTime(t *testing.T) {
 }
 
 func TestDeleteTenant(t *testing.T) {
+	t.Parallel()
 	s := tenantServer(t)
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	if _, err := s.DeleteTenant(ctx, &aigridv1.DeleteTenantRequest{Id: idGlobex}); err != nil {
 		t.Fatal(err)
 	}
@@ -707,10 +718,11 @@ func TestDeleteTenant(t *testing.T) {
 // TestTenantMutationsNeedAProviderAdmin: the backend gates Keycloak writes
 // with the same provider-admin check as hub writes; reads need only a token.
 func TestTenantMutationsNeedAProviderAdmin(t *testing.T) {
+	t.Parallel()
 	access := Access{DefaultAllowed: true, DeniedTokens: []string{"viewer-token"}, RejectedTokens: []string{"expired-token"}}
 	s := newServer(t, &Fixtures{Tenants: seedOrgs(), Access: access})
 	as := func(token, user string) context.Context {
-		return metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+token, "x-forwarded-user", user))
+		return metadata.NewIncomingContext(t.Context(), metadata.Pairs("authorization", "Bearer "+token, "x-forwarded-user", user))
 	}
 	viewer := as("viewer-token", "viewer")
 	want := `User "viewer" is not a provider admin, and only provider admins can change tenants (a provider admin may patch ManagedClusters on the hub)`
@@ -728,7 +740,7 @@ func TestTenantMutationsNeedAProviderAdmin(t *testing.T) {
 	}
 	_, err = s.DeleteTenant(as("expired-token", "ghost"), &aigridv1.DeleteTenantRequest{Id: idAcme})
 	mustCode(t, err, codes.Unauthenticated, "")
-	anon := context.Background()
+	anon := t.Context()
 	for name, call := range map[string]func() error{
 		"get": func() error { _, err := s.GetTenant(anon, &aigridv1.GetTenantRequest{Id: idAcme}); return err },
 		"create": func() error {
@@ -754,7 +766,8 @@ func TestTenantMutationsNeedAProviderAdmin(t *testing.T) {
 // select (unavailable, realmMissing, organizationsDisabled), mapped with the
 // conventions' codes.
 func TestTenantsErrorModes(t *testing.T) {
-	ctx := authed(context.Background())
+	t.Parallel()
+	ctx := authed(t.Context())
 	down, err := New(&Fixtures{TenantsUnavailable: "request Keycloak token: dial tcp 192.0.2.1:8080: connect: connection refused", Access: Access{DefaultAllowed: true}}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
@@ -798,7 +811,7 @@ func TestTenantsErrorModes(t *testing.T) {
 		}
 	}
 	// Authentication and the caller's own mistakes still come first.
-	if _, err := missing.ListTenants(context.Background(), &aigridv1.ListTenantsRequest{}); status.Code(err) != codes.Unauthenticated {
+	if _, err := missing.ListTenants(t.Context(), &aigridv1.ListTenantsRequest{}); status.Code(err) != codes.Unauthenticated {
 		t.Errorf("anonymous = %v", err)
 	}
 
@@ -811,6 +824,7 @@ func TestTenantsErrorModes(t *testing.T) {
 }
 
 func TestNewUUIDIsVersion4(t *testing.T) {
+	t.Parallel()
 	seen := map[string]bool{}
 	for range 100 {
 		id := newUUID()
@@ -829,8 +843,9 @@ func TestNewUUIDIsVersion4(t *testing.T) {
 // every write it makes; a stale expected version is Aborted and changes
 // nothing; the attribute is never visible or settable.
 func TestTenantVersion(t *testing.T) {
+	t.Parallel()
 	s := tenantServer(t)
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	get := func(id string) *aigridv1.Tenant {
 		t.Helper()
 		resp, err := s.GetTenant(ctx, &aigridv1.GetTenantRequest{Id: id})
@@ -903,8 +918,9 @@ func TestTenantVersion(t *testing.T) {
 // so the escapes for quotes, backslashes and control characters are decoded
 // by CEL before the comparison.
 func TestListTenantsDecodesTheFilterLiteral(t *testing.T) {
+	t.Parallel()
 	s := tenantServer(t, &aigridv1.Tenant{Id: idAcme, Name: `a"b\c`, Alias: "quotes"}, &aigridv1.Tenant{Id: idGlobex, Name: "tab\there", Alias: "tab"})
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	for literal, want := range map[string]string{`"a\"b\\c"`: `a"b\c`, `"tab\there"`: "tab\there", `"tab\u0009"`: "tab\there", `'a"b'`: `a"b\c`, `r"b\c"`: `a"b\c`} {
 		filter := `this.name.lowerAscii().contains(` + literal + `) || this.domains.exists(d, d.lowerAscii().contains(` + literal + `))`
 		resp, err := s.ListTenants(ctx, &aigridv1.ListTenantsRequest{Filter: proto.String(filter)})
@@ -919,9 +935,10 @@ func TestListTenantsDecodesTheFilterLiteral(t *testing.T) {
 // that fails on an organization needs the organizations, so with Keycloak
 // unreachable it is Unavailable like every other Keycloak-backed answer.
 func TestListTenantsFilterErrorsAfterTheKeycloakGate(t *testing.T) {
+	t.Parallel()
 	s := tenantServer(t)
 	s.TenantsErr = status.Error(codes.Unavailable, MsgKeycloakDownPref+"connection refused")
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	_, err := s.ListTenants(ctx, &aigridv1.ListTenantsRequest{Filter: proto.String(`this.name ==`)})
 	mustCode(t, err, codes.InvalidArgument, "")
 	_, err = s.ListTenants(ctx, &aigridv1.ListTenantsRequest{Filter: proto.String(`this.attributes["x"] == "y"`)})
@@ -945,7 +962,8 @@ func validIdP() *aigridv1.IdentityProvider {
 // on create, returned by Get, replaced by a patch that names only
 // identity_provider, and the domains stay.
 func TestTenantIdentityProviderRoundTrips(t *testing.T) {
-	ctx := authed(context.Background())
+	t.Parallel()
+	ctx := authed(t.Context())
 	s := tenantServer(t)
 	created, err := s.CreateTenant(ctx, &aigridv1.CreateTenantRequest{Object: &aigridv1.Tenant{Name: "wayne-aerospace", Domains: []string{"wayne-aero.example.com"}, IdentityProvider: validIdP()}})
 	if err != nil {
@@ -979,7 +997,8 @@ func TestTenantIdentityProviderRoundTrips(t *testing.T) {
 // provider included; with the current version the same request is
 // InvalidArgument with the field violations.
 func TestStaleUpdateIsAbortedBeforeItsIdentityProviderIsValidated(t *testing.T) {
-	ctx := authed(context.Background())
+	t.Parallel()
+	ctx := authed(t.Context())
 	s := tenantServer(t)
 	created, err := s.CreateTenant(ctx, &aigridv1.CreateTenantRequest{Object: &aigridv1.Tenant{Name: "wayne-aerospace", IdentityProvider: validIdP()}})
 	if err != nil {
@@ -1005,7 +1024,8 @@ func TestStaleUpdateIsAbortedBeforeItsIdentityProviderIsValidated(t *testing.T) 
 // TestPatchWithoutIdentityProviderKeepsIt: a patch of other fields, or an
 // update without a mask, leaves the identity provider alone.
 func TestPatchWithoutIdentityProviderKeepsIt(t *testing.T) {
-	ctx := authed(context.Background())
+	t.Parallel()
+	ctx := authed(t.Context())
 	acme := seedOrgs()[1]
 	acme.IdentityProvider = validIdP()
 	s := tenantServer(t, acme)
@@ -1025,7 +1045,8 @@ func TestPatchWithoutIdentityProviderKeepsIt(t *testing.T) {
 // messages as BadRequest field violations under identityProvider.*, and the
 // values trimmed as zod's .trim() outputs them.
 func TestIdentityProviderIsValidatedAndTrimmed(t *testing.T) {
-	ctx := authed(context.Background())
+	t.Parallel()
+	ctx := authed(t.Context())
 	create := func(idp *aigridv1.IdentityProvider) (*aigridv1.Tenant, error) {
 		s := tenantServer(t)
 		resp, err := s.CreateTenant(ctx, &aigridv1.CreateTenantRequest{Object: &aigridv1.Tenant{Name: "wayne-aerospace", IdentityProvider: idp}})
@@ -1122,8 +1143,9 @@ func TestIdentityProviderIsValidatedAndTrimmed(t *testing.T) {
 // is Aborted (the BFF's 409) and changes nothing, and so is a delete with the
 // version the second tab read.
 func TestTwoTabsOnAnUnversionedOrganization(t *testing.T) {
+	t.Parallel()
 	s := newRepoServer(t)
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	const idInitech = "c5a4d3e2-f1b0-4987-a6c5-d4e3f2a1b0c9"
 	read := func() *aigridv1.Tenant {
 		t.Helper()

@@ -1,7 +1,6 @@
 package fakebackend
 
 import (
-	"context"
 	"encoding/json"
 	"math"
 	"os"
@@ -66,6 +65,7 @@ func fixtureMembers(t *testing.T, dir string) []*aigridv1.ManagedCluster {
 }
 
 func TestDemoMetricsMatchThePoC(t *testing.T) {
+	t.Parallel()
 	raw, err := os.ReadFile("../../../mock/golden/demo-metrics.json")
 	if err != nil {
 		t.Fatal(err)
@@ -112,6 +112,7 @@ func TestDemoMetricsMatchThePoC(t *testing.T) {
 }
 
 func TestDemoMetricsWithoutReadyClusters(t *testing.T) {
+	t.Parallel()
 	offline := fixtureMembers(t, repoFixtures)[0]
 	offline.Status = &aigridv1.ManagedClusterStatus{Conditions: []*aigridv1.Condition{
 		{Type: "ManagedClusterConditionAvailable", Status: aigridv1.ConditionStatus_CONDITION_STATUS_FALSE},
@@ -139,6 +140,7 @@ func TestDemoMetricsWithoutReadyClusters(t *testing.T) {
 
 // TestDemoHash checks the hash against the PoC's, values from node.
 func TestDemoHash(t *testing.T) {
+	t.Parallel()
 	for name, want := range map[string]uint32{"site1": 309851683, "a.example": 931874998, "a😀b": 2017919, "zzzzzzzzzzzzzzzzzzzz": 3197943559} {
 		if got := demoHash(name); got != want {
 			t.Errorf("demoHash(%q) = %d, want %d", name, got, want)
@@ -149,6 +151,7 @@ func TestDemoHash(t *testing.T) {
 // TestToFixed3 checks the rounding against JavaScript's Number(x.toFixed(3)),
 // which rounds an exact tie up, where %.3f would round it to even.
 func TestToFixed3(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ in, want float64 }{
 		{0.0625, 0.063}, // exact tie: (0.0625).toFixed(3) is "0.063"
 		{0.1875, 0.188}, // exact tie
@@ -163,8 +166,9 @@ func TestToFixed3(t *testing.T) {
 }
 
 func TestGetOverview(t *testing.T) {
+	t.Parallel()
 	s := newRepoServer(t)
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	names := func(resp *aigridv1.GetOverviewResponse) string {
 		var out []string
 		for _, c := range resp.GetClusters() {
@@ -232,8 +236,9 @@ func strptr(s string) *string { return &s }
 // but 1h, 6h or 24h is the PoC's InvalidArgument, an empty range is 1h, and
 // both sources are always set. It authenticates like PR 12's RPCs.
 func TestOverviewRejectsAnUnknownRange(t *testing.T) {
+	t.Parallel()
 	s := newRepoServer(t)
-	ctx := authed(context.Background())
+	ctx := authed(t.Context())
 	_, err := s.GetOverview(ctx, &aigridv1.GetOverviewRequest{Range: "2h"})
 	if status.Code(err) != codes.InvalidArgument || status.Convert(err).Message() != "Choose a time range of 1h, 6h, or 24h." {
 		t.Fatalf("2h: %v", err)
@@ -249,7 +254,7 @@ func TestOverviewRejectsAnUnknownRange(t *testing.T) {
 	if resp.GetInventorySource() == aigridv1.InventorySource_INVENTORY_SOURCE_UNSPECIFIED || resp.GetMetricsSource() == aigridv1.MetricsSource_METRICS_SOURCE_UNSPECIFIED {
 		t.Fatalf("sources %v %v", resp.GetInventorySource(), resp.GetMetricsSource())
 	}
-	if _, err := s.GetOverview(context.Background(), &aigridv1.GetOverviewRequest{Range: "1h"}); status.Code(err) != codes.Unauthenticated {
+	if _, err := s.GetOverview(t.Context(), &aigridv1.GetOverviewRequest{Range: "1h"}); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("anonymous: %v", err)
 	}
 }

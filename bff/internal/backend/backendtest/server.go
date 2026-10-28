@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,8 +26,9 @@ import (
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/fakebackend/celfilter"
 )
 
-// Fake answers the ManagedClusters, Tenants and AiGrid services from fixed
-// data and the draft-only services with Unimplemented. Set Err to make every
+// Fake answers the console's draft API, as the console's fake backend serves
+// it (`make run-fake`), from fixed data; CatalogItems and the draft-only
+// methods it has no data for answer Unimplemented. Set Err to make every
 // RPC fail with that status, or Errs to fail one RPC by method name
 // ("UpdateManagedCluster"), so a read can succeed and the write that follows
 // it fail. Calls lists the methods reached, in order, and Metadata records the
@@ -49,9 +51,10 @@ import (
 // phase directly) with NotFound, AlreadyExists, the mask paths and the
 // resource-version lock (and DeleteModel's `resource_version` precondition);
 // Capabilities is what GetHubCapabilities answers, Unimplemented when nil like
-// today's backend. ShippedLists makes ListTenants and ListModels answer like
-// the shipped backend, whose empty ListTenantsRequest drops `offset`, `limit`
-// and `filter`: every item, no `size` and no `total`.
+// the backend.
+//
+// Each RPC runs under a lock, so concurrent calls are safe. A test reads the
+// recorded fields after its call returned: the answer orders them.
 type Fake struct {
 	aigridv1.UnimplementedAiGridServer
 	aigridv1.UnimplementedManagedClustersServer
@@ -88,9 +91,6 @@ type Fake struct {
 	// Locations is what ListLocations answers.
 	Locations []string
 
-	// ShippedLists serves the lists without paging, filtering or counts.
-	ShippedLists bool
-
 	Subscriptions          []*aigridv1.Subscription
 	AuthPolicies           []*aigridv1.AuthPolicy
 	ModelRegistrations     []*aigridv1.ModelRegistration
@@ -102,6 +102,8 @@ type Fake struct {
 	Metrics      []*aigridv1.Metric
 	OverviewTime *timestamppb.Timestamp
 	LastOverview *aigridv1.GetOverviewRequest
+
+	mu sync.Mutex
 }
 
 // stale is the Aborted answer to an expected version that is not the stored one.
@@ -131,16 +133,15 @@ func (f *Fake) begin(ctx context.Context, method string) error {
 
 // Reached reports whether the named RPC was called.
 func (f *Fake) Reached(method string) bool {
-	for _, m := range f.Calls {
-		if m == method {
-			return true
-		}
-	}
-	return false
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Contains(f.Calls, method)
 }
 
 // Ping implements AiGrid.
 func (f *Fake) Ping(ctx context.Context, req *aigridv1.PingRequest) (*aigridv1.PingResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if err := f.begin(ctx, "Ping"); err != nil {
 		return nil, err
 	}
@@ -149,6 +150,8 @@ func (f *Fake) Ping(ctx context.Context, req *aigridv1.PingRequest) (*aigridv1.P
 
 // ListManagedClusters implements ManagedClusters.
 func (f *Fake) ListManagedClusters(ctx context.Context, req *aigridv1.ListManagedClustersRequest) (*aigridv1.ListManagedClustersResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if err := f.begin(ctx, "ListManagedClusters"); err != nil {
 		return nil, err
 	}
@@ -168,6 +171,8 @@ func (f *Fake) ListManagedClusters(ctx context.Context, req *aigridv1.ListManage
 
 // GetManagedCluster implements ManagedClusters with the backend's NotFound message.
 func (f *Fake) GetManagedCluster(ctx context.Context, req *aigridv1.GetManagedClusterRequest) (*aigridv1.GetManagedClusterResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if err := f.begin(ctx, "GetManagedCluster"); err != nil {
 		return nil, err
 	}
@@ -184,6 +189,8 @@ func (f *Fake) GetManagedCluster(ctx context.Context, req *aigridv1.GetManagedCl
 // and answers Aborted on a mismatch; an update that changes nothing keeps
 // the version.
 func (f *Fake) UpdateManagedCluster(ctx context.Context, req *aigridv1.UpdateManagedClusterRequest) (*aigridv1.UpdateManagedClusterResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.LastUpdate = req
 	if err := f.begin(ctx, "UpdateManagedCluster"); err != nil {
 		return nil, err
@@ -233,13 +240,12 @@ func (f *Fake) find(name string) *aigridv1.ManagedCluster {
 // sees the same matches and the same InvalidArgument answers; `total` counts
 // the filtered set.
 func (f *Fake) ListTenants(ctx context.Context, req *aigridv1.ListTenantsRequest) (*aigridv1.ListTenantsResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if err := f.begin(ctx, "ListTenants"); err != nil {
 		return nil, err
 	}
 	f.LastListTenants = req
-	if f.ShippedLists {
-		return &aigridv1.ListTenantsResponse{Tenants: f.Tenants}, nil
-	}
 	filter, err := celfilter.Compile(req.GetFilter(), &aigridv1.Tenant{})
 	if err != nil {
 		return nil, err
@@ -266,6 +272,8 @@ func (f *Fake) ListTenants(ctx context.Context, req *aigridv1.ListTenantsRequest
 
 // GetTenant implements Tenants with the backend's NotFound message.
 func (f *Fake) GetTenant(ctx context.Context, req *aigridv1.GetTenantRequest) (*aigridv1.GetTenantResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if err := f.begin(ctx, "GetTenant"); err != nil {
 		return nil, err
 	}
@@ -281,6 +289,8 @@ func (f *Fake) GetTenant(ctx context.Context, req *aigridv1.GetTenantRequest) (*
 // to true, mirrors `domains` into `domain_details`, 409 on a taken name with
 // Keycloak's message.
 func (f *Fake) CreateTenant(ctx context.Context, req *aigridv1.CreateTenantRequest) (*aigridv1.CreateTenantResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.LastCreateTenant = req
 	if err := f.begin(ctx, "CreateTenant"); err != nil {
 		return nil, err
@@ -316,6 +326,8 @@ func (f *Fake) CreateTenant(ctx context.Context, req *aigridv1.CreateTenantReque
 // InvalidArgument, whatever the mask); an update that changes nothing keeps
 // the version, as the fake backend skips the PUT.
 func (f *Fake) UpdateTenant(ctx context.Context, req *aigridv1.UpdateTenantRequest) (*aigridv1.UpdateTenantResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.LastUpdateTenant = req
 	if err := f.begin(ctx, "UpdateTenant"); err != nil {
 		return nil, err
@@ -377,6 +389,8 @@ func (f *Fake) UpdateTenant(ctx context.Context, req *aigridv1.UpdateTenantReque
 
 // DeleteTenant implements Tenants.
 func (f *Fake) DeleteTenant(ctx context.Context, req *aigridv1.DeleteTenantRequest) (*aigridv1.DeleteTenantResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.LastDeleteTenant = req
 	if err := f.begin(ctx, "DeleteTenant"); err != nil {
 		return nil, err
@@ -422,6 +436,8 @@ func (f *Fake) findTenant(id string) *aigridv1.Tenant {
 
 // GetHubCapabilities implements AiGrid: Unimplemented until Capabilities is set.
 func (f *Fake) GetHubCapabilities(ctx context.Context, _ *aigridv1.GetHubCapabilitiesRequest) (*aigridv1.GetHubCapabilitiesResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if err := f.begin(ctx, "GetHubCapabilities"); err != nil {
 		return nil, err
 	}
@@ -435,12 +451,11 @@ func (f *Fake) GetHubCapabilities(ctx context.Context, _ *aigridv1.GetHubCapabil
 // evaluated as CEL over `this` (a Model, as stored) like ListTenants,
 // offset/limit paging.
 func (f *Fake) ListModels(ctx context.Context, req *aigridv1.ListModelsRequest) (*aigridv1.ListModelsResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.LastListModels = req
 	if err := f.begin(ctx, "ListModels"); err != nil {
 		return nil, err
-	}
-	if f.ShippedLists {
-		return &aigridv1.ListModelsResponse{Items: f.Models}, nil
 	}
 	filter, err := celfilter.Compile(req.GetFilter(), &aigridv1.Model{})
 	if err != nil {
@@ -473,6 +488,8 @@ func (f *Fake) ListModels(ctx context.Context, req *aigridv1.ListModelsRequest) 
 
 // GetModel implements Models with the backend's NotFound message.
 func (f *Fake) GetModel(ctx context.Context, req *aigridv1.GetModelRequest) (*aigridv1.GetModelResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if err := f.begin(ctx, "GetModel"); err != nil {
 		return nil, err
 	}
@@ -486,6 +503,8 @@ func (f *Fake) GetModel(ctx context.Context, req *aigridv1.GetModelRequest) (*ai
 // CreateModel implements Models: AlreadyExists on a taken namespace/name,
 // metadata filled, no status (the controllers have not run).
 func (f *Fake) CreateModel(ctx context.Context, req *aigridv1.CreateModelRequest) (*aigridv1.CreateModelResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.LastCreateModel = req
 	if err := f.begin(ctx, "CreateModel"); err != nil {
 		return nil, err
@@ -509,6 +528,8 @@ func (f *Fake) CreateModel(ctx context.Context, req *aigridv1.CreateModelRequest
 // `lock` against `metadata.resource_version` with Aborted on a mismatch; an
 // update that changes nothing keeps the version.
 func (f *Fake) UpdateModel(ctx context.Context, req *aigridv1.UpdateModelRequest) (*aigridv1.UpdateModelResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.LastUpdateModel = req
 	if err := f.begin(ctx, "UpdateModel"); err != nil {
 		return nil, err
@@ -561,6 +582,8 @@ func (f *Fake) UpdateModel(ctx context.Context, req *aigridv1.UpdateModelRequest
 
 // DeleteModel implements Models.
 func (f *Fake) DeleteModel(ctx context.Context, req *aigridv1.DeleteModelRequest) (*aigridv1.DeleteModelResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.LastDeleteModel = req
 	if err := f.begin(ctx, "DeleteModel"); err != nil {
 		return nil, err
@@ -579,6 +602,8 @@ func (f *Fake) DeleteModel(ctx context.Context, req *aigridv1.DeleteModelRequest
 
 // ListLocations implements Models: it answers Locations.
 func (f *Fake) ListLocations(ctx context.Context, _ *aigridv1.ListLocationsRequest) (*aigridv1.ListLocationsResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if err := f.begin(ctx, "ListLocations"); err != nil {
 		return nil, err
 	}
@@ -596,6 +621,8 @@ func (f *Fake) findModel(namespace, name string) *aigridv1.Model {
 
 // ListSubscriptions implements Subscriptions.
 func (f *Fake) ListSubscriptions(ctx context.Context, _ *aigridv1.ListSubscriptionsRequest) (*aigridv1.ListSubscriptionsResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if err := f.begin(ctx, "ListSubscriptions"); err != nil {
 		return nil, err
 	}
@@ -605,6 +632,8 @@ func (f *Fake) ListSubscriptions(ctx context.Context, _ *aigridv1.ListSubscripti
 // GetSubscription implements Subscriptions: it finds the subscription by name
 // and answers with every model and policy.
 func (f *Fake) GetSubscription(ctx context.Context, req *aigridv1.GetSubscriptionRequest) (*aigridv1.GetSubscriptionResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if err := f.begin(ctx, "GetSubscription"); err != nil {
 		return nil, err
 	}
@@ -620,6 +649,8 @@ func (f *Fake) GetSubscription(ctx context.Context, req *aigridv1.GetSubscriptio
 // returns its object with version "1", and with create_auth_policy a
 // <name>-policy.
 func (f *Fake) CreateSubscription(ctx context.Context, req *aigridv1.CreateSubscriptionRequest) (*aigridv1.CreateSubscriptionResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.LastSubscriptionCreate = req
 	if err := f.begin(ctx, "CreateSubscription"); err != nil {
 		return nil, err
@@ -633,28 +664,52 @@ func (f *Fake) CreateSubscription(ctx context.Context, req *aigridv1.CreateSubsc
 	return resp, nil
 }
 
-// UpdateSubscription implements Subscriptions: it records the request and returns its object.
+// UpdateSubscription implements Subscriptions: it records the request and
+// returns its object. With lock, an expected version other than a seeded
+// subscription's is Aborted.
 func (f *Fake) UpdateSubscription(ctx context.Context, req *aigridv1.UpdateSubscriptionRequest) (*aigridv1.UpdateSubscriptionResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.LastSubscriptionUpdate = req
 	if err := f.begin(ctx, "UpdateSubscription"); err != nil {
 		return nil, err
 	}
+	if s := f.findSubscription(req.GetObject().GetName()); s != nil && req.GetLock() && req.GetObject().GetResourceVersion() != s.GetResourceVersion() {
+		return nil, stale(s.GetName(), s.GetResourceVersion(), req.GetObject().GetResourceVersion())
+	}
 	return &aigridv1.UpdateSubscriptionResponse{Subscription: req.GetObject()}, nil
 }
 
-// DeleteSubscription implements Subscriptions: it records the request.
+// DeleteSubscription implements Subscriptions: it records the request. An
+// expected version other than a seeded subscription's is Aborted.
 func (f *Fake) DeleteSubscription(ctx context.Context, req *aigridv1.DeleteSubscriptionRequest) (*aigridv1.DeleteSubscriptionResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.LastSubscriptionDelete = req
 	if err := f.begin(ctx, "DeleteSubscription"); err != nil {
 		return nil, err
 	}
+	if s := f.findSubscription(req.GetName()); s != nil && req.GetResourceVersion() != "" && req.GetResourceVersion() != s.GetResourceVersion() {
+		return nil, stale(s.GetName(), s.GetResourceVersion(), req.GetResourceVersion())
+	}
 	return &aigridv1.DeleteSubscriptionResponse{}, nil
+}
+
+func (f *Fake) findSubscription(name string) *aigridv1.Subscription {
+	for _, s := range f.Subscriptions {
+		if s.GetName() == name {
+			return s
+		}
+	}
+	return nil
 }
 
 // GetOverview implements Grid: it records the request and answers with the
 // clusters labelled ai-grid/enabled=true (and ai-grid/site=site when set), and
 // Metrics when include_metrics is set.
 func (f *Fake) GetOverview(ctx context.Context, req *aigridv1.GetOverviewRequest) (*aigridv1.GetOverviewResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.LastOverview = req
 	if err := f.begin(ctx, "GetOverview"); err != nil {
 		return nil, err
@@ -678,11 +733,12 @@ func (f *Fake) GetOverview(ctx context.Context, req *aigridv1.GetOverviewRequest
 // Status is a shorthand for a gRPC error.
 func Status(code codes.Code, msg string) error { return status.Error(code, msg) }
 
-// Start serves the fake over an in-memory connection and returns a client for
-// it. Both are stopped when the test ends.
+// Start serves the fake over an in-memory connection and returns a client
+// dialed for the console's draft API, as `make run-fake` dials the fake
+// backend (DraftAPI). Both are stopped when the test ends. StartV1 serves the
+// backend's own API, which production calls.
 func Start(t *testing.T, fake *Fake) *backend.Client {
 	t.Helper()
-	lis := bufconn.Listen(1 << 20)
 	srv := grpc.NewServer()
 	aigridv1.RegisterAiGridServer(srv, fake)
 	aigridv1.RegisterManagedClustersServer(srv, fake)
@@ -691,50 +747,18 @@ func Start(t *testing.T, fake *Fake) *backend.Client {
 	aigridv1.RegisterModelsServer(srv, fake)
 	aigridv1.RegisterCatalogItemsServer(srv, fake)
 	aigridv1.RegisterSubscriptionsServer(srv, fake)
-	return serve(t, srv, lis)
+	return serve(t, srv, backend.Config{DraftAPI: true})
 }
 
-// realShape is ai-grid-backend as it ships today: Ping, ListManagedClusters
-// and ListTenants, every other method of those services Unimplemented, and
-// no other service.
-type realShape struct {
-	aigridv1.UnimplementedAiGridServer
-	aigridv1.UnimplementedManagedClustersServer
-	aigridv1.UnimplementedTenantsServer
-	fake *Fake
-}
-
-func (r realShape) Ping(ctx context.Context, req *aigridv1.PingRequest) (*aigridv1.PingResponse, error) {
-	return r.fake.Ping(ctx, req)
-}
-
-func (r realShape) ListManagedClusters(ctx context.Context, req *aigridv1.ListManagedClustersRequest) (*aigridv1.ListManagedClustersResponse, error) {
-	return r.fake.ListManagedClusters(ctx, req)
-}
-
-func (r realShape) ListTenants(ctx context.Context, req *aigridv1.ListTenantsRequest) (*aigridv1.ListTenantsResponse, error) {
-	return r.fake.ListTenants(ctx, req)
-}
-
-// StartRealShape serves fake the way the real backend would: only Ping,
-// ListManagedClusters and ListTenants answer; everything else is Unimplemented.
-func StartRealShape(t *testing.T, fake *Fake) *backend.Client {
+// serve runs srv over an in-memory connection and dials it with cfg (the
+// address and transport are set here). Both are stopped when the test ends.
+func serve(t *testing.T, srv *grpc.Server, cfg backend.Config) *backend.Client {
 	t.Helper()
 	lis := bufconn.Listen(1 << 20)
-	srv := grpc.NewServer()
-	real := realShape{fake: fake}
-	aigridv1.RegisterAiGridServer(srv, real)
-	aigridv1.RegisterManagedClustersServer(srv, real)
-	aigridv1.RegisterTenantsServer(srv, real)
-	return serve(t, srv, lis)
-}
-
-func serve(t *testing.T, srv *grpc.Server, lis *bufconn.Listener) *backend.Client {
-	t.Helper()
 	go func() { _ = srv.Serve(lis) }()
 
-	client, err := backend.Dial(backend.Config{Address: "passthrough:///bufconn", Insecure: true, DraftAPI: true},
-		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return lis.DialContext(ctx) }))
+	cfg.Address, cfg.Insecure = "passthrough:///bufconn", true
+	client, err := backend.Dial(cfg, grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return lis.DialContext(ctx) }))
 	if err != nil {
 		t.Fatal(err)
 	}

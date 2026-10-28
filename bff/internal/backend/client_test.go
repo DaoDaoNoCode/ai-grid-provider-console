@@ -1,7 +1,6 @@
 package backend_test
 
 import (
-	"context"
 	"net/url"
 	"strings"
 	"testing"
@@ -13,6 +12,7 @@ import (
 )
 
 func TestDialValidation(t *testing.T) {
+	t.Parallel()
 	if _, err := backend.Dial(backend.Config{}); err == nil {
 		t.Fatal("empty address accepted")
 	}
@@ -37,6 +37,7 @@ func TestDialValidation(t *testing.T) {
 }
 
 func TestForwardsIdentity(t *testing.T) {
+	t.Parallel()
 	fake := &backendtest.Fake{}
 	client := backendtest.Start(t, fake)
 
@@ -45,7 +46,7 @@ func TestForwardsIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := client.Context(identity.WithIdentity(context.Background(), id))
+	ctx, cancel := client.Context(identity.WithIdentity(t.Context(), id))
 	defer cancel()
 	if _, err := client.Health.Ping(ctx, &aigridv1.PingRequest{Name: "bff"}); err != nil {
 		t.Fatal(err)
@@ -56,7 +57,7 @@ func TestForwardsIdentity(t *testing.T) {
 	}
 
 	// No identity: nothing forwarded.
-	ctx2, cancel2 := client.Context(context.Background())
+	ctx2, cancel2 := client.Context(t.Context())
 	defer cancel2()
 	if _, err := client.Health.Ping(ctx2, &aigridv1.PingRequest{}); err != nil {
 		t.Fatal(err)
@@ -70,6 +71,7 @@ func TestForwardsIdentity(t *testing.T) {
 // header with an accented name used to fail every RPC. The BFF percent-encodes
 // the identity values, and plain percent-decoding gives them back.
 func TestForwardsNonASCIIIdentity(t *testing.T) {
+	t.Parallel()
 	fake := &backendtest.Fake{}
 	client := backendtest.Start(t, fake)
 
@@ -78,7 +80,7 @@ func TestForwardsNonASCIIIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := client.Context(identity.WithIdentity(context.Background(), id))
+	ctx, cancel := client.Context(identity.WithIdentity(t.Context(), id))
 	defer cancel()
 	if _, err := client.Health.Ping(ctx, &aigridv1.PingRequest{Name: "bff"}); err != nil {
 		t.Fatalf("an accented identity must reach the backend: %v", err)
@@ -114,6 +116,7 @@ func TestForwardsNonASCIIIdentity(t *testing.T) {
 }
 
 func TestEncodeMetadataValue(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"":                       "",
 		"alice":                  "alice",

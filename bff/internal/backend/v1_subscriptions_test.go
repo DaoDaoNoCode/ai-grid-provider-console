@@ -73,7 +73,8 @@ func draftSub() *aigridv1.Subscription {
 }
 
 func TestV1SubscriptionReads(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	conn := &recordingConn{reply: &backendv1.SubscriptionsListResponse{Items: []*backendv1.Subscription{v1Sub()}}}
 	list, err := v1Subscriptions{conn}.ListSubscriptions(ctx, &aigridv1.ListSubscriptionsRequest{})
 	if err != nil || conn.method != methodSubscriptionsList {
@@ -139,9 +140,10 @@ func TestV1SubscriptionReads(t *testing.T) {
 }
 
 func TestV1SubscriptionCreate(t *testing.T) {
+	t.Parallel()
 	conn := &recordingConn{reply: &backendv1.SubscriptionsCreateResponse{Object: v1Sub(), AuthPolicy: &backendv1.AuthPolicy{Id: "gold-policy"}}}
 	in := draftSub()
-	got, err := v1Subscriptions{conn}.CreateSubscription(context.Background(), &aigridv1.CreateSubscriptionRequest{Object: in, CreateAuthPolicy: true})
+	got, err := v1Subscriptions{conn}.CreateSubscription(t.Context(), &aigridv1.CreateSubscriptionRequest{Object: in, CreateAuthPolicy: true})
 	if err != nil || conn.method != methodSubscriptionsCreate {
 		t.Fatalf("Create sent %s: %v", conn.method, err)
 	}
@@ -171,13 +173,14 @@ func TestV1SubscriptionCreate(t *testing.T) {
 	}
 
 	// The backend always creates <name>-policy, so a create without one is refused.
-	_, err = v1Subscriptions{conn}.CreateSubscription(context.Background(), &aigridv1.CreateSubscriptionRequest{Object: in})
+	_, err = v1Subscriptions{conn}.CreateSubscription(t.Context(), &aigridv1.CreateSubscriptionRequest{Object: in})
 	if status.Code(err) != codes.Unimplemented {
 		t.Fatalf("Create without a policy: %v, want Unimplemented", err)
 	}
 }
 
 func TestV1SubscriptionUpdate(t *testing.T) {
+	t.Parallel()
 	conn := &methodConn{replies: map[string]proto.Message{
 		methodSubscriptionsGet:    &backendv1.SubscriptionsGetResponse{Object: v1Sub()},
 		methodSubscriptionsUpdate: &backendv1.SubscriptionsUpdateResponse{Object: v1Sub()},
@@ -185,7 +188,7 @@ func TestV1SubscriptionUpdate(t *testing.T) {
 	in := draftSub()
 	in.DisplayName = "Gold plus"
 	in.Description = "" // cleared: left out, because git mode replaces the annotations
-	got, err := v1Subscriptions{conn}.UpdateSubscription(context.Background(), &aigridv1.UpdateSubscriptionRequest{Object: in, Lock: true})
+	got, err := v1Subscriptions{conn}.UpdateSubscription(t.Context(), &aigridv1.UpdateSubscriptionRequest{Object: in, Lock: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,14 +217,15 @@ func TestV1SubscriptionUpdate(t *testing.T) {
 	}
 
 	in.ResourceVersion = "abc"
-	if _, err := (v1Subscriptions{conn}).UpdateSubscription(context.Background(), &aigridv1.UpdateSubscriptionRequest{Object: in, Lock: true}); status.Code(err) != codes.FailedPrecondition {
+	if _, err := (v1Subscriptions{conn}).UpdateSubscription(t.Context(), &aigridv1.UpdateSubscriptionRequest{Object: in, Lock: true}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("Update with a version the backend never answered: %v, want FailedPrecondition", err)
 	}
 }
 
 func TestV1SubscriptionDelete(t *testing.T) {
+	t.Parallel()
 	conn := &recordingConn{reply: &backendv1.SubscriptionsDeleteResponse{}}
-	if _, err := (v1Subscriptions{conn}).DeleteSubscription(context.Background(), &aigridv1.DeleteSubscriptionRequest{Name: "gold", ResourceVersion: "12"}); err != nil {
+	if _, err := (v1Subscriptions{conn}).DeleteSubscription(t.Context(), &aigridv1.DeleteSubscriptionRequest{Name: "gold", ResourceVersion: "12"}); err != nil {
 		t.Fatal(err)
 	}
 	if want := (&backendv1.SubscriptionsDeleteRequest{Id: "gold", ResourceVersion: 12}); conn.method != methodSubscriptionsDelete || !proto.Equal(conn.req.(proto.Message), want) {
@@ -230,13 +234,13 @@ func TestV1SubscriptionDelete(t *testing.T) {
 
 	// A stale version: the backend's Aborted reaches the API layer, which answers 409.
 	stale := abortingConn{&recordingConn{}}
-	if _, err := (v1Subscriptions{stale}).DeleteSubscription(context.Background(), &aigridv1.DeleteSubscriptionRequest{Name: "gold", ResourceVersion: "11"}); status.Code(err) != codes.Aborted {
+	if _, err := (v1Subscriptions{stale}).DeleteSubscription(t.Context(), &aigridv1.DeleteSubscriptionRequest{Name: "gold", ResourceVersion: "11"}); status.Code(err) != codes.Aborted {
 		t.Fatalf("stale Delete: %v, want Aborted", err)
 	}
 
 	// Version 0 is the backend's "no check": refused, so If-Match never makes a delete unconditional.
 	unsent := &recordingConn{}
-	if _, err := (v1Subscriptions{unsent}).DeleteSubscription(context.Background(), &aigridv1.DeleteSubscriptionRequest{Name: "gold", ResourceVersion: "0"}); status.Code(err) != codes.FailedPrecondition || unsent.method != "" {
+	if _, err := (v1Subscriptions{unsent}).DeleteSubscription(t.Context(), &aigridv1.DeleteSubscriptionRequest{Name: "gold", ResourceVersion: "0"}); status.Code(err) != codes.FailedPrecondition || unsent.method != "" {
 		t.Fatalf("Delete with version 0: %v after calling %q, want FailedPrecondition and no call", err, unsent.method)
 	}
 }

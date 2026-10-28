@@ -1,0 +1,9 @@
+{
+  "request": "DELETE /api/v1/subscriptions/onboarding",
+  "requestHeaders": {
+    "If-Match": "\"1\""
+  },
+  "token": "dev-token",
+  "user": "dev-user",
+  "status": 204
+}
