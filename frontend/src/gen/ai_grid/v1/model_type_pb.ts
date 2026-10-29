@@ -15,7 +15,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file ai_grid/v1/model_type.proto.
  */
 export const file_ai_grid_v1_model_type: GenFile = /*@__PURE__*/
-  fileDesc("ChthaV9ncmlkL3YxL21vZGVsX3R5cGUucHJvdG8SCmFpX2dyaWQudjEiugEKBU1vZGVsEjsKAmlkGAEgASgJQi+6SCxyKhABGD8yJF5bYS16MC05XShbYS16MC05LV17MCw2MX1bYS16MC05XSk/JBImCghtZXRhZGF0YRgCIAEoCzIULmFpX2dyaWQudjEuTWV0YWRhdGESIwoEc3BlYxgDIAEoCzIVLmFpX2dyaWQudjEuTW9kZWxTcGVjEicKBnN0YXR1cxgEIAEoCzIXLmFpX2dyaWQudjEuTW9kZWxTdGF0dXMijgQKCU1vZGVsU3BlYxImCgVtb2RlbBgBIAEoCzIXLmFpX2dyaWQudjEuTW9kZWxTb3VyY2USFQoIcmVwbGljYXMYAiABKAVIAIgBARIkCgliYXNlX3JlZnMYAyADKAlCEbpIDpIBCyIJcgcyBV5cUyskEg8KB3J1bnRpbWUYBCABKAkSJwoGcm91dGVyGAUgASgLMhcuYWlfZ3JpZC52MS5Nb2RlbFJvdXRlchIoCgRtYWluGAYgASgLMhouYWlfZ3JpZC52MS5Nb2RlbENvbnRhaW5lchIpCgdzY2FsaW5nGAcgASgLMhguYWlfZ3JpZC52MS5Nb2RlbFNjYWxpbmcSLQoJcGxhY2VtZW50GAggASgLMhouYWlfZ3JpZC52MS5Nb2RlbFBsYWNlbWVudBIpCgdyb2xsb3V0GAkgASgLMhguYWlfZ3JpZC52MS5Nb2RlbFJvbGxvdXQ6pQG6SKEBGp4BChVtb2RlbF9zcGVjLm1haW5faW1hZ2USP3NwZWMubWFpbi5pbWFnZSBpcyByZXF1aXJlZCB3aGVuIHNwZWMuYmFzZV9yZWZzIG5hbWVzIG5vIHByZXNldBpEIWhhcyh0aGlzLm1haW4pIHx8IHRoaXMubWFpbi5pbWFnZSAhPSAnJyB8fCBzaXplKHRoaXMuYmFzZV9yZWZzKSA+IDBCCwoJX3JlcGxpY2FzIjgKC01vZGVsU291cmNlEhcKA3VyaRgBIAEoCUIKukgHcgUQARiAEBIQCgRuYW1lGAIgASgJQgIYASJqCgtNb2RlbFJvdXRlchIxCgxnYXRld2F5X3JlZnMYASADKAsyGy5haV9ncmlkLnYxLk1vZGVsR2F0ZXdheVJlZhIVCg1tYW5hZ2VkX3JvdXRlGAIgASgIEhEKCXNjaGVkdWxlchgDIAEoCCJICg9Nb2RlbEdhdGV3YXlSZWYSDAoEbmFtZRgBIAEoCRIRCgluYW1lc3BhY2UYAiABKAkSFAoMc2VjdGlvbl9uYW1lGAMgASgJIo0DCg5Nb2RlbENvbnRhaW5lchINCgVpbWFnZRgBIAEoCRJ0CghyZXF1ZXN0cxgCIAMoCzIoLmFpX2dyaWQudjEuTW9kZWxDb250YWluZXIuUmVxdWVzdHNFbnRyeUI4ukg1mgEyIgRyAhABKipyKDImXlwrP1swLTkuXStbZUVpbnVta0tNR1RQXSpbLStdP1swLTldKiQScAoGbGltaXRzGAMgAygLMiYuYWlfZ3JpZC52MS5Nb2RlbENvbnRhaW5lci5MaW1pdHNFbnRyeUI4ukg1mgEyIgRyAhABKipyKDImXlwrP1swLTkuXStbZUVpbnVta0tNR1RQXSpbLStdP1swLTldKiQSJAoDZW52GAQgAygLMhcuYWlfZ3JpZC52MS5Nb2RlbEVudlZhchovCg1SZXF1ZXN0c0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEaLQoLTGltaXRzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASIqCgtNb2RlbEVudlZhchIMCgRuYW1lGAEgASgJEg0KBXZhbHVlGAIgASgJIngKDE1vZGVsU2NhbGluZxIUCgxtaW5fcmVwbGljYXMYASABKAUSFAoMbWF4X3JlcGxpY2FzGAIgASgFEgwKBGtlZGEYAyABKAgSLgoIdHJpZ2dlcnMYBCADKAsyHC5haV9ncmlkLnYxLk1vZGVsS2VkYVRyaWdnZXIijwEKEE1vZGVsS2VkYVRyaWdnZXISDAoEdHlwZRgBIAEoCRI8CghtZXRhZGF0YRgCIAMoCzIqLmFpX2dyaWQudjEuTW9kZWxLZWRhVHJpZ2dlci5NZXRhZGF0YUVudHJ5Gi8KDU1ldGFkYXRhRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASKWAQoOTW9kZWxQbGFjZW1lbnQSFAoMY2x1c3Rlcl9zZXRzGAEgAygJEjYKDmxhYmVsX3NlbGVjdG9yGAIgASgLMh4uYWlfZ3JpZC52MS5Nb2RlbExhYmVsU2VsZWN0b3ISHwoSbnVtYmVyX29mX2NsdXN0ZXJzGAMgASgFSACIAQFCFQoTX251bWJlcl9vZl9jbHVzdGVycyLVAQoSTW9kZWxMYWJlbFNlbGVjdG9yEkUKDG1hdGNoX2xhYmVscxgBIAMoCzIvLmFpX2dyaWQudjEuTW9kZWxMYWJlbFNlbGVjdG9yLk1hdGNoTGFiZWxzRW50cnkSRAoRbWF0Y2hfZXhwcmVzc2lvbnMYAiADKAsyKS5haV9ncmlkLnYxLk1vZGVsTGFiZWxTZWxlY3RvclJlcXVpcmVtZW50GjIKEE1hdGNoTGFiZWxzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASJOCh1Nb2RlbExhYmVsU2VsZWN0b3JSZXF1aXJlbWVudBILCgNrZXkYASABKAkSEAoIb3BlcmF0b3IYAiABKAkSDgoGdmFsdWVzGAMgAygJIqYBCgxNb2RlbFJvbGxvdXQSMgoIc3RyYXRlZ3kYASABKA4yIC5haV9ncmlkLnYxLk1vZGVsUm9sbG91dFN0cmF0ZWd5EhcKD21heF9jb25jdXJyZW5jeRgCIAEoCRIUCgxtYXhfZmFpbHVyZXMYAyABKAkSGQoRcHJvZ3Jlc3NfZGVhZGxpbmUYBCABKAkSGAoQbWluX3N1Y2Nlc3NfdGltZRgFIAEoCSLCAgoLTW9kZWxTdGF0dXMSCwoDdXJsGAEgASgJEikKCmNvbmRpdGlvbnMYAiADKAsyFS5haV9ncmlkLnYxLkNvbmRpdGlvbhIlCgVwaGFzZRgDIAEoDjIWLmFpX2dyaWQudjEuTW9kZWxQaGFzZRIOCgZyZWFzb24YBCABKAkSDwoHbWVzc2FnZRgFIAEoCRIzCglwbGFjZW1lbnQYBiABKAsyIC5haV9ncmlkLnYxLk1vZGVsUGxhY2VtZW50U3RhdHVzEi8KB3JvbGxvdXQYByABKAsyHi5haV9ncmlkLnYxLk1vZGVsUm9sbG91dFN0YXR1cxIbChNvYnNlcnZlZF9nZW5lcmF0aW9uGAggASgDEjAKCGNsdXN0ZXJzGAkgAygLMh4uYWlfZ3JpZC52MS5Nb2RlbENsdXN0ZXJTdGF0dXMitQEKEk1vZGVsQ2x1c3RlclN0YXR1cxJACgdjbHVzdGVyGAEgASgJQi+6SCxyKhABGD8yJF5bYS16MC05XShbYS16MC05LV17MCw2MX1bYS16MC05XSk/JBIzCgVwaGFzZRgCIAEoDjIWLmFpX2dyaWQudjEuTW9kZWxQaGFzZUIMukgJggEGEAEgACAEEhcKBnJlYXNvbhgDIAEoCUIHukgEcgIQARIPCgdtZXNzYWdlGAQgASgJIpQBChRNb2RlbFBsYWNlbWVudFN0YXR1cxIjChtudW1iZXJfb2Zfc2VsZWN0ZWRfY2x1c3RlcnMYASABKAUSGQoRc2VsZWN0ZWRfY2x1c3RlcnMYAiADKAkSKQoKY29uZGl0aW9ucxgDIAMoCzIVLmFpX2dyaWQudjEuQ29uZGl0aW9uEhEKCWxvY2F0aW9ucxgEIAMoCSKgAQoSTW9kZWxSb2xsb3V0U3RhdHVzEhIKCnJvbGxlZF9vdXQYASABKAgSDwoHYXBwbGllZBgCIAEoCBIOCgZyZWFzb24YAyABKAkSKgoFd29ya3MYBCADKAsyGy5haV9ncmlkLnYxLk1vZGVsV29ya1N0YXR1cxIpCgpjb25kaXRpb25zGAUgAygLMhUuYWlfZ3JpZC52MS5Db25kaXRpb24ibQoPTW9kZWxXb3JrU3RhdHVzEg8KB2NsdXN0ZXIYASABKAkSDwoHYXBwbGllZBgCIAEoCRIRCglhdmFpbGFibGUYAyABKAkSEwoLcHJvZ3Jlc3NpbmcYBCABKAkSEAoIZGVncmFkZWQYBSABKAkquAEKFE1vZGVsUm9sbG91dFN0cmF0ZWd5EiYKIk1PREVMX1JPTExPVVRfU1RSQVRFR1lfVU5TUEVDSUZJRUQQABIeChpNT0RFTF9ST0xMT1VUX1NUUkFURUdZX0FMTBABEiYKIk1PREVMX1JPTExPVVRfU1RSQVRFR1lfUFJPR1JFU1NJVkUQAhIwCixNT0RFTF9ST0xMT1VUX1NUUkFURUdZX1BST0dSRVNTSVZFX1BFUl9HUk9VUBADKpYBCgpNb2RlbFBoYXNlEhsKF01PREVMX1BIQVNFX1VOU1BFQ0lGSUVEEAASFwoTTU9ERUxfUEhBU0VfUEVORElORxABEhUKEU1PREVMX1BIQVNFX1JFQURZEAISFgoSTU9ERUxfUEhBU0VfRkFJTEVEEAMSIwofTU9ERUxfUEhBU0VfUEFSVElBTExZX0FWQUlMQUJMRRAEQkpaSGdpdGh1Yi5jb20vb3NhYy1wcm9qZWN0L2FpLWdyaWQtcHJvdmlkZXItYmFja2VuZC9nZW4vYWlfZ3JpZC92MTthaWdyaWR2MWIGcHJvdG8z", [file_ai_grid_v1_condition_type, file_ai_grid_v1_metadata_type, file_buf_validate_validate]);
+  fileDesc("ChthaV9ncmlkL3YxL21vZGVsX3R5cGUucHJvdG8SCmFpX2dyaWQudjEiugEKBU1vZGVsEjsKAmlkGAEgASgJQi+6SCxyKhABGD8yJF5bYS16MC05XShbYS16MC05LV17MCw2MX1bYS16MC05XSk/JBImCghtZXRhZGF0YRgCIAEoCzIULmFpX2dyaWQudjEuTWV0YWRhdGESIwoEc3BlYxgDIAEoCzIVLmFpX2dyaWQudjEuTW9kZWxTcGVjEicKBnN0YXR1cxgEIAEoCzIXLmFpX2dyaWQudjEuTW9kZWxTdGF0dXMijgQKCU1vZGVsU3BlYxImCgVtb2RlbBgBIAEoCzIXLmFpX2dyaWQudjEuTW9kZWxTb3VyY2USFQoIcmVwbGljYXMYAiABKAVIAIgBARIkCgliYXNlX3JlZnMYAyADKAlCEbpIDpIBCyIJcgcyBV5cUyskEg8KB3J1bnRpbWUYBCABKAkSJwoGcm91dGVyGAUgASgLMhcuYWlfZ3JpZC52MS5Nb2RlbFJvdXRlchIoCgRtYWluGAYgASgLMhouYWlfZ3JpZC52MS5Nb2RlbENvbnRhaW5lchIpCgdzY2FsaW5nGAcgASgLMhguYWlfZ3JpZC52MS5Nb2RlbFNjYWxpbmcSLQoJcGxhY2VtZW50GAggASgLMhouYWlfZ3JpZC52MS5Nb2RlbFBsYWNlbWVudBIpCgdyb2xsb3V0GAkgASgLMhguYWlfZ3JpZC52MS5Nb2RlbFJvbGxvdXQ6pQG6SKEBGp4BChVtb2RlbF9zcGVjLm1haW5faW1hZ2USP3NwZWMubWFpbi5pbWFnZSBpcyByZXF1aXJlZCB3aGVuIHNwZWMuYmFzZV9yZWZzIG5hbWVzIG5vIHByZXNldBpEIWhhcyh0aGlzLm1haW4pIHx8IHRoaXMubWFpbi5pbWFnZSAhPSAnJyB8fCBzaXplKHRoaXMuYmFzZV9yZWZzKSA+IDBCCwoJX3JlcGxpY2FzIjgKC01vZGVsU291cmNlEhcKA3VyaRgBIAEoCUIKukgHcgUQARiAEBIQCgRuYW1lGAIgASgJQgIYASJqCgtNb2RlbFJvdXRlchIxCgxnYXRld2F5X3JlZnMYASADKAsyGy5haV9ncmlkLnYxLk1vZGVsR2F0ZXdheVJlZhIVCg1tYW5hZ2VkX3JvdXRlGAIgASgIEhEKCXNjaGVkdWxlchgDIAEoCCJICg9Nb2RlbEdhdGV3YXlSZWYSDAoEbmFtZRgBIAEoCRIRCgluYW1lc3BhY2UYAiABKAkSFAoMc2VjdGlvbl9uYW1lGAMgASgJIo0DCg5Nb2RlbENvbnRhaW5lchINCgVpbWFnZRgBIAEoCRJ0CghyZXF1ZXN0cxgCIAMoCzIoLmFpX2dyaWQudjEuTW9kZWxDb250YWluZXIuUmVxdWVzdHNFbnRyeUI4ukg1mgEyIgRyAhABKipyKDImXlwrP1swLTkuXStbZUVpbnVta0tNR1RQXSpbLStdP1swLTldKiQScAoGbGltaXRzGAMgAygLMiYuYWlfZ3JpZC52MS5Nb2RlbENvbnRhaW5lci5MaW1pdHNFbnRyeUI4ukg1mgEyIgRyAhABKipyKDImXlwrP1swLTkuXStbZUVpbnVta0tNR1RQXSpbLStdP1swLTldKiQSJAoDZW52GAQgAygLMhcuYWlfZ3JpZC52MS5Nb2RlbEVudlZhchovCg1SZXF1ZXN0c0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEaLQoLTGltaXRzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASIqCgtNb2RlbEVudlZhchIMCgRuYW1lGAEgASgJEg0KBXZhbHVlGAIgASgJIngKDE1vZGVsU2NhbGluZxIUCgxtaW5fcmVwbGljYXMYASABKAUSFAoMbWF4X3JlcGxpY2FzGAIgASgFEgwKBGtlZGEYAyABKAgSLgoIdHJpZ2dlcnMYBCADKAsyHC5haV9ncmlkLnYxLk1vZGVsS2VkYVRyaWdnZXIijwEKEE1vZGVsS2VkYVRyaWdnZXISDAoEdHlwZRgBIAEoCRI8CghtZXRhZGF0YRgCIAMoCzIqLmFpX2dyaWQudjEuTW9kZWxLZWRhVHJpZ2dlci5NZXRhZGF0YUVudHJ5Gi8KDU1ldGFkYXRhRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASKWAQoOTW9kZWxQbGFjZW1lbnQSFAoMY2x1c3Rlcl9zZXRzGAEgAygJEjYKDmxhYmVsX3NlbGVjdG9yGAIgASgLMh4uYWlfZ3JpZC52MS5Nb2RlbExhYmVsU2VsZWN0b3ISHwoSbnVtYmVyX29mX2NsdXN0ZXJzGAMgASgFSACIAQFCFQoTX251bWJlcl9vZl9jbHVzdGVycyLVAQoSTW9kZWxMYWJlbFNlbGVjdG9yEkUKDG1hdGNoX2xhYmVscxgBIAMoCzIvLmFpX2dyaWQudjEuTW9kZWxMYWJlbFNlbGVjdG9yLk1hdGNoTGFiZWxzRW50cnkSRAoRbWF0Y2hfZXhwcmVzc2lvbnMYAiADKAsyKS5haV9ncmlkLnYxLk1vZGVsTGFiZWxTZWxlY3RvclJlcXVpcmVtZW50GjIKEE1hdGNoTGFiZWxzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASJOCh1Nb2RlbExhYmVsU2VsZWN0b3JSZXF1aXJlbWVudBILCgNrZXkYASABKAkSEAoIb3BlcmF0b3IYAiABKAkSDgoGdmFsdWVzGAMgAygJIqYBCgxNb2RlbFJvbGxvdXQSMgoIc3RyYXRlZ3kYASABKA4yIC5haV9ncmlkLnYxLk1vZGVsUm9sbG91dFN0cmF0ZWd5EhcKD21heF9jb25jdXJyZW5jeRgCIAEoCRIUCgxtYXhfZmFpbHVyZXMYAyABKAkSGQoRcHJvZ3Jlc3NfZGVhZGxpbmUYBCABKAkSGAoQbWluX3N1Y2Nlc3NfdGltZRgFIAEoCSL6AwoLTW9kZWxTdGF0dXMSCwoDdXJsGAEgASgJEikKCmNvbmRpdGlvbnMYAiADKAsyFS5haV9ncmlkLnYxLkNvbmRpdGlvbhIlCgVwaGFzZRgDIAEoDjIWLmFpX2dyaWQudjEuTW9kZWxQaGFzZRIOCgZyZWFzb24YBCABKAkSDwoHbWVzc2FnZRgFIAEoCRIzCglwbGFjZW1lbnQYBiABKAsyIC5haV9ncmlkLnYxLk1vZGVsUGxhY2VtZW50U3RhdHVzEi8KB3JvbGxvdXQYByABKAsyHi5haV9ncmlkLnYxLk1vZGVsUm9sbG91dFN0YXR1cxIbChNvYnNlcnZlZF9nZW5lcmF0aW9uGAggASgDEjAKCGNsdXN0ZXJzGAkgAygLMh4uYWlfZ3JpZC52MS5Nb2RlbENsdXN0ZXJTdGF0dXMSNAoKZGVwbG95bWVudBgKIAEoDjIgLmFpX2dyaWQudjEuTW9kZWxEZXBsb3ltZW50U3RhdGUSKAoEbWFhcxgLIAEoDjIaLmFpX2dyaWQudjEuTW9kZWxNYWFzU3RhdGUSLwoHaW5ncmVzcxgMIAMoCzIeLmFpX2dyaWQudjEuTW9kZWxJbmdyZXNzU3RhdHVzEiUKBXN0YXRlGA0gASgOMhYuYWlfZ3JpZC52MS5Nb2RlbFN0YXRlIpwBChJNb2RlbEluZ3Jlc3NTdGF0dXMSQAoHY2x1c3RlchgBIAEoCUIvukgscioQARg/MiReW2EtejAtOV0oW2EtejAtOS1dezAsNjF9W2EtejAtOV0pPyQSMwoFc3RhdGUYAiABKA4yGi5haV9ncmlkLnYxLk1vZGVsTWFhc1N0YXRlQgi6SAWCAQIQARIPCgdtZXNzYWdlGAMgASgJItoDChJNb2RlbENsdXN0ZXJTdGF0dXMSQAoHY2x1c3RlchgBIAEoCUIvukgscioQARg/MiReW2EtejAtOV0oW2EtejAtOS1dezAsNjF9W2EtejAtOV0pPyQSMwoFcGhhc2UYAiABKA4yFi5haV9ncmlkLnYxLk1vZGVsUGhhc2VCDLpICYIBBhABIAAgBBIXCgZyZWFzb24YAyABKAlCB7pIBHICEAESDwoHbWVzc2FnZRgEIAEoCRI+CgpkZXBsb3ltZW50GAUgASgOMiAuYWlfZ3JpZC52MS5Nb2RlbERlcGxveW1lbnRTdGF0ZUIIukgFggECEAESGgoSZGVwbG95bWVudF9tZXNzYWdlGAYgASgJEjIKBHN5bmMYByABKA4yGi5haV9ncmlkLnYxLk1vZGVsU3luY1N0YXRlQgi6SAWCAQIQARIUCgxzeW5jX21lc3NhZ2UYCCABKAkSLwoFc3RhdGUYCSABKA4yFi5haV9ncmlkLnYxLk1vZGVsU3RhdGVCCLpIBYIBAhABEhAKCHZpZXdfdXJsGAogASgJEjoKC3ZpZXdfdGFyZ2V0GAsgASgOMhsuYWlfZ3JpZC52MS5Nb2RlbFZpZXdUYXJnZXRCCLpIBYIBAhABIpQBChRNb2RlbFBsYWNlbWVudFN0YXR1cxIjChtudW1iZXJfb2Zfc2VsZWN0ZWRfY2x1c3RlcnMYASABKAUSGQoRc2VsZWN0ZWRfY2x1c3RlcnMYAiADKAkSKQoKY29uZGl0aW9ucxgDIAMoCzIVLmFpX2dyaWQudjEuQ29uZGl0aW9uEhEKCWxvY2F0aW9ucxgEIAMoCSKgAQoSTW9kZWxSb2xsb3V0U3RhdHVzEhIKCnJvbGxlZF9vdXQYASABKAgSDwoHYXBwbGllZBgCIAEoCBIOCgZyZWFzb24YAyABKAkSKgoFd29ya3MYBCADKAsyGy5haV9ncmlkLnYxLk1vZGVsV29ya1N0YXR1cxIpCgpjb25kaXRpb25zGAUgAygLMhUuYWlfZ3JpZC52MS5Db25kaXRpb24ibQoPTW9kZWxXb3JrU3RhdHVzEg8KB2NsdXN0ZXIYASABKAkSDwoHYXBwbGllZBgCIAEoCRIRCglhdmFpbGFibGUYAyABKAkSEwoLcHJvZ3Jlc3NpbmcYBCABKAkSEAoIZGVncmFkZWQYBSABKAkquAEKFE1vZGVsUm9sbG91dFN0cmF0ZWd5EiYKIk1PREVMX1JPTExPVVRfU1RSQVRFR1lfVU5TUEVDSUZJRUQQABIeChpNT0RFTF9ST0xMT1VUX1NUUkFURUdZX0FMTBABEiYKIk1PREVMX1JPTExPVVRfU1RSQVRFR1lfUFJPR1JFU1NJVkUQAhIwCixNT0RFTF9ST0xMT1VUX1NUUkFURUdZX1BST0dSRVNTSVZFX1BFUl9HUk9VUBADKs4BChRNb2RlbERlcGxveW1lbnRTdGF0ZRImCiJNT0RFTF9ERVBMT1lNRU5UX1NUQVRFX1VOU1BFQ0lGSUVEEAASIwofTU9ERUxfREVQTE9ZTUVOVF9TVEFURV9TVEFSVElORxABEiIKHk1PREVMX0RFUExPWU1FTlRfU1RBVEVfUlVOTklORxACEiEKHU1PREVMX0RFUExPWU1FTlRfU1RBVEVfRkFJTEVEEAMSIgoeTU9ERUxfREVQTE9ZTUVOVF9TVEFURV9TVE9QUEVEEAQq+wEKCk1vZGVsU3RhdGUSGwoXTU9ERUxfU1RBVEVfVU5TUEVDSUZJRUQQABIcChhNT0RFTF9TVEFURV9TQVZFRF9UT19HSVQQARIXChNNT0RFTF9TVEFURV9TWU5DSU5HEAISFgoSTU9ERUxfU1RBVEVfU1lOQ0VEEAMSGAoUTU9ERUxfU1RBVEVfU1RBUlRJTkcQBBIVChFNT0RFTF9TVEFURV9SRUFEWRAFEh8KG01PREVMX1NUQVRFX1BBUlRJQUxMWV9SRUFEWRAGEhYKEk1PREVMX1NUQVRFX0ZBSUxFRBAHEhcKE01PREVMX1NUQVRFX1NUT1BQRUQQCCqOAQoOTW9kZWxTeW5jU3RhdGUSIAocTU9ERUxfU1lOQ19TVEFURV9VTlNQRUNJRklFRBAAEhsKF01PREVMX1NZTkNfU1RBVEVfU1lOQ0VEEAESIAocTU9ERUxfU1lOQ19TVEFURV9PVVRfT0ZfU1lOQxACEhsKF01PREVMX1NZTkNfU1RBVEVfRkFJTEVEEAMqnwIKDk1vZGVsTWFhc1N0YXRlEiAKHE1PREVMX01BQVNfU1RBVEVfVU5TUEVDSUZJRUQQABIoCiRNT0RFTF9NQUFTX1NUQVRFX0NPTkZJR1VSSU5HX1JPVVRJTkcQARIeChpNT0RFTF9NQUFTX1NUQVRFX0FWQUlMQUJMRRACEioKJk1PREVMX01BQVNfU1RBVEVfQVdBSVRJTkdfU1VCU0NSSVBUSU9OEAMSGwoXTU9ERUxfTUFBU19TVEFURV9GQUlMRUQQBBI2CjJNT0RFTF9NQUFTX1NUQVRFX0FXQUlUSU5HX1NVQlNDUklQVElPTl9BTkRfQkFDS0VORBAFEiAKHE1PREVMX01BQVNfU1RBVEVfVU5BVkFJTEFCTEUQBiqBAQoPTW9kZWxWaWV3VGFyZ2V0EiEKHU1PREVMX1ZJRVdfVEFSR0VUX1VOU1BFQ0lGSUVEEAASIgoeTU9ERUxfVklFV19UQVJHRVRfT1BFTlNISUZUX0FJEAESJwojTU9ERUxfVklFV19UQVJHRVRfT1BFTlNISUZUX0NPTlNPTEUQAiqWAQoKTW9kZWxQaGFzZRIbChdNT0RFTF9QSEFTRV9VTlNQRUNJRklFRBAAEhcKE01PREVMX1BIQVNFX1BFTkRJTkcQARIVChFNT0RFTF9QSEFTRV9SRUFEWRACEhYKEk1PREVMX1BIQVNFX0ZBSUxFRBADEiMKH01PREVMX1BIQVNFX1BBUlRJQUxMWV9BVkFJTEFCTEUQBEJKWkhnaXRodWIuY29tL29zYWMtcHJvamVjdC9haS1ncmlkLXByb3ZpZGVyLWJhY2tlbmQvZ2VuL2FpX2dyaWQvdjE7YWlncmlkdjFiBnByb3RvMw", [file_ai_grid_v1_condition_type, file_ai_grid_v1_metadata_type, file_buf_validate_validate]);
 
 /**
  * Model is a deployable LLM inference workload on the AI Grid.
@@ -570,8 +570,8 @@ export type ModelStatus = Message<"ai_grid.v1.ModelStatus"> & {
 
   /**
    * Reason of the condition that decided phase. In git mode: SavedToGit
-   * while no cluster has reported, else Ready, PartiallyAvailable or
-   * NotReady with the phase.
+   * while no cluster has reported, else Ready, PartiallyAvailable, Failed,
+   * Stopped or NotReady with the phase (see ModelPhase).
    *
    * @generated from field: string reason = 4;
    */
@@ -579,8 +579,9 @@ export type ModelStatus = Message<"ai_grid.v1.ModelStatus"> & {
 
   /**
    * Message of the condition that decided phase. In git mode, while a
-   * cluster has reported: where the model is ready, for example "Not ready
-   * on site-a; ready on site-b; no report from site-c".
+   * cluster has reported: where the model is ready, for example "Failed on
+   * site-a; not ready on site-b; ready on site-c; no report from site-d",
+   * then Argo CD's message for each failed object.
    *
    * @generated from field: string message = 5;
    */
@@ -612,7 +613,7 @@ export type ModelStatus = Message<"ai_grid.v1.ModelStatus"> & {
   /**
    * The model on each cluster its placement names (the clusters in
    * placement.selected_clusters), one entry per cluster in cluster-name
-   * order, from what the hub's status Policies report. Empty while no
+   * order, from what the hub's catalog Argo CD Applications report. Empty while no
    * cluster has reported (reason SavedToGit). Ingress clusters the model
    * isn't placed on, which publish it but don't run it, have no entry; their
    * reports count in `phase` and `message`. Output only.
@@ -620,6 +621,60 @@ export type ModelStatus = Message<"ai_grid.v1.ModelStatus"> & {
    * @generated from field: repeated ai_grid.v1.ModelClusterStatus clusters = 9;
    */
   clusters: ModelClusterStatus[];
+
+  /**
+   * The model's deployment, summed over its placed clusters
+   * (`clusters[].deployment` and `sync`): FAILED when one reports it failed
+   * or its sync failed; STARTING when one is starting or hasn't reported;
+   * STOPPED when every one is stopped; RUNNING when every one runs it or is
+   * stopped, and at least one runs it; UNSPECIFIED while none has reported
+   * a deployment. A placed cluster stopped on purpose doesn't make the model
+   * STARTING. It says
+   * nothing about MaaS: see `maas`. It can differ from `phase`: a model
+   * failed on one cluster and running on another is FAILED here and
+   * PARTIALLY_AVAILABLE there. Output only.
+   *
+   * @generated from field: ai_grid.v1.ModelDeploymentState deployment = 10;
+   */
+  deployment: ModelDeploymentState;
+
+  /**
+   * The model in MaaS, for a list's Availability column, summed over the
+   * ingress clusters (`ingress`), worst first: FAILED;
+   * AWAITING_SUBSCRIPTION_AND_BACKEND; CONFIGURING_ROUTING (also while one
+   * hasn't reported); AWAITING_SUBSCRIPTION; AVAILABLE. AVAILABLE and
+   * CONFIGURING_ROUTING become UNAVAILABLE when no placed cluster serves the
+   * model (`state` neither READY nor PARTIALLY_READY). UNSPECIFIED while none has reported. Each
+   * `ingress` entry keeps MaaS's own message. Output only.
+   *
+   * @generated from field: ai_grid.v1.ModelMaasState maas = 11;
+   */
+  maas: ModelMaasState;
+
+  /**
+   * The model on each ingress cluster, one entry per cluster in cluster-name
+   * order: the ones with a catalog ingress Application and the ones labelled
+   * ai-grid/enabled "true" and ai-grid/role ingress or combined. A combined
+   * cluster has an entry here and in `clusters`. Empty while no cluster has
+   * reported (reason SavedToGit). Output only.
+   *
+   * @generated from field: repeated ai_grid.v1.ModelIngressStatus ingress = 12;
+   */
+  ingress: ModelIngressStatus[];
+
+  /**
+   * The model's rollout in one word, Git sync and deployment together, for
+   * a list's Status column (`clusters[].state` summed): SAVED_TO_GIT while no
+   * cluster has reported; READY when every placed cluster is READY;
+   * PARTIALLY_READY when some are and some aren't; else FAILED when one is
+   * failed; STOPPED when all are stopped (or every reporting one is);
+   * STARTING when one is starting; SYNCING when one hasn't applied Git's
+   * change yet; SYNCED when every one has but none reports a deployment yet.
+   * `phase` stays the MaaS-inclusive answer. Output only.
+   *
+   * @generated from field: ai_grid.v1.ModelState state = 13;
+   */
+  state: ModelState;
 };
 
 /**
@@ -630,11 +685,45 @@ export const ModelStatusSchema: GenMessage<ModelStatus> = /*@__PURE__*/
   messageDesc(file_ai_grid_v1_model_type, 13);
 
 /**
- * The model on one placed cluster. In git mode it comes from the hub's
- * status Policies: the cluster's models-ready report of the model's
- * LLMInferenceService (Ready=True), and, on a combined cluster, which is
- * also an ingress cluster, its model-refs-ready report of the model's
- * MaaSModelRef (phase Ready). Output only.
+ * The model in MaaS on one ingress cluster. Output only.
+ *
+ * @generated from message ai_grid.v1.ModelIngressStatus
+ */
+export type ModelIngressStatus = Message<"ai_grid.v1.ModelIngressStatus"> & {
+  /**
+   * ManagedCluster name.
+   *
+   * @generated from field: string cluster = 1;
+   */
+  cluster: string;
+
+  /**
+   * What the cluster reports.
+   *
+   * @generated from field: ai_grid.v1.ModelMaasState state = 2;
+   */
+  state: ModelMaasState;
+
+  /**
+   * MaaS's or Argo CD's message, for example "Awaiting governance pairing".
+   *
+   * @generated from field: string message = 3;
+   */
+  message: string;
+};
+
+/**
+ * Describes the message ai_grid.v1.ModelIngressStatus.
+ * Use `create(ModelIngressStatusSchema)` to create a new message.
+ */
+export const ModelIngressStatusSchema: GenMessage<ModelIngressStatus> = /*@__PURE__*/
+  messageDesc(file_ai_grid_v1_model_type, 14);
+
+/**
+ * The model on one placed cluster. In git mode it comes from the health the
+ * hub's catalog Argo CD Applications record for the cluster's
+ * LLMInferenceService and, on a combined cluster, which is also an ingress
+ * cluster, for its MaaSModelRef and ExternalModel. Output only.
  *
  * @generated from message ai_grid.v1.ModelClusterStatus
  */
@@ -647,16 +736,17 @@ export type ModelClusterStatus = Message<"ai_grid.v1.ModelClusterStatus"> & {
   cluster: string;
 
   /**
-   * READY when every report from the cluster says ready; PENDING when one
-   * says not ready (or not found) or one is missing. Git mode never sets
-   * FAILED; PARTIALLY_AVAILABLE is only a whole model's phase.
+   * READY when every report from the cluster says ready; FAILED when one
+   * says failed; PENDING when one says not ready or one is missing.
+   * PARTIALLY_AVAILABLE is only a whole model's phase.
    *
    * @generated from field: ai_grid.v1.ModelPhase phase = 2;
    */
   phase: ModelPhase;
 
   /**
-   * Ready, NotReady (a report says not ready or not found) or NoReport (the
+   * Ready, Failed, NotReady (a report says not ready), Stopped (the
+   * LLMInferenceService is stopped, `deployment` STOPPED) or NoReport (the
    * cluster hasn't reported the object yet).
    *
    * @generated from field: string reason = 3;
@@ -665,11 +755,77 @@ export type ModelClusterStatus = Message<"ai_grid.v1.ModelClusterStatus"> & {
 
   /**
    * What the cluster reported, for example "LLMInferenceService not ready"
-   * or "LLMInferenceService ready; no MaaSModelRef report".
+   * or "LLMInferenceService ready; no MaaSModelRef report; no ExternalModel
+   * report".
    *
    * @generated from field: string message = 4;
    */
   message: string;
+
+  /**
+   * What the cluster reports about the model's LLMInferenceService.
+   *
+   * @generated from field: ai_grid.v1.ModelDeploymentState deployment = 5;
+   */
+  deployment: ModelDeploymentState;
+
+  /**
+   * KServe's message about the deployment, for example "Deployment does
+   * not have minimum availability.". Empty when it is running or hasn't
+   * reported.
+   *
+   * @generated from field: string deployment_message = 6;
+   */
+  deploymentMessage: string;
+
+  /**
+   * Whether Argo CD has applied the model's LLMInferenceService on the
+   * cluster as Git has it.
+   *
+   * @generated from field: ai_grid.v1.ModelSyncState sync = 7;
+   */
+  sync: ModelSyncState;
+
+  /**
+   * Argo CD's sync operation message while the sync failed or is being
+   * retried, for example an AppProject refusing the kind.
+   *
+   * @generated from field: string sync_message = 8;
+   */
+  syncMessage: string;
+
+  /**
+   * Git sync and deployment on this cluster in one word: the deployment's
+   * state (READY, STARTING, FAILED, STOPPED) once the
+   * LLMInferenceService is on the cluster; FAILED when its sync failed;
+   * SYNCING while Argo CD hasn't applied it; SYNCED when it has but KServe
+   * hasn't reported yet; UNSPECIFIED with no report.
+   *
+   * @generated from field: ai_grid.v1.ModelState state = 9;
+   */
+  state: ModelState;
+
+  /**
+   * Where to see the model on this cluster: OpenShift AI's model
+   * deployments page, or the LLMInferenceService in the OpenShift console
+   * (view_target). Built from the ManagedCluster's
+   * consoleurl.cluster.open-cluster-management.io claim, the apps domain
+   * after "console-openshift-console.", or from the cluster's
+   * ai-grid/openshift-ai-url annotation when the dashboard's host differs.
+   * Only an https URL with a host and no user info is used from the claim
+   * or the annotation. Empty when there is neither (view_target
+   * UNSPECIFIED).
+   *
+   * @generated from field: string view_url = 10;
+   */
+  viewUrl: string;
+
+  /**
+   * Whether view_url opens OpenShift AI or the OpenShift console.
+   *
+   * @generated from field: ai_grid.v1.ModelViewTarget view_target = 11;
+   */
+  viewTarget: ModelViewTarget;
 };
 
 /**
@@ -677,7 +833,7 @@ export type ModelClusterStatus = Message<"ai_grid.v1.ModelClusterStatus"> & {
  * Use `create(ModelClusterStatusSchema)` to create a new message.
  */
 export const ModelClusterStatusSchema: GenMessage<ModelClusterStatus> = /*@__PURE__*/
-  messageDesc(file_ai_grid_v1_model_type, 14);
+  messageDesc(file_ai_grid_v1_model_type, 15);
 
 /**
  * Placement observed state.
@@ -724,7 +880,7 @@ export type ModelPlacementStatus = Message<"ai_grid.v1.ModelPlacementStatus"> & 
  * Use `create(ModelPlacementStatusSchema)` to create a new message.
  */
 export const ModelPlacementStatusSchema: GenMessage<ModelPlacementStatus> = /*@__PURE__*/
-  messageDesc(file_ai_grid_v1_model_type, 15);
+  messageDesc(file_ai_grid_v1_model_type, 16);
 
 /**
  * ManifestWorkReplicaSet observed state.
@@ -774,7 +930,7 @@ export type ModelRolloutStatus = Message<"ai_grid.v1.ModelRolloutStatus"> & {
  * Use `create(ModelRolloutStatusSchema)` to create a new message.
  */
 export const ModelRolloutStatusSchema: GenMessage<ModelRolloutStatus> = /*@__PURE__*/
-  messageDesc(file_ai_grid_v1_model_type, 16);
+  messageDesc(file_ai_grid_v1_model_type, 17);
 
 /**
  * One generated ManifestWork summary.
@@ -813,7 +969,7 @@ export type ModelWorkStatus = Message<"ai_grid.v1.ModelWorkStatus"> & {
  * Use `create(ModelWorkStatusSchema)` to create a new message.
  */
 export const ModelWorkStatusSchema: GenMessage<ModelWorkStatus> = /*@__PURE__*/
-  messageDesc(file_ai_grid_v1_model_type, 17);
+  messageDesc(file_ai_grid_v1_model_type, 18);
 
 /**
  * Rollout strategy type.
@@ -849,6 +1005,304 @@ export const ModelRolloutStrategySchema: GenEnum<ModelRolloutStrategy> = /*@__PU
   enumDesc(file_ai_grid_v1_model_type, 0);
 
 /**
+ * What one placed cluster reports about the model's LLMInferenceService.
+ *
+ * @generated from enum ai_grid.v1.ModelDeploymentState
+ */
+export enum ModelDeploymentState {
+  /**
+   * No report: the LLMInferenceService isn't on the cluster yet, or the
+   * cluster doesn't list it. ModelClusterStatus.sync says whether Argo CD
+   * has applied it.
+   *
+   * @generated from enum value: MODEL_DEPLOYMENT_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * On the cluster but not serving yet: progressing, or KServe reports a
+   * step that is still under way, such as a Deployment below its minimum
+   * availability. That step has no deadline: a pod that keeps crashing,
+   * can't pull its image or finds no GPU leaves the same message, so it also
+   * shows here, with KServe's message, until it is fixed.
+   *
+   * @generated from enum value: MODEL_DEPLOYMENT_STATE_STARTING = 1;
+   */
+  STARTING = 1,
+
+  /**
+   * Ready=True: serving. While ModelClusterStatus.sync isn't SYNCED, this
+   * is the previous revision.
+   *
+   * @generated from enum value: MODEL_DEPLOYMENT_STATE_RUNNING = 2;
+   */
+  RUNNING = 2,
+
+  /**
+   * KServe reports it not ready for another reason.
+   *
+   * @generated from enum value: MODEL_DEPLOYMENT_STATE_FAILED = 3;
+   */
+  FAILED = 3,
+
+  /**
+   * KServe reports it stopped ("Service is stopped"): the
+   * LLMInferenceService carries the serving.kserve.io/stop annotation, so
+   * it runs no pods.
+   *
+   * @generated from enum value: MODEL_DEPLOYMENT_STATE_STOPPED = 4;
+   */
+  STOPPED = 4,
+}
+
+/**
+ * Describes the enum ai_grid.v1.ModelDeploymentState.
+ */
+export const ModelDeploymentStateSchema: GenEnum<ModelDeploymentState> = /*@__PURE__*/
+  enumDesc(file_ai_grid_v1_model_type, 1);
+
+/**
+ * A model's rollout, Git sync and deployment together (ModelStatus.state,
+ * ModelClusterStatus.state).
+ *
+ * @generated from enum ai_grid.v1.ModelState
+ */
+export enum ModelState {
+  /**
+   * No report.
+   *
+   * @generated from enum value: MODEL_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Committed to Git; no cluster has reported it yet.
+   *
+   * @generated from enum value: MODEL_STATE_SAVED_TO_GIT = 1;
+   */
+  SAVED_TO_GIT = 1,
+
+  /**
+   * Argo CD hasn't applied Git's change yet, or is retrying it: the model
+   * isn't on the cluster yet, or it is stopped there and out of sync (a
+   * start on its way). A running cluster out of sync stays READY: its
+   * previous revision serves, and an edit in flight can't be told from
+   * lasting drift, so a stop shows READY until Argo CD applies it.
+   *
+   * @generated from enum value: MODEL_STATE_SYNCING = 2;
+   */
+  SYNCING = 2,
+
+  /**
+   * Applied; KServe hasn't reported the deployment yet.
+   *
+   * @generated from enum value: MODEL_STATE_SYNCED = 3;
+   */
+  SYNCED = 3,
+
+  /**
+   * On the cluster, not serving yet (ModelDeploymentState STARTING).
+   *
+   * @generated from enum value: MODEL_STATE_STARTING = 4;
+   */
+  STARTING = 4,
+
+  /**
+   * Serving.
+   *
+   * @generated from enum value: MODEL_STATE_READY = 5;
+   */
+  READY = 5,
+
+  /**
+   * Serving on some placed clusters, not all. Model only.
+   *
+   * @generated from enum value: MODEL_STATE_PARTIALLY_READY = 6;
+   */
+  PARTIALLY_READY = 6,
+
+  /**
+   * KServe reports it failed, or Argo CD couldn't sync it.
+   *
+   * @generated from enum value: MODEL_STATE_FAILED = 7;
+   */
+  FAILED = 7,
+
+  /**
+   * Stopped (serving.kserve.io/stop). KServe reports no stopping step: one
+   * reconcile marks the service stopped and deletes its workloads, so there
+   * is no STOPPING.
+   *
+   * @generated from enum value: MODEL_STATE_STOPPED = 8;
+   */
+  STOPPED = 8,
+}
+
+/**
+ * Describes the enum ai_grid.v1.ModelState.
+ */
+export const ModelStateSchema: GenEnum<ModelState> = /*@__PURE__*/
+  enumDesc(file_ai_grid_v1_model_type, 2);
+
+/**
+ * Whether Argo CD has applied what Git holds for the model on one cluster.
+ *
+ * @generated from enum ai_grid.v1.ModelSyncState
+ */
+export enum ModelSyncState {
+  /**
+   * No report: the cluster has no Application in the catalog's models
+   * ApplicationSet, or the backend can't read the Applications.
+   *
+   * @generated from enum value: MODEL_SYNC_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * The live LLMInferenceService matches Git.
+   *
+   * @generated from enum value: MODEL_SYNC_STATE_SYNCED = 1;
+   */
+  SYNCED = 1,
+
+  /**
+   * Not applied yet: the cluster's Application doesn't list it yet, it is
+   * OutOfSync or Missing, or Argo CD is retrying its sync (sync_message
+   * says why).
+   *
+   * @generated from enum value: MODEL_SYNC_STATE_OUT_OF_SYNC = 2;
+   */
+  OUT_OF_SYNC = 2,
+
+  /**
+   * Argo CD's sync to the revision it wants failed and it stopped retrying
+   * (sync_message says why).
+   *
+   * @generated from enum value: MODEL_SYNC_STATE_FAILED = 3;
+   */
+  FAILED = 3,
+}
+
+/**
+ * Describes the enum ai_grid.v1.ModelSyncState.
+ */
+export const ModelSyncStateSchema: GenEnum<ModelSyncState> = /*@__PURE__*/
+  enumDesc(file_ai_grid_v1_model_type, 3);
+
+/**
+ * What one ingress cluster reports about the model's MaaSModelRef and
+ * ExternalModel.
+ *
+ * @generated from enum ai_grid.v1.ModelMaasState
+ */
+export enum ModelMaasState {
+  /**
+   * No report: the cluster doesn't list both of them yet.
+   *
+   * @generated from enum value: MODEL_MAAS_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * MaaS is still setting up the route: Argo CD hasn't synced them or they
+   * are progressing, or the MaaSModelRef says "Governed but backend is not
+   * ready", "Waiting for tenant resolution: ..." or "Waiting for HTTPRoute
+   * to be created". For an ExternalModel, MaaS's "backend" is its HTTPRoute
+   * accepted by the gateway, not the model's pods.
+   *
+   * @generated from enum value: MODEL_MAAS_STATE_CONFIGURING_ROUTING = 1;
+   */
+  CONFIGURING_ROUTING = 1,
+
+  /**
+   * Published and governed: MaaSModelRef Ready ("Governed and
+   * runtime-healthy"), so tenants with a subscription can call it.
+   *
+   * @generated from enum value: MODEL_MAAS_STATE_AVAILABLE = 2;
+   */
+  AVAILABLE = 2,
+
+  /**
+   * Routed, but no active MaaSSubscription and MaaSAuthPolicy pair covers
+   * it, so no tenant can call it yet ("Awaiting governance pairing").
+   *
+   * @generated from enum value: MODEL_MAAS_STATE_AWAITING_SUBSCRIPTION = 3;
+   */
+  AWAITING_SUBSCRIPTION = 3,
+
+  /**
+   * MaaS or the AI gateway reports it failed, or Argo CD couldn't sync it.
+   *
+   * @generated from enum value: MODEL_MAAS_STATE_FAILED = 4;
+   */
+  FAILED = 4,
+
+  /**
+   * No subscription covers it and its route isn't ready either ("Awaiting
+   * governance pairing and backend readiness").
+   *
+   * @generated from enum value: MODEL_MAAS_STATE_AWAITING_SUBSCRIPTION_AND_BACKEND = 5;
+   */
+  AWAITING_SUBSCRIPTION_AND_BACKEND = 5,
+
+  /**
+   * No placed cluster serves it, while MaaS publishes it or is still
+   * routing it: MaaS checks only the route, so it can't see the model's pods
+   * are down. Summary only (ModelStatus.maas), from `state`.
+   *
+   * @generated from enum value: MODEL_MAAS_STATE_UNAVAILABLE = 6;
+   */
+  UNAVAILABLE = 6,
+}
+
+/**
+ * Describes the enum ai_grid.v1.ModelMaasState.
+ */
+export const ModelMaasStateSchema: GenEnum<ModelMaasState> = /*@__PURE__*/
+  enumDesc(file_ai_grid_v1_model_type, 4);
+
+/**
+ * Where a cluster's View link goes (ModelClusterStatus.view_url).
+ *
+ * @generated from enum ai_grid.v1.ModelViewTarget
+ */
+export enum ModelViewTarget {
+  /**
+   * No link: no https console URL claim, and no annotation on an ingress or
+   * combined cluster.
+   *
+   * @generated from enum value: MODEL_VIEW_TARGET_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * OpenShift AI's model deployments for the models namespace, at
+   * https://rh-ai.<apps domain>/ai-hub/models/deployments/internal/<namespace>,
+   * on clusters with role ingress or combined (the reference removes the
+   * dashboard on inference clusters).
+   *
+   * @generated from enum value: MODEL_VIEW_TARGET_OPENSHIFT_AI = 1;
+   */
+  OPENSHIFT_AI = 1,
+
+  /**
+   * The LLMInferenceService in the OpenShift console: on clusters without
+   * the OpenShift AI dashboard, and on an ingress or combined cluster whose
+   * console host isn't console-openshift-console.<apps domain> and that has
+   * no ai-grid/openshift-ai-url annotation.
+   *
+   * @generated from enum value: MODEL_VIEW_TARGET_OPENSHIFT_CONSOLE = 2;
+   */
+  OPENSHIFT_CONSOLE = 2,
+}
+
+/**
+ * Describes the enum ai_grid.v1.ModelViewTarget.
+ */
+export const ModelViewTargetSchema: GenEnum<ModelViewTarget> = /*@__PURE__*/
+  enumDesc(file_ai_grid_v1_model_type, 5);
+
+/**
  * Derived model phase.
  *
  * In git mode, while no cluster has reported the model, the phase is
@@ -856,22 +1310,34 @@ export const ModelRolloutStrategySchema: GenEnum<ModelRolloutStrategy> = /*@__PU
  * order of precedence:
  *
  *   - READY (reason Ready): every ingress cluster reports the model's
- *     MaaSModelRef ready, and every placed cluster is READY in `clusters`.
+ *     MaaSModelRef and ExternalModel ready, and every placed cluster is
+ *     READY in `clusters`.
  *   - PARTIALLY_AVAILABLE (reason PartiallyAvailable): every ingress cluster
- *     reports the MaaSModelRef ready, at least one placed cluster is READY
- *     and at least one is not.
+ *     reports them ready, at least one placed cluster is READY and at least
+ *     one is not.
+ *   - FAILED (reason Failed): a cluster reports one of the model's objects
+ *     failed: Argo CD health Degraded, or its sync failed. An
+ *     LLMInferenceService KServe reports stopped is Degraded but not failed.
+ *   - PENDING (reason Stopped): every placed cluster reports it stopped
+ *     (`deployment` STOPPED) and has applied Git's change (`sync` SYNCED).
  *   - PENDING (reason NotReady): otherwise, including while an ingress
  *     cluster reports the MaaSModelRef not ready or hasn't reported it.
  *
- * The ingress clusters are those the catalog status Policy lists and those
+ * A MaaSModelRef that waits only for a subscription (MaaS
+ * GovernanceAttached False, RuntimeReady True) counts as ready here: the
+ * model runs and is published, so it isn't PENDING. `maas` says
+ * AWAITING_SUBSCRIPTION, and `state` and `maas` keep the two sides apart for
+ * a list that shows both, such as "Ready" and "Awaiting subscription". KServe's and
+ * MaaS's Ready=False messages for steps still under way, such as a
+ * Deployment below its minimum availability, are pending, not failed.
+ *
+ * The ingress clusters are those with a catalog ingress Application and those
  * labelled ai-grid/enabled "true" and ai-grid/role ingress or combined; each
  * must report. READY and PARTIALLY_AVAILABLE need at least one: with none,
  * nothing shows the model published, so it is PENDING, and the message ends
  * "no ingress cluster has reported the MaaSModelRef".
  *
- * Git mode never reports FAILED: the status Policies can't tell a model
- * that failed from one that is still starting. The order is the one the
- * console's Models page uses (READY, PARTIALLY_AVAILABLE, FAILED, then the
+ * The order is the one the console's Models page uses (READY, PARTIALLY_AVAILABLE, FAILED, then the
  * PENDING cases; proposal P13).
  *
  * @generated from enum ai_grid.v1.ModelPhase
@@ -900,7 +1366,7 @@ export enum ModelPhase {
   /**
    * Serving on some of the clusters its placement names but not all (see
    * above). Only a whole model has it; a cluster in ModelStatus.clusters is
-   * READY or PENDING.
+   * READY, FAILED or PENDING.
    *
    * @generated from enum value: MODEL_PHASE_PARTIALLY_AVAILABLE = 4;
    */
@@ -911,5 +1377,5 @@ export enum ModelPhase {
  * Describes the enum ai_grid.v1.ModelPhase.
  */
 export const ModelPhaseSchema: GenEnum<ModelPhase> = /*@__PURE__*/
-  enumDesc(file_ai_grid_v1_model_type, 1);
+  enumDesc(file_ai_grid_v1_model_type, 6);
 
