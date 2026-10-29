@@ -32,9 +32,8 @@ SA="system:serviceaccount:${NS}:${NAME}"
 PORT="${LOCAL_PORT:-18443}"
 # The images the test runs, by digest, so a push to another repository can't change a result
 # (backend:latest started to require a Git URL and failed main's CI, run 40544192631). The backend
-# is the build of the commit in .backend-api-version, the API the console is generated from; when
-# that file moves, take the digest of its sha-<commit> tag:
-#   skopeo inspect --raw docker://ghcr.io/ai-grid-cloud/ai-grid-provider-backend:sha-<commit> | skopeo manifest-digest /dev/stdin
+# is the build of the commit in .backend-api-version, the API the console is generated from, as in
+# the chart's values: set by `make backend-pin` from `.backend-api-version`; don't edit by hand.
 # The proxy has no version tag newer than August, so it is latest as of 2026-10-27 (built
 # 2026-10-16 from opendatahub-io/kube-auth-proxy b2d77d8). busybox runs netstat for step 2.
 BACKEND_PIN="$(cat "${ROOT}/.backend-api-version")"
@@ -124,7 +123,7 @@ docker tag "${BUSYBOX_IMAGE}" localhost/busybox:kind
 kind load docker-image --name "${CLUSTER}" localhost/ai-grid-provider-console:kind \
   localhost/ai-grid-backend:kind localhost/kube-auth-proxy:kind localhost/busybox:kind >/dev/null
 IMAGES=(--set images.console.repository=localhost/ai-grid-provider-console --set images.console.tag=kind
-  --set images.backend.repository=localhost/ai-grid-backend --set images.backend.tag=kind
+  --set images.backend.repository=localhost/ai-grid-backend --set images.backend.tag=kind --set images.backend.digest=
   --set images.authProxy.repository=localhost/kube-auth-proxy --set images.authProxy.tag=kind)
 # No service CA on kind: the test makes the certificate.
 # The backend doesn't start without a Git URL (git mode, ai-grid-provider-backend#29). It clones in
@@ -215,7 +214,7 @@ expect() { # expect <status> <description> curl-args...
 base_install() {
   kubectl kustomize "${ROOT}/manifests/base" 2>/dev/null |
     sed -e "s#ghcr.io/ai-grid-cloud/ai-grid-provider-console:latest#localhost/ai-grid-provider-console:kind#" \
-      -e "s#ghcr.io/ai-grid-cloud/ai-grid-provider-backend:latest#localhost/ai-grid-backend:kind#" \
+      -e "s#ghcr.io/ai-grid-cloud/ai-grid-provider-backend:sha-[0-9a-f]*@sha256:[0-9a-f]*#localhost/ai-grid-backend:kind#" \
       -e "s#quay.io/opendatahub/odh-kube-auth-proxy:latest#localhost/kube-auth-proxy:kind#" |
     k apply -f - >/dev/null
   # manifests/base has the chart's defaults, which set no Git URL (see VALUES).

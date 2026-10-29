@@ -26,8 +26,10 @@ images:
   - name: kube-auth-proxy
     newName: quay.io/opendatahub/odh-kube-auth-proxy
     newTag: latest
-  # Published by https://github.com/ai-grid-cloud/ai-grid-provider-backend's CI;
-  # hack/deploy.sh takes BACKEND_IMAGE to pin a tag.
+  # Published by https://github.com/ai-grid-cloud/ai-grid-provider-backend's CI: the build of the
+  # commit in .backend-api-version, as in the chart's values.yaml. Set by `make backend-pin` from
+  # `.backend-api-version`; don't edit by hand.
   - name: ai-grid-backend
     newName: ghcr.io/ai-grid-cloud/ai-grid-provider-backend
-    newTag: latest
+    newTag: sha-3deed95ebfd1a92b177863bfbb3659e18881e117
+    digest: sha256:9ab357ce95bbda733ae8471904e0d59b371418ee852afdc39146cea566e61106

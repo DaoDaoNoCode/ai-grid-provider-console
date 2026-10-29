@@ -275,14 +275,16 @@ exist. The vendored commit is the backend's `main` (`mock/proto/upstream/COMMIT`
 The frontend calls the backend's own RPCs over Connect (no page does yet) with TypeScript
 generated from the backend's proto: `proto/` of ai-grid-cloud/ai-grid-provider-backend, package
 `ai_grid.v1` (not its draft, `ai_grid/draft`), at the full commit SHA in `.backend-api-version`,
-into `frontend/src/gen`, which is committed and never edited by hand. To move the console to a
-newer backend:
+into `frontend/src/gen`, which is committed and never edited by hand. The chart, `manifests/base`
+and the kind test deploy the build of that commit (`sha-<sha>`, by digest). To move the console to
+a newer backend:
 
 ```sh
 git ls-remote https://github.com/ai-grid-cloud/ai-grid-provider-backend.git refs/heads/main  # the SHA
-echo <sha> > .backend-api-version
-make generate-api          # buf through `go run`, protoc-gen-es from frontend/node_modules (make install first)
-make check-generated-api   # what CI runs: a fresh generation in a temporary directory must match src/gen
+make backend-pin SHA=<sha> # .backend-api-version, make generate-api, and the backend image of the chart,
+                           # manifests/base and hack/test-chart-kind.sh (fails if CI hasn't published sha-<sha> yet)
+make check-generated-api   # what CI runs: a fresh generation in a temporary directory must match src/gen,
+                           # and every backend image must be the build of .backend-api-version
 ```
 
 `frontend/buf.gen.yaml` runs `@bufbuild/protoc-gen-es`, the devDependency pinned in
@@ -315,6 +317,8 @@ sets the package's visibility to Public, or clusters need a pull secret.
 `make deploy` needs `TAG`: `:dev` is never published, and the Recreate rollout stops the running
 pod before the new one pulls, so a tag the registry lacks takes the console down. `make image`
 builds for `PLATFORM`, `linux/amd64` by default, so a build on an arm64 Mac runs on the hub.
+Without `BACKEND_IMAGE`, the backend is the chart's: the build of `.backend-api-version`, the
+backend this console was generated against. Set it only for a backend you built yourself.
 
 ```sh
 make image IMAGE=quay.io/<you>/ai-grid-provider-console TAG=dev

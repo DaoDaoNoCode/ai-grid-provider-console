@@ -94,8 +94,10 @@ and Argo CD delivery; their draft implementations have been removed from the bac
 
 1. Implement the contract in the backend with its infrastructure fakes and tests, following
    that repository's `docs/API_CONTRACT.md`.
-2. Move `.backend-api-version` to a backend commit that has it and run `make generate-api`;
-   commit `frontend/src/gen` with the change. Never edit generated files or repeat their types.
+2. Run `make backend-pin SHA=<full sha>` with a backend commit on `main` that has it: it writes
+   `.backend-api-version`, regenerates `frontend/src/gen`, and moves the backend image of the
+   chart, `manifests/base` and the kind test to that commit's build. Commit them all with the
+   change. Never edit generated files or repeat their types.
 3. Build the page with `useQuery` and `useMutation` from `@connectrpc/connect-query` on the
    generated descriptors (`frontend/src/gen/ai_grid/v1/*_connectquery.ts`); `App` already
    provides the transport and the query cache (`BackendProvider`). Show errors with
@@ -122,7 +124,11 @@ Models area" and "The Subscriptions area"); the other areas still use `/api/v1`:
 - `.backend-api-version` holds the backend commit (one full SHA) whose `proto/` (package
   `ai_grid.v1`, not `ai_grid/draft`) the frontend is generated from. `make generate-api` writes
   `frontend/src/gen` (committed; never edit it, `make check-generated-api` fails CI when it
-  differs). To move to a newer backend, change the SHA and regenerate in the same change.
+  differs). The chart, `manifests/base` and the kind test deploy that commit's image,
+  `ghcr.io/ai-grid-cloud/ai-grid-provider-backend:sha-<sha>` by digest: a newer backend can
+  refuse what an older console sends. To move to a newer backend, run
+  `make backend-pin SHA=<full sha>`, which does all of it; `make check-generated-api` fails when
+  any of them names another build.
 - `frontend/src/api/connect`: `createConsoleTransport` (Connect JSON to the console's origin; on
   Unauthenticated it calls the console's `checkSession`), `createConsoleClients` (typed clients
   per service), `BackendProvider` (the transport and a Query v5 cache for Connect Query, which
