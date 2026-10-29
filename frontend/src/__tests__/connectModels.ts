@@ -1,8 +1,10 @@
 // The backend's Models API for page tests, in the generated messages (fakeClients serializes them as
 // JSON): List, Get, Create, Update and Delete over an in-memory list, with the backend's rules the
 // pages show (models_git.go and models_server.go at the pin): AlreadyExists, NotFound, Aborted on a
-// stale version, FailedPrecondition while a subscription uses the model, and InvalidArgument for a
-// placement naming a cluster ListPlacementClusters doesn't offer. Subscriptions/List answers the
+// stale version, FailedPrecondition while a subscription uses the model, InvalidArgument for a
+// placement naming a cluster ListPlacementClusters doesn't offer and for a served name
+// (spec.model.name) other than empty or the id, and an update that switches a model still served
+// under another name to its id (normalizeServedName, servedNameOnUpdate). Subscriptions/List answers the
 // subscriptions whose refs name a model (SubscriptionModelRef.model_id), for the delete dialog.
 import { clone, create, type MessageInitShape } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
@@ -186,8 +188,12 @@ export class FakeModels {
     }
     const model = object ? clone(ModelSchema, object) : create(ModelSchema);
     model.id = id;
-    // An empty served name is the id (ModelSource.name).
-    if (model.spec?.model && !model.spec.model.name) model.spec.model.name = id;
+    // The served name is the id: empty becomes it, any other name is refused (ModelSource.name).
+    const served = model.spec?.model?.name;
+    if (served && served !== id) {
+      throw new ConnectError(`spec.model.name "${served}" must be empty or the model id "${id}"`, Code.InvalidArgument);
+    }
+    if (model.spec?.model) model.spec.model.name = id;
     await this.checkPlacement(model);
     model.metadata = create(MetadataSchema, {
       name: id,
@@ -240,6 +246,8 @@ export class FakeModels {
       }
     }
     if (paths.includes('spec.placement')) await this.checkPlacement(next);
+    // Any update serves a model under its id from then on, one saved under another name too.
+    if (spec.model) spec.model.name = id;
     next.metadata.version = (current.metadata?.version ?? 0) + 1;
     const saved = paths.includes('spec.placement') ? this.placed(next) : next;
     this.models = this.models.map((m) => (m.id === id ? saved : m));
