@@ -31,7 +31,9 @@ export const createModel = async (request: APIRequestContext, id: string, displa
       id,
       metadata: { name: id, annotations: { 'openshift.io/display-name': displayName } },
       spec: {
-        model: { uri: 'hf://facebook/opt-125m', name: 'facebook/opt-125m' },
+        // No served name: the backend serves a model as its id and refuses any other name
+        // (normalizeServedName, internal/servers/models_git.go at backend 1141af0).
+        model: { uri: 'hf://facebook/opt-125m' },
         replicas: 1,
         main: { image: 'quay.io/example/vllm:latest', requests: { cpu: '100m', memory: '1Gi' } },
         placement: { labelSelector: { matchExpressions: [{ key: 'name', operator: 'In', values: [items[0].id] }] } },

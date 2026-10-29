@@ -5,7 +5,8 @@
 # Usage: hack/deploy.sh [image[:tag]]
 #
 # Environment:
-#   BACKEND_IMAGE            ai-grid-backend image (default ghcr.io/ai-grid-cloud/ai-grid-provider-backend:latest)
+#   BACKEND_IMAGE            ai-grid-backend image; unset, the chart's: the build of the commit in
+#                            .backend-api-version, which this console is generated from
 #   KEYCLOAK_URL             required: Keycloak base URL the backend lists tenants from,
 #                            https:// where the cluster offers it (the admin password
 #                            travels with every call), e.g. the Keycloak Route
@@ -45,7 +46,7 @@ if [[ "${KEYCLOAK_URL}" == http://* ]]; then
 fi
 
 IMAGE="${1:-ghcr.io/ai-grid-cloud/ai-grid-provider-console:latest}"
-BACKEND_IMAGE="${BACKEND_IMAGE:-ghcr.io/ai-grid-cloud/ai-grid-provider-backend:latest}"
+BACKEND_IMAGE="${BACKEND_IMAGE:-}"
 NAMESPACE="${NAMESPACE:-ai-grid}"
 NAME=ai-grid-provider-console
 RELEASE="${RELEASE:-ai-grid-provider-console}"
@@ -73,7 +74,11 @@ image_values() {
   echo "--set" "images.${key}.repository=${ref}" "--set" "images.${key}.tag=${tag}" "--set" "images.${key}.digest=${digest}"
 }
 # shellcheck disable=SC2207 # each value is one word
-VALUES=($(image_values console "${IMAGE}") $(image_values backend "${BACKEND_IMAGE}"))
+VALUES=($(image_values console "${IMAGE}"))
+if [[ -n "${BACKEND_IMAGE}" ]]; then
+  # shellcheck disable=SC2207 # each value is one word
+  VALUES+=($(image_values backend "${BACKEND_IMAGE}"))
+fi
 if [[ -n "${GIT_URL:-}" ]]; then
   # https://, then a host name (and port) and a path: no user:password@ before the host, which the
   # backend refuses and this script would print. The same rule as the chart's values.schema.json.
@@ -144,7 +149,7 @@ fi
 # A console deployed before the chart, from manifests/base, becomes this release in place.
 "$(dirname "$0")/chart-takeover.sh" "${RELEASE}" "${NAMESPACE}" "${VALUES[@]}"
 
-echo "==> installing chart ${CHART##*/} as release ${RELEASE} in ${NAMESPACE} with images ${IMAGE} and ${BACKEND_IMAGE}"
+echo "==> installing chart ${CHART##*/} as release ${RELEASE} in ${NAMESPACE} with images ${IMAGE} and ${BACKEND_IMAGE:-the backend image of the chart}"
 helm upgrade --install "${RELEASE}" "${CHART}" -n "${NAMESPACE}" "${VALUES[@]}"
 
 echo "==> waiting for the route host"

@@ -1,6 +1,7 @@
 # Root developer targets. See docs/dev-setup.md.
 IMAGE ?= ghcr.io/ai-grid-cloud/ai-grid-provider-console
-BACKEND_IMAGE ?= ghcr.io/ai-grid-cloud/ai-grid-provider-backend:latest
+# Empty deploys the chart's backend image, the build of .backend-api-version (make backend-pin).
+BACKEND_IMAGE ?=
 # make image and make push default to :dev; make deploy needs TAG given (see deploy).
 TAG ?= dev
 # The hub's architecture, not the build machine's: an Apple-silicon Mac builds linux/amd64 too.
@@ -40,7 +41,7 @@ generate-api-into = cd frontend && \
 	$(BUF) generate '$(API_INPUT)' --exclude-path ai_grid/draft --template buf.gen.yaml -o "$(1)" && \
 	$(BUF) generate '$(GOOGLEAPIS)' --path google/rpc/error_details.proto --template buf.gen.yaml -o "$(1)"
 
-.PHONY: help install dev-cluster dev dev-fake dev-fake-infra generate-api \
+.PHONY: help install dev-cluster dev dev-fake dev-fake-infra backend-pin generate-api \
 	dev-forward-backend dev-forward-perses dev-bff dev-frontend \
 	dev-fake-backend dev-bff-fake dev-frontend-fake dev-fake-infra-backend dev-bff-fake-infra \
 	lint test e2e check-generated-api chart-check chart-test \
@@ -92,6 +93,13 @@ dev-fake-infra: ## Without a cluster, on the backend at .backend-api-version and
 	$(MAKE) -s dev-bff-fake-infra & \
 	$(MAKE) -s dev-frontend-fake & \
 	wait
+
+backend-pin: ## Move the console to backend commit SHA (a full SHA on the backend's main): .backend-api-version, frontend/src/gen and the backend image of the chart, manifests/base and the kind test
+ifndef SHA
+	$(error make backend-pin needs SHA, a full ai-grid-provider-backend commit whose sha-<commit> image CI has published)
+endif
+	hack/backend-pin.sh '$(SHA)'
+	$(MAKE) --no-print-directory generate-api
 
 generate-api: ## Regenerate frontend/src/gen from the backend's proto at .backend-api-version (buf through go run; make install first)
 	rm -rf frontend/src/gen
@@ -155,7 +163,8 @@ test: ## Run the BFF's Go tests and the frontend's unit tests
 e2e: ## Browser tests on the production bundle against a fake stack of their own (first run: cd frontend && pnpm exec playwright install chromium)
 	cd frontend && pnpm e2e
 
-check-generated-api: ## Fail when frontend/src/gen differs from what make generate-api writes: stale, hand-edited, missing or left-over files
+check-generated-api: ## Fail when frontend/src/gen differs from what make generate-api writes (stale, hand-edited, missing or left-over files), or a backend image isn't the build of .backend-api-version
+	hack/backend-pin.sh --check
 	tmp="$$(mktemp -d)" && trap 'rm -rf "$$tmp"' EXIT && \
 	($(call generate-api-into,$$tmp)) && \
 	diff -r "$$tmp/src/gen" frontend/src/gen

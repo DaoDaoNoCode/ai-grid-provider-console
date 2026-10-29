@@ -42,13 +42,17 @@ page ── generated client ──► kube-auth-proxy ──► BFF relay ─�
 ## Where the types come from
 
 - `.backend-api-version` holds one full commit SHA of the backend. The console is built against
-  that commit's `proto/` (package `ai_grid.v1`; `ai_grid/draft` is excluded).
+  that commit's `proto/` (package `ai_grid.v1`; `ai_grid/draft` is excluded), and deploys that
+  commit's image: the chart's `images.backend`, `manifests/base` and `hack/test-chart-kind.sh` name
+  `ghcr.io/ai-grid-cloud/ai-grid-provider-backend:sha-<sha>` with its digest. `make backend-pin`
+  sets all of them (`hack/backend-pin.sh`).
 - `make generate-api` writes `frontend/src/gen` with protoc-gen-es v2 (a pinned devDependency,
   run locally by buf through `go run`), and Connect Query descriptors, plus
   `google/rpc/error_details.proto` for field errors.
 - `frontend/src/gen` is committed and never edited by hand. `make check-generated-api` regenerates
   into a temporary directory and fails CI when anything differs: stale, hand-edited, missing or
-  left-over files.
+  left-over files. It also fails when one of the backend images above names another build, and
+  says to run `make backend-pin SHA=<pin>`.
 - Never write a TypeScript type that repeats a message the generated code already has. A page may
   have small display helpers (formatting a quantity, a label for an enum value); anything that
   decides what data means belongs in the backend (ADR-0002, and AGENTS.md "The BFF does transport
@@ -305,13 +309,23 @@ const { clients } = fakeClients({
 1. **Change the backend first.** Add the field or RPC to `proto/ai_grid/v1` in the backend, with
    its implementation, in a backend PR that follows the backend's `docs/API_CONTRACT.md`. Don't add
    it to `mock/proto`, and don't compute it in the page or the BFF.
-2. **Move the pin** to a backend commit that has it (the PR's head while it's open, `main` once it
-   merges): change `.backend-api-version`, run `make generate-api`, and commit both with the page
-   change.
+2. **Move the pin** to a backend commit that has it: `make backend-pin SHA=<full sha>` writes
+   `.backend-api-version`, regenerates `frontend/src/gen` and moves the backend image of the chart,
+   `manifests/base` and the kind test to that commit's build. Commit them with the page change.
+   The backend's CI publishes `sha-<commit>` only for a commit on its `main`, so while the backend
+   PR is open, try its head locally (`echo <sha> > .backend-api-version && make generate-api`, or
+   `BACKEND_DIR` for `make dev-fake-infra`); CI fails until the pin is a merged commit.
 3. **Build the page** against the generated type; test it with `fakeClients` and try it with
    `make dev-fake-infra`.
 
 ## When the pin moves and something breaks
+
+Move the pin with `make backend-pin SHA=<full sha>`, never `.backend-api-version` alone: it also
+moves the backend image the chart deploys. A console version ships with the backend it was built
+against, because a newer backend can refuse what an older console sends. The first case is
+`ModelSource.name`: backend 1141af0 accepts it only empty or as the model's id, so a console that
+still sent a served name would fail every model create on that backend (the backend's
+`docs/API_CONTRACT.md`, "Recorded deviations from path 1").
 
 - **`tsc` fails:** the backend changed something a page uses. Fix the page in the same change as
   the pin bump; the pin doesn't move until it compiles and the tests pass.

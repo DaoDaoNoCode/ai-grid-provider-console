@@ -13,14 +13,19 @@ images:
     repository: quay.io/opendatahub/odh-kube-auth-proxy
     tag: latest
     digest: ""
+  # A chart can't name the build of its own commit, so the console stays latest here; set its tag
+  # or digest when you install (README.md, "Images").
   console:
     repository: ghcr.io/ai-grid-cloud/ai-grid-provider-console
     tag: latest
     digest: ""
+  # The build of the backend commit the console is generated from (.backend-api-version): a newer
+  # backend can refuse what this console sends. Set by `make backend-pin` from
+  # `.backend-api-version`; don't edit by hand.
   backend:
     repository: ghcr.io/ai-grid-cloud/ai-grid-provider-backend
-    tag: latest
-    digest: ""
+    tag: sha-1141af02f5e0eee062b1c18da7f3e579a82d062c
+    digest: sha256:04e53a5a5f8ae8d75e9cb7b16117227d23aa77b1814524e682fb7817c3578559
 imagePullPolicy: ""  # empty: the cluster default
 imagePullSecrets: []
 

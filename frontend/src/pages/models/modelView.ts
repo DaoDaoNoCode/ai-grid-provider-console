@@ -168,5 +168,13 @@ export const toModelView = (model: Model): ModelView => {
   };
 };
 
+/**
+ * The name a model still serves instead of its id, for one saved before the backend served every
+ * model as its id; undefined for any other model. The backend reports the name a model serves
+ * (spec.model.name) and switches it to the id on the model's next update.
+ */
+export const olderServedNameOf = (model: Pick<ModelView, 'id' | 'modelName'>): string | undefined =>
+  model.modelName && model.modelName !== model.id ? model.modelName : undefined;
+
 /** The name a page shows for the model: its display name, else its id. */
 export const titleOf = (model: Pick<ModelView, 'id' | 'displayName'>) => model.displayName ?? model.id;

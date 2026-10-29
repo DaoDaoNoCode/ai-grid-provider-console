@@ -32,13 +32,12 @@ SA="system:serviceaccount:${NS}:${NAME}"
 PORT="${LOCAL_PORT:-18443}"
 # The images the test runs, by digest, so a push to another repository can't change a result
 # (backend:latest started to require a Git URL and failed main's CI, run 40544192631). The backend
-# is the build of the commit in .backend-api-version, the API the console is generated from; when
-# that file moves, take the digest of its sha-<commit> tag:
-#   skopeo inspect --raw docker://ghcr.io/ai-grid-cloud/ai-grid-provider-backend:sha-<commit> | skopeo manifest-digest /dev/stdin
+# is the build of the commit in .backend-api-version, the API the console is generated from, as in
+# the chart's values: set by `make backend-pin` from `.backend-api-version`; don't edit by hand.
 # The proxy has no version tag newer than August, so it is latest as of 2026-10-27 (built
 # 2026-10-16 from opendatahub-io/kube-auth-proxy b2d77d8). busybox runs netstat for step 2.
 BACKEND_PIN="$(cat "${ROOT}/.backend-api-version")"
-BACKEND_IMAGE="${BACKEND_IMAGE:-ghcr.io/ai-grid-cloud/ai-grid-provider-backend:sha-3deed95ebfd1a92b177863bfbb3659e18881e117@sha256:9ab357ce95bbda733ae8471904e0d59b371418ee852afdc39146cea566e61106}"
+BACKEND_IMAGE="${BACKEND_IMAGE:-ghcr.io/ai-grid-cloud/ai-grid-provider-backend:sha-1141af02f5e0eee062b1c18da7f3e579a82d062c@sha256:04e53a5a5f8ae8d75e9cb7b16117227d23aa77b1814524e682fb7817c3578559}"
 PROXY_IMAGE="${PROXY_IMAGE:-quay.io/opendatahub/odh-kube-auth-proxy@sha256:1a5f6e220362aa2077026bb7e3091c38f80aac861fa060b08045e58e783d5bc5}"
 BUSYBOX_IMAGE=docker.io/library/busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
 ROUTE_CRD=https://raw.githubusercontent.com/openshift/api/a9b3f04dd8db4c20aacca607afeff8ddbc25d863/route/v1/zz_generated.crd-manifests/routes.crd.yaml
@@ -124,7 +123,7 @@ docker tag "${BUSYBOX_IMAGE}" localhost/busybox:kind
 kind load docker-image --name "${CLUSTER}" localhost/ai-grid-provider-console:kind \
   localhost/ai-grid-backend:kind localhost/kube-auth-proxy:kind localhost/busybox:kind >/dev/null
 IMAGES=(--set images.console.repository=localhost/ai-grid-provider-console --set images.console.tag=kind
-  --set images.backend.repository=localhost/ai-grid-backend --set images.backend.tag=kind
+  --set images.backend.repository=localhost/ai-grid-backend --set images.backend.tag=kind --set images.backend.digest=
   --set images.authProxy.repository=localhost/kube-auth-proxy --set images.authProxy.tag=kind)
 # No service CA on kind: the test makes the certificate.
 # The backend doesn't start without a Git URL (git mode, ai-grid-provider-backend#29). It clones in
@@ -215,7 +214,7 @@ expect() { # expect <status> <description> curl-args...
 base_install() {
   kubectl kustomize "${ROOT}/manifests/base" 2>/dev/null |
     sed -e "s#ghcr.io/ai-grid-cloud/ai-grid-provider-console:latest#localhost/ai-grid-provider-console:kind#" \
-      -e "s#ghcr.io/ai-grid-cloud/ai-grid-provider-backend:latest#localhost/ai-grid-backend:kind#" \
+      -e "s#ghcr.io/ai-grid-cloud/ai-grid-provider-backend:sha-[0-9a-f]*@sha256:[0-9a-f]*#localhost/ai-grid-backend:kind#" \
       -e "s#quay.io/opendatahub/odh-kube-auth-proxy:latest#localhost/kube-auth-proxy:kind#" |
     k apply -f - >/dev/null
   # manifests/base has the chart's defaults, which set no Git URL (see VALUES).
