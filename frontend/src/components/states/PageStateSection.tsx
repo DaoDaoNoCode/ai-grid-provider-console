@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { PageSection } from '@patternfly/react-core';
+import { PageSection, Stack, StackItem } from '@patternfly/react-core';
 import { ServiceError } from '../../api/ConsoleService';
 import { LoadError, type NotFound } from '../LoadError';
 import { PageHeader } from '../PageHeader';
@@ -94,13 +94,20 @@ export const PageStateSection: React.FC<Props> = ({
       return body;
     }
   } else {
-    // The alert's slot is always there, so the content keeps its place (and its state) when it comes and goes.
+    // The alert's slot is always there, so the content keeps its place (and its state) when it comes and
+    // goes; the Stack spaces the two.
     // 401 shows nothing: the console says once that the session has ended.
     const stale = error && !(serviceError?.isUnauthenticated ?? false);
     body = (
       <PageSection isFilled hasBodyWrapper={hasBodyWrapper}>
-        {stale ? <StaleDataAlert object={what} error={error} onRetry={onRetry} className="pf-v6-u-mb-md" /> : null}
-        {children}
+        <Stack hasGutter>
+          {stale ? (
+            <StackItem>
+              <StaleDataAlert object={what} error={error} onRetry={onRetry} />
+            </StackItem>
+          ) : null}
+          <StackItem isFilled>{children}</StackItem>
+        </Stack>
       </PageSection>
     );
   }

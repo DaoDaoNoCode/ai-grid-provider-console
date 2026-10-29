@@ -26,6 +26,10 @@ A page is a `PageHeader` and one filled `PageSection`, through `PageStateSection
 
 Never write a page-level `EmptyState` or `Alert` for these by hand: use the components below.
 
+Spacing between siblings comes from PatternFly's layouts (`Stack` or `Flex` with a gutter), not
+margin or padding utilities; where a utility is the only way, it carries a one-line reason. The
+breadcrumb goes to `PageHeader`, which puts it in PatternFly's `PageBreadcrumb` section.
+
 ## States
 
 All in `src/components/states/`; `LoadError` (`src/components/LoadError.tsx`) picks the right one for

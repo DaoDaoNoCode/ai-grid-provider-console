@@ -5,7 +5,7 @@
 // Telemetry is dropped. The page and its states are the console's (PageStateSection), and a delete
 // says so in a toast, as every list does.
 import { useCallback, useMemo, useState } from 'react';
-import { Alert, AlertActionLink, Button } from '@patternfly/react-core';
+import { Alert, AlertActionLink, Button, Stack } from '@patternfly/react-core';
 import { Link, useNavigate } from 'react-router-dom';
 import type { MaaSSubscription } from '../../api/types';
 import { EmptyListState } from '../../components/states/EmptyListState';
@@ -116,14 +116,13 @@ export const SubscriptionsList: React.FC<Props> = ({ service }) => {
       );
     }
     return (
-      <>
+      <Stack hasGutter>
         {modelsState === 'failed' && (
           <Alert
             isInline
             variant="warning"
             title="Unable to load models"
             actionLinks={<AlertActionLink onClick={refresh}>Retry</AlertActionLink>}
-            className="pf-v6-u-mb-md"
             data-testid="subscriptions-models-unavailable"
           >
             The models' locations aren't shown, and the model filter matches only the names and descriptions the
@@ -148,7 +147,7 @@ export const SubscriptionsList: React.FC<Props> = ({ service }) => {
           canWrite={canWrite}
           onDelete={confirmDelete}
         />
-      </>
+      </Stack>
     );
   };
 

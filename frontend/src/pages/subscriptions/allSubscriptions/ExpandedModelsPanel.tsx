@@ -4,7 +4,7 @@
 // The console adds the Locations column (where the model's placement put it), as the org admin's
 // view shows regions, named and styled as the Models page names them, and moves the model's
 // description into a popover by its name.
-import { Button, Label, LabelGroup, Popover, Skeleton } from '@patternfly/react-core';
+import { Button, Flex, Label, LabelGroup, Popover, Skeleton } from '@patternfly/react-core';
 import { OutlinedQuestionCircleIcon } from '@patternfly/react-icons';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { ManagedModel, ModelSubscriptionRef } from '../../../api/types';
@@ -86,20 +86,19 @@ export const ExpandedModelsPanel: React.FC<Props> = ({ modelRefs, models, models
               <Td dataLabel="Model name">
                 <TableRowTitleDescription
                   title={
-                    <>
+                    <Flex spaceItems={{ default: 'spaceItemsSm' }} alignItems={{ default: 'alignItemsCenter' }}>
                       <strong>{title}</strong>
                       {description && (
                         <Popover headerContent={title} bodyContent={description}>
                           <Button
                             variant="plain"
                             hasNoPadding
-                            className="pf-v6-u-ml-sm"
                             aria-label={`About ${title}`}
                             icon={<OutlinedQuestionCircleIcon />}
                           />
                         </Popover>
                       )}
-                    </>
+                    </Flex>
                   }
                   subtitle={<code>{ref.name}</code>}
                 />

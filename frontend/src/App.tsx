@@ -252,6 +252,8 @@ export const App: React.FC<Props> = ({
       {userError && !(userError instanceof ServiceError && userError.isUnauthenticated) && (
         // Without the user the console can't tell a provider admin, so the pages hide what changes
         // data: say so, rather than look read-only for no reason.
+        // No bottom padding: the page's header section below brings its own, and PageSection has no
+        // prop for one side.
         <PageSection hasBodyWrapper={false} className="pf-v6-u-pb-0">
           <Alert
             isInline

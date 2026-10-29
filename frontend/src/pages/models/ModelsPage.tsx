@@ -221,20 +221,18 @@ export const ModelsPage: React.FC<Props> = ({ service }) => {
                     </Tr>
                     <Tr isExpanded={isExpanded}>
                       <Td />
-                      <Td noPadding colSpan={columns.length + (canWrite ? 1 : 0)}>
+                      <Td colSpan={columns.length + (canWrite ? 1 : 0)}>
                         <ExpandableRowContent>
                           {isExpanded &&
                             (works.length > 0 ? (
-                              <div className="pf-v6-u-pb-lg">
-                                <ModelLocationsTable
-                                  model={deployment}
-                                  works={works}
-                                  clusters={clusters}
-                                  siteNames={siteNames}
-                                  onEdit={canWrite ? () => navigate(`${modelPath(deployment)}/edit`) : undefined}
-                                  isNested
-                                />
-                              </div>
+                              <ModelLocationsTable
+                                model={deployment}
+                                works={works}
+                                clusters={clusters}
+                                siteNames={siteNames}
+                                onEdit={canWrite ? () => navigate(`${modelPath(deployment)}/edit`) : undefined}
+                                isNested
+                              />
                             ) : deployment.selectedClusters.length > 0 ? (
                               <ModelSelectedClusters model={deployment} clusters={clusters} siteNames={siteNames} />
                             ) : (
