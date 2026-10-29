@@ -2,8 +2,7 @@
  * The console's zod: import `z` from here, never from 'zod' (eslint enforces it), so every schema gets
  * the console's wording. `consoleErrorMap` words each issue a schema doesn't word itself, in short
  * sentences a user can act on; a schema's own message (`.min(1, '...')`, `{ error: ... }`) still wins.
- * bff/internal/validation words the same issues the same way for the fake backend, and
- * mock/validation/cases.json keeps the two in step.
+ * mock/validation/cases.json pins the resulting messages (cases.test.ts).
  *
  * z.config is global to the zod copy, which Perses shares; Perses's own schemas set their messages.
  */

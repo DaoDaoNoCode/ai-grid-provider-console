@@ -2,7 +2,7 @@ import { z } from './zod';
 
 /**
  * Field errors keyed by JSON path, the last message per path, as the PoC keeps them
- * (Object.fromEntries over the zod issues) and as bff/internal/validation does.
+ * (Object.fromEntries over the zod issues).
  */
 export const fieldErrorsOf = (schema: z.ZodType, input: unknown): Record<string, string> => {
   const result = schema.safeParse(input);
