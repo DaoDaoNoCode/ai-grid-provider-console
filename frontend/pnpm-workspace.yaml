@@ -3,23 +3,6 @@ packages:
 allowBuilds:
   esbuild: true
 
-# The Perses 0.56 prereleases (React 19 support), newer than pnpm's minimum release age when we
-# moved to them. Remove these entries when Perses 0.56.0 is released and the console moves to it.
-minimumReleaseAgeExclude:
-  - '@perses-dev/client@0.56.0-beta.0'
-  - '@perses-dev/components@0.56.0-beta.0'
-  - '@perses-dev/dashboards@0.56.0-beta.0'
-  - '@perses-dev/explore@0.56.0-beta.0'
-  - '@perses-dev/gauge-chart-plugin@0.15.0-beta.0'
-  - '@perses-dev/loki-plugin@0.8.0-beta.0'
-  - '@perses-dev/markdown-plugin@0.14.0-beta.0'
-  - '@perses-dev/pie-chart-plugin@0.16.0-beta.0'
-  - '@perses-dev/plugin-system@0.56.0-beta.0'
-  - '@perses-dev/prometheus-plugin@0.60.0-beta.0'
-  - '@perses-dev/stat-chart-plugin@0.16.0-beta.0'
-  - '@perses-dev/table-plugin@0.15.0-beta.0'
-  - '@perses-dev/timeseries-chart-plugin@0.15.0-beta.0'
-
 # Perses 0.56 still declares Query v4. The real-renderer browser test in e2e/perses.spec.ts
 # verifies its v5 integration; keep the console and all plugins on the same runtime.
 # Under v5, three things in Perses behave differently (docs/connect.md, "Perses on Query v5"):
