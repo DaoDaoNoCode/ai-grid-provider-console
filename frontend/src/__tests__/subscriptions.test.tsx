@@ -13,6 +13,7 @@ import type { NavigateFunction } from 'react-router-dom';
 import { clone } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 import { Code, ConnectError } from '@connectrpc/connect';
+import { focusManager } from '@tanstack/react-query';
 import { ServiceError } from '../api/ConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
 import { ConditionStatus } from '../gen/ai_grid/v1/condition_type_pb';
@@ -504,6 +505,38 @@ describe('administrator subscription flows', () => {
     expect(stored(service, 'engineering').metadata?.annotations['openshift.io/description']).toBe(
       'Production models for the engineering team.',
     );
+  });
+
+  it('saves against the version it opened, even after a refetch brings a newer one', async () => {
+    const service = seeded();
+    const fake = subscriptionsOf(service);
+    const user = userEvent.setup();
+    renderAt('/subscriptions/edit/engineering', service);
+    const description = await screen.findByTestId('subscription-name-desc-description');
+    await user.clear(description);
+    await user.paste('Unsaved description');
+    // Someone else saves it meanwhile, and the window regains focus, so Subscriptions/Get refetches
+    // and answers their version.
+    const theirs = stored(service, 'engineering');
+    theirs.metadata!.version = 2;
+    theirs.spec!.priority = 7;
+    const gets = fake.sent('get').length;
+    act(() => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+    });
+    await waitFor(() => expect(fake.sent('get').length).toBeGreaterThan(gets));
+    await user.click(screen.getByTestId('update-subscription-button'));
+    // The save carries the version the form opened at, so the backend refuses it as a conflict
+    // instead of the form writing its old values over their change.
+    expect(
+      await screen.findByText(
+        'update Subscription "engineering": the subscription changed since it was read; reload and retry',
+      ),
+    ).toBeVisible();
+    expect(fake.sent('update').at(-1)?.object?.metadata?.version).toBe(1);
+    expect(stored(service, 'engineering').spec?.priority).toBe(7);
+    expect(description).toHaveValue('Unsaved description');
   });
 });
 
