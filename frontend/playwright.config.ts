@@ -16,7 +16,8 @@ const fakesBffPort = process.env.E2E_FAKES_BFF_PORT ?? '8280';
 const fakesBackendPort = Number(process.env.E2E_FAKES_BACKEND_PORT ?? '9290');
 const fakesOrigin = `http://127.0.0.1:${fakesPort}`;
 const browser = { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } };
-const membership = 'cluster-membership.spec.ts';
+// The specs that change fixture objects (and put them back), one test at a time.
+const fixtureWriters = ['cluster-membership.spec.ts', 'models.spec.ts'];
 const onBackendFakes = ['clusters.spec.ts', 'grid.spec.ts'];
 
 export default defineConfig({
@@ -36,12 +37,13 @@ export default defineConfig({
     navigationTimeout: 15_000,
   },
   projects: [
-    { name: 'chromium', use: browser, testIgnore: [membership, ...onBackendFakes] },
+    { name: 'chromium', use: browser, testIgnore: [...fixtureWriters, ...onBackendFakes] },
     { name: 'backend fakes', use: { ...browser, baseURL: fakesOrigin }, testMatch: onBackendFakes },
-    // Every spec but this one leaves the fixtures as it found them, or changes only objects it
-    // created under a name of its own, so they can run side by side. This one adds a fixture
-    // cluster to AI Grid and removes it again: one run at a time.
-    { name: 'cluster membership', use: { ...browser, baseURL: fakesOrigin }, testMatch: membership, workers: 1 },
+    // Every other spec leaves the fixtures as it found them, or changes only objects it created
+    // under a name of its own, so they can run side by side. These change a fixture cluster and put
+    // it back (cluster-membership adds site4 to AI Grid and removes it; models gives site1 a role
+    // for its run): one test at a time.
+    { name: 'fixture writers', use: { ...browser, baseURL: fakesOrigin }, testMatch: fixtureWriters, workers: 1 },
   ],
   // The console's fake stack on the PoC preset (mock/fixtures-poc), with the frontend as it ships: the production bundle,
   // served by `vite preview`, whose proxy is the dev server's (vite.config.ts), so the identity
