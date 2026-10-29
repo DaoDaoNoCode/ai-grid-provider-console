@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext } from '@playwright/test';
+import { callBackend as call } from './backend';
 
 // The backend's own Models API on its fakes (the backend's fixtures/poc), through the BFF's
 // Connect relay. site1 is an Available member, Compliant with the ready Policy; the fixtures give
@@ -8,16 +9,6 @@ import { expect, test, type APIRequestContext } from '@playwright/test';
 const CLUSTER = 'site1';
 
 type Labels = Record<string, string>;
-
-/** One Connect unary call through the console's origin, as the browser's client sends it. */
-const call = async <T>(request: APIRequestContext, procedure: string, body: unknown): Promise<T> => {
-  const res = await request.post(`/ai_grid.v1.${procedure}`, {
-    data: body,
-    headers: { 'Connect-Protocol-Version': '1' },
-  });
-  expect(res.ok(), `${procedure}: ${res.status()} ${await res.text()}`).toBeTruthy();
-  return (await res.json()) as T;
-};
 
 type Cluster = { object: { metadata: { labels?: Labels; version?: number } } };
 
