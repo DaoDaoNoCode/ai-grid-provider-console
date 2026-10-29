@@ -8,8 +8,8 @@ when the API has to change. The backend's side of the same rules is its
 `docs/API_CONTRACT.md`.
 
 The Clusters area (the list, a cluster's page, Add and Remove), the Models area (the list, a
-model's page, the Deploy model wizard, its edit and delete) and the AI Grid map are on it; the
-other areas move one at a time; each move deletes that area's draft RPCs, fake data,
+model's page, the Deploy model wizard, its edit and delete), the Subscriptions area and the AI
+Grid map are on it; Organizations moves next; each move deletes that area's draft RPCs, fake data,
 BFF handlers and hand-written frontend types. When the last one moves, `mock/proto`, `bff/gen`, the
 console's fake backend and `frontend/src/api`'s hand-written layer go.
 
@@ -174,9 +174,10 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   name tenants send; the wizard starts the id from the URI's last path segment and shows it on
   Review as "Name tenants call"), `replicas`, `base_refs` (the model server's presets), `spec.main` (the image, the
   requests it asks for and `VLLM_ADDITIONAL_ARGS` for runtime arguments) and a `name In [...]`
-  placement over the clusters `Models/ListPlacementClusters` offers. It sets no router, no
-  rollout and no limits: the backend's defaults apply (gateway
-  `openshift-ingress/openshift-ai-inference` and a managed route; no scheduler), and it saves a GPU
+  placement over the clusters `Models/ListPlacementClusters` offers, and the router
+  `{ scheduler: true, managedRoute: true }` (`modelRequests.ts`): the backend defaults the
+  scheduler to off, and a model needs it to be routed. It sets no rollout and no limits: the
+  backend's defaults apply (gateway `openshift-ingress/openshift-ai-inference`), and it saves a GPU
   request as the limit too (`ModelContainer.requests`). An edit calls `Models/Update` with only
   the paths it changed (`spec.replicas`, `spec.main.image`, `spec.main.env`,
   `metadata.annotations`, `spec.placement`; the env and the annotations whole, as loaded) and
@@ -190,8 +191,43 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
 - **The map and Monitoring** read the same `Models/List`: a member's models are those whose
   `status.placement.selected_clusters` name it, and Monitoring's target sites the clusters at
   `status.placement.locations`.
-- The BFF keeps `GET /api/v1/models`, `toModel` and `--models-namespace` only for the
-  Subscriptions pages, until they read `Models/List` too.
+
+### The Subscriptions area
+
+- **Reads.** `useSubscriptionList`, `useSubscription`, `useModelsByIds` and `useTenantList`
+  (`frontend/src/pages/subscriptions/useSubscriptions.ts`) call `Subscriptions/List` and `Get`,
+  `Models/List` and `Tenants/List`; the lists poll every 30 s. A subscription's page and its edit
+  page load `Get` once, and the edit page keeps the first answer, so a save is checked against the
+  version it started from. Models are read with a CEL filter on their ids,
+  `this.id in ["<id>", ...]`: the list page asks for the models its subscriptions name, the edit
+  page for its subscription's, and a subscription's page for none, because the backend joins the
+  names it shows. The model picker reads every model when it opens, and the create page for its
+  "No models available" warning.
+- **Words.** `subscriptionText.ts` reads the subscription: the display name and description
+  annotations (as `modelView.ts` reads a model's), `spec.organization.id`, and `status.phase`,
+  Active or Pending in git mode and none until a cluster reports, which reads Unknown, with the
+  Ready condition's message in the tooltip. A model is the Models pages' `ModelView`, its phase
+  worded there. A referenced model's status on a subscription's page is its `model_registrations`
+  entry: its phase; Saved to Git for one with no phase and a Ready condition of reason
+  `SavedToGit`, the reading `phaseWordOf` gives a model; Not found without an entry, as the
+  backend's `gitModelRegistrations` says a client takes it.
+- **The model join.** A ref names its model by `SubscriptionModelRef.model_id`, which the backend
+  fills (with `display_name` and `description`) for a ref to a model in its catalog; a ref it
+  can't join has no model and shows its name. A model the form adds is sent as the model's id in
+  `name` with no `namespace`, as the field's comment says.
+- **Writes.** Create sends `id`, the annotations and the spec (bare owner groups, the
+  organization, the priority, the model refs with their token limits); the backend creates the
+  managed `<id>-policy` with it. Update sends the whole spec, with what the form doesn't edit
+  (users, token metadata, inference priority, guardrails, a ref's billing rate and guardrails) as
+  loaded, and the whole annotations map it loaded with the display name and description changed,
+  because an Update replaces a map whole: mask `spec` and `metadata.annotations`,
+  `metadata.version` with `lock: true`. Delete sends `resource_version`, the version read (zero
+  would skip the check). Aborted is the conflict the form and the delete dialog already show.
+- **Testing.** Page tests answer from `frontend/src/__tests__/connectSubscriptions.ts`, an
+  in-memory Subscriptions service over the generated messages that answers as git mode does,
+  joined to `connectModels.ts`'s models; the browser test (`e2e/subscriptions.spec.ts`) runs on the
+  backend's fakes and commits a model of its own first (`e2e/backend.ts`).
+- The BFF has no `/api/v1/subscriptions` or `/api/v1/models` routes and no `--models-namespace`.
 
 ### Perses on Query v5
 

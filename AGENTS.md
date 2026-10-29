@@ -115,9 +115,9 @@ behaviour and points at its source (a file, a function or an upstream commit), n
 ## The backend's own API over Connect
 
 The console is moving to the backend's RPCs, called from the browser over Connect (ADRs 0002
-and 0004), through one provider at the app root. The Clusters pages, the Models pages and the AI
-Grid map read and write through it (`docs/connect.md`, "The Clusters area" and "The Models
-area"); the other areas still use `/api/v1`:
+and 0004), through one provider at the app root. The Clusters pages, the Models pages, the Subscriptions pages
+and the AI Grid map read and write through it (`docs/connect.md`, "The Clusters area", "The
+Models area" and "The Subscriptions area"); the other areas still use `/api/v1`:
 
 - `.backend-api-version` holds the backend commit (one full SHA) whose `proto/` (package
   `ai_grid.v1`, not `ai_grid/draft`) the frontend is generated from. `make generate-api` writes
@@ -198,27 +198,8 @@ when the RPCs allow it.
   they hold what a read shows (`description: ""`, `enabled: true`, `attributes: {}`), which may
   not be what Keycloak stores (`readBackValue`), and send a PATCH that sets only such fields as
   an update with the mask `id`.
-- The stopgap Models and Subscriptions clients (`bff/internal/backend/v1_models.go`, `v1.go`),
-  until Models and Subscriptions move to the Connect clients:
-  - the models namespace: `GET /api/v1/models`, which only the Subscriptions pages still read,
-    gives the BFF's `--models-namespace` (the Models pages, the map and Monitoring read
-    `Models/List` over Connect, `docs/connect.md`, "The Models area");
-  - 501 for `createAuthPolicy: false`, and for a model list with a filter or an order;
-  - a model or registration the backend reports as saved to Git (reason `SavedToGit`, no phase)
-    keeps that reason, which the UI shows as Saved to Git;
-  - a subscription update reads the subscription first and sends its annotations back with the
-    display name and description changed, because the backend replaces the map whole;
-  - a delete with `If-Match: "0"` is 412, because the backend treats version 0 as no check.
 - `toTenant` (`bff/internal/api/tenants.go`), fallbacks for the shipped backend: `enabled`
   defaults to true, `domainDetails` is built from `domains`.
-- `toModel` (`bff/internal/api/models.go`), for `GET /api/v1/models`, which only the Subscriptions
-  pages still read: `displayName` and `description` from the
-  `openshift.io/display-name` and `openshift.io/description` annotations; `modelName` defaults to
-  the model name; `placement.selectedClusters` from the decisions; `placement.satisfied`,
-  `reason` and `message` from `PlacementSatisfied`; `rollout.rolledOut`, `applied` and `reason`
-  from `PlacementRolledOut` and `ManifestworkApplied`; each work's `applied`, `available`,
-  `progressing` and `degraded` from its conditions and `feedback` from the manifest feedback
-  values; `rollout.strategy` shown as `All` when unset.
 - `toGridOverview` (`bff/internal/api/grid.go`): drops metric points whose value is NaN or
   ±Inf (JSON cannot carry them), always sends `demo: false`, and writes `updatedAt` as
   `2006-01-02T15:04:05.000Z` (the PoC's millisecond format) whatever precision the backend

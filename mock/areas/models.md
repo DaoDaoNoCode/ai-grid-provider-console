@@ -4,9 +4,8 @@
 > (`docs/connect.md`, "The Models area") and run on `make dev-fake-infra`. The Deploy model wizard
 > asks for no served name: the backend serves a model as its id, the name tenants send, so the
 > fixtures' Hugging Face served names below (`modelName`) are the console fake's own, not what a
-> model deployed now carries. The BFF's only model
-> route left is `GET /api/v1/models`, which the Subscriptions pages read until they move too; the
-> fake's model writes below are reached by its own tests only, and go with the fake.
+> model deployed now carries. The BFF has no model routes left: the
+> fake's models below are reached by its own tests only, and go with the fake.
 
 What the fake backend and the BFF implement for this area, where they deviate from the
 real controllers, which texts are invented, and what remains. The fixture data is described in
@@ -308,19 +307,8 @@ expression: ...`, `filter <f> must evaluate to a bool, not <type>`, `filter <f> 
 
 ## BFF
 
-`GET /api/v1/models?offset=&limit=&filter=` (the client's CEL forwarded unchanged; the removed
-`namespace` and `label` parameters are 422 `query parameter "<name>" is not supported; send a CEL
-filter in "filter"`), for the Subscriptions pages, with the JSON shape in `docs/plan/bff-api.md`: the POC's `ManagedModel` without its
-inventions, plus `placement` (selector, selected clusters, `PlacementSatisfied`) and `rollout`
-(strategy, summary without `updated`, per-site works with their condition statuses and the
-`ready` and `url` feedback); `url` is omitted when empty; PATCH is one `UpdateModel` with every
-present field in the mask (no read first, no comparison; `labels` and `annotations` are whole
-maps, and the display name and description are their `openshift.io/*` annotation keys, not body
-fields on PATCH or POST), locked on the `If-Match` version the client must send (428 without it),
-and a body that names no field is 422; DELETE needs `If-Match` too and passes
-it as `DeleteModelRequest.resource_version`, which the fake checks like a Kubernetes
-delete precondition (`Aborted` with the update's wording when stale); GET, POST and PATCH send
-the `resourceVersion` as the `ETag`.
+None: the Models and Subscriptions pages call the backend's Models API over Connect
+(`docs/connect.md`, "The Models area").
 
 UI: the Models page and deploy wizard are the port's; a delete blocked
 by a subscription or auth policy shows the 412 message.

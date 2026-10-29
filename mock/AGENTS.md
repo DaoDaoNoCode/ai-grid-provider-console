@@ -16,9 +16,9 @@
 > so the other pages keep working meanwhile. Console cleanup remains pending and removes
 > the draft proto, generated draft code and `bff/internal/fakebackend` from here. Models
 > and Subscriptions have already moved to real backend services (the backend's
-> `internal/servers/models_git.go` and `subscriptions_git.go`). The Models pages call the backend's
-> Models API over Connect, so they run on `make dev-fake-infra`, not on this fake; Subscriptions
-> still uses the BFF adapters, and this fake's models answer only its `GET /api/v1/models`. The
+> `internal/servers/models_git.go` and `subscriptions_git.go`). The Models and Subscriptions pages
+> call the backend's API over Connect, so they run on `make dev-fake-infra`, not on this fake,
+> which serves no subscriptions and whose models no console page reads. The
 > vendored upstream proto and drift guard remain during migration.
 
 Monitoring uses the hub's Perses dashboards when configured. Its fallback page uses the
@@ -66,7 +66,7 @@ curl -s -H 'x-forwarded-access-token: dev-token' -H 'x-forwarded-user: dev-user'
 ```
 
 The browser tests (`make e2e`) start the same fake on `fixtures-poc/` instead (the PoC's four
-sites, three models, three organizations and three subscriptions, no scenario events, no latency),
+sites, three models and three organizations, no scenario events, no latency),
 from `frontend/playwright.config.ts`. To run the pieces separately, see
 `docs/dev-setup.md`, "Run the pieces separately".
 
@@ -105,18 +105,12 @@ adds `"meta": {"size", "total", "offset", "limit"}` (`limit` only when the reque
 | Method | Path | Request body | Response `data` |
 |---|---|---|---|
 | GET | `/api/v1/user` | | `{username, email?, groups, isProviderAdmin}` |
-| GET | `/api/v1/config` | | `{gridEndpoint, mapTileUrl, mapTileAttribution, billingUrl, version, modelsNamespace, fakeBackend, monitoring: {enabled, persesProject}}` |
+| GET | `/api/v1/config` | | `{gridEndpoint, mapTileUrl, mapTileAttribution, billingUrl, version, fakeBackend, monitoring: {enabled, persesProject}}` |
 | GET | `/api/v1/tenants?offset=&limit=&filter=` | | `Tenant[]` by name, plus `meta` |
 | GET | `/api/v1/tenants/{id}` | | `Tenant`, `ETag` |
 | POST | `/api/v1/tenants` | `{name, alias?, description?, enabled?, domains?, attributes?, identityProvider?}` | 201, `Tenant`, `Location` and `ETag` headers |
 | PATCH | `/api/v1/tenants/{id}` | `{name?, description?, enabled?, domains?, attributes?, identityProvider?, alias?}` (the backend refuses a changed alias) | `Tenant` after the write, `ETag` |
 | DELETE | `/api/v1/tenants/{id}` | | 204 |
-| GET | `/api/v1/models?offset=&limit=&filter=` | | `Model[]` by namespace and name, plus `meta`, for the Subscriptions pages |
-| GET | `/api/v1/subscriptions` | | `Subscription[]` by name |
-| GET | `/api/v1/subscriptions/{name}` | | `{subscription, modelRefs, authPolicies, meteringMetadata?, modelRegistrations}` |
-| POST | `/api/v1/subscriptions` | `{name, displayName?, description?, priority, owner, modelRefs, tokenMetadata?, inferencePriority?, guardrails?, createAuthPolicy?}` | 201, `{subscription, authPolicy?}`, `Location` header |
-| PUT | `/api/v1/subscriptions/{name}` | the POST body without `name` and `createAuthPolicy` | `{subscription}` after the write |
-| DELETE | `/api/v1/subscriptions/{name}` | | 204 |
 | GET | `/api/v1/grid/overview?range=&site=&metrics=false` | | `{clusters, metrics, metricsSource?, inventorySource?, demo, updatedAt?}` |
 
 Request bodies must be sent with `Content-Type: application/json` (charset allowed), or the
@@ -152,8 +146,7 @@ before any call. The fake decides what an update changes: one that leaves the ob
 `resourceVersion`, like the API server.
 
 Stale tabs (`ETag`, `If-Match`). `GET` of one cluster or tenant and the answer to its
-POST or PATCH carry `ETag: "<resourceVersion>"`, as do `GET` of one subscription and the answer
-to its PUT. Every PATCH, PUT and DELETE must send it back as `If-Match`: a write against an object
+POST or PATCH carry `ETag: "<resourceVersion>"`. Every PATCH, PUT and DELETE must send it back as `If-Match`: a write against an object
 that changed since is 409 (the backend's `Aborted`) instead of overwriting it, and a PATCH, PUT
 or DELETE without `If-Match` (or with `If-Match: *`, which names no version) is 428 before
 anything is called. The BFF checks a write in this order: 415 for a body that is not JSON, 428,
@@ -175,14 +168,8 @@ when the BFF set them.
 | `get-config.json` | `GET /api/v1/config` (every setting at its default) |
 | `get-tenants.json` | `GET /api/v1/tenants`, all six tenants with `meta` |
 | `get-tenant.json` | `GET /api/v1/tenants/{id}` for `acme-robotics` |
-| `get-models.json` | `GET /api/v1/models`, all five models with `meta` |
-| `get-subscriptions.json` | `GET /api/v1/subscriptions`, all four subscriptions |
-| `get-subscription.json` | `GET /api/v1/subscriptions/engineering`: the subscription, its models, policies and registrations |
 | `get-grid-overview.json` | `GET /api/v1/grid/overview?range=1h`, the members with the demo metrics |
 | `post-tenant.json` | `POST /api/v1/tenants`: 201 with `Location` and `ETag` |
-| `post-subscription.json` | `POST /api/v1/subscriptions` with `createAuthPolicy`: 201 with `Location`, the subscription and its policy |
-| `put-subscription.json` | `PUT /api/v1/subscriptions/onboarding` with its `If-Match`: 200 and the new `ETag` |
-| `delete-subscription.json` | `DELETE /api/v1/subscriptions/onboarding` with its `If-Match`: 204, no body |
 | `error-401-expired-token.json` | `GET /api/v1/user` with `expired-token` |
 | `error-403-viewer-patch.json` | `PATCH /api/v1/tenants/{id}` with `viewer-token` and the tenant's `If-Match` |
 | `error-404-unknown-tenant.json` | `GET /api/v1/tenants/unknown-tenant` |
@@ -272,7 +259,7 @@ lifecycles alike. Restart the fake to replay.
 | 90 s, 130 s | `site-berlin-1` add-ons become available (three, then all seven) |
 | 300 s | `site-madrid-1` recovers its lease: `unknown` to `ready`; `granite-8b-instruct` and `mistral-7b-instruct` roll out to it: Granite reads `partiallyavailable` until its work there is ready, about 45 s later, then `ready`; Mistral's work fails to apply there, so Mistral stays `partiallyavailable` |
 
-A model created with `POST /api/v1/models` (and `mistral-7b-instruct` at start) walks
+A model the fake creates (its own tests' `CreateModel`, and `mistral-7b-instruct` at start) walks
 KServe's conditions, counted from its creation:
 
 | At | `Ready` and what else changes |
@@ -314,7 +301,7 @@ is in the gRPC status only).
 | 401 | `AUTH_TOKEN=expired-token` on any `/api/v1` endpoint but `GET /config`: the hub rejects the token in the BFF's provider-admin check (the access review, for `GET /user`), before the BFF's own checks (415, 428, 422, 413). `GET /config` asks neither and answers 200. A request without the token header is 401 on every `/api/v1` path, `/config` included | `the hub rejected the credentials; log in again`, `missing x-forwarded-access-token header` |
 | 403 | `viewer-token` on any `/api/v1` request but `GET /user` and `GET /config`, reads included: the BFF's provider-admin check refuses it before its own checks (415, 428, the body) and before the backend. The backend's own 403 texts are behind that check until the backend authorizes the caller | `this console is only for provider admins, users who may patch ManagedClusters on the hub, and the hub says you are not one` |
 | 404 | an unknown cluster, tenant or model | `object with identifier '<name>' not found` for a cluster, `'<id>'` for a tenant, `'<namespace>/<name>'` for a model |
-| 405 | a known `/api/v1` path with a method it has no route for, such as `POST /api/v1/models` | `POST is not allowed on /api/v1/models; use GET, HEAD`, with an `Allow` header |
+| 405 | a known `/api/v1` path with a method it has no route for, such as `POST /api/v1/grid/overview` | `POST is not allowed on /api/v1/grid/overview; use GET, HEAD`, with an `Allow` header |
 | 409 | a taken tenant name or alias, or model name; a blank `name` in a tenant PATCH (Keycloak's own answer); an `If-Match` older than the object (also for an update that would change nothing) | `A organization with the same name already exists.`, `... same alias already exists`, the API server's `... already exists` for a model, `object with identifier '<id>' has resource version <v>, the request carries "<v>"; fetch it again and retry` |
 | 412 | `manifestWorkReplicaSetEnabled: false` in `settings.json`, then a model with `placement` (a POST, or a PATCH that adds one); `{"realmMissing": true}` or `{"organizationsDisabled": true}` in `tenants.json` | `ManifestWorkReplicaSet feature gate disabled on hub`; `Keycloak realm "ai-grid": Realm not found.`, `Keycloak realm "ai-grid": Organizations not enabled for this realm.` |
 | 413 | a body over 1 MiB | `request body must not exceed 1048576 bytes` |
@@ -333,9 +320,10 @@ The fake answers `Unimplemented` for exactly the methods in `intentionallyUnimpl
 disagree ([proto/README.md](proto/README.md) explains the allowlist). Today:
 `AiGrid/GetCurrentUser` (the BFF derives `isProviderAdmin` from a hub access review instead),
 `Grid/GetNetwork`, and every method of `CatalogItems`. They are placeholders until the shapes
-are agreed with the backend team; the BFF has no endpoint for them yet. `Subscriptions` and
-`Grid/GetOverview` are implemented (`/api/v1/subscriptions`, `/api/v1/grid/overview`); their
-proto is a proposal for the backend owners (`proto/README.md`, "Proposals from the port").
+are agreed with the backend team; the BFF has no endpoint for them yet. `Grid/GetOverview` is
+implemented (`/api/v1/grid/overview`); its proto is a proposal for the backend owners
+(`proto/README.md`, "Proposals from the port"). The draft has no `Subscriptions` service any more:
+the console reads the backend's own.
 
 ## Rules
 
