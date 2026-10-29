@@ -37,8 +37,8 @@ make install
 make dev-cluster  # the hub's deployed backend on :9090, BFF :8080, frontend :9000
 ```
 
-Then open http://127.0.0.1:9000. To run your own backend from its repository instead, use
-`make dev`; without a cluster, `make dev-fake` (the console's own fake backend) or
+Then open http://127.0.0.1:9000. To run your own backend instead, start it with `make run-hub` in
+its repository, then run `make dev` here; without a cluster, `make dev-fake` (the console's own fake backend) or
 `make dev-fake-infra` (the real backend at `.backend-api-version` on the fake hub and Keycloak of
 its repository, fetched into `.cache/backend/`, or your checkout with `BACKEND_DIR`). See
 `docs/dev-setup.md` for details.
