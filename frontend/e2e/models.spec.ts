@@ -25,7 +25,10 @@ type Cluster = { object: { metadata: { labels?: Labels; version?: number } } };
 const writeLabels = async (request: APIRequestContext, change: (labels: Labels) => Labels) => {
   const { object } = await call<Cluster>(request, 'Clusters/Get', { id: CLUSTER });
   await call(request, 'Clusters/Update', {
-    object: { id: CLUSTER, metadata: { labels: change({ ...object.metadata.labels }), version: object.metadata.version } },
+    object: {
+      id: CLUSTER,
+      metadata: { labels: change({ ...object.metadata.labels }), version: object.metadata.version },
+    },
     updateMask: 'metadata.labels',
     lock: true,
   });
