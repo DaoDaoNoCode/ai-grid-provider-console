@@ -1,7 +1,10 @@
 // What the Deploy model wizard sends: Models/Create with the fields the backend's ModelsCreateRequest
-// takes, and Models/Update with only the paths an edit changed (ModelsUpdateRequest.update_mask). The
-// console decides no defaults: an unset router is the backend's gateway, managed route and scheduler
-// defaults, and a GPU request is also saved as its limit by the backend (ModelContainer.requests).
+// takes, and Models/Update with only the paths an edit changed (ModelsUpdateRequest.update_mask). A
+// new model gets the inference scheduler and a managed route, as the console's models always have:
+// the backend defaults the scheduler to off, and without it KServe makes no InferencePool or
+// endpoint picker, so the model's route has no backend. The gateway is the backend's default (an
+// empty gateway_refs), and a GPU request is also saved as its limit by the backend
+// (ModelContainer.requests).
 import type { MessageInitShape } from '@bufbuild/protobuf';
 import type { ModelsCreateRequestSchema, ModelsUpdateRequestSchema } from '../../gen/ai_grid/v1/models_service_pb';
 import type { ModelEnvVarSchema, ModelPlacementSchema } from '../../gen/ai_grid/v1/model_type_pb';
@@ -66,6 +69,8 @@ export const createRequestOf = (input: ModelInput): MessageInitShape<typeof Mode
           requests: requestsOf(input),
           env: withRuntimeArgs([], input.runtimeArgs),
         },
+        // Both set: with the scheduler on, the backend takes managed_route as sent (modelRouterToMap).
+        router: { scheduler: true, managedRoute: true },
         placement: namedPlacement(input.locations),
       },
     },

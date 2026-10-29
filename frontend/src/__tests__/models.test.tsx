@@ -7,6 +7,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
 import type { NavigateFunction } from 'react-router-dom';
 import { Code, ConnectError } from '@connectrpc/connect';
+import { focusManager } from '@tanstack/react-query';
 import { ServiceError } from '../api/ConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
 import { ModelPhase } from '../gen/ai_grid/v1/model_type_pb';
@@ -118,8 +119,8 @@ it('walks the deployment wizard, selects locations and creates the model', async
   expect(await screen.findByText('Model deployed')).toBeVisible();
   expect(await screen.findByTestId('model-deployments-table')).toHaveTextContent('Widget');
   expect(within(screen.getByTestId('model-locations-widget')).getByText(site1)).toBeVisible();
-  // What Models/Create took: the wizard's fields only. No router: the backend's gateway, managed
-  // route and scheduler defaults apply. No limits: the backend saves a GPU request as its limit.
+  // What Models/Create took: the wizard's fields, and the inference scheduler with a managed route,
+  // which the backend's defaults leave off. No limits: the backend saves a GPU request as its limit.
   const [request] = create.mock.calls[0];
   expect(request.object).toMatchObject({
     id: 'widget',
@@ -132,7 +133,7 @@ it('walks the deployment wizard, selects locations and creates the model', async
       placement: { labelSelector: { matchExpressions: [{ key: 'name', operator: 'In', values: ['site1', 'site2'] }] } },
     },
   });
-  expect(request.object?.spec?.router).toBeUndefined();
+  expect(request.object?.spec?.router).toMatchObject({ scheduler: true, managedRoute: true, gatewayRefs: [] });
   expect(request.object?.spec?.rollout).toBeUndefined();
 });
 
@@ -854,7 +855,7 @@ describe('the model server', () => {
     expect(screen.queryByRole('spinbutton', { name: 'GPUs' })).not.toBeInTheDocument();
     await user.type(screen.getByRole('textbox', { name: /Runtime image/ }), 'registry.example/vllm-cpu:test');
     expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
-    server.focus();
+    act(() => server.focus());
     await user.tab();
     expect(server).toHaveAccessibleDescription(/Required\./);
     await chooseServer(user);
@@ -1079,6 +1080,38 @@ describe('editing a model deployment', () => {
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
     await waitFor(() => expect(update).toHaveBeenCalled());
     expect(update.mock.calls[0][0].updateMask?.paths).toEqual(['spec.replicas']);
+  });
+
+  it('saves against the version the edit started from, whatever a refetch brings in meanwhile', async () => {
+    const service = new MockConsoleService();
+    const models = modelsOf(service);
+    const get = vi.spyOn(models, 'get');
+    const update = vi.spyOn(models, 'update');
+    const user = userEvent.setup();
+    renderAt('/models/granite-3-8b/edit', service);
+    await openStep(user, 'Deployment');
+    const replicas = await screen.findByRole('spinbutton', { name: 'Replicas' });
+    await user.clear(replicas);
+    await user.paste('4');
+    // Another tab saves; then the window regains focus, and the model is read again.
+    models.find('granite-3-8b').metadata!.version = 2;
+    const reads = get.mock.calls.length;
+    act(() => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+    });
+    await waitFor(() => expect(get.mock.calls.length).toBeGreaterThan(reads));
+    await openStep(user, 'Review');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(update).toHaveBeenCalled());
+    // The edit's version, not the refetched one: the backend refuses it, and the page says so.
+    expect(update.mock.calls[0][0].object?.metadata?.version).toBe(1);
+    expect(
+      await screen.findByText(
+        'This model deployment changed since you opened it. Reload the page to edit the current version.',
+      ),
+    ).toBeVisible();
+    act(() => focusManager.setFocused(undefined));
   });
 
   it('says the deployment changed when the version it opened is stale', async () => {
