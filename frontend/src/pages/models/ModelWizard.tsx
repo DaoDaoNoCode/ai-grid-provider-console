@@ -171,9 +171,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
   const { data: nameDescData, onDataChange: onNameDescChange } = useK8sNameDescriptionFieldData({
     maxLength: 63,
     // A k8sName makes the resource name read-only, as a deployed one is.
-    initialData: model
-      ? { name: titleOf(model), description: model.description ?? '', k8sName: model.id }
-      : undefined,
+    initialData: model ? { name: titleOf(model), description: model.description ?? '', k8sName: model.id } : undefined,
   });
   const [modelUri, setModelUri] = useState(start.modelUri);
   const [modelName, setModelName] = useState(start.modelName);

@@ -1,11 +1,5 @@
 import type { DashboardResource } from '@perses-dev/client';
-import {
-  toGridCluster,
-  toManagedModel,
-  toOrganization,
-  toSubscription,
-  toSubscriptionInfo,
-} from './adapters';
+import { toGridCluster, toManagedModel, toOrganization, toSubscription, toSubscriptionInfo } from './adapters';
 import type { ConsoleService } from './ConsoleService';
 import { RelayedError, ServiceError } from './ConsoleService';
 import { PERSES_API } from './monitoring';

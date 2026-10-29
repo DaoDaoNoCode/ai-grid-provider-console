@@ -58,83 +58,12 @@ describe('HttpConsoleService', () => {
     );
   });
 
-  it('gets one model by namespace and name', async () => {
-    const model = { name: 'a b', namespace: 'team-models', resourceVersion: '7', modelName: 'org/widget' };
-    const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, { data: model }));
-    const service = new HttpConsoleService(fetchFn);
-    await expect(service.getModel('team-models', 'a b')).resolves.toMatchObject({
-      name: 'a b',
-      namespace: 'team-models',
-      resourceVersion: '7',
-    });
-    expect(fetchFn).toHaveBeenCalledWith(
-      '/api/v1/models/team-models/a%20b',
-      expect.objectContaining({ method: 'GET' }),
-    );
-  });
-
-  it('lists, creates and deletes models, with the version in If-Match', async () => {
+  it('lists the models for the Subscriptions pages', async () => {
     const model = { name: 'widget', namespace: 'team-models', modelUri: 'hf://org/widget', modelName: 'org/widget' };
-    const fetchFn = vi.fn().mockImplementation(async (url: string) =>
-      jsonResponse(200, {
-        data: url.endsWith('/config') ? { modelsNamespace: 'team-models' } : url.endsWith('/models') ? [model] : [],
-      }),
-    );
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, { data: [model] }));
     const service = new HttpConsoleService(fetchFn);
     await expect(service.listModels()).resolves.toMatchObject([{ name: 'widget', namespace: 'team-models' }]);
-    // The whole list: the page filters, sorts and pages in the browser.
     expect(fetchFn).toHaveBeenLastCalledWith('/api/v1/models', expect.objectContaining({ method: 'GET' }));
-    await service.listLocations();
-    expect(fetchFn).toHaveBeenLastCalledWith('/api/v1/locations', expect.objectContaining({ method: 'GET' }));
-    fetchFn.mockImplementation(async (url: string) =>
-      jsonResponse(200, { data: url.endsWith('/config') ? { modelsNamespace: 'team-models' } : model }),
-    );
-    const input = {
-      name: 'widget',
-      displayName: 'Widget',
-      modelUri: 'hf://org/widget',
-      modelName: 'org/widget',
-      runtimeImage: 'img',
-      replicas: 1,
-      cpu: '2',
-      memory: '4Gi',
-      gpuCount: 0,
-      runtimeArgs: [],
-      baseRefs: ['v3-6-0-kserve-config-llm-template-cpu'],
-      locations: ['site-paris-1'],
-    };
-    await expect(service.createModel(input)).resolves.toMatchObject({ name: 'widget', namespace: 'team-models' });
-    const post = fetchFn.mock.calls.find(([, init]) => init?.method === 'POST');
-    expect(post?.[0]).toBe('/api/v1/models');
-    // The BFF's ModelCreate (bff/internal/api/models.go) in the configured namespace, placed by cluster name.
-    expect(JSON.parse(post?.[1].body)).toMatchObject({
-      name: 'widget',
-      namespace: 'team-models',
-      baseRefs: ['v3-6-0-kserve-config-llm-template-cpu'],
-      placement: { matchExpressions: [{ key: 'name', operator: 'In', values: ['site-paris-1'] }] },
-    });
-    fetchFn.mockImplementation(async () =>
-      jsonResponse(200, {
-        data: { name: 'a b', namespace: 'team-models', modelUri: 'hf://x', modelName: 'x', replicas: 2 },
-      }),
-    );
-    await expect(service.updateModel('team-models', 'a b', { replicas: 2 }, '3')).resolves.toMatchObject({
-      replicas: 2,
-    });
-    expect(fetchFn).toHaveBeenLastCalledWith(
-      '/api/v1/models/team-models/a%20b',
-      expect.objectContaining({
-        method: 'PATCH',
-        headers: expect.objectContaining({ 'If-Match': '"3"' }),
-        body: JSON.stringify({ replicas: 2 }),
-      }),
-    );
-    fetchFn.mockImplementation(async () => new Response(null, { status: 204 }));
-    await expect(service.deleteModel('team-models', 'a b', '3')).resolves.toBeUndefined();
-    expect(fetchFn).toHaveBeenLastCalledWith(
-      '/api/v1/models/team-models/a%20b',
-      expect.objectContaining({ method: 'DELETE', headers: expect.objectContaining({ 'If-Match': '"3"' }) }),
-    );
   });
 
   it('reads and writes subscriptions by name, with the version in If-Match', async () => {

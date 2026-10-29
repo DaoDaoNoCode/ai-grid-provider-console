@@ -48,7 +48,13 @@ const ClusterStatusModal: React.FC<{
   onClose: () => void;
   onEdit?: () => void;
 }> = ({ model, status, location, onClose, onEdit }) => (
-  <Modal isOpen variant="small" onClose={onClose} aria-labelledby="cluster-status-modal-title" data-testid="cluster-status-modal">
+  <Modal
+    isOpen
+    variant="small"
+    onClose={onClose}
+    aria-labelledby="cluster-status-modal-title"
+    data-testid="cluster-status-modal"
+  >
     <ModalHeader
       labelId="cluster-status-modal-title"
       title={
@@ -147,7 +153,12 @@ export const ModelLocationsTable: React.FC<Props> = ({ model, clusters, siteName
 
   return (
     <>
-      <Table aria-label={`Locations of ${title}`} variant="compact" isNested={isNested} data-testid={`model-clusters-${model.id}`}>
+      <Table
+        aria-label={`Locations of ${title}`}
+        variant="compact"
+        isNested={isNested}
+        data-testid={`model-clusters-${model.id}`}
+      >
         <Thead>
           {/* resetOffset: inside the Models page's expanded row, the nested table's first column lines
               up with the row's Name, as PatternFly's nested tables and the UX design do. */}

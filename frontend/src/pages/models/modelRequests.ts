@@ -130,4 +130,3 @@ export const updateRequestOf = (
     lock: true,
   };
 };
-

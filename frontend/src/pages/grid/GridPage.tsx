@@ -25,9 +25,7 @@ import { ObservabilityPanel } from './ObservabilityPanel';
 import { tileLayerConfig } from './tiles';
 
 type Props = {
-  service: GridService &
-    Pick<OrganizationsService, 'listOrganizations'> &
-    Pick<ConsoleService, 'getConfig'>;
+  service: GridService & Pick<OrganizationsService, 'listOrganizations'> & Pick<ConsoleService, 'getConfig'>;
   monitoring?: boolean;
   /** The map's AI Grid members, loaded by AiGridPage; unused with `monitoring`. */
   map?: MapInventory;

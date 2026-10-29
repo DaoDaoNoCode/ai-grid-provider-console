@@ -10,6 +10,7 @@ import { ServiceError } from '../api/ConsoleService';
 import type { GridMembership } from '../api/clusters';
 import { fakeClients, type FakeBackend } from '../api/connect/testing';
 import type { GridCluster } from '../api/types';
+import { modelsOf } from './connectModels';
 import {
   ManagedClusterLocationSource,
   ManagedClusterSchema,
@@ -173,10 +174,16 @@ export const clustersBackend = (service: ClusterSource & Writes) =>
   }) satisfies FakeBackend['clusters'];
 
 /**
- * A Connect transport whose Clusters service is the service's clusters, built with the console's
- * interceptors, so an Unauthenticated answer checks the session as the browser's transport does.
+ * A Connect transport whose Clusters service is the service's clusters and whose Models service is
+ * its FakeModels (connectModels.ts, modelsOf), built with the console's interceptors, so an
+ * Unauthenticated answer checks the session as the browser's transport does.
  */
 export const transportFor =
-  (service: ClusterSource & Writes): TransportWith =>
-  (interceptors) =>
-    fakeClients({ clusters: clustersBackend(service) }, { interceptors }).transport;
+  (service: ClusterSource & Writes & { clusters?: GridCluster[] }): TransportWith =>
+  (interceptors) => {
+    const models = modelsOf(service.clusters ? (service as { clusters: GridCluster[] }) : { clusters: [] });
+    return fakeClients(
+      { clusters: clustersBackend(service), models: models.backend(), subscriptions: models.subscriptionsBackend() },
+      { interceptors },
+    ).transport;
+  };
