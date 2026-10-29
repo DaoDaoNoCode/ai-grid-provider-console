@@ -10,9 +10,9 @@ import { Link } from 'react-router-dom';
 import type { ConsoleService } from '../../api/ConsoleService';
 import { ServiceError } from '../../api/ConsoleService';
 import type { GridService } from '../../api/grid';
-import type { ModelsService } from '../../api/models';
 import type { OrganizationsService } from '../../api/organizations';
-import type { GridOverview, GridRange, ManagedModel, Organization } from '../../api/types';
+import type { GridOverview, GridRange, Organization } from '../../api/types';
+import { useModelList } from '../models/useModels';
 import type { FleetCluster } from './GridFleetView';
 import { RefreshButton } from '../../components/RefreshButton';
 import { RelativeTime } from '../../components/RelativeTime';
@@ -26,7 +26,6 @@ import { tileLayerConfig } from './tiles';
 
 type Props = {
   service: GridService &
-    ModelsService &
     Pick<OrganizationsService, 'listOrganizations'> &
     Pick<ConsoleService, 'getConfig'>;
   monitoring?: boolean;
@@ -58,7 +57,7 @@ const organizationsErrorOf = (err: Error) =>
 const ranges: GridRange[] = ['1h', '6h', '24h'];
 
 export const GridPage: React.FC<Props> = ({ service, monitoring = false, map = noMap }) => {
-  const [models, , modelsLoadError, refreshModels] = useServiceData<ManagedModel[]>(() => service.listModels(), []);
+  const { data: models, error: modelsLoadError, refresh: refreshModels } = useModelList();
   const { config, configError } = useConsoleSession();
   const [organizations, , organizationsLoadError, refreshOrganizations] = useServiceData<Organization[]>(
     () => (monitoring ? service.listOrganizations() : Promise.resolve([])),

@@ -1,13 +1,9 @@
 import type {
   ApiCluster,
   ApiModel,
-  ApiModelCreate,
   ApiTenant,
   ClusterState,
   ClusterStatus,
-  ConsolePlacement,
-  CreateModelRequest,
-  EnvVar,
   GridCluster,
   IdentityProvider,
   MaaSAuthPolicy,
@@ -227,107 +223,4 @@ const placementSpecOf = ({
   ...(claimExpressions?.length ? { claimExpressions } : {}),
   ...(tolerations?.length ? { tolerations } : {}),
   ...(numberOfClusters !== undefined ? { numberOfClusters } : {}),
-});
-
-/**
- * The placement the console writes for a set of clusters: `name In [...]` over ManagedCluster
- * names, the backend's own placement (its models_service.proto, ListPlacementClusters). GET
- * /locations answers the names it takes.
- */
-export const consolePlacement = (clusters: string[]): ConsolePlacement => ({
-  matchExpressions: [{ key: 'name', operator: 'In', values: [...clusters] }],
-});
-
-/**
- * The clusters of a placement the console wrote, or undefined for any other shape (cluster
- * sets, other selectors, a hub-only model). Only the console's own shape can be edited in the
- * wizard without changing what else the placement selects.
- */
-export const consolePlacementLocations = (spec: ModelPlacementSpec | undefined): string[] | undefined => {
-  if (!spec) return undefined;
-  const {
-    clusterSets,
-    matchLabels = {},
-    matchExpressions = [],
-    claimExpressions,
-    tolerations,
-    numberOfClusters,
-  } = spec;
-  const [expression, ...others] = matchExpressions;
-  if (
-    clusterSets?.length ||
-    claimExpressions?.length ||
-    tolerations?.length ||
-    numberOfClusters !== undefined ||
-    Object.keys(matchLabels).length > 0 ||
-    others.length > 0 ||
-    expression?.key !== 'name' ||
-    expression.operator !== 'In'
-  ) {
-    return undefined;
-  }
-  return [...(expression.values ?? [])];
-};
-
-/** The variable the console passes vLLM's extra arguments in (the PoC's deploymentResources). */
-export const RUNTIME_ARGS_ENV = 'VLLM_ADDITIONAL_ARGS';
-
-/**
- * The runtime arguments a model's env carries, one per flag as the wizard shows them. The wizard
- * joins its lines with spaces, so the value is cut before each flag (`-x`, `--x`) that starts
- * after whitespace outside quotes; each piece keeps its own text, so a flag's value
- * (`--max-model-len 4096`) and a quoted value (`--name "a  --b"`) survive an edit unchanged.
- */
-export const runtimeArgsOf = (env: EnvVar[] | undefined): string[] => {
-  const value = env?.find((v) => v.name === RUNTIME_ARGS_ENV)?.value ?? '';
-  const args: string[] = [];
-  let quote: string | undefined;
-  let start = 0;
-  for (let i = 0; i < value.length; i++) {
-    const c = value[i];
-    if (quote) {
-      if (c === quote) quote = undefined;
-    } else if (c === '"' || c === "'") {
-      quote = c;
-    } else if (/\s/.test(c) && /^\s+--?[A-Za-z]/.test(value.slice(i))) {
-      args.push(value.slice(start, i));
-      start = i + value.slice(i).search(/\S/);
-      i = start - 1;
-    }
-  }
-  args.push(value.slice(start));
-  return args.map((arg) => arg.trim()).filter(Boolean);
-};
-
-/** The env with its runtime arguments replaced, keeping every other variable in place. */
-export const withRuntimeArgs = (env: EnvVar[] | undefined, args: string[]): EnvVar[] => {
-  const others = (env ?? []).filter((v) => v.name !== RUNTIME_ARGS_ENV);
-  return args.length > 0 ? [...others, { name: RUNTIME_ARGS_ENV, value: args.join(' ') }] : others;
-};
-
-/**
- * The wizard's input as the BFF's POST /models body, with only the keys the PoC writes. The
- * Placement is the PoC's (backend/placements.mjs): enrolled, provisioned clusters at the chosen
- * locations, rolled out to all at once. Runtime arguments go in VLLM_ADDITIONAL_ARGS, as the
- * PoC's deployment does (backend/models.mjs deploymentResources).
- */
-export const toModelCreate = (input: CreateModelRequest, namespace: string): ApiModelCreate => ({
-  name: input.name,
-  namespace,
-  // The BFF takes the display name and description as annotations, as on PATCH; empty ones are left out.
-  annotations: {
-    ...(input.displayName ? { 'openshift.io/display-name': input.displayName } : {}),
-    ...(input.description ? { 'openshift.io/description': input.description } : {}),
-  },
-  modelUri: input.modelUri,
-  modelName: input.modelName,
-  runtimeImage: input.runtimeImage,
-  replicas: input.replicas,
-  cpu: input.cpu,
-  memory: input.memory,
-  gpuCount: input.gpuCount,
-  baseRefs: input.baseRefs,
-  ...(input.runtimeArgs.length > 0 ? { env: withRuntimeArgs([], input.runtimeArgs) } : {}),
-  placement: consolePlacement(input.locations),
-  rollout: { strategy: 'All' },
 });

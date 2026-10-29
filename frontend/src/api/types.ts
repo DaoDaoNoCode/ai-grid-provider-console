@@ -263,53 +263,8 @@ export type ApiTenant = {
 // src/app/types/subscriptions.ts at 62319b8), with resourceVersion for the PoC's revision.
 export type ModelReference = { kind: string; name: string };
 
-/** The body of POST /api/v1/models; the PoC's CreateModelRequest. */
-export type CreateModelRequest = {
-  name: string;
-  displayName: string;
-  description?: string;
-  modelUri: string;
-  modelName: string;
-  runtimeImage: string;
-  replicas: number;
-  cpu: string;
-  memory: string;
-  gpuCount: number;
-  runtimeArgs: string[];
-  /** The model server's presets (spec.baseRefs); empty for KServe's default. */
-  baseRefs: string[];
-  locations: string[];
-};
-
-/**
- * The body of POST /api/v1/models: the keys of `ModelCreate` (bff/internal/api/models.go)
- * that the wizard sets, and no others. `toModelCreate` in adapters.ts builds it.
- */
-export type ApiModelCreate = {
-  name: string;
-  namespace: string;
-  /** `openshift.io/display-name` and `openshift.io/description`. */
-  annotations: Record<string, string>;
-  modelUri: string;
-  modelName: string;
-  runtimeImage: string;
-  replicas: number;
-  cpu: string;
-  memory: string;
-  gpuCount: number;
-  baseRefs: string[];
-  env?: EnvVar[];
-  placement: ConsolePlacement;
-  rollout: { strategy: 'All' };
-};
-
 /** A container environment variable, as the BFF's `env` lists them. */
 export type EnvVar = { name: string; value: string };
-
-/** The placement the console writes: enrolled, provisioned clusters at the chosen locations. */
-export type ConsolePlacement = {
-  matchExpressions: { key: string; operator: 'In'; values: string[] }[];
-};
 
 /** The Placement spec a model was deployed with, as the BFF returns it; the console writes only some shapes. */
 export type ModelPlacementSpec = {
@@ -319,19 +274,6 @@ export type ModelPlacementSpec = {
   claimExpressions?: { key: string; operator: string; values?: string[] }[];
   tolerations?: unknown[];
   numberOfClusters?: number;
-};
-
-/**
- * A change to a deployed model: the fields PATCH /api/v1/models/{namespace}/{name} takes. Each
- * present field replaces the stored one as a whole (`env`, `annotations`), so callers send what
- * they loaded with their change applied.
- */
-export type ModelUpdate = {
-  replicas?: number;
-  runtimeImage?: string;
-  env?: EnvVar[];
-  placement?: ConsolePlacement;
-  annotations?: Record<string, string>;
 };
 
 /**

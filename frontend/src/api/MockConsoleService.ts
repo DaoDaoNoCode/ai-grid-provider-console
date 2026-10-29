@@ -1,17 +1,10 @@
 import type { DashboardResource } from '@perses-dev/client';
-import {
-  consolePlacement,
-  consolePlacementLocations,
-  toSubscription,
-  toSubscriptionInfo,
-  withRuntimeArgs,
-} from './adapters';
+import { toSubscription, toSubscriptionInfo } from './adapters';
 import type { GridMembership } from './clusters';
 import type { ConsoleService } from './ConsoleService';
 import { ServiceError } from './ConsoleService';
 import type {
   ConsoleConfig,
-  CreateModelRequest,
   CreateSubscriptionRequest,
   CreateSubscriptionResponse,
   ClusterGPUs,
@@ -24,7 +17,6 @@ import type {
   MaaSSubscription,
   ManagedModel,
   ModelRegistration,
-  ModelUpdate,
   ModelSubscriptionRef,
   Organization,
   OrganizationInput,
@@ -33,7 +25,6 @@ import type {
   User,
 } from './types';
 import {
-  createModelSchema,
   createSubscriptionSchema,
   fieldErrorsOf,
   organizationInputSchema,
@@ -213,164 +204,10 @@ export class MockConsoleService implements ConsoleService {
     this.organizations.splice(index, 1);
   };
 
-  // The fake backend's model rules and messages (bff/internal/fakebackend/models.go),
-  // with the BFF's status codes.
-
+  // The models the Subscriptions pages read, until they read Models/List over Connect. The Models
+  // pages read the backend's Models API (__tests__/connectModels.ts).
   listModels = async (): Promise<ManagedModel[]> =>
     structuredClone(this.models).sort((a, b) => a.name.localeCompare(b.name));
-
-  getModel = async (namespace: string, name: string): Promise<ManagedModel> => {
-    const model = this.models.find((m) => m.namespace === namespace && m.name === name);
-    if (!model) {
-      throw new ServiceError(404, `object with identifier '${namespace}/${name}' not found`);
-    }
-    return structuredClone(model);
-  };
-
-  /** The PoC's eligibleLocations: Ready, provisioned AI Grid members' location labels. */
-  listLocations = async (): Promise<string[]> =>
-    [
-      ...new Set(
-        this.clusters
-          .filter(
-            (c) =>
-              c.aiGridEnabled &&
-              c.provisioned &&
-              c.status === 'Ready' &&
-              ['inference', 'combined'].includes(c.labels?.['ai-grid/role'] ?? ''),
-          )
-          .map((c) => c.name),
-      ),
-    ].sort();
-
-  /**
-   * The fake backend's decision for the console's placement, `name In [...]`
-   * (bff/internal/fakebackend/placement.go): the clusters of those names, sorted.
-   */
-  private decidedClusters = (names: string[]): string[] =>
-    this.clusters
-      .filter((c) => names.includes(c.name))
-      .map((c) => c.name)
-      .sort();
-
-  /** The decided clusters' `location` labels, unique and sorted, as the fake reports them (P8). */
-  private decidedLocations = (names: string[]): string[] =>
-    [
-      ...new Set(this.clusters.filter((c) => names.includes(c.name) && c.location).map((c) => c.location as string)),
-    ].sort();
-
-  createModel = async (input: CreateModelRequest): Promise<ManagedModel> => {
-    const fieldErrors = fieldErrorsOf(createModelSchema, input);
-    if (Object.keys(fieldErrors).length > 0) {
-      throw new ServiceError(422, 'The model is invalid.', fieldErrors);
-    }
-    const known = await this.listLocations();
-    if (input.locations.some((l) => !known.includes(l))) {
-      throw new ServiceError(422, unknownLocation, { locations: unknownLocation });
-    }
-    const namespace = this.config.modelsNamespace;
-    if (this.models.some((m) => m.namespace === namespace && m.name === input.name)) {
-      throw new ServiceError(409, 'A model with this resource name already exists.');
-    }
-    const created: ManagedModel = {
-      name: input.name,
-      namespace,
-      displayName: input.displayName.trim(),
-      description: input.description,
-      modelRef: { kind: 'LLMInferenceService', name: input.name },
-      phase: 'Pending',
-      creationTimestamp: new Date().toISOString(),
-      resourceVersion: '1',
-      locations: this.decidedLocations(input.locations),
-      selectedClusters: this.decidedClusters(input.locations),
-      modelUri: input.modelUri.trim(),
-      modelName: input.modelName.trim(),
-      runtimeImage: input.runtimeImage.trim(),
-      replicas: input.replicas,
-      autoscaled: false,
-      cpu: input.cpu,
-      memory: input.memory,
-      gpuCount: input.gpuCount,
-      baseRefs: [...input.baseRefs],
-      env: withRuntimeArgs([], input.runtimeArgs),
-      annotations: {
-        ...(input.displayName.trim() ? { 'openshift.io/display-name': input.displayName.trim() } : {}),
-        ...(input.description ? { 'openshift.io/description': input.description } : {}),
-      },
-      placementSpec: consolePlacement(input.locations),
-    };
-    this.models.push(created);
-    return structuredClone(created);
-  };
-
-  /** The fake backend's UpdateModel through the BFF's PATCH: each present field replaces the stored one. */
-  updateModel = async (
-    namespace: string,
-    name: string,
-    update: ModelUpdate,
-    resourceVersion: string,
-  ): Promise<ManagedModel> => {
-    const model = this.models.find((m) => m.namespace === namespace && m.name === name);
-    if (!model) {
-      throw new ServiceError(404, `Model ${namespace}/${name} not found.`);
-    }
-    if (resourceVersion !== model.resourceVersion) {
-      throw new ServiceError(409, 'This model changed. Reload it before saving.');
-    }
-    if (Object.keys(update).length === 0) {
-      throw new ServiceError(422, 'Name at least one field to change.');
-    }
-    const fieldErrors = fieldErrorsOf(createModelSchema.pick({ replicas: true, runtimeImage: true }).partial(), {
-      replicas: update.replicas,
-      runtimeImage: update.runtimeImage,
-    });
-    if (Object.keys(fieldErrors).length > 0) {
-      throw new ServiceError(422, 'The model is invalid.', fieldErrors);
-    }
-    const locations = consolePlacementLocations(update.placement);
-    if (update.placement) {
-      const known = await this.listLocations();
-      if (!locations?.length || locations.some((l) => !known.includes(l))) {
-        throw new ServiceError(422, unknownLocation, { locations: unknownLocation });
-      }
-    }
-    if (update.replicas !== undefined) model.replicas = update.replicas;
-    if (update.runtimeImage !== undefined) model.runtimeImage = update.runtimeImage.trim();
-    if (update.env) model.env = structuredClone(update.env);
-    if (update.annotations) {
-      model.annotations = { ...update.annotations };
-      // As the BFF: no display name when the annotation is missing (omitempty in toModel).
-      model.displayName = update.annotations['openshift.io/display-name'] || undefined;
-      model.description = update.annotations['openshift.io/description'] || undefined;
-    }
-    if (update.placement && locations) {
-      model.placementSpec = structuredClone(update.placement);
-      model.locations = this.decidedLocations(locations);
-      model.selectedClusters = this.decidedClusters(locations);
-    }
-    model.resourceVersion = String(Number(model.resourceVersion) + 1);
-    return structuredClone(model);
-  };
-
-  deleteModel = async (namespace: string, name: string, resourceVersion: string): Promise<void> => {
-    const index = this.models.findIndex((m) => m.namespace === namespace && m.name === name);
-    if (index < 0) {
-      throw new ServiceError(404, `object with identifier '${namespace}/${name}' not found`);
-    }
-    if (resourceVersion && resourceVersion !== this.models[index].resourceVersion) {
-      throw new ServiceError(409, 'This model changed. Reload it before deleting.');
-    }
-    // A reference without a namespace is to the console's models namespace (P6).
-    const references = (ref: { name: string; namespace?: string }) =>
-      ref.name === name && (ref.namespace || this.config.modelsNamespace) === namespace;
-    if ([...this.subscriptions, ...this.authPolicies].some((s) => s.modelRefs.some(references))) {
-      throw new ServiceError(
-        412,
-        'Remove this model from its subscriptions and authorization policies before deleting it.',
-      );
-    }
-    this.models.splice(index, 1);
-  };
 
   // The fake backend's subscription rules and messages (bff/internal/fakebackend/subscriptions.go),
   // with the BFF's status codes.
@@ -525,8 +362,6 @@ export class MockConsoleService implements ConsoleService {
     }
   }
 }
-
-const unknownLocation = 'Select locations from the available location catalog.';
 
 // The fake backend's Aborted message (checkTenantVersion), which the BFF passes through as a 409.
 const organizationChanged = (id: string, stored: string, carried: string) =>
@@ -752,8 +587,6 @@ export const seedModels = (): ManagedModel[] =>
       'openshift.io/display-name': displayName,
       ...(description ? { 'openshift.io/description': description } : {}),
     },
-    // A placed model is the console's shape; the others are served on the hub only.
-    ...(locations.length > 0 ? { placementSpec: consolePlacement(locations) } : {}),
   }));
 
 // The PoC's subscriptions and policies (with engineering in the fixture organization

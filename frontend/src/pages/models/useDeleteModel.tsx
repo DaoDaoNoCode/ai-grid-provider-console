@@ -1,13 +1,10 @@
 import { useState } from 'react';
 import { Stack } from '@patternfly/react-core';
 import { ServiceError } from '../../api/ConsoleService';
-import type { ModelsService } from '../../api/models';
-import type { SubscriptionsService } from '../../api/subscriptions';
-import type { ManagedModel } from '../../api/types';
 import { DeleteModal } from '../../components/DeleteModal';
 import { ReferencingSubscriptions } from './ModelReferences';
-
-export type ModelDeleteService = ModelsService & Pick<SubscriptionsService, 'listSubscriptions'>;
+import { titleOf, type ModelView } from './modelView';
+import { useModelWrites } from './useModels';
 
 const deleteErrorOf = (err: unknown) =>
   err instanceof ServiceError && err.isNotImplemented
@@ -20,17 +17,21 @@ const deleteErrorOf = (err: unknown) =>
  * Deleting a model deployment, the same from its list row and its page: returns `confirmDelete`
  * and the modal to render. `refresh` reloads the page after a failed delete.
  */
-export const useDeleteModel = (
-  service: ModelDeleteService,
-  { refresh, onDeleted }: { refresh: () => void; onDeleted: () => void },
-): [(model: ManagedModel) => void, React.ReactNode] => {
-  const [selected, setSelected] = useState<ManagedModel>();
+export const useDeleteModel = ({
+  refresh,
+  onDeleted,
+}: {
+  refresh: () => void;
+  onDeleted: () => void;
+}): [(model: ModelView) => void, React.ReactNode] => {
+  const writes = useModelWrites();
+  const [selected, setSelected] = useState<ModelView>();
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<Error>();
   const [reloadError, setReloadError] = useState<Error>();
   const [inUse, setInUse] = useState(false);
 
-  const confirmDelete = (model: ManagedModel) => {
+  const confirmDelete = (model: ModelView) => {
     setSelected(model);
     setError(undefined);
     setReloadError(undefined);
@@ -46,14 +47,15 @@ export const useDeleteModel = (
     // loads the model again and stays busy until it has, so a retry sends the version the backend
     // has now.
     try {
-      await service.deleteModel(selected.namespace, selected.name, selected.resourceVersion);
+      await writes.deleteModel(selected);
       setSelected(undefined);
       onDeleted();
     } catch (err) {
       setError(deleteErrorOf(err));
       refresh();
       try {
-        setSelected(await service.getModel(selected.namespace, selected.name));
+        const reloaded = await writes.loadModel(selected.id);
+        if (reloaded) setSelected(reloaded);
       } catch (reloadErr) {
         setReloadError(reloadErr instanceof Error ? reloadErr : new Error(String(reloadErr)));
       }
@@ -65,7 +67,7 @@ export const useDeleteModel = (
   const modal = selected && (
     <DeleteModal
       title="Delete model deployment?"
-      deleteName={selected.displayName ?? selected.name}
+      deleteName={titleOf(selected)}
       onClose={() => {
         if (!deleting) {
           setSelected(undefined);
@@ -86,7 +88,7 @@ export const useDeleteModel = (
           Delete this model, its saved deployment, and its location placement resources? Remove references from
           subscriptions and authorization policies first.
         </p>
-        <ReferencingSubscriptions service={service} model={selected} onInUse={setInUse} />
+        <ReferencingSubscriptions modelId={selected.id} onInUse={setInUse} />
       </Stack>
     </DeleteModal>
   );

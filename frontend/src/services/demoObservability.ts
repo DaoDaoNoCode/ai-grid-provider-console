@@ -4,7 +4,8 @@
 // from the overview's gateway request rate. Only measurements are simulated: models and
 // organizations are always the configured ones. The PoC's unused `allModels` parameter of
 // modelMetrics is dropped.
-import type { GridMetric, ManagedModel, Organization } from '../api/types';
+import type { GridMetric, Organization } from '../api/types';
+import type { ModelView } from '../pages/models/modelView';
 
 const seed = (name: string) => [...name].reduce((n, c) => Math.imul(n, 31) + c.charCodeAt(0), 7) >>> 0;
 
@@ -35,10 +36,10 @@ const modelDefinitions = [
 ] as const;
 
 /** Simulated performance series for the selected models, shaped by the gateway's load. */
-export function modelMetrics(models: ManagedModel[], metrics: GridMetric[], simulated: boolean): GridMetric[] {
+export function modelMetrics(models: Pick<ModelView, 'id' | 'replicas'>[], metrics: GridMetric[], simulated: boolean): GridMetric[] {
   const requests = metrics.find((m) => m.key === 'requests');
   const latency = metrics.find((m) => m.key === 'latency');
-  const profile = models.reduce((sum, m) => sum + (seed(m.name) % 97), 0) / Math.max(1, models.length);
+  const profile = models.reduce((sum, m) => sum + (seed(m.id) % 97), 0) / Math.max(1, models.length);
   return modelDefinitions.map(([key, label, unit]) => ({
     key,
     label,
@@ -49,7 +50,7 @@ export function modelMetrics(models: ManagedModel[], metrics: GridMetric[], simu
       !simulated || !models.length
         ? []
         : (requests?.points ?? []).map((p, i) => {
-            const jitter = noise(models.map((m) => m.name).join(',') + key, p.timestamp);
+            const jitter = noise(models.map((m) => m.id).join(',') + key, p.timestamp);
             const load = p.value;
             const value =
               key === 'queue'

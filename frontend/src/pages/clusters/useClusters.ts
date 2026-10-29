@@ -11,7 +11,7 @@ import { LABEL_ENABLED, LABEL_LOCATION, LABEL_ROLE, toClusterView, type ClusterV
 /** The pages poll as useServiceData does. */
 const POLL_MS = 30_000;
 
-type Loaded<T> = {
+export type Loaded<T> = {
   data: T;
   /** The answer has arrived (or failed) at least once. */
   loaded: boolean;
@@ -27,14 +27,14 @@ type Loaded<T> = {
  * ended session (401) after a successful load shows nothing: the console shows the session-ended
  * page once.
  */
-const errorOf = (hasData: boolean, raw: unknown): Error | undefined => {
+export const loadErrorOf = (hasData: boolean, raw: unknown): Error | undefined => {
   if (!raw) return undefined;
   const err = toServiceError(raw);
   return hasData && err.isUnauthenticated ? undefined : err;
 };
 
 /** The query options both loads share: poll until the session ends, and no retries (the page offers Retry). */
-const useLoadOptions = () => {
+export const useLoadOptions = () => {
   const { sessionEnded } = useConsoleSession();
   return { refetchInterval: sessionEnded ? (false as const) : POLL_MS, retry: false };
 };
@@ -48,7 +48,7 @@ export const useClusterList = (): Loaded<ClusterView[]> => {
   return {
     data,
     loaded: objects.isFetched,
-    error: errorOf(!!objects.data, objects.error),
+    error: loadErrorOf(!!objects.data, objects.error),
     updatedAt: objects.data ? objects.dataUpdatedAt : undefined,
     refresh,
   };
@@ -60,7 +60,7 @@ export const useCluster = (name: string): Loaded<ClusterView | undefined> => {
   const { refetch } = object;
   const data = useMemo(() => object.data?.object && toClusterView(object.data.object), [object.data]);
   const refresh = useCallback(async () => (await refetch()).isSuccess, [refetch]);
-  return { data, loaded: object.isFetched, error: errorOf(!!data, object.error), refresh };
+  return { data, loaded: object.isFetched, error: loadErrorOf(!!data, object.error), refresh };
 };
 
 /** The cluster as the backend has it now, for the dialog after a conflict. */
