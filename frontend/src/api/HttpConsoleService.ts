@@ -1,12 +1,5 @@
 import type { DashboardResource } from '@perses-dev/client';
-import {
-  toGridCluster,
-  toManagedModel,
-  toModelCreate,
-  toOrganization,
-  toSubscription,
-  toSubscriptionInfo,
-} from './adapters';
+import { toGridCluster, toManagedModel, toOrganization, toSubscription, toSubscriptionInfo } from './adapters';
 import type { ConsoleService } from './ConsoleService';
 import { RelayedError, ServiceError } from './ConsoleService';
 import { PERSES_API } from './monitoring';
@@ -15,14 +8,12 @@ import type {
   ApiModel,
   ApiTenant,
   ConsoleConfig,
-  CreateModelRequest,
   CreateSubscriptionRequest,
   CreateSubscriptionResponse,
   GridOverview,
   GridRange,
   MaaSSubscription,
   ManagedModel,
-  ModelUpdate,
   Organization,
   OrganizationInput,
   SubscriptionInfoResponse,
@@ -110,46 +101,9 @@ export class HttpConsoleService implements ConsoleService {
     return this.request<void>('DELETE', `/tenants/${encodeURIComponent(id)}`, { ifMatch: resourceVersion });
   }
 
+  /** For the Subscriptions pages until they read Models/List over Connect. */
   async listModels(): Promise<ManagedModel[]> {
     return (await this.request<ApiModel[]>('GET', '/models')).map(toManagedModel);
-  }
-
-  async getModel(namespace: string, name: string): Promise<ManagedModel> {
-    return toManagedModel(
-      await this.request<ApiModel>('GET', `/models/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`),
-    );
-  }
-
-  listLocations(): Promise<string[]> {
-    return this.request<string[]>('GET', '/locations');
-  }
-
-  /** POSTs the BFF's ModelCreate (bff/internal/api/models.go) with only the wizard's keys, in the configured models namespace. */
-  async createModel(input: CreateModelRequest): Promise<ManagedModel> {
-    const { modelsNamespace } = await this.getConfig();
-    return toManagedModel(
-      await this.request<ApiModel>('POST', '/models', { body: toModelCreate(input, modelsNamespace) }),
-    );
-  }
-
-  async updateModel(
-    namespace: string,
-    name: string,
-    update: ModelUpdate,
-    resourceVersion: string,
-  ): Promise<ManagedModel> {
-    return toManagedModel(
-      await this.request<ApiModel>('PATCH', `/models/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`, {
-        body: update,
-        ifMatch: resourceVersion,
-      }),
-    );
-  }
-
-  deleteModel(namespace: string, name: string, resourceVersion: string): Promise<void> {
-    return this.request<void>('DELETE', `/models/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`, {
-      ifMatch: resourceVersion,
-    });
   }
 
   async listSubscriptions(): Promise<MaaSSubscription[]> {

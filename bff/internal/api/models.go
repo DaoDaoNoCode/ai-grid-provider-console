@@ -1,20 +1,18 @@
 package api
 
 import (
-	"encoding/json"
-	"errors"
-	"fmt"
 	"net/http"
-	"net/url"
-	"strings"
 	"time"
 
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
 )
 
+// GET /api/v1/models, for the Subscriptions pages only: they read the models
+// through it until they move to the backend's Models/List over Connect, as
+// the Models pages, the map and Monitoring have (docs/connect.md).
+//
 // Models are KServe LLMInferenceServices, optionally fanned out to managed
 // clusters by an ACM Placement and a ManifestWorkReplicaSet. The JSON is close
 // to the POC's ManagedModel (mock/research/models-maas.md 7.2) but carries only
@@ -36,15 +34,6 @@ const (
 	ResourceGPU    = "nvidia.com/gpu"
 )
 
-// The product-default Gateway the console attaches a model to
-// (`openshift-ingress/openshift-ai-inference`, the name RHOAI installs for
-// KServe; mock/research/models-maas.md 1). A name, not a claim that any given
-// hub has it.
-const (
-	DefaultGatewayName      = "openshift-ai-inference"
-	DefaultGatewayNamespace = "openshift-ingress"
-)
-
 // Model phases, lowercase like the cluster statuses.
 const (
 	PhasePending = "pending"
@@ -62,17 +51,6 @@ const (
 	StrategyProgressivePerGroup = "ProgressivePerGroup"
 )
 
-// Field-mask paths of UpdateModel.
-const (
-	maskReplicas    = "spec.replicas"
-	maskImage       = "spec.main.image"
-	maskEnv         = "spec.main.env"
-	maskPlacement   = "spec.placement"
-	maskRollout     = "spec.rollout"
-	maskLabels      = "metadata.labels"
-	maskAnnotations = "metadata.annotations"
-)
-
 var phaseStrings = map[aigridv1.ModelPhase]string{
 	aigridv1.ModelPhase_MODEL_PHASE_PENDING:             PhasePending,
 	aigridv1.ModelPhase_MODEL_PHASE_READY:               PhaseReady,
@@ -84,12 +62,6 @@ var strategyStrings = map[aigridv1.RolloutStrategy]string{
 	aigridv1.RolloutStrategy_ROLLOUT_STRATEGY_ALL:                   StrategyAll,
 	aigridv1.RolloutStrategy_ROLLOUT_STRATEGY_PROGRESSIVE:           StrategyProgressive,
 	aigridv1.RolloutStrategy_ROLLOUT_STRATEGY_PROGRESSIVE_PER_GROUP: StrategyProgressivePerGroup,
-}
-
-var strategyEnums = map[string]aigridv1.RolloutStrategy{
-	StrategyAll:                 aigridv1.RolloutStrategy_ROLLOUT_STRATEGY_ALL,
-	StrategyProgressive:         aigridv1.RolloutStrategy_ROLLOUT_STRATEGY_PROGRESSIVE,
-	StrategyProgressivePerGroup: aigridv1.RolloutStrategy_ROLLOUT_STRATEGY_PROGRESSIVE_PER_GROUP,
 }
 
 // Model is a model as the console shows it.
@@ -285,13 +257,6 @@ type WorkFeedback struct {
 	URL   string `json:"url,omitempty"`
 }
 
-// Capabilities is what GET /api/v1/capabilities returns.
-type Capabilities struct {
-	ManifestWorkReplicaSetEnabled bool   `json:"manifestWorkReplicaSetEnabled"`
-	ObservabilityInstalled        bool   `json:"observabilityInstalled"`
-	ACMVersion                    string `json:"acmVersion"`
-}
-
 func toConditions(conds []*aigridv1.Condition) []ClusterCondition {
 	out := make([]ClusterCondition, 0, len(conds))
 	for _, c := range conds {
@@ -462,49 +427,6 @@ func toModel(m *aigridv1.Model) Model {
 	return out
 }
 
-// fromPlacementSpec builds the proto Placement.
-func fromPlacementSpec(p *PlacementSpec) *aigridv1.Placement {
-	out := &aigridv1.Placement{ClusterSets: p.ClusterSets, LabelSelector: &aigridv1.LabelSelector{MatchLabels: p.MatchLabels}}
-	for _, e := range p.MatchExpressions {
-		out.LabelSelector.MatchExpressions = append(out.LabelSelector.MatchExpressions, &aigridv1.LabelSelectorRequirement{Key: e.Key, Operator: e.Operator, Values: e.Values})
-	}
-	for _, e := range p.ClaimExpressions {
-		out.ClaimExpressions = append(out.ClaimExpressions, &aigridv1.ClaimExpression{Key: e.Key, Operator: e.Operator, Values: e.Values})
-	}
-	for _, t := range p.Tolerations {
-		tol := &aigridv1.Toleration{Key: t.Key, Operator: t.Operator, Value: t.Value, Effect: t.Effect}
-		if t.TolerationSeconds != nil {
-			tol.TolerationSeconds = proto.Int64(*t.TolerationSeconds)
-		}
-		out.Tolerations = append(out.Tolerations, tol)
-	}
-	if p.NumberOfClusters != nil {
-		out.NumberOfClusters = proto.Int32(*p.NumberOfClusters)
-	}
-	return out
-}
-
-// fromRolloutSpec builds the proto Rollout; an unknown strategy is 422.
-func fromRolloutSpec(r *RolloutSpec) (*aigridv1.Rollout, error) {
-	strategy := aigridv1.RolloutStrategy_ROLLOUT_STRATEGY_ALL
-	if r.Strategy != "" {
-		s, ok := strategyEnums[r.Strategy]
-		if !ok {
-			return nil, Errorf(http.StatusUnprocessableEntity, fmt.Sprintf("rollout.strategy must be %s, %s or %s", StrategyAll, StrategyProgressive, StrategyProgressivePerGroup))
-		}
-		strategy = s
-	}
-	return &aigridv1.Rollout{Strategy: strategy, MaxConcurrency: r.MaxConcurrency, MaxFailures: r.MaxFailures, ProgressDeadline: r.ProgressDeadline, MinSuccessTime: r.MinSuccessTime}, nil
-}
-
-func fromEnv(env []EnvVar) []*aigridv1.EnvVar {
-	out := make([]*aigridv1.EnvVar, 0, len(env))
-	for _, e := range env {
-		out = append(out, &aigridv1.EnvVar{Name: e.Name, Value: e.Value})
-	}
-	return out
-}
-
 // listModels answers GET /api/v1/models?offset=&limit=&filter=: the backend
 // evaluates `filter` (listFilter) and returns the models by namespace and
 // name.
@@ -549,279 +471,4 @@ func (a *App) listModels(w http.ResponseWriter, r *http.Request) {
 		out = append(out, toModel(m))
 	}
 	writeList(w, http.StatusOK, out, listMeta(offset, limit, len(out), resp.Total))
-}
-
-// getModel answers GET /api/v1/models/{namespace}/{name}.
-func (a *App) getModel(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := a.backend.Context(r.Context())
-	defer cancel()
-	resp, err := a.backend.Models.GetModel(ctx, &aigridv1.GetModelRequest{Namespace: r.PathValue("namespace"), Name: r.PathValue("name")})
-	if err != nil {
-		a.respondError(w, r, err)
-		return
-	}
-	setETag(w, resp.GetObject().GetMetadata().GetResourceVersion())
-	writeData(w, http.StatusOK, toModel(resp.GetObject()))
-}
-
-// ModelCreate is the body of POST /api/v1/models: the POC deploy wizard's
-// inputs mapped to the LLMInferenceService spec (models-maas.md 7.3). The
-// display name and description travel in `annotations`
-// (`openshift.io/display-name`, `openshift.io/description`), as on PATCH.
-// `cpu`, `memory` and `gpuCount` become the main container's requests (and
-// the GPU its limit); `scaling` (exclusive with `replicas`) becomes a
-// `spec.scaling.keda` block; `gateway` defaults to the hub's AI inference
-// Gateway; the route and the scheduler are always managed.
-type ModelCreate struct {
-	Name         string            `json:"name"`
-	Namespace    string            `json:"namespace"`
-	ModelURI     string            `json:"modelUri"`
-	ModelName    string            `json:"modelName"`
-	RuntimeImage string            `json:"runtimeImage"`
-	Runtime      string            `json:"runtime"`
-	Replicas     *int32            `json:"replicas"`
-	Scaling      *ModelScaling     `json:"scaling"`
-	BaseRefs     []string          `json:"baseRefs"`
-	CPU          string            `json:"cpu"`
-	Memory       string            `json:"memory"`
-	GPUCount     *int              `json:"gpuCount"`
-	Env          []EnvVar          `json:"env"`
-	Gateway      *GatewayRef       `json:"gateway"`
-	Placement    *PlacementSpec    `json:"placement"`
-	Rollout      *RolloutSpec      `json:"rollout"`
-	Labels       map[string]string `json:"labels"`
-	Annotations  map[string]string `json:"annotations"`
-}
-
-// createModel answers POST /api/v1/models: 201 with the model and a Location
-// header. Validation is the backend's (the CRD's messages come back as 422,
-// a taken name as 409, a disabled ManifestWorkReplicaSet gate as 412).
-func (a *App) createModel(w http.ResponseWriter, r *http.Request) {
-	var body ModelCreate
-	if err := decodeBody(w, r, &body); err != nil {
-		a.respondError(w, r, err)
-		return
-	}
-	if body.GPUCount != nil && *body.GPUCount < 0 {
-		a.respondError(w, r, Errorf(http.StatusUnprocessableEntity, "gpuCount must not be negative"))
-		return
-	}
-	annotations := copyMap(body.Annotations)
-	main := &aigridv1.Container{Image: body.RuntimeImage, Requests: map[string]string{}, Limits: map[string]string{}, Env: fromEnv(body.Env)}
-	if body.CPU != "" {
-		main.Requests[ResourceCPU] = body.CPU
-	}
-	if body.Memory != "" {
-		main.Requests[ResourceMemory] = body.Memory
-	}
-	if body.GPUCount != nil && *body.GPUCount > 0 {
-		gpu := fmt.Sprint(*body.GPUCount)
-		main.Requests[ResourceGPU], main.Limits[ResourceGPU] = gpu, gpu
-	}
-	gateway := &aigridv1.GatewayRef{Name: DefaultGatewayName, Namespace: DefaultGatewayNamespace}
-	if body.Gateway != nil {
-		gateway = &aigridv1.GatewayRef{Name: body.Gateway.Name, Namespace: body.Gateway.Namespace}
-	}
-	obj := &aigridv1.Model{
-		Name:     body.Name,
-		Metadata: &aigridv1.ObjectMeta{Namespace: body.Namespace, Labels: copyMap(body.Labels), Annotations: annotations},
-		Spec: &aigridv1.ModelSpec{
-			Model:    &aigridv1.ModelSource{Uri: body.ModelURI, Name: body.ModelName},
-			Replicas: body.Replicas,
-			BaseRefs: body.BaseRefs,
-			Runtime:  body.Runtime,
-			Router:   &aigridv1.Router{GatewayRefs: []*aigridv1.GatewayRef{gateway}, ManagedRoute: true, Scheduler: true},
-			Main:     main,
-		},
-	}
-	if body.Scaling != nil {
-		obj.Spec.Scaling = &aigridv1.Scaling{MinReplicas: body.Scaling.MinReplicas, MaxReplicas: body.Scaling.MaxReplicas, Keda: true}
-		for _, t := range body.Scaling.Triggers {
-			obj.Spec.Scaling.Triggers = append(obj.Spec.Scaling.Triggers, &aigridv1.KedaTrigger{Type: t.Type, Metadata: t.Metadata})
-		}
-	}
-	if body.Placement != nil {
-		obj.Spec.Placement = fromPlacementSpec(body.Placement)
-	}
-	if body.Rollout != nil {
-		rollout, err := fromRolloutSpec(body.Rollout)
-		if err != nil {
-			a.respondError(w, r, err)
-			return
-		}
-		obj.Spec.Rollout = rollout
-	}
-	ctx, cancel := a.backend.Context(r.Context())
-	defer cancel()
-	resp, err := a.backend.Models.CreateModel(ctx, &aigridv1.CreateModelRequest{Object: obj})
-	if err != nil {
-		a.respondError(w, r, err)
-		return
-	}
-	m := toModel(resp.GetObject())
-	a.log(r).Info("model created", "namespace", m.Namespace, "name", m.Name, "placed", m.Placement != nil)
-	w.Header().Set("Location", APIPrefix+"/models/"+url.PathEscape(m.Namespace)+"/"+url.PathEscape(m.Name))
-	setETag(w, m.ResourceVersion)
-	writeData(w, http.StatusCreated, m)
-}
-
-// optionalPlacement tells apart absent, null (remove the placement) and an object.
-type optionalPlacement struct {
-	Set   bool
-	Value *PlacementSpec
-}
-
-func (o *optionalPlacement) UnmarshalJSON(b []byte) error {
-	o.Set = true
-	if string(b) == "null" {
-		return nil
-	}
-	var v PlacementSpec
-	dec := json.NewDecoder(strings.NewReader(string(b)))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&v); err != nil {
-		// This decoder starts at the placement, so its paths do too; name the
-		// field from the body's root, as the POST body's errors do. Wrapped, so
-		// the outer decoder doesn't add "placement." again: Go 1.26 prefixes an
-		// UnmarshalTypeError an UnmarshalJSON returns, Go 1.27 doesn't.
-		var typ *json.UnmarshalTypeError
-		if errors.As(err, &typ) {
-			typ.Field = "placement." + typ.Field
-			return fmt.Errorf("placement: %w", err)
-		}
-		return err
-	}
-	o.Value = &v
-	return nil
-}
-
-// ModelPatch is the body of PATCH /api/v1/models/{namespace}/{name}. Every
-// field is optional and an absent field is left alone; a present field
-// replaces the stored one as a whole (`env: []` removes every variable,
-// `placement: null` makes the model a hub deployment again, `labels` and
-// `annotations` are whole maps). The display name and description are the
-// `openshift.io/display-name` and `openshift.io/description` keys of
-// `annotations`, which the client edits like any other key.
-type ModelPatch struct {
-	Replicas     *int32             `json:"replicas"`
-	RuntimeImage *string            `json:"runtimeImage"`
-	Env          *[]EnvVar          `json:"env"`
-	Placement    optionalPlacement  `json:"placement"`
-	Rollout      *RolloutSpec       `json:"rollout"`
-	Labels       *map[string]string `json:"labels"`
-	Annotations  *map[string]string `json:"annotations"`
-}
-
-// patchModel answers PATCH /api/v1/models/{namespace}/{name} with one
-// UpdateModel: each present field goes into the object and its path into
-// the mask, whatever the stored value (the backend skips an update that
-// changes nothing, and drops a rollout whose placement goes), under
-// optimistic locking on the If-Match version the client must send
-// (requireIfMatch), so a stale tab or a concurrent change surfaces as 409.
-// The BFF does not read the model first. A body that names no field is
-// 422.
-func (a *App) patchModel(w http.ResponseWriter, r *http.Request) {
-	namespace, name := r.PathValue("namespace"), r.PathValue("name")
-	if err := requireJSON(r); err != nil {
-		a.respondError(w, r, err)
-		return
-	}
-	expected, err := requireIfMatch(r)
-	if err != nil {
-		a.respondError(w, r, err)
-		return
-	}
-	var patch ModelPatch
-	if err := decodeBody(w, r, &patch); err != nil {
-		a.respondError(w, r, err)
-		return
-	}
-	obj := &aigridv1.Model{Name: name, Metadata: &aigridv1.ObjectMeta{Namespace: namespace, ResourceVersion: expected}, Spec: &aigridv1.ModelSpec{Main: &aigridv1.Container{}}}
-	var paths []string
-	if patch.Replicas != nil {
-		obj.Spec.Replicas = proto.Int32(*patch.Replicas)
-		paths = append(paths, maskReplicas)
-	}
-	if patch.RuntimeImage != nil {
-		obj.Spec.Main.Image = *patch.RuntimeImage
-		paths = append(paths, maskImage)
-	}
-	if patch.Env != nil {
-		obj.Spec.Main.Env = fromEnv(*patch.Env)
-		paths = append(paths, maskEnv)
-	}
-	if patch.Placement.Set {
-		if patch.Placement.Value != nil {
-			obj.Spec.Placement = fromPlacementSpec(patch.Placement.Value)
-		}
-		paths = append(paths, maskPlacement)
-	}
-	if patch.Rollout != nil {
-		rollout, err := fromRolloutSpec(patch.Rollout)
-		if err != nil {
-			a.respondError(w, r, err)
-			return
-		}
-		obj.Spec.Rollout = rollout
-		paths = append(paths, maskRollout)
-	}
-	if patch.Labels != nil {
-		obj.Metadata.Labels = *patch.Labels
-		paths = append(paths, maskLabels)
-	}
-	if patch.Annotations != nil {
-		obj.Metadata.Annotations = *patch.Annotations
-		paths = append(paths, maskAnnotations)
-	}
-	if len(paths) == 0 {
-		a.respondError(w, r, Errorf(http.StatusUnprocessableEntity, "the request body names no field to change"))
-		return
-	}
-	ctx, cancel := a.backend.Context(r.Context())
-	defer cancel()
-	updated, err := a.backend.Models.UpdateModel(ctx, &aigridv1.UpdateModelRequest{Object: obj, UpdateMask: &fieldmaskpb.FieldMask{Paths: paths}, Lock: true})
-	if err != nil {
-		a.respondError(w, r, err)
-		return
-	}
-	a.log(r).Info("model updated", "namespace", namespace, "name", name, "paths", paths)
-	setETag(w, updated.GetObject().GetMetadata().GetResourceVersion())
-	writeData(w, http.StatusOK, toModel(updated.GetObject()))
-}
-
-// deleteModel answers DELETE /api/v1/models/{namespace}/{name} with 204; 412
-// while a catalog entry or a subscription references the model. The
-// If-Match version (required, requireIfMatch) is the request's
-// `resource_version` precondition: 409 when the model changed since.
-func (a *App) deleteModel(w http.ResponseWriter, r *http.Request) {
-	namespace, name := r.PathValue("namespace"), r.PathValue("name")
-	expected, err := requireIfMatch(r)
-	if err != nil {
-		a.respondError(w, r, err)
-		return
-	}
-	ctx, cancel := a.backend.Context(r.Context())
-	defer cancel()
-	if _, err := a.backend.Models.DeleteModel(ctx, &aigridv1.DeleteModelRequest{Namespace: namespace, Name: name, ResourceVersion: expected}); err != nil {
-		a.respondError(w, r, err)
-		return
-	}
-	a.log(r).Info("model deleted", "namespace", namespace, "name", name)
-	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// getCapabilities answers GET /api/v1/capabilities from
-// `AiGrid/GetHubCapabilities`; a backend without the RPC yields 501, which the
-// UI treats as "unknown" rather than as an error.
-func (a *App) getCapabilities(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := a.backend.Context(r.Context())
-	defer cancel()
-	resp, err := a.backend.Health.GetHubCapabilities(ctx, &aigridv1.GetHubCapabilitiesRequest{})
-	if err != nil {
-		a.respondError(w, r, err)
-		return
-	}
-	c := resp.GetCapabilities()
-	writeData(w, http.StatusOK, Capabilities{ManifestWorkReplicaSetEnabled: c.GetManifestWorkReplicaSetEnabled(), ObservabilityInstalled: c.GetObservabilityInstalled(), ACMVersion: c.GetAcmVersion()})
 }

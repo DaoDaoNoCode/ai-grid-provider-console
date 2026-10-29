@@ -63,11 +63,6 @@ var calls = []struct {
 	{"ai_grid.v1.Subscriptions.Update", "ai_grid.backend.v1.SubscriptionsUpdateRequest", "ai_grid.backend.v1.SubscriptionsUpdateResponse"},
 	{"ai_grid.v1.Subscriptions.Delete", "ai_grid.backend.v1.SubscriptionsDeleteRequest", "ai_grid.backend.v1.SubscriptionsDeleteResponse"},
 	{"ai_grid.v1.Models.List", "ai_grid.backend.v1.ModelsListRequest", "ai_grid.backend.v1.ModelsListResponse"},
-	{"ai_grid.v1.Models.Get", "ai_grid.backend.v1.ModelsGetRequest", "ai_grid.backend.v1.ModelsGetResponse"},
-	{"ai_grid.v1.Models.Create", "ai_grid.backend.v1.ModelsCreateRequest", "ai_grid.backend.v1.ModelsCreateResponse"},
-	{"ai_grid.v1.Models.Update", "ai_grid.backend.v1.ModelsUpdateRequest", "ai_grid.backend.v1.ModelsUpdateResponse"},
-	{"ai_grid.v1.Models.Delete", "ai_grid.backend.v1.ModelsDeleteRequest", "ai_grid.backend.v1.ModelsDeleteResponse"},
-	{"ai_grid.v1.Models.ListPlacementClusters", "ai_grid.backend.v1.ModelsListPlacementClustersRequest", "ai_grid.backend.v1.ModelsListPlacementClustersResponse"},
 }
 
 // TestCallsMatchTheBFF fails when the BFF calls a backend method that calls doesn't list,

@@ -1,21 +1,9 @@
 import getModels from '../../../mock/examples/get-models.json';
-import {
-  consolePlacement,
-  consolePlacementLocations,
-  runtimeArgsOf,
-  toGridCluster,
-  toManagedModel,
-  toModelCreate,
-  toOrganization,
-  toSubscription,
-  toSubscriptionInfo,
-  withRuntimeArgs,
-} from './adapters';
+import { toGridCluster, toManagedModel, toOrganization, toSubscription, toSubscriptionInfo } from './adapters';
 import type {
   ApiCluster,
   ApiModel,
   ApiTenant,
-  CreateModelRequest,
   MaaSAuthPolicy,
   MaaSSubscription,
   SubscriptionInfoResponse,
@@ -310,87 +298,6 @@ describe('toOrganization', () => {
   });
 });
 
-// The wizard's input (the PoC's CreateModelRequest).
-const wizardInput = (overrides: Partial<CreateModelRequest> = {}): CreateModelRequest => ({
-  name: 'widget',
-  displayName: 'Widget',
-  description: 'A test model',
-  modelUri: 'hf://org/widget',
-  modelName: 'org/widget',
-  runtimeImage: 'registry.example/runtime:test',
-  replicas: 2,
-  cpu: '500m',
-  memory: '4Gi',
-  gpuCount: 1,
-  runtimeArgs: [],
-  baseRefs: [],
-  locations: ['site-paris-1', 'site-madrid-1'],
-  ...overrides,
-});
-
-describe('toModelCreate', () => {
-  it("places the model on the chosen clusters by name, as the backend's placement does", () => {
-    expect(toModelCreate(wizardInput(), 'ai-grid-models')).toMatchObject({
-      placement: {
-        matchExpressions: [{ key: 'name', operator: 'In', values: ['site-paris-1', 'site-madrid-1'] }],
-      },
-      rollout: { strategy: 'All' },
-    });
-  });
-
-  it('puts runtime arguments in VLLM_ADDITIONAL_ARGS', () => {
-    const body = toModelCreate(wizardInput({ runtimeArgs: ['--max-model-len=4096', '--enforce-eager'] }), 'ns');
-    expect(body.env).toEqual([{ name: 'VLLM_ADDITIONAL_ARGS', value: '--max-model-len=4096 --enforce-eager' }]);
-  });
-
-  it("sends the model server's presets, and an empty image so the preset's image applies", () => {
-    const cpu = ['v3-6-0-kserve-config-llm-template-cpu'];
-    expect(toModelCreate(wizardInput({ baseRefs: cpu, runtimeImage: '' }), 'ns')).toMatchObject({
-      baseRefs: cpu,
-      runtimeImage: '',
-    });
-    expect(toModelCreate(wizardInput(), 'ns').baseRefs).toEqual([]);
-  });
-
-  it('omits env without runtime arguments', () => {
-    expect(toModelCreate(wizardInput(), 'ns')).not.toHaveProperty('env');
-  });
-
-  it("sends only the wizard's keys", () => {
-    const body = toModelCreate(wizardInput({ runtimeArgs: ['--enforce-eager'] }), 'ai-grid-models');
-    expect(Object.keys(body).sort()).toEqual(
-      [
-        'name',
-        'namespace',
-        'annotations',
-        'modelUri',
-        'modelName',
-        'runtimeImage',
-        'replicas',
-        'cpu',
-        'memory',
-        'gpuCount',
-        'baseRefs',
-        'env',
-        'placement',
-        'rollout',
-      ].sort(),
-    );
-    expect(body).toMatchObject({
-      name: 'widget',
-      namespace: 'ai-grid-models',
-      annotations: { 'openshift.io/display-name': 'Widget', 'openshift.io/description': 'A test model' },
-      modelUri: 'hf://org/widget',
-      modelName: 'org/widget',
-      runtimeImage: 'registry.example/runtime:test',
-      replicas: 2,
-      cpu: '500m',
-      memory: '4Gi',
-      gpuCount: 1,
-    });
-  });
-});
-
 describe('toManagedModel', () => {
   it("maps each cluster's phase and a partially available model (P13)", () => {
     const json = {
@@ -492,70 +399,15 @@ describe('toManagedModel', () => {
       requests: { cpu: '8', memory: '32Gi', 'nvidia.com/gpu': '1' },
       env: [{ name: 'A', value: '1' }],
       annotations: { 'openshift.io/display-name': 'Chat', team: 'x' },
-      placement: { ...consolePlacement(['paris']), locations: ['paris'] },
+      placement: { matchExpressions: [{ key: 'name', operator: 'In', values: ['paris'] }], locations: ['paris'] },
     });
     expect(model).toMatchObject({ cpu: '8', memory: '32Gi', gpuCount: 1, autoscaled: false });
     expect(model.env).toEqual([{ name: 'A', value: '1' }]);
     expect(model.annotations).toEqual({ 'openshift.io/display-name': 'Chat', team: 'x' });
     // The spec without the decision's locations.
-    expect(model.placementSpec).toEqual(consolePlacement(['paris']));
+    expect(model.placementSpec).toEqual({ matchExpressions: [{ key: 'name', operator: 'In', values: ['paris'] }] });
     expect(
       toManagedModel({ name: 'k', namespace: 'ns', modelUri: 'hf://x', modelName: 'x', scaling: {} }).autoscaled,
     ).toBe(true);
-  });
-});
-
-describe('consolePlacementLocations', () => {
-  it('reads the clusters of a placement the console wrote', () => {
-    expect(consolePlacementLocations(consolePlacement(['site-a', 'site-b']))).toEqual(['site-a', 'site-b']);
-  });
-
-  it.each([
-    ['a hub-only model', undefined],
-    ['cluster sets', { ...consolePlacement(['paris']), clusterSets: ['global'] }],
-    ['labels', { ...consolePlacement(['paris']), matchLabels: { 'ai-grid/enabled': 'true' } }],
-    [
-      'another expression',
-      { ...consolePlacement(['paris']), matchExpressions: [{ key: 'name', operator: 'NotIn', values: ['x'] }] },
-    ],
-    ['the location label', { matchExpressions: [{ key: 'location', operator: 'In', values: ['paris'] }] }],
-    [
-      'a second expression',
-      {
-        matchExpressions: [
-          ...consolePlacement(['paris']).matchExpressions,
-          { key: 'zone', operator: 'In', values: ['a'] },
-        ],
-      },
-    ],
-    ['a cluster count', { ...consolePlacement(['paris']), numberOfClusters: 1 }],
-  ])('is undefined for any other shape: %s', (_, spec) => {
-    expect(consolePlacementLocations(spec)).toBeUndefined();
-  });
-});
-
-describe('runtime arguments in env', () => {
-  it('reads and replaces VLLM_ADDITIONAL_ARGS, keeping every other variable', () => {
-    const env = [
-      { name: 'VLLM_CPU_KVCACHE_SPACE', value: '8' },
-      { name: 'VLLM_ADDITIONAL_ARGS', value: '--max-model-len 4096 --enforce-eager -tp=2' },
-    ];
-    // One line per flag, its value kept with it.
-    expect(runtimeArgsOf(env)).toEqual(['--max-model-len 4096', '--enforce-eager', '-tp=2']);
-    expect(withRuntimeArgs(env, ['--enforce-eager'])).toEqual([
-      { name: 'VLLM_CPU_KVCACHE_SPACE', value: '8' },
-      { name: 'VLLM_ADDITIONAL_ARGS', value: '--enforce-eager' },
-    ]);
-    // No arguments drop the variable, not the others.
-    expect(withRuntimeArgs(env, [])).toEqual([{ name: 'VLLM_CPU_KVCACHE_SPACE', value: '8' }]);
-    expect(runtimeArgsOf(undefined)).toEqual([]);
-  });
-
-  it('keeps quoted values whole, flag-like text and spacing included, so an edit round-trips them', () => {
-    const value = `--served-model-name "alpha  --beta" --chat-template '{{ x }} --y' --enforce-eager`;
-    const args = runtimeArgsOf([{ name: 'VLLM_ADDITIONAL_ARGS', value }]);
-    expect(args).toEqual([`--served-model-name "alpha  --beta"`, `--chat-template '{{ x }} --y'`, '--enforce-eager']);
-    // Joined again the way the wizard joins its lines, the value is unchanged.
-    expect(withRuntimeArgs([], args)).toEqual([{ name: 'VLLM_ADDITIONAL_ARGS', value }]);
   });
 });

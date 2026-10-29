@@ -1,7 +1,6 @@
 import { Alert, Breadcrumb, BreadcrumbItem, Flex, List, ListItem, Stack } from '@patternfly/react-core';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ServiceError } from '../../api/ConsoleService';
-import type { ManagedModel } from '../../api/types';
 import { DetailsList } from '../../components/DetailsList';
 import { DetailsSection } from '../../components/DetailsSection';
 import { RelativeTime } from '../../components/RelativeTime';
@@ -9,36 +8,31 @@ import { PageStateSection } from '../../components/states/PageStateSection';
 import { SectionEmptyState } from '../../components/states/SectionEmptyState';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
 import { useConsoleSession } from '../../context/useConsoleSession';
-import { useServiceData } from '../../hooks/useServiceData';
 import { locationLabel, modelNotFound, modelPath, siteNamesOf } from './modelUtils';
 import { ModelLocationsTable } from './ModelLocationsTable';
 import { ModelStatusDetails, ModelStatusLabel } from './ModelStatus';
 import { PARTIALLY_AVAILABLE, hasModelStatusDetails, modelPhase, modelStatusTitle } from './modelStatusInfo';
-import type { ModelDeleteService } from './useDeleteModel';
+import { titleOf } from './modelView';
 import { useDeleteModel } from './useDeleteModel';
+import { useModel } from './useModels';
 import { modelServerLabel } from './modelServers';
 import { useClusterList } from '../clusters/useClusters';
 
-type Props = { service: ModelDeleteService };
-
-/** A model deployment at /models/:namespace/:name: its status explained, its configuration and its locations. */
-export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
-  const { namespace = '', name = '' } = useParams();
+/** A model deployment at /models/:id: its status explained, its configuration and its locations. */
+export const ModelDetailsPage: React.FC = () => {
+  const { id = '' } = useParams();
   const navigate = useNavigate();
-  const [loadedModel, loaded, error, refresh] = useServiceData<ManagedModel | undefined>(
-    () => service.getModel(namespace, name),
-    undefined,
-  );
+  const { data: loadedModel, loaded, error, refresh } = useModel(id);
   const { data: clusters } = useClusterList();
   const { user } = useConsoleSession();
   // A 404 means the deployment is gone, even when an earlier answer is still held (PageStateSection
   // shows the not-found state then).
   const model = error instanceof ServiceError && error.status === 404 ? undefined : loadedModel;
-  const [confirmDelete, deleteModal] = useDeleteModel(service, {
+  const [confirmDelete, deleteModal] = useDeleteModel({
     refresh: () => void refresh(),
     onDeleted: () => navigate('/models', { state: { notice: 'Model deployment deleted' } }),
   });
-  const title = model?.displayName ?? name;
+  const title = model ? titleOf(model) : id;
   const siteNames = siteNamesOf(clusters);
 
   const body = () => {
@@ -46,9 +40,10 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
       return null;
     }
     const phase = modelPhase(model);
+    const edit = user?.isProviderAdmin ? () => navigate(`${modelPath(model)}/edit`) : undefined;
     return (
       <Flex direction={{ default: 'column' }} flexWrap={{ default: 'nowrap' }} spaceItems={{ default: 'spaceItemsXl' }}>
-        {/* Saved to Git says all git mode knows; the status label shows it, so no alert repeats it. */}
+        {/* Saved to Git says all the backend knows yet; the status label shows it, so no alert repeats it. */}
         {phase !== 'Ready' && phase !== 'Saved to Git' && hasModelStatusDetails(model) && (
           <Alert
             isInline
@@ -63,32 +58,25 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
           <DetailsList
             aria-label="Deployment"
             items={[
-              { term: 'Resource name', value: model.name },
+              { term: 'Resource name', value: model.id },
               { term: 'Description', value: model.description },
-              { term: 'Model', value: model.modelName ?? model.modelRef.name },
+              { term: 'Model', value: model.modelName },
               { term: 'Model URI', value: model.modelUri },
               { term: 'Model server', value: modelServerLabel(model.baseRefs) || undefined },
               { term: 'Runtime image', value: model.runtimeImage },
-              { term: 'Replicas', value: model.replicas },
-              { term: 'Endpoint', value: model.endpoint },
+              { term: 'Replicas', value: model.autoscaled ? 'Autoscaled' : model.replicas },
+              { term: 'Endpoint', value: model.url },
               { term: 'Created', value: model.creationTimestamp && <RelativeTime time={model.creationTimestamp} /> },
             ]}
           />
         </DetailsSection>
         <DetailsSection title="Locations">
-          {model.locations.length || model.works?.length ? (
-            // model-locations names the section either way: the list until the clusters report,
-            // then their table.
+          {model.clusters.length || model.selectedClusters.length || model.locations.length ? (
+            // model-locations names the section either way: each cluster's status once one reports,
+            // the clusters the placement chose until then.
             <Stack hasGutter data-testid="model-locations">
-              {/* Each cluster's status, as the Models page shows it under the model's row. */}
-              {model.works?.length ? (
-                <ModelLocationsTable
-                  model={model}
-                  works={model.works}
-                  clusters={clusters}
-                  siteNames={siteNames}
-                  onEdit={user?.isProviderAdmin ? () => navigate(`${modelPath(model)}/edit`) : undefined}
-                />
+              {model.clusters.length || model.selectedClusters.length ? (
+                <ModelLocationsTable model={model} clusters={clusters} siteNames={siteNames} onEdit={edit} />
               ) : (
                 <List>
                   {model.locations.map((location) => (
@@ -96,9 +84,7 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
                   ))}
                 </List>
               )}
-              <Link to={`/ai-grid?model=${encodeURIComponent(`${model.namespace}/${model.name}`)}`}>
-                Show on the AI Grid map
-              </Link>
+              <Link to={`/ai-grid?model=${encodeURIComponent(model.id)}`}>Show on the AI Grid map</Link>
             </Stack>
           ) : (
             <SectionEmptyState title="No locations yet">
@@ -123,11 +109,7 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
               ariaLabel={`Actions for ${title}`}
               testId="model-actions"
               dropdownItems={[
-                {
-                  key: 'edit',
-                  label: 'Edit',
-                  onClick: () => navigate(`${modelPath(model)}/edit`),
-                },
+                { key: 'edit', label: 'Edit', onClick: () => navigate(`${modelPath(model)}/edit`) },
                 { isSpacer: true },
                 { key: 'delete', label: 'Delete', isDanger: true, onClick: () => confirmDelete(model) },
               ]}
@@ -148,7 +130,7 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
         subject="Models"
         object="model"
         loadingLabel="Loading model"
-        notFound={modelNotFound(namespace, name)}
+        notFound={modelNotFound(id)}
       >
         {body()}
       </PageStateSection>

@@ -26,7 +26,8 @@ import {
 } from '@patternfly/react-core';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import { Link } from 'react-router-dom';
-import type { GridCluster, GridMetric, GridRange, ManagedModel, Organization } from '../../api/types';
+import type { GridCluster, GridMetric, GridRange, Organization } from '../../api/types';
+import { titleOf, type ModelView } from '../models/modelView';
 import { HelpPopover } from '../../components/HelpPopover';
 import { StatCard } from '../../components/StatCard';
 import { StatusLabel } from '../../components/StatusLabel';
@@ -34,7 +35,6 @@ import { SubtleText } from '../../components/SubtleText';
 import { TableEmptyRow } from '../../components/TableEmptyRow';
 import { SectionEmptyState } from '../../components/states/SectionEmptyState';
 import { TypeaheadSelect } from '../../components/TypeaheadSelect';
-import { modelKey } from '../../utilities/authpolicies';
 import { EMPTY_VALUE } from '../../utilities/format';
 import { modelMetrics, tenantUsage, total } from '../../services/demoObservability';
 import { modelPath } from '../models/modelUtils';
@@ -284,7 +284,7 @@ function UsageChart({ usage }: { usage: ReturnType<typeof tenantUsage> }) {
 
 type Props = {
   clusters: GridCluster[];
-  models: ManagedModel[];
+  models: ModelView[];
   modelsError?: string;
   organizations: Organization[];
   organizationsError?: string;
@@ -338,14 +338,14 @@ export function ObservabilityPanel({
   const relevantModels = models.filter(
     (m) => m.locations.length === 0 || clusters.some((c) => c.location && m.locations.includes(c.location)),
   );
-  if (model !== 'all' && !relevantModels.some((m) => modelKey(m) === model)) {
+  if (model !== 'all' && !relevantModels.some((m) => m.id === model)) {
     setModel('all');
   }
   const modelOptions = [
     { value: 'all', label: 'All models' },
-    ...relevantModels.map((m) => ({ value: modelKey(m), label: m.displayName ?? m.name })),
+    ...relevantModels.map((m) => ({ value: m.id, label: titleOf(m) })),
   ];
-  const visibleModels = relevantModels.filter((m) => model === 'all' || modelKey(m) === model);
+  const visibleModels = relevantModels.filter((m) => model === 'all' || m.id === model);
   const modelSeries = modelMetrics(visibleModels, metrics, simulated);
   const usage = tenantUsage(metrics, organizations);
   const usageTotal = usage.reduce((n, t) => n + t.input + t.output + t.cached, 0);
@@ -562,12 +562,12 @@ export function ObservabilityPanel({
                       />
                     ))}
                   {visibleModels.map((m) => (
-                    <Tr key={modelKey(m)}>
+                    <Tr key={m.id}>
                       <Td dataLabel="Model deployment">
-                        <Link to={modelPath(m)}>{m.displayName ?? m.name}</Link>
+                        <Link to={modelPath(m)}>{titleOf(m)}</Link>
                       </Td>
                       <Td dataLabel="Model" modifier="breakWord">
-                        {m.modelName ?? m.modelRef.name}
+                        {m.modelName ?? m.id}
                       </Td>
                       <Td dataLabel="Target sites">
                         {[
@@ -582,7 +582,7 @@ export function ObservabilityPanel({
                         {m.replicas ?? EMPTY_VALUE}
                       </Td>
                       <Td dataLabel="Status">
-                        <StatusLabel isCompact status={m.phase ?? 'Pending'} />
+                        <StatusLabel isCompact status={m.phase} />
                       </Td>
                     </Tr>
                   ))}

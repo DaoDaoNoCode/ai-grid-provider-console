@@ -5,6 +5,8 @@ import { MemoryRouter, useNavigate } from 'react-router-dom';
 import type { InitialEntry, NavigateFunction } from 'react-router-dom';
 import { ServiceError } from '../api/ConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
+import { Code, ConnectError } from '@connectrpc/connect';
+import { modelsOf } from './connectModels';
 // The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
 import '../pages/grid/GridPage';
 import '../pages/models/ModelDetailsPage';
@@ -63,7 +65,7 @@ describe('routes', () => {
     '/organizations',
     '/organizations/org-1',
     '/models',
-    '/models/ai-grid-models/granite-3-8b',
+    '/models/granite-3-8b',
     '/subscriptions',
     '/subscriptions/view/engineering',
   ])('asks for the user and the config once: %s', async (path) => {
@@ -86,8 +88,6 @@ describe('routes', () => {
   const toLocationsStep = async (user: ReturnType<typeof userEvent.setup>) => {
     await user.click(await screen.findByRole('textbox', { name: /Model URI/ }));
     await user.paste('hf://org/widget');
-    await user.click(screen.getByRole('textbox', { name: /^Model name/ }));
-    await user.paste('org/widget');
     await user.click(screen.getByRole('button', { name: 'Next' }));
     await user.click(await screen.findByTestId('model-name-desc-name'));
     await user.paste('Widget');
@@ -101,8 +101,13 @@ describe('routes', () => {
     ['/organizations', 'listOrganizations', orgs],
     ['/organizations/org-1', 'getOrganization', orgs],
     ['/organizations/org-1/edit', 'getOrganization', orgs],
-    ['/models', 'listModels', 'Models are not available on this backend yet'],
-    ['/models/deploy', 'listLocations', 'Locations are not available on this backend yet.', toLocationsStep],
+    ['/models', 'models.list', 'Models are not available on this backend yet'],
+    [
+      '/models/deploy',
+      'models.listPlacementClusters',
+      'Locations are not available on this backend yet.',
+      toLocationsStep,
+    ],
     ['/subscriptions', 'listSubscriptions', subs],
     ['/subscriptions/view/engineering', 'getSubscriptionInfo', subs],
     ['/subscriptions/create', 'listSubscriptions', subs],
@@ -113,6 +118,13 @@ describe('routes', () => {
     const service = new MockConsoleService();
     // `methods` lists the service calls that answer 501, joined with +.
     for (const name of methods.split('+') as (keyof MockConsoleService)[]) {
+      // models.<rpc>: the backend's Models API over Connect (connectModels.ts) has no such RPC.
+      if (name.startsWith('models.')) {
+        vi.spyOn(modelsOf(service), name.slice('models.'.length) as 'list').mockImplementation(() => {
+          throw new ConnectError('no such method', Code.Unimplemented);
+        });
+        continue;
+      }
       vi.spyOn(service, name as 'listModels').mockRejectedValue(
         new ServiceError(501, 'the AI Grid backend does not support this operation yet'),
       );
@@ -128,8 +140,8 @@ describe('routes', () => {
   });
 
   it.each([
-    ['/models/ai-grid-models/nope', 'Models', 'Model deployment not found', 'Go to Models', '/models'],
-    ['/models/ai-grid-models/nope/edit', 'Models', 'Model deployment not found', 'Go to Models', '/models'],
+    ['/models/nope', 'Models', 'Model deployment not found', 'Go to Models', '/models'],
+    ['/models/nope/edit', 'Models', 'Model deployment not found', 'Go to Models', '/models'],
     [
       '/organizations/does-not-exist',
       'Organizations',

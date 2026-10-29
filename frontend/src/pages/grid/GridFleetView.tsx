@@ -29,7 +29,7 @@ import {
 } from '@patternfly/react-core';
 import { AngleLeftIcon } from '@patternfly/react-icons';
 import { Link, useSearchParams } from 'react-router-dom';
-import type { ManagedModel } from '../../api/types';
+import { titleOf, type ModelView } from '../models/modelView';
 import type { ClusterView } from '../clusters/clusterView';
 import { DetailsList } from '../../components/DetailsList';
 import { DetailsSection } from '../../components/DetailsSection';
@@ -38,7 +38,6 @@ import { StatusLabel } from '../../components/StatusLabel';
 import { SubtleText } from '../../components/SubtleText';
 import { NoResultsState } from '../../components/states/NoResultsState';
 import { SiteText } from '../clusters/ClusterSite';
-import { modelKey } from '../../utilities/authpolicies';
 import { modelPath } from '../models/modelUtils';
 import { LOCATION_DOCS_URL } from '../clusters/site';
 import { GridFleetMap } from './GridFleetMap';
@@ -52,12 +51,12 @@ export type FleetCluster = Pick<
 > &
   Partial<Pick<ClusterView, 'locationSource' | 'locationProblem'>>;
 
-/** A cluster by its name, or a model by its modelKey. */
+/** A cluster by its name, or a model by its id. */
 type Selection = { kind: 'cluster' | 'model'; name: string };
 
 type Props = {
   clusters: FleetCluster[];
-  models: ManagedModel[];
+  models: ModelView[];
   modelsError?: string;
   tiles: TileLayerConfig | null | undefined;
 };
@@ -65,9 +64,9 @@ type Props = {
 // A model is on the clusters its placement chose, by name: on the backend a model's `locations`
 // are cluster names (bff/internal/backend/v1_models.go), on the console's fake `location` labels
 // that several clusters can share, but `selectedClusters` are the decided clusters on both.
-const matches = (model: ManagedModel, cluster: FleetCluster) => model.selectedClusters.includes(cluster.name);
+const matches = (model: ModelView, cluster: FleetCluster) => model.selectedClusters.includes(cluster.name);
 
-const displayName = (model: ManagedModel) => model.displayName ?? model.name;
+const displayName = titleOf;
 
 const siteOf = (cluster: FleetCluster) => cluster.siteName ?? cluster.region ?? cluster.site ?? cluster.name;
 
@@ -76,7 +75,7 @@ const hasCoordinates = (c: FleetCluster) => c.latitude !== undefined && c.longit
 /** The availability filter: All, then each cluster status by the word the labels use. */
 const availabilityFilters: FleetCluster['status'][] = ['Ready', 'Offline', 'Unknown'];
 
-/** A link can open the drawer on a cluster (?cluster=<name>) or a model (?model=<namespace/name>). */
+/** A link can open the drawer on a cluster (?cluster=<name>) or a model (?model=<id>, the model's id). */
 const selectionFrom = (params: URLSearchParams): Selection | null => {
   const cluster = params.get('cluster');
   const model = params.get('model');
@@ -146,10 +145,10 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
   const [availability, setAvailability] = useState('all');
 
   const selectedCluster = selection?.kind === 'cluster' ? clusters.find((c) => c.name === selection.name) : undefined;
-  const selectedModel = selection?.kind === 'model' ? models.find((m) => modelKey(m) === selection.name) : undefined;
+  const selectedModel = selection?.kind === 'model' ? models.find((m) => m.id === selection.name) : undefined;
   const relevantModels = models.filter((m) => m.selectedClusters.length === 0 || clusters.some((c) => matches(m, c)));
   const modelsAt = (cluster: FleetCluster) => models.filter((m) => matches(m, cluster));
-  const clustersOf = (model: ManagedModel) => clusters.filter((c) => matches(model, c));
+  const clustersOf = (model: ModelView) => clusters.filter((c) => matches(model, c));
   const query = search.toLowerCase();
   const visibleClusters = clusters.filter(
     (c) =>
@@ -159,7 +158,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
         .includes(query),
   );
   const visibleModels = relevantModels.filter((m) =>
-    `${m.name} ${displayName(m)} ${m.modelName ?? ''} ${clustersOf(m).map(siteOf).join(' ')}`
+    `${m.id} ${displayName(m)} ${m.modelName ?? ''} ${clustersOf(m).map(siteOf).join(' ')}`
       .toLowerCase()
       .includes(query),
   );
@@ -189,7 +188,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
       ? visibleClusters
       : clusters.filter((c) => visibleModels.some((m) => matches(m, c)));
 
-  const clusterLinks = (model: ManagedModel) => {
+  const clusterLinks = (model: ModelView) => {
     const targets = clustersOf(model);
     return targets.length ? (
       <Flex
@@ -221,7 +220,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
         spaceItems={{ default: 'spaceItemsSm' }}
       >
         {assigned.map((m) => (
-          <Button key={modelKey(m)} variant="link" isInline onClick={() => open({ kind: 'model', name: modelKey(m) })}>
+          <Button key={m.id} variant="link" isInline onClick={() => open({ kind: 'model', name: m.id })}>
             {displayName(m)}
           </Button>
         ))}
@@ -246,10 +245,10 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
           <Title headingLevel="h2" size="lg" className="pf-v6-u-text-break-word">
             {selectedCluster?.name ?? (selectedModel && displayName(selectedModel))}
           </Title>
-          <StatusLabel isCompact status={selectedCluster?.status ?? selectedModel?.phase ?? 'Pending'} />
+          <StatusLabel isCompact status={selectedCluster?.status ?? selectedModel?.phase ?? 'Unknown'} />
         </Flex>
         <SubtleText>
-          {selectedCluster ? siteOf(selectedCluster) : (selectedModel?.modelName ?? selectedModel?.name)}
+          {selectedCluster ? siteOf(selectedCluster) : (selectedModel?.modelName ?? selectedModel?.id)}
         </SubtleText>
       </Stack>
     ) : (
@@ -322,14 +321,14 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
     </Stack>
   );
 
-  const modelDetails = (model: ManagedModel) => (
+  const modelDetails = (model: ModelView) => (
     <Stack hasGutter>
       <DetailsSection title="Model configuration" headingLevel="h3">
         <DetailsList
           aria-label="Model configuration"
           items={[
-            { term: 'Resource name', value: model.name },
-            { term: 'Model', value: model.modelName ?? model.modelRef.name },
+            { term: 'Resource name', value: model.id },
+            { term: 'Model', value: model.modelName },
             { term: 'Replicas', value: model.replicas },
             { term: 'Model URI', value: model.modelUri },
             { term: 'Runtime image', value: model.runtimeImage },
@@ -402,14 +401,14 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
               const sites = clustersOf(m).map(siteOf);
               return (
                 <FleetCard
-                  key={modelKey(m)}
-                  id={modelKey(m).replace(/\W/g, '-')}
+                  key={m.id}
+                  id={m.id.replace(/\W/g, '-')}
                   title={displayName(m)}
-                  status={m.phase ?? 'Pending'}
+                  status={m.phase}
                   actionLabel={`View ${displayName(m)} details`}
-                  onOpen={() => open({ kind: 'model', name: modelKey(m) })}
+                  onOpen={() => open({ kind: 'model', name: m.id })}
                 >
-                  <span>{m.modelName ?? m.modelRef.name}</span>
+                  <span>{m.modelName ?? m.id}</span>
                   <SubtleText>{sites.length ? `Sites: ${sites.join(', ')}` : 'No sites'}</SubtleText>
                 </FleetCard>
               );

@@ -213,11 +213,9 @@ func TestWrongMethodIsJSON405(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t, testConfig(t), nil)
 	cases := map[string]string{
-		"POST /api/v1/locations":                "GET, HEAD",
-		"PUT /api/v1/tenants/t-1":               "GET, HEAD, PATCH, DELETE",
-		"PATCH /api/v1/subscriptions/s":         "GET, HEAD, PUT, DELETE",
-		"DELETE /api/v1/models":                 "GET, HEAD, POST",
-		"POST /api/v1/models/ai-grid-models/m1": "GET, HEAD, PATCH, DELETE",
+		"PUT /api/v1/tenants/t-1":       "GET, HEAD, PATCH, DELETE",
+		"PATCH /api/v1/subscriptions/s": "GET, HEAD, PUT, DELETE",
+		"DELETE /api/v1/models":         "GET, HEAD",
 	}
 	for req, allow := range cases {
 		t.Run(req, func(t *testing.T) {
@@ -911,8 +909,6 @@ func TestWritesRequireJSONContentType(t *testing.T) {
 	writes := []struct{ method, path, body string }{
 		{http.MethodPost, "/api/v1/tenants", `{"name": "evil"}`},
 		{http.MethodPatch, "/api/v1/tenants/t-1", `{"enabled": false}`},
-		{http.MethodPost, "/api/v1/models", `{"name": "m", "namespace": "ns", "modelUri": "hf://x/y"}`},
-		{http.MethodPatch, "/api/v1/models/ai-grid-models/tiny-llm", `{"replicas": 2}`},
 	}
 	for _, ct := range []string{"", "text/plain", "text/plain;charset=UTF-8", "application/x-www-form-urlencoded", "multipart/form-data; boundary=x", "application/jsonp", "application/merge-patch+json", "json", "application/json;;"} {
 		for _, wr := range writes {
@@ -964,12 +960,8 @@ func TestWritesRequireIfMatch(t *testing.T) {
 	writes := []struct{ method, path, body string }{
 		{http.MethodPatch, "/api/v1/tenants/t-1", `{"enabled": false}`},
 		{http.MethodDelete, "/api/v1/tenants/t-1", ""},
-		{http.MethodPatch, "/api/v1/models/ai-grid-models/tiny-llm", `{"replicas": 2}`},
-		{http.MethodDelete, "/api/v1/models/ai-grid-models/tiny-llm", ""},
 		// A body that would be 422 is 428 first, an unknown object too.
-		{http.MethodPatch, "/api/v1/models/ai-grid-models/tiny-llm", `{"colour": "red"}`},
 		{http.MethodPatch, "/api/v1/tenants/missing", `null`},
-		{http.MethodDelete, "/api/v1/models/ai-grid-models/missing", ""},
 	}
 	for _, wr := range writes {
 		fake := &backendtest.Fake{Tenants: seedTenants(), Models: seedModels()}

@@ -1,20 +1,17 @@
 package backend
 
-// Stopgap: the backend's real Models RPCs behind the draft's ModelsClient, so
-// the API handlers are unchanged.
+// Stopgap: the backend's real Models/List behind the draft's ListModels, for
+// GET /api/v1/models, which only the Subscriptions pages still read; the Models
+// pages call the backend's Models API over Connect.
 //
 // The backend's models have an id and no namespace: it keeps every model in one
 // namespace of its own. The draft's namespace is the BFF's configured models
-// namespace (--models-namespace), which reads give back and the other calls
-// require. A placement passes as it is: the console writes the backend's own
-// `name In [...]` over cluster names (the backend's git-mode placement on the
-// `name` label, internal/servers/models_git.go).
+// namespace (--models-namespace), which the list gives back.
 
 import (
 	"context"
 	"slices"
 	"strconv"
-	"strings"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -30,7 +27,7 @@ type v1Models struct {
 	namespace string
 }
 
-var _ aigridv1.ModelsClient = v1Models{}
+var _ ModelLister = v1Models{}
 
 // ListModels forwards offset and limit. The backend's ModelsListRequest has a
 // filter over its own field names (id, no namespace), so a draft filter is
@@ -46,179 +43,6 @@ func (c v1Models) ListModels(ctx context.Context, in *aigridv1.ListModelsRequest
 	out := &aigridv1.ListModelsResponse{Size: resp.GetSize(), Total: proto.Int32(resp.GetTotal())}
 	for _, m := range resp.GetItems() {
 		out.Items = append(out.Items, c.fromV1(m))
-	}
-	return out, nil
-}
-
-func (c v1Models) GetModel(ctx context.Context, in *aigridv1.GetModelRequest, opts ...grpc.CallOption) (*aigridv1.GetModelResponse, error) {
-	if err := c.inNamespace(in.GetNamespace(), in.GetName()); err != nil {
-		return nil, err
-	}
-	resp := &backendv1.ModelsGetResponse{}
-	if err := c.conn.Invoke(ctx, methodModelsGet, &backendv1.ModelsGetRequest{Id: in.GetName()}, resp, opts...); err != nil {
-		return nil, err
-	}
-	return &aigridv1.GetModelResponse{Object: c.fromV1(resp.GetObject())}, nil
-}
-
-func (c v1Models) CreateModel(ctx context.Context, in *aigridv1.CreateModelRequest, opts ...grpc.CallOption) (*aigridv1.CreateModelResponse, error) {
-	obj := in.GetObject()
-	if obj.GetMetadata().GetNamespace() != c.namespace {
-		return nil, status.Errorf(codes.InvalidArgument, "metadata.namespace must be %q, the namespace this backend keeps models in", c.namespace)
-	}
-	m, err := toV1Model(obj, 0)
-	if err != nil {
-		return nil, err
-	}
-	resp := &backendv1.ModelsCreateResponse{}
-	if err := c.conn.Invoke(ctx, methodModelsCreate, &backendv1.ModelsCreateRequest{Object: m}, resp, opts...); err != nil {
-		return nil, err
-	}
-	return &aigridv1.CreateModelResponse{Object: c.fromV1(resp.GetObject())}, nil
-}
-
-// UpdateModel sends the draft's mask as it is (both APIs name the same paths)
-// and its resource_version as metadata.version.
-func (c v1Models) UpdateModel(ctx context.Context, in *aigridv1.UpdateModelRequest, opts ...grpc.CallOption) (*aigridv1.UpdateModelResponse, error) {
-	obj := in.GetObject()
-	if err := c.inNamespace(obj.GetMetadata().GetNamespace(), obj.GetName()); err != nil {
-		return nil, err
-	}
-	var version int32
-	if in.GetLock() {
-		v, err := v1Version(obj.GetMetadata().GetResourceVersion())
-		if err != nil {
-			return nil, err
-		}
-		version = v
-	}
-	m, err := toV1Model(obj, version)
-	if err != nil {
-		return nil, err
-	}
-	resp := &backendv1.ModelsUpdateResponse{}
-	req := &backendv1.ModelsUpdateRequest{Object: m, UpdateMask: in.GetUpdateMask(), Lock: in.GetLock()}
-	if err := c.conn.Invoke(ctx, methodModelsUpdate, req, resp, opts...); err != nil {
-		return nil, err
-	}
-	return &aigridv1.UpdateModelResponse{Object: c.fromV1(resp.GetObject())}, nil
-}
-
-// DeleteModel sends the expected version; empty skips the check in both APIs
-// (zero in the backend's).
-func (c v1Models) DeleteModel(ctx context.Context, in *aigridv1.DeleteModelRequest, opts ...grpc.CallOption) (*aigridv1.DeleteModelResponse, error) {
-	if err := c.inNamespace(in.GetNamespace(), in.GetName()); err != nil {
-		return nil, err
-	}
-	req := &backendv1.ModelsDeleteRequest{Id: in.GetName()}
-	if rv := in.GetResourceVersion(); rv != "" {
-		v, err := v1DeleteVersion(rv)
-		if err != nil {
-			return nil, err
-		}
-		req.ResourceVersion = v
-	}
-	if err := c.conn.Invoke(ctx, methodModelsDelete, req, &backendv1.ModelsDeleteResponse{}, opts...); err != nil {
-		return nil, err
-	}
-	return &aigridv1.DeleteModelResponse{}, nil
-}
-
-// ListLocations answers the backend's Models/ListPlacementClusters
-// (internal/servers/models_server.go; its ListLocations is deprecated): the names of the members a model
-// can run on (provisioned, Available, role inference or combined), the values
-// a placement's `name In [...]` takes.
-func (c v1Models) ListLocations(ctx context.Context, _ *aigridv1.ListLocationsRequest, opts ...grpc.CallOption) (*aigridv1.ListLocationsResponse, error) {
-	resp := &backendv1.ModelsListPlacementClustersResponse{}
-	if err := c.conn.Invoke(ctx, methodModelsListPlacementClusters, &backendv1.ModelsListPlacementClustersRequest{}, resp, opts...); err != nil {
-		return nil, err
-	}
-	return &aigridv1.ListLocationsResponse{Locations: append([]string{}, resp.GetClusters()...)}, nil
-}
-
-// inNamespace answers the draft's NotFound for a model outside the configured
-// namespace, which the backend can't hold.
-func (c v1Models) inNamespace(namespace, name string) error {
-	if namespace != c.namespace {
-		return status.Errorf(codes.NotFound, "object with identifier '%s/%s' not found", namespace, name)
-	}
-	return nil
-}
-
-// toV1Model maps the draft's writable fields. Placement fields the backend
-// lacks (claim expressions, tolerations, spread constraints) are Unimplemented.
-func toV1Model(m *aigridv1.Model, version int32) (*backendv1.Model, error) {
-	meta, spec := m.GetMetadata(), m.GetSpec()
-	out := &backendv1.Model{
-		Id:       m.GetName(),
-		Metadata: &backendv1.Metadata{Name: m.GetName(), Labels: meta.GetLabels(), Annotations: meta.GetAnnotations(), Version: version},
-	}
-	if spec == nil {
-		return out, nil
-	}
-	out.Spec = &backendv1.ModelSpec{
-		Replicas: spec.Replicas,
-		BaseRefs: spec.GetBaseRefs(),
-		Runtime:  spec.GetRuntime(),
-	}
-	if src := spec.GetModel(); src != nil {
-		out.Spec.Model = &backendv1.ModelSource{Uri: src.GetUri(), Name: src.GetName()}
-	}
-	if r := spec.GetRouter(); r != nil {
-		out.Spec.Router = &backendv1.ModelRouter{ManagedRoute: r.GetManagedRoute(), Scheduler: r.GetScheduler()}
-		for _, g := range r.GetGatewayRefs() {
-			out.Spec.Router.GatewayRefs = append(out.Spec.Router.GatewayRefs, &backendv1.ModelGatewayRef{Name: g.GetName(), Namespace: g.GetNamespace(), SectionName: g.GetSectionName()})
-		}
-	}
-	if c := spec.GetMain(); c != nil {
-		out.Spec.Main = &backendv1.ModelContainer{Image: c.GetImage(), Requests: c.GetRequests(), Limits: c.GetLimits()}
-		for _, e := range c.GetEnv() {
-			out.Spec.Main.Env = append(out.Spec.Main.Env, &backendv1.ModelEnvVar{Name: e.GetName(), Value: e.GetValue()})
-		}
-	}
-	if s := spec.GetScaling(); s != nil {
-		out.Spec.Scaling = &backendv1.ModelScaling{MinReplicas: s.GetMinReplicas(), MaxReplicas: s.GetMaxReplicas(), Keda: s.GetKeda()}
-		for _, t := range s.GetTriggers() {
-			out.Spec.Scaling.Triggers = append(out.Spec.Scaling.Triggers, &backendv1.ModelKedaTrigger{Type: t.GetType(), Metadata: t.GetMetadata()})
-		}
-	}
-	if p := spec.GetPlacement(); p != nil {
-		placement, err := toV1Placement(p)
-		if err != nil {
-			return nil, err
-		}
-		out.Spec.Placement = placement
-	}
-	if r := spec.GetRollout(); r != nil {
-		out.Spec.Rollout = &backendv1.ModelRollout{
-			Strategy:       backendv1.ModelRolloutStrategy(r.GetStrategy()),
-			MaxConcurrency: r.GetMaxConcurrency(), MaxFailures: r.GetMaxFailures(),
-			ProgressDeadline: r.GetProgressDeadline(), MinSuccessTime: r.GetMinSuccessTime(),
-		}
-	}
-	return out, nil
-}
-
-func toV1Placement(p *aigridv1.Placement) (*backendv1.ModelPlacement, error) {
-	var missing []string
-	if len(p.GetClaimExpressions()) > 0 {
-		missing = append(missing, "spec.placement.claim_expressions")
-	}
-	if len(p.GetTolerations()) > 0 {
-		missing = append(missing, "spec.placement.tolerations")
-	}
-	if len(p.GetSpreadConstraints()) > 0 {
-		missing = append(missing, "spec.placement.spread_constraints")
-	}
-	if len(missing) > 0 {
-		return nil, status.Errorf(codes.Unimplemented, "the backend's Models API has no %s", strings.Join(missing, ", "))
-	}
-	out := &backendv1.ModelPlacement{ClusterSets: p.GetClusterSets(), NumberOfClusters: p.NumberOfClusters}
-	if sel := p.GetLabelSelector(); sel != nil {
-		out.LabelSelector = &backendv1.ModelLabelSelector{MatchLabels: sel.GetMatchLabels()}
-		for _, r := range sel.GetMatchExpressions() {
-			out.LabelSelector.MatchExpressions = append(out.LabelSelector.MatchExpressions, &backendv1.ModelLabelSelectorRequirement{Key: r.GetKey(), Operator: r.GetOperator(), Values: r.GetValues()})
-		}
 	}
 	return out, nil
 }

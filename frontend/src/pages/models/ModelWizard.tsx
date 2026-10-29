@@ -25,11 +25,7 @@ import {
   WizardStep,
   useWizardContext,
 } from '@patternfly/react-core';
-import type { UserService } from '../../api/ConsoleService';
 import { ServiceError } from '../../api/ConsoleService';
-import type { ModelsService } from '../../api/models';
-import { consolePlacement, consolePlacementLocations, runtimeArgsOf, withRuntimeArgs } from '../../api/adapters';
-import type { CreateModelRequest, ManagedModel, ModelUpdate } from '../../api/types';
 import { ConsoleWizardFooter } from '../../components/ConsoleWizardFooter';
 import { CountInput } from '../../components/CountInput';
 import { DetailsList } from '../../components/DetailsList';
@@ -40,18 +36,19 @@ import { MultiSelection } from '../../components/MultiSelection';
 import { PageHeader } from '../../components/PageHeader';
 import { ReadOnlyField } from '../../components/ReadOnlyField';
 import { useConfirmDiscard } from '../../hooks/useConfirmDiscard';
-import { useServiceData } from '../../hooks/useServiceData';
 import { createModelSchema, fieldMessage } from '../../validation';
 import { RuntimeArgsField } from './fields/RuntimeArgsField';
-import { filterRuntimeArgsForContainer, type RuntimeArgsFieldData } from './fields/runtimeArgs';
-import { locationLabel, modelPath, siteNamesOf } from './modelUtils';
+import { filterRuntimeArgsForContainer, runtimeArgsOf, type RuntimeArgsFieldData } from './fields/runtimeArgs';
+import { DEFAULT_REPLICAS, sameSet, updateRequestOf, type ModelInput } from './modelRequests';
+import { titleOf, type ModelView } from './modelView';
+import { useModelWrites, usePlacementClusters } from './useModels';
+import { deploymentNameFromUri, locationLabel, modelPath, siteNamesOf } from './modelUtils';
 import { type ModelServer, modelServerLabel, modelServers } from './modelServers';
 import { useClusterList } from '../clusters/useClusters';
 
 type Props = {
-  service: ModelsService & UserService;
   /** The model to edit; without it the wizard deploys a new one. */
-  model?: ManagedModel;
+  model?: ModelView;
 };
 
 const steps = {
@@ -61,68 +58,32 @@ const steps = {
   review: 'summary-step',
 } as const;
 
-const defaults = { replicas: '1', cpu: '2', memory: '4Gi', gpuCount: '0' };
+const defaults = { replicas: String(DEFAULT_REPLICAS), cpu: '2', memory: '4Gi', gpuCount: '0' };
 
-const DISPLAY_NAME = 'openshift.io/display-name';
-const DESCRIPTION = 'openshift.io/description';
-
-/** Why a field is read-only when editing: UpdateModel changes only the replicas, image, env, placement and metadata. */
 /** A resource the model was deployed without, shown in its read-only field. */
 const NOT_SET = 'Not set';
 
 const fixedReason = {
   source: 'The model a deployment serves is fixed. Deploy a new model to serve another one.',
+  // Says what the field is without claiming a model deployed earlier serves its resource name: one
+  // written before the backend served models as their ids can keep another.
+  served:
+    'Tenants send this name as the model in their requests, and it can’t be changed here. A model deployed from this console is served as its resource name.',
   resources: 'Resources are set when the model is deployed. Deploy it again to change them.',
 };
 
 /** The wizard's starting values: the defaults when deploying, the model's own when editing. */
-const initialValues = (model?: ManagedModel) => ({
+const initialValues = (model?: ModelView) => ({
   modelUri: model?.modelUri ?? '',
-  modelName: model?.modelName ?? '',
   runtimeImage: model?.runtimeImage ?? '',
   replicas: model?.replicas !== undefined ? String(model.replicas) : defaults.replicas,
   cpu: model ? (model.cpu ?? '') : defaults.cpu,
   memory: model ? (model.memory ?? '') : defaults.memory,
   gpuCount: model ? String(model.gpuCount ?? 0) : defaults.gpuCount,
   runtimeArgs: runtimeArgsOf(model?.env),
-  // Only a placement the console wrote can be edited as locations (consolePlacementLocations).
-  locations: (model ? consolePlacementLocations(model.placementSpec) : undefined) ?? [],
+  // Only a `name In [...]` placement can be edited as locations (placementClustersOf).
+  locations: model?.placementClusters ?? [],
 });
-
-const sameList = (a: string[], b: string[]) => a.length === b.length && a.every((value, i) => value === b[i]);
-const sameSet = (a: string[], b: string[]) => sameList([...a].sort(), [...b].sort());
-
-/**
- * What an edit changes: only fields UpdateModel takes, and only those that differ from the model.
- * `env` and `annotations` are whole maps on the wire, so they go back as loaded with the change
- * applied, keeping variables and annotations the console doesn't edit.
- */
-const modelUpdateOf = (model: ManagedModel, input: CreateModelRequest): ModelUpdate => {
-  const update: ModelUpdate = {};
-  // A model stored without a count shows the default; only a count the user changed is sent.
-  if (!model.autoscaled && input.replicas !== (model.replicas ?? Number(defaults.replicas))) {
-    update.replicas = input.replicas;
-  }
-  if (input.runtimeImage.trim() !== (model.runtimeImage ?? '')) update.runtimeImage = input.runtimeImage.trim();
-  if (!sameList(input.runtimeArgs, runtimeArgsOf(model.env))) {
-    update.env = withRuntimeArgs(model.env, input.runtimeArgs);
-  }
-  const displayName = input.displayName.trim();
-  if (displayName !== (model.displayName ?? model.name) || input.description !== (model.description ?? '')) {
-    const annotations = { ...model.annotations };
-    // The name field starts from the resource name when the model has no display name; keeping
-    // that default writes nothing, so a description edit doesn't add an annotation nobody set.
-    const hadDisplayName = model.annotations?.[DISPLAY_NAME] !== undefined;
-    if (displayName && (hadDisplayName || displayName !== model.name)) annotations[DISPLAY_NAME] = displayName;
-    else delete annotations[DISPLAY_NAME];
-    if (input.description) annotations[DESCRIPTION] = input.description;
-    else delete annotations[DESCRIPTION];
-    update.annotations = annotations;
-  }
-  const current = consolePlacementLocations(model.placementSpec);
-  if (current && !sameSet(input.locations, current)) update.placement = consolePlacement(input.locations);
-  return update;
-};
 
 /** A field's help line, replaced by the field's error while it has one. */
 const Help: React.FC<{ children: React.ReactNode; error?: string; id?: string }> = ({ children, error, id }) => (
@@ -141,9 +102,6 @@ const goneLocationsError = (names: string[]) =>
   names.length === 0
     ? undefined
     : `${names.join(', ')} ${names.length === 1 ? 'is' : 'are'} no longer available. Remove ${names.length === 1 ? 'it' : 'them'} to continue.`;
-
-/** "org/model" names a deployment "model": the last path segment, as a starting point. */
-const deploymentNameFor = (modelName: string) => modelName.trim().split('/').filter(Boolean).pop() ?? '';
 
 /**
  * The Review step: a warning about the choices first, if there is one, spaced as the sections are;
@@ -173,31 +131,33 @@ const ReviewStep: React.FC<{
 
 /**
  * The four-step deploy wizard at /models/deploy: source, deployment, locations, review. With
- * `model` it edits that deployment at /models/:namespace/:name/edit through the same steps: every
- * step can be opened from the start, the fields UpdateModel can't change are read-only, and Save
- * changes sends only what changed.
+ * `model` it edits that deployment at /models/:id/edit through the same steps: every step can be
+ * opened from the start, the fields the console doesn't edit are read-only, and Save changes sends
+ * only what changed (Models/Update with its mask).
  */
-export const ModelWizard: React.FC<Props> = ({ service, model }) => {
+export const ModelWizard: React.FC<Props> = ({ model }) => {
   const navigate = useNavigate();
   const editing = !!model;
   const [start] = useState(() => initialValues(model));
-  // Editing a placement written outside the console as locations would change what else it selects.
-  const locationsEditable = !model || consolePlacementLocations(model.placementSpec) !== undefined;
+  // Editing any other placement as locations would change what else it selects.
+  const locationsEditable = !model || model.placementClusters !== undefined;
   const replicasEditable = !model?.autoscaled;
-  const [availableLocations, locationsLoaded, locationsError, reloadLocations] = useServiceData<string[]>(
-    () => service.listLocations(),
-    [],
-    0,
-  );
+  const writes = useModelWrites();
+  const {
+    data: availableLocations,
+    loaded: locationsLoaded,
+    error: locationsError,
+    refresh: reloadLocations,
+  } = usePlacementClusters();
   const { data: clusters, refresh: reloadClusters } = useClusterList();
   // Site names by location label, for a placement the console didn't write (its model.locations).
   const siteNames = useMemo(() => siteNamesOf(clusters), [clusters]);
-  // Site names by cluster name, for the clusters GET /locations offers and the placement takes.
+  // Site names by cluster name, for the clusters Models/ListPlacementClusters offers and the placement takes.
   const clusterSiteNames = useMemo(
     () => new Map(clusters.flatMap((c) => (c.siteName ? [[c.name, c.siteName] as const] : []))),
     [clusters],
   );
-  // AI Grid members GET /locations doesn't offer yet: not Ready, not provisioned, or not a cluster
+  // AI Grid members ListPlacementClusters doesn't offer: not Available, not Compliant, or not a cluster
   // that serves models (role inference or combined).
   const unavailableMembers = clusters.filter((c) => c.aiGridEnabled && !availableLocations.includes(c.name)).length;
   const [locations, setLocations] = useState<string[]>(start.locations);
@@ -211,12 +171,9 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
   const { data: nameDescData, onDataChange: onNameDescChange } = useK8sNameDescriptionFieldData({
     maxLength: 63,
     // A k8sName makes the resource name read-only, as a deployed one is.
-    initialData: model
-      ? { name: model.displayName ?? model.name, description: model.description ?? '', k8sName: model.name }
-      : undefined,
+    initialData: model ? { name: titleOf(model), description: model.description ?? '', k8sName: model.id } : undefined,
   });
   const [modelUri, setModelUri] = useState(start.modelUri);
-  const [modelName, setModelName] = useState(start.modelName);
   const [runtimeImage, setRuntimeImage] = useState(start.runtimeImage);
   const [replicas, setReplicas] = useState(start.replicas);
   const [cpu, setCpu] = useState(start.cpu);
@@ -244,12 +201,11 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
 
-  const input: CreateModelRequest = {
+  const input: ModelInput = {
     name: nameDescData.k8sName.value,
     displayName: nameDescData.name,
     description: nameDescData.description,
     modelUri: modelUri.trim(),
-    modelName,
     runtimeImage,
     replicas: Number(replicas),
     cpu,
@@ -258,14 +214,12 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
     gpuCount: usesGpus ? Number(gpuCount) : 0,
     runtimeArgs: filterRuntimeArgsForContainer(runtimeArgs.args),
     baseRefs: model ? model.baseRefs : (server?.baseRefs ?? []),
-    locations,
+    clusters: locations,
   };
-  const update = model
-    ? modelUpdateOf(model, { ...input, locations: locationsEditable ? locations : start.locations })
-    : {};
+  const edited: ModelInput = { ...input, clusters: locationsEditable ? locations : start.locations };
   const isDirty = model
-    ? Object.keys(update).length > 0
-    : [modelUri, modelName, runtimeImage, nameDescData.name, nameDescData.description].some((v) => v !== '') ||
+    ? updateRequestOf(model, edited) !== undefined
+    : [modelUri, runtimeImage, nameDescData.name, nameDescData.description].some((v) => v !== '') ||
       replicas !== defaults.replicas ||
       cpu !== defaults.cpu ||
       memory !== defaults.memory ||
@@ -285,7 +239,6 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
         ? fieldMessage(createModelSchema.shape[field], value, parse)
         : 'Required.';
   const modelUriError = shownError('modelUri', modelUri);
-  const modelNameError = shownError('modelName', modelName);
   const runtimeImageError = shownError('runtimeImage', runtimeImage);
   const replicasError = shownError('replicas', replicas, Number);
   const cpuError = shownError('cpu', cpu);
@@ -297,8 +250,7 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
     shownError('gpuCount', gpuCount, Number) ??
     (touched.has('gpuCount') && gpusMissing ? 'A GPU model server needs at least 1 GPU.' : undefined);
   // A deployed model's source, name and resources are fixed, so only what an edit can change is checked.
-  const sourceValid =
-    editing || createModelSchema.pick({ modelUri: true, modelName: true }).safeParse({ modelUri, modelName }).success;
+  const sourceValid = editing || createModelSchema.pick({ modelUri: true }).safeParse({ modelUri }).success;
   const deploymentValid = editing
     ? createModelSchema
         .pick({ displayName: true, description: true })
@@ -336,10 +288,10 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
     setError(undefined);
     try {
       if (model) {
-        await service.updateModel(model.namespace, model.name, update, model.resourceVersion);
+        await writes.updateModel(model, edited);
         navigate(detailsPath, { state: { notice: 'Model deployment updated' } });
       } else {
-        await service.createModel(input);
+        await writes.createModel(input);
         // Replaces the deploy form in history, so Back doesn't land on it, empty.
         navigate('/models', { replace: true, state: { notice: 'Model deployed' } });
       }
@@ -358,9 +310,9 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
     }
   };
 
-  // A placement written outside the console, or a model served on the hub, as the review and the step show it.
+  // A placement the console doesn't edit, or none, as the review and the step show it.
   const placedAt = () => {
-    if (!model?.placementSpec) return 'The hub only';
+    if (!model?.placed) return 'No placement';
     return model.locations.length > 0
       ? model.locations.map((l) => locationLabel(l, siteNames)).join(', ')
       : 'No locations chosen yet';
@@ -374,9 +326,9 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
           fieldId="model-locations"
           value={placedAt()}
           reason={
-            model?.placementSpec
+            model?.placed
               ? 'This placement selects clusters by more than location, so it can’t be edited as locations here.'
-              : 'This model is served on the hub, not placed on AI Grid locations.'
+              : 'This model has no placement, so it isn’t placed on any AI Grid location.'
           }
         />
       );
@@ -400,7 +352,7 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
     if (availableLocations.length === 0 && goneLocations.length === 0) {
       return (
         <Alert isInline variant="warning" title="No locations available">
-          Locations become available when an AI Grid member is provisioned and Ready.
+          Locations become available when an AI Grid member that serves models is Available and provisioned.
         </Alert>
       );
     }
@@ -440,7 +392,7 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
         <Help>
           The model runs on each AI Grid cluster you choose.
           {unavailableMembers > 0 &&
-            ` ${unavailableMembers} AI Grid ${unavailableMembers === 1 ? 'cluster isn’t' : 'clusters aren’t'} listed because ${unavailableMembers === 1 ? 'it isn’t' : 'they aren’t'} Ready and provisioned, or ${unavailableMembers === 1 ? 'doesn’t' : 'don’t'} serve models.`}
+            ` ${unavailableMembers} AI Grid ${unavailableMembers === 1 ? 'cluster isn’t' : 'clusters aren’t'} listed because ${unavailableMembers === 1 ? 'it isn’t' : 'they aren’t'} Available and provisioned, or ${unavailableMembers === 1 ? 'doesn’t' : 'don’t'} serve models.`}
         </Help>
       </FormGroup>
     );
@@ -470,7 +422,8 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
       step: steps.source,
       items: [
         { term: 'Model URI', value: modelUri },
-        { term: 'Model name', value: modelName },
+        // A deployed model keeps the name it is served as; a new one is served as its resource name.
+        ...(model ? [{ term: 'Model name', value: model.modelName ?? model.id }] : []),
       ],
     },
     {
@@ -478,6 +431,7 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
       step: steps.deployment,
       items: [
         { term: 'Deployment name', value: nameDescData.name },
+        ...(model ? [] : [{ term: 'Name tenants call', value: nameDescData.k8sName.value }]),
         { term: 'Description', value: nameDescData.description },
         { term: 'Model server', value: modelServerLabel(input.baseRefs) },
         { term: 'Runtime image', value: runtimeImage },
@@ -503,7 +457,7 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
   return (
     <>
       <PageHeader
-        title={model ? `Edit ${model.displayName ?? model.name}` : 'Deploy model'}
+        title={model ? `Edit ${titleOf(model)}` : 'Deploy model'}
         description={
           model ? 'Change the model deployment’s settings and locations.' : 'Deploy a model to AI Grid locations.'
         }
@@ -514,7 +468,7 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
             </BreadcrumbItem>
             {model && (
               <BreadcrumbItem>
-                <Link to={detailsPath}>{model.displayName ?? model.name}</Link>
+                <Link to={detailsPath}>{titleOf(model)}</Link>
               </BreadcrumbItem>
             )}
             <BreadcrumbItem isActive>{model ? 'Edit' : 'Deploy model'}</BreadcrumbItem>
@@ -526,9 +480,9 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
           isProgressive={false}
           onClose={requestLeave}
           onStepChange={(_event, current, previous) => {
-            // Start a new deployment's name from the model's, once.
+            // Start a new deployment's name from the model URI's last segment, once.
             if (!editing && previous.id === steps.source && !nameDescData.name) {
-              onNameDescChange('name', deploymentNameFor(modelName));
+              onNameDescChange('name', deploymentNameFromUri(modelUri));
             }
             // A cluster can change state while the earlier steps are filled in, so offer what is available now.
             if (current.id === steps.locations && locationsEditable) {
@@ -562,8 +516,8 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
                   <ReadOnlyField
                     label="Model name"
                     fieldId="model-alias"
-                    value={modelName}
-                    reason={fixedReason.source}
+                    value={model?.modelName ?? model?.id ?? ''}
+                    reason={fixedReason.served}
                   />
                 </>
               ) : (
@@ -583,20 +537,6 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
                       or pvc://claim/path.
                     </Help>
                   </FormGroup>
-                  <FormGroup label="Model name" fieldId="model-alias" isRequired>
-                    <TextInput
-                      id="model-alias"
-                      aria-describedby="model-alias-help"
-                      value={modelName}
-                      onChange={(_event, value) => setModelName(value)}
-                      onBlur={() => touch('modelName')}
-                      validated={modelNameError ? 'error' : 'default'}
-                      isRequired
-                    />
-                    <Help id="model-alias-help" error={modelNameError}>
-                      The model name exposed by the inference service, for example org/model.
-                    </Help>
-                  </FormGroup>
                 </>
               )}
             </Form>
@@ -608,7 +548,11 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
                 onDataChange={onNameDescChange}
                 dataTestId="model-name-desc"
                 nameLabel="Deployment name"
-                nameHelperText={editing ? undefined : 'Choose a resource name of at most 63 characters.'}
+                nameHelperText={
+                  editing
+                    ? undefined
+                    : 'Choose a resource name of at most 63 characters. Tenants send it as the model in their requests.'
+                }
               />
               {editing ? (
                 <ReadOnlyField

@@ -93,21 +93,21 @@ const Pages: React.FC<Props> = ({ service }) => (
         </ByParams>
       }
     />
-    <Route path="/models" element={<ModelsPage service={service} />} />
-    <Route path="/models/deploy" element={<ModelWizard service={service} />} />
+    <Route path="/models" element={<ModelsPage />} />
+    <Route path="/models/deploy" element={<ModelWizard />} />
     <Route
-      path="/models/:namespace/:name"
+      path="/models/:id"
       element={
         <ByParams>
-          <ModelDetailsPage service={service} />
+          <ModelDetailsPage />
         </ByParams>
       }
     />
     <Route
-      path="/models/:namespace/:name/edit"
+      path="/models/:id/edit"
       element={
         <ByParams>
-          <ModelEditPage service={service} />
+          <ModelEditPage />
         </ByParams>
       }
     />

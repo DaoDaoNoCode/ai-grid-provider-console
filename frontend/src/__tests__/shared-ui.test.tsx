@@ -7,6 +7,8 @@ import { MemoryRouter } from 'react-router-dom';
 import { ServiceError } from '../api/ConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
 import { renderAt } from './render';
+import { modelsOf } from './connectModels';
+import { ModelPhase } from '../gen/ai_grid/v1/model_type_pb';
 import '../pages/models/ModelsPage';
 import '../pages/subscriptions/SubscriptionsPage';
 import { LoadError } from '../components/LoadError';
@@ -44,19 +46,28 @@ it('fills a status label only when it opens something', async () => {
   expect(onClick).toHaveBeenCalledTimes(1);
 });
 
-it.each([
-  ['/models', 'model-deployments-table'],
-  ['/subscriptions', 'subscriptions-table'],
-])('gives every status label in one column one variant, whatever the status: %s', async (path, table) => {
+it('gives every status label in one column one variant, whatever the status: /subscriptions', async () => {
   const service = new MockConsoleService();
-  // Mixed states, those that opened details (Failed, Partially available) among the others.
-  const phases = ['Ready', 'Saved to Git', 'Failed', 'Partially available', 'Pending'];
-  service.models = service.models.map((m, i) => ({ ...m, phase: phases[i % phases.length] }));
-  renderAt(path, service);
-  const rows = await screen.findByTestId(table);
+  renderAt('/subscriptions', service);
+  const rows = await screen.findByTestId('subscriptions-table');
   const labels = Array.from(rows.querySelectorAll<HTMLElement>('td[data-label="Status"] .pf-v6-c-label'));
   expect(new Set(labels.map((l) => l.textContent)).size).toBeGreaterThan(2);
   // One variant per column: status labels open nothing, so every one is an outline label, no button.
+  expect(new Set(labels.map((l) => l.classList.contains('pf-m-outline')))).toEqual(new Set([true]));
+  for (const label of labels) {
+    expect(within(label).queryByRole('button')).not.toBeInTheDocument();
+  }
+});
+
+it("gives the Models list's status column one variant, whatever the phase: outline, opening nothing", async () => {
+  const service = new MockConsoleService();
+  const models = modelsOf(service);
+  const phases = [ModelPhase.READY, ModelPhase.FAILED, ModelPhase.PARTIALLY_AVAILABLE];
+  models.models.forEach((m, i) => (m.status!.phase = phases[i % phases.length]));
+  renderAt('/models', service);
+  const rows = await screen.findByTestId('model-deployments-table');
+  const labels = Array.from(rows.querySelectorAll<HTMLElement>('td[data-label="Status"] .pf-v6-c-label'));
+  expect(new Set(labels.map((l) => l.textContent)).size).toBeGreaterThan(2);
   expect(new Set(labels.map((l) => l.classList.contains('pf-m-outline')))).toEqual(new Set([true]));
   for (const label of labels) {
     expect(within(label).queryByRole('button')).not.toBeInTheDocument();

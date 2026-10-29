@@ -58,8 +58,7 @@ enroll), organizations, models, subscriptions, locations and the grid overview, 
 tied to the backend. The shipped `ai-grid-backend` serves clusters (list, get, and the update
 behind Add to AI Grid and Remove) and tenants, the console's organizations (list, get, create,
 update, delete). A tenant create or update that sets a field the backend's tenant doesn't have
-answers 501 instead of dropping it. Against it, models, subscriptions, the grid overview and
-capabilities are 501, and so is a list request with `filter`, `offset` or `limit`, which it
+answers 501 instead of dropping it. Against it, subscriptions and the grid overview are 501, and so is a list request with `filter`, `offset` or `limit`, which it
 doesn't apply; the pages show these as not available on this backend yet. `/user` and
 `/config` work on any backend (neither calls it). See the "Waiting on backend RPCs" table in
 `docs/plan/bff-api.md`.

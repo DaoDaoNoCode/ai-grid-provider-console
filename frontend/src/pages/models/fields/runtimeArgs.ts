@@ -5,6 +5,45 @@
 import React from 'react';
 import { z } from 'zod';
 
+/** A container environment variable, as ModelContainer.env lists them. */
+export type EnvVar = { name: string; value: string };
+
+/** The variable the console passes vLLM's extra arguments in (the PoC's deploymentResources). */
+export const RUNTIME_ARGS_ENV = 'VLLM_ADDITIONAL_ARGS';
+
+/**
+ * The runtime arguments a model's env carries, one per flag as the wizard shows them. The wizard
+ * joins its lines with spaces, so the value is cut before each flag (`-x`, `--x`) that starts
+ * after whitespace outside quotes; each piece keeps its own text, so a flag's value
+ * (`--max-model-len 4096`) and a quoted value (`--name "a  --b"`) survive an edit unchanged.
+ */
+export const runtimeArgsOf = (env: readonly EnvVar[] | undefined): string[] => {
+  const value = env?.find((v) => v.name === RUNTIME_ARGS_ENV)?.value ?? '';
+  const args: string[] = [];
+  let quote: string | undefined;
+  let start = 0;
+  for (let i = 0; i < value.length; i++) {
+    const c = value[i];
+    if (quote) {
+      if (c === quote) quote = undefined;
+    } else if (c === '"' || c === "'") {
+      quote = c;
+    } else if (/\s/.test(c) && /^\s+--?[A-Za-z]/.test(value.slice(i))) {
+      args.push(value.slice(start, i));
+      start = i + value.slice(i).search(/\S/);
+      i = start - 1;
+    }
+  }
+  args.push(value.slice(start));
+  return args.map((arg) => arg.trim()).filter(Boolean);
+};
+
+/** The env with its runtime arguments replaced, keeping every other variable in place. */
+export const withRuntimeArgs = (env: readonly EnvVar[] | undefined, args: string[]): EnvVar[] => {
+  const others = (env ?? []).filter((v) => v.name !== RUNTIME_ARGS_ENV);
+  return args.length > 0 ? [...others, { name: RUNTIME_ARGS_ENV, value: args.join(' ') }] : others;
+};
+
 // Schema
 export const runtimeArgsFieldSchema = z.object({
   enabled: z.boolean(),

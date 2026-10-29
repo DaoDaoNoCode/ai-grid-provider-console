@@ -7,8 +7,9 @@ how a call travels, where the types come from, how a page uses them, how to test
 when the API has to change. The backend's side of the same rules is its
 `docs/API_CONTRACT.md`.
 
-The Clusters area (the list, a cluster's page, Add and Remove) and the AI Grid map are on it; the
-other areas move one at a time (Organizations, then Models and Subscriptions); each move deletes that area's draft RPCs, fake data,
+The Clusters area (the list, a cluster's page, Add and Remove), the Models area (the list, a
+model's page, the Deploy model wizard, its edit and delete) and the AI Grid map are on it; the
+other areas move one at a time; each move deletes that area's draft RPCs, fake data,
 BFF handlers and hand-written frontend types. When the last one moves, `mock/proto`, `bff/gen`, the
 console's fake backend and `frontend/src/api`'s hand-written layer go.
 
@@ -132,7 +133,7 @@ regression passing when updating these dependencies.
 - **The map** (`pages/grid/AiGridPage.tsx`) shows the members among the same list, placed where
   `status.location` says; `Grid/GetOverview`, which the backend doesn't have, serves only the
   Monitoring fallback now. It links a member to the models whose placement chose it by cluster
-  name (`placement.selectedClusters` of `GET /api/v1/models`), not by `locations`, the `location`
+  name (`status.placement.selected_clusters` of `Models/List`), not by `locations`, the `location`
   labels that several clusters share.
 
 - **Where a cluster is**, read-only (`pages/clusters/ClusterSite.tsx`, `site.ts`): the list's Site
@@ -146,6 +147,51 @@ regression passing when updating these dependencies.
 Still worded in the page, and backend asks if another client needs them: a provisioning enum
 instead of the Policy's compliance string, and typed `openshift_version`, `console_url`,
 `platform` and `product`.
+
+### The Models area
+
+- **Reads.** `useModelList` and `useModel` (`frontend/src/pages/models/useModels.ts`) call
+  `Models/List` and `Models/Get`, polling every 30 s as the Clusters pages do (the edit page loads
+  its model once, and keeps the first answer, so an edit is checked against the version it
+  started from). `toModelView` (`modelView.ts`) words the generated `Model`: the display name and
+  description from the `openshift.io/display-name` and `openshift.io/description` annotations
+  the backend documents; the phase from `status.phase` (`MODEL_PHASE_PARTIALLY_AVAILABLE` is
+  Partially available; `UNSPECIFIED` with reason `SavedToGit` is Saved to Git, any other
+  unspecified phase Unknown); `status.message` as the status's tooltip and the page's alert;
+  `status.url` as the endpoint; `status.placement.locations` (the `location` labels) in the
+  Locations column; and the main container's `requests` as CPU, memory and GPUs. Pages are at
+  `/models/:id` and `/models/:id/edit`.
+- **Each cluster.** The expanded row and the model's page list `status.clusters`, the backend's
+  status of the model on each cluster its placement names, as it reports them: one row per
+  entry, named by the cluster's location, each status opening what that cluster reported (its
+  reason and message). It is the one clickable status column; a model's own status label is
+  outline, its message in a tooltip. While no cluster has reported (`status.clusters` empty,
+  reason `SavedToGit`), the rows are `status.placement.selected_clusters` with no Status column.
+  At the pin the backend lists only placed clusters there; an ingress cluster's reports count in
+  the phase and `status.message` only.
+- **Writes.** The wizard calls `Models/Create` with the id and `metadata.name`, the annotations,
+  `spec.model` (the URI only: no served name, because the backend serves a model as its id, the
+  name tenants send; the wizard starts the id from the URI's last path segment and shows it on
+  Review as "Name tenants call"), `replicas`, `base_refs` (the model server's presets), `spec.main` (the image, the
+  requests it asks for and `VLLM_ADDITIONAL_ARGS` for runtime arguments) and a `name In [...]`
+  placement over the clusters `Models/ListPlacementClusters` offers. It sets no router, no
+  rollout and no limits: the backend's defaults apply (gateway
+  `openshift-ingress/openshift-ai-inference` and a managed route; no scheduler), and it saves a GPU
+  request as the limit too (`ModelContainer.requests`). An edit calls `Models/Update` with only
+  the paths it changed (`spec.replicas`, `spec.main.image`, `spec.main.env`,
+  `metadata.annotations`, `spec.placement`; the env and the annotations whole, as loaded) and
+  `metadata.version` with `lock: true`. Delete calls `Models/Delete` with `resource_version`, the
+  version the dialog read; Aborted is the conflict the dialog already handles, and
+  FailedPrecondition the backend's refusal while a subscription uses the model.
+- **References.** The delete dialog lists the subscriptions that use the model with
+  `Subscriptions/List` and the filter `this.spec.model_refs.exists(r, r.model_id == "<id>")`: the
+  backend joins a model ref to its model (`SubscriptionModelRef.model_id`) and evaluates the
+  filter after the join.
+- **The map and Monitoring** read the same `Models/List`: a member's models are those whose
+  `status.placement.selected_clusters` name it, and Monitoring's target sites the clusters at
+  `status.placement.locations`.
+- The BFF keeps `GET /api/v1/models`, `toModel` and `--models-namespace` only for the
+  Subscriptions pages, until they read `Models/List` too.
 
 ### Perses on Query v5
 

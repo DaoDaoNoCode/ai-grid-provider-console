@@ -115,8 +115,9 @@ behaviour and points at its source (a file, a function or an upstream commit), n
 ## The backend's own API over Connect
 
 The console is moving to the backend's RPCs, called from the browser over Connect (ADRs 0002
-and 0004), through one provider at the app root. The Clusters pages and the AI Grid map read and
-write through it (`docs/connect.md`, "The Clusters area"); the other areas still use `/api/v1`:
+and 0004), through one provider at the app root. The Clusters pages, the Models pages and the AI
+Grid map read and write through it (`docs/connect.md`, "The Clusters area" and "The Models
+area"); the other areas still use `/api/v1`:
 
 - `.backend-api-version` holds the backend commit (one full SHA) whose `proto/` (package
   `ai_grid.v1`, not `ai_grid/draft`) the frontend is generated from. `make generate-api` writes
@@ -199,8 +200,9 @@ when the RPCs allow it.
   an update with the mask `id`.
 - The stopgap Models and Subscriptions clients (`bff/internal/backend/v1_models.go`, `v1.go`),
   until Models and Subscriptions move to the Connect clients:
-  - the models namespace: reads give the BFF's `--models-namespace`, and a model elsewhere is
-    NotFound;
+  - the models namespace: `GET /api/v1/models`, which only the Subscriptions pages still read,
+    gives the BFF's `--models-namespace` (the Models pages, the map and Monitoring read
+    `Models/List` over Connect, `docs/connect.md`, "The Models area");
   - 501 for `createAuthPolicy: false`, and for a model list with a filter or an order;
   - a model or registration the backend reports as saved to Git (reason `SavedToGit`, no phase)
     keeps that reason, which the UI shows as Saved to Git;
@@ -209,24 +211,18 @@ when the RPCs allow it.
   - a delete with `If-Match: "0"` is 412, because the backend treats version 0 as no check.
 - `toTenant` (`bff/internal/api/tenants.go`), fallbacks for the shipped backend: `enabled`
   defaults to true, `domainDetails` is built from `domains`.
-- `toModel` (`bff/internal/api/models.go`): `displayName` and `description` from the
+- `toModel` (`bff/internal/api/models.go`), for `GET /api/v1/models`, which only the Subscriptions
+  pages still read: `displayName` and `description` from the
   `openshift.io/display-name` and `openshift.io/description` annotations; `modelName` defaults to
   the model name; `placement.selectedClusters` from the decisions; `placement.satisfied`,
   `reason` and `message` from `PlacementSatisfied`; `rollout.rolledOut`, `applied` and `reason`
   from `PlacementRolledOut` and `ManifestworkApplied`; each work's `applied`, `available`,
   `progressing` and `degraded` from its conditions and `feedback` from the manifest feedback
   values; `rollout.strategy` shown as `All` when unset.
-- `fromRolloutSpec`: parses the rollout strategy name into the enum and answers 422 for an
-  unknown one; an empty strategy is sent as `ROLLOUT_STRATEGY_ALL`, a default the backend
-  should apply to `ROLLOUT_STRATEGY_UNSPECIFIED`.
 - `toGridOverview` (`bff/internal/api/grid.go`): drops metric points whose value is NaN or
   ±Inf (JSON cannot carry them), always sends `demo: false`, and writes `updatedAt` as
   `2006-01-02T15:04:05.000Z` (the PoC's millisecond format) whatever precision the backend
   sends.
-- The model create (`createModel`): `cpu`, `memory` and `gpuCount` become the main container's
-  requests (the GPU also its limit, a negative `gpuCount` is 422); `scaling` becomes a KEDA
-  block; the gateway defaults to `openshift-ingress/openshift-ai-inference`; the managed route
-  and the scheduler are always on.
 - `requireTotal` (`bff/internal/api/respond.go`): a list answer without `total` comes from a
   backend that ignored `filter`, `offset` and `limit` (the shipped one), so the BFF answers 501
   when the caller sent any of them; without them `listMeta` falls back to a total it can prove.

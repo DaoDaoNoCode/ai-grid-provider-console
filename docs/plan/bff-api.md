@@ -58,9 +58,9 @@ backend service for cluster access and this BFF for the browser.
 
 Until the console moves to Connect and the backend's generated contract (issues 20–27 and the
 ADRs in `docs/adr/`), the BFF calls a real backend's `ai_grid.v1.Clusters` `List`, `Get` and
-`Update`, `Tenants` `List`, `Get`, `Create`, `Update` and `Delete`, and `Subscriptions` and `Models`
-`List`, `Get`, `Create`, `Update` and `Delete` for the clusters, tenants, subscriptions, models and
-locations routes, and maps them onto the draft types, so the handlers and the JSON above are
+`Update`, `Tenants` `List`, `Get`, `Create`, `Update` and `Delete`, `Subscriptions` `List`, `Get`,
+`Create`, `Update` and `Delete`, and `Models/List` for the clusters, tenants, subscriptions and
+models routes, and maps them onto the draft types, so the handlers and the JSON above are
 unchanged (`bff/internal/backend/v1.go` and `v1_models.go`, messages in
 `mock/proto/ai_grid/backend/v1`). The fake backend still serves the draft, so `--fake-backend`
 keeps the draft clients. `If-Match` maps to `metadata.version` with `lock: true`, and the
@@ -96,19 +96,14 @@ reports a MaaS registration for in `modelRefs`, with that registration's phase (
 Failed, Invalid or Unhealthy, else Pending); a model without one shows as not found. DELETE sends
 the `If-Match` version, so a stale one is 409.
 
-Models follow the backend's `internal/servers/models_server.go` and `models_git.go`. Its models have an `id` and no namespace (it keeps them
-in one namespace of its own), so the BFF reports every model in its `--models-namespace` and
-answers 404 for a model in any other; against a real backend, set it to the backend's subscription
-namespace (`AI_GRID_SUBSCRIPTION_NAMESPACE`, default `models-as-a-service`), where the backend
-keeps the `MaaSModelRef` that subscriptions name, so a subscription's model references match the
-models. `GET /locations` answers `Models/ListPlacementClusters` (`internal/servers/models_server.go`): the names of the
-clusters a model can run on. The console places a model by those names, `name In [...]` over the
-ACM `name` label, as the backend's git mode stores it, so a placement goes as it is, except claim
-expressions, tolerations and spread constraints, which the backend lacks (501). A location is the
-value of the `location` label, which a model's `placement.locations` reports; several clusters can
-share one. A list with a filter or an order
-answers 501, because the backend's filter uses its own field names. PATCH sends the draft's mask
-unchanged, with the `If-Match` version and `lock: true`, and DELETE sends the `If-Match` version.
+`GET /models` is the one model route left, for the Subscriptions pages until they read
+`Models/List` over Connect: the Models pages, the map and Monitoring call the backend's Models API
+through the Connect relay (`docs/connect.md`, "The Models area"). The backend's models have an
+`id` and no namespace (it keeps them in one namespace of its own), so the BFF reports every model
+in its `--models-namespace`; against a real backend, set it to the backend's subscription namespace
+(`AI_GRID_SUBSCRIPTION_NAMESPACE`, default `models-as-a-service`), where the backend keeps the
+`MaaSModelRef` that subscriptions name, so a subscription's model references match the models. A
+list with a filter or an order answers 501, because the backend's filter uses its own field names.
 
 ## Decisions
 
@@ -159,20 +154,14 @@ under `/perses/api`, and the Connect relay to the backend's own RPCs under `/ai_
 | GET | `/healthcheck` | `{status, version}` | none; no identity and no backend call: a check, by a person or a script on the pod, that the BFF process serves HTTP and which build it is (`version`). No probe uses it: the kubelet probes only `/readyz` (below), and there is deliberately no liveness probe, which would restart the BFF whenever the proxy in front of it is down. Through the route it is behind the login like any page (the proxy skips auth for `/readyz` only) |
 | GET | `/readyz` | `{status, version, backend}` | `AiGrid/Ping`; readiness, 503 when the backend does not answer. The pod is then unready, and with the one replica the chart runs, the Service has no endpoint left: the OpenShift router answers every request with its own 503 page (HTML, not this API's JSON error), until the backend answers again |
 | GET | `/api/v1/user` | `{username, email?, groups, isProviderAdmin}` (`email` omitted when the proxy sends none) | none; the identity from the proxy headers, `isProviderAdmin` from a hub `SelfSubjectAccessReview` |
-| GET | `/api/v1/config` | `{gridEndpoint, mapTileUrl, mapTileAttribution, billingUrl, version, modelsNamespace, fakeBackend, monitoring: {enabled, persesProject}}`: `modelsNamespace` is the namespace the console creates models in (default `models-as-a-service`, the backend's subscription namespace; `make dev-fake` sets `ai-grid-models` for the fake's fixtures), `fakeBackend` makes the UI show its fake-backend banner, `monitoring.enabled` says the BFF relays `/perses/api` (it has a `PERSES_URL`) and `monitoring.persesProject` names the one Perses project the relay reads, whose `dashboard-*` objects are the Monitoring tabs (always set when `monitoring.enabled`) | none; env `GRID_CONSUMER_URL`, `MAP_TILE_URL`, `MAP_TILE_ATTRIBUTION` (the attribution shown with `MAP_TILE_URL`'s tiles; with no `MAP_TILE_URL` the map draws a bundled land outline), `BILLING_URL`, `MODELS_NAMESPACE`, `FAKE_BACKEND`, `PERSES_URL`, `PERSES_PROJECT` |
+| GET | `/api/v1/config` | `{gridEndpoint, mapTileUrl, mapTileAttribution, billingUrl, version, modelsNamespace, fakeBackend, monitoring: {enabled, persesProject}}`: `modelsNamespace` is the namespace `GET /api/v1/models` reports the backend's models in, by which the Subscriptions pages join a model reference to its model (default `models-as-a-service`, the backend's subscription namespace; `make dev-fake` sets `ai-grid-models` for the fake's fixtures), `fakeBackend` makes the UI show its fake-backend banner, `monitoring.enabled` says the BFF relays `/perses/api` (it has a `PERSES_URL`) and `monitoring.persesProject` names the one Perses project the relay reads, whose `dashboard-*` objects are the Monitoring tabs (always set when `monitoring.enabled`) | none; env `GRID_CONSUMER_URL`, `MAP_TILE_URL`, `MAP_TILE_ATTRIBUTION` (the attribution shown with `MAP_TILE_URL`'s tiles; with no `MAP_TILE_URL` the map draws a bundled land outline), `BILLING_URL`, `MODELS_NAMESPACE`, `FAKE_BACKEND`, `PERSES_URL`, `PERSES_PROJECT` |
 | GET | `/api/v1/tenants?offset=&limit=&filter=` | `Tenant[]` in Keycloak's order (by name, the realm database's collation) plus `meta`; `filter` is a CEL expression the client writes, over `this` (a Tenant), see "Writes, versions and lists"; `limit` omitted returns everything; the removed `search` is 422 | `Tenants/ListTenants` with `offset`, `limit` and `filter` exactly as sent |
 | GET | `/api/v1/tenants/{id}` | `Tenant`, `ETag: "<resourceVersion>"` | `Tenants/GetTenant`; 404 with the backend's message when absent |
 | POST | `/api/v1/tenants` | 201, `Tenant` as created, `Location: /api/v1/tenants/{id}`, `ETag` | `Tenants/CreateTenant`; 422 with Keycloak's message on a bad name, alias or domain, 409 on a taken name or alias |
 | PATCH | `/api/v1/tenants/{id}` | `Tenant` after the write, with its `ETag` | `Tenants/UpdateTenant` with the present body fields as the mask (`alias` included) and the `If-Match` version as `object.resource_version`; an empty body is 422; 422 "Cannot change the alias", 409 on a taken or blank name (Keycloak's own answer to a blank one) or a stale `If-Match`, 428 without `If-Match` |
 | DELETE | `/api/v1/tenants/{id}` | 204 | `Tenants/DeleteTenant` with the `If-Match` version as `resource_version`; 404 when absent, 409 on a stale `If-Match`, 428 without `If-Match` |
-| GET | `/api/v1/models?offset=&limit=&filter=` | `Model[]` by namespace and name plus `meta`; `filter` is CEL over `this` (a Model) as for tenants; the removed `namespace` and `label` are 422 | `Models/ListModels` with `offset`, `limit` and `filter` exactly as sent |
-| GET | `/api/v1/models/{namespace}/{name}` | `Model`, `ETag: "<resourceVersion>"` | `Models/GetModel`; 404 with the backend's message (`object with identifier '<ns>/<name>' not found`) |
-| POST | `/api/v1/models` | 201, `Model` with no conditions yet, `Location: /api/v1/models/{namespace}/{name}`, `ETag` | `Models/CreateModel`; 422 with the API server's or the CRD's message (a name that is not a DNS-1123 subdomain, a negative `replicas`, `replicas` with `scaling`, `scaling` without `maxReplicas`, without a trigger, with `maxReplicas` below 1 or a negative `minReplicas` (`minReplicas: 0` counts as unset and defaults to 1) or with `minReplicas` above `maxReplicas`) or the console's own (URI scheme, Placement operators, rollout fields, `rollout` without `placement`), 409 on a taken name, 412 `ManifestWorkReplicaSet feature gate disabled on hub` when `placement` is set on a hub without the controller |
-| PATCH | `/api/v1/models/{namespace}/{name}` | `Model` after the write, with its `ETag` | `UpdateModel` (no read first) with every present field as the mask (`spec.replicas`, `spec.main.image`, `spec.main.env`, `spec.placement`, `spec.rollout`, `metadata.labels`, `metadata.annotations`) and `lock: true` on the `If-Match` version; an empty body is 422; 409 when the object is not at that version, 428 without `If-Match`, 412 when a placement is added on a gated hub |
-| DELETE | `/api/v1/models/{namespace}/{name}` | 204; the model is gone at once (the MWRS cascades `Background`, its works drain out of sight) | `Models/DeleteModel` with the `If-Match` version as `resource_version`; 404 when absent, 409 on a stale `If-Match`, 428 without `If-Match`, 412 while a catalog entry, a subscription or an auth policy references the model (on the fake, subscriptions and auth policies block it; catalog entries don't exist yet) |
-| GET | `/api/v1/capabilities` | `{manifestWorkReplicaSetEnabled, observabilityInstalled, acmVersion}` | `AiGrid/GetHubCapabilities`; 501 against a backend without the RPC, which a client reads as "unknown" |
+| GET | `/api/v1/models?offset=&limit=&filter=` | for the Subscriptions pages only: `Model[]` by namespace and name plus `meta`; `filter` is CEL over `this` (a Model) as for tenants; the removed `namespace` and `label` are 422 | `Models/ListModels` with `offset`, `limit` and `filter` exactly as sent |
 | GET, POST | `/perses/api/<Perses API path>` | Perses's own answer, status and body unchanged, with only its `Content-Type`, `Content-Encoding`, `Content-Length`, `Vary`, `Cache-Control`, `Date`, `Age` and `Expires` headers; a redirect from Perses is 502 | none; the Monitoring page's relay to the hub's Perses (`PERSES_URL`), see "The Perses relay" |
-| GET | `/api/v1/locations` | `string[]`: the names of the clusters a model can be placed on (the values of the placement's `name In [...]`), in the backend's order; despite the path, not `location` labels | `Models/ListLocations` (proposal P7, `mock/proto/README.md`); against the backend, `Models/ListPlacementClusters` |
 | GET | `/api/v1/subscriptions` | `Subscription[]` in the backend's order; takes no query parameters (any is 422 `the subscriptions list takes no query parameters; filter, sort and page it in the client`) | `Subscriptions/ListSubscriptions` |
 | GET | `/api/v1/subscriptions/{name}` | `ETag: "<resourceVersion>"`, `{subscription, authPolicies, meteringMetadata?, modelRegistrations, modelRefs}`: the subscription, the authorization policies that cover its models, `meteringMetadata`, the subscription's `tokenMetadata` again, as the PoC's SubscriptionInfoResponse has it (omitted when the subscription has none), the status of each referenced model's registration, and the referenced models in the `Model` JSON | `Subscriptions/GetSubscription`; 404 with the backend's message when absent |
 | POST | `/api/v1/subscriptions` | 201, `{subscription, authPolicy?}`, `Location: /api/v1/subscriptions/{name}` | `Subscriptions/CreateSubscription` with `createAuthPolicy` from the body; 422 with `fieldErrors` on a bad body (a new subscription without `tokenMetadata.organizationId` is "Select an organization"), 409 on a taken name |
@@ -324,7 +313,7 @@ no `revision`, `status: Saved`, `hasDeployment`; collections are always present)
 {
   "name": "granite-8b-instruct", "namespace": "ai-grid-models",
   "displayName": "Granite 8B Instruct", "description": "Served on every enrolled and provisioned site.",
-  "modelUri": "hf://example-org/granite-8b-instruct", "modelName": "example-org/granite-8b-instruct",
+  "modelUri": "hf://example-org/granite-8b-instruct", "modelName": "granite-8b-instruct",
   "runtimeImage": "quay.io/example/vllm-cuda:v0.11.0", "replicas": 1,
   "baseRefs": ["v3-6-0-kserve-config-llm-template"],
   "requests": {"cpu": "8", "memory": "32Gi", "nvidia.com/gpu": "1"}, "limits": {"nvidia.com/gpu": "1"}, "env": [],
@@ -355,6 +344,9 @@ no `revision`, `status: Saved`, `hasDeployment`; collections are always present)
 }
 ```
 
+- `modelName` is the name tenants send as the model: the backend serves a model as its id
+  (`ModelSource.name` defaults to the id; ai-grid-provider-backend#47 refuses any other), so it
+  equals `name` for a model the console deploys. A model written earlier can keep another.
 - `phase` is the backend's derivation (`ModelPhase` in `mock/proto/ai_grid/v1/model_type.proto`):
   for a hub deployment from the `Ready` condition (True `ready`; False with a reason that does
   not recover on its own, `ConfigNotFound`, `RefsInvalid` or `GatewaysNotReady`, `failed` with
@@ -392,42 +384,6 @@ no `revision`, `status: Saved`, `hasDeployment`; collections are always present)
   `openshift.io/description` annotations; a client sets them through `annotations`, on
   create and on PATCH alike.
 
-`POST /api/v1/models` body (the POC deploy wizard's inputs mapped to the spec,
-`mock/research/models-maas.md` 7.3): `{"name", "namespace", "modelUri", "modelName",
-"runtimeImage", "runtime", "replicas" | "scaling": {"minReplicas", "maxReplicas", "triggers":
-[{"type", "metadata"}]}, "baseRefs": ["..."], "cpu": "8", "memory": "32Gi", "gpuCount": 1,
-"env": [{"name", "value"}], "gateway": {"name", "namespace"}, "placement": {"clusterSets",
-"matchLabels", "matchExpressions": [{"key", "operator", "values"}], "claimExpressions",
-"tolerations": [{"key", "operator", "value", "effect", "tolerationSeconds"}],
-"numberOfClusters"}, "rollout": {"strategy": "All|Progressive|ProgressivePerGroup",
-"maxConcurrency", "maxFailures", "progressDeadline", "minSuccessTime"}, "labels",
-"annotations"}`. `name`, `namespace` and `modelUri` are required by the backend; `cpu`, `memory`
-and `gpuCount` become the main container's requests (the GPU also its limit); `scaling` becomes
-a `spec.scaling.keda` block and is refused with the CRD's own messages when it comes with
-`replicas`, without `maxReplicas`, without a trigger, with `maxReplicas` below 1 or a negative
-`minReplicas` (`minReplicas: 0` counts as unset and defaults to 1) or with `minReplicas` above
-`maxReplicas`; the gateway defaults to `openshift-ingress/openshift-ai-inference`, the route and
-the scheduler are always managed; `rollout` without `placement` is 422. The display name and
-description go in `annotations` (`openshift.io/display-name`, `openshift.io/description`), as on
-PATCH; `displayName` and `description` are not body fields (422 unknown field). The same body
-rules as the other POSTs apply (unknown fields 422, over 1 MiB 413). Open question: a `namespace` that does not exist. The fake creates the model anyway, a real API server answers NotFound, and the backend has not decided whether it creates the namespace (`mock/areas/models.md`, "Remaining").
-
-`PATCH /api/v1/models/{namespace}/{name}` body, every field optional: `{"replicas", "runtimeImage",
-"env": [...], "placement": {...} | null, "rollout": {...}, "labels", "annotations"}`. A present
-field replaces the stored one as a whole (`env: []` removes every variable, `placement: null`
-makes the model a hub deployment again, `labels` and `annotations` are whole maps) and goes into
-the mask whatever the stored value; the BFF does not read the model first. `displayName` and
-`description` are not body fields (422 unknown field), here as on POST: a page edits the
-`openshift.io/display-name` and `openshift.io/description` keys of the `annotations` map it
-loaded. A rollout is sent only when the client sends one; the backend drops the stored rollout
-when the placement is removed without a new one. A body that names no field is 422, before any
-call. A spec change bumps `generation`; a change of
-anything but `placement` and `rollout` also rolls the Deployment out again and makes a placed
-model re-apply its works, while a change of only `rollout` or `placement` re-applies none (a new
-placement adds and removes the works of clusters entering and leaving the decision). An update
-that leaves the spec, labels and annotations as stored is not written and keeps the
-`resourceVersion`.
-
 The list response:
 
 ```json
@@ -445,7 +401,7 @@ decides.
   and before the hub or the backend is called. A browser sends an HTML form or a `text/plain`
   `fetch` cross-site without a CORS preflight; this is what keeps another app under the
   cluster's `apps` domain from writing with an admin's session.
-- **`ETag` and `If-Match`.** `GET` of one cluster, tenant or model, and the answer to its POST
+- **`ETag` and `If-Match`.** `GET` of one cluster or tenant, and the answer to its POST
   or PATCH, and `GET` of one subscription and the answer to its PUT, carry `ETag: "<resourceVersion>"` (the same value as `resourceVersion` in the
   JSON; no header when the backend reports no version, as today's backend does for tenants).
   The draft's backend must return a non-empty `resource_version` on every object it serves:
@@ -457,10 +413,8 @@ decides.
   | Request | `If-Match` becomes |
   |---|---|
   | PATCH `/clusters/{name}` | `object.resource_version` with `lock: true` |
-  | PATCH `/models/{namespace}/{name}` | `object.metadata.resource_version` with `lock: true` |
   | PATCH `/tenants/{id}` | `object.resource_version` (the draft's precondition: set means checked) |
   | DELETE `/tenants/{id}` | `DeleteTenantRequest.resource_version` |
-  | DELETE `/models/{namespace}/{name}` | `DeleteModelRequest.resource_version` |
   | PUT `/subscriptions/{name}` | `object.resource_version` with `lock: true` |
   | DELETE `/subscriptions/{name}` | `DeleteSubscriptionRequest.resource_version` |
 
@@ -782,7 +736,7 @@ exists; the frontend uses the mock service meanwhile.
 |---|---|---|---|
 | GET | `/api/v1/user` (`isProviderAdmin`) | Optional: `AiGrid/GetCurrentUser` returning roles, once the backend acts as the caller; today the BFF asks the hub directly | Step 1 |
 | GET/POST/PATCH/DELETE | `/api/v1/tenants[/{id}]` (on the backend's `Tenants` RPCs) | the draft `Tenant`'s `alias`, `enabled`, `description`, `attributes`, `domain_details` and `identity_provider`, if the console keeps them; `filter` evaluated on `List`; mutations gated on the provider-admin check | Step 6 |
-| GET/POST/PATCH/DELETE | `/api/v1/models[/{namespace}/{name}]`, GET `/api/v1/capabilities` (implemented against the draft) | The backend has to ship the draft's `Models` service and `Model` message (`mock/proto/ai_grid/v1/model*.proto`) over LLMInferenceService, Placement and ManifestWorkReplicaSet with the status derived server-side (including proposal P13: each work's `phase`, `reason` and `message`, and `MODEL_PHASE_PARTIALLY_AVAILABLE`), and `AiGrid/GetHubCapabilities`; the `ManifestWorkReplicaSet` feature gate on the hub for multi-site models (`FailedPrecondition` otherwise) | Steps 3, 4 |
+| GET | `/api/v1/models` (implemented against the draft), for the Subscriptions pages only | Goes when the Subscriptions pages read `Models/List` over Connect; the Models pages already call the backend's Models API (`docs/connect.md`, "The Models area") | Steps 3, 4 |
 | GET/POST/PUT/DELETE | `/api/v1/catalog[/{name}]` | `Catalog/*` on ConfigMaps | Step 9 |
 | GET/POST/PUT/DELETE | `/api/v1/subscriptions[/{name}]`, GET `/api/v1/grid/overview` (implemented against the draft) | The backend has to ship the draft's `Subscriptions` service and `Grid/GetOverview` (`mock/proto/ai_grid/v1/subscription*.proto`, `grid_service.proto`) with the POC's metric contract (requests, errors, latency, gpu from Thanos with a `cluster` label), and validate every subscription write itself ("The BFF is thin") | Steps 5, 8, 10 |
 | GET/POST/DELETE | `/api/v1/tenants/{id}/members[/{userId}]` | Member RPCs on `Tenants` (not drafted yet; `mock/research/keycloak.md` open question 3) | Step 6 |
@@ -793,7 +747,7 @@ exists; the frontend uses the mock service meanwhile.
 | Situation | Status |
 |---|---|
 | A path under `/api/v1` that no route has | 404, `the requested resource could not be found` |
-| A known `/api/v1` path with a method it has no route for (`POST /locations`) | 405 with `Allow` (`GET, HEAD`; a GET route also answers HEAD) and the JSON error shape, `POST is not allowed on /api/v1/locations; use GET, HEAD`. It is checked after the identity and provider-admin checks, so a non-admin gets 403 |
+| A known `/api/v1` path with a method it has no route for (`POST /models`) | 405 with `Allow` (`GET, HEAD`; a GET route also answers HEAD) and the JSON error shape, `POST is not allowed on /api/v1/models; use GET, HEAD`. It is checked after the identity and provider-admin checks, so a non-admin gets 403 |
 | Missing or malformed token header | 401 |
 | Hub rejects the token in the access review | 401 |
 | Hub unreachable, failing or slower than 5 s during the access review | 502, `the hub could not confirm the caller's permissions; try again`, detail in the BFF log (a slow hub is not the backend's 504) |

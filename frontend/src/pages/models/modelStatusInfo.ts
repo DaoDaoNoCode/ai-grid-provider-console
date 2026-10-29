@@ -1,8 +1,9 @@
-import type { ManagedModel } from '../../api/types';
+import type { ModelView } from './modelView';
 
 /**
- * What the terminal Ready=False reasons (KServe's ConfigNotFound, RefsInvalid, GatewaysNotReady;
- * see mock/areas/models.md) mean to an administrator, and what to do next.
+ * What KServe's terminal Ready=False reasons (ConfigNotFound, RefsInvalid, GatewaysNotReady) mean to
+ * an administrator, and what to do next. The backend reports them as the model's reason when it reads
+ * a live LLMInferenceService (model_mapper.go); in git mode the reasons are its own.
  */
 export const failureExplanations: Record<string, { summary: string; next: string }> = {
   ConfigNotFound: {
@@ -19,14 +20,14 @@ export const failureExplanations: Record<string, { summary: string; next: string
   },
 };
 
-export const modelPhase = (model: ManagedModel): string => model.phase ?? 'Pending';
+export const modelPhase = (model: Pick<ModelView, 'phase'>): string => model.phase;
 
 /** A placed model serving on some of its clusters but not all (the backend's phase, proposal P13). */
 export const PARTIALLY_AVAILABLE = 'Partially available';
 
 /** The status's title: "Deployment failed" for Failed, else the phase. */
-export const modelStatusTitle = (model: ManagedModel): string =>
+export const modelStatusTitle = (model: ModelView): string =>
   modelPhase(model) === 'Failed' ? 'Deployment failed' : modelPhase(model);
 
 /** Whether the model has anything to explain beyond its phase. */
-export const hasModelStatusDetails = (model: ManagedModel): boolean => !!(model.reason || model.statusMessage);
+export const hasModelStatusDetails = (model: ModelView): boolean => !!(model.reason || model.statusMessage);

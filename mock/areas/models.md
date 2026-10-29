@@ -1,5 +1,13 @@
 # Models (LLMInferenceService, Placement, ManifestWorkReplicaSet)
 
+> The Models pages, the AI Grid map and Monitoring call the backend's Models API over Connect
+> (`docs/connect.md`, "The Models area") and run on `make dev-fake-infra`. The Deploy model wizard
+> asks for no served name: the backend serves a model as its id, the name tenants send, so the
+> fixtures' Hugging Face served names below (`modelName`) are the console fake's own, not what a
+> model deployed now carries. The BFF's only model
+> route left is `GET /api/v1/models`, which the Subscriptions pages read until they move too; the
+> fake's model writes below are reached by its own tests only, and go with the fake.
+
 What the fake backend and the BFF implement for this area, where they deviate from the
 real controllers, which texts are invented, and what remains. The fixture data is described in
 `mock/fixtures/README.md`, the HTTP contract in `docs/plan/bff-api.md`, the proto in
@@ -302,9 +310,7 @@ expression: ...`, `filter <f> must evaluate to a bool, not <type>`, `filter <f> 
 
 `GET /api/v1/models?offset=&limit=&filter=` (the client's CEL forwarded unchanged; the removed
 `namespace` and `label` parameters are 422 `query parameter "<name>" is not supported; send a CEL
-filter in "filter"`), `GET/PATCH/DELETE /api/v1/models/{namespace}/{name}`,
-`POST /api/v1/models` (201 + Location) and `GET /api/v1/capabilities` (501 against today's
-backend), with the JSON shape in `docs/plan/bff-api.md`: the POC's `ManagedModel` without its
+filter in "filter"`), for the Subscriptions pages, with the JSON shape in `docs/plan/bff-api.md`: the POC's `ManagedModel` without its
 inventions, plus `placement` (selector, selected clusters, `PlacementSatisfied`) and `rollout`
 (strategy, summary without `updated`, per-site works with their condition statuses and the
 `ready` and `url` feedback); `url` is omitted when empty; PATCH is one `UpdateModel` with every
