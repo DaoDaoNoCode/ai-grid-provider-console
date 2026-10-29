@@ -265,7 +265,7 @@ syntax, perses/perses#2139). If the integration regresses before then, the fallb
 Query runtime for Perses alone.
 
 Navigations render as React transitions, React Router's default. On React 18 the console turned
-them off (#74): React 18 can drop a class component's update that lands mid-render, which left
+them off (f24e1aa, `routerProps` in the `frontend/src/router.ts` this move deletes): React 18 can drop a class component's update that lands mid-render, which left
 Perses's time-range menu's invisible popover blocking the page. React 19 fixed that
 (facebook/react#24663), so the setting went with the move to React 19 and the Perses 0.56
 prereleases, the first with React 19 support (perses/shared#390, perses/plugins#889).

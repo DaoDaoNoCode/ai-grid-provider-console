@@ -50,6 +50,8 @@ describe("the console's wording for zod issues", () => {
     ['a URL', z.url(), 'not a url', 'Enter a valid URL.'],
     ['an email address', z.email(), 'nobody', 'Enter a valid email address.'],
     ['a prefix', z.string().startsWith('hf://'), 'oci://x', 'Start with "hf://".'],
+    ['a suffix', z.string().endsWith('.yaml'), 'values.json', 'End with ".yaml".'],
+    ['a substring', z.string().includes('/'), 'model', 'Include "/".'],
     ['a multiple', z.number().multipleOf(5), 7, 'Enter a multiple of 5.'],
     ['an unknown field', z.strictObject({}), { a: 1 }, 'Remove the unknown field "a".'],
     ['unknown fields', z.strictObject({}), { a: 1, b: 2 }, 'Remove the unknown fields "a", "b".'],
