@@ -43,6 +43,15 @@ const formatMessages: Record<string, string> = {
   email: 'Enter a valid email address.',
 };
 
+/** A string's or a list's length bound: "Enter exactly 3 items.", "Enter at most 63 characters." */
+const lengthMessage = (
+  bound: number | bigint,
+  exact: boolean | undefined,
+  side: 'least' | 'most',
+  one: string,
+  many: string,
+) => (exact ? `Enter exactly ${plural(bound, one, many)}.` : `Enter at ${side} ${plural(bound, one, many)}.`);
+
 export const consoleErrorMap: z.core.$ZodErrorMap = (issue) => {
   switch (issue.code) {
     case 'invalid_type':
@@ -51,14 +60,12 @@ export const consoleErrorMap: z.core.$ZodErrorMap = (issue) => {
     case 'too_small':
       switch (issue.origin) {
         case 'string':
-          if (issue.exact) return `Enter exactly ${plural(issue.minimum, 'character', 'characters')}.`;
-          return Number(issue.minimum) <= 1
-            ? 'Required.'
-            : `Enter at least ${plural(issue.minimum, 'character', 'characters')}.`;
+          // A string of at least one character is simply required.
+          if (!issue.exact && Number(issue.minimum) <= 1) return 'Required.';
+          return lengthMessage(issue.minimum, issue.exact, 'least', 'character', 'characters');
         case 'array':
         case 'set':
-          if (issue.exact) return `Enter exactly ${plural(issue.minimum, 'item', 'items')}.`;
-          return `Enter at least ${plural(issue.minimum, 'item', 'items')}.`;
+          return lengthMessage(issue.minimum, issue.exact, 'least', 'item', 'items');
         case 'number':
         case 'int':
         case 'bigint':
@@ -77,12 +84,10 @@ export const consoleErrorMap: z.core.$ZodErrorMap = (issue) => {
     case 'too_big':
       switch (issue.origin) {
         case 'string':
-          if (issue.exact) return `Enter exactly ${plural(issue.maximum, 'character', 'characters')}.`;
-          return `Enter at most ${plural(issue.maximum, 'character', 'characters')}.`;
+          return lengthMessage(issue.maximum, issue.exact, 'most', 'character', 'characters');
         case 'array':
         case 'set':
-          if (issue.exact) return `Enter exactly ${plural(issue.maximum, 'item', 'items')}.`;
-          return `Enter at most ${plural(issue.maximum, 'item', 'items')}.`;
+          return lengthMessage(issue.maximum, issue.exact, 'most', 'item', 'items');
         case 'number':
         case 'int':
         case 'bigint':
