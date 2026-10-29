@@ -41,6 +41,7 @@ import { RuntimeArgsField } from './fields/RuntimeArgsField';
 import { filterRuntimeArgsForContainer, runtimeArgsOf, type RuntimeArgsFieldData } from './fields/runtimeArgs';
 import { DEFAULT_REPLICAS, sameSet, updateRequestOf, type ModelInput } from './modelRequests';
 import { titleOf, type ModelView } from './modelView';
+import { OlderServedNameAlert } from './OlderServedNameAlert';
 import { useModelWrites, usePlacementClusters } from './useModels';
 import { deploymentNameFromUri, locationLabel, modelPath, siteNamesOf } from './modelUtils';
 import { type ModelServer, modelServerLabel, modelServers } from './modelServers';
@@ -104,13 +105,13 @@ const goneLocationsError = (names: string[]) =>
     : `${names.join(', ')} ${names.length === 1 ? 'is' : 'are'} no longer available. Remove ${names.length === 1 ? 'it' : 'them'} to continue.`;
 
 /**
- * The Review step: a warning about the choices first, if there is one, spaced as the sections are;
- * each section's Edit link goes back to its step.
+ * The Review step: an alert about the choices or the model first, if there is one, spaced as the
+ * sections are; each section's Edit link goes back to its step.
  */
 const ReviewStep: React.FC<{
   sections: { title: string; step: string; items: { term: string; value?: string }[] }[];
-  warning?: React.ReactNode;
-}> = ({ sections, warning }) => {
+  alert?: React.ReactNode;
+}> = ({ sections, alert }) => {
   const { goToStepById } = useWizardContext();
   return (
     <Flex
@@ -119,7 +120,7 @@ const ReviewStep: React.FC<{
       spaceItems={{ default: 'spaceItemsXl' }}
       data-testid="model-review"
     >
-      {warning}
+      {alert}
       {sections.map((section) => (
         <DetailsSection key={section.title} title={section.title} onEdit={() => goToStepById(section.step)}>
           <DetailsList items={section.items} hideEmpty aria-label={section.title} />
@@ -512,6 +513,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
             <Form maxWidth="750px">
               {editing ? (
                 <>
+                  {model && <OlderServedNameAlert model={model} />}
                   <ReadOnlyField label="Model URI" fieldId="model-uri" value={modelUri} reason={fixedReason.source} />
                   <ReadOnlyField
                     label="Model name"
@@ -709,9 +711,13 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
           >
             <ReviewStep
               sections={review}
-              warning={
-                serverMismatch && (
-                  <Alert isInline variant="warning" title={serverMismatch} data-testid="model-server-mismatch" />
+              alert={
+                model ? (
+                  <OlderServedNameAlert model={model} />
+                ) : (
+                  serverMismatch && (
+                    <Alert isInline variant="warning" title={serverMismatch} data-testid="model-server-mismatch" />
+                  )
                 )
               }
             />

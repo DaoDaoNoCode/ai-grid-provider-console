@@ -1033,6 +1033,51 @@ describe('editing a model deployment', () => {
     expect(screen.getByTestId('model-review')).not.toHaveTextContent('Name tenants call');
   });
 
+  it('says a model that still serves an older name fails tenant requests until any change is saved', async () => {
+    const service = new MockConsoleService();
+    const models = modelsOf(service);
+    // Saved before the backend served models as their ids: it still serves its own name.
+    models.find('granite-3-8b').spec!.model!.name = 'example-org/granite-3-8b';
+    const update = vi.spyOn(models, 'update');
+    const user = userEvent.setup();
+    renderAt('/models/granite-3-8b/edit', service);
+    const alert = await screen.findByTestId('model-older-name');
+    expect(alert).toHaveClass('pf-m-info');
+    expect(within(alert).getByRole('heading', { name: /This model uses an older name/ })).toBeVisible();
+    expect(alert).toHaveTextContent(
+      'Tenants request models by their ID, granite-3-8b, but this model still answers only to example-org/granite-3-8b, so tenant requests to it fail. Saving any change updates it to use its ID. The model is unavailable for a moment while it restarts.',
+    );
+    expect([...alert.querySelectorAll('code')].map((c) => c.textContent)).toEqual([
+      'granite-3-8b',
+      'example-org/granite-3-8b',
+    ]);
+    await openStep(user, 'Deployment');
+    expect(screen.queryByTestId('model-older-name')).not.toBeInTheDocument();
+    const description = await screen.findByRole('textbox', { name: 'Description' });
+    await user.clear(description);
+    await user.paste('new');
+    await openStep(user, 'Review');
+    expect(within(screen.getByTestId('model-review')).getByTestId('model-older-name')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect(await screen.findByText('Model deployment updated')).toBeVisible();
+    // The edit sends no served name: the backend switches the model to its id on any update.
+    const [request] = update.mock.calls[0];
+    expect(request.updateMask?.paths).toEqual(['metadata.annotations']);
+    expect(request.object?.spec?.model).toBeUndefined();
+    expect(models.find('granite-3-8b').spec?.model?.name).toBe('granite-3-8b');
+  });
+
+  it('shows no older-name alert for a model served as its id', async () => {
+    const service = new MockConsoleService();
+    const user = userEvent.setup();
+    renderAt('/models/granite-3-8b/edit', service);
+    expect(await screen.findByRole('textbox', { name: 'Model name' })).toHaveValue('granite-3-8b');
+    expect(screen.queryByTestId('model-older-name')).not.toBeInTheDocument();
+    await openStep(user, 'Review');
+    expect(await screen.findByTestId('model-review')).toBeVisible();
+    expect(screen.queryByTestId('model-older-name')).not.toBeInTheDocument();
+  });
+
   it('says a resource the model was deployed without is not set', async () => {
     const service = new MockConsoleService();
     modelsOf(service).find('granite-3-8b').spec!.main!.requests = {};
