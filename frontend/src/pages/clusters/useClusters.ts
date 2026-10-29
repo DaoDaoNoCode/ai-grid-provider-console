@@ -1,10 +1,15 @@
 import { useCallback, useMemo } from 'react';
+import type { UseQueryResult } from '@tanstack/react-query';
 import { createClient, type Client } from '@connectrpc/connect';
 import { useQuery as useConnectQuery, useTransport } from '@connectrpc/connect-query';
 import type { GridMembership } from '../../api/clusters';
 import { toServiceError } from '../../api/connect/errors';
 import { useConsoleSession } from '../../context/useConsoleSession';
-import { Clusters } from '../../gen/ai_grid/v1/clusters_service_pb';
+import {
+  Clusters,
+  type ClustersGetResponse,
+  type ClustersListResponse,
+} from '../../gen/ai_grid/v1/clusters_service_pb';
 import { get, list } from '../../gen/ai_grid/v1/clusters_service-Clusters_connectquery';
 import { LABEL_ENABLED, LABEL_LOCATION, LABEL_ROLE, toClusterView, type ClusterView } from './clusterView';
 
@@ -33,35 +38,41 @@ export const loadErrorOf = (hasData: boolean, raw: unknown): Error | undefined =
   return hasData && err.isUnauthenticated ? undefined : err;
 };
 
+/**
+ * A Connect query as the pages read it: `select` turns the answer into what the page shows (a
+ * module-level function, so its result stays the same object between renders); `loaded` once the
+ * answer has arrived or failed; `error` as loadErrorOf says, with data meaning both an answer and
+ * something selected from it; `refresh` loads again and says whether that worked.
+ */
+export const useLoaded = <R, T>(query: UseQueryResult<R, unknown>, select: (answer: R | undefined) => T): Loaded<T> => {
+  const { refetch, data: answer } = query;
+  const data = useMemo(() => select(answer), [select, answer]);
+  const refresh = useCallback(async () => (await refetch()).isSuccess, [refetch]);
+  return {
+    data,
+    loaded: query.isFetched,
+    error: loadErrorOf(answer !== undefined && data !== undefined, query.error),
+    updatedAt: answer !== undefined ? query.dataUpdatedAt : undefined,
+    refresh,
+  };
+};
+
 /** The query options both loads share: poll until the session ends, and no retries (the page offers Retry). */
 export const useLoadOptions = () => {
   const { sessionEnded } = useConsoleSession();
   return { refetchInterval: sessionEnded ? (false as const) : POLL_MS, retry: false };
 };
 
+const clusterViews = (answer: ClustersListResponse | undefined) => answer?.items.map(toClusterView) ?? [];
+const clusterView = (answer: ClustersGetResponse | undefined) => answer?.object && toClusterView(answer.object);
+
 /** Every ManagedCluster from Clusters/List. */
-export const useClusterList = (): Loaded<ClusterView[]> => {
-  const objects = useConnectQuery(list, {}, useLoadOptions());
-  const { refetch } = objects;
-  const data = useMemo(() => objects.data?.items.map(toClusterView) ?? [], [objects.data]);
-  const refresh = useCallback(async () => (await refetch()).isSuccess, [refetch]);
-  return {
-    data,
-    loaded: objects.isFetched,
-    error: loadErrorOf(!!objects.data, objects.error),
-    updatedAt: objects.data ? objects.dataUpdatedAt : undefined,
-    refresh,
-  };
-};
+export const useClusterList = (): Loaded<ClusterView[]> =>
+  useLoaded(useConnectQuery(list, {}, useLoadOptions()), clusterViews);
 
 /** One cluster from Clusters/Get. */
-export const useCluster = (name: string): Loaded<ClusterView | undefined> => {
-  const object = useConnectQuery(get, { id: name }, useLoadOptions());
-  const { refetch } = object;
-  const data = useMemo(() => object.data?.object && toClusterView(object.data.object), [object.data]);
-  const refresh = useCallback(async () => (await refetch()).isSuccess, [refetch]);
-  return { data, loaded: object.isFetched, error: loadErrorOf(!!data, object.error), refresh };
-};
+export const useCluster = (name: string): Loaded<ClusterView | undefined> =>
+  useLoaded(useConnectQuery(get, { id: name }, useLoadOptions()), clusterView);
 
 /** The cluster as the backend has it now, for the dialog after a conflict. */
 const loadCluster = async (client: Client<typeof Clusters>, name: string): Promise<ClusterView | undefined> => {

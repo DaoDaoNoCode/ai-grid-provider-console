@@ -2,11 +2,16 @@
 // BFF's relay), and Subscriptions/List for the subscriptions that use a model. Reads poll as the
 // Clusters pages do (useClusters.ts); writes go through useMutation and refetch every Models query
 // once they land.
-import { useCallback, useMemo } from 'react';
+import { useMemo } from 'react';
 import { callUnaryMethod, createConnectQueryKey, useMutation, useQuery, useTransport } from '@connectrpc/connect-query';
 import { useQueryClient } from '@tanstack/react-query';
 import { toServiceError } from '../../api/connect/errors';
-import { Models } from '../../gen/ai_grid/v1/models_service_pb';
+import {
+  Models,
+  type ModelsGetResponse,
+  type ModelsListPlacementClustersResponse,
+  type ModelsListResponse,
+} from '../../gen/ai_grid/v1/models_service_pb';
 import {
   create,
   delete$,
@@ -17,24 +22,18 @@ import {
 } from '../../gen/ai_grid/v1/models_service-Models_connectquery';
 import { list as listSubscriptions } from '../../gen/ai_grid/v1/subscriptions_service-Subscriptions_connectquery';
 import type { Subscription } from '../../gen/ai_grid/v1/subscription_type_pb';
-import { loadErrorOf, useLoadOptions, type Loaded } from '../clusters/useClusters';
+import type { SubscriptionsListResponse } from '../../gen/ai_grid/v1/subscriptions_service_pb';
+import { useLoadOptions, useLoaded, type Loaded } from '../clusters/useClusters';
 import { createRequestOf, updateRequestOf, type ModelInput } from './modelRequests';
 import { toModelView, type ModelView } from './modelView';
 
+const modelViews = (answer: ModelsListResponse | undefined) => answer?.items.map(toModelView) ?? [];
+const modelView = (answer: ModelsGetResponse | undefined) => answer?.object && toModelView(answer.object);
+const clusterNames = (answer: ModelsListPlacementClustersResponse | undefined) => answer?.clusters ?? [];
+const subscriptionItems = (answer: SubscriptionsListResponse | undefined) => answer?.items ?? [];
+
 /** Every model, from Models/List. */
-export const useModelList = (): Loaded<ModelView[]> => {
-  const objects = useQuery(list, {}, useLoadOptions());
-  const { refetch } = objects;
-  const data = useMemo(() => objects.data?.items.map(toModelView) ?? [], [objects.data]);
-  const refresh = useCallback(async () => (await refetch()).isSuccess, [refetch]);
-  return {
-    data,
-    loaded: objects.isFetched,
-    error: loadErrorOf(!!objects.data, objects.error),
-    updatedAt: objects.data ? objects.dataUpdatedAt : undefined,
-    refresh,
-  };
-};
+export const useModelList = (): Loaded<ModelView[]> => useLoaded(useQuery(list, {}, useLoadOptions()), modelViews);
 
 /**
  * One model from Models/Get. `poll: false` loads it once, as the edit page does, so the wizard starts
@@ -42,24 +41,17 @@ export const useModelList = (): Loaded<ModelView[]> => {
  */
 export const useModel = (id: string, { poll = true }: { poll?: boolean } = {}): Loaded<ModelView | undefined> => {
   const options = useLoadOptions();
-  const object = useQuery(get, { id }, poll ? options : { retry: false, refetchInterval: false });
-  const { refetch } = object;
-  const data = useMemo(() => object.data?.object && toModelView(object.data.object), [object.data]);
-  const refresh = useCallback(async () => (await refetch()).isSuccess, [refetch]);
-  return { data, loaded: object.isFetched, error: loadErrorOf(!!data, object.error), refresh };
+  // The edit page passes poll: false on purpose: its wizard holds the snapshot it started from
+  // (ModelEditPage), and a save is checked against that version.
+  return useLoaded(useQuery(get, { id }, poll ? options : { retry: false, refetchInterval: false }), modelView);
 };
 
 /**
  * The clusters a model can be placed on, from Models/ListPlacementClusters: loaded when the wizard
  * opens and again on `refresh`, not polled.
  */
-export const usePlacementClusters = (): Loaded<string[]> => {
-  const answer = useQuery(listPlacementClusters, {}, { retry: false });
-  const { refetch } = answer;
-  const data = useMemo(() => answer.data?.clusters ?? [], [answer.data]);
-  const refresh = useCallback(async () => (await refetch()).isSuccess, [refetch]);
-  return { data, loaded: answer.isFetched, error: loadErrorOf(!!answer.data, answer.error), refresh };
-};
+export const usePlacementClusters = (): Loaded<string[]> =>
+  useLoaded(useQuery(listPlacementClusters, {}, { retry: false }), clusterNames);
 
 /** What the wizard and the delete dialog write, and how the dialog loads a model again. */
 export type ModelWrites = {
@@ -129,10 +121,5 @@ export const usingModelFilter = (id: string) =>
   /^[a-z0-9-]+$/.test(id) ? `this.spec.model_refs.exists(r, r.model_id == "${id}")` : 'false';
 
 /** The subscriptions that use the model, from Subscriptions/List; loaded once. */
-export const useSubscriptionsUsingModel = (id: string): Loaded<Subscription[]> => {
-  const answer = useQuery(listSubscriptions, { filter: usingModelFilter(id) }, { retry: false });
-  const { refetch } = answer;
-  const data = useMemo(() => answer.data?.items ?? [], [answer.data]);
-  const refresh = useCallback(async () => (await refetch()).isSuccess, [refetch]);
-  return { data, loaded: answer.isFetched, error: loadErrorOf(!!answer.data, answer.error), refresh };
-};
+export const useSubscriptionsUsingModel = (id: string): Loaded<Subscription[]> =>
+  useLoaded(useQuery(listSubscriptions, { filter: usingModelFilter(id) }, { retry: false }), subscriptionItems);
