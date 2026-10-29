@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"mime"
 	"net/http"
 	"reflect"
@@ -76,15 +75,6 @@ func decodeObject(dec *json.Decoder, into any) error {
 	strict := json.NewDecoder(bytes.NewReader(raw))
 	strict.DisallowUnknownFields()
 	return strict.Decode(into)
-}
-
-// copyMap is nil-safe: the JSON carries an empty map rather than null when
-// the backend sends none.
-func copyMap(m map[string]string) map[string]string {
-	if m == nil {
-		return map[string]string{}
-	}
-	return maps.Clone(m)
 }
 
 // decodeErrorMessage keeps the useful part of a JSON decoding error.

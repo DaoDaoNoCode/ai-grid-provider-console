@@ -123,7 +123,7 @@ describe('routes', () => {
         });
         continue;
       }
-      vi.spyOn(service, name as 'listModels').mockRejectedValue(
+      vi.spyOn(service, name as 'listOrganizations').mockRejectedValue(
         new ServiceError(501, 'the AI Grid backend does not support this operation yet'),
       );
     }

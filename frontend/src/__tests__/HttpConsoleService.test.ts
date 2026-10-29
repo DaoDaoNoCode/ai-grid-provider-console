@@ -58,14 +58,6 @@ describe('HttpConsoleService', () => {
     );
   });
 
-  it('lists the models for the Subscriptions pages', async () => {
-    const model = { name: 'widget', namespace: 'team-models', modelUri: 'hf://org/widget', modelName: 'org/widget' };
-    const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, { data: [model] }));
-    const service = new HttpConsoleService(fetchFn);
-    await expect(service.listModels()).resolves.toMatchObject([{ name: 'widget', namespace: 'team-models' }]);
-    expect(fetchFn).toHaveBeenLastCalledWith('/api/v1/models', expect.objectContaining({ method: 'GET' }));
-  });
-
   it('maps the clusters the grid overview embeds', async () => {
     const fetchFn = vi.fn().mockResolvedValue(
       jsonResponse(200, {

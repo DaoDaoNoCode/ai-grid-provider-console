@@ -22,7 +22,7 @@ func TestParseDefaults(t *testing.T) {
 	if cfg.Port != 8080 || cfg.AuthTokenHeader != DefaultAuthTokenHeader || cfg.AuthUserHeader != DefaultAuthUserHeader || cfg.BackendAddress != DefaultBackendAddress {
 		t.Fatalf("unexpected defaults: %+v", cfg)
 	}
-	if cfg.BackendTimeout != 10*time.Second || cfg.BindAddress != DefaultBindAddress || cfg.HubCAFile != "" || cfg.ModelsNamespace != DefaultModelsNamespace || DefaultModelsNamespace != "models-as-a-service" {
+	if cfg.BackendTimeout != 10*time.Second || cfg.BindAddress != DefaultBindAddress || cfg.HubCAFile != "" {
 		t.Fatalf("unexpected defaults: %+v", cfg)
 	}
 	if cfg.TLSEnabled() {
@@ -56,7 +56,7 @@ func TestParseInClusterDefaults(t *testing.T) {
 
 func TestParseEnvThenFlags(t *testing.T) {
 	t.Parallel()
-	env := map[string]string{"PORT": "9000", "BACKEND_ADDRESS": "from-env:1", "LOG_LEVEL": "debug", "BACKEND_TIMEOUT": "3s", "HUB_API_URL": "https://hub.example", "BIND_ADDRESS": "0.0.0.0", "MODELS_NAMESPACE": "team-models"}
+	env := map[string]string{"PORT": "9000", "BACKEND_ADDRESS": "from-env:1", "LOG_LEVEL": "debug", "BACKEND_TIMEOUT": "3s", "HUB_API_URL": "https://hub.example", "BIND_ADDRESS": "0.0.0.0"}
 	cfg, err := Parse([]string{"--backend-address=from-flag:2"}, lookup(env))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -72,9 +72,6 @@ func TestParseEnvThenFlags(t *testing.T) {
 	}
 	if cfg.ListenAddr() != "0.0.0.0:9000" {
 		t.Errorf("ListenAddr = %q", cfg.ListenAddr())
-	}
-	if cfg.ModelsNamespace != "team-models" {
-		t.Errorf("ModelsNamespace = %q", cfg.ModelsNamespace)
 	}
 	if cfg.LogLevel.String() != "DEBUG" {
 		t.Errorf("LogLevel = %s", cfg.LogLevel)

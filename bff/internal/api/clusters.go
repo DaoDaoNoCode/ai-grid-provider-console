@@ -209,6 +209,20 @@ var conditionStatusStrings = map[aigridv1.ConditionStatus]string{
 	aigridv1.ConditionStatus_CONDITION_STATUS_UNSPECIFIED: "Unknown",
 }
 
+// toConditions is a cluster's conditions as the JSON carries them.
+func toConditions(conds []*aigridv1.Condition) []ClusterCondition {
+	out := make([]ClusterCondition, 0, len(conds))
+	for _, c := range conds {
+		cond := ClusterCondition{Type: c.GetType(), Status: conditionStatusStrings[c.GetStatus()], Reason: c.GetReason(), Message: c.GetMessage()}
+		if ts := c.GetLastTransitionTime(); ts != nil {
+			t := ts.AsTime().UTC()
+			cond.LastTransitionTime = &t
+		}
+		out = append(out, cond)
+	}
+	return out
+}
+
 func toGridCluster(mc *aigridv1.ManagedCluster) GridCluster {
 	labels := mc.GetLabels()
 	if labels == nil {

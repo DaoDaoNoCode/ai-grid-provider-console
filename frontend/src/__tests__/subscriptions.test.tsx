@@ -603,7 +603,9 @@ describe('a failed background poll', () => {
     const failed = vi.fn(async () => {
       throw new ServiceError(503, 'Service unavailable.');
     });
-    service.listModels = failed;
+    vi.spyOn(fleetOf(service), 'list').mockImplementation(() => {
+      throw new ConnectError('Service unavailable.', Code.Unavailable);
+    });
     service.listOrganizations = failed;
     await act(async () => {
       vi.advanceTimersByTime(30000);

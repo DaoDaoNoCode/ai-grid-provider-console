@@ -2,7 +2,6 @@
 // to HttpConsoleService, so page
 // tests render what the browser gets from `make dev-fake` instead of the mock's own shapes.
 import getGridOverview from '../../../mock/examples/get-grid-overview.json';
-import getModels from '../../../mock/examples/get-models.json';
 import { HttpConsoleService } from '../api/HttpConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
 
@@ -13,7 +12,6 @@ const json = (data: unknown) =>
 export const bffExamplesFetch = () =>
   vi.fn(async (url: string, init?: RequestInit) => {
     if (init?.method === 'DELETE') return new Response(null, { status: 204 });
-    if (url.endsWith('/models')) return json(getModels.body.data);
     if (url.includes('/grid/overview')) {
       return json({ ...getGridOverview.body.data, metrics: [] });
     }
@@ -24,7 +22,6 @@ export const bffExamplesFetch = () =>
 export const serviceOnBffExamples = (fetchFn: ReturnType<typeof bffExamplesFetch> = bffExamplesFetch()) => {
   const service = new MockConsoleService();
   const http = new HttpConsoleService(fetchFn as unknown as typeof fetch);
-  service.listModels = () => http.listModels();
   service.getGridOverview = (...args) => http.getGridOverview(...args);
   return service;
 };

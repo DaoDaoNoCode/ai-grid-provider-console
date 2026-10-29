@@ -10,7 +10,6 @@ import type {
   GridCluster,
   GridOverview,
   GridRange,
-  ManagedModel,
   Organization,
   OrganizationInput,
   User,
@@ -20,8 +19,6 @@ import { demoMetrics } from '../services/demoMetrics';
 
 /** In-memory service for tests and UI work without a cluster. */
 export class MockConsoleService implements ConsoleService {
-  public models: ManagedModel[] = seedModels();
-
   constructor(
     public user: User = { username: 'dev-user', groups: ['cluster-admins'], isProviderAdmin: true },
     public clusters: GridCluster[] = seedClusters(),
@@ -32,7 +29,6 @@ export class MockConsoleService implements ConsoleService {
       mapTileAttribution: '',
       billingUrl: '',
       version: 'mock',
-      modelsNamespace: 'ai-grid-models',
       fakeBackend: false,
       monitoring: { enabled: false, persesProject: '' },
     },
@@ -182,11 +178,6 @@ export class MockConsoleService implements ConsoleService {
     }
     this.organizations.splice(index, 1);
   };
-
-  // The models the Subscriptions pages read, until they read Models/List over Connect. The Models
-  // pages read the backend's Models API (__tests__/connectModels.ts).
-  listModels = async (): Promise<ManagedModel[]> =>
-    structuredClone(this.models).sort((a, b) => a.name.localeCompare(b.name));
 
   private organizationIndex(id: string): number {
     const index = this.organizations.findIndex((o) => o.id === id);
@@ -397,42 +388,3 @@ export const seedOrganizations = (): Organization[] =>
       creationTimestamp: created,
     };
   });
-
-// The models in mock/fixtures/models.json (the PoC's catalog models), except that
-// granite-3-8b is placed on site1, so pages that follow placement have one to show (A27).
-export const seedModels = (): ManagedModel[] =>
-  (
-    [
-      ['granite-3-8b', 'Granite 3.3 8B Instruct', 'Enterprise language model', 'Ready', ['site1']],
-      ['llama-3-70b', 'Llama 3.3 70B Instruct', 'General purpose language model', 'Ready', []],
-      ['granite-research', 'Granite research endpoint', undefined, 'Pending', []],
-    ] as [string, string, string | undefined, string, string[]][]
-  ).map(([name, displayName, description, phase, locations]) => ({
-    name,
-    namespace: 'ai-grid-models',
-    displayName,
-    description,
-    modelRef: { kind: 'LLMInferenceService', name },
-    phase,
-    ...(name === 'granite-research'
-      ? { reason: 'ModelNotReady', statusMessage: 'The model endpoint is starting.' }
-      : {}),
-    resourceVersion: '1',
-    locations,
-    // The seed clusters' location label is their name, and site1 is a provisioned member.
-    selectedClusters: [...locations],
-    modelUri: `hf://example-org/${name}`,
-    modelName: `example-org/${name}`,
-    runtimeImage: 'quay.io/example/vllm:v1',
-    replicas: 1,
-    autoscaled: false,
-    cpu: '2',
-    memory: '4Gi',
-    gpuCount: 0,
-    baseRefs: ['v3-6-0-kserve-config-llm-template-cpu'],
-    env: [],
-    annotations: {
-      'openshift.io/display-name': displayName,
-      ...(description ? { 'openshift.io/description': description } : {}),
-    },
-  }));

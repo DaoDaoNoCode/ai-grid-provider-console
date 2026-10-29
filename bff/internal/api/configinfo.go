@@ -9,8 +9,6 @@ type ConsoleConfig struct {
 	MapTileAttribution string `json:"mapTileAttribution"`
 	BillingURL         string `json:"billingUrl"`
 	Version            string `json:"version"`
-	// ModelsNamespace is the namespace the console creates models in.
-	ModelsNamespace string `json:"modelsNamespace"`
 	// FakeBackend tells the UI to show its fake-backend banner.
 	FakeBackend bool `json:"fakeBackend"`
 	// Monitoring says whether /perses/api reaches a Perses server, and the one project it
@@ -32,7 +30,6 @@ func (a *App) getConfig(w http.ResponseWriter, _ *http.Request) {
 		MapTileAttribution: a.cfg.MapTileAttribution,
 		BillingURL:         a.cfg.BillingURL,
 		Version:            Version,
-		ModelsNamespace:    a.cfg.ModelsNamespace,
 		FakeBackend:        a.cfg.FakeBackend,
 		Monitoring:         MonitoringConfig{Enabled: a.perses != nil, PersesProject: a.cfg.PersesProject},
 	})

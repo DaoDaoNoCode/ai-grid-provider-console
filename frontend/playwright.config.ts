@@ -64,7 +64,7 @@ export default defineConfig({
     },
     {
       // make -C bff run-fake.
-      command: `go run ./cmd --port=${bffPort} --backend-address=127.0.0.1:${backendPort} --hub-api-url=http://127.0.0.1:${hubPort} --fake-backend --models-namespace=ai-grid-models`,
+      command: `go run ./cmd --port=${bffPort} --backend-address=127.0.0.1:${backendPort} --hub-api-url=http://127.0.0.1:${hubPort} --fake-backend`,
       cwd: '../bff',
       url: `http://127.0.0.1:${bffPort}/healthcheck`,
       reuseExistingServer: !process.env.CI,

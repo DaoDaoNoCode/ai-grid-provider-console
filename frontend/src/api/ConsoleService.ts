@@ -1,5 +1,4 @@
 import type { GridService } from './grid';
-import type { ModelsService } from './models';
 import type { MonitoringService } from './monitoring';
 import type { OrganizationsService } from './organizations';
 import type { ConsoleConfig, User } from './types';
@@ -14,8 +13,7 @@ export interface UserService {
  * just the areas it uses. The HTTP implementation is used in the browser; tests
  * use an in-memory one.
  */
-export interface ConsoleService
-  extends OrganizationsService, ModelsService, GridService, MonitoringService, UserService {
+export interface ConsoleService extends OrganizationsService, GridService, MonitoringService, UserService {
   getConfig(): Promise<ConsoleConfig>;
 }
 

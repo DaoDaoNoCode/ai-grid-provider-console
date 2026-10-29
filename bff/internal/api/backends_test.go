@@ -10,7 +10,6 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/protobuf/proto"
 
 	backendv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/backend/v1"
 	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
@@ -25,12 +24,8 @@ import (
 // both share against both, with the same fleet seeded in each one's shape,
 // so a change that works on the fake and breaks the production path fails.
 
-// fleetModelsNamespace is the namespace of the seeded model.
-const fleetModelsNamespace = backendtest.V1ModelsNamespace
-
 // backendShape is one backend the BFF can be dialed to, seeded with the
-// fleet: tenant t-1 "acme" at version 3; model tiny-llm at version 7 with one replica;
-// subscription team-a at version 2; and the location site-1. start fails
+// fleet: tenant t-1 "acme" at version 3. start fails
 // every call with err when it is set, and returns the client and the
 // incoming metadata of the last call.
 type backendShape struct {
@@ -43,11 +38,6 @@ var backendShapes = []backendShape{
 		fake := &backendtest.Fake{
 			Err:     err,
 			Tenants: []*aigridv1.Tenant{{Id: "t-1", Name: "acme", Domains: []string{"acme.example.com"}, ResourceVersion: "3"}},
-			Models: []*aigridv1.Model{{Name: "tiny-llm", Metadata: &aigridv1.ObjectMeta{Namespace: fleetModelsNamespace, ResourceVersion: "7"},
-				Spec: &aigridv1.ModelSpec{Replicas: proto.Int32(1), Model: &aigridv1.ModelSource{Uri: "hf://example-org/tiny-llm"}}}},
-			Subscriptions: []*aigridv1.Subscription{{Name: "team-a", DisplayName: "Team A", Priority: 5, ResourceVersion: "2",
-				TokenMetadata: &aigridv1.TokenMetadata{OrganizationId: "t-1"},
-				ModelRefs:     []*aigridv1.ModelSubscriptionRef{{Name: "tiny-llm", TokenRateLimits: []*aigridv1.TokenRateLimit{{Limit: 100, Window: "1m"}}}}}},
 		}
 		return backendtest.Start(t, fake), func() metadata.MD { return fake.Metadata }
 	}},
@@ -56,12 +46,6 @@ var backendShapes = []backendShape{
 			Err: err,
 			Tenants: []*backendv1.Tenant{{Id: "t-1", Metadata: &backendv1.Metadata{Name: "acme", Version: 3},
 				Spec: &backendv1.TenantSpec{Domains: []string{"acme.example.com"}}}},
-			Models: []*backendv1.Model{{Id: "tiny-llm", Metadata: &backendv1.Metadata{Name: "tiny-llm", Version: 7},
-				Spec: &backendv1.ModelSpec{Replicas: proto.Int32(1), Model: &backendv1.ModelSource{Uri: "hf://example-org/tiny-llm"}}}},
-			Subscriptions: []*backendv1.Subscription{{Id: "team-a",
-				Metadata: &backendv1.Metadata{Version: 2, Annotations: map[string]string{AnnotationDisplayName: "Team A"}},
-				Spec: &backendv1.SubscriptionSpec{Priority: 5, Organization: &backendv1.SubscriptionOrganization{Id: "t-1"},
-					ModelRefs: []*backendv1.SubscriptionModelRef{{Name: "tiny-llm", TokenRateLimits: []*backendv1.TokenRateLimit{{Limit: 100, Window: "1m"}}}}}}},
 		}
 		return backendtest.StartV1(t, v1), v1.Metadata
 	}},
@@ -125,59 +109,6 @@ func TestTenantsOnEveryBackend(t *testing.T) {
 	})
 }
 
-// GET /api/v1/models, which the Subscriptions pages read, on either backend.
-func TestModelsOnEveryBackend(t *testing.T) {
-	t.Parallel()
-	onEveryBackend(t, func(t *testing.T, app *App) {
-		var list []Model
-		rec := serve(app, asUser(http.MethodGet, "/api/v1/models?offset=0&limit=5"))
-		wantStatus(t, "list", rec, http.StatusOK, "")
-		if meta := decodeList(t, rec, &list); len(list) != 1 || list[0].Name != "tiny-llm" || list[0].Namespace != fleetModelsNamespace || total(meta) != 1 {
-			t.Fatalf("list: %+v, meta %+v; want %s/tiny-llm, total 1", list, meta, fleetModelsNamespace)
-		}
-	})
-}
-
-func TestSubscriptionsOnEveryBackend(t *testing.T) {
-	t.Parallel()
-	update := `{"description": "Models for team A.", "priority": 7, "owner": {"groups": [{"name": "team-a"}]},
-"modelRefs": [{"name": "tiny-llm", "tokenRateLimits": [{"limit": 5, "window": "1m"}]}], "tokenMetadata": {"organizationId": "t-1"}}`
-	onEveryBackend(t, func(t *testing.T, app *App) {
-		var list []map[string]any
-		rec := serve(app, asUser(http.MethodGet, "/api/v1/subscriptions"))
-		wantStatus(t, "list", rec, http.StatusOK, "")
-		if decodeData(t, rec, &list); len(list) != 1 || list[0]["name"] != "team-a" || list[0]["displayName"] != "Team A" || list[0]["resourceVersion"] != "2" {
-			t.Fatalf("list: %v, want team-a at version 2", list)
-		}
-		wantStatus(t, "get", serve(app, asUser(http.MethodGet, "/api/v1/subscriptions/team-a")), http.StatusOK, `"2"`)
-		wantStatus(t, "get unknown", serve(app, asUser(http.MethodGet, "/api/v1/subscriptions/nope")), http.StatusNotFound, "")
-
-		rec = serve(app, jsonRequest(http.MethodPost, "/api/v1/subscriptions", strings.Replace(validSubscription, `"team-a"`, `"team-b"`, 1)))
-		wantStatus(t, "create", rec, http.StatusCreated, "")
-		var created struct {
-			Subscription map[string]any
-			AuthPolicy   map[string]any
-		}
-		if decodeData(t, rec, &created); rec.Header().Get("Location") != "/api/v1/subscriptions/team-b" || created.AuthPolicy["name"] != "team-b-policy" {
-			t.Fatalf("create: Location %q, policy %v; want team-b and team-b-policy", rec.Header().Get("Location"), created.AuthPolicy)
-		}
-
-		put := func(version string) *http.Request {
-			return withIfMatch(jsonRequest(http.MethodPut, "/api/v1/subscriptions/team-a", update), version)
-		}
-		wantStatus(t, "stale update", serve(app, put(`"1"`)), http.StatusConflict, "")
-		rec = serve(app, put(`"2"`))
-		wantStatus(t, "update", rec, http.StatusOK, "")
-		var updated struct{ Subscription map[string]any }
-		if decodeData(t, rec, &updated); updated.Subscription["description"] != "Models for team A." || updated.Subscription["priority"] != float64(7) {
-			t.Fatalf("update answered %v, want the new description and priority 7", updated.Subscription)
-		}
-
-		wantStatus(t, "stale delete", serve(app, withIfMatch(asUser(http.MethodDelete, "/api/v1/subscriptions/team-a"), `"9"`)), http.StatusConflict, "")
-		wantStatus(t, "delete", serve(app, withIfMatch(asUser(http.MethodDelete, "/api/v1/subscriptions/team-b"), `"1"`)), http.StatusNoContent, "")
-	})
-}
-
 // The caller's identity reaches either backend, and the backend's codes map
 // to the same HTTP statuses through the adapters as through the draft.
 func TestIdentityAndErrorsOnEveryBackend(t *testing.T) {
@@ -219,7 +150,7 @@ func TestIdentityAndErrorsOnEveryBackend(t *testing.T) {
 				t.Run(tc.code.String(), func(t *testing.T) {
 					client, _ := shape.start(t, backendtest.Status(tc.code, "backend said no"))
 					app := NewApp(testConfig(t), slog.New(slog.DiscardHandler), client, startHub(t, &fakeHub{allowed: true}))
-					for _, path := range []string{"/api/v1/tenants", "/api/v1/models", "/api/v1/subscriptions"} {
+					for _, path := range []string{"/api/v1/tenants"} {
 						rec := serve(app, asUser(http.MethodGet, path))
 						if msg := decodeError(t, rec).Error.Message; rec.Code != tc.want || (msg == "backend said no") != tc.keep {
 							t.Errorf("GET %s: %d %q, want %d (backend's message kept: %v)", path, rec.Code, msg, tc.want, tc.keep)
@@ -233,16 +164,13 @@ func TestIdentityAndErrorsOnEveryBackend(t *testing.T) {
 
 // The backend has no Grid service (a method it doesn't
 // serve answers Unimplemented without reaching a handler), and the adapters
-// refuse with 501 what its API cannot carry, before any call: a model
-// filter, a subscription without its auth policy, and
-// tenant fields its Tenant lacks.
+// refuse with 501 what its API cannot carry, before any call: tenant fields
+// its Tenant lacks.
 func TestV1BackendAnswers501ForWhatItLacks(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct{ method, path, body, ifMatch string }{
 		{http.MethodGet, "/api/v1/grid/overview?range=1h", "", ""},
 		{http.MethodGet, "/api/v1/grid/overview?range=24h&site=brussels&metrics=false", "", ""},
-		{http.MethodGet, "/api/v1/models?filter=" + url.QueryEscape(`this.name == "tiny-llm"`), "", ""},
-		{http.MethodPost, "/api/v1/subscriptions", strings.Replace(validSubscription, `"createAuthPolicy":true`, `"createAuthPolicy":false`, 1), ""},
 		{http.MethodPost, "/api/v1/tenants", `{"name": "globex", "description": "Globex Corp."}`, ""},
 		{http.MethodPatch, "/api/v1/tenants/t-1", `{"alias": "acme"}`, `"3"`},
 	} {

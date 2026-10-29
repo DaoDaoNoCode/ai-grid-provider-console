@@ -1,16 +1,14 @@
 import type { DashboardResource } from '@perses-dev/client';
-import { toGridCluster, toManagedModel, toOrganization } from './adapters';
+import { toGridCluster, toOrganization } from './adapters';
 import type { ConsoleService } from './ConsoleService';
 import { RelayedError, ServiceError } from './ConsoleService';
 import { PERSES_API } from './monitoring';
 import type {
   ApiCluster,
-  ApiModel,
   ApiTenant,
   ConsoleConfig,
   GridOverview,
   GridRange,
-  ManagedModel,
   Organization,
   OrganizationInput,
   User,
@@ -94,11 +92,6 @@ export class HttpConsoleService implements ConsoleService {
 
   deleteOrganization(id: string, resourceVersion: string): Promise<void> {
     return this.request<void>('DELETE', `/tenants/${encodeURIComponent(id)}`, { ifMatch: resourceVersion });
-  }
-
-  /** For the Subscriptions pages until they read Models/List over Connect. */
-  async listModels(): Promise<ManagedModel[]> {
-    return (await this.request<ApiModel[]>('GET', '/models')).map(toManagedModel);
   }
 
   async getGridOverview(

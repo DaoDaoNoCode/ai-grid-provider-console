@@ -30,7 +30,7 @@ const tones: Record<string, StatusTone> = {
   'Not provisioned': 'neutral',
   // A cluster outside AI Grid (no ai-grid/enabled label).
   'Not added': 'neutral',
-  // Models (ManagedModel.phase) and subscriptions (normalized MaaSSubscription phases).
+  // Models (the Models pages' phase words) and subscriptions (their phase as reported).
   Active: 'success',
   Pending: 'info',
   Failed: 'danger',
