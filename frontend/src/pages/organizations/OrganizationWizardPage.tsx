@@ -50,7 +50,7 @@ export const OrganizationWizardPage: React.FC<Props> = ({ service }) => {
       object="organization"
       loadingLabel="Loading organization"
       notFound={id === undefined ? undefined : organizationNotFound(id)}
-      hasBodyWrapper={false}
+      isWizard
     >
       <OrganizationFormWizard key={organization?.id} service={service} organization={organization} />
     </PageStateSection>

@@ -118,7 +118,11 @@ export const ViewSubscriptionPage: React.FC<Props> = ({ service }) => {
       notFound={subscriptionNotFound(subscriptionName, backUrl)}
     >
       {subscriptionInfo && (
-        <Flex direction={{ default: 'column' }} spaceItems={{ default: 'spaceItemsXl' }}>
+        <Flex
+          direction={{ default: 'column' }}
+          flexWrap={{ default: 'nowrap' }}
+          spaceItems={{ default: 'spaceItemsXl' }}
+        >
           <SubscriptionDetailsSection
             subscription={subscriptionInfo.subscription}
             authPolicies={Array.isArray(subscriptionInfo.authPolicies) ? subscriptionInfo.authPolicies : []}

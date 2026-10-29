@@ -97,6 +97,7 @@ export const OrganizationConfigurationDetails: React.FC<Props> = ({ organization
   return (
     <Flex
       direction={{ default: 'column' }}
+      flexWrap={{ default: 'nowrap' }}
       spaceItems={{ default: 'spaceItemsXl' }}
       data-testid="organization-configuration-details"
     >

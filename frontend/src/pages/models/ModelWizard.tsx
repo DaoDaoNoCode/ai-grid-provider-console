@@ -145,13 +145,23 @@ const goneLocationsError = (names: string[]) =>
 /** "org/model" names a deployment "model": the last path segment, as a starting point. */
 const deploymentNameFor = (modelName: string) => modelName.trim().split('/').filter(Boolean).pop() ?? '';
 
-/** The Review step; each section's Edit link goes back to its step. */
+/**
+ * The Review step: a warning about the choices first, if there is one, spaced as the sections are;
+ * each section's Edit link goes back to its step.
+ */
 const ReviewStep: React.FC<{
   sections: { title: string; step: string; items: { term: string; value?: string }[] }[];
-}> = ({ sections }) => {
+  warning?: React.ReactNode;
+}> = ({ sections, warning }) => {
   const { goToStepById } = useWizardContext();
   return (
-    <Flex direction={{ default: 'column' }} spaceItems={{ default: 'spaceItemsXl' }} data-testid="model-review">
+    <Flex
+      direction={{ default: 'column' }}
+      flexWrap={{ default: 'nowrap' }}
+      spaceItems={{ default: 'spaceItemsXl' }}
+      data-testid="model-review"
+    >
+      {warning}
       {sections.map((section) => (
         <DetailsSection key={section.title} title={section.title} onEdit={() => goToStepById(section.step)}>
           <DetailsList items={section.items} hideEmpty aria-label={section.title} />
@@ -511,7 +521,7 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
           </Breadcrumb>
         }
       />
-      <PageSection hasBodyWrapper={false} isFilled>
+      <PageSection type="wizard" hasBodyWrapper={false} isFilled>
         <Wizard
           isProgressive={false}
           onClose={requestLeave}
@@ -753,10 +763,14 @@ export const ModelWizard: React.FC<Props> = ({ service, model }) => {
             id={steps.review}
             isDisabled={!sourceValid || !deploymentValid || !locationsValid || saving}
           >
-            {serverMismatch && (
-              <Alert isInline variant="warning" title={serverMismatch} data-testid="model-server-mismatch" />
-            )}
-            <ReviewStep sections={review} />
+            <ReviewStep
+              sections={review}
+              warning={
+                serverMismatch && (
+                  <Alert isInline variant="warning" title={serverMismatch} data-testid="model-server-mismatch" />
+                )
+              }
+            />
           </WizardStep>
         </Wizard>
       </PageSection>

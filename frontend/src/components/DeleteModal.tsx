@@ -63,7 +63,11 @@ export const DeleteModal: React.FC<Props> = ({
         <Stack hasGutter>
           <StackItem>{children}</StackItem>
           <StackItem>
-            <Flex direction={{ default: 'column' }} spaceItems={{ default: 'spaceItemsSm' }}>
+            <Flex
+              direction={{ default: 'column' }}
+              flexWrap={{ default: 'nowrap' }}
+              spaceItems={{ default: 'spaceItemsSm' }}
+            >
               <FlexItem id="delete-modal-prompt">
                 Type <strong>{deleteNameSanitized}</strong> to confirm:
               </FlexItem>

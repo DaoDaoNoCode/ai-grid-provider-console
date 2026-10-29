@@ -194,6 +194,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
     return targets.length ? (
       <Flex
         direction={{ default: 'column' }}
+        flexWrap={{ default: 'nowrap' }}
         alignItems={{ default: 'alignItemsFlexStart' }}
         spaceItems={{ default: 'spaceItemsSm' }}
       >
@@ -215,6 +216,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
     return assigned.length ? (
       <Flex
         direction={{ default: 'column' }}
+        flexWrap={{ default: 'nowrap' }}
         alignItems={{ default: 'alignItemsFlexStart' }}
         spaceItems={{ default: 'spaceItemsSm' }}
       >

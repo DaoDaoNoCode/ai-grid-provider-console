@@ -227,8 +227,10 @@ describe('routes', () => {
     at(path);
     await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('dev-user'));
     // PatternFly's Page isContentFilled plus a PageSection isFilled: the white panel reaches the bottom.
+    // A wizard's is PatternFly's wizard section, so its footer stays in view and only the step scrolls.
+    const section = ['/models/deploy', '/organizations/create'].includes(path) ? 'wizard' : 'section';
     expect(document.querySelector('.pf-v6-c-page__main-container.pf-m-fill')).not.toBeNull();
-    await waitFor(() => expect(document.querySelector('.pf-v6-c-page__main-section.pf-m-fill')).not.toBeNull());
+    await waitFor(() => expect(document.querySelector(`.pf-v6-c-page__main-${section}.pf-m-fill`)).not.toBeNull());
   });
 
   it('shows a success toast for a notice passed through navigation state', async () => {

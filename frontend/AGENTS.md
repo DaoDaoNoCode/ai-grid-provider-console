@@ -29,6 +29,11 @@ Never write a page-level `EmptyState` or `Alert` for these by hand: use the comp
 Spacing between siblings comes from PatternFly's layouts (`Stack` or `Flex` with a gutter), not
 margin or padding utilities; where a utility is the only way, it carries a one-line reason. The
 breadcrumb goes to `PageHeader`, which puts it in PatternFly's `PageBreadcrumb` section.
+A vertical `Flex` also sets `flexWrap={{ default: 'nowrap' }}`: `Flex` wraps by default, and in a
+container of limited height (a wizard step) its column wraps into side-by-side columns. A page whose
+content is a `Wizard` passes `isWizard` to `PageStateSection` (or uses `PageSection type="wizard"`),
+so the wizard fills the page, its footer stays in view and only the step scrolls; content in a
+step is spaced by a `Stack` or a `Form`.
 
 ## States
 

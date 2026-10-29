@@ -47,7 +47,7 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
     }
     const phase = modelPhase(model);
     return (
-      <Flex direction={{ default: 'column' }} spaceItems={{ default: 'spaceItemsXl' }}>
+      <Flex direction={{ default: 'column' }} flexWrap={{ default: 'nowrap' }} spaceItems={{ default: 'spaceItemsXl' }}>
         {/* Saved to Git says all git mode knows; the status label shows it, so no alert repeats it. */}
         {phase !== 'Ready' && phase !== 'Saved to Git' && hasModelStatusDetails(model) && (
           <Alert

@@ -30,8 +30,13 @@ type Props = {
    */
   notFound?: NotFound;
   notAvailableTitle?: string;
-  /** Off for content that brings its own padding (a wizard). */
+  /** Off for content that brings its own padding. */
   hasBodyWrapper?: boolean;
+  /**
+   * The content is a Wizard: PatternFly's wizard page section, which fills the page so the wizard's
+   * footer stays in view and only the step scrolls.
+   */
+  isWizard?: boolean;
   children?: React.ReactNode;
 };
 
@@ -62,6 +67,7 @@ export const PageStateSection: React.FC<Props> = ({
   notFound,
   notAvailableTitle,
   hasBodyWrapper,
+  isWizard,
   children,
 }) => {
   const [shown, setShown] = useState(false);
@@ -99,7 +105,7 @@ export const PageStateSection: React.FC<Props> = ({
     // 401 shows nothing: the console says once that the session has ended.
     const stale = error && !(serviceError?.isUnauthenticated ?? false);
     body = (
-      <PageSection isFilled hasBodyWrapper={hasBodyWrapper}>
+      <PageSection isFilled type={isWizard ? 'wizard' : undefined} hasBodyWrapper={isWizard ? false : hasBodyWrapper}>
         <Stack hasGutter>
           {stale ? (
             <StackItem>
