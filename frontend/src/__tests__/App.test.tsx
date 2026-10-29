@@ -15,7 +15,7 @@ describe('App', () => {
   it('shows the signed-in user and the clusters from the service', async () => {
     const service = new MockConsoleService();
     render(
-      <MemoryRouter>
+      <MemoryRouter initialEntries={['/clusters']}>
         <TestApp service={service} />
       </MemoryRouter>,
     );
@@ -34,9 +34,9 @@ describe('App', () => {
         <TestApp service={new MockConsoleService()} />
       </MemoryRouter>,
     );
-    await screen.findByRole('row', { name: /^site1 / });
+    await screen.findByRole('heading', { level: 1, name: 'AI Grid' });
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
-    expect(screen.getAllByRole('heading')[0]).toHaveTextContent('Clusters');
+    expect(screen.getAllByRole('heading')[0]).toHaveTextContent('AI Grid');
     expect(screen.getByText('Cloud Provider Admin Console')).toBeVisible();
     expect(screen.queryByRole('heading', { name: 'Cloud Provider Admin Console' })).not.toBeInTheDocument();
   });
@@ -48,7 +48,7 @@ describe('App', () => {
         <TestApp service={new MockConsoleService()} />
       </MemoryRouter>,
     );
-    await screen.findByRole('row', { name: /^site1 / });
+    await screen.findByRole('heading', { level: 1, name: 'AI Grid' });
     await user.tab();
     const skip = screen.getByRole('link', { name: 'Skip to content' });
     expect(skip).toHaveFocus();

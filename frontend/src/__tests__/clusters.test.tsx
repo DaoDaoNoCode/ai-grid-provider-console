@@ -60,7 +60,7 @@ const add = async (user: User, cluster: string) => {
 it('lists live Hub states, includes AI Grid navigation and enrolls with a label-only PATCH', async () => {
   const user = userEvent.setup();
   const service = serviceWith(hubClusters());
-  renderAt('/', service);
+  renderAt('/clusters', service);
   const table = await screen.findByTestId('clusters-table');
   const nav = screen.getByRole('navigation', { name: 'Console sections' });
   expect(

@@ -5,9 +5,9 @@ import { NotFoundPage } from './components/NotFoundPage';
 import { PageErrorBoundary } from './components/PageErrorBoundary';
 import { PageLoading } from './components/PageLoading';
 import { MaaSGovernanceProvider } from './context/MaaSGovernanceContext';
-// The landing page (/ goes to /clusters) is in the first download; every other page, and the map
-// with Leaflet, loads when it is first opened.
-import { ClustersPage } from './pages/clusters/ClustersPage';
+// Every page loads when it is first opened, so the first download is the shell alone: the landing
+// page (/ goes to /ai-grid, the map) brings Leaflet, which no other page needs.
+const ClustersPage = lazy(() => import('./pages/clusters/ClustersPage').then((m) => ({ default: m.ClustersPage })));
 
 const ClusterDetailsPage = lazy(() =>
   import('./pages/clusters/ClusterDetailsPage').then((m) => ({ default: m.ClusterDetailsPage })),
@@ -62,7 +62,7 @@ export const AppRoutes: React.FC<Props> = ({ service }) => (
 
 const Pages: React.FC<Props> = ({ service }) => (
   <Routes>
-    <Route path="/" element={<Navigate to="/clusters" replace />} />
+    <Route path="/" element={<Navigate to="/ai-grid" replace />} />
     {/* Keyed, so moving between the map and monitoring mounts a fresh page with its own loads. */}
     <Route path="/ai-grid" element={<AiGridPage key="ai-grid" service={service} />} />
     <Route path="/monitoring" element={<MonitoringPage service={service} />} />

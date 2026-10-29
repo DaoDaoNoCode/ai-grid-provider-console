@@ -28,9 +28,9 @@ const at = (path: InitialEntry, service = new MockConsoleService()) =>
   );
 
 describe('routes', () => {
-  it('redirects / to clusters', async () => {
+  it('lands on the AI Grid map', async () => {
     at('/');
-    expect(await screen.findByRole('heading', { name: 'Clusters' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: 'AI Grid' })).toBeInTheDocument();
   });
 
   it('deep-links to every route', async () => {
