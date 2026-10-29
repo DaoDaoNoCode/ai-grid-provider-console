@@ -26,10 +26,10 @@ so a schema written without a single message still reads well:
    schema's own message always wins over the map.
 3. Show it with `fieldErrorsOf` (every field's last message) or `fieldMessage` (one text field).
 
-## The fake backend's copy
+## The cases and the fake backend
 
-`bff/internal/validation` (subscriptions) and `bff/internal/fakebackend/validate.go` (identity
-providers) apply the same rules with the same messages for the fake backend. The cases in
-`mock/validation/cases.json` run on both sides (`cases.test.ts`, `TestSharedValidationCases`), so a
-rule or message changed on one side must change on the other. `zod.test.ts` fails if any of zod's
+The cases in `mock/validation/cases.json` run in the frontend (`cases.test.ts`) and pin each
+schema's messages. The console's fake backend still checks identity providers for the Organizations
+pages (`bff/internal/fakebackend/validate.go`) with the same messages; change them together until
+Organizations moves to the backend's API. `zod.test.ts` fails if any of zod's
 own English reaches a user. The real backend words its errors itself; the console shows them as sent.
