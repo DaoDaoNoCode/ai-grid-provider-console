@@ -29,8 +29,11 @@ export type ModelInput = {
   runtimeArgs: string[];
   /** The model server's presets (spec.base_refs); empty for KServe's default. */
   baseRefs: string[];
-  /** The clusters to place the model on, by name (Models/ListPlacementClusters). */
-  locations: string[];
+  /**
+   * The clusters to place the model on, by name, from Models/ListPlacementClusters; not
+   * `location` labels, which status.placement.locations reports.
+   */
+  clusters: string[];
 };
 
 /** The placement the console writes: `name In [...]`, the shape git mode takes (ModelSpec.placement). */
@@ -71,7 +74,7 @@ export const createRequestOf = (input: ModelInput): MessageInitShape<typeof Mode
         },
         // Both set: with the scheduler on, the backend takes managed_route as sent (modelRouterToMap).
         router: { scheduler: true, managedRoute: true },
-        placement: namedPlacement(input.locations),
+        placement: namedPlacement(input.clusters),
       },
     },
   };
@@ -121,8 +124,8 @@ export const updateRequestOf = (
     else delete annotations[DESCRIPTION];
     paths.push('metadata.annotations');
   }
-  if (model.placementClusters && !sameSet(input.locations, model.placementClusters)) {
-    spec.placement = namedPlacement(input.locations);
+  if (model.placementClusters && !sameSet(input.clusters, model.placementClusters)) {
+    spec.placement = namedPlacement(input.clusters);
     paths.push('spec.placement');
   }
   if (paths.length === 0) return undefined;

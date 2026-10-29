@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Alert, List, ListItem } from '@patternfly/react-core';
-import { DISPLAY_NAME } from './modelView';
+import { displayNameOf } from './modelView';
 import { useSubscriptionsUsingModel } from './useModels';
 
 /**
@@ -25,9 +25,7 @@ export const ReferencingSubscriptions: React.FC<{ modelId: string; onInUse?: (in
       <List>
         {using.map((subscription) => (
           <ListItem key={subscription.id}>
-            <Link to={`/subscriptions/view/${encodeURIComponent(subscription.id)}`}>
-              {subscription.metadata?.annotations[DISPLAY_NAME] || subscription.id}
-            </Link>
+            <Link to={`/subscriptions/view/${encodeURIComponent(subscription.id)}`}>{displayNameOf(subscription)}</Link>
           </ListItem>
         ))}
       </List>

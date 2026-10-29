@@ -10,6 +10,14 @@ import { ModelPhase, type Model, type ModelEnvVar, type ModelSpec } from '../../
 export const DISPLAY_NAME = 'openshift.io/display-name';
 export const DESCRIPTION = 'openshift.io/description';
 
+/** The display name an object's annotations give it, if they give one (a model's, a subscription's). */
+export const displayNameAnnotation = (annotations: { [key: string]: string } | undefined): string | undefined =>
+  annotations?.[DISPLAY_NAME] || undefined;
+
+/** The name a page shows for a backend object: its display name annotation, else its id. */
+export const displayNameOf = (object: { id: string; metadata?: { annotations: { [key: string]: string } } }) =>
+  displayNameAnnotation(object.metadata?.annotations) ?? object.id;
+
 /** The main container's request keys the console reads and writes. */
 const REQUEST_CPU = 'cpu';
 const REQUEST_MEMORY = 'memory';
@@ -128,7 +136,7 @@ export const toModelView = (model: Model): ModelView => {
   const created = model.metadata?.creationTimestamp;
   return {
     id: model.id,
-    displayName: nonEmpty(annotations[DISPLAY_NAME]),
+    displayName: displayNameAnnotation(annotations),
     description: nonEmpty(annotations[DESCRIPTION]),
     modelName: nonEmpty(spec?.model?.name),
     modelUri: nonEmpty(spec?.model?.uri),

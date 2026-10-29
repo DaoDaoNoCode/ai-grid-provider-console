@@ -23,7 +23,7 @@ import {
 import { SubscriptionSchema, type Subscription } from '../gen/ai_grid/v1/subscription_type_pb';
 
 /** The clusters ListPlacementClusters offers: Ready, provisioned members that serve models. */
-const placementClustersOf = (clusters: GridCluster[]) =>
+const placeableClustersOf = (clusters: GridCluster[]) =>
   [
     ...new Set(
       clusters
@@ -118,7 +118,7 @@ export class FakeModels {
   constructor(private readonly source: { clusters: GridCluster[] }) {}
 
   /** Models/ListPlacementClusters; a test replaces it to change what the wizard offers. */
-  placementClusters = async (): Promise<string[]> => placementClustersOf(this.source.clusters);
+  placementClusters = async (): Promise<string[]> => placeableClustersOf(this.source.clusters);
 
   find = (id: string): Model => {
     const model = this.models.find((m) => m.id === id);

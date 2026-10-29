@@ -75,7 +75,7 @@ const hasCoordinates = (c: FleetCluster) => c.latitude !== undefined && c.longit
 /** The availability filter: All, then each cluster status by the word the labels use. */
 const availabilityFilters: FleetCluster['status'][] = ['Ready', 'Offline', 'Unknown'];
 
-/** A link can open the drawer on a cluster (?cluster=<name>) or a model (?model=<namespace/name>). */
+/** A link can open the drawer on a cluster (?cluster=<name>) or a model (?model=<id>, the model's id). */
 const selectionFrom = (params: URLSearchParams): Selection | null => {
   const cluster = params.get('cluster');
   const model = params.get('model');

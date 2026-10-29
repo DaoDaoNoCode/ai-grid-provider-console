@@ -214,9 +214,9 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
     gpuCount: usesGpus ? Number(gpuCount) : 0,
     runtimeArgs: filterRuntimeArgsForContainer(runtimeArgs.args),
     baseRefs: model ? model.baseRefs : (server?.baseRefs ?? []),
-    locations,
+    clusters: locations,
   };
-  const edited: ModelInput = { ...input, locations: locationsEditable ? locations : start.locations };
+  const edited: ModelInput = { ...input, clusters: locationsEditable ? locations : start.locations };
   const isDirty = model
     ? updateRequestOf(model, edited) !== undefined
     : [modelUri, runtimeImage, nameDescData.name, nameDescData.description].some((v) => v !== '') ||
