@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -34,7 +33,7 @@ func seedModels() []*aigridv1.Model {
 			Metadata: &aigridv1.ObjectMeta{Namespace: "ai-grid-models", ResourceVersion: "7", Generation: 1, Labels: map[string]string{"ai-grid/family": "tiny"}, Annotations: map[string]string{AnnotationDisplayName: "Tiny LLM", AnnotationDescription: "CPU smoke test"}, CreationTimestamp: timestamppb.New(time.Date(2026, 10, 1, 10, 0, 0, 0, time.UTC))},
 			Spec: &aigridv1.ModelSpec{
 				Model: &aigridv1.ModelSource{Uri: "hf://example-org/tiny-llm", Name: "example-org/tiny-llm"}, Replicas: proto.Int32(1), BaseRefs: []string{"v3-6-0-kserve-config-llm-template-cpu"},
-				Router: &aigridv1.Router{GatewayRefs: []*aigridv1.GatewayRef{{Name: DefaultGatewayName, Namespace: DefaultGatewayNamespace}}, ManagedRoute: true, Scheduler: true},
+				Router: &aigridv1.Router{GatewayRefs: []*aigridv1.GatewayRef{{Name: "openshift-ai-inference", Namespace: "openshift-ingress"}}, ManagedRoute: true, Scheduler: true},
 				Main:   &aigridv1.Container{Requests: map[string]string{"cpu": "4"}, Env: []*aigridv1.EnvVar{{Name: "VLLM_CPU_KVCACHE_SPACE", Value: "8"}}},
 			},
 			Status: &aigridv1.ModelStatus{
@@ -95,7 +94,7 @@ func TestListModels(t *testing.T) {
 		t.Errorf("no query means no filter: %v", fake.LastListModels)
 	}
 	tiny := list[1]
-	if tiny.DisplayName != "Tiny LLM" || tiny.Description != "CPU smoke test" || tiny.ModelURI != "hf://example-org/tiny-llm" || tiny.ModelName != "example-org/tiny-llm" || tiny.Replicas == nil || *tiny.Replicas != 1 || tiny.Phase != PhaseReady || tiny.URL == "" || len(tiny.Addresses) != 1 || len(tiny.Addresses[0].Models) != 2 || len(tiny.Conditions) != 2 || len(tiny.AppliedConfigs) != 1 || tiny.Env[0].Name != "VLLM_CPU_KVCACHE_SPACE" || tiny.Gateways[0].Name != DefaultGatewayName || tiny.Requests["cpu"] != "4" || tiny.Placement != nil || tiny.Rollout != nil || tiny.ResourceVersion != "7" || tiny.CreationTimestamp == nil {
+	if tiny.DisplayName != "Tiny LLM" || tiny.Description != "CPU smoke test" || tiny.ModelURI != "hf://example-org/tiny-llm" || tiny.ModelName != "example-org/tiny-llm" || tiny.Replicas == nil || *tiny.Replicas != 1 || tiny.Phase != PhaseReady || tiny.URL == "" || len(tiny.Addresses) != 1 || len(tiny.Addresses[0].Models) != 2 || len(tiny.Conditions) != 2 || len(tiny.AppliedConfigs) != 1 || tiny.Env[0].Name != "VLLM_CPU_KVCACHE_SPACE" || tiny.Gateways[0].Name != "openshift-ai-inference" || tiny.Requests["cpu"] != "4" || tiny.Placement != nil || tiny.Rollout != nil || tiny.ResourceVersion != "7" || tiny.CreationTimestamp == nil {
 		t.Errorf("tiny = %+v", tiny)
 	}
 	granite := list[0]
@@ -161,256 +160,6 @@ func TestListModels(t *testing.T) {
 	}
 }
 
-func TestGetModel(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t, testConfig(t), &backendtest.Fake{Models: seedModels()})
-	var m Model
-	rec := serve(app, asUser(http.MethodGet, "/api/v1/models/team-b/other"))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
-	}
-	decodeData(t, rec, &m)
-	if m.Name != "other" || m.Namespace != "team-b" || m.Message == "" {
-		t.Errorf("model = %+v", m)
-	}
-	rec = serve(app, asUser(http.MethodGet, "/api/v1/models/team-b/nope"))
-	if rec.Code != http.StatusNotFound || decodeError(t, rec).Error.Message != "object with identifier 'team-b/nope' not found" {
-		t.Errorf("not found = %d %s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestCreateModel(t *testing.T) {
-	t.Parallel()
-	fake := &backendtest.Fake{Models: seedModels()}
-	app := newTestApp(t, testConfig(t), fake)
-	body := `{"name": "mistral-7b", "namespace": "ai-grid-models", "modelUri": "oci://registry.example.com/models/mistral:v0.3", "modelName": "example-org/mistral-7b",
-	  "runtimeImage": "quay.io/example/vllm-cuda:v0.11.0", "replicas": 2, "baseRefs": ["v3-6-0-kserve-config-llm-template"], "cpu": "8", "memory": "32Gi", "gpuCount": 1, "env": [{"name": "VLLM_ADDITIONAL_ARGS", "value": "--max-model-len 8192"}],
-	  "placement": {"matchLabels": {"ai-grid/enabled": "true"}, "matchExpressions": [{"key": "location", "operator": "In", "values": ["paris", "madrid"]}], "tolerations": [{"key": "cluster.open-cluster-management.io/unreachable", "operator": "Exists", "tolerationSeconds": 600}], "numberOfClusters": 2},
-	  "rollout": {"strategy": "Progressive", "maxConcurrency": "1", "progressDeadline": "15m"}, "labels": {"ai-grid/family": "mistral"}, "annotations": {"openshift.io/display-name": "Mistral 7B", "openshift.io/description": "EU sites"}}`
-	rec := serve(app, jsonRequest(http.MethodPost, "/api/v1/models", body))
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
-	}
-	if loc := rec.Header().Get("Location"); loc != "/api/v1/models/ai-grid-models/mistral-7b" {
-		t.Errorf("Location = %q", loc)
-	}
-	var m Model
-	decodeData(t, rec, &m)
-	if m.Name != "mistral-7b" || m.DisplayName != "Mistral 7B" || m.Phase != PhasePending || m.Placement == nil || m.Rollout.Strategy != StrategyProgressive {
-		t.Errorf("created = %+v", m)
-	}
-	sent := fake.LastCreateModel.GetObject()
-	if sent.GetMetadata().GetAnnotations()[AnnotationDisplayName] != "Mistral 7B" || sent.GetMetadata().GetAnnotations()[AnnotationDescription] != "EU sites" || sent.GetMetadata().GetLabels()["ai-grid/family"] != "mistral" {
-		t.Errorf("annotations/labels = %v", sent.GetMetadata())
-	}
-	spec := sent.GetSpec()
-	if spec.GetModel().GetUri() != "oci://registry.example.com/models/mistral:v0.3" || spec.GetModel().GetName() != "example-org/mistral-7b" || spec.GetReplicas() != 2 || spec.GetBaseRefs()[0] != "v3-6-0-kserve-config-llm-template" {
-		t.Errorf("spec = %v", spec)
-	}
-	if main := spec.GetMain(); main.GetImage() != "quay.io/example/vllm-cuda:v0.11.0" || main.GetRequests()[ResourceCPU] != "8" || main.GetRequests()[ResourceMemory] != "32Gi" || main.GetRequests()[ResourceGPU] != "1" || main.GetLimits()[ResourceGPU] != "1" || main.GetEnv()[0].GetValue() != "--max-model-len 8192" {
-		t.Errorf("main = %v", main)
-	}
-	if r := spec.GetRouter(); !r.GetManagedRoute() || !r.GetScheduler() || r.GetGatewayRefs()[0].GetName() != DefaultGatewayName || r.GetGatewayRefs()[0].GetNamespace() != DefaultGatewayNamespace {
-		t.Errorf("router = %v", r)
-	}
-	if p := spec.GetPlacement(); p.GetLabelSelector().GetMatchLabels()["ai-grid/enabled"] != "true" || p.GetLabelSelector().GetMatchExpressions()[0].GetValues()[1] != "madrid" || p.GetTolerations()[0].GetTolerationSeconds() != 600 || p.GetNumberOfClusters() != 2 {
-		t.Errorf("placement = %v", p)
-	}
-	if r := spec.GetRollout(); r.GetStrategy() != aigridv1.RolloutStrategy_ROLLOUT_STRATEGY_PROGRESSIVE || r.GetMaxConcurrency() != "1" || r.GetProgressDeadline() != "15m" {
-		t.Errorf("rollout = %v", r)
-	}
-
-	// Scaling becomes a keda block with its triggers.
-	rec = serve(app, jsonRequest(http.MethodPost, "/api/v1/models", `{"name": "scaled", "namespace": "ai-grid-models", "modelUri": "hf://example-org/scaled", "scaling": {"minReplicas": 1, "maxReplicas": 4, "triggers": [{"type": "prometheus", "metadata": {"query": "vllm:num_requests_waiting"}}]}}`))
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
-	}
-	if sc := fake.LastCreateModel.GetObject().GetSpec().GetScaling(); !sc.GetKeda() || sc.GetMinReplicas() != 1 || sc.GetMaxReplicas() != 4 || len(sc.GetTriggers()) != 1 || sc.GetTriggers()[0].GetType() != "prometheus" || sc.GetTriggers()[0].GetMetadata()["query"] != "vllm:num_requests_waiting" {
-		t.Errorf("scaling = %v", sc)
-	}
-	var scaled Model
-	decodeData(t, rec, &scaled)
-	if scaled.Scaling == nil || scaled.Scaling.MaxReplicas != 4 || len(scaled.Scaling.Triggers) != 1 || scaled.Replicas != nil {
-		t.Errorf("scaled = %+v", scaled)
-	}
-
-	// A hub-only model: no placement, no GPU request without gpuCount.
-	rec = serve(app, jsonRequest(http.MethodPost, "/api/v1/models", `{"name": "cpu-only", "namespace": "ai-grid-models", "modelUri": "hf://example-org/cpu-only"}`))
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
-	}
-	if sent := fake.LastCreateModel.GetObject(); sent.GetSpec().GetPlacement() != nil || sent.GetSpec().Replicas != nil || len(sent.GetSpec().GetMain().GetRequests()) != 0 || sent.GetSpec().GetRollout() != nil {
-		t.Errorf("hub-only = %v", sent.GetSpec())
-	}
-
-	calls := len(fake.Calls)
-	for _, tc := range []struct {
-		name, body string
-		code       int
-		message    string
-	}{
-		{"unknown field", `{"name": "x", "namespace": "n", "modelUri": "hf://x", "locations": ["a"]}`, http.StatusUnprocessableEntity, `invalid request body: json: unknown field "locations"`},
-		{"bad strategy", `{"name": "x", "namespace": "n", "modelUri": "hf://x", "placement": {}, "rollout": {"strategy": "Canary"}}`, http.StatusUnprocessableEntity, "rollout.strategy must be All, Progressive or ProgressivePerGroup"},
-		{"negative gpu", `{"name": "x", "namespace": "n", "modelUri": "hf://x", "gpuCount": -1}`, http.StatusUnprocessableEntity, "gpuCount must not be negative"},
-		{"malformed", `{"name": `, http.StatusUnprocessableEntity, "invalid request body: malformed JSON"},
-		{"null", `null`, http.StatusUnprocessableEntity, "invalid request body: must be a JSON object"},
-		{"nested type", `{"name": "x", "placement": {"clusterSets": "x"}}`, http.StatusUnprocessableEntity, `invalid request body: field "placement.clusterSets" must be an array`},
-	} {
-		rec := serve(app, jsonRequest(http.MethodPost, "/api/v1/models", tc.body))
-		if rec.Code != tc.code || decodeError(t, rec).Error.Message != tc.message {
-			t.Errorf("%s: %d %s", tc.name, rec.Code, rec.Body.String())
-		}
-	}
-	if len(fake.Calls) != calls {
-		t.Errorf("an invalid body must not reach the backend: %v", fake.Calls[calls:])
-	}
-
-	// Backend answers: the CRD's message as 422, a taken name as 409, the gate as 412.
-	rec = serve(app, jsonRequest(http.MethodPost, "/api/v1/models", `{"name": "tiny-llm", "namespace": "ai-grid-models", "modelUri": "hf://x"}`))
-	if rec.Code != http.StatusConflict || decodeError(t, rec).Error.Message != `llminferenceservices.serving.kserve.io "tiny-llm" already exists` {
-		t.Errorf("duplicate = %d %s", rec.Code, rec.Body.String())
-	}
-	fake.Errs = map[string]error{"CreateModel": backendtest.Status(codes.FailedPrecondition, "ManifestWorkReplicaSet feature gate disabled on hub")}
-	rec = serve(app, jsonRequest(http.MethodPost, "/api/v1/models", `{"name": "y", "namespace": "n", "modelUri": "hf://y", "placement": {}}`))
-	if rec.Code != http.StatusPreconditionFailed || decodeError(t, rec).Error.Message != "ManifestWorkReplicaSet feature gate disabled on hub" {
-		t.Errorf("gate off = %d %s", rec.Code, rec.Body.String())
-	}
-	fake.Errs = map[string]error{"CreateModel": backendtest.Status(codes.InvalidArgument, "either wva or keda must be specified when scaling is configured")}
-	rec = serve(app, jsonRequest(http.MethodPost, "/api/v1/models", `{"name": "y", "namespace": "n", "modelUri": "hf://y"}`))
-	if rec.Code != http.StatusUnprocessableEntity || decodeError(t, rec).Error.Message != "either wva or keda must be specified when scaling is configured" {
-		t.Errorf("CRD message = %d %s", rec.Code, rec.Body.String())
-	}
-	fake.Errs = map[string]error{"CreateModel": backendtest.Status(codes.PermissionDenied, `User "alice" is not a provider admin: cannot patch resource "managedclusters" in API group "cluster.open-cluster-management.io" at the cluster scope`)}
-	if rec := serve(app, jsonRequest(http.MethodPost, "/api/v1/models", `{"name": "y", "namespace": "n", "modelUri": "hf://y"}`)); rec.Code != http.StatusForbidden {
-		t.Errorf("viewer = %d", rec.Code)
-	}
-}
-
-func TestPatchModel(t *testing.T) {
-	t.Parallel()
-	fake := &backendtest.Fake{Models: seedModels()}
-	app := newTestApp(t, testConfig(t), fake)
-	const tiny = "/api/v1/models/ai-grid-models/tiny-llm"
-	rec := serve(app, withIfMatch(jsonRequest(http.MethodPatch, tiny, `{"replicas": 3, "runtimeImage": "quay.io/example/vllm:v2", "env": [], "labels": {"team": "a"}, "annotations": {"openshift.io/display-name": "Tiny LLM v2"}}`), `"7"`))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
-	}
-	var m Model
-	decodeData(t, rec, &m)
-	// The annotations are a whole map: the description the client left out is gone.
-	if m.Replicas == nil || *m.Replicas != 3 || m.RuntimeImage != "quay.io/example/vllm:v2" || len(m.Env) != 0 || m.DisplayName != "Tiny LLM v2" || m.Description != "" || m.Labels["team"] != "a" || m.ResourceVersion != "8" {
-		t.Errorf("patched = %+v", m)
-	}
-	if strings.Join(fake.Calls, ",") != "UpdateModel" {
-		t.Errorf("the BFF must not read the model first: calls %v", fake.Calls)
-	}
-	req := fake.LastUpdateModel
-	if !req.GetLock() || req.GetObject().GetMetadata().GetResourceVersion() != "7" || strings.Join(req.GetUpdateMask().GetPaths(), ",") != "spec.replicas,spec.main.image,spec.main.env,metadata.labels,metadata.annotations" {
-		t.Errorf("update request = %v", req)
-	}
-	if ann := req.GetObject().GetMetadata().GetAnnotations(); len(ann) != 1 || ann[AnnotationDisplayName] != "Tiny LLM v2" {
-		t.Errorf("annotations go as sent, nothing merged: %v", ann)
-	}
-	if len(req.GetObject().GetSpec().GetMain().GetEnv()) != 0 {
-		t.Errorf("env: [] clears the variables (the mask path carries the intent), sent %v", req.GetObject().GetSpec().GetMain())
-	}
-
-	// A placement alone is only spec.placement: the BFF adds no rollout.
-	rec = serve(app, withIfMatch(jsonRequest(http.MethodPatch, tiny, `{"placement": {"matchLabels": {"ai-grid/enabled": "true"}}}`), `"8"`))
-	if rec.Code != http.StatusOK || strings.Join(fake.LastUpdateModel.GetUpdateMask().GetPaths(), ",") != "spec.placement" || fake.LastUpdateModel.GetObject().GetSpec().GetRollout() != nil {
-		t.Errorf("placement only = %d %v", rec.Code, fake.LastUpdateModel)
-	}
-	rec = serve(app, withIfMatch(jsonRequest(http.MethodPatch, tiny, `{"placement": {"matchLabels": {"ai-grid/enabled": "true"}}, "rollout": {"strategy": "All", "progressDeadline": "10m"}}`), `"9"`))
-	req = fake.LastUpdateModel
-	if rec.Code != http.StatusOK || strings.Join(req.GetUpdateMask().GetPaths(), ",") != "spec.placement,spec.rollout" || req.GetObject().GetSpec().GetPlacement().GetLabelSelector().GetMatchLabels()["ai-grid/enabled"] != "true" || req.GetObject().GetSpec().GetRollout().GetProgressDeadline() != "10m" {
-		t.Errorf("placement update = %d %v", rec.Code, req)
-	}
-	rec = serve(app, withIfMatch(jsonRequest(http.MethodPatch, tiny, `{"placement": null}`), `"10"`))
-	if rec.Code != http.StatusOK || fake.LastUpdateModel.GetObject().GetSpec().GetPlacement() != nil || strings.Join(fake.LastUpdateModel.GetUpdateMask().GetPaths(), ",") != "spec.placement" {
-		t.Errorf("placement: null removes it: %d %v", rec.Code, fake.LastUpdateModel)
-	}
-
-	// An empty body is 422 and calls nothing, so a stale If-Match is never
-	// answered with the current object.
-	fake.Calls = nil
-	rec = serve(app, withIfMatch(jsonRequest(http.MethodPatch, tiny, `{}`), `"1"`))
-	if rec.Code != http.StatusUnprocessableEntity || len(fake.Calls) != 0 || decodeError(t, rec).Error.Message != "the request body names no field to change" {
-		t.Errorf("empty patch = %d %s, calls %v", rec.Code, rec.Body.String(), fake.Calls)
-	}
-	fake.Calls = nil
-	for _, tc := range []struct{ body, message string }{
-		{`{"nope": 1}`, `invalid request body: json: unknown field "nope"`},
-		// The display name and description are annotation keys now.
-		{`{"displayName": "Tiny"}`, `invalid request body: json: unknown field "displayName"`},
-		{`{"replicas": "2"}`, `invalid request body: field "replicas" must be a whole number`},
-		{`{"description": "x"}`, `invalid request body: json: unknown field "description"`},
-		{`{"rollout": {"strategy": "Blue"}}`, "rollout.strategy must be All, Progressive or ProgressivePerGroup"},
-		{`{"placement": {"nope": 1}}`, `invalid request body: json: unknown field "nope"`},
-		// A nested field is named by its whole path, as on POST.
-		{`{"placement": {"clusterSets": "x"}}`, `invalid request body: field "placement.clusterSets" must be an array`},
-		// Go 1.27 names an array element by its index; Go 1.26 (the CI toolchain) leaves it out.
-		{`{"placement": {"matchExpressions": [{"values": "x"}]}}`, `invalid request body: field "placement.matchExpressions.0.values" must be an array|invalid request body: field "placement.matchExpressions.values" must be an array`},
-	} {
-		rec := serve(app, withIfMatch(jsonRequest(http.MethodPatch, tiny, tc.body), `"11"`))
-		if rec.Code != http.StatusUnprocessableEntity || !slices.Contains(strings.Split(tc.message, "|"), decodeError(t, rec).Error.Message) {
-			t.Errorf("%s: %d %s", tc.body, rec.Code, rec.Body.String())
-		}
-	}
-	if len(fake.Calls) != 0 {
-		t.Errorf("invalid patches reached the backend: %v", fake.Calls)
-	}
-	rec = serve(app, withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/models/ai-grid-models/nope", `{"replicas": 1}`), `"1"`))
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("unknown model = %d", rec.Code)
-	}
-	// A write that landed since the client read is the backend's Aborted, 409.
-	rec = serve(app, withIfMatch(jsonRequest(http.MethodPatch, tiny, `{"replicas": 4}`), `"10"`))
-	if rec.Code != http.StatusConflict || !strings.Contains(decodeError(t, rec).Error.Message, `carries "10"`) {
-		t.Errorf("stale write = %d %s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestDeleteModel(t *testing.T) {
-	t.Parallel()
-	fake := &backendtest.Fake{Models: seedModels()}
-	app := newTestApp(t, testConfig(t), fake)
-	rec := serve(app, withIfMatch(asUser(http.MethodDelete, "/api/v1/models/team-b/other"), `"3"`))
-	if rec.Code != http.StatusNoContent || rec.Body.Len() != 0 || fake.LastDeleteModel.GetNamespace() != "team-b" || fake.LastDeleteModel.GetName() != "other" {
-		t.Errorf("delete = %d %q %v", rec.Code, rec.Body.String(), fake.LastDeleteModel)
-	}
-	if rec := serve(app, withIfMatch(asUser(http.MethodDelete, "/api/v1/models/team-b/other"), `"3"`)); rec.Code != http.StatusNotFound {
-		t.Errorf("second delete = %d", rec.Code)
-	}
-	fake.Errs = map[string]error{"DeleteModel": backendtest.Status(codes.FailedPrecondition, "model ai-grid-models/tiny-llm is referenced by subscription acme/gold; remove those references first")}
-	rec = serve(app, withIfMatch(asUser(http.MethodDelete, "/api/v1/models/ai-grid-models/tiny-llm"), `"7"`))
-	if rec.Code != http.StatusPreconditionFailed || !strings.Contains(decodeError(t, rec).Error.Message, "referenced by") {
-		t.Errorf("referenced = %d %s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestCapabilities(t *testing.T) {
-	t.Parallel()
-	fake := &backendtest.Fake{}
-	app := newTestApp(t, testConfig(t), fake)
-	rec := serve(app, asUser(http.MethodGet, "/api/v1/capabilities"))
-	if rec.Code != http.StatusNotImplemented {
-		t.Errorf("today's backend has no GetHubCapabilities: %d %s", rec.Code, rec.Body.String())
-	}
-	fake.Capabilities = &aigridv1.HubCapabilities{ManifestWorkReplicaSetEnabled: false, ObservabilityInstalled: true, AcmVersion: "2.17.3"}
-	rec = serve(app, asUser(http.MethodGet, "/api/v1/capabilities"))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
-	}
-	var c Capabilities
-	decodeData(t, rec, &c)
-	if c.ManifestWorkReplicaSetEnabled || !c.ObservabilityInstalled || c.ACMVersion != "2.17.3" {
-		t.Errorf("capabilities = %+v", c)
-	}
-	if !strings.Contains(rec.Body.String(), `"manifestWorkReplicaSetEnabled":false`) {
-		t.Errorf("false is serialised, not omitted: %s", rec.Body.String())
-	}
-}
-
 func TestModelFromTodaysShapes(t *testing.T) {
 	t.Parallel()
 	// A model without status, scaling or router renders with empty collections
@@ -427,81 +176,6 @@ func TestModelFromTodaysShapes(t *testing.T) {
 	}
 }
 
-func TestModelVersions(t *testing.T) {
-	t.Parallel()
-	fake := &backendtest.Fake{Models: seedModels()}
-	app := newTestApp(t, testConfig(t), fake)
-	const path = "/api/v1/models/ai-grid-models/tiny-llm"
-
-	if rec := serve(app, asUser(http.MethodGet, path)); rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"7"` {
-		t.Fatalf("GET = %d, ETag %q", rec.Code, rec.Header().Get("ETag"))
-	}
-	rec := serve(app, withIfMatch(jsonRequest(http.MethodPatch, path, `{"replicas": 2}`), `"6"`))
-	if rec.Code != http.StatusConflict || !fake.LastUpdateModel.GetLock() || fake.LastUpdateModel.GetObject().GetMetadata().GetResourceVersion() != "6" {
-		t.Fatalf("stale PATCH = %d %s, request %v", rec.Code, rec.Body.String(), fake.LastUpdateModel)
-	}
-	if fake.Models[0].GetSpec().GetReplicas() != 1 {
-		t.Errorf("a stale write must not land")
-	}
-	rec = serve(app, withIfMatch(jsonRequest(http.MethodPatch, path, `{"replicas": 2}`), `"7"`))
-	if rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"8"` {
-		t.Fatalf("matching PATCH = %d, ETag %q", rec.Code, rec.Header().Get("ETag"))
-	}
-	rec = serve(app, withIfMatch(asUser(http.MethodDelete, path), `"7"`))
-	if rec.Code != http.StatusConflict || fake.LastDeleteModel.GetResourceVersion() != "7" || len(fake.Models) != 3 {
-		t.Fatalf("stale DELETE = %d %s", rec.Code, rec.Body.String())
-	}
-	if rec := serve(app, withIfMatch(asUser(http.MethodDelete, path), `"8"`)); rec.Code != http.StatusNoContent || len(fake.Models) != 2 {
-		t.Errorf("matching DELETE = %d", rec.Code)
-	}
-	if rec := serve(app, withIfMatch(asUser(http.MethodDelete, "/api/v1/models/team-b/other"), `W/"3"`)); rec.Code != http.StatusUnprocessableEntity || len(fake.Models) != 2 {
-		t.Errorf("weak If-Match on DELETE = %d", rec.Code)
-	}
-	fake.Calls = nil
-	if rec := serve(app, asUser(http.MethodDelete, "/api/v1/models/team-b/other")); rec.Code != http.StatusPreconditionRequired || len(fake.Calls) != 0 || len(fake.Models) != 2 {
-		t.Errorf("DELETE without If-Match = %d, calls %v; want 428 and no call", rec.Code, fake.Calls)
-	}
-}
-
-// Resending what the page loaded goes to the backend with every present
-// path; the backend sees that nothing changes and keeps the version.
-func TestRepeatedModelPatchReachesTheBackend(t *testing.T) {
-	t.Parallel()
-	fake := &backendtest.Fake{Models: seedModels()}
-	app := newTestApp(t, testConfig(t), fake)
-	rec := serve(app, withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/models/ai-grid-models/tiny-llm", `{"replicas": 1, "env": [{"name": "VLLM_CPU_KVCACHE_SPACE", "value": "8"}], "labels": {"ai-grid/family": "tiny"}}`), `"7"`))
-	if rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"7"` || strings.Join(fake.LastUpdateModel.GetUpdateMask().GetPaths(), ",") != "spec.replicas,spec.main.env,metadata.labels" {
-		t.Errorf("repeat = %d, ETag %q, mask %v", rec.Code, rec.Header().Get("ETag"), fake.LastUpdateModel.GetUpdateMask().GetPaths())
-	}
-}
-
-// Every present field goes in the mask, also for a model whose backend sent
-// no spec: the BFF has nothing to compare with.
-func TestPatchModelSendsEveryPresentField(t *testing.T) {
-	t.Parallel()
-	fake := &backendtest.Fake{Models: []*aigridv1.Model{{Name: "bare", Metadata: &aigridv1.ObjectMeta{Namespace: "ns", ResourceVersion: "1"}}}}
-	app := newTestApp(t, testConfig(t), fake)
-	rec := serve(app, withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/models/ns/bare", `{"replicas": 1, "runtimeImage": "img", "env": [], "placement": null, "rollout": {}, "labels": {}, "annotations": {}}`), `"1"`))
-	if rec.Code != http.StatusOK || strings.Join(fake.LastUpdateModel.GetUpdateMask().GetPaths(), ",") != "spec.replicas,spec.main.image,spec.main.env,spec.placement,spec.rollout,metadata.labels,metadata.annotations" {
-		t.Errorf("bare model = %d %s, mask %v", rec.Code, rec.Body.String(), fake.LastUpdateModel.GetUpdateMask().GetPaths())
-	}
-}
-
-// The display name and description travel as annotations on create too,
-// so a client sets them one way on both POST and PATCH.
-func TestCreateModelTakesNoDisplayNameField(t *testing.T) {
-	t.Parallel()
-	fake := &backendtest.Fake{Models: seedModels()}
-	app := newTestApp(t, testConfig(t), fake)
-	for _, field := range []string{"displayName", "description"} {
-		body := `{"name": "m", "namespace": "ai-grid-models", "modelUri": "hf://example-org/m", "` + field + `": "x"}`
-		rec := serve(app, jsonRequest(http.MethodPost, "/api/v1/models", body))
-		if rec.Code != http.StatusUnprocessableEntity || decodeError(t, rec).Error.Message != `invalid request body: json: unknown field "`+field+`"` || fake.Reached("CreateModel") {
-			t.Errorf("%s on create = %d %s", field, rec.Code, rec.Body.String())
-		}
-	}
-}
-
 // TestModelWithoutSpec: a model the backend sends without a spec (as a
 // subscription's referenced model can be) maps instead of panicking into a 500.
 func TestModelWithoutSpec(t *testing.T) {
@@ -509,21 +183,6 @@ func TestModelWithoutSpec(t *testing.T) {
 	got := toModel(&aigridv1.Model{Name: "bare", Metadata: &aigridv1.ObjectMeta{Namespace: "ai-grid-models"}})
 	if got.Name != "bare" || got.Replicas != nil {
 		t.Fatalf("model %+v", got)
-	}
-}
-
-// TestListLocations: GET /api/v1/locations passes ListLocations through.
-func TestListLocations(t *testing.T) {
-	t.Parallel()
-	fake := &backendtest.Fake{Locations: []string{"madrid", "paris"}}
-	app := newTestApp(t, testConfig(t), fake)
-	rec := serve(app, asUser(http.MethodGet, "/api/v1/locations"))
-	if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != `{"data":["madrid","paris"]}` {
-		t.Fatalf("locations: %d %s", rec.Code, rec.Body)
-	}
-	fake.Locations = nil
-	if rec := serve(app, asUser(http.MethodGet, "/api/v1/locations")); rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != `{"data":[]}` {
-		t.Fatalf("no locations: %d %s", rec.Code, rec.Body)
 	}
 }
 

@@ -1,14 +1,12 @@
 package backend
 
 import (
-	"slices"
 	"testing"
 	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/fieldmaskpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	backendv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/backend/v1"
@@ -94,120 +92,15 @@ func TestV1ModelReads(t *testing.T) {
 		t.Fatalf("List got %v, want %v", list, draftModel())
 	}
 
-	conn = &recordingConn{reply: &backendv1.ModelsGetResponse{Object: v1Model()}}
-	got, err := v1Models{conn, modelsNS}.GetModel(ctx, &aigridv1.GetModelRequest{Namespace: modelsNS, Name: "granite"})
-	if err != nil || conn.method != methodModelsGet || conn.req.(*backendv1.ModelsGetRequest).GetId() != "granite" {
-		t.Fatalf("Get sent %s %v: %v", conn.method, conn.req, err)
-	}
-	if !proto.Equal(got.GetObject(), draftModel()) {
-		t.Errorf("Get got %v, want %v", got.GetObject(), draftModel())
-	}
 }
 
 // The draft's filter and order use its own field names, which the backend's
-// List doesn't have; a model in another namespace can't be in this backend.
+// List doesn't have.
 func TestV1ModelRefusals(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	c := v1Models{&recordingConn{}, modelsNS}
 	if _, err := c.ListModels(ctx, &aigridv1.ListModelsRequest{Filter: proto.String("true")}); status.Code(err) != codes.Unimplemented {
 		t.Errorf("List with a filter: %v, want Unimplemented", err)
-	}
-	if _, err := c.GetModel(ctx, &aigridv1.GetModelRequest{Namespace: "other", Name: "granite"}); status.Code(err) != codes.NotFound {
-		t.Errorf("Get in another namespace: %v, want NotFound", err)
-	}
-	if _, err := c.DeleteModel(ctx, &aigridv1.DeleteModelRequest{Namespace: "other", Name: "granite"}); status.Code(err) != codes.NotFound {
-		t.Errorf("Delete in another namespace: %v, want NotFound", err)
-	}
-	other := draftModel()
-	other.Metadata.Namespace = "other"
-	if _, err := c.CreateModel(ctx, &aigridv1.CreateModelRequest{Object: other}); status.Code(err) != codes.InvalidArgument {
-		t.Errorf("Create in another namespace: %v, want InvalidArgument", err)
-	}
-	tolerating := draftModel()
-	tolerating.Spec.Placement.Tolerations = []*aigridv1.Toleration{{Key: "k", Operator: "Exists"}}
-	if _, err := c.CreateModel(ctx, &aigridv1.CreateModelRequest{Object: tolerating}); status.Code(err) != codes.Unimplemented {
-		t.Errorf("Create with tolerations: %v, want Unimplemented", err)
-	}
-}
-
-func TestV1ModelWrites(t *testing.T) {
-	t.Parallel()
-	ctx := t.Context()
-	in := draftModel()
-	in.Status, in.Metadata.ResourceVersion = nil, ""
-	want := v1Model()
-	want.Status, want.Metadata.Version, want.Metadata.CreationTimestamp = nil, 0, nil
-
-	conn := &recordingConn{reply: &backendv1.ModelsCreateResponse{Object: v1Model()}}
-	if _, err := (v1Models{conn, modelsNS}).CreateModel(ctx, &aigridv1.CreateModelRequest{Object: in}); err != nil || conn.method != methodModelsCreate {
-		t.Fatalf("Create sent %s: %v", conn.method, err)
-	}
-	if sent := conn.req.(*backendv1.ModelsCreateRequest).GetObject(); !proto.Equal(sent, want) {
-		t.Errorf("Create sent %v, want %v", sent, want)
-	}
-
-	in.Metadata.ResourceVersion = "3"
-	mask := &fieldmaskpb.FieldMask{Paths: []string{"spec.placement", "metadata.labels"}}
-	conn = &recordingConn{reply: &backendv1.ModelsUpdateResponse{Object: v1Model()}}
-	if _, err := (v1Models{conn, modelsNS}).UpdateModel(ctx, &aigridv1.UpdateModelRequest{Object: in, UpdateMask: mask, Lock: true}); err != nil || conn.method != methodModelsUpdate {
-		t.Fatalf("Update sent %s: %v", conn.method, err)
-	}
-	sent := conn.req.(*backendv1.ModelsUpdateRequest)
-	want.Metadata.Version = 3
-	if !proto.Equal(sent.GetObject(), want) || !proto.Equal(sent.GetUpdateMask(), mask) || !sent.GetLock() {
-		t.Errorf("Update sent %v, want %v with the mask and the lock", sent, want)
-	}
-
-	for rv, version := range map[string]int32{"": 0, "3": 3} {
-		conn = &recordingConn{reply: &backendv1.ModelsDeleteResponse{}}
-		if _, err := (v1Models{conn, modelsNS}).DeleteModel(ctx, &aigridv1.DeleteModelRequest{Namespace: modelsNS, Name: "granite", ResourceVersion: rv}); err != nil {
-			t.Fatal(err)
-		}
-		if sent := conn.req.(*backendv1.ModelsDeleteRequest); conn.method != methodModelsDelete || sent.GetId() != "granite" || sent.GetResourceVersion() != version {
-			t.Errorf("Delete with version %q sent %s %v, want version %d", rv, conn.method, sent, version)
-		}
-	}
-
-	// Version 0 is the backend's "no check": refused, so If-Match never makes a delete unconditional.
-	conn = &recordingConn{}
-	if _, err := (v1Models{conn, modelsNS}).DeleteModel(ctx, &aigridv1.DeleteModelRequest{Namespace: modelsNS, Name: "granite", ResourceVersion: "0"}); status.Code(err) != codes.FailedPrecondition || conn.method != "" {
-		t.Errorf("Delete with version 0: %v after calling %q, want FailedPrecondition and no call", err, conn.method)
-	}
-}
-
-// Any other placement passes through in both directions too.
-func TestV1ModelOtherPlacement(t *testing.T) {
-	t.Parallel()
-	in := &aigridv1.Placement{ClusterSets: []string{"set"}, LabelSelector: &aigridv1.LabelSelector{
-		MatchLabels:      map[string]string{"region": "east"},
-		MatchExpressions: []*aigridv1.LabelSelectorRequirement{{Key: "location", Operator: "In", Values: []string{"a"}}},
-	}}
-	out, err := toV1Placement(in)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !proto.Equal(fromV1Placement(out), in) {
-		t.Errorf("round trip got %v, want %v", fromV1Placement(out), in)
-	}
-}
-
-// ListLocations calls the backend's Models/ListPlacementClusters: the names of
-// the provisioned, Available inference and combined members, in its order.
-func TestV1ListLocations(t *testing.T) {
-	t.Parallel()
-	conn := &recordingConn{reply: &backendv1.ModelsListPlacementClustersResponse{Clusters: []string{"site-a", "site-b"}}}
-	got, err := v1Models{conn, modelsNS}.ListLocations(t.Context(), &aigridv1.ListLocationsRequest{})
-	if err != nil || conn.method != methodModelsListPlacementClusters {
-		t.Fatalf("ListLocations sent %s: %v", conn.method, err)
-	}
-	if want := []string{"site-a", "site-b"}; !slices.Equal(got.GetLocations(), want) {
-		t.Errorf("ListLocations got %v, want %v", got.GetLocations(), want)
-	}
-
-	// None: an empty list, not null.
-	conn = &recordingConn{reply: &backendv1.ModelsListPlacementClustersResponse{}}
-	if got, err := (v1Models{conn, modelsNS}).ListLocations(t.Context(), &aigridv1.ListLocationsRequest{}); err != nil || got.GetLocations() == nil {
-		t.Errorf("ListLocations with none got %v, %v; want an empty list", got.GetLocations(), err)
 	}
 }

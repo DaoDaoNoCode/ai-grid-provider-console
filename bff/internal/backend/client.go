@@ -49,10 +49,17 @@ type Config struct {
 	// DraftAPI says the backend serves the console's draft proto (the fake).
 	// Otherwise clusters, tenants, subscriptions and models use the backend's real RPCs (v1.go).
 	DraftAPI bool
-	// ModelsNamespace is the namespace the console's models are in. The real
-	// backend's models have none, so its models are reported in this one
-	// (v1_models.go).
+	// ModelsNamespace is the namespace the real backend's models are reported
+	// in by GET /api/v1/models (v1_models.go), which have none: the Subscriptions
+	// pages join a model reference to a model by it.
 	ModelsNamespace string
+}
+
+// ModelLister is the one Models call the BFF still makes: GET /api/v1/models,
+// for the Subscriptions pages until they read the backend's Models/List over
+// Connect, as the Models pages do. The draft's client and v1Models have it.
+type ModelLister interface {
+	ListModels(ctx context.Context, in *aigridv1.ListModelsRequest, opts ...grpc.CallOption) (*aigridv1.ListModelsResponse, error)
 }
 
 // Client wraps the generated service clients.
@@ -61,7 +68,7 @@ type Client struct {
 	timeout       time.Duration
 	Health        aigridv1.AiGridClient
 	Tenants       aigridv1.TenantsClient
-	Models        aigridv1.ModelsClient
+	Models        ModelLister
 	Subscriptions aigridv1.SubscriptionsClient
 	Grid          aigridv1.GridClient
 }
@@ -91,7 +98,7 @@ func Dial(cfg Config, extra ...grpc.DialOption) (*Client, error) {
 	}
 	var tenants aigridv1.TenantsClient = v1Tenants{conn}
 	var subscriptions aigridv1.SubscriptionsClient = v1Subscriptions{conn}
-	var models aigridv1.ModelsClient = v1Models{conn: conn, namespace: cfg.ModelsNamespace}
+	var models ModelLister = v1Models{conn: conn, namespace: cfg.ModelsNamespace}
 	if cfg.DraftAPI {
 		tenants = aigridv1.NewTenantsClient(conn)
 		subscriptions, models = aigridv1.NewSubscriptionsClient(conn), aigridv1.NewModelsClient(conn)
