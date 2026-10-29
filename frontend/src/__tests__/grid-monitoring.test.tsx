@@ -200,6 +200,12 @@ it('lists the models with the sites their placement chose', async () => {
   renderAt('/monitoring', service);
   await user.click(await screen.findByRole('tab', { name: 'Models' }));
   const table = screen.getByRole('grid', { name: 'Models' });
+  // The Models page's words: the name shown, then the model users request.
+  expect(
+    within(table)
+      .getAllByRole('columnheader')
+      .map((h) => h.textContent),
+  ).toEqual(['Name', 'Model', 'Target sites', 'Replicas', 'Status']);
   const row = within(table).getByText('Granite 8B Instruct').closest('tr')!;
   expect(row).toHaveTextContent('Paris DC1');
 });

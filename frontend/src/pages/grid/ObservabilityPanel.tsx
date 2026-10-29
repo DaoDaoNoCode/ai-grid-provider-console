@@ -537,7 +537,7 @@ export function ObservabilityPanel({
               <Table aria-label="Models" variant="compact">
                 <Thead>
                   <Tr>
-                    <Th>Model</Th>
+                    <Th>Name</Th>
                     <Th>Model</Th>
                     <Th>Target sites</Th>
                     <Th className="console-number">Replicas</Th>
@@ -563,7 +563,7 @@ export function ObservabilityPanel({
                     ))}
                   {visibleModels.map((m) => (
                     <Tr key={m.id}>
-                      <Td dataLabel="Model">
+                      <Td dataLabel="Name">
                         <Link to={modelPath(m)}>{titleOf(m)}</Link>
                       </Td>
                       <Td dataLabel="Model" modifier="breakWord">
