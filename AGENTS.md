@@ -2,7 +2,9 @@
 
 Rules for every coding agent (and person) changing this repository. There is no root
 `CLAUDE.md`; this file applies to all agents. To build console pages against the fake backend,
-read [mock/AGENTS.md](mock/AGENTS.md).
+read [mock/AGENTS.md](mock/AGENTS.md); for how every page looks and behaves (its loading, error,
+empty and not-found states, lists, status labels and forms), read
+[frontend/AGENTS.md](frontend/AGENTS.md).
 
 ## This architecture is being replaced
 

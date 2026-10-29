@@ -1,20 +1,16 @@
 import { useRef, useState } from 'react';
 import {
-  Alert,
   Breadcrumb,
   BreadcrumbItem,
   Button,
   Card,
   CardBody,
   Content,
-  EmptyState,
-  EmptyStateBody,
   Flex,
   Grid,
   GridItem,
   List,
   ListItem,
-  PageSection,
   Stack,
 } from '@patternfly/react-core';
 import { SubtleText } from '../../components/SubtleText';
@@ -22,19 +18,15 @@ import { ExternalLinkAltIcon } from '@patternfly/react-icons';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { GridMembership } from '../../api/clusters';
-import type { UserService } from '../../api/ConsoleService';
-import { ServiceError } from '../../api/ConsoleService';
 import type { ClusterGPUs, GPUNode } from '../../gen/ai_grid/v1/managed_cluster_type_pb';
 import { DetailsList } from '../../components/DetailsList';
 import { DetailsSection } from '../../components/DetailsSection';
 import { TableRowTitleDescription } from '../../components/TableRowTitleDescription';
-import { LoadError } from '../../components/LoadError';
-import { PageHeader } from '../../components/PageHeader';
-import { PageLoading } from '../../components/PageLoading';
+import { PageStateSection } from '../../components/states/PageStateSection';
 import { RelativeTime } from '../../components/RelativeTime';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
 import { StatusLabel } from '../../components/StatusLabel';
-import { useServiceData } from '../../hooks/useServiceData';
+import { useConsoleSession } from '../../context/useConsoleSession';
 import { EMPTY_VALUE } from '../../utilities/format';
 import { formatCores, formatGiB } from '../../utilities/quantity';
 import { gpuCount, membershipAction, statusReason } from './clusterInfo';
@@ -55,9 +47,7 @@ import { roleOf } from './roles';
 import type { ClusterView } from './clusterView';
 import { useCluster, useMembershipWrites } from './useClusters';
 import { ClusterSite } from './ClusterSite';
-import { isApproximate, LOCATION_DOCS_URL } from './site';
-
-type Props = { service: UserService };
+import { isFromCloudRegion, LOCATION_DOCS_URL } from './site';
 
 /** "68 cores, 65 allocatable", or only the capacity when the hub reports no allocatable value. */
 const withAllocatable = (capacity?: string, allocatable?: string) =>
@@ -129,7 +119,7 @@ const clusterItems = (c: ClusterView) => [
 
 /**
  * Where the map puts the cluster and from what: the hub admin's annotations, or the cloud region
- * (approximate); otherwise why it isn't on the map. Without annotations it links to how a hub
+ * ("<lat, lon> from the cloud region"); otherwise why it isn't on the map. Without annotations it links to how a hub
  * admin sets them.
  */
 const MapPosition: React.FC<{ cluster: ClusterView }> = ({ cluster: c }) => {
@@ -147,10 +137,10 @@ const MapPosition: React.FC<{ cluster: ClusterView }> = ({ cluster: c }) => {
     );
   }
   const at = `${c.latitude}, ${c.longitude}`;
-  return isApproximate(c) ? (
+  return isFromCloudRegion(c) ? (
     <Stack>
       <span>
-        {at} <SubtleText>approximate, from the cloud region</SubtleText>
+        {at} <SubtleText>from the cloud region</SubtleText>
       </span>
       {how}
     </Stack>
@@ -270,7 +260,9 @@ const GPUNodesTable: React.FC<{ nodes: GPUNode[] }> = ({ nodes }) => (
           Node
         </Th>
         <Th modifier="wrap">Model</Th>
-        <Th modifier="wrap">GPUs</Th>
+        <Th modifier="wrap" className="console-number">
+          GPUs
+        </Th>
         <Th modifier="wrap">Memory</Th>
         <Th modifier="wrap">Architecture</Th>
         <Th modifier="wrap">Driver</Th>
@@ -294,11 +286,13 @@ const GPUNodesTable: React.FC<{ nodes: GPUNode[] }> = ({ nodes }) => (
             />
           </Td>
           <Td dataLabel="Model">{gpuModel(n.product)}</Td>
-          <Td dataLabel="GPUs">{n.count}</Td>
+          <Td dataLabel="GPUs" className="console-number">
+            {n.count}
+          </Td>
           <Td dataLabel="Memory">{gpuMemory(n.memoryMib) ?? EMPTY_VALUE}</Td>
           <Td dataLabel="Architecture">{architectureText(n.family, n.computeCapability) ?? EMPTY_VALUE}</Td>
           <Td dataLabel="Driver">{driverText(n.driverVersion, n.cudaRuntimeVersion) ?? EMPTY_VALUE}</Td>
-          <Td dataLabel="Sharing">{gpuSharing(n.sharing, n.product) ?? 'None'}</Td>
+          <Td dataLabel="Sharing">{gpuSharing(n.sharing, n.product) ?? EMPTY_VALUE}</Td>
           <Td dataLabel="Status">
             <StatusLabel isCompact status={n.ready ? 'Ready' : 'Not ready'} />
           </Td>
@@ -329,12 +323,12 @@ const Section: React.FC<{ title: string; help?: React.ReactNode; children: React
 );
 
 /** A cluster at /clusters/:name: its AI Grid membership, what the hub knows about it, and its health. */
-export const ClusterDetailsPage: React.FC<Props> = ({ service }) => {
+export const ClusterDetailsPage: React.FC = () => {
   const { name = '' } = useParams();
   const navigate = useNavigate();
   const { data: loadedCluster, loaded, error, refresh } = useCluster(name);
   const writes = useMembershipWrites();
-  const [user] = useServiceData(() => service.getUser(), undefined, 0);
+  const { user } = useConsoleSession();
   const [change, setChange] = useState<MembershipChange>();
   // The cluster as Add or Remove returned it, shown until a load started after that change
   // succeeds: a slow or failed reload can't bring back the membership (or the version) from before
@@ -374,8 +368,6 @@ export const ClusterDetailsPage: React.FC<Props> = ({ service }) => {
     reload();
   };
 
-  const notFound = error instanceof ServiceError && error.status === 404;
-
   const actions = cluster && (
     <Flex spaceItems={{ default: 'spaceItemsSm' }}>
       {cluster.consoleUrl && (
@@ -403,30 +395,11 @@ export const ClusterDetailsPage: React.FC<Props> = ({ service }) => {
   );
 
   const body = () => {
-    if (notFound) {
-      return (
-        <EmptyState titleText="Cluster not found" headingLevel="h2">
-          <EmptyStateBody>
-            The hub has no managed cluster {name}. <Link to="/clusters">Go to Clusters</Link>
-          </EmptyStateBody>
-        </EmptyState>
-      );
-    }
-    if (error && !cluster) {
-      return <LoadError subject="Clusters" error={error} onRetry={reload} />;
-    }
     if (!cluster) {
       return null;
     }
     return (
       <Grid hasGutter>
-        {error && (
-          <GridItem>
-            <Alert isInline variant="warning" title="Showing the last loaded state">
-              {error.message}
-            </Alert>
-          </GridItem>
-        )}
         <GridItem md={6}>
           <Section
             title="AI Grid"
@@ -483,7 +456,7 @@ export const ClusterDetailsPage: React.FC<Props> = ({ service }) => {
 
   return (
     <>
-      <PageHeader
+      <PageStateSection
         title={name}
         headerAction={actions}
         breadcrumb={
@@ -494,8 +467,21 @@ export const ClusterDetailsPage: React.FC<Props> = ({ service }) => {
             <BreadcrumbItem isActive>{name}</BreadcrumbItem>
           </Breadcrumb>
         }
-      />
-      {!loaded ? <PageLoading label="Loading cluster" /> : <PageSection isFilled>{body()}</PageSection>}
+        loaded={loaded}
+        error={error}
+        onRetry={reload}
+        subject="Clusters"
+        object="cluster"
+        loadingLabel="Loading cluster"
+        notFound={{
+          what: 'Cluster',
+          body: `The hub has no managed cluster ${name}.`,
+          listPath: '/clusters',
+          listLabel: 'Clusters',
+        }}
+      >
+        {body()}
+      </PageStateSection>
       {change && (
         <MembershipModal
           {...change}

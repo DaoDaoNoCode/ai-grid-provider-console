@@ -39,10 +39,9 @@ test('adds an enrollable cluster to the AI Grid, keeps it after a reload, and re
   // Remove it from its details page, which leaves site4 as the fixture has it.
   await page.getByRole('button', { name: `Actions for ${ENROLLABLE}` }).click();
   await page.getByRole('menuitem', { name: 'Remove from AI Grid' }).click();
-  await page
-    .getByRole('dialog', { name: `Remove ${ENROLLABLE} from AI Grid?` })
-    .getByRole('button', { name: 'Remove', exact: true })
-    .click();
+  const remove = page.getByRole('dialog', { name: `Remove ${ENROLLABLE} from AI Grid?` });
+  await remove.getByRole('textbox', { name: `Type ${ENROLLABLE} to confirm:` }).fill(ENROLLABLE);
+  await remove.getByRole('button', { name: 'Remove', exact: true }).click();
   await expect(page.getByText(`${ENROLLABLE} removed from AI Grid`)).toBeVisible();
   await expect(page.getByTestId('cluster-membership')).toContainText('Not added');
 });

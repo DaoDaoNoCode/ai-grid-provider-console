@@ -72,7 +72,7 @@ export const useDeleteOrganization = (
         }
       }}
       onDelete={() => void remove()}
-      testId="delete-tenant-modal"
+      testId="delete-organization-modal"
     >
       <p>Delete this organization and its saved identity provider configuration?</p>
     </DeleteModal>

@@ -6,9 +6,9 @@ import { Link, useLocation, useParams } from 'react-router-dom';
 import { Breadcrumb, BreadcrumbItem } from '@patternfly/react-core';
 import type { GovernanceService } from '../../context/useMaaSGovernanceContext';
 import { useMaaSGovernanceContext } from '../../context/useMaaSGovernanceContext';
-import { useGetSubscriptionInfo } from '../../hooks/useGetSubscriptionInfo';
+import { useGetSubscriptionInfo } from './hooks/useGetSubscriptionInfo';
 import { getBackUrl, getSubscriptionViewUrl, subscriptionNotFound } from '../../utilities/maasGovernanceNavigation';
-import { ApplicationsPage } from './ApplicationsPage';
+import { PageStateSection } from '../../components/states/PageStateSection';
 import { CreateSubscriptionForm } from './createSubscription/CreateSubscriptionForm';
 
 type Props = { service: GovernanceService };
@@ -26,8 +26,8 @@ export const EditSubscriptionPage: React.FC<Props> = ({ service }) => {
     subscriptionInfo?.subscription.displayName || subscriptionInfo?.subscription.name || subscriptionName;
 
   return (
-    <ApplicationsPage
-      title="Edit subscription"
+    <PageStateSection
+      title={`Edit ${displayName}`}
       description={
         displayName ? `Edit the subscription configuration for ${displayName}.` : 'Edit the subscription configuration.'
       }
@@ -35,12 +35,15 @@ export const EditSubscriptionPage: React.FC<Props> = ({ service }) => {
         <Breadcrumb>
           <BreadcrumbItem render={() => <Link to={returnTo}>Subscriptions</Link>} />
           <BreadcrumbItem render={() => <Link to={getSubscriptionViewUrl(subscriptionName)}>{displayName}</Link>} />
-          <BreadcrumbItem isActive>Edit subscription</BreadcrumbItem>
+          <BreadcrumbItem isActive>Edit</BreadcrumbItem>
         </Breadcrumb>
       }
-      loaded={loaded || !!error}
-      loadError={error}
-      errorMessage="Unable to load subscription details."
+      loaded={loaded}
+      error={error}
+      subject="Subscriptions"
+      object="subscription"
+      loadingLabel="Loading subscription"
+      hasBodyWrapper={false}
       notFound={subscriptionNotFound(subscriptionName, returnTo)}
       onRetry={() => {
         void reloadInfo();
@@ -55,6 +58,6 @@ export const EditSubscriptionPage: React.FC<Props> = ({ service }) => {
           returnTo={returnTo}
         />
       )}
-    </ApplicationsPage>
+    </PageStateSection>
   );
 };

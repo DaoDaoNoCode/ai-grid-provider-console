@@ -1,22 +1,13 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
-import {
-  Alert,
-  AlertActionLink,
-  AlertActionCloseButton,
-  EmptyState,
-  EmptyStateBody,
-  PageSection,
-  Stack,
-  Tab,
-  TabTitleText,
-  Tabs,
-} from '@patternfly/react-core';
+import { Alert, AlertActionCloseButton, Stack, Tab, TabTitleText, Tabs } from '@patternfly/react-core';
+import { CubesIcon } from '@patternfly/react-icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { ConsoleService } from '../../api/ConsoleService';
 import { ServiceError } from '../../api/ConsoleService';
 import { dashboardTitle, monitoringLinkFor, monitoringTabs } from '../../api/monitoring';
 import type { ConsoleConfig } from '../../api/types';
-import { PageHeader } from '../../components/PageHeader';
+import { EmptyListState } from '../../components/states/EmptyListState';
+import { PageStateSection } from '../../components/states/PageStateSection';
 import { useConsoleSession } from '../../context/useConsoleSession';
 import { PageLoading } from '../../components/PageLoading';
 import { useServiceData } from '../../hooks/useServiceData';
@@ -25,13 +16,6 @@ import { GridPage } from '../grid/GridPage';
 const PersesDashboardView = lazy(() => import('./PersesDashboardView'));
 
 type Props = { service: ConsoleService };
-
-const failureOf = (error: Error) => {
-  if (error instanceof ServiceError && error.status === 403) {
-    return { title: "You can't read these dashboards", body: error.message };
-  }
-  return { title: 'Dashboards could not be loaded', body: error.message };
-};
 
 /**
  * The hub's Perses dashboards as tabs, when the BFF relays to a Perses (docs/plan/bff-api.md, "The
@@ -57,27 +41,12 @@ const PersesMonitoring: React.FC<{ service: ConsoleService; project: string }> =
   const selected = tabs.find((d) => d.metadata.name === asked) ?? tabs[0];
 
   const body = () => {
-    if (error) {
-      const { title, body } = failureOf(error);
-      return (
-        <Alert
-          isInline
-          variant="danger"
-          title={title}
-          actionLinks={<AlertActionLink onClick={() => void refresh()}>Retry</AlertActionLink>}
-        >
-          {body}
-        </Alert>
-      );
-    }
     if (!selected) {
       return (
-        <EmptyState titleText="No dashboards yet" headingLevel="h2">
-          <EmptyStateBody>
-            Monitoring shows the Perses dashboards in project {project} whose names start with <code>dashboard-</code>.
-            The hub has none yet.
-          </EmptyStateBody>
-        </EmptyState>
+        <EmptyListState title="No dashboards" icon={CubesIcon}>
+          Monitoring shows the Perses dashboards in project {project} whose names start with <code>dashboard-</code>.
+          The hub has none yet.
+        </EmptyListState>
       );
     }
     return (
@@ -141,10 +110,17 @@ const PersesMonitoring: React.FC<{ service: ConsoleService; project: string }> =
   };
 
   return (
-    <>
-      <PageHeader title="Monitoring" description="Dashboards from the hub's Perses, across the AI Grid clusters." />
-      {!loaded ? <PageLoading label="Loading dashboards" /> : <PageSection isFilled>{body()}</PageSection>}
-    </>
+    <PageStateSection
+      title="Monitoring"
+      description="Dashboards from the hub's Perses, across the AI Grid clusters."
+      loaded={loaded}
+      error={error}
+      onRetry={() => void refresh()}
+      subject="Dashboards"
+      loadingLabel="Loading dashboards"
+    >
+      {body()}
+    </PageStateSection>
   );
 };
 
@@ -155,26 +131,19 @@ export const MonitoringPage: React.FC<Props> = ({ service }) => {
     undefined,
     0,
   );
-  if (!loaded && !error) {
-    return <PageLoading label="Loading monitoring" />;
-  }
   // Without the configuration the page can't tell whether the console has a Perses: say so rather
-  // than fall back to the overview's metrics.
+  // than fall back to the overview's metrics. The header stays while it loads.
   if (!config) {
     return (
-      <>
-        <PageHeader title="Monitoring" />
-        <PageSection isFilled>
-          <Alert
-            isInline
-            variant="danger"
-            title="Monitoring could not be loaded"
-            actionLinks={<AlertActionLink onClick={() => void refresh()}>Retry</AlertActionLink>}
-          >
-            {error?.message}
-          </Alert>
-        </PageSection>
-      </>
+      <PageStateSection
+        title="Monitoring"
+        loaded={loaded}
+        error={error}
+        onRetry={() => void refresh()}
+        subject="Monitoring"
+        object="the console settings"
+        loadingLabel="Loading monitoring"
+      />
     );
   }
   if (config.monitoring.enabled) {

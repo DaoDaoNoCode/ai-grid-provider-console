@@ -15,7 +15,6 @@ import {
   HelperText,
   HelperTextItem,
   NumberInput,
-  PageSection,
   TextInput,
 } from '@patternfly/react-core';
 import { z } from 'zod';
@@ -39,8 +38,8 @@ import { SystemAuthenticatedWarning } from '../../../components/SystemAuthentica
 import { TypeaheadSelect } from '../../../components/TypeaheadSelect';
 import { useMaaSGovernanceContext } from '../../../context/useMaaSGovernanceContext';
 import { useConfirmDiscard } from '../../../hooks/useConfirmDiscard';
-import type { SubscriptionModelEntry } from '../../../hooks/useSubscriptionModels';
-import { useSubscriptionModels } from '../../../hooks/useSubscriptionModels';
+import type { SubscriptionModelEntry } from '../hooks/useSubscriptionModels';
+import { useSubscriptionModels } from '../hooks/useSubscriptionModels';
 import { isSameModel } from '../../../utilities/authpolicies';
 import { getSectionUrl } from '../../../utilities/maasGovernanceNavigation';
 import { fieldErrorsOf } from '../../../validation';
@@ -286,13 +285,13 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ service, modelRefs, su
     </FormHelperText>
   );
   if (organizationsError) {
-    organizationHelper = errorText(`Organizations could not be loaded: ${organizationsError.message}`);
+    organizationHelper = errorText(`Unable to load organizations: ${organizationsError.message}`);
   } else if (organizationTouched && organizationMissing) {
     organizationHelper = errorText(SELECT_ORGANIZATION);
   }
 
   return (
-    <PageSection hasBodyWrapper={false} isFilled>
+    <>
       <Form maxWidth="750px">
         <K8sNameDescriptionField
           data={nameDescData}
@@ -455,7 +454,7 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ service, modelRefs, su
         )}
 
         {submitError && (
-          <Alert variant="danger" isInline title={`Failed to ${isEditing ? 'update' : 'create'} subscription`}>
+          <Alert variant="danger" isInline title={`Unable to ${isEditing ? 'update' : 'create'} subscription`}>
             {submitError}
           </Alert>
         )}
@@ -481,6 +480,6 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ service, modelRefs, su
         </ActionGroup>
       </Form>
       {discardModal}
-    </PageSection>
+    </>
   );
 };

@@ -17,10 +17,6 @@ import {
   DrawerHead,
   DrawerPanelBody,
   DrawerPanelContent,
-  EmptyState,
-  EmptyStateActions,
-  EmptyStateBody,
-  EmptyStateFooter,
   Flex,
   FlexItem,
   Grid,
@@ -31,7 +27,7 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from '@patternfly/react-core';
-import { AngleLeftIcon, SearchIcon } from '@patternfly/react-icons';
+import { AngleLeftIcon } from '@patternfly/react-icons';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { ManagedModel } from '../../api/types';
 import type { ClusterView } from '../clusters/clusterView';
@@ -40,6 +36,8 @@ import { DetailsSection } from '../../components/DetailsSection';
 import { StatCard } from '../../components/StatCard';
 import { StatusLabel } from '../../components/StatusLabel';
 import { SubtleText } from '../../components/SubtleText';
+import { NoResultsState } from '../../components/states/NoResultsState';
+import { SiteText } from '../clusters/ClusterSite';
 import { modelKey } from '../../utilities/authpolicies';
 import { modelPath } from '../models/modelUtils';
 import { LOCATION_DOCS_URL } from '../clusters/site';
@@ -196,6 +194,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
     return targets.length ? (
       <Flex
         direction={{ default: 'column' }}
+        flexWrap={{ default: 'nowrap' }}
         alignItems={{ default: 'alignItemsFlexStart' }}
         spaceItems={{ default: 'spaceItemsSm' }}
       >
@@ -217,6 +216,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
     return assigned.length ? (
       <Flex
         direction={{ default: 'column' }}
+        flexWrap={{ default: 'nowrap' }}
         alignItems={{ default: 'alignItemsFlexStart' }}
         spaceItems={{ default: 'spaceItemsSm' }}
       >
@@ -256,8 +256,8 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
       <Flex alignItems={{ default: 'alignItemsCenter' }} spaceItems={{ default: 'spaceItemsSm' }}>
         <FlexItem grow={{ default: 'grow' }}>
           <SearchInput
-            aria-label={`Search grid ${objects}`}
-            placeholder={`Search ${objects}`}
+            aria-label={`Filter grid ${objects}`}
+            placeholder="Filter by name"
             value={search}
             onChange={(_, value) => setSearch(value)}
             onClear={() => setSearch('')}
@@ -299,7 +299,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
                   {cluster.locationSource === 'cloud region' && (
                     <>
                       {' '}
-                      <SubtleText>approximate, from the cloud region</SubtleText>
+                      <SubtleText>from the cloud region</SubtleText>
                     </>
                   )}
                 </>
@@ -348,18 +348,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
     </Stack>
   );
 
-  const noResults = (
-    <EmptyState variant="xs" titleText={`No ${objects} match`} headingLevel="h3" icon={SearchIcon}>
-      <EmptyStateBody>Change the search or the filter to see more.</EmptyStateBody>
-      <EmptyStateFooter>
-        <EmptyStateActions>
-          <Button variant="link" onClick={clearFilters}>
-            Clear all filters
-          </Button>
-        </EmptyStateActions>
-      </EmptyStateFooter>
-    </EmptyState>
-  );
+  const noResults = <NoResultsState body={`Change the filter to see more ${objects}.`} onClear={clearFilters} />;
 
   // Not on the map: no position (no annotations, no known cloud region), or annotations to fix.
   const notOnMap = clusters.filter((c) => !hasCoordinates(c));
@@ -401,7 +390,10 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
                   actionLabel={`View ${c.name} details`}
                   onOpen={() => open({ kind: 'cluster', name: c.name })}
                 >
-                  <span>{[siteOf(c), c.location].filter(Boolean).join(' · ')}</span>
+                  <span>
+                    <SiteText text={siteOf(c)} fromCloudRegion={!c.siteName && c.locationSource === 'cloud region'} />
+                    {c.location && ` · ${c.location}`}
+                  </span>
                   <SubtleText>{at.length ? `Models: ${at.map(displayName).join(', ')}` : 'No models'}</SubtleText>
                 </FleetCard>
               );
@@ -447,7 +439,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
       <DrawerPanelBody>
         <Stack hasGutter>
           {modelsError && (
-            <Alert isInline variant="warning" title="Models unavailable">
+            <Alert isInline variant="warning" title="Unable to load models">
               {modelsError}
             </Alert>
           )}

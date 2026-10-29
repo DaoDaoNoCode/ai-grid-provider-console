@@ -11,6 +11,8 @@ import { normalizePhase } from '../../../utilities/phaseLabelUtils';
 export type SubscriptionColumn = {
   label: string;
   width?: ThProps['width'];
+  /** A number: right-aligned. */
+  isNumber?: boolean;
   sortable: (a: MaaSSubscription, b: MaaSSubscription) => number;
 };
 
@@ -43,6 +45,7 @@ export const subscriptionsColumns = (organizationName: (s: MaaSSubscription) => 
   {
     label: 'Priority',
     width: 10,
+    isNumber: true,
     sortable: (a, b) => (a.priority ?? 0) - (b.priority ?? 0),
   },
 ];

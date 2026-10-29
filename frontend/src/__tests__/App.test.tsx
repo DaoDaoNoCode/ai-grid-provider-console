@@ -150,9 +150,11 @@ describe('App', () => {
     expect(body).toHaveTextContent('The fake backend has no login');
   });
 
-  it('shows the pages when the user could not be loaded, without admin actions', async () => {
+  it('shows the pages when the user could not be loaded, without admin actions, and says why', async () => {
     const service = new MockConsoleService();
+    const getUser = service.getUser.bind(service);
     service.getUser = () => Promise.reject(new ServiceError(500, 'unavailable'));
+    const user = userEvent.setup();
     render(
       <MemoryRouter initialEntries={['/clusters']}>
         <TestApp service={service} />
@@ -161,6 +163,14 @@ describe('App', () => {
     expect(await screen.findByRole('row', { name: /^site1 / })).toBeInTheDocument();
     expect(screen.queryByText('This console is for provider admins')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Actions for / })).not.toBeInTheDocument();
+    // Not silently read-only: the console says it couldn't tell, and tries again.
+    const alert = screen.getByTestId('user-load-error');
+    expect(alert).toHaveTextContent('Unable to load your access');
+    expect(alert).toHaveTextContent('unavailable');
+    service.getUser = getUser;
+    await user.click(within(alert).getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByRole('button', { name: 'Actions for site1' })).toBeVisible();
+    expect(screen.queryByTestId('user-load-error')).not.toBeInTheDocument();
   });
 
   it('navigates to organizations and shows them', async () => {
@@ -189,7 +199,7 @@ describe('App', () => {
     fireEvent.click(await screen.findByRole('link', { name: 'Organizations' }));
 
     expect(await screen.findByText('Organizations are not available on this backend yet')).toBeInTheDocument();
-    expect(screen.queryByText('Error loading organizations')).not.toBeInTheDocument();
+    expect(screen.queryByText('Unable to load organizations')).not.toBeInTheDocument();
   });
 
   it('shows the backend error when organizations cannot be loaded', async () => {
@@ -204,7 +214,7 @@ describe('App', () => {
     );
     fireEvent.click(await screen.findByRole('link', { name: 'Organizations' }));
 
-    expect(await screen.findByText('Error loading organizations')).toBeInTheDocument();
+    expect(await screen.findByText('Unable to load organizations')).toBeInTheDocument();
     expect(screen.getByText('the AI Grid backend failed to process the request')).toBeInTheDocument();
   });
 });
@@ -296,7 +306,7 @@ describe('an ended session', () => {
     expect(screen.queryByRole('navigation', { name: 'Console sections' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /navigation/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Clusters' })).not.toBeInTheDocument();
-    expect(screen.queryByText('Error loading clusters')).not.toBeInTheDocument();
+    expect(screen.queryByText('Unable to load clusters')).not.toBeInTheDocument();
     expect(screen.queryAllByRole('heading', { level: 1 })).toHaveLength(h1s);
     expect(screen.getByText('Cloud Provider Admin Console')).toBeVisible();
   };

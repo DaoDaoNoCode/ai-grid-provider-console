@@ -227,8 +227,12 @@ describe('administrator subscription flows', () => {
     await user.click(actions);
     expect(actions).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeVisible();
-    // A subscription being deleted keeps its named menu, disabled.
-    expect(within(table).getByRole('button', { name: 'Actions for Research' })).toBeDisabled();
+    // A subscription being deleted can still be viewed; Edit and Delete stay, disabled.
+    await user.keyboard('{Escape}');
+    await user.click(within(table).getByRole('button', { name: 'Actions for Research' }));
+    expect(screen.getByRole('menuitem', { name: 'View details' })).not.toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('menuitem', { name: 'Edit' })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('menuitem', { name: 'Delete' })).toHaveAttribute('aria-disabled', 'true');
   });
 
   it('keeps keyboard focus on the filter menu after choosing what to filter by', async () => {
@@ -261,9 +265,7 @@ describe('administrator subscription flows', () => {
     expect(screen.getByTestId('expanded-subscription-model-locations')).toHaveTextContent('Loading locations');
 
     act(() => fail(new Error('backend down')));
-    expect(await screen.findByTestId('subscriptions-models-unavailable')).toHaveTextContent(
-      "The hub's models could not be loaded",
-    );
+    expect(await screen.findByTestId('subscriptions-models-unavailable')).toHaveTextContent('Unable to load models');
     expect(screen.getByTestId('expanded-subscription-model-locations')).toHaveTextContent('Unavailable');
     // The reference's own name still filters.
     await user.click(screen.getByTestId('subscriptions-filter-attribute'));
@@ -384,6 +386,19 @@ describe('administrator subscription flows', () => {
     });
   });
 
+  it('keeps the list under a warning when a reload fails', async () => {
+    const service = new MockConsoleService();
+    const user = userEvent.setup();
+    renderAt('/subscriptions', service);
+    expect(await screen.findByRole('link', { name: 'Engineering' })).toBeVisible();
+    vi.spyOn(service, 'listSubscriptions').mockRejectedValue(new ServiceError(503, 'Service unavailable.'));
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(await screen.findByTestId('stale-data-alert')).toHaveTextContent(
+      'Showing the last loaded subscriptionsService unavailable.',
+    );
+    expect(screen.getByRole('link', { name: 'Engineering' })).toBeVisible();
+  });
+
   it('renders load failures and allows retry', async () => {
     const service = new MockConsoleService();
     const list = service.listSubscriptions;
@@ -393,7 +408,8 @@ describe('administrator subscription flows', () => {
     };
     const user = userEvent.setup();
     renderAt('/subscriptions', service);
-    expect(await screen.findByTestId('error-empty-state')).toHaveTextContent('Service unavailable.');
+    expect(await screen.findByRole('heading', { name: 'Unable to load subscriptions' })).toBeVisible();
+    expect(screen.getByTestId('error-state')).toHaveTextContent('Service unavailable.');
     await user.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByTestId('subscriptions-table')).toBeVisible();
   });
@@ -454,17 +470,14 @@ it('requires an organization and shows it in the table', async () => {
 
 it('hides write actions until it knows the user is a provider admin', async () => {
   const service = unknownUser();
-  const user = userEvent.setup();
   const { unmount } = renderAt('/subscriptions', service);
   await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('User could not be loaded'));
   const table = await screen.findByTestId('subscriptions-table');
   expect(within(table).getByRole('link', { name: 'Engineering' })).toBeVisible();
   expect(screen.queryByRole('link', { name: 'Create subscription' })).not.toBeInTheDocument();
-  const row = within(table).getByRole('link', { name: 'Engineering' }).closest('tr')!;
-  await user.click(within(row).getByRole('button', { name: 'Actions for Engineering' }));
-  expect(screen.getByRole('menuitem', { name: 'View details' })).toBeVisible();
-  expect(screen.queryByRole('menuitem', { name: 'Edit' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('menuitem', { name: 'Delete' })).not.toBeInTheDocument();
+  // No row menu, as on the other lists: a viewer opens a subscription from its name.
+  expect(within(table).queryByRole('button', { name: 'Actions for Engineering' })).not.toBeInTheDocument();
+  expect(within(table).queryByRole('columnheader', { name: 'Actions' })).not.toBeInTheDocument();
   unmount();
 
   renderAt('/subscriptions/view/engineering', service);
@@ -494,7 +507,7 @@ it('says creating is not available on a backend without subscriptions', async ()
   await pickOrganization(user, 'acme-robotics');
   await user.click(screen.getByTestId('create-subscription-button'));
   expect(await screen.findByText('Creating subscriptions is not available on this backend yet.')).toBeVisible();
-  expect(screen.getByText('Failed to create subscription')).toBeVisible();
+  expect(screen.getByText('Unable to create subscription')).toBeVisible();
 });
 
 it('shows one pagination, in the toolbar, for a single page', async () => {
@@ -569,7 +582,12 @@ describe('MaaS subscription phases', () => {
     // No phase yet reads Unknown, as in odh-dashboard's MaaS screens.
     expect(label('unreconciled-sub')).toHaveTextContent('Unknown');
     expect(label('degraded-sub')).toHaveTextContent('Degraded');
-    expect(label('active-sub')).toHaveTextContent('Ready');
+    // Active, as its policy's phase reads beside it. Every status is an outline label that opens nothing.
+    expect(label('active-sub')).toHaveTextContent('Active');
+    for (const name of ['active-sub', 'degraded-sub']) {
+      expect(label(name)).toHaveClass('pf-m-outline');
+      expect(within(label(name)).queryByRole('button')).not.toBeInTheDocument();
+    }
     expect(label('failed-sub')).toHaveTextContent('Failed');
     expect(label('invalid-sub')).toHaveTextContent('Invalid');
     expect(screen.queryByText('Saved')).not.toBeInTheDocument();
@@ -583,57 +601,9 @@ describe('MaaS subscription phases', () => {
     const user = userEvent.setup();
     renderAt('/subscriptions', service);
     expect(await screen.findByTestId('phase-label-subtext')).toHaveTextContent(TRLP_MESSAGE);
-    await user.click(within(screen.getByTestId('phase-label')).getByRole('button'));
-    expect(await screen.findByTestId('phase-modal')).toHaveTextContent(TRLP_MESSAGE);
-  });
-
-  it('lists unpaired and unhealthy models as affected', async () => {
-    const service = new MockConsoleService();
-    const sub = withPhase('degraded-sub', 'Degraded', {
-      status: 'False',
-      reason: 'PartialFailure',
-      message: '1 of 3 model references are invalid or unavailable',
-    });
-    sub.modelRefs = ['granite-3-8b', 'llama-3-70b', 'retired-llm'].map((name) => ({
-      name,
-      tokenRateLimits: [{ limit: 1000, window: '1h' }],
-    }));
-    sub.modelRefStatuses = [
-      { name: 'granite-3-8b', namespace: 'ai-grid-models', ready: true, reason: 'Valid' },
-      { name: 'llama-3-70b', namespace: 'ai-grid-models', ready: true, reason: 'Valid' },
-      {
-        name: 'retired-llm',
-        namespace: 'ai-grid-models',
-        ready: false,
-        reason: 'NotFound',
-        message: 'MaaSModelRef ai-grid-models/retired-llm not found',
-      },
-    ];
-    service.subscriptions = [sub];
-    service.modelRegistrations = [
-      {
-        name: 'granite-3-8b',
-        namespace: 'ai-grid-models',
-        phase: 'Pending',
-        conditions: [{ type: 'Ready', status: 'False', reason: 'Pending', message: 'Awaiting governance pairing' }],
-      },
-      {
-        name: 'llama-3-70b',
-        namespace: 'ai-grid-models',
-        phase: 'Unhealthy',
-        conditions: [
-          { type: 'Ready', status: 'False', reason: 'Unhealthy', message: 'Governed but backend is not ready' },
-        ],
-      },
-    ];
-    const user = userEvent.setup();
-    renderAt('/subscriptions/view/degraded-sub', service);
-    const details = await screen.findByTestId('subscription-details-section');
-    await user.click(within(within(details).getByTestId('phase-label')).getByRole('button'));
-    const modal = await screen.findByTestId('phase-modal');
-    expect(modal).toHaveTextContent('Awaiting governance pairing');
-    expect(modal).toHaveTextContent('Governed but backend is not ready');
-    expect(modal).toHaveTextContent('Model not found. It may have been deleted.');
+    // The condition's message is the label's tooltip too.
+    await user.hover(within(screen.getByTestId('phase-label')).getByText('Degraded'));
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(TRLP_MESSAGE);
   });
 });
 

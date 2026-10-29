@@ -1,16 +1,15 @@
 // Ported from krisv/ai-grid-cloud-provider-poc src/app/pages/tenants/TenantDetailsPage.tsx at 62319b8.
-import { Breadcrumb, BreadcrumbItem, PageSection } from '@patternfly/react-core';
+import { Breadcrumb, BreadcrumbItem } from '@patternfly/react-core';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { OrganizationsService } from '../../api/organizations';
 import type { Organization } from '../../api/types';
-import { PageHeader } from '../../components/PageHeader';
-import { PageLoading } from '../../components/PageLoading';
+import { PageStateSection } from '../../components/states/PageStateSection';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
 import { StatusLabel } from '../../components/StatusLabel';
 import { useConsoleSession } from '../../context/useConsoleSession';
 import { useServiceData } from '../../hooks/useServiceData';
 import { OrganizationConfigurationDetails } from './OrganizationConfigurationDetails';
-import { OrganizationLoadError } from './OrganizationLoadError';
+import { organizationNotFound } from './organizationNotFound';
 import { useDeleteOrganization } from './useDeleteOrganization';
 
 type Props = { service: OrganizationsService };
@@ -48,9 +47,9 @@ export const OrganizationDetailsPage: React.FC<Props> = ({ service }) => {
 
   return (
     <>
-      <PageHeader
+      <PageStateSection
         title={organization?.name ?? id}
-        status={organization && <StatusLabel status={organization.status} />}
+        status={organization && <StatusLabel isCompact status={organization.status} />}
         headerAction={actions}
         breadcrumb={
           <Breadcrumb>
@@ -60,18 +59,16 @@ export const OrganizationDetailsPage: React.FC<Props> = ({ service }) => {
             <BreadcrumbItem isActive>{organization?.name ?? id}</BreadcrumbItem>
           </Breadcrumb>
         }
-      />
-      {!error && (!loaded || !organization) ? (
-        <PageLoading label="Loading organization" />
-      ) : (
-        <PageSection isFilled>
-          {error ? (
-            <OrganizationLoadError error={error} id={id} />
-          ) : (
-            organization && <OrganizationConfigurationDetails organization={organization} variant="details" />
-          )}
-        </PageSection>
-      )}
+        loaded={loaded}
+        error={error}
+        onRetry={() => void refresh()}
+        subject="Organizations"
+        object="organization"
+        loadingLabel="Loading organization"
+        notFound={organizationNotFound(id)}
+      >
+        {organization && <OrganizationConfigurationDetails organization={organization} variant="details" />}
+      </PageStateSection>
       {deleteModal}
     </>
   );

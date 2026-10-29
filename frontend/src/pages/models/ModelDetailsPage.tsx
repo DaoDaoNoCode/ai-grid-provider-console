@@ -1,16 +1,15 @@
-import { Alert, Breadcrumb, BreadcrumbItem, Flex, List, ListItem, PageSection, Stack } from '@patternfly/react-core';
+import { Alert, Breadcrumb, BreadcrumbItem, Flex, List, ListItem, Stack } from '@patternfly/react-core';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ServiceError } from '../../api/ConsoleService';
 import type { ManagedModel } from '../../api/types';
 import { DetailsList } from '../../components/DetailsList';
 import { DetailsSection } from '../../components/DetailsSection';
-import { LoadError } from '../../components/LoadError';
-import { PageHeader } from '../../components/PageHeader';
-import { PageLoading } from '../../components/PageLoading';
+import { RelativeTime } from '../../components/RelativeTime';
+import { PageStateSection } from '../../components/states/PageStateSection';
+import { SectionEmptyState } from '../../components/states/SectionEmptyState';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
 import { useConsoleSession } from '../../context/useConsoleSession';
 import { useServiceData } from '../../hooks/useServiceData';
-import { formatDateTime } from '../../utilities/format';
 import { locationLabel, modelNotFound, modelPath, siteNamesOf } from './modelUtils';
 import { ModelLocationsTable } from './ModelLocationsTable';
 import { ModelStatusDetails, ModelStatusLabel } from './ModelStatus';
@@ -32,9 +31,9 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
   );
   const { data: clusters } = useClusterList();
   const { user } = useConsoleSession();
-  // A 404 means the deployment is gone, even when an earlier answer is still held.
-  const notFound = error instanceof ServiceError && error.status === 404;
-  const model = notFound ? undefined : loadedModel;
+  // A 404 means the deployment is gone, even when an earlier answer is still held (PageStateSection
+  // shows the not-found state then).
+  const model = error instanceof ServiceError && error.status === 404 ? undefined : loadedModel;
   const [confirmDelete, deleteModal] = useDeleteModel(service, {
     refresh: () => void refresh(),
     onDeleted: () => navigate('/models', { state: { notice: 'Model deployment deleted' } }),
@@ -44,11 +43,11 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
 
   const body = () => {
     if (!model) {
-      return error && <LoadError subject="Models" error={error} notFound={modelNotFound(namespace, name)} />;
+      return null;
     }
     const phase = modelPhase(model);
     return (
-      <Flex direction={{ default: 'column' }} spaceItems={{ default: 'spaceItemsXl' }}>
+      <Flex direction={{ default: 'column' }} flexWrap={{ default: 'nowrap' }} spaceItems={{ default: 'spaceItemsXl' }}>
         {/* Saved to Git says all git mode knows; the status label shows it, so no alert repeats it. */}
         {phase !== 'Ready' && phase !== 'Saved to Git' && hasModelStatusDetails(model) && (
           <Alert
@@ -72,7 +71,7 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
               { term: 'Runtime image', value: model.runtimeImage },
               { term: 'Replicas', value: model.replicas },
               { term: 'Endpoint', value: model.endpoint },
-              { term: 'Created', value: formatDateTime(model.creationTimestamp) },
+              { term: 'Created', value: model.creationTimestamp && <RelativeTime time={model.creationTimestamp} /> },
             ]}
           />
         </DetailsSection>
@@ -102,7 +101,9 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
               </Link>
             </Stack>
           ) : (
-            <p>The placement hasn’t chosen any locations yet.</p>
+            <SectionEmptyState title="No locations yet">
+              The placement hasn’t chosen any locations yet.
+            </SectionEmptyState>
           )}
         </DetailsSection>
       </Flex>
@@ -111,7 +112,7 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
 
   return (
     <>
-      <PageHeader
+      <PageStateSection
         title={title}
         status={model && <ModelStatusLabel model={model} />}
         headerAction={
@@ -141,8 +142,16 @@ export const ModelDetailsPage: React.FC<Props> = ({ service }) => {
             <BreadcrumbItem isActive>{title}</BreadcrumbItem>
           </Breadcrumb>
         }
-      />
-      {!error && !loaded ? <PageLoading label="Loading model" /> : <PageSection isFilled>{body()}</PageSection>}
+        loaded={loaded}
+        error={error}
+        onRetry={() => void refresh()}
+        subject="Models"
+        object="model"
+        loadingLabel="Loading model"
+        notFound={modelNotFound(namespace, name)}
+      >
+        {body()}
+      </PageStateSection>
       {deleteModal}
     </>
   );

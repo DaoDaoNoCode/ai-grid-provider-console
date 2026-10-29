@@ -82,7 +82,7 @@ it('lists live Hub states, includes AI Grid navigation and enrolls with a label-
   const enrolled = service.clusters.find((c) => c.name === 'cluster-b')!;
   expect(enrolled.labels).toEqual({ location: 'site2', 'ai-grid/enabled': 'true', 'ai-grid/role': 'inference' });
   expect(enrolled.location).toBe('site2');
-  await user.click(screen.getByRole('textbox', { name: 'Search clusters' }));
+  await user.click(screen.getByRole('textbox', { name: 'Filter clusters' }));
   await user.paste('cluster-c');
   expect(within(screen.getByTestId('clusters-table')).queryByText('cluster-a')).not.toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'Actions for cluster-c' }));
@@ -101,6 +101,9 @@ it('removes a member from AI Grid after a confirmation', async () => {
   expect(modal).toHaveTextContent(
     'Models deployed to it from the Models page are removed from it. OpenShift AI is not uninstalled.',
   );
+  // Destructive, so it asks for the cluster's name typed in, as every delete does.
+  expect(within(modal).getByRole('button', { name: 'Remove' })).toBeDisabled();
+  await user.type(within(modal).getByRole('textbox', { name: 'Type cluster-a to confirm:' }), 'cluster-a');
   await user.click(within(modal).getByRole('button', { name: 'Remove' }));
   expect(await screen.findByText('cluster-a removed from AI Grid')).toBeVisible();
   const removed = service.clusters.find((c) => c.name === 'cluster-a')!;
@@ -183,8 +186,9 @@ it('reports Hub unavailability and retries instead of showing a false empty list
   };
   const user = userEvent.setup();
   renderAt('/clusters', service);
-  expect(await screen.findByText('the AI Grid backend is unavailable; try again')).toBeVisible();
-  expect(screen.queryByText('No managed clusters')).not.toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: 'Unable to load clusters' })).toBeVisible();
+  expect(screen.getByText('the AI Grid backend is unavailable; try again')).toBeVisible();
+  expect(screen.queryByRole('heading', { name: 'No clusters' })).not.toBeInTheDocument();
   service.listClusters = list;
   await user.click(screen.getByRole('button', { name: 'Retry' }));
   expect(await screen.findByTestId('clusters-table')).toHaveTextContent('cluster-a');
@@ -297,10 +301,27 @@ it('rejects a response that does not confirm membership', async () => {
   expect(within(modal).getByText('The Hub did not confirm the change. Refresh and try again.')).toBeVisible();
 });
 
-it('shows the PoC empty state', async () => {
+it('says when the hub has no clusters', async () => {
   renderAt('/clusters', serviceWith([]));
-  expect(await screen.findByText('No managed clusters')).toBeInTheDocument();
-  expect(screen.getByText('No ManagedClusters are available.')).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: 'No clusters' })).toBeVisible();
+  expect(screen.getByText(/The hub has no managed clusters yet/)).toBeVisible();
+});
+
+it('keeps the list under a warning when a reload fails, and clears it on the next', async () => {
+  const service = serviceWith(hubClusters());
+  const user = userEvent.setup();
+  renderAt('/clusters', service);
+  expect(await screen.findByRole('link', { name: 'cluster-a' })).toBeVisible();
+  const failed = vi.spyOn(service, 'listClusters').mockRejectedValue(new ServiceError(503, 'Hub unavailable.'));
+  await user.click(screen.getByRole('button', { name: 'Refresh' }));
+  const alert = await screen.findByTestId('stale-data-alert');
+  expect(alert).toHaveTextContent('Showing the last loaded clusters');
+  // The fake Connect transport answers a 503 with its own Unavailable message.
+  expect(alert).toHaveTextContent('the AI Grid backend is unavailable; try again');
+  expect(screen.getByRole('link', { name: 'cluster-a' })).toBeVisible();
+  failed.mockRestore();
+  await user.click(within(alert).getByRole('button', { name: 'Retry' }));
+  await waitFor(() => expect(screen.queryByTestId('stale-data-alert')).not.toBeInTheDocument());
 });
 
 it('shows the seeded clusters with location, status and provisioning, and no site or region', async () => {
@@ -608,13 +629,13 @@ it('says when the search matches no cluster, and clears it from the table', asyn
   const user = userEvent.setup();
   renderAt('/clusters', new MockConsoleService());
   await screen.findByRole('row', { name: /^site1 / });
-  await user.click(screen.getByRole('textbox', { name: 'Search clusters' }));
+  await user.click(screen.getByRole('textbox', { name: 'Filter clusters' }));
   await user.paste('no-such-cluster');
   expect(screen.getByRole('heading', { name: 'No results found' })).toBeVisible();
-  expect(screen.getByText('Change the search to see more clusters.')).toBeVisible();
+  expect(screen.getByText('Change the filter to see more clusters.')).toBeVisible();
   await user.click(screen.getByRole('button', { name: 'Clear all filters' }));
   expect(await screen.findByRole('row', { name: /^site1 / })).toBeVisible();
-  expect(screen.getByRole('textbox', { name: 'Search clusters' })).toHaveValue('');
+  expect(screen.getByRole('textbox', { name: 'Filter clusters' })).toHaveValue('');
 });
 
 it('reloads the cluster in the open dialog after a conflict, keeping the choices, so the next Add works', async () => {
@@ -729,7 +750,7 @@ it('returns focus to the row’s menu button when the dialog it opened closes', 
   await waitFor(() => expect(screen.getByRole('button', { name: 'Actions for site4' })).toHaveFocus());
 });
 
-it("shows each cluster's site: its name, the cloud region marked approximate, or what to fix", async () => {
+it("shows each cluster's site: its name, the cloud region marked as such, or what to fix", async () => {
   const user = userEvent.setup();
   renderAt(
     '/clusters',
@@ -777,7 +798,13 @@ it("shows each cluster's site: its name, the cloud region marked approximate, or
     ),
   );
   expect(await screen.findByTestId('cluster-site-named')).toHaveTextContent(/^Columbus DC2$/);
-  expect(screen.getByTestId('cluster-site-in-region')).toHaveTextContent('us-east-2 approximate');
+  const inRegion = screen.getByTestId('cluster-site-in-region');
+  expect(inRegion).toHaveTextContent('us-east-2 (cloud region)');
+  // What "(cloud region)" means, from the keyboard too.
+  inRegion.focus();
+  expect(await screen.findByRole('tooltip')).toHaveTextContent(
+    'No site is set on this cluster; the map places it by its cloud region.',
+  );
   const wrong = screen.getByTestId('cluster-site-wrong');
   expect(wrong).toHaveTextContent('Position not readable');
   await user.hover(wrong);

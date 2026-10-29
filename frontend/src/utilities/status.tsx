@@ -66,7 +66,7 @@ const toneProps: Record<StatusTone, Pick<LabelProps, 'status' | 'color' | 'icon'
 /** The Label props for a status: PatternFly's status color with its icon. */
 export const statusLabelProps = (status: string | undefined): Pick<LabelProps, 'status' | 'color' | 'icon'> => {
   const props = toneProps[statusTone(status)];
-  // A few neutral states have a more specific icon than the question mark.
+  // A few states have a more specific icon than their tone's.
   if (status === 'Pending') {
     return { ...props, icon: <PendingIcon /> };
   }

@@ -128,34 +128,28 @@ describe('routes', () => {
   });
 
   it.each([
-    ['/models/ai-grid-models/nope', 'nope', 'Model deployment not found', 'Go to Models', '/models'],
-    ['/models/ai-grid-models/nope/edit', 'Edit nope', 'Model deployment not found', 'Go to Models', '/models'],
+    ['/models/ai-grid-models/nope', 'Models', 'Model deployment not found', 'Go to Models', '/models'],
+    ['/models/ai-grid-models/nope/edit', 'Models', 'Model deployment not found', 'Go to Models', '/models'],
     [
       '/organizations/does-not-exist',
-      'does-not-exist',
+      'Organizations',
       'Organization not found',
       'Go to Organizations',
       '/organizations',
     ],
     [
       '/organizations/does-not-exist/edit',
-      'Edit does-not-exist',
+      'Organizations',
       'Organization not found',
       'Go to Organizations',
       '/organizations',
     ],
-    ['/subscriptions/view/nope', 'nope', 'Subscription not found', 'Go to Subscriptions', '/subscriptions'],
-    [
-      '/subscriptions/edit/nope',
-      'Edit subscription',
-      'Subscription not found',
-      'Go to Subscriptions',
-      '/subscriptions',
-    ],
+    ['/subscriptions/view/nope', 'Subscriptions', 'Subscription not found', 'Go to Subscriptions', '/subscriptions'],
+    ['/subscriptions/edit/nope', 'Subscriptions', 'Subscription not found', 'Go to Subscriptions', '/subscriptions'],
   ])('says a missing object is not found, the same way: %s', async (path, h1, title, back, href) => {
     at(path);
     const state = await screen.findByTestId('not-found-state');
-    // The page's heading names the object that was asked for.
+    // The page's heading names the list, not the id that doesn't exist.
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(h1);
     expect(within(state).getByRole('heading', { name: title })).toBeVisible();
     expect(within(state).getByRole('link', { name: back })).toHaveAttribute('href', href);
@@ -183,6 +177,23 @@ describe('routes', () => {
     at('/clusters', new MockConsoleService());
     await user.click(await screen.findByRole('button', { name: 'Collapse navigation' }));
     expect(screen.getByRole('button', { name: 'Expand navigation' })).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('opens the navigation over a narrow window, and closes it after a section is chosen', async () => {
+    window.innerWidth = 400;
+    try {
+      const user = userEvent.setup();
+      at('/clusters', new MockConsoleService());
+      const toggle = await screen.findByRole('button', { name: 'Expand navigation' });
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      await user.click(toggle);
+      expect(screen.getByRole('button', { name: 'Collapse navigation' })).toHaveAttribute('aria-expanded', 'true');
+      await user.click(screen.getByRole('link', { name: 'Models' }));
+      expect(await screen.findByRole('heading', { level: 1, name: 'Models' })).toBeVisible();
+      expect(screen.getByRole('button', { name: 'Expand navigation' })).toHaveAttribute('aria-expanded', 'false');
+    } finally {
+      window.innerWidth = 1280;
+    }
   });
 
   it('shows the fake-backend banner only in fake mode', async () => {
@@ -216,8 +227,10 @@ describe('routes', () => {
     at(path);
     await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('dev-user'));
     // PatternFly's Page isContentFilled plus a PageSection isFilled: the white panel reaches the bottom.
+    // A wizard's is PatternFly's wizard section, so its footer stays in view and only the step scrolls.
+    const section = ['/models/deploy', '/organizations/create'].includes(path) ? 'wizard' : 'section';
     expect(document.querySelector('.pf-v6-c-page__main-container.pf-m-fill')).not.toBeNull();
-    await waitFor(() => expect(document.querySelector('.pf-v6-c-page__main-section.pf-m-fill')).not.toBeNull());
+    await waitFor(() => expect(document.querySelector(`.pf-v6-c-page__main-${section}.pf-m-fill`)).not.toBeNull());
   });
 
   it('shows a success toast for a notice passed through navigation state', async () => {

@@ -19,7 +19,10 @@ type Props = {
   organization?: Organization;
 };
 
-const stepOf: Record<OrganizationSection, string> = { details: 'tenant-details', identityProvider: 'tenant-idp' };
+const stepOf: Record<OrganizationSection, string> = {
+  details: 'organization-details',
+  identityProvider: 'organization-idp',
+};
 
 /** The Review step; its Edit links go back to the step that edits each section. */
 const ReviewStep: React.FC<{ organization: OrganizationInput }> = ({ organization }) => {
@@ -73,20 +76,20 @@ export const OrganizationFormWizard: React.FC<Props> = ({ service, organization 
               refused={form.serverErrorsSent}
               errorStep={
                 Object.keys(form.detailServerErrors).length
-                  ? 'tenant-details'
+                  ? 'organization-details'
                   : Object.keys(form.idpServerErrors).length
-                    ? 'tenant-idp'
+                    ? 'organization-idp'
                     : undefined
               }
             />
             <ConsoleWizardFooter
-              submitStepId="tenant-review"
+              submitStepId="organization-review"
               submitLabel={editing ? 'Save changes' : 'Create organization'}
               errorTitle="Unable to save organization"
               isStepValid={(step) =>
                 form.detailsValid &&
-                (step === 'tenant-details' || form.idpValid) &&
-                (step !== 'tenant-review' || !editing || form.isDirty)
+                (step === 'organization-details' || form.idpValid) &&
+                (step !== 'organization-review' || !editing || form.isDirty)
               }
               saving={saving}
               error={form.error}
@@ -96,7 +99,7 @@ export const OrganizationFormWizard: React.FC<Props> = ({ service, organization 
           </>
         }
       >
-        <WizardStep name="Organization details" id="tenant-details">
+        <WizardStep name="Organization details" id="organization-details">
           <Form maxWidth="750px">
             <OrganizationDetailsFields
               value={{ name: values.name, domains: values.domains }}
@@ -108,7 +111,7 @@ export const OrganizationFormWizard: React.FC<Props> = ({ service, organization 
             />
           </Form>
         </WizardStep>
-        <WizardStep name="Identity provider" id="tenant-idp" isDisabled={!form.detailsValid || saving}>
+        <WizardStep name="Identity provider" id="organization-idp" isDisabled={!form.detailsValid || saving}>
           <Form maxWidth="750px">
             <IdentityProviderFields
               value={values.identityProvider}
@@ -118,7 +121,7 @@ export const OrganizationFormWizard: React.FC<Props> = ({ service, organization 
             />
           </Form>
         </WizardStep>
-        <WizardStep name="Review" id="tenant-review" isDisabled={!form.detailsValid || !form.idpValid || saving}>
+        <WizardStep name="Review" id="organization-review" isDisabled={!form.detailsValid || !form.idpValid || saving}>
           <ReviewStep organization={form.toSave} />
         </WizardStep>
       </Wizard>

@@ -1,15 +1,7 @@
 import { Component, type ErrorInfo } from 'react';
-import {
-  Button,
-  EmptyState,
-  EmptyStateActions,
-  EmptyStateBody,
-  EmptyStateFooter,
-  ExpandableSection,
-  PageSection,
-} from '@patternfly/react-core';
-import { ExclamationCircleIcon } from '@patternfly/react-icons';
+import { ExpandableSection, PageSection } from '@patternfly/react-core';
 import { isDynamicImportError } from '../utilities/errors';
+import { ErrorState } from './states/ErrorState';
 
 type Props = {
   /** The page's path: moving to another page tries again. */
@@ -50,23 +42,13 @@ export class PageErrorBoundary extends Component<Props, State> {
     const outdated = isDynamicImportError(error);
     return (
       <PageSection isFilled>
-        <EmptyState
-          titleText={outdated ? 'This page could not be loaded' : 'Something went wrong on this page'}
+        <ErrorState
+          title={outdated ? 'Unable to load this page' : 'Something went wrong on this page'}
           headingLevel="h1"
-          icon={ExclamationCircleIcon}
-        >
-          <EmptyStateBody>
-            {outdated
-              ? 'The console may have been updated since this tab opened. Reload to get the current version.'
-              : 'The console ran into a problem showing this page. Reload to try again, or go to another page.'}
-          </EmptyStateBody>
-          <EmptyStateFooter>
-            <EmptyStateActions>
-              <Button variant="primary" onClick={() => window.location.reload()}>
-                Reload
-              </Button>
-            </EmptyStateActions>
-            {!outdated && (
+          retryLabel="Reload"
+          onRetry={() => window.location.reload()}
+          footer={
+            !outdated && (
               <ExpandableSection
                 toggleText="Error details"
                 isExpanded={detailsOpen}
@@ -76,9 +58,13 @@ export class PageErrorBoundary extends Component<Props, State> {
                   {error.message}
                 </p>
               </ExpandableSection>
-            )}
-          </EmptyStateFooter>
-        </EmptyState>
+            )
+          }
+        >
+          {outdated
+            ? 'The console may have been updated since this tab opened. Reload to get the current version.'
+            : 'The console ran into a problem showing this page. Reload to try again, or go to another page.'}
+        </ErrorState>
       </PageSection>
     );
   }

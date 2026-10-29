@@ -9,6 +9,21 @@ class ResizeObserverStub {
 }
 globalThis.ResizeObserver ??= ResizeObserverStub;
 
+// PatternFly's managed sidebar (Page isManagedSidebar) is open from its xl breakpoint up, measured as
+// the page element's width. jsdom has no layout, so every element is 0px wide and its window 1024px:
+// the page reports the window's width, and the window is a desktop's. A test that needs a narrow window
+// sets window.innerWidth itself.
+if (typeof window !== 'undefined') {
+  Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1280 });
+  const clientWidth = Object.getOwnPropertyDescriptor(Element.prototype, 'clientWidth')!;
+  Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+    configurable: true,
+    get(this: HTMLElement) {
+      return this.classList.contains('pf-v6-c-page') ? window.innerWidth : (clientWidth.get!.call(this) as number);
+    },
+  });
+}
+
 // No test reaches the network. A test that needs fetch stubs it (vi.stubGlobal, vi.spyOn, or a
 // fetch passed in); one that forgets fails with the URL instead of calling the real one.
 globalThis.fetch = (input) => Promise.reject(new Error(`unstubbed fetch: ${String(input)}`));

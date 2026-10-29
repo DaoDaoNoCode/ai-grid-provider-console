@@ -3,21 +3,22 @@
 // packages/maas/frontend/src/app/pages/subscriptions/ViewSubscriptionPage.tsx
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
 // Telemetry is dropped; a viewer gets no actions; the console adds the Organization. The page
-// has one view, so it shows its sections without odh-dashboard's single "Details" tab.
-import { useState } from 'react';
+// has one view, so it shows its sections without odh-dashboard's single "Details" tab, and its status
+// beside its title, as every details page does.
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { Breadcrumb, BreadcrumbItem, Flex, PageSection } from '@patternfly/react-core';
+import { Breadcrumb, BreadcrumbItem, Flex } from '@patternfly/react-core';
 import type { SubscriptionsService } from '../../api/subscriptions';
 import type { MaaSModelRefSummary, MaaSSubscription, SubscriptionInfoResponse } from '../../api/types';
 import { MaasModelsSection } from '../../components/MaasModelsSection';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
 import type { GovernanceService } from '../../context/useMaaSGovernanceContext';
 import { useMaaSGovernanceContext } from '../../context/useMaaSGovernanceContext';
-import { useGetSubscriptionInfo } from '../../hooks/useGetSubscriptionInfo';
+import { useGetSubscriptionInfo } from './hooks/useGetSubscriptionInfo';
 import { modelRefsToSummaries } from '../../utilities/authpolicies';
 import { getBackUrl, getSubscriptionEditUrl, subscriptionNotFound } from '../../utilities/maasGovernanceNavigation';
-import { ApplicationsPage } from './ApplicationsPage';
-import { DeleteSubscriptionModal } from './DeleteSubscriptionModal';
+import { PageStateSection } from '../../components/states/PageStateSection';
+import { PhaseLabel } from './Phase/PhaseLabel';
+import { useDeleteSubscription } from './hooks/useDeleteSubscription';
 import { SubscriptionDetailsSection } from './viewSubscription/SubscriptionDetailsSection';
 import { SubscriptionGroupsSection } from './viewSubscription/SubscriptionGroupsSection';
 
@@ -26,7 +27,12 @@ type ActionsProps = { service: SubscriptionsService; subscription: MaaSSubscript
 const SubscriptionActions: React.FC<ActionsProps> = ({ service, subscription, returnTo }) => {
   const navigate = useNavigate();
   const { refresh } = useMaaSGovernanceContext();
-  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [confirmDelete, deleteDialog] = useDeleteSubscription(service, {
+    onDeleted: () => {
+      refresh();
+      navigate(returnTo, { state: { notice: 'Subscription deleted' } });
+    },
+  });
   return (
     <>
       <SimpleMenuActions
@@ -45,24 +51,12 @@ const SubscriptionActions: React.FC<ActionsProps> = ({ service, subscription, re
             key: 'delete',
             label: 'Delete',
             isDanger: true,
-            onClick: () => setIsDeleteOpen(true),
+            onClick: () => confirmDelete(subscription),
             isDisabled: !!subscription.deletionTimestamp,
           },
         ]}
       />
-      {isDeleteOpen && (
-        <DeleteSubscriptionModal
-          service={service}
-          subscription={subscription}
-          onClose={(deleted) => {
-            setIsDeleteOpen(false);
-            if (deleted) {
-              refresh();
-              navigate(returnTo, { state: { notice: 'Subscription deleted' } });
-            }
-          }}
-        />
-      )}
+      {deleteDialog}
     </>
   );
 };
@@ -86,8 +80,19 @@ export const ViewSubscriptionPage: React.FC<Props> = ({ service }) => {
   const organization = organizations.find((o) => o.id === organizationId)?.name ?? organizationId;
 
   return (
-    <ApplicationsPage
+    <PageStateSection
       title={displaySubscriptionName}
+      status={
+        subscriptionInfo && (
+          <span data-testid="subscription-phase">
+            <PhaseLabel
+              phase={subscriptionInfo.subscription.phase}
+              statusMessage={subscriptionInfo.subscription.statusMessage}
+              reason={subscriptionInfo.subscription.reason}
+            />
+          </span>
+        )
+      }
       breadcrumb={
         <Breadcrumb>
           <BreadcrumbItem>
@@ -104,29 +109,32 @@ export const ViewSubscriptionPage: React.FC<Props> = ({ service }) => {
           <SubscriptionActions service={service} subscription={subscriptionInfo.subscription} returnTo={backUrl} />
         )
       }
-      loaded={loaded || !!loadError}
-      loadError={loadError}
-      errorMessage="Unable to load subscription details."
+      loaded={loaded}
+      error={loadError}
       onRetry={() => void reload()}
+      subject="Subscriptions"
+      object="subscription"
+      loadingLabel="Loading subscription"
       notFound={subscriptionNotFound(subscriptionName, backUrl)}
     >
-      {loaded && subscriptionInfo && (
-        <PageSection isFilled>
-          <Flex direction={{ default: 'column' }} spaceItems={{ default: 'spaceItemsXl' }}>
-            <SubscriptionDetailsSection
-              subscription={subscriptionInfo.subscription}
-              modelRegistrations={subscriptionInfo.modelRegistrations ?? []}
-              authPolicies={Array.isArray(subscriptionInfo.authPolicies) ? subscriptionInfo.authPolicies : []}
-              organization={organization}
-            />
-            <SubscriptionGroupsSection groups={subscriptionInfo.subscription.owner.groups} />
-            <MaasModelsSection
-              modelRefSummaries={viewModelRefSummaries(subscriptionInfo)}
-              modelRefsWithRateLimits={subscriptionInfo.subscription.modelRefs}
-            />
-          </Flex>
-        </PageSection>
+      {subscriptionInfo && (
+        <Flex
+          direction={{ default: 'column' }}
+          flexWrap={{ default: 'nowrap' }}
+          spaceItems={{ default: 'spaceItemsXl' }}
+        >
+          <SubscriptionDetailsSection
+            subscription={subscriptionInfo.subscription}
+            authPolicies={Array.isArray(subscriptionInfo.authPolicies) ? subscriptionInfo.authPolicies : []}
+            organization={organization}
+          />
+          <SubscriptionGroupsSection groups={subscriptionInfo.subscription.owner.groups} />
+          <MaasModelsSection
+            modelRefSummaries={viewModelRefSummaries(subscriptionInfo)}
+            modelRefsWithRateLimits={subscriptionInfo.subscription.modelRefs}
+          />
+        </Flex>
       )}
-    </ApplicationsPage>
+    </PageStateSection>
   );
 };

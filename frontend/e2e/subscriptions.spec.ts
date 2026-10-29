@@ -30,13 +30,13 @@ test('creates, views, edits and deletes a subscription', async ({ page }) => {
 
   // The MaaS controller's phases: no phase (shown as Unknown) until the first reconcile,
   // Degraded until the TokenRateLimitPolicy is accepted (2 s on the PoC preset's clock), then
-  // Active, which the label shows as Ready. The list doesn't poll, so reload until it reads Ready.
+  // Active. The list doesn't poll, so reload until it reads Active.
   const row = page.getByRole('row').filter({ has: page.getByRole('link', { name: unique, exact: true }) });
   const label = row.getByTestId('phase-label');
   await expect(label).toHaveText(/Unknown|Degraded/);
   await expect(async () => {
     await page.reload();
-    await expect(label).toHaveText('Ready');
+    await expect(label).toHaveText('Active');
   }).toPass();
 
   // The view page opens directly and survives a reload.

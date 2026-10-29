@@ -35,6 +35,8 @@ export const ConsoleWizardFooter: React.FC<Props> = ({
   return (
     <>
       {error && (
+        // The footer's own inline padding, so the alert lines up with its buttons: PatternFly has no
+        // wrapper for content above WizardFooter.
         <div className="pf-v6-u-px-lg">
           <Alert isInline variant="danger" title={errorTitle}>
             {error}

@@ -492,21 +492,14 @@ it('shows the phase', async () => {
   const failed = within(await row('llama-3-70b')).getByTestId('model-phase');
   expect(failed).toHaveTextContent('Failed');
   expect(screen.queryByText(/Git/)).not.toBeInTheDocument();
-  // Only a status that opens something is filled: Ready is an outline label and no button.
+  // An outline label that opens nothing, with the backend's message in its tooltip.
   const ready = within(await row('granite-8b-instruct')).getByTestId('model-phase');
-  expect(within(ready).queryByRole('button')).not.toBeInTheDocument();
-  expect(ready.querySelector('.pf-v6-c-label')).toHaveClass('pf-m-outline');
-  expect(failed.querySelector('.pf-v6-c-label')).not.toHaveClass('pf-m-outline');
-  await user.click(within(failed).getByRole('button', { name: 'Failed' }));
-  // A modal: a sentence and the next step; the controller's own words fold away under Details.
-  const modal = await screen.findByTestId('model-status-modal');
-  expect(within(modal).getByRole('heading', { name: /Llama 3 70B status/ })).toBeVisible();
-  expect(screen.getByText('A runtime template this model needs isn’t installed on the hub.')).toBeVisible();
-  const raw = screen.getByText(/v3-6-0-kserve-config-llm-template-tpu" not found/);
-  expect(raw).not.toBeVisible();
-  await user.click(screen.getByRole('button', { name: 'Details' }));
-  expect(raw).toBeVisible();
-  expect(raw).toHaveTextContent(/^ConfigNotFound: /);
+  for (const phase of [ready, failed]) {
+    expect(phase.querySelector('.pf-v6-c-label')).toHaveClass('pf-m-outline');
+    expect(within(phase).queryByRole('button')).not.toBeInTheDocument();
+  }
+  await user.hover(within(failed).getByText('Failed'));
+  expect(await screen.findByRole('tooltip')).toHaveTextContent(/v3-6-0-kserve-config-llm-template-tpu" not found/);
 });
 
 it('shows Saved to Git, not Pending, for a model the backend saved to Git', async () => {
@@ -526,11 +519,11 @@ it('shows Saved to Git, not Pending, for a model the backend saved to Git', asyn
   expect(phase).toHaveTextContent(/^Saved to Git$/);
   // Neutral (grey, PatternFly's default), not Pending's in-progress info status.
   expect(phase.querySelector('.pf-v6-c-label')).not.toHaveClass('pf-m-info');
-  // Like Ready: an outline label with nothing to open, so the git-mode message isn't repeated.
+  // An outline label that opens nothing; the backend's git-mode message is its tooltip.
   expect(phase.querySelector('.pf-v6-c-label')).toHaveClass('pf-m-outline');
   expect(within(phase).queryByRole('button')).not.toBeInTheDocument();
-  await userEvent.setup().click(within(phase).getByText('Saved to Git'));
-  expect(screen.queryByTestId('model-status-modal')).not.toBeInTheDocument();
+  await userEvent.setup().hover(within(phase).getByText('Saved to Git'));
+  expect(await screen.findByRole('tooltip')).toHaveTextContent(/^Saved to Git; git mode/);
   renderAt(`/models/${saved.namespace}/granite-8b-instruct`, serviceOnModelJson(fetchFn));
   expect(await screen.findByTestId('model-phase')).toHaveTextContent(/^Saved to Git$/);
   // The label says it all: no alert repeats the backend's git-mode message.
@@ -559,6 +552,8 @@ it('deletes by namespace and name with If-Match', async () => {
   await user.click(within(screen.getByTestId('delete-deployment-modal')).getByRole('button', { name: 'Delete' }));
   await waitFor(() => expect(screen.queryByTestId('delete-deployment-modal')).not.toBeInTheDocument());
   const call = fetchFn.mock.calls.find(([, init]) => init?.method === 'DELETE');
+  // A delete from the list says so, as one from the model's page does.
+  expect(await screen.findByText('Model deployment deleted')).toBeVisible();
   expect(call?.[0]).toBe('/api/v1/models/ai-grid-models/granite-8b-instruct');
   expect(call?.[1]?.headers).toMatchObject({ 'If-Match': '"48760230"' });
 });
@@ -660,10 +655,45 @@ it("takes only the fake backend's URI schemes and sends the URI trimmed", async 
   expect(create.mock.calls[0][0].modelUri).toBe('hf://org/widget');
 });
 
+it.each(['/models/ai-grid-models/granite-research', '/models/ai-grid-models/granite-research/edit'])(
+  'offers Retry when a model fails to load: %s',
+  async (path) => {
+    const service = new MockConsoleService();
+    const get = service.getModel;
+    service.getModel = async () => {
+      service.getModel = get;
+      throw new ServiceError(503, 'Service unavailable.');
+    };
+    const user = userEvent.setup();
+    renderAt(path, service);
+    expect(await screen.findByRole('heading', { name: 'Unable to load model' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(
+      await screen.findByRole('heading', { level: 1, name: /Granite research endpoint|granite-research/ }),
+    ).toBeVisible();
+    expect(screen.queryByTestId('error-state')).not.toBeInTheDocument();
+  },
+);
+
 describe('a failed background poll', () => {
   // Only the 30-second polls are faked; user-event and findBy keep real timeouts.
   beforeEach(() => vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] }));
   afterEach(() => vi.useRealTimers());
+
+  it("keeps a model's page under a warning, so stale data doesn't look current", async () => {
+    const service = new MockConsoleService();
+    renderAt('/models/ai-grid-models/granite-research', service);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Granite research endpoint' })).toBeVisible();
+    vi.spyOn(service, 'getModel').mockRejectedValue(new ServiceError(503, 'Service unavailable.'));
+    await act(async () => {
+      vi.advanceTimersByTime(30000);
+    });
+    expect(await screen.findByTestId('stale-data-alert')).toHaveTextContent(
+      'Showing the last loaded modelService unavailable.',
+    );
+    expect(screen.getByRole('heading', { level: 1, name: 'Granite research endpoint' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Deployment' })).toBeVisible();
+  });
 
   it('keeps the list and shows the error above it', async () => {
     const service = new MockConsoleService();
@@ -674,7 +704,7 @@ describe('a failed background poll', () => {
       vi.advanceTimersByTime(30000);
     });
     await waitFor(() => expect(failed).toHaveBeenCalled());
-    expect(await screen.findByText('Error loading models')).toBeVisible();
+    expect(await screen.findByText('Showing the last loaded models')).toBeVisible();
     expect(screen.getByTestId('model-deployments-table')).toHaveTextContent('Granite 3.3 8B Instruct');
   });
 });
@@ -1461,16 +1491,14 @@ describe('each location of a placed model (proposal P13)', () => {
     ]);
   });
 
-  it('opens Partially available with how many clusters serve it, and shows the locations from there', async () => {
+  it('says how many clusters serve a partially available model, and shows its locations in its row', async () => {
     const user = userEvent.setup();
     renderAt('/models', serviceOnModelJson(partialFetch()));
     const row = await mistralRow();
-    await user.click(within(row).getByRole('button', { name: 'Partially available' }));
-    const modal = await screen.findByTestId('model-status-modal');
-    expect(modal).toHaveTextContent('1 of 3 clusters are serving the model.');
+    await user.hover(within(row).getByText('Partially available'));
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('1 of 3 clusters are serving the model.');
     expect(screen.queryByTestId('model-works-mistral-7b-instruct')).not.toBeInTheDocument();
-    await user.click(within(modal).getByRole('button', { name: 'View locations' }));
-    expect(screen.queryByTestId('model-status-modal')).not.toBeInTheDocument();
+    await user.click(within(row).getByRole('button', { name: 'Details' }));
     expect(await screen.findByTestId('model-works-mistral-7b-instruct')).toBeVisible();
   });
 
@@ -1640,7 +1668,9 @@ describe('the Models list expands every row', () => {
       within(selected)
         .getAllByTestId('model-selected-cluster-row')
         .map((r) => r.textContent),
-    ).toEqual(['us-east · site-bStatus not reported']);
+    ).toEqual(['us-east · site-b']);
+    // The line above says it once; no Status column repeats it on every row.
+    expect(within(selected).queryByRole('columnheader', { name: 'Status' })).not.toBeInTheDocument();
     expect(screen.queryByText('Not placed on any cluster yet')).not.toBeInTheDocument();
   });
 
@@ -1652,17 +1682,5 @@ describe('the Models list expands every row', () => {
     await user.click(within(await rowOf('llama-3-70b')).getByRole('button', { name: 'Details' }));
     const empty = await screen.findByTestId('model-not-placed-llama-3-70b');
     expect(within(empty).queryByRole('button', { name: 'Edit locations' })).not.toBeInTheDocument();
-  });
-
-  it("opens a partially available model's locations from its status, whether or not it has works", async () => {
-    const user = userEvent.setup();
-    const service = new MockConsoleService();
-    service.models = service.models.map((m) =>
-      m.name === 'granite-research' ? { ...m, phase: 'Partially available', works: undefined } : m,
-    );
-    renderAt('/models', service);
-    await user.click(within(await rowOf('granite-research')).getByText('Partially available'));
-    await user.click(await screen.findByRole('button', { name: 'View locations' }));
-    expect(await screen.findByTestId('model-not-placed-granite-research')).toBeVisible();
   });
 });

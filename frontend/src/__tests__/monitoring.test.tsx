@@ -85,7 +85,7 @@ it('opens the tab ?dashboard= names, and another one on click', async () => {
 
 it('says when the hub has no such dashboards yet', async () => {
   renderAt('/monitoring', withMonitoring('ai-grid', [dashboard('ai-grid', 'acm-clusters-overview')]));
-  expect(await screen.findByRole('heading', { name: 'No dashboards yet' })).toBeVisible();
+  expect(await screen.findByRole('heading', { name: 'No dashboards' })).toBeVisible();
   expect(screen.getByText(/in project ai-grid whose names start with/)).toBeVisible();
   expect(screen.queryByTestId('perses-dashboard')).not.toBeInTheDocument();
 });
@@ -94,7 +94,7 @@ it("says when the caller can't read the dashboards", async () => {
   const service = withMonitoring('ai-grid', []);
   service.listMonitoringDashboards = () => Promise.reject(new ServiceError(403, 'forbidden: project ai-grid'));
   renderAt('/monitoring', service);
-  expect(await screen.findByText("You can't read these dashboards")).toBeVisible();
+  expect(await screen.findByRole('heading', { name: "You don't have access to dashboards" })).toBeVisible();
   expect(screen.getByText('forbidden: project ai-grid')).toBeVisible();
 });
 
@@ -104,7 +104,7 @@ it("says when the dashboards can't be loaded, and retries", async () => {
   const list = service.listMonitoringDashboards;
   service.listMonitoringDashboards = () => Promise.reject(new ServiceError(502, 'perses is unavailable'));
   renderAt('/monitoring', service);
-  expect(await screen.findByText('Dashboards could not be loaded')).toBeVisible();
+  expect(await screen.findByRole('heading', { name: 'Unable to load dashboards' })).toBeVisible();
   service.listMonitoringDashboards = list;
   await user.click(screen.getByRole('button', { name: 'Retry' }));
   expect(await screen.findByTestId('perses-dashboard')).toHaveTextContent('ai-grid/dashboard-1-fleet');
@@ -116,7 +116,7 @@ it("says when the console's configuration can't be read, instead of falling back
   const getConfig = service.getConfig;
   service.getConfig = () => Promise.reject(new ServiceError(0, 'The console backend could not be reached.'));
   renderAt('/monitoring', service);
-  expect(await screen.findByText('Monitoring could not be loaded')).toBeVisible();
+  expect(await screen.findByRole('heading', { name: 'Unable to load the console settings' })).toBeVisible();
   expect(screen.queryByText(/Cluster availability, gateway performance/)).not.toBeInTheDocument();
   service.getConfig = getConfig;
   await user.click(screen.getByRole('button', { name: 'Retry' }));

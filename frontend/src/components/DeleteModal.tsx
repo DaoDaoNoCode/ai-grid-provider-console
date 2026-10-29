@@ -31,7 +31,8 @@ type Props = {
   reloadError?: Error;
   children: React.ReactNode;
   testId?: string;
-  genericLabel?: boolean;
+  /** The failure's title; "Unable to delete <name>" without one. */
+  errorTitle?: string;
   /** Why Delete can't be used now; set, it disables Delete and shows this in a tooltip. */
   disabledReason?: string;
 };
@@ -48,7 +49,7 @@ export const DeleteModal: React.FC<Props> = ({
   reloadError,
   submitButtonLabel = 'Delete',
   testId,
-  genericLabel,
+  errorTitle,
   disabledReason,
 }) => {
   const [value, setValue] = useState('');
@@ -62,10 +63,13 @@ export const DeleteModal: React.FC<Props> = ({
         <Stack hasGutter>
           <StackItem>{children}</StackItem>
           <StackItem>
-            <Flex direction={{ default: 'column' }} spaceItems={{ default: 'spaceItemsSm' }}>
+            <Flex
+              direction={{ default: 'column' }}
+              flexWrap={{ default: 'nowrap' }}
+              spaceItems={{ default: 'spaceItemsSm' }}
+            >
               <FlexItem id="delete-modal-prompt">
-                Type <strong>{deleteNameSanitized}</strong> to confirm
-                {genericLabel ? '' : ' deletion'}:
+                Type <strong>{deleteNameSanitized}</strong> to confirm:
               </FlexItem>
               <TextInput
                 id="delete-modal-input"
@@ -86,7 +90,7 @@ export const DeleteModal: React.FC<Props> = ({
             <StackItem>
               <Alert
                 data-testid="delete-model-error-message-alert"
-                title={`Error deleting ${deleteNameSanitized}`}
+                title={errorTitle ?? `Unable to delete ${deleteNameSanitized}`}
                 isInline
                 variant="danger"
               >

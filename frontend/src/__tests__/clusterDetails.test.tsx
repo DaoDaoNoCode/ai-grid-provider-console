@@ -10,6 +10,7 @@ import { create } from '@bufbuild/protobuf';
 import { fakeClients } from '../api/connect/testing';
 import { ManagedClusterLocationSource, ManagedClusterSchema } from '../gen/ai_grid/v1/managed_cluster_type_pb';
 import { renderAt } from './render';
+import { EMPTY_VALUE } from '../utilities/format';
 // The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
 import '../pages/clusters/ClusterDetailsPage';
 import { TestApp } from './TestApp';
@@ -90,7 +91,8 @@ it('shows a member: AI Grid, the cluster, its capacity and GPUs', async () => {
     '140.4 GiB',
     'Hopper (9.0)',
     '580.105.08 (CUDA 13.0)',
-    'None',
+    // Not shared: the empty value, as every missing value.
+    EMPTY_VALUE,
     'p5en.48xlarge',
     'Ready',
   ]) {
@@ -377,7 +379,7 @@ it('keeps the added membership when the reload fails', async () => {
   expect(await screen.findByTestId('cluster-membership')).toHaveTextContent('Not added');
   service.getCluster = () => Promise.reject(new ServiceError(503, 'the hub is unavailable'));
   await addSite4(user);
-  expect(await screen.findByText('Showing the last loaded state')).toBeVisible();
+  expect(await screen.findByText('Showing the last loaded cluster')).toBeVisible();
   expect(screen.getByTestId('cluster-membership')).toHaveTextContent('Provisioning');
 });
 
@@ -388,6 +390,7 @@ it('removes the cluster from AI Grid', async () => {
   await user.click(await screen.findByRole('button', { name: 'Actions for site1' }));
   await user.click(screen.getByRole('menuitem', { name: 'Remove from AI Grid' }));
   const modal = await screen.findByTestId('cluster-membership-modal');
+  await user.type(within(modal).getByRole('textbox', { name: 'Type site1 to confirm:' }), 'site1');
   await user.click(within(modal).getByRole('button', { name: 'Remove' }));
   expect(await screen.findByText('site1 removed from AI Grid')).toBeVisible();
   expect(screen.getByTestId('cluster-membership')).toHaveTextContent('Not added');
@@ -402,6 +405,7 @@ it('keeps the modal open with the error when the change fails', async () => {
   await user.click(await screen.findByRole('button', { name: 'Actions for site1' }));
   await user.click(screen.getByRole('menuitem', { name: 'Remove from AI Grid' }));
   const modal = await screen.findByTestId('cluster-membership-modal');
+  await user.type(within(modal).getByRole('textbox', { name: 'Type site1 to confirm:' }), 'site1');
   await user.click(within(modal).getByRole('button', { name: 'Remove' }));
   expect(await within(modal).findByText(/the hub refused the change/)).toBeVisible();
   expect(screen.getByTestId('cluster-membership')).toHaveTextContent('Provisioned');
@@ -495,7 +499,7 @@ it('says when the hub has no such cluster', async () => {
   expect(screen.getByRole('link', { name: 'Go to Clusters' })).toHaveAttribute('href', '/clusters');
 });
 
-it('says where the map puts the cluster, approximate from its cloud region, with how to set it', async () => {
+it('says where the map puts the cluster, from its cloud region, with how to set it', async () => {
   const transport = fakeClients({
     clusters: {
       get: async () => ({
@@ -516,12 +520,12 @@ it('says where the map puts the cluster, approximate from its cloud region, with
   }).transport;
   renderAt('/clusters/in-region', new MockConsoleService(), transport);
   const position = await screen.findByTestId('cluster-map-position');
-  expect(position).toHaveTextContent('40.42, -82.91 approximate, from the cloud region');
+  expect(position).toHaveTextContent('40.42, -82.91 from the cloud region');
   expect(within(position).getByRole('link', { name: "How to set a cluster's position" })).toHaveAttribute(
     'href',
     'https://github.com/ai-grid-cloud/ai-grid-provider-backend/blob/main/README.md#cluster-locations',
   );
-  expect(screen.getByTestId('cluster-site')).toHaveTextContent('us-east-2 approximate');
+  expect(screen.getByTestId('cluster-site')).toHaveTextContent('us-east-2 (cloud region)');
 });
 
 it('says what to fix when the coordinate annotations are wrong', async () => {

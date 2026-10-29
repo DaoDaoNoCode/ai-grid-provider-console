@@ -8,7 +8,7 @@ import { Breadcrumb, BreadcrumbItem } from '@patternfly/react-core';
 import type { GovernanceService } from '../../context/useMaaSGovernanceContext';
 import { useMaaSGovernanceContext } from '../../context/useMaaSGovernanceContext';
 import { getBackUrl } from '../../utilities/maasGovernanceNavigation';
-import { ApplicationsPage } from './ApplicationsPage';
+import { PageStateSection } from '../../components/states/PageStateSection';
 import { CreateSubscriptionForm } from './createSubscription/CreateSubscriptionForm';
 
 type Props = { service: GovernanceService };
@@ -19,7 +19,7 @@ export const CreateSubscriptionPage: React.FC<Props> = ({ service }) => {
   const backUrl = getBackUrl(state, 'subscriptions');
 
   return (
-    <ApplicationsPage
+    <PageStateSection
       title="Create subscription"
       description="Give groups of an organization's users access to models, with token limits for each model."
       breadcrumb={
@@ -34,11 +34,14 @@ export const CreateSubscriptionPage: React.FC<Props> = ({ service }) => {
           <BreadcrumbItem isActive>Create subscription</BreadcrumbItem>
         </Breadcrumb>
       }
-      loaded={loaded || !!error}
-      loadError={error}
+      loaded={loaded}
+      error={error}
       onRetry={refresh}
+      subject="Subscriptions"
+      loadingLabel="Loading subscription form"
+      hasBodyWrapper={false}
     >
       <CreateSubscriptionForm service={service} modelRefs={modelRefs} returnTo={backUrl} />
-    </ApplicationsPage>
+    </PageStateSection>
   );
 };
