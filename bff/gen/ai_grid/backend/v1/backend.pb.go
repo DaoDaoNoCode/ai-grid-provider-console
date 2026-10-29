@@ -1,6 +1,6 @@
 // Stopgap: the messages of the backend's real ai_grid.v1 Tenants, Subscriptions and Models
 // services, copied from ai-grid-provider-backend proto/ai_grid/v1 (tenants at 8c1a1bc,
-// subscriptions and models at 3428d8d, ListPlacementClusters at 71bb8cc)
+// subscriptions and models at 3428d8d; of Models only List, for GET /api/v1/models)
 // (condition_type, metadata_type, model_type, models_service, subscription_type,
 // subscriptions_service, tenant_type, tenants_service), so
 // the BFF can call those RPCs. Fields the BFF doesn't use are
@@ -3603,454 +3603,6 @@ func (x *ModelsListResponse) GetItems() []*Model {
 	return nil
 }
 
-type ModelsGetRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ModelsGetRequest) Reset() {
-	*x = ModelsGetRequest{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[58]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ModelsGetRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ModelsGetRequest) ProtoMessage() {}
-
-func (x *ModelsGetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[58]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ModelsGetRequest.ProtoReflect.Descriptor instead.
-func (*ModelsGetRequest) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{58}
-}
-
-func (x *ModelsGetRequest) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-type ModelsGetResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Object        *Model                 `protobuf:"bytes,1,opt,name=object,proto3" json:"object,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ModelsGetResponse) Reset() {
-	*x = ModelsGetResponse{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[59]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ModelsGetResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ModelsGetResponse) ProtoMessage() {}
-
-func (x *ModelsGetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[59]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ModelsGetResponse.ProtoReflect.Descriptor instead.
-func (*ModelsGetResponse) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{59}
-}
-
-func (x *ModelsGetResponse) GetObject() *Model {
-	if x != nil {
-		return x.Object
-	}
-	return nil
-}
-
-type ModelsCreateRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Object        *Model                 `protobuf:"bytes,1,opt,name=object,proto3" json:"object,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ModelsCreateRequest) Reset() {
-	*x = ModelsCreateRequest{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[60]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ModelsCreateRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ModelsCreateRequest) ProtoMessage() {}
-
-func (x *ModelsCreateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[60]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ModelsCreateRequest.ProtoReflect.Descriptor instead.
-func (*ModelsCreateRequest) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{60}
-}
-
-func (x *ModelsCreateRequest) GetObject() *Model {
-	if x != nil {
-		return x.Object
-	}
-	return nil
-}
-
-type ModelsCreateResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Object        *Model                 `protobuf:"bytes,1,opt,name=object,proto3" json:"object,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ModelsCreateResponse) Reset() {
-	*x = ModelsCreateResponse{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[61]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ModelsCreateResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ModelsCreateResponse) ProtoMessage() {}
-
-func (x *ModelsCreateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[61]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ModelsCreateResponse.ProtoReflect.Descriptor instead.
-func (*ModelsCreateResponse) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{61}
-}
-
-func (x *ModelsCreateResponse) GetObject() *Model {
-	if x != nil {
-		return x.Object
-	}
-	return nil
-}
-
-type ModelsUpdateRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Object        *Model                 `protobuf:"bytes,1,opt,name=object,proto3" json:"object,omitempty"`
-	UpdateMask    *fieldmaskpb.FieldMask `protobuf:"bytes,2,opt,name=update_mask,json=updateMask,proto3" json:"update_mask,omitempty"`
-	Lock          bool                   `protobuf:"varint,3,opt,name=lock,proto3" json:"lock,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ModelsUpdateRequest) Reset() {
-	*x = ModelsUpdateRequest{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[62]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ModelsUpdateRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ModelsUpdateRequest) ProtoMessage() {}
-
-func (x *ModelsUpdateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[62]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ModelsUpdateRequest.ProtoReflect.Descriptor instead.
-func (*ModelsUpdateRequest) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{62}
-}
-
-func (x *ModelsUpdateRequest) GetObject() *Model {
-	if x != nil {
-		return x.Object
-	}
-	return nil
-}
-
-func (x *ModelsUpdateRequest) GetUpdateMask() *fieldmaskpb.FieldMask {
-	if x != nil {
-		return x.UpdateMask
-	}
-	return nil
-}
-
-func (x *ModelsUpdateRequest) GetLock() bool {
-	if x != nil {
-		return x.Lock
-	}
-	return false
-}
-
-type ModelsUpdateResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Object        *Model                 `protobuf:"bytes,1,opt,name=object,proto3" json:"object,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ModelsUpdateResponse) Reset() {
-	*x = ModelsUpdateResponse{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[63]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ModelsUpdateResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ModelsUpdateResponse) ProtoMessage() {}
-
-func (x *ModelsUpdateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[63]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ModelsUpdateResponse.ProtoReflect.Descriptor instead.
-func (*ModelsUpdateResponse) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{63}
-}
-
-func (x *ModelsUpdateResponse) GetObject() *Model {
-	if x != nil {
-		return x.Object
-	}
-	return nil
-}
-
-type ModelsDeleteRequest struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	Id              string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	ResourceVersion int32                  `protobuf:"varint,2,opt,name=resource_version,json=resourceVersion,proto3" json:"resource_version,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
-}
-
-func (x *ModelsDeleteRequest) Reset() {
-	*x = ModelsDeleteRequest{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[64]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ModelsDeleteRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ModelsDeleteRequest) ProtoMessage() {}
-
-func (x *ModelsDeleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[64]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ModelsDeleteRequest.ProtoReflect.Descriptor instead.
-func (*ModelsDeleteRequest) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{64}
-}
-
-func (x *ModelsDeleteRequest) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-func (x *ModelsDeleteRequest) GetResourceVersion() int32 {
-	if x != nil {
-		return x.ResourceVersion
-	}
-	return 0
-}
-
-type ModelsDeleteResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ModelsDeleteResponse) Reset() {
-	*x = ModelsDeleteResponse{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[65]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ModelsDeleteResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ModelsDeleteResponse) ProtoMessage() {}
-
-func (x *ModelsDeleteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[65]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ModelsDeleteResponse.ProtoReflect.Descriptor instead.
-func (*ModelsDeleteResponse) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{65}
-}
-
-type ModelsListPlacementClustersRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ModelsListPlacementClustersRequest) Reset() {
-	*x = ModelsListPlacementClustersRequest{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[66]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ModelsListPlacementClustersRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ModelsListPlacementClustersRequest) ProtoMessage() {}
-
-func (x *ModelsListPlacementClustersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[66]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ModelsListPlacementClustersRequest.ProtoReflect.Descriptor instead.
-func (*ModelsListPlacementClustersRequest) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{66}
-}
-
-type ModelsListPlacementClustersResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Clusters      []string               `protobuf:"bytes,1,rep,name=clusters,proto3" json:"clusters,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ModelsListPlacementClustersResponse) Reset() {
-	*x = ModelsListPlacementClustersResponse{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[67]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ModelsListPlacementClustersResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ModelsListPlacementClustersResponse) ProtoMessage() {}
-
-func (x *ModelsListPlacementClustersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[67]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ModelsListPlacementClustersResponse.ProtoReflect.Descriptor instead.
-func (*ModelsListPlacementClustersResponse) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{67}
-}
-
-func (x *ModelsListPlacementClustersResponse) GetClusters() []string {
-	if x != nil {
-		return x.Clusters
-	}
-	return nil
-}
-
 var File_ai_grid_backend_v1_backend_proto protoreflect.FileDescriptor
 
 const file_ai_grid_backend_v1_backend_proto_rawDesc = "" +
@@ -4336,29 +3888,7 @@ const file_ai_grid_backend_v1_backend_proto_rawDesc = "" +
 	"\x12ModelsListResponse\x12\x12\n" +
 	"\x04size\x18\x01 \x01(\x05R\x04size\x12\x14\n" +
 	"\x05total\x18\x02 \x01(\x05R\x05total\x12/\n" +
-	"\x05items\x18\x03 \x03(\v2\x19.ai_grid.backend.v1.ModelR\x05items\"\"\n" +
-	"\x10ModelsGetRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"F\n" +
-	"\x11ModelsGetResponse\x121\n" +
-	"\x06object\x18\x01 \x01(\v2\x19.ai_grid.backend.v1.ModelR\x06object\"H\n" +
-	"\x13ModelsCreateRequest\x121\n" +
-	"\x06object\x18\x01 \x01(\v2\x19.ai_grid.backend.v1.ModelR\x06object\"I\n" +
-	"\x14ModelsCreateResponse\x121\n" +
-	"\x06object\x18\x01 \x01(\v2\x19.ai_grid.backend.v1.ModelR\x06object\"\x99\x01\n" +
-	"\x13ModelsUpdateRequest\x121\n" +
-	"\x06object\x18\x01 \x01(\v2\x19.ai_grid.backend.v1.ModelR\x06object\x12;\n" +
-	"\vupdate_mask\x18\x02 \x01(\v2\x1a.google.protobuf.FieldMaskR\n" +
-	"updateMask\x12\x12\n" +
-	"\x04lock\x18\x03 \x01(\bR\x04lock\"I\n" +
-	"\x14ModelsUpdateResponse\x121\n" +
-	"\x06object\x18\x01 \x01(\v2\x19.ai_grid.backend.v1.ModelR\x06object\"P\n" +
-	"\x13ModelsDeleteRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12)\n" +
-	"\x10resource_version\x18\x02 \x01(\x05R\x0fresourceVersion\"\x16\n" +
-	"\x14ModelsDeleteResponse\"$\n" +
-	"\"ModelsListPlacementClustersRequest\"A\n" +
-	"#ModelsListPlacementClustersResponse\x12\x1a\n" +
-	"\bclusters\x18\x01 \x03(\tR\bclusters*j\n" +
+	"\x05items\x18\x03 \x03(\v2\x19.ai_grid.backend.v1.ModelR\x05items*j\n" +
 	"\x0fConditionStatus\x12 \n" +
 	"\x1cCONDITION_STATUS_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15CONDITION_STATUS_TRUE\x10\x01\x12\x1a\n" +
@@ -4388,94 +3918,84 @@ func file_ai_grid_backend_v1_backend_proto_rawDescGZIP() []byte {
 }
 
 var file_ai_grid_backend_v1_backend_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_ai_grid_backend_v1_backend_proto_msgTypes = make([]protoimpl.MessageInfo, 75)
+var file_ai_grid_backend_v1_backend_proto_msgTypes = make([]protoimpl.MessageInfo, 65)
 var file_ai_grid_backend_v1_backend_proto_goTypes = []any{
-	(ConditionStatus)(0),                        // 0: ai_grid.backend.v1.ConditionStatus
-	(ModelRolloutStrategy)(0),                   // 1: ai_grid.backend.v1.ModelRolloutStrategy
-	(ModelPhase)(0),                             // 2: ai_grid.backend.v1.ModelPhase
-	(*Metadata)(nil),                            // 3: ai_grid.backend.v1.Metadata
-	(*Tenant)(nil),                              // 4: ai_grid.backend.v1.Tenant
-	(*TenantSpec)(nil),                          // 5: ai_grid.backend.v1.TenantSpec
-	(*TenantStatus)(nil),                        // 6: ai_grid.backend.v1.TenantStatus
-	(*TenantsListRequest)(nil),                  // 7: ai_grid.backend.v1.TenantsListRequest
-	(*TenantsListResponse)(nil),                 // 8: ai_grid.backend.v1.TenantsListResponse
-	(*TenantsGetRequest)(nil),                   // 9: ai_grid.backend.v1.TenantsGetRequest
-	(*TenantsGetResponse)(nil),                  // 10: ai_grid.backend.v1.TenantsGetResponse
-	(*TenantsCreateRequest)(nil),                // 11: ai_grid.backend.v1.TenantsCreateRequest
-	(*TenantsCreateResponse)(nil),               // 12: ai_grid.backend.v1.TenantsCreateResponse
-	(*TenantsUpdateRequest)(nil),                // 13: ai_grid.backend.v1.TenantsUpdateRequest
-	(*TenantsUpdateResponse)(nil),               // 14: ai_grid.backend.v1.TenantsUpdateResponse
-	(*TenantsDeleteRequest)(nil),                // 15: ai_grid.backend.v1.TenantsDeleteRequest
-	(*TenantsDeleteResponse)(nil),               // 16: ai_grid.backend.v1.TenantsDeleteResponse
-	(*Condition)(nil),                           // 17: ai_grid.backend.v1.Condition
-	(*Subscription)(nil),                        // 18: ai_grid.backend.v1.Subscription
-	(*SubscriptionSpec)(nil),                    // 19: ai_grid.backend.v1.SubscriptionSpec
-	(*SubscriptionOrganization)(nil),            // 20: ai_grid.backend.v1.SubscriptionOrganization
-	(*SubscriptionOwner)(nil),                   // 21: ai_grid.backend.v1.SubscriptionOwner
-	(*SubscriptionModelRef)(nil),                // 22: ai_grid.backend.v1.SubscriptionModelRef
-	(*TokenRateLimit)(nil),                      // 23: ai_grid.backend.v1.TokenRateLimit
-	(*BillingRate)(nil),                         // 24: ai_grid.backend.v1.BillingRate
-	(*TokenMetadata)(nil),                       // 25: ai_grid.backend.v1.TokenMetadata
-	(*GuardrailAttachment)(nil),                 // 26: ai_grid.backend.v1.GuardrailAttachment
-	(*SubscriptionStatus)(nil),                  // 27: ai_grid.backend.v1.SubscriptionStatus
-	(*ResourceRefStatus)(nil),                   // 28: ai_grid.backend.v1.ResourceRefStatus
-	(*TokenRateLimitStatus)(nil),                // 29: ai_grid.backend.v1.TokenRateLimitStatus
-	(*AuthPolicy)(nil),                          // 30: ai_grid.backend.v1.AuthPolicy
-	(*AuthPolicyModelRef)(nil),                  // 31: ai_grid.backend.v1.AuthPolicyModelRef
-	(*ModelRegistration)(nil),                   // 32: ai_grid.backend.v1.ModelRegistration
-	(*SubscriptionsListRequest)(nil),            // 33: ai_grid.backend.v1.SubscriptionsListRequest
-	(*SubscriptionsListResponse)(nil),           // 34: ai_grid.backend.v1.SubscriptionsListResponse
-	(*SubscriptionsGetRequest)(nil),             // 35: ai_grid.backend.v1.SubscriptionsGetRequest
-	(*SubscriptionsGetResponse)(nil),            // 36: ai_grid.backend.v1.SubscriptionsGetResponse
-	(*SubscriptionsCreateRequest)(nil),          // 37: ai_grid.backend.v1.SubscriptionsCreateRequest
-	(*SubscriptionsCreateResponse)(nil),         // 38: ai_grid.backend.v1.SubscriptionsCreateResponse
-	(*SubscriptionsUpdateRequest)(nil),          // 39: ai_grid.backend.v1.SubscriptionsUpdateRequest
-	(*SubscriptionsUpdateResponse)(nil),         // 40: ai_grid.backend.v1.SubscriptionsUpdateResponse
-	(*SubscriptionsDeleteRequest)(nil),          // 41: ai_grid.backend.v1.SubscriptionsDeleteRequest
-	(*SubscriptionsDeleteResponse)(nil),         // 42: ai_grid.backend.v1.SubscriptionsDeleteResponse
-	(*Model)(nil),                               // 43: ai_grid.backend.v1.Model
-	(*ModelSpec)(nil),                           // 44: ai_grid.backend.v1.ModelSpec
-	(*ModelSource)(nil),                         // 45: ai_grid.backend.v1.ModelSource
-	(*ModelRouter)(nil),                         // 46: ai_grid.backend.v1.ModelRouter
-	(*ModelGatewayRef)(nil),                     // 47: ai_grid.backend.v1.ModelGatewayRef
-	(*ModelContainer)(nil),                      // 48: ai_grid.backend.v1.ModelContainer
-	(*ModelEnvVar)(nil),                         // 49: ai_grid.backend.v1.ModelEnvVar
-	(*ModelScaling)(nil),                        // 50: ai_grid.backend.v1.ModelScaling
-	(*ModelKedaTrigger)(nil),                    // 51: ai_grid.backend.v1.ModelKedaTrigger
-	(*ModelPlacement)(nil),                      // 52: ai_grid.backend.v1.ModelPlacement
-	(*ModelLabelSelector)(nil),                  // 53: ai_grid.backend.v1.ModelLabelSelector
-	(*ModelLabelSelectorRequirement)(nil),       // 54: ai_grid.backend.v1.ModelLabelSelectorRequirement
-	(*ModelRollout)(nil),                        // 55: ai_grid.backend.v1.ModelRollout
-	(*ModelStatus)(nil),                         // 56: ai_grid.backend.v1.ModelStatus
-	(*ModelPlacementStatus)(nil),                // 57: ai_grid.backend.v1.ModelPlacementStatus
-	(*ModelRolloutStatus)(nil),                  // 58: ai_grid.backend.v1.ModelRolloutStatus
-	(*ModelsListRequest)(nil),                   // 59: ai_grid.backend.v1.ModelsListRequest
-	(*ModelsListResponse)(nil),                  // 60: ai_grid.backend.v1.ModelsListResponse
-	(*ModelsGetRequest)(nil),                    // 61: ai_grid.backend.v1.ModelsGetRequest
-	(*ModelsGetResponse)(nil),                   // 62: ai_grid.backend.v1.ModelsGetResponse
-	(*ModelsCreateRequest)(nil),                 // 63: ai_grid.backend.v1.ModelsCreateRequest
-	(*ModelsCreateResponse)(nil),                // 64: ai_grid.backend.v1.ModelsCreateResponse
-	(*ModelsUpdateRequest)(nil),                 // 65: ai_grid.backend.v1.ModelsUpdateRequest
-	(*ModelsUpdateResponse)(nil),                // 66: ai_grid.backend.v1.ModelsUpdateResponse
-	(*ModelsDeleteRequest)(nil),                 // 67: ai_grid.backend.v1.ModelsDeleteRequest
-	(*ModelsDeleteResponse)(nil),                // 68: ai_grid.backend.v1.ModelsDeleteResponse
-	(*ModelsListPlacementClustersRequest)(nil),  // 69: ai_grid.backend.v1.ModelsListPlacementClustersRequest
-	(*ModelsListPlacementClustersResponse)(nil), // 70: ai_grid.backend.v1.ModelsListPlacementClustersResponse
-	nil,                           // 71: ai_grid.backend.v1.Metadata.LabelsEntry
-	nil,                           // 72: ai_grid.backend.v1.Metadata.AnnotationsEntry
-	nil,                           // 73: ai_grid.backend.v1.TokenMetadata.LabelsEntry
-	nil,                           // 74: ai_grid.backend.v1.ModelContainer.RequestsEntry
-	nil,                           // 75: ai_grid.backend.v1.ModelContainer.LimitsEntry
-	nil,                           // 76: ai_grid.backend.v1.ModelKedaTrigger.MetadataEntry
-	nil,                           // 77: ai_grid.backend.v1.ModelLabelSelector.MatchLabelsEntry
-	(*timestamppb.Timestamp)(nil), // 78: google.protobuf.Timestamp
-	(*fieldmaskpb.FieldMask)(nil), // 79: google.protobuf.FieldMask
+	(ConditionStatus)(0),                  // 0: ai_grid.backend.v1.ConditionStatus
+	(ModelRolloutStrategy)(0),             // 1: ai_grid.backend.v1.ModelRolloutStrategy
+	(ModelPhase)(0),                       // 2: ai_grid.backend.v1.ModelPhase
+	(*Metadata)(nil),                      // 3: ai_grid.backend.v1.Metadata
+	(*Tenant)(nil),                        // 4: ai_grid.backend.v1.Tenant
+	(*TenantSpec)(nil),                    // 5: ai_grid.backend.v1.TenantSpec
+	(*TenantStatus)(nil),                  // 6: ai_grid.backend.v1.TenantStatus
+	(*TenantsListRequest)(nil),            // 7: ai_grid.backend.v1.TenantsListRequest
+	(*TenantsListResponse)(nil),           // 8: ai_grid.backend.v1.TenantsListResponse
+	(*TenantsGetRequest)(nil),             // 9: ai_grid.backend.v1.TenantsGetRequest
+	(*TenantsGetResponse)(nil),            // 10: ai_grid.backend.v1.TenantsGetResponse
+	(*TenantsCreateRequest)(nil),          // 11: ai_grid.backend.v1.TenantsCreateRequest
+	(*TenantsCreateResponse)(nil),         // 12: ai_grid.backend.v1.TenantsCreateResponse
+	(*TenantsUpdateRequest)(nil),          // 13: ai_grid.backend.v1.TenantsUpdateRequest
+	(*TenantsUpdateResponse)(nil),         // 14: ai_grid.backend.v1.TenantsUpdateResponse
+	(*TenantsDeleteRequest)(nil),          // 15: ai_grid.backend.v1.TenantsDeleteRequest
+	(*TenantsDeleteResponse)(nil),         // 16: ai_grid.backend.v1.TenantsDeleteResponse
+	(*Condition)(nil),                     // 17: ai_grid.backend.v1.Condition
+	(*Subscription)(nil),                  // 18: ai_grid.backend.v1.Subscription
+	(*SubscriptionSpec)(nil),              // 19: ai_grid.backend.v1.SubscriptionSpec
+	(*SubscriptionOrganization)(nil),      // 20: ai_grid.backend.v1.SubscriptionOrganization
+	(*SubscriptionOwner)(nil),             // 21: ai_grid.backend.v1.SubscriptionOwner
+	(*SubscriptionModelRef)(nil),          // 22: ai_grid.backend.v1.SubscriptionModelRef
+	(*TokenRateLimit)(nil),                // 23: ai_grid.backend.v1.TokenRateLimit
+	(*BillingRate)(nil),                   // 24: ai_grid.backend.v1.BillingRate
+	(*TokenMetadata)(nil),                 // 25: ai_grid.backend.v1.TokenMetadata
+	(*GuardrailAttachment)(nil),           // 26: ai_grid.backend.v1.GuardrailAttachment
+	(*SubscriptionStatus)(nil),            // 27: ai_grid.backend.v1.SubscriptionStatus
+	(*ResourceRefStatus)(nil),             // 28: ai_grid.backend.v1.ResourceRefStatus
+	(*TokenRateLimitStatus)(nil),          // 29: ai_grid.backend.v1.TokenRateLimitStatus
+	(*AuthPolicy)(nil),                    // 30: ai_grid.backend.v1.AuthPolicy
+	(*AuthPolicyModelRef)(nil),            // 31: ai_grid.backend.v1.AuthPolicyModelRef
+	(*ModelRegistration)(nil),             // 32: ai_grid.backend.v1.ModelRegistration
+	(*SubscriptionsListRequest)(nil),      // 33: ai_grid.backend.v1.SubscriptionsListRequest
+	(*SubscriptionsListResponse)(nil),     // 34: ai_grid.backend.v1.SubscriptionsListResponse
+	(*SubscriptionsGetRequest)(nil),       // 35: ai_grid.backend.v1.SubscriptionsGetRequest
+	(*SubscriptionsGetResponse)(nil),      // 36: ai_grid.backend.v1.SubscriptionsGetResponse
+	(*SubscriptionsCreateRequest)(nil),    // 37: ai_grid.backend.v1.SubscriptionsCreateRequest
+	(*SubscriptionsCreateResponse)(nil),   // 38: ai_grid.backend.v1.SubscriptionsCreateResponse
+	(*SubscriptionsUpdateRequest)(nil),    // 39: ai_grid.backend.v1.SubscriptionsUpdateRequest
+	(*SubscriptionsUpdateResponse)(nil),   // 40: ai_grid.backend.v1.SubscriptionsUpdateResponse
+	(*SubscriptionsDeleteRequest)(nil),    // 41: ai_grid.backend.v1.SubscriptionsDeleteRequest
+	(*SubscriptionsDeleteResponse)(nil),   // 42: ai_grid.backend.v1.SubscriptionsDeleteResponse
+	(*Model)(nil),                         // 43: ai_grid.backend.v1.Model
+	(*ModelSpec)(nil),                     // 44: ai_grid.backend.v1.ModelSpec
+	(*ModelSource)(nil),                   // 45: ai_grid.backend.v1.ModelSource
+	(*ModelRouter)(nil),                   // 46: ai_grid.backend.v1.ModelRouter
+	(*ModelGatewayRef)(nil),               // 47: ai_grid.backend.v1.ModelGatewayRef
+	(*ModelContainer)(nil),                // 48: ai_grid.backend.v1.ModelContainer
+	(*ModelEnvVar)(nil),                   // 49: ai_grid.backend.v1.ModelEnvVar
+	(*ModelScaling)(nil),                  // 50: ai_grid.backend.v1.ModelScaling
+	(*ModelKedaTrigger)(nil),              // 51: ai_grid.backend.v1.ModelKedaTrigger
+	(*ModelPlacement)(nil),                // 52: ai_grid.backend.v1.ModelPlacement
+	(*ModelLabelSelector)(nil),            // 53: ai_grid.backend.v1.ModelLabelSelector
+	(*ModelLabelSelectorRequirement)(nil), // 54: ai_grid.backend.v1.ModelLabelSelectorRequirement
+	(*ModelRollout)(nil),                  // 55: ai_grid.backend.v1.ModelRollout
+	(*ModelStatus)(nil),                   // 56: ai_grid.backend.v1.ModelStatus
+	(*ModelPlacementStatus)(nil),          // 57: ai_grid.backend.v1.ModelPlacementStatus
+	(*ModelRolloutStatus)(nil),            // 58: ai_grid.backend.v1.ModelRolloutStatus
+	(*ModelsListRequest)(nil),             // 59: ai_grid.backend.v1.ModelsListRequest
+	(*ModelsListResponse)(nil),            // 60: ai_grid.backend.v1.ModelsListResponse
+	nil,                                   // 61: ai_grid.backend.v1.Metadata.LabelsEntry
+	nil,                                   // 62: ai_grid.backend.v1.Metadata.AnnotationsEntry
+	nil,                                   // 63: ai_grid.backend.v1.TokenMetadata.LabelsEntry
+	nil,                                   // 64: ai_grid.backend.v1.ModelContainer.RequestsEntry
+	nil,                                   // 65: ai_grid.backend.v1.ModelContainer.LimitsEntry
+	nil,                                   // 66: ai_grid.backend.v1.ModelKedaTrigger.MetadataEntry
+	nil,                                   // 67: ai_grid.backend.v1.ModelLabelSelector.MatchLabelsEntry
+	(*timestamppb.Timestamp)(nil),         // 68: google.protobuf.Timestamp
+	(*fieldmaskpb.FieldMask)(nil),         // 69: google.protobuf.FieldMask
 }
 var file_ai_grid_backend_v1_backend_proto_depIdxs = []int32{
-	78, // 0: ai_grid.backend.v1.Metadata.creation_timestamp:type_name -> google.protobuf.Timestamp
-	78, // 1: ai_grid.backend.v1.Metadata.deletion_timestamp:type_name -> google.protobuf.Timestamp
-	71, // 2: ai_grid.backend.v1.Metadata.labels:type_name -> ai_grid.backend.v1.Metadata.LabelsEntry
-	72, // 3: ai_grid.backend.v1.Metadata.annotations:type_name -> ai_grid.backend.v1.Metadata.AnnotationsEntry
+	68, // 0: ai_grid.backend.v1.Metadata.creation_timestamp:type_name -> google.protobuf.Timestamp
+	68, // 1: ai_grid.backend.v1.Metadata.deletion_timestamp:type_name -> google.protobuf.Timestamp
+	61, // 2: ai_grid.backend.v1.Metadata.labels:type_name -> ai_grid.backend.v1.Metadata.LabelsEntry
+	62, // 3: ai_grid.backend.v1.Metadata.annotations:type_name -> ai_grid.backend.v1.Metadata.AnnotationsEntry
 	3,  // 4: ai_grid.backend.v1.Tenant.metadata:type_name -> ai_grid.backend.v1.Metadata
 	5,  // 5: ai_grid.backend.v1.Tenant.spec:type_name -> ai_grid.backend.v1.TenantSpec
 	6,  // 6: ai_grid.backend.v1.Tenant.status:type_name -> ai_grid.backend.v1.TenantStatus
@@ -4484,10 +4004,10 @@ var file_ai_grid_backend_v1_backend_proto_depIdxs = []int32{
 	4,  // 9: ai_grid.backend.v1.TenantsCreateRequest.object:type_name -> ai_grid.backend.v1.Tenant
 	4,  // 10: ai_grid.backend.v1.TenantsCreateResponse.object:type_name -> ai_grid.backend.v1.Tenant
 	4,  // 11: ai_grid.backend.v1.TenantsUpdateRequest.object:type_name -> ai_grid.backend.v1.Tenant
-	79, // 12: ai_grid.backend.v1.TenantsUpdateRequest.update_mask:type_name -> google.protobuf.FieldMask
+	69, // 12: ai_grid.backend.v1.TenantsUpdateRequest.update_mask:type_name -> google.protobuf.FieldMask
 	4,  // 13: ai_grid.backend.v1.TenantsUpdateResponse.object:type_name -> ai_grid.backend.v1.Tenant
 	0,  // 14: ai_grid.backend.v1.Condition.status:type_name -> ai_grid.backend.v1.ConditionStatus
-	78, // 15: ai_grid.backend.v1.Condition.last_transition_time:type_name -> google.protobuf.Timestamp
+	68, // 15: ai_grid.backend.v1.Condition.last_transition_time:type_name -> google.protobuf.Timestamp
 	3,  // 16: ai_grid.backend.v1.Subscription.metadata:type_name -> ai_grid.backend.v1.Metadata
 	19, // 17: ai_grid.backend.v1.Subscription.spec:type_name -> ai_grid.backend.v1.SubscriptionSpec
 	27, // 18: ai_grid.backend.v1.Subscription.status:type_name -> ai_grid.backend.v1.SubscriptionStatus
@@ -4499,7 +4019,7 @@ var file_ai_grid_backend_v1_backend_proto_depIdxs = []int32{
 	23, // 24: ai_grid.backend.v1.SubscriptionModelRef.token_rate_limits:type_name -> ai_grid.backend.v1.TokenRateLimit
 	24, // 25: ai_grid.backend.v1.SubscriptionModelRef.billing_rate:type_name -> ai_grid.backend.v1.BillingRate
 	26, // 26: ai_grid.backend.v1.SubscriptionModelRef.guardrails:type_name -> ai_grid.backend.v1.GuardrailAttachment
-	73, // 27: ai_grid.backend.v1.TokenMetadata.labels:type_name -> ai_grid.backend.v1.TokenMetadata.LabelsEntry
+	63, // 27: ai_grid.backend.v1.TokenMetadata.labels:type_name -> ai_grid.backend.v1.TokenMetadata.LabelsEntry
 	17, // 28: ai_grid.backend.v1.SubscriptionStatus.conditions:type_name -> ai_grid.backend.v1.Condition
 	28, // 29: ai_grid.backend.v1.SubscriptionStatus.model_ref_statuses:type_name -> ai_grid.backend.v1.ResourceRefStatus
 	29, // 30: ai_grid.backend.v1.SubscriptionStatus.token_rate_limit_statuses:type_name -> ai_grid.backend.v1.TokenRateLimitStatus
@@ -4516,7 +4036,7 @@ var file_ai_grid_backend_v1_backend_proto_depIdxs = []int32{
 	18, // 41: ai_grid.backend.v1.SubscriptionsCreateResponse.object:type_name -> ai_grid.backend.v1.Subscription
 	30, // 42: ai_grid.backend.v1.SubscriptionsCreateResponse.auth_policy:type_name -> ai_grid.backend.v1.AuthPolicy
 	18, // 43: ai_grid.backend.v1.SubscriptionsUpdateRequest.object:type_name -> ai_grid.backend.v1.Subscription
-	79, // 44: ai_grid.backend.v1.SubscriptionsUpdateRequest.update_mask:type_name -> google.protobuf.FieldMask
+	69, // 44: ai_grid.backend.v1.SubscriptionsUpdateRequest.update_mask:type_name -> google.protobuf.FieldMask
 	18, // 45: ai_grid.backend.v1.SubscriptionsUpdateResponse.object:type_name -> ai_grid.backend.v1.Subscription
 	3,  // 46: ai_grid.backend.v1.Model.metadata:type_name -> ai_grid.backend.v1.Metadata
 	44, // 47: ai_grid.backend.v1.Model.spec:type_name -> ai_grid.backend.v1.ModelSpec
@@ -4528,13 +4048,13 @@ var file_ai_grid_backend_v1_backend_proto_depIdxs = []int32{
 	52, // 53: ai_grid.backend.v1.ModelSpec.placement:type_name -> ai_grid.backend.v1.ModelPlacement
 	55, // 54: ai_grid.backend.v1.ModelSpec.rollout:type_name -> ai_grid.backend.v1.ModelRollout
 	47, // 55: ai_grid.backend.v1.ModelRouter.gateway_refs:type_name -> ai_grid.backend.v1.ModelGatewayRef
-	74, // 56: ai_grid.backend.v1.ModelContainer.requests:type_name -> ai_grid.backend.v1.ModelContainer.RequestsEntry
-	75, // 57: ai_grid.backend.v1.ModelContainer.limits:type_name -> ai_grid.backend.v1.ModelContainer.LimitsEntry
+	64, // 56: ai_grid.backend.v1.ModelContainer.requests:type_name -> ai_grid.backend.v1.ModelContainer.RequestsEntry
+	65, // 57: ai_grid.backend.v1.ModelContainer.limits:type_name -> ai_grid.backend.v1.ModelContainer.LimitsEntry
 	49, // 58: ai_grid.backend.v1.ModelContainer.env:type_name -> ai_grid.backend.v1.ModelEnvVar
 	51, // 59: ai_grid.backend.v1.ModelScaling.triggers:type_name -> ai_grid.backend.v1.ModelKedaTrigger
-	76, // 60: ai_grid.backend.v1.ModelKedaTrigger.metadata:type_name -> ai_grid.backend.v1.ModelKedaTrigger.MetadataEntry
+	66, // 60: ai_grid.backend.v1.ModelKedaTrigger.metadata:type_name -> ai_grid.backend.v1.ModelKedaTrigger.MetadataEntry
 	53, // 61: ai_grid.backend.v1.ModelPlacement.label_selector:type_name -> ai_grid.backend.v1.ModelLabelSelector
-	77, // 62: ai_grid.backend.v1.ModelLabelSelector.match_labels:type_name -> ai_grid.backend.v1.ModelLabelSelector.MatchLabelsEntry
+	67, // 62: ai_grid.backend.v1.ModelLabelSelector.match_labels:type_name -> ai_grid.backend.v1.ModelLabelSelector.MatchLabelsEntry
 	54, // 63: ai_grid.backend.v1.ModelLabelSelector.match_expressions:type_name -> ai_grid.backend.v1.ModelLabelSelectorRequirement
 	1,  // 64: ai_grid.backend.v1.ModelRollout.strategy:type_name -> ai_grid.backend.v1.ModelRolloutStrategy
 	17, // 65: ai_grid.backend.v1.ModelStatus.conditions:type_name -> ai_grid.backend.v1.Condition
@@ -4544,17 +4064,11 @@ var file_ai_grid_backend_v1_backend_proto_depIdxs = []int32{
 	17, // 69: ai_grid.backend.v1.ModelPlacementStatus.conditions:type_name -> ai_grid.backend.v1.Condition
 	17, // 70: ai_grid.backend.v1.ModelRolloutStatus.conditions:type_name -> ai_grid.backend.v1.Condition
 	43, // 71: ai_grid.backend.v1.ModelsListResponse.items:type_name -> ai_grid.backend.v1.Model
-	43, // 72: ai_grid.backend.v1.ModelsGetResponse.object:type_name -> ai_grid.backend.v1.Model
-	43, // 73: ai_grid.backend.v1.ModelsCreateRequest.object:type_name -> ai_grid.backend.v1.Model
-	43, // 74: ai_grid.backend.v1.ModelsCreateResponse.object:type_name -> ai_grid.backend.v1.Model
-	43, // 75: ai_grid.backend.v1.ModelsUpdateRequest.object:type_name -> ai_grid.backend.v1.Model
-	79, // 76: ai_grid.backend.v1.ModelsUpdateRequest.update_mask:type_name -> google.protobuf.FieldMask
-	43, // 77: ai_grid.backend.v1.ModelsUpdateResponse.object:type_name -> ai_grid.backend.v1.Model
-	78, // [78:78] is the sub-list for method output_type
-	78, // [78:78] is the sub-list for method input_type
-	78, // [78:78] is the sub-list for extension type_name
-	78, // [78:78] is the sub-list for extension extendee
-	0,  // [0:78] is the sub-list for field type_name
+	72, // [72:72] is the sub-list for method output_type
+	72, // [72:72] is the sub-list for method input_type
+	72, // [72:72] is the sub-list for extension type_name
+	72, // [72:72] is the sub-list for extension extendee
+	0,  // [0:72] is the sub-list for field type_name
 }
 
 func init() { file_ai_grid_backend_v1_backend_proto_init() }
@@ -4574,7 +4088,7 @@ func file_ai_grid_backend_v1_backend_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ai_grid_backend_v1_backend_proto_rawDesc), len(file_ai_grid_backend_v1_backend_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   75,
+			NumMessages:   65,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -62,8 +62,6 @@ type V1 struct {
 	Subscriptions      []*backendv1.Subscription
 	AuthPolicies       []*backendv1.AuthPolicy
 	ModelRegistrations []*backendv1.ModelRegistration
-	// Locations is what Models/ListPlacementClusters answers (its clusters).
-	Locations []string
 	// Err makes every call fail with this status.
 	Err error
 
@@ -105,11 +103,6 @@ func StartV1(t *testing.T, v *V1) *backend.Client {
 	}}, v)
 	srv.RegisterService(&grpc.ServiceDesc{ServiceName: "ai_grid.v1.Models", HandlerType: (*any)(nil), Methods: []grpc.MethodDesc{
 		unary(v, "List", v.listModels),
-		unary(v, "Get", v.getModel),
-		unary(v, "Create", v.createModel),
-		unary(v, "Update", v.updateModel),
-		unary(v, "Delete", v.deleteModel),
-		unary(v, "ListPlacementClusters", v.listPlacementClusters),
 	}}, v)
 	srv.RegisterService(&grpc.ServiceDesc{ServiceName: "ai_grid.v1.Subscriptions", HandlerType: (*any)(nil), Methods: []grpc.MethodDesc{
 		unary(v, "List", v.listSubscriptions),
@@ -292,98 +285,6 @@ func (v *V1) listModels(in *backendv1.ModelsListRequest) (*backendv1.ModelsListR
 	sorted := slices.SortedFunc(slices.Values(v.Models), func(a, b *backendv1.Model) int { return cmp.Compare(a.GetId(), b.GetId()) })
 	page, total := window(sorted, in.Offset, in.Limit)
 	return &backendv1.ModelsListResponse{Size: int32(len(page)), Total: total, Items: clones(page)}, nil
-}
-
-func (v *V1) findModel(id string) (int, error) {
-	for i, m := range v.Models {
-		if m.GetId() == id {
-			return i, nil
-		}
-	}
-	return 0, status.Errorf(codes.NotFound, "Model %q not found", id)
-}
-
-func (v *V1) getModel(in *backendv1.ModelsGetRequest) (*backendv1.ModelsGetResponse, error) {
-	i, err := v.findModel(in.GetId())
-	if err != nil {
-		return nil, err
-	}
-	return &backendv1.ModelsGetResponse{Object: proto.Clone(v.Models[i]).(*backendv1.Model)}, nil
-}
-
-// createModel stores the model at version 1, named by its id.
-func (v *V1) createModel(in *backendv1.ModelsCreateRequest) (*backendv1.ModelsCreateResponse, error) {
-	m := proto.Clone(in.GetObject()).(*backendv1.Model)
-	if m.GetId() == "" {
-		m.Id = m.GetMetadata().GetName()
-	}
-	if _, err := v.findModel(m.GetId()); err == nil {
-		return nil, status.Errorf(codes.AlreadyExists, "Model %q already exists", m.GetId())
-	}
-	if m.Metadata == nil {
-		m.Metadata = &backendv1.Metadata{}
-	}
-	m.Metadata.Name, m.Metadata.Version = m.GetId(), 1
-	v.Models = append(v.Models, m)
-	return &backendv1.ModelsCreateResponse{Object: proto.Clone(m).(*backendv1.Model)}, nil
-}
-
-func (v *V1) updateModel(in *backendv1.ModelsUpdateRequest) (*backendv1.ModelsUpdateResponse, error) {
-	obj := in.GetObject()
-	i, err := v.findModel(obj.GetId())
-	if err != nil {
-		return nil, err
-	}
-	m := v.Models[i]
-	if err := lockedVersion(in.GetLock(), obj.GetMetadata().GetVersion(), m.GetMetadata().GetVersion(), staleV1("update", "Model", "model", m.GetId())); err != nil {
-		return nil, err
-	}
-	next := proto.Clone(m).(*backendv1.Model)
-	if next.Spec == nil {
-		next.Spec = &backendv1.ModelSpec{}
-	}
-	if next.Spec.Main == nil {
-		next.Spec.Main = &backendv1.ModelContainer{}
-	}
-	for _, p := range in.GetUpdateMask().GetPaths() {
-		switch p {
-		case "metadata.labels":
-			next.Metadata.Labels = maps.Clone(obj.GetMetadata().GetLabels())
-		case "metadata.annotations":
-			next.Metadata.Annotations = maps.Clone(obj.GetMetadata().GetAnnotations())
-		case "spec.replicas":
-			next.Spec.Replicas = obj.GetSpec().Replicas
-		case "spec.main.image":
-			next.Spec.Main.Image = obj.GetSpec().GetMain().GetImage()
-		case "spec.main.env":
-			next.Spec.Main.Env = obj.GetSpec().GetMain().GetEnv()
-		case "spec.placement":
-			next.Spec.Placement = obj.GetSpec().GetPlacement()
-		case "spec.rollout":
-			next.Spec.Rollout = obj.GetSpec().GetRollout()
-		default:
-			return nil, status.Errorf(codes.InvalidArgument, "update_mask path %q is not supported", p)
-		}
-	}
-	next.Metadata.Version++
-	v.Models[i] = next
-	return &backendv1.ModelsUpdateResponse{Object: proto.Clone(next).(*backendv1.Model)}, nil
-}
-
-func (v *V1) deleteModel(in *backendv1.ModelsDeleteRequest) (*backendv1.ModelsDeleteResponse, error) {
-	i, err := v.findModel(in.GetId())
-	if err != nil {
-		return nil, err
-	}
-	if rv := in.GetResourceVersion(); rv != 0 && rv != v.Models[i].GetMetadata().GetVersion() {
-		return nil, staleV1("delete", "Model", "model", in.GetId())
-	}
-	v.Models = slices.Delete(v.Models, i, i+1)
-	return &backendv1.ModelsDeleteResponse{}, nil
-}
-
-func (v *V1) listPlacementClusters(*backendv1.ModelsListPlacementClustersRequest) (*backendv1.ModelsListPlacementClustersResponse, error) {
-	return &backendv1.ModelsListPlacementClustersResponse{Clusters: slices.Clone(v.Locations)}, nil
 }
 
 func (v *V1) listSubscriptions(*backendv1.SubscriptionsListRequest) (*backendv1.SubscriptionsListResponse, error) {

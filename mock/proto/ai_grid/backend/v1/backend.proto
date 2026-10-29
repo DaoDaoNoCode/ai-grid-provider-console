@@ -1,6 +1,6 @@
 // Stopgap: the messages of the backend's real ai_grid.v1 Tenants, Subscriptions and Models
 // services, copied from ai-grid-provider-backend proto/ai_grid/v1 (tenants at 8c1a1bc,
-// subscriptions and models at 3428d8d, ListPlacementClusters at 71bb8cc)
+// subscriptions and models at 3428d8d; of Models only List, for GET /api/v1/models)
 // (condition_type, metadata_type, model_type, models_service, subscription_type,
 // subscriptions_service, tenant_type, tenants_service), so
 // the BFF can call those RPCs. Fields the BFF doesn't use are
@@ -371,43 +371,4 @@ message ModelsListResponse {
   int32 size = 1;
   int32 total = 2;
   repeated Model items = 3;
-}
-
-message ModelsGetRequest {
-  string id = 1;
-}
-
-message ModelsGetResponse {
-  Model object = 1;
-}
-
-message ModelsCreateRequest {
-  Model object = 1;
-}
-
-message ModelsCreateResponse {
-  Model object = 1;
-}
-
-message ModelsUpdateRequest {
-  Model object = 1;
-  google.protobuf.FieldMask update_mask = 2;
-  bool lock = 3;
-}
-
-message ModelsUpdateResponse {
-  Model object = 1;
-}
-
-message ModelsDeleteRequest {
-  string id = 1;
-  int32 resource_version = 2;
-}
-
-message ModelsDeleteResponse {}
-
-message ModelsListPlacementClustersRequest {}
-
-message ModelsListPlacementClustersResponse {
-  repeated string clusters = 1;
 }

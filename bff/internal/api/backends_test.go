@@ -48,7 +48,6 @@ var backendShapes = []backendShape{
 			Subscriptions: []*aigridv1.Subscription{{Name: "team-a", DisplayName: "Team A", Priority: 5, ResourceVersion: "2",
 				TokenMetadata: &aigridv1.TokenMetadata{OrganizationId: "t-1"},
 				ModelRefs:     []*aigridv1.ModelSubscriptionRef{{Name: "tiny-llm", TokenRateLimits: []*aigridv1.TokenRateLimit{{Limit: 100, Window: "1m"}}}}}},
-			Locations: []string{"site-1"},
 		}
 		return backendtest.Start(t, fake), func() metadata.MD { return fake.Metadata }
 	}},
@@ -63,7 +62,6 @@ var backendShapes = []backendShape{
 				Metadata: &backendv1.Metadata{Version: 2, Annotations: map[string]string{AnnotationDisplayName: "Team A"}},
 				Spec: &backendv1.SubscriptionSpec{Priority: 5, Organization: &backendv1.SubscriptionOrganization{Id: "t-1"},
 					ModelRefs: []*backendv1.SubscriptionModelRef{{Name: "tiny-llm", TokenRateLimits: []*backendv1.TokenRateLimit{{Limit: 100, Window: "1m"}}}}}}},
-			Locations: []string{"site-1"},
 		}
 		return backendtest.StartV1(t, v1), v1.Metadata
 	}},
@@ -127,42 +125,15 @@ func TestTenantsOnEveryBackend(t *testing.T) {
 	})
 }
 
+// GET /api/v1/models, which the Subscriptions pages read, on either backend.
 func TestModelsOnEveryBackend(t *testing.T) {
 	t.Parallel()
-	const tiny = "/api/v1/models/" + fleetModelsNamespace + "/tiny-llm"
 	onEveryBackend(t, func(t *testing.T, app *App) {
 		var list []Model
 		rec := serve(app, asUser(http.MethodGet, "/api/v1/models?offset=0&limit=5"))
 		wantStatus(t, "list", rec, http.StatusOK, "")
 		if meta := decodeList(t, rec, &list); len(list) != 1 || list[0].Name != "tiny-llm" || list[0].Namespace != fleetModelsNamespace || total(meta) != 1 {
 			t.Fatalf("list: %+v, meta %+v; want %s/tiny-llm, total 1", list, meta, fleetModelsNamespace)
-		}
-		wantStatus(t, "get", serve(app, asUser(http.MethodGet, tiny)), http.StatusOK, `"7"`)
-		wantStatus(t, "get unknown", serve(app, asUser(http.MethodGet, "/api/v1/models/"+fleetModelsNamespace+"/missing")), http.StatusNotFound, "")
-
-		rec = serve(app, jsonRequest(http.MethodPost, "/api/v1/models", `{"name": "cpu-only", "namespace": "`+fleetModelsNamespace+`", "modelUri": "hf://example-org/cpu-only"}`))
-		wantStatus(t, "create", rec, http.StatusCreated, "")
-		if loc := rec.Header().Get("Location"); loc != "/api/v1/models/"+fleetModelsNamespace+"/cpu-only" {
-			t.Fatalf("create: Location %q", loc)
-		}
-		wantStatus(t, "create a taken name", serve(app, jsonRequest(http.MethodPost, "/api/v1/models", `{"name": "tiny-llm", "namespace": "`+fleetModelsNamespace+`", "modelUri": "hf://x/y"}`)), http.StatusConflict, "")
-
-		wantStatus(t, "stale patch", serve(app, withIfMatch(jsonRequest(http.MethodPatch, tiny, `{"replicas": 3}`), `"6"`)), http.StatusConflict, "")
-		rec = serve(app, withIfMatch(jsonRequest(http.MethodPatch, tiny, `{"replicas": 3}`), `"7"`))
-		wantStatus(t, "patch", rec, http.StatusOK, `"8"`)
-		var patched Model
-		if decodeData(t, rec, &patched); patched.Replicas == nil || *patched.Replicas != 3 {
-			t.Fatalf("patched replicas %v, want 3", patched.Replicas)
-		}
-
-		wantStatus(t, "stale delete", serve(app, withIfMatch(asUser(http.MethodDelete, tiny), `"7"`)), http.StatusConflict, "")
-		wantStatus(t, "delete", serve(app, withIfMatch(asUser(http.MethodDelete, tiny), `"8"`)), http.StatusNoContent, "")
-		wantStatus(t, "get after delete", serve(app, asUser(http.MethodGet, tiny)), http.StatusNotFound, "")
-
-		rec = serve(app, asUser(http.MethodGet, "/api/v1/locations"))
-		wantStatus(t, "locations", rec, http.StatusOK, "")
-		if got := strings.TrimSpace(rec.Body.String()); got != `{"data":["site-1"]}` {
-			t.Fatalf("locations: %s, want site-1", got)
 		}
 	})
 }
@@ -260,7 +231,7 @@ func TestIdentityAndErrorsOnEveryBackend(t *testing.T) {
 	}
 }
 
-// The backend has no Grid service and no capabilities (a method it doesn't
+// The backend has no Grid service (a method it doesn't
 // serve answers Unimplemented without reaching a handler), and the adapters
 // refuse with 501 what its API cannot carry, before any call: a model
 // filter, a subscription without its auth policy, and
@@ -270,7 +241,6 @@ func TestV1BackendAnswers501ForWhatItLacks(t *testing.T) {
 	for _, tc := range []struct{ method, path, body, ifMatch string }{
 		{http.MethodGet, "/api/v1/grid/overview?range=1h", "", ""},
 		{http.MethodGet, "/api/v1/grid/overview?range=24h&site=brussels&metrics=false", "", ""},
-		{http.MethodGet, "/api/v1/capabilities", "", ""},
 		{http.MethodGet, "/api/v1/models?filter=" + url.QueryEscape(`this.name == "tiny-llm"`), "", ""},
 		{http.MethodPost, "/api/v1/subscriptions", strings.Replace(validSubscription, `"createAuthPolicy":true`, `"createAuthPolicy":false`, 1), ""},
 		{http.MethodPost, "/api/v1/tenants", `{"name": "globex", "description": "Globex Corp."}`, ""},

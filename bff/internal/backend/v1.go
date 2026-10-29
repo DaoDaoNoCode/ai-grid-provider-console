@@ -36,13 +36,7 @@ const (
 	methodSubscriptionsUpdate = "/ai_grid.v1.Subscriptions/Update"
 	methodSubscriptionsDelete = "/ai_grid.v1.Subscriptions/Delete"
 
-	methodModelsList   = "/ai_grid.v1.Models/List"
-	methodModelsGet    = "/ai_grid.v1.Models/Get"
-	methodModelsCreate = "/ai_grid.v1.Models/Create"
-	methodModelsUpdate = "/ai_grid.v1.Models/Update"
-	methodModelsDelete = "/ai_grid.v1.Models/Delete"
-
-	methodModelsListPlacementClusters = "/ai_grid.v1.Models/ListPlacementClusters"
+	methodModelsList = "/ai_grid.v1.Models/List"
 )
 
 // The annotations the backend keeps a subscription's and an auth policy's

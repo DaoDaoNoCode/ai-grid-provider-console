@@ -78,14 +78,9 @@ type Fake struct {
 	// never reused after a delete.
 	lastTenantID int
 
-	Models          []*aigridv1.Model
-	Capabilities    *aigridv1.HubCapabilities
-	LastListModels  *aigridv1.ListModelsRequest
-	LastCreateModel *aigridv1.CreateModelRequest
-	LastUpdateModel *aigridv1.UpdateModelRequest
-	LastDeleteModel *aigridv1.DeleteModelRequest
-	// Locations is what ListLocations answers.
-	Locations []string
+	Models         []*aigridv1.Model
+	Capabilities   *aigridv1.HubCapabilities
+	LastListModels *aigridv1.ListModelsRequest
 
 	Subscriptions          []*aigridv1.Subscription
 	AuthPolicies           []*aigridv1.AuthPolicy
@@ -394,139 +389,6 @@ func (f *Fake) ListModels(ctx context.Context, req *aigridv1.ListModelsRequest) 
 		page = page[:req.GetLimit()]
 	}
 	return &aigridv1.ListModelsResponse{Items: page, Size: int32(len(page)), Total: proto.Int32(int32(total))}, nil
-}
-
-// GetModel implements Models with the backend's NotFound message.
-func (f *Fake) GetModel(ctx context.Context, req *aigridv1.GetModelRequest) (*aigridv1.GetModelResponse, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if err := f.begin(ctx, "GetModel"); err != nil {
-		return nil, err
-	}
-	m := f.findModel(req.GetNamespace(), req.GetName())
-	if m == nil {
-		return nil, status.Errorf(codes.NotFound, "object with identifier '%s/%s' not found", req.GetNamespace(), req.GetName())
-	}
-	return &aigridv1.GetModelResponse{Object: proto.Clone(m).(*aigridv1.Model)}, nil
-}
-
-// CreateModel implements Models: AlreadyExists on a taken namespace/name,
-// metadata filled, no status (the controllers have not run).
-func (f *Fake) CreateModel(ctx context.Context, req *aigridv1.CreateModelRequest) (*aigridv1.CreateModelResponse, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.LastCreateModel = req
-	if err := f.begin(ctx, "CreateModel"); err != nil {
-		return nil, err
-	}
-	m := proto.Clone(req.GetObject()).(*aigridv1.Model)
-	if m.GetName() == "" || m.GetMetadata().GetNamespace() == "" {
-		return nil, status.Error(codes.InvalidArgument, "metadata.name is required")
-	}
-	if f.findModel(m.GetMetadata().GetNamespace(), m.GetName()) != nil {
-		return nil, status.Errorf(codes.AlreadyExists, "llminferenceservices.serving.kserve.io %q already exists", m.GetName())
-	}
-	m.Metadata.Uid = "uid-" + strconv.Itoa(len(f.Models)+1)
-	m.Metadata.ResourceVersion = "1"
-	m.Metadata.Generation = 1
-	m.Status = &aigridv1.ModelStatus{Phase: aigridv1.ModelPhase_MODEL_PHASE_PENDING}
-	f.Models = append(f.Models, m)
-	return &aigridv1.CreateModelResponse{Object: m}, nil
-}
-
-// UpdateModel implements Models: the supported mask paths applied in place,
-// `lock` against `metadata.resource_version` with Aborted on a mismatch; an
-// update that changes nothing keeps the version.
-func (f *Fake) UpdateModel(ctx context.Context, req *aigridv1.UpdateModelRequest) (*aigridv1.UpdateModelResponse, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.LastUpdateModel = req
-	if err := f.begin(ctx, "UpdateModel"); err != nil {
-		return nil, err
-	}
-	obj := req.GetObject()
-	m := f.findModel(obj.GetMetadata().GetNamespace(), obj.GetName())
-	if m == nil {
-		return nil, status.Errorf(codes.NotFound, "object with identifier '%s/%s' not found", obj.GetMetadata().GetNamespace(), obj.GetName())
-	}
-	if req.GetLock() && obj.GetMetadata().GetResourceVersion() != m.GetMetadata().GetResourceVersion() {
-		return nil, status.Errorf(codes.Aborted, "object with identifier '%s/%s' has resource version %s, the request carries %q", m.GetMetadata().GetNamespace(), m.GetName(), m.GetMetadata().GetResourceVersion(), obj.GetMetadata().GetResourceVersion())
-	}
-	before := proto.Clone(m).(*aigridv1.Model)
-	if m.Spec == nil {
-		m.Spec = &aigridv1.ModelSpec{}
-	}
-	if m.Spec.Main == nil {
-		m.Spec.Main = &aigridv1.Container{}
-	}
-	for _, p := range req.GetUpdateMask().GetPaths() {
-		switch p {
-		case "spec.replicas":
-			m.Spec.Replicas = nil
-			if obj.GetSpec().Replicas != nil {
-				m.Spec.Replicas = proto.Int32(obj.GetSpec().GetReplicas())
-			}
-		case "spec.main.image":
-			m.Spec.Main.Image = obj.GetSpec().GetMain().GetImage()
-		case "spec.main.env":
-			m.Spec.Main.Env = obj.GetSpec().GetMain().GetEnv()
-		case "spec.placement":
-			m.Spec.Placement = obj.GetSpec().GetPlacement()
-		case "spec.rollout":
-			m.Spec.Rollout = obj.GetSpec().GetRollout()
-		case "metadata.labels":
-			m.Metadata.Labels = maps.Clone(obj.GetMetadata().GetLabels())
-		case "metadata.annotations":
-			m.Metadata.Annotations = maps.Clone(obj.GetMetadata().GetAnnotations())
-		default:
-			return nil, status.Errorf(codes.InvalidArgument, "update_mask path %q is not supported", p)
-		}
-	}
-	if proto.Equal(before.GetSpec(), m.GetSpec()) && maps.Equal(before.GetMetadata().GetLabels(), m.GetMetadata().GetLabels()) && maps.Equal(before.GetMetadata().GetAnnotations(), m.GetMetadata().GetAnnotations()) {
-		return &aigridv1.UpdateModelResponse{Object: m}, nil
-	}
-	rv, _ := strconv.Atoi(m.GetMetadata().GetResourceVersion())
-	m.Metadata.ResourceVersion = strconv.Itoa(rv + 1)
-	return &aigridv1.UpdateModelResponse{Object: m}, nil
-}
-
-// DeleteModel implements Models.
-func (f *Fake) DeleteModel(ctx context.Context, req *aigridv1.DeleteModelRequest) (*aigridv1.DeleteModelResponse, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.LastDeleteModel = req
-	if err := f.begin(ctx, "DeleteModel"); err != nil {
-		return nil, err
-	}
-	for i, m := range f.Models {
-		if m.GetMetadata().GetNamespace() == req.GetNamespace() && m.GetName() == req.GetName() {
-			if rv := req.GetResourceVersion(); rv != "" && rv != m.GetMetadata().GetResourceVersion() {
-				return nil, stale(req.GetNamespace()+"/"+req.GetName(), m.GetMetadata().GetResourceVersion(), rv)
-			}
-			f.Models = slices.Delete(f.Models, i, i+1)
-			return &aigridv1.DeleteModelResponse{}, nil
-		}
-	}
-	return nil, status.Errorf(codes.NotFound, "object with identifier '%s/%s' not found", req.GetNamespace(), req.GetName())
-}
-
-// ListLocations implements Models: it answers Locations.
-func (f *Fake) ListLocations(ctx context.Context, _ *aigridv1.ListLocationsRequest) (*aigridv1.ListLocationsResponse, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if err := f.begin(ctx, "ListLocations"); err != nil {
-		return nil, err
-	}
-	return &aigridv1.ListLocationsResponse{Locations: f.Locations}, nil
-}
-
-func (f *Fake) findModel(namespace, name string) *aigridv1.Model {
-	for _, m := range f.Models {
-		if m.GetMetadata().GetNamespace() == namespace && m.GetName() == name {
-			return m
-		}
-	}
-	return nil
 }
 
 // ListSubscriptions implements Subscriptions.
