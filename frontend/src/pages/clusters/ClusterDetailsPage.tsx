@@ -91,6 +91,12 @@ const aiGridItems = (c: ClusterView) => {
   ];
 };
 
+/** The status tooltip: "Hub connection: Importing. <the hub's message>", either part when it is all there is. */
+const hubConnection = (c: ClusterView) => {
+  const detail = [c.state && `${c.state}.`, c.statusMessage].filter(Boolean).join(' ');
+  return detail ? `Hub connection: ${detail}` : undefined;
+};
+
 /**
  * The cluster as the hub sees it, its connection first, as the peer of the AI Grid card's status.
  * ACM sets the OpenShift version only on OpenShift clusters (the version.openshift.io claim), so
@@ -99,13 +105,7 @@ const aiGridItems = (c: ClusterView) => {
 const clusterItems = (c: ClusterView) => [
   {
     term: 'Status',
-    value: (
-      <StatusLabel
-        isCompact
-        status={c.status}
-        reason={[c.state && `Hub connection: ${c.state}.`, c.statusMessage].filter(Boolean).join(' ')}
-      />
-    ),
+    value: <StatusLabel isCompact status={c.status} reason={hubConnection(c)} />,
     'data-testid': 'cluster-status',
   },
   { term: 'Site', value: <ClusterSite cluster={c} testId="cluster-site" /> },

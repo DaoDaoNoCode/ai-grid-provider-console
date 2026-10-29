@@ -556,3 +556,28 @@ it('says what to fix when the coordinate annotations are wrong', async () => {
     'Not on the map: ai-grid/latitude "39,96" is not a decimal number of degrees',
   );
 });
+
+it("says in the status tooltip what the hub reports about the cluster's connection", async () => {
+  const user = userEvent.setup();
+  const importing: GridCluster = {
+    ...bare(),
+    name: 'importing-1',
+    status: 'Unknown',
+    state: 'Importing',
+    statusMessage: 'The klusterlet is starting.',
+  };
+  const offline: GridCluster = { ...bare(), name: 'offline-1', status: 'Offline', statusMessage: 'Lease not updated.' };
+  renderAt('/clusters/importing-1', new MockConsoleService(undefined, [importing, offline]));
+  await user.hover(await within(await screen.findByTestId('cluster-status')).findByText('Unknown'));
+  expect(await screen.findByRole('tooltip')).toHaveTextContent(
+    /^Hub connection: Importing\. The klusterlet is starting\.$/,
+  );
+});
+
+it('says in the status tooltip what the hub reports, without a state', async () => {
+  const user = userEvent.setup();
+  const offline: GridCluster = { ...bare(), name: 'offline-1', status: 'Offline', statusMessage: 'Lease not updated.' };
+  renderAt('/clusters/offline-1', new MockConsoleService(undefined, [offline]));
+  await user.hover(await within(await screen.findByTestId('cluster-status')).findByText('Offline'));
+  expect(await screen.findByRole('tooltip')).toHaveTextContent(/^Hub connection: Lease not updated\.$/);
+});
