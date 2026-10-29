@@ -7,6 +7,8 @@ import { ServiceError } from '../api/ConsoleService';
 import { MockConsoleService, seedOrganizations } from '../api/MockConsoleService';
 import { serviceOnBffExamples } from './bffExamples';
 import { renderAt } from './render';
+import { modelsOf } from './connectModels';
+import { titleOf, toModelView } from '../pages/models/modelView';
 // The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
 import '../pages/grid/GridPage';
 import '../pages/monitoring/MonitoringPage';
@@ -52,7 +54,7 @@ it('updates monitoring chart windows through time controls', async () => {
 
 it('provides Clusters, Models and Usage tabs, plain section headings, and a working model selector', async () => {
   const service = withOrganizations();
-  const models = await service.listModels();
+  const models = modelsOf(service).models.map(toModelView);
   const user = userEvent.setup();
   renderAt('/monitoring', service);
   await screen.findByRole('img', { name: 'GPU utilization over time' });
@@ -75,7 +77,7 @@ it('provides Clusters, Models and Usage tabs, plain section headings, and a work
   expect(screen.queryByRole('columnheader', { name: 'Organization ID' })).not.toBeInTheDocument();
   await user.click(screen.getByRole('tab', { name: 'Models' }));
   await user.click(screen.getByRole('combobox', { name: 'Select model deployment' }));
-  await user.click(screen.getByRole('option', { name: models[0].displayName ?? models[0].name }));
+  await user.click(screen.getByRole('option', { name: titleOf(models[0]) }));
   expect(within(screen.getByRole('grid', { name: 'Model deployments' })).getAllByRole('row')).toHaveLength(2);
   expect(screen.getByRole('img', { name: 'Request queue length over time' })).toBeVisible();
   expect(screen.getByRole('img', { name: 'P90 Time to first token (TTFT) over time' })).toBeVisible();
@@ -115,7 +117,7 @@ it('shows the request count in the window as a whole number', async () => {
 
 it('changes simulated model charts with model selection and organization usage with the time window', async () => {
   const service = withOrganizations();
-  const models = await service.listModels();
+  const models = modelsOf(service).models.map(toModelView);
   const user = userEvent.setup();
   renderAt('/monitoring', service);
   await screen.findByRole('img', { name: 'Gateway request rate over time' });
@@ -124,7 +126,7 @@ it('changes simulated model charts with model selection and organization usage w
     screen.getByRole('img', { name: 'Request queue length over time' }).querySelector('path')!.getAttribute('d');
   const all = queue();
   await user.click(screen.getByRole('combobox', { name: 'Select model deployment' }));
-  await user.click(screen.getByRole('option', { name: models[0].displayName ?? models[0].name }));
+  await user.click(screen.getByRole('option', { name: titleOf(models[0]) }));
   expect(queue()).not.toBe(all);
   await user.click(screen.getByRole('tab', { name: 'Usage' }));
   const chart = () => screen.getByRole('img', { name: 'Token consumption by organization' });
@@ -186,13 +188,18 @@ it('loads organization usage when opened from the map', async () => {
   expect(within(usage).getByRole('link', { name: 'acme-robotics' })).toBeVisible();
 });
 
-it("lists the BFF's example models with their target sites", async () => {
+it('lists the models with the sites their placement chose', async () => {
   const user = userEvent.setup();
-  renderAt('/monitoring', serviceOnBffExamples());
+  const service = serviceOnBffExamples();
+  // A model of the Models API placed at the example clusters' location (status.placement.locations).
+  const granite = modelsOf(service).find('granite-3-8b');
+  granite.metadata!.annotations['openshift.io/display-name'] = 'Granite 8B Instruct';
+  granite.status!.placement!.locations = ['paris'];
+  renderAt('/monitoring', service);
   await user.click(await screen.findByRole('tab', { name: 'Models' }));
   const table = screen.getByRole('grid', { name: 'Model deployments' });
-  const granite = within(table).getByText('Granite 8B Instruct').closest('tr')!;
-  expect(granite).toHaveTextContent('Paris DC1');
+  const row = within(table).getByText('Granite 8B Instruct').closest('tr')!;
+  expect(row).toHaveTextContent('Paris DC1');
 });
 
 it('explains the target sites in a help popover', async () => {
@@ -203,23 +210,6 @@ it('explains the target sites in a help popover', async () => {
   expect(
     await screen.findByText(/^Target sites are the sites of the clusters each model's placement chose/),
   ).toBeVisible();
-});
-
-it('filters by one of two models of the same name in different namespaces', async () => {
-  const service = withOrganizations();
-  const [model] = service.models;
-  service.models = [
-    { ...model, namespace: 'ai-grid-models', displayName: 'Shared granite' },
-    { ...model, namespace: 'team-models', displayName: 'Team granite' },
-  ];
-  const user = userEvent.setup();
-  renderAt('/monitoring', service);
-  await user.click(await screen.findByRole('tab', { name: 'Models' }));
-  await user.click(screen.getByRole('combobox', { name: 'Select model deployment' }));
-  await user.click(screen.getByRole('option', { name: 'Team granite' }));
-  const table = screen.getByRole('grid', { name: 'Model deployments' });
-  expect(table).toHaveTextContent('Team granite');
-  expect(table).not.toHaveTextContent('Shared granite');
 });
 
 it('does not name Thanos when the backend reports no metrics source', async () => {

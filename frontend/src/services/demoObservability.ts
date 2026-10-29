@@ -36,7 +36,11 @@ const modelDefinitions = [
 ] as const;
 
 /** Simulated performance series for the selected models, shaped by the gateway's load. */
-export function modelMetrics(models: Pick<ModelView, 'id' | 'replicas'>[], metrics: GridMetric[], simulated: boolean): GridMetric[] {
+export function modelMetrics(
+  models: Pick<ModelView, 'id' | 'replicas'>[],
+  metrics: GridMetric[],
+  simulated: boolean,
+): GridMetric[] {
   const requests = metrics.find((m) => m.key === 'requests');
   const latency = metrics.find((m) => m.key === 'latency');
   const profile = models.reduce((sum, m) => sum + (seed(m.id) % 97), 0) / Math.max(1, models.length);

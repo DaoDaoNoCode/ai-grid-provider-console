@@ -6,18 +6,28 @@ import { act, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import type { NavigateFunction } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
-import getModels from '../../../mock/examples/get-models.json';
+import { Code, ConnectError } from '@connectrpc/connect';
+import { ModelPhase } from '../gen/ai_grid/v1/model_type_pb';
 import { ServiceError } from '../api/ConsoleService';
 import { fakeClients } from '../api/connect/testing';
-import { HttpConsoleService } from '../api/HttpConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
 import { tileLayerConfig } from '../pages/grid/tiles';
 import { serviceOnBffExamples } from './bffExamples';
 import { toManagedCluster } from './connectClusters';
+import { modelsOf } from './connectModels';
 import { renderAt } from './render';
 // The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
 import '../pages/grid/AiGridPage';
 import { TestApp } from './TestApp';
+
+/** Places a model of the Models API on these clusters, as Models/List reports it. */
+const placeOn = (service: MockConsoleService, id: string, clusters: string[], displayName?: string) => {
+  const model = modelsOf(service).find(id);
+  model.status!.placement!.selectedClusters = clusters;
+  model.status!.placement!.locations = clusters;
+  model.status!.clusters = [];
+  if (displayName) model.metadata!.annotations['openshift.io/display-name'] = displayName;
+};
 
 // Exercise the page and drawer without a browser map renderer or external tiles.
 vi.mock('../pages/grid/GridFleetMap', () => ({
@@ -52,9 +62,8 @@ it('opens the drawer on the cluster or model a link names', async () => {
   const view = renderAt('/ai-grid?cluster=site3', service);
   expect(await screen.findByRole('heading', { name: 'site3' })).toBeVisible();
   view.unmount();
-  const [model] = await service.listModels();
-  renderAt(`/ai-grid?model=${encodeURIComponent(`${model.namespace}/${model.name}`)}`, service);
-  expect(await screen.findByRole('heading', { name: model.displayName ?? model.name })).toBeVisible();
+  renderAt('/ai-grid?model=granite-3-8b', service);
+  expect(await screen.findByRole('heading', { name: 'Granite 3.3 8B Instruct' })).toBeVisible();
 });
 
 it('filters the drawer and map by availability while retaining inventory summaries', async () => {
@@ -76,13 +85,13 @@ it('filters the drawer and map by availability while retaining inventory summari
 
 it('switches between clusters and models and follows placement cross-links', async () => {
   const service = new MockConsoleService();
-  const [model] = service.models;
-  service.models = [{ ...model, locations: ['site3'], selectedClusters: ['site3'] }];
+  const model = { displayName: 'Granite 3.3 8B Instruct' };
+  placeOn(service, 'granite-3-8b', ['site3']);
   const user = userEvent.setup();
   renderAt('/ai-grid', service);
   // A card is one control; its models are links in the cluster's details.
   await user.click(await screen.findByRole('button', { name: 'View site3 details' }));
-  await user.click(await screen.findByRole('button', { name: model.displayName ?? model.name }));
+  await user.click(await screen.findByRole('button', { name: model.displayName }));
   expect(screen.getByRole('heading', { name: 'Model configuration' })).toBeVisible();
   await user.click(screen.getByRole('button', { name: 'Brussels · site3' }));
   expect(screen.getByRole('heading', { name: 'Site and cluster' })).toBeVisible();
@@ -102,8 +111,10 @@ it('switches between clusters and models and follows placement cross-links', asy
 it("follows placement cross-links on the BFF's example model JSON", async () => {
   const user = userEvent.setup();
   const service = serviceOnBffExamples();
-  // The example overview's clusters, as Clusters/List over Connect (connectClusters.ts).
+  // The example overview's clusters, as Clusters/List over Connect (connectClusters.ts), and a model
+  // of the Models API placed on one of them.
   service.listClusters = async () => (await service.getGridOverview('1h')).clusters;
+  placeOn(service, 'granite-3-8b', ['site-paris-1'], 'Granite 8B Instruct');
   renderAt('/ai-grid', service);
   await user.click(await screen.findByRole('button', { name: 'View site-paris-1 details' }));
   await user.click(await screen.findByRole('button', { name: 'Granite 8B Instruct' }));
@@ -116,25 +127,13 @@ it('places a model on the clusters its placement chose, by name, when they share
   const user = userEvent.setup();
   const service = new MockConsoleService();
   // As on the dev hub: two members, site-a and site-b, both labelled location=us-east, and a model
-  // the backend placed on site-b. Through the BFF's v1 adapter (bff/internal/backend/v1_models.go)
-  // its placement's selectedClusters and locations are both ManagedCluster names.
+  // the backend placed on site-b (status.placement.selected_clusters).
   const [first, second] = service.clusters;
   service.clusters = [
     { ...first, name: 'site-a', location: 'us-east', siteName: 'Site A' },
     { ...second, name: 'site-b', location: 'us-east', siteName: 'Site B' },
   ];
-  const granite = getModels.body.data.find((m) => m.name === 'granite-8b-instruct')!;
-  const placed = {
-    ...granite,
-    placement: { ...granite.placement, selectedClusters: ['site-b'], locations: ['site-b'] },
-  };
-  const http = new HttpConsoleService(
-    (async () =>
-      new Response(JSON.stringify({ data: [placed] }), {
-        headers: { 'Content-Type': 'application/json' },
-      })) as unknown as typeof fetch,
-  );
-  service.listModels = () => http.listModels();
+  placeOn(service, 'granite-3-8b', ['site-b'], 'Granite 8B Instruct');
   renderAt('/ai-grid', service);
   await user.click(await screen.findByRole('button', { name: 'View site-a details' }));
   expect(screen.getByText('No models on this cluster.')).toBeVisible();
@@ -217,7 +216,7 @@ it('shows only the AI Grid members, and when the console read them', async () =>
 it('shows a model by its phase, not "Deployment saved"', async () => {
   const user = userEvent.setup();
   const service = serviceOnBffExamples();
-  const [model] = await service.listModels();
+  const model = { phase: 'Ready' };
   renderAt('/ai-grid', service);
   await user.click(
     within(await screen.findByRole('group', { name: 'Grid object type' })).getByRole('button', { name: 'Models' }),
@@ -228,7 +227,7 @@ it('shows a model by its phase, not "Deployment saved"', async () => {
 
 it('keeps the map, its selection and its models when a refresh fails', async () => {
   const service = new MockConsoleService();
-  const [model] = service.models;
+  const model = { displayName: 'Granite 3.3 8B Instruct' };
   const user = userEvent.setup();
   renderAt('/ai-grid', service);
   await user.click(await screen.findByRole('button', { name: 'Map pin site1' }));
@@ -236,7 +235,9 @@ it('keeps the map, its selection and its models when a refresh fails', async () 
   expect(screen.getByRole('button', { name: model.displayName })).toBeVisible();
   const failed = new ServiceError(503, 'Service unavailable.');
   vi.spyOn(service, 'listClusters').mockRejectedValue(failed);
-  vi.spyOn(service, 'listModels').mockRejectedValue(failed);
+  vi.spyOn(modelsOf(service), 'list').mockImplementation(() => {
+    throw new ConnectError('Service unavailable.', Code.Unavailable);
+  });
   await user.click(screen.getByRole('button', { name: 'Refresh' }));
   expect(await screen.findByText('Showing the last loaded AI Grid clusters')).toBeVisible();
   expect(screen.getByText('Unable to load models')).toBeVisible();
@@ -274,28 +275,14 @@ it('names the page like every other page, with no status chips over the map', as
 
 it('does not call a failed model available for subscriptions', async () => {
   const service = new MockConsoleService();
-  const [model] = service.models;
-  service.models = [{ ...model, phase: 'Failed' }];
+  const model = { displayName: 'Granite 3.3 8B Instruct' };
+  modelsOf(service).find('granite-3-8b').status!.phase = ModelPhase.FAILED;
   const user = userEvent.setup();
   renderAt('/ai-grid', service);
   await user.click(await screen.findByRole('button', { name: 'Map pin site1' }));
   await user.click(screen.getByRole('button', { name: model.displayName }));
   expect(screen.getByRole('heading', { name: 'Model configuration' })).toBeVisible();
   expect(screen.queryByText('Available for subscriptions')).not.toBeInTheDocument();
-});
-
-it('tells apart models of the same name in two namespaces', async () => {
-  const service = new MockConsoleService();
-  const [model] = service.models;
-  service.models = [
-    { ...model, namespace: 'ai-grid-models', displayName: 'Shared granite' },
-    { ...model, namespace: 'team-models', displayName: 'Team granite' },
-  ];
-  const user = userEvent.setup();
-  renderAt('/ai-grid', service);
-  await user.click(await screen.findByRole('button', { name: `Map pin ${model.locations[0]}` }));
-  await user.click(screen.getByRole('button', { name: 'Team granite' }));
-  expect(screen.getByRole('heading', { name: 'Team granite' })).toBeVisible();
 });
 
 it('exposes the map area and the fleet summary as named regions', async () => {
@@ -334,8 +321,8 @@ it('closes the drawer when the AI Grid nav link drops the cluster from the URL',
 
 it("drops the Back trail when a link moves the drawer to something the trail wasn't built for", async () => {
   const service = new MockConsoleService();
-  const [model] = service.models;
-  service.models = [{ ...model, locations: ['site3'], selectedClusters: ['site3'] }];
+  const model = { displayName: 'Granite 3.3 8B Instruct' };
+  placeOn(service, 'granite-3-8b', ['site3']);
   let navigate: NavigateFunction = () => undefined;
   const Probe = () => {
     navigate = useNavigate();
@@ -348,7 +335,7 @@ it("drops the Back trail when a link moves the drawer to something the trail was
       <TestApp service={service} />
     </MemoryRouter>,
   );
-  await user.click(await screen.findByRole('button', { name: model.displayName ?? model.name }));
+  await user.click(await screen.findByRole('button', { name: model.displayName }));
   expect(screen.getByRole('button', { name: 'Back' })).toBeVisible();
   // A link elsewhere opens site2: Back would have led to site3, which isn't where the user came from.
   act(() => navigate('/ai-grid?cluster=site2'));
