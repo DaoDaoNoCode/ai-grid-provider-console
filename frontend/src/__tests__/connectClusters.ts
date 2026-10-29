@@ -10,7 +10,7 @@ import { ServiceError } from '../api/ConsoleService';
 import type { GridMembership } from '../api/clusters';
 import { fakeClients, type FakeBackend } from '../api/connect/testing';
 import type { GridCluster } from '../api/types';
-import { modelsOf } from './connectModels';
+import { fleetOf, subscriptionsBackend, type SubscriptionsSource } from './connectSubscriptions';
 import {
   ManagedClusterLocationSource,
   ManagedClusterSchema,
@@ -48,7 +48,7 @@ const asConnectError = (err: unknown) =>
     ? new ConnectError(err.message, codes[err.status] ?? Code.Unknown)
     : ConnectError.from(err);
 
-const call = async <T>(fn: () => Promise<T>) => {
+export const call = async <T>(fn: () => Promise<T>) => {
   try {
     return await fn();
   } catch (err) {
@@ -174,16 +174,19 @@ export const clustersBackend = (service: ClusterSource & Writes) =>
   }) satisfies FakeBackend['clusters'];
 
 /**
- * A Connect transport whose Clusters service is the service's clusters and whose Models service is
- * its FakeModels (connectModels.ts, modelsOf), built with the console's interceptors, so an
+ * A Connect transport whose Clusters service is the service's clusters, whose Models service is its
+ * FakeModels (connectSubscriptions.ts, fleetOf), and whose Subscriptions and Tenants/List are
+ * connectSubscriptions.ts's over the service, built with the console's interceptors, so an
  * Unauthenticated answer checks the session as the browser's transport does.
  */
 export const transportFor =
-  (service: ClusterSource & Writes & { clusters?: GridCluster[] }): TransportWith =>
-  (interceptors) => {
-    const models = modelsOf(service.clusters ? (service as { clusters: GridCluster[] }) : { clusters: [] });
-    return fakeClients(
-      { clusters: clustersBackend(service), models: models.backend(), subscriptions: models.subscriptionsBackend() },
+  (service: ClusterSource & Writes & SubscriptionsSource): TransportWith =>
+  (interceptors) =>
+    fakeClients(
+      {
+        clusters: clustersBackend(service),
+        models: fleetOf(service).backend(),
+        ...subscriptionsBackend(service, call),
+      },
       { interceptors },
     ).transport;
-  };

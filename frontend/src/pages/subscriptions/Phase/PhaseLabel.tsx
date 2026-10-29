@@ -17,7 +17,7 @@ type Props = {
 /** A subscription's phase: an outline StatusLabel with the controller's message in its tooltip, and a subtext. */
 export const PhaseLabel: React.FC<Props> = ({ phase, statusMessage, reason }) => {
   const normalized = normalizePhase(phase);
-  const statusSubtext = getStatusSubtext(normalized, statusMessage);
+  const statusSubtext = getStatusSubtext(normalized);
   const subtextProps = getSubtextProps(normalized);
   return (
     <>

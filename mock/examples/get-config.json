@@ -10,7 +10,6 @@
       "mapTileAttribution": "",
       "billingUrl": "",
       "version": "dev",
-      "modelsNamespace": "ai-grid-models",
       "fakeBackend": false,
       "monitoring": {
         "enabled": false,

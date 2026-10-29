@@ -46,11 +46,7 @@ import (
 // keep the last request of each tenant RPC, reached or refused; a tenant's
 // `resource_version` is compared when Update or Delete carries one (Aborted
 // on a mismatch) and bumped by every update, counting from whatever the test
-// seeded (empty counts as 0). Models are
-// served as given (status included, so a handler test controls the derived
-// phase directly) with NotFound, AlreadyExists, the mask paths and the
-// resource-version lock (and DeleteModel's `resource_version` precondition);
-// Capabilities is what GetHubCapabilities answers, Unimplemented when nil like
+// seeded (empty counts as 0). Capabilities is what GetHubCapabilities answers, Unimplemented when nil like
 // the backend.
 //
 // Each RPC runs under a lock, so concurrent calls are safe. A test reads the
@@ -61,7 +57,6 @@ type Fake struct {
 	aigridv1.UnimplementedGridServer
 	aigridv1.UnimplementedModelsServer
 	aigridv1.UnimplementedCatalogItemsServer
-	aigridv1.UnimplementedSubscriptionsServer
 
 	Clusters []*aigridv1.ManagedCluster
 	Tenants  []*aigridv1.Tenant
@@ -78,16 +73,7 @@ type Fake struct {
 	// never reused after a delete.
 	lastTenantID int
 
-	Models         []*aigridv1.Model
-	Capabilities   *aigridv1.HubCapabilities
-	LastListModels *aigridv1.ListModelsRequest
-
-	Subscriptions          []*aigridv1.Subscription
-	AuthPolicies           []*aigridv1.AuthPolicy
-	ModelRegistrations     []*aigridv1.ModelRegistration
-	LastSubscriptionCreate *aigridv1.CreateSubscriptionRequest
-	LastSubscriptionUpdate *aigridv1.UpdateSubscriptionRequest
-	LastSubscriptionDelete *aigridv1.DeleteSubscriptionRequest
+	Capabilities *aigridv1.HubCapabilities
 
 	// Metrics and OverviewTime are GetOverview's metrics and updated_at.
 	Metrics      []*aigridv1.Metric
@@ -352,130 +338,6 @@ func (f *Fake) GetHubCapabilities(ctx context.Context, _ *aigridv1.GetHubCapabil
 	return &aigridv1.GetHubCapabilitiesResponse{Capabilities: f.Capabilities}, nil
 }
 
-// ListModels implements Models: namespace then name order, `filter`
-// evaluated as CEL over `this` (a Model, as stored) like ListTenants,
-// offset/limit paging.
-func (f *Fake) ListModels(ctx context.Context, req *aigridv1.ListModelsRequest) (*aigridv1.ListModelsResponse, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.LastListModels = req
-	if err := f.begin(ctx, "ListModels"); err != nil {
-		return nil, err
-	}
-	filter, err := celfilter.Compile(req.GetFilter(), &aigridv1.Model{})
-	if err != nil {
-		return nil, err
-	}
-	sorted := slices.Clone(f.Models)
-	sort.Slice(sorted, func(i, j int) bool {
-		if a, b := sorted[i].GetMetadata().GetNamespace(), sorted[j].GetMetadata().GetNamespace(); a != b {
-			return a < b
-		}
-		return sorted[i].GetName() < sorted[j].GetName()
-	})
-	var all []*aigridv1.Model
-	for _, m := range sorted {
-		ok, err := filter.Match(ctx, m, m.GetMetadata().GetNamespace()+"/"+m.GetName(), time.Now())
-		if err != nil {
-			return nil, err
-		}
-		if ok {
-			all = append(all, m)
-		}
-	}
-	total := len(all)
-	page := all[min(int(req.GetOffset()), total):]
-	if req.Limit != nil && int(req.GetLimit()) < len(page) {
-		page = page[:req.GetLimit()]
-	}
-	return &aigridv1.ListModelsResponse{Items: page, Size: int32(len(page)), Total: proto.Int32(int32(total))}, nil
-}
-
-// ListSubscriptions implements Subscriptions.
-func (f *Fake) ListSubscriptions(ctx context.Context, _ *aigridv1.ListSubscriptionsRequest) (*aigridv1.ListSubscriptionsResponse, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if err := f.begin(ctx, "ListSubscriptions"); err != nil {
-		return nil, err
-	}
-	return &aigridv1.ListSubscriptionsResponse{Subscriptions: f.Subscriptions}, nil
-}
-
-// GetSubscription implements Subscriptions: it finds the subscription by name
-// and answers with every model and policy.
-func (f *Fake) GetSubscription(ctx context.Context, req *aigridv1.GetSubscriptionRequest) (*aigridv1.GetSubscriptionResponse, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if err := f.begin(ctx, "GetSubscription"); err != nil {
-		return nil, err
-	}
-	for _, s := range f.Subscriptions {
-		if s.GetName() == req.GetName() {
-			return &aigridv1.GetSubscriptionResponse{Subscription: s, ModelRefs: f.Models, AuthPolicies: f.AuthPolicies, ModelRegistrations: f.ModelRegistrations}, nil
-		}
-	}
-	return nil, status.Errorf(codes.NotFound, "object with identifier '%s' not found", req.GetName())
-}
-
-// CreateSubscription implements Subscriptions: it records the request and
-// returns its object with version "1", and with create_auth_policy a
-// <name>-policy.
-func (f *Fake) CreateSubscription(ctx context.Context, req *aigridv1.CreateSubscriptionRequest) (*aigridv1.CreateSubscriptionResponse, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.LastSubscriptionCreate = req
-	if err := f.begin(ctx, "CreateSubscription"); err != nil {
-		return nil, err
-	}
-	out := proto.Clone(req.GetObject()).(*aigridv1.Subscription)
-	out.ResourceVersion = "1"
-	resp := &aigridv1.CreateSubscriptionResponse{Subscription: out}
-	if req.GetCreateAuthPolicy() {
-		resp.AuthPolicy = &aigridv1.AuthPolicy{Name: out.GetName() + "-policy"}
-	}
-	return resp, nil
-}
-
-// UpdateSubscription implements Subscriptions: it records the request and
-// returns its object. With lock, an expected version other than a seeded
-// subscription's is Aborted.
-func (f *Fake) UpdateSubscription(ctx context.Context, req *aigridv1.UpdateSubscriptionRequest) (*aigridv1.UpdateSubscriptionResponse, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.LastSubscriptionUpdate = req
-	if err := f.begin(ctx, "UpdateSubscription"); err != nil {
-		return nil, err
-	}
-	if s := f.findSubscription(req.GetObject().GetName()); s != nil && req.GetLock() && req.GetObject().GetResourceVersion() != s.GetResourceVersion() {
-		return nil, stale(s.GetName(), s.GetResourceVersion(), req.GetObject().GetResourceVersion())
-	}
-	return &aigridv1.UpdateSubscriptionResponse{Subscription: req.GetObject()}, nil
-}
-
-// DeleteSubscription implements Subscriptions: it records the request. An
-// expected version other than a seeded subscription's is Aborted.
-func (f *Fake) DeleteSubscription(ctx context.Context, req *aigridv1.DeleteSubscriptionRequest) (*aigridv1.DeleteSubscriptionResponse, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.LastSubscriptionDelete = req
-	if err := f.begin(ctx, "DeleteSubscription"); err != nil {
-		return nil, err
-	}
-	if s := f.findSubscription(req.GetName()); s != nil && req.GetResourceVersion() != "" && req.GetResourceVersion() != s.GetResourceVersion() {
-		return nil, stale(s.GetName(), s.GetResourceVersion(), req.GetResourceVersion())
-	}
-	return &aigridv1.DeleteSubscriptionResponse{}, nil
-}
-
-func (f *Fake) findSubscription(name string) *aigridv1.Subscription {
-	for _, s := range f.Subscriptions {
-		if s.GetName() == name {
-			return s
-		}
-	}
-	return nil
-}
-
 // GetOverview implements Grid: it records the request and answers with the
 // clusters labelled ai-grid/enabled=true (and ai-grid/site=site when set), and
 // Metrics when include_metrics is set.
@@ -517,7 +379,6 @@ func Start(t *testing.T, fake *Fake) *backend.Client {
 	aigridv1.RegisterGridServer(srv, fake)
 	aigridv1.RegisterModelsServer(srv, fake)
 	aigridv1.RegisterCatalogItemsServer(srv, fake)
-	aigridv1.RegisterSubscriptionsServer(srv, fake)
 	return serve(t, srv, backend.Config{DraftAPI: true})
 }
 

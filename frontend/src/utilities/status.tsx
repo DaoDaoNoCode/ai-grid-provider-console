@@ -30,7 +30,7 @@ const tones: Record<string, StatusTone> = {
   'Not provisioned': 'neutral',
   // A cluster outside AI Grid (no ai-grid/enabled label).
   'Not added': 'neutral',
-  // Models (ManagedModel.phase) and subscriptions (normalized MaaSSubscription phases).
+  // Models (the Models pages' phase words) and subscriptions (their phase as reported).
   Active: 'success',
   Pending: 'info',
   Failed: 'danger',
@@ -38,10 +38,6 @@ const tones: Record<string, StatusTone> = {
   'Partially available': 'warning',
   // A model the backend saved to Git in git mode, without reading its status from the clusters.
   'Saved to Git': 'neutral',
-  Invalid: 'danger',
-  Unavailable: 'danger',
-  Unhealthy: 'danger',
-  Degraded: 'warning',
   // A subscription's model that the hub doesn't have.
   'Not found': 'danger',
   // ACM add-ons (feature.open-cluster-management.io/addon-* labels).

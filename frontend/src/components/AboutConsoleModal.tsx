@@ -64,7 +64,6 @@ export const AboutConsoleModal: React.FC<Props> = ({ isOpen, onClose, config, co
             : 'On',
       ),
     ],
-    ['Models namespace', fromConfig((c) => c.modelsNamespace)],
     ['Signed in as', fromUser((u) => (u.email ? `${u.username} (${u.email})` : u.username))],
     [
       'Access',

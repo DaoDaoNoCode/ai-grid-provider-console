@@ -290,7 +290,13 @@ grep -q '"isProviderAdmin":true' "${TMP}/body" || fail "isProviderAdmin should b
 list=(-X POST -H "Content-Type: application/json" -H "Connect-Protocol-Version: 1" -d '{}')
 expect 200 "the backend lists ManagedClusters with its ServiceAccount" "${auth[@]}" "${list[@]}" "${u}/ai_grid.v1.Clusters/List"
 grep -q '"id":"site-a"' "${TMP}/body" || fail "site-a missing: $(cat "${TMP}/body")"
-expect 503 "Models wait for the Git clone, which can't reach git.invalid" "${auth[@]}" "${u}/api/v1/models"
+# What the Models and Subscriptions pages call: git mode answers Unavailable (HTTP 503 in Connect)
+# while its clone can't reach git.invalid (modelGitError and subscriptionGitError in the backend's
+# internal/servers).
+for service in Models Subscriptions; do
+  expect 503 "${service} wait for the Git clone, which can't reach git.invalid" "${auth[@]}" "${list[@]}" "${u}/ai_grid.v1.${service}/List"
+  grep -q '"code":"unavailable"' "${TMP}/body" || fail "${service}/List should be unavailable: $(cat "${TMP}/body")"
+done
 expect 200 "a provider admin's Connect call reaches the backend through the relay" "${auth[@]}" "${connect[@]}" "${u}/ai_grid.v1.AiGrid/Ping"
 expect 200 "the frontend is served" "${auth[@]}" "${u}/"
 

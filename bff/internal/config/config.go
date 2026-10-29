@@ -23,11 +23,6 @@ const (
 	DefaultAuthGroupsHeader = "x-forwarded-groups"
 	// DefaultBackendAddress is the backend container in the same pod.
 	DefaultBackendAddress = "127.0.0.1:9090"
-	// DefaultModelsNamespace is where the console creates models: the
-	// backend's subscription namespace, where git mode lists models and where
-	// subscriptions reference them. The fake backend's fixtures use
-	// ai-grid-models, which `make run-fake` passes.
-	DefaultModelsNamespace = "models-as-a-service"
 	// DefaultBindAddress keeps the BFF off the pod network: only kube-auth-proxy
 	// in the same pod (and the kubelet through it) can reach it.
 	DefaultBindAddress = "127.0.0.1"
@@ -90,9 +85,6 @@ type Config struct {
 	// BillingURL is an external billing UI link; empty hides the menu item.
 	BillingURL string
 
-	// ModelsNamespace is the namespace the console creates models in.
-	ModelsNamespace string
-
 	// FakeBackend says the backend is the fake from mock/fixtures, so the UI
 	// shows a banner.
 	FakeBackend bool
@@ -141,7 +133,6 @@ func Parse(args []string, lookupEnv func(string) (string, bool)) (Config, error)
 	fs.StringVar(&cfg.MapTileURL, "map-tile-url", env.str("MAP_TILE_URL", ""), "Tile server URL template for the fleet map; empty draws a bundled land outline")
 	fs.StringVar(&cfg.MapTileAttribution, "map-tile-attribution", env.str("MAP_TILE_ATTRIBUTION", ""), "Attribution shown with the map-tile-url tiles")
 	fs.StringVar(&cfg.BillingURL, "billing-url", env.str("BILLING_URL", ""), "External billing UI URL")
-	fs.StringVar(&cfg.ModelsNamespace, "models-namespace", env.str("MODELS_NAMESPACE", DefaultModelsNamespace), "Namespace the console creates models in")
 	fs.BoolVar(&cfg.FakeBackend, "fake-backend", env.boolean("fake-backend", "FAKE_BACKEND", false), "The backend is the fake from mock/fixtures; the UI shows a banner")
 	fs.StringVar(&cfg.PersesURL, "perses-url", env.str("PERSES_URL", ""), "The hub's Perses server for the Monitoring page; empty turns Monitoring off")
 	fs.StringVar(&cfg.PersesCAFile, "perses-ca-file", env.str("PERSES_CA_FILE", ""), "CA for the Perses server's certificate; empty for system roots")

@@ -64,14 +64,8 @@ var examples = []example{
 	{file: "get-config.json", method: http.MethodGet, path: "/api/v1/config", as: admin},
 	{file: "get-tenants.json", method: http.MethodGet, path: "/api/v1/tenants", as: admin},
 	{file: "get-tenant.json", method: http.MethodGet, path: "/api/v1/tenants/3f1c9a72-5b6e-4d2a-8c01-2d3e4f5a6b7c", as: admin},
-	{file: "get-models.json", method: http.MethodGet, path: "/api/v1/models", as: admin},
-	{file: "get-subscriptions.json", method: http.MethodGet, path: "/api/v1/subscriptions", as: admin},
-	{file: "get-subscription.json", method: http.MethodGet, path: "/api/v1/subscriptions/engineering", as: admin},
 	{file: "get-grid-overview.json", method: http.MethodGet, path: "/api/v1/grid/overview?range=1h", as: admin},
 	{file: "post-tenant.json", method: http.MethodPost, path: "/api/v1/tenants", body: `{"name": "hooli-cloud", "description": "Hooli, US region", "domains": ["hooli.example.com"]}`, as: admin},
-	{file: "post-subscription.json", method: http.MethodPost, path: "/api/v1/subscriptions", body: `{"name": "support", "displayName": "Support", "description": "Models for the support team.", "priority": 5, "owner": {"groups": [{"name": "support"}]}, "modelRefs": [{"name": "tiny-llm", "namespace": "ai-grid-models", "tokenRateLimits": [{"limit": 1000, "window": "1m"}]}], "tokenMetadata": {"organizationId": "3f1c9a72-5b6e-4d2a-8c01-2d3e4f5a6b7c"}, "createAuthPolicy": true}`, as: admin},
-	{file: "put-subscription.json", method: http.MethodPut, path: "/api/v1/subscriptions/onboarding", body: `{"displayName": "Onboarding", "description": "Trial access for new teams, two weeks.", "priority": 1, "owner": {"groups": [{"name": "onboarding"}]}, "modelRefs": [{"name": "tiny-llm", "namespace": "ai-grid-models", "tokenRateLimits": [{"limit": 2000, "window": "1m"}]}]}`, header: map[string]string{"If-Match": `"1"`}, as: admin},
-	{file: "delete-subscription.json", method: http.MethodDelete, path: "/api/v1/subscriptions/onboarding", header: map[string]string{"If-Match": `"1"`}, as: admin},
 	{file: "error-401-expired-token.json", method: http.MethodGet, path: "/api/v1/user", as: expired},
 	{file: "error-403-viewer-patch.json", method: http.MethodPatch, path: "/api/v1/tenants/3f1c9a72-5b6e-4d2a-8c01-2d3e4f5a6b7c", body: `{"description": "Acme Robotics, EU"}`, header: map[string]string{"If-Match": `"1"`}, as: viewer},
 	{file: "error-404-unknown-tenant.json", method: http.MethodGet, path: "/api/v1/tenants/unknown-tenant", as: admin},
@@ -185,7 +179,7 @@ func newApp(t *testing.T) *api.App {
 	// No environment, so the files do not depend on the shell that ran the
 	// test. Every setting is its default except the models namespace, which
 	// `make run-fake` sets for the fake backend's fixtures.
-	cfg, err := config.Parse([]string{"--hub-api-url=" + hubSrv.URL, "--models-namespace=ai-grid-models"}, func(string) (string, bool) { return "", false })
+	cfg, err := config.Parse([]string{"--hub-api-url=" + hubSrv.URL}, func(string) (string, bool) { return "", false })
 	if err != nil {
 		t.Fatal(err)
 	}

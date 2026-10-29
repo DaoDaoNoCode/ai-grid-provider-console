@@ -3,7 +3,6 @@ package backendtest
 import (
 	"cmp"
 	"context"
-	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -21,15 +20,10 @@ import (
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/backend"
 )
 
-// V1ModelsNamespace is the models namespace StartV1 dials with
-// (backend.Config.ModelsNamespace): the backend's models have none, so the
-// BFF reports them, and expects them, in this one.
-const V1ModelsNamespace = "ai-grid-models"
-
 // V1 answers the backend's own API, ai_grid.v1 as ai-grid-provider-backend
 // serves it, which is what production calls through the adapters in
-// internal/backend (v1.go, v1_models.go): AiGrid (Ping only), Tenants,
-// Models and Subscriptions on the backend's method paths, with the
+// internal/backend (v1.go): AiGrid (Ping only) and Tenants on the backend's
+// method paths, with the
 // messages of the BFF's copy of its proto (ai_grid.backend.v1). The backend
 // has no Grid service and no capabilities, so those answer Unimplemented, and
 // so does every method it doesn't have.
@@ -57,11 +51,7 @@ const V1ModelsNamespace = "ai-grid-models"
 // Seed the exported fields before StartV1. Each call is handled under a lock,
 // so concurrent calls are safe; read Calls and Metadata after a call returned.
 type V1 struct {
-	Tenants            []*backendv1.Tenant
-	Models             []*backendv1.Model
-	Subscriptions      []*backendv1.Subscription
-	AuthPolicies       []*backendv1.AuthPolicy
-	ModelRegistrations []*backendv1.ModelRegistration
+	Tenants []*backendv1.Tenant
 	// Err makes every call fail with this status.
 	Err error
 
@@ -101,17 +91,7 @@ func StartV1(t *testing.T, v *V1) *backend.Client {
 		unary(v, "Update", v.updateTenant),
 		unary(v, "Delete", v.deleteTenant),
 	}}, v)
-	srv.RegisterService(&grpc.ServiceDesc{ServiceName: "ai_grid.v1.Models", HandlerType: (*any)(nil), Methods: []grpc.MethodDesc{
-		unary(v, "List", v.listModels),
-	}}, v)
-	srv.RegisterService(&grpc.ServiceDesc{ServiceName: "ai_grid.v1.Subscriptions", HandlerType: (*any)(nil), Methods: []grpc.MethodDesc{
-		unary(v, "List", v.listSubscriptions),
-		unary(v, "Get", v.getSubscription),
-		unary(v, "Create", v.createSubscription),
-		unary(v, "Update", v.updateSubscription),
-		unary(v, "Delete", v.deleteSubscription),
-	}}, v)
-	return serve(t, srv, backend.Config{ModelsNamespace: V1ModelsNamespace})
+	return serve(t, srv, backend.Config{})
 }
 
 // unary is the grpc.MethodDesc of one method, as protoc-gen-go-grpc would
@@ -153,18 +133,6 @@ func ptrValue(p *int32) int32 {
 		return 0
 	}
 	return *p
-}
-
-// lockedVersion is the backend's precondition on an Update: with lock the
-// request must carry a version, and a nonzero version must be the stored one.
-func lockedVersion(lock bool, sent, stored int32, stale error) error {
-	if lock && sent == 0 {
-		return status.Error(codes.InvalidArgument, "lock requires metadata.version")
-	}
-	if sent != 0 && sent != stored {
-		return stale
-	}
-	return nil
 }
 
 // staleV1 is the backend's Aborted answer to a stale version, "update Model \"m\": the model changed since it was read; reload and retry".
@@ -279,99 +247,6 @@ func (v *V1) deleteTenant(in *backendv1.TenantsDeleteRequest) (*backendv1.Tenant
 	}
 	v.Tenants = slices.Delete(v.Tenants, i, i+1)
 	return &backendv1.TenantsDeleteResponse{}, nil
-}
-
-func (v *V1) listModels(in *backendv1.ModelsListRequest) (*backendv1.ModelsListResponse, error) {
-	sorted := slices.SortedFunc(slices.Values(v.Models), func(a, b *backendv1.Model) int { return cmp.Compare(a.GetId(), b.GetId()) })
-	page, total := window(sorted, in.Offset, in.Limit)
-	return &backendv1.ModelsListResponse{Size: int32(len(page)), Total: total, Items: clones(page)}, nil
-}
-
-func (v *V1) listSubscriptions(*backendv1.SubscriptionsListRequest) (*backendv1.SubscriptionsListResponse, error) {
-	sorted := slices.SortedFunc(slices.Values(v.Subscriptions), func(a, b *backendv1.Subscription) int { return cmp.Compare(a.GetId(), b.GetId()) })
-	return &backendv1.SubscriptionsListResponse{Items: clones(sorted)}, nil
-}
-
-func (v *V1) findSubscription(id string) (int, error) {
-	for i, s := range v.Subscriptions {
-		if s.GetId() == id {
-			return i, nil
-		}
-	}
-	return 0, status.Errorf(codes.NotFound, "Subscription %q not found", id)
-}
-
-// getSubscription answers with every auth policy and model registration, as
-// the draft Fake does.
-func (v *V1) getSubscription(in *backendv1.SubscriptionsGetRequest) (*backendv1.SubscriptionsGetResponse, error) {
-	i, err := v.findSubscription(in.GetId())
-	if err != nil {
-		return nil, err
-	}
-	return &backendv1.SubscriptionsGetResponse{
-		Object:             proto.Clone(v.Subscriptions[i]).(*backendv1.Subscription),
-		AuthPolicies:       clones(v.AuthPolicies),
-		ModelRegistrations: clones(v.ModelRegistrations),
-	}, nil
-}
-
-// createSubscription stores the subscription at version 1 and answers with
-// its <id>-policy, which the backend always creates.
-func (v *V1) createSubscription(in *backendv1.SubscriptionsCreateRequest) (*backendv1.SubscriptionsCreateResponse, error) {
-	s := proto.Clone(in.GetObject()).(*backendv1.Subscription)
-	if _, err := v.findSubscription(s.GetId()); err == nil {
-		return nil, status.Errorf(codes.AlreadyExists, "Subscription %q already exists", s.GetId())
-	}
-	if s.Metadata == nil {
-		s.Metadata = &backendv1.Metadata{}
-	}
-	s.Metadata.Name, s.Metadata.Version = s.GetId(), 1
-	v.Subscriptions = append(v.Subscriptions, s)
-	return &backendv1.SubscriptionsCreateResponse{
-		Object:     proto.Clone(s).(*backendv1.Subscription),
-		AuthPolicy: &backendv1.AuthPolicy{Id: s.GetId() + "-policy"},
-	}, nil
-}
-
-func (v *V1) updateSubscription(in *backendv1.SubscriptionsUpdateRequest) (*backendv1.SubscriptionsUpdateResponse, error) {
-	obj := in.GetObject()
-	i, err := v.findSubscription(obj.GetId())
-	if err != nil {
-		return nil, err
-	}
-	s := v.Subscriptions[i]
-	if err := lockedVersion(in.GetLock(), obj.GetMetadata().GetVersion(), s.GetMetadata().GetVersion(), staleV1("update", "Subscription", "subscription", s.GetId())); err != nil {
-		return nil, err
-	}
-	next := proto.Clone(s).(*backendv1.Subscription)
-	if next.Metadata == nil {
-		next.Metadata = &backendv1.Metadata{}
-	}
-	for _, p := range in.GetUpdateMask().GetPaths() {
-		switch p {
-		case "spec":
-			next.Spec = obj.GetSpec()
-		case "metadata.annotations":
-			next.Metadata.Annotations = maps.Clone(obj.GetMetadata().GetAnnotations())
-		default:
-			return nil, status.Errorf(codes.InvalidArgument, "unsupported update_mask path %q", p)
-		}
-	}
-	next.Metadata.Version++
-	v.Subscriptions[i] = next
-	return &backendv1.SubscriptionsUpdateResponse{Object: proto.Clone(next).(*backendv1.Subscription)}, nil
-}
-
-func (v *V1) deleteSubscription(in *backendv1.SubscriptionsDeleteRequest) (*backendv1.SubscriptionsDeleteResponse, error) {
-	i, err := v.findSubscription(in.GetId())
-	if err != nil {
-		return nil, err
-	}
-	if rv := in.GetResourceVersion(); rv != 0 && rv != v.Subscriptions[i].GetMetadata().GetVersion() {
-		return nil, staleV1("delete", "Subscription", "subscription", in.GetId())
-	}
-	v.Subscriptions = slices.Delete(v.Subscriptions, i, i+1)
-	return &backendv1.SubscriptionsDeleteResponse{}, nil
 }
 
 // clones deep-copies items, so an answer never shares a stored message.

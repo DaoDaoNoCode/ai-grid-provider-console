@@ -1,18 +1,11 @@
 import type {
   ApiCluster,
-  ApiModel,
   ApiTenant,
   ClusterState,
   ClusterStatus,
   GridCluster,
   IdentityProvider,
-  MaaSAuthPolicy,
-  MaaSSubscription,
-  ManagedModel,
-  ModelPlacementSpec,
-  ModelWork,
   Organization,
-  SubscriptionInfoResponse,
 } from './types';
 
 // The one place that turns the BFF's JSON into the types the pages read. It renames
@@ -65,41 +58,6 @@ export const toGridCluster = (json: ApiCluster): GridCluster => ({
   labels: json.labels ?? {},
 });
 
-/**
- * A MaaS resource as the BFF returns it, with its Ready condition picked into the fields the
- * PoC's pages read (reason, statusMessage, status, conditionType, lastTransitionTime).
- */
-const withReadyCondition = <T extends MaaSSubscription | MaaSAuthPolicy>(json: T): T => {
-  const ready = json.conditions?.find((c) => c.type === 'Ready');
-  const out: T = { ...json };
-  if (ready) {
-    out.status = ready.status;
-    out.reason = ready.reason;
-    out.statusMessage = ready.message;
-    out.conditionType = ready.type;
-    out.lastTransitionTime = ready.lastTransitionTime;
-  }
-  return out;
-};
-
-/**
- * A subscription with its Ready condition picked into its status fields. A subscription the
- * controller hasn't reconciled has no phase (the controller never writes Pending); the label
- * shows it as Unknown, as odh-dashboard does.
- */
-export const toSubscription = (json: MaaSSubscription): MaaSSubscription => withReadyCondition(json);
-
-/**
- * GET /subscriptions/{name}, with its subscription adapted by toSubscription and each policy's
- * Ready condition picked into its status fields the same way: the BFF sends a policy's
- * conditions only.
- */
-export const toSubscriptionInfo = (json: SubscriptionInfoResponse): SubscriptionInfoResponse => ({
-  ...json,
-  subscription: toSubscription(json.subscription),
-  authPolicies: Array.isArray(json.authPolicies) ? json.authPolicies.map(withReadyCondition) : json.authPolicies,
-});
-
 const toIdentityProvider = (json: NonNullable<ApiTenant['identityProvider']>): IdentityProvider => {
   const config = json.config ?? {};
   return {
@@ -149,78 +107,3 @@ export const toOrganization = (json: ApiTenant): Organization => {
   }
   return out;
 };
-
-const modelPhases: Record<string, string> = {
-  pending: 'Pending',
-  ready: 'Ready',
-  failed: 'Failed',
-  partiallyavailable: 'Partially available',
-};
-
-const phaseOf = (phase: string | undefined) => (phase ? (modelPhases[phase] ?? phase) : 'Pending');
-
-/** The backend's reason for a model in git mode, where it reports no phase. */
-const SAVED_TO_GIT_REASON = 'SavedToGit';
-
-/** A model's phase: Saved to Git when the backend saved it to Git and reports no phase. */
-const modelPhaseOf = (phase: string | undefined, reason: string | undefined) =>
-  !phase && reason === SAVED_TO_GIT_REASON ? 'Saved to Git' : phaseOf(phase);
-
-/**
- * Maps a model of GET/POST /models to the PoC's ManagedModel. Status is the BFF's phase (Pending
- * before the backend reports one, Saved to Git when the backend saved it to Git); locations are the placement's decided locations (P8).
- */
-export const toManagedModel = (json: ApiModel): ManagedModel => ({
-  name: json.name,
-  namespace: json.namespace,
-  displayName: json.displayName,
-  description: json.description,
-  modelRef: { kind: 'LLMInferenceService', name: json.name },
-  phase: modelPhaseOf(json.phase, json.reason),
-  reason: json.reason,
-  statusMessage: json.message,
-  creationTimestamp: json.creationTimestamp,
-  resourceVersion: json.resourceVersion ?? '',
-  locations: json.placement?.locations ?? [],
-  selectedClusters: json.placement?.selectedClusters ?? [],
-  ...(json.placement?.satisfied === false && (json.placement.reason || json.placement.message)
-    ? { placementIssue: { reason: json.placement.reason, message: json.placement.message } }
-    : {}),
-  works: json.rollout?.works?.map((work): ModelWork => ({
-    cluster: work.cluster,
-    phase: phaseOf(work.phase),
-    reason: work.reason,
-    message: work.message,
-    ready: work.feedback?.ready,
-    conditions: work.conditions ?? [],
-  })),
-  modelUri: json.modelUri,
-  modelName: json.modelName,
-  runtimeImage: json.runtimeImage,
-  baseRefs: json.baseRefs ?? [],
-  replicas: json.replicas,
-  autoscaled: json.scaling !== undefined && json.scaling !== null,
-  cpu: json.requests?.cpu,
-  memory: json.requests?.memory,
-  gpuCount: json.requests?.['nvidia.com/gpu'] !== undefined ? Number(json.requests['nvidia.com/gpu']) : undefined,
-  env: json.env ?? [],
-  annotations: json.annotations ?? {},
-  placementSpec: json.placement ? placementSpecOf(json.placement) : undefined,
-});
-
-/** The spec part of a placement the BFF returned, without its decisions and status. */
-const placementSpecOf = ({
-  clusterSets,
-  matchLabels,
-  matchExpressions,
-  claimExpressions,
-  tolerations,
-  numberOfClusters,
-}: ModelPlacementSpec): ModelPlacementSpec => ({
-  ...(clusterSets?.length ? { clusterSets } : {}),
-  ...(matchLabels && Object.keys(matchLabels).length ? { matchLabels } : {}),
-  ...(matchExpressions?.length ? { matchExpressions } : {}),
-  ...(claimExpressions?.length ? { claimExpressions } : {}),
-  ...(tolerations?.length ? { tolerations } : {}),
-  ...(numberOfClusters !== undefined ? { numberOfClusters } : {}),
-});

@@ -11,6 +11,7 @@ import { modelsOf } from './connectModels';
 import { ModelPhase } from '../gen/ai_grid/v1/model_type_pb';
 import '../pages/models/ModelsPage';
 import '../pages/subscriptions/SubscriptionsPage';
+import { seedSubscriptionsOf } from './connectSubscriptions';
 import { LoadError } from '../components/LoadError';
 import { OverflowList } from '../components/OverflowList';
 import { PageErrorBoundary } from '../components/PageErrorBoundary';
@@ -48,6 +49,7 @@ it('fills a status label only when it opens something', async () => {
 
 it('gives every status label in one column one variant, whatever the status: /subscriptions', async () => {
   const service = new MockConsoleService();
+  seedSubscriptionsOf(service);
   renderAt('/subscriptions', service);
   const rows = await screen.findByTestId('subscriptions-table');
   const labels = Array.from(rows.querySelectorAll<HTMLElement>('td[data-label="Status"] .pf-v6-c-label'));
@@ -113,9 +115,9 @@ it('shows billions as B on chart ticks', () => {
 });
 
 it('gives a phase the same colour in its label and its subtext', () => {
-  expect(statusLabelProps('Unavailable').status).toBe('danger');
-  expect(getSubtextProps('Unavailable')).toEqual({ className: 'pf-v6-u-text-color-status-danger' });
-  expect(getSubtextProps('Degraded')).toEqual({ className: 'pf-v6-u-text-color-status-warning' });
+  expect(statusLabelProps('Failed').status).toBe('danger');
+  expect(getSubtextProps('Failed')).toEqual({ className: 'pf-v6-u-text-color-status-danger' });
+  expect(getSubtextProps('Partially available')).toEqual({ className: 'pf-v6-u-text-color-status-warning' });
   expect(getSubtextProps('Ready')).toBeUndefined();
 });
 

@@ -3,7 +3,16 @@
 // packages/maas/frontend/src/app/utilities/rateLimits.ts
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
 import { z } from 'zod';
-import type { TokenRateLimit } from '../api/types';
+
+/**
+ * A subscription's token limit as the form keeps it: the generated TokenRateLimit's fields, with its
+ * int64 limit as a number rather than a bigint, because the form's count fields and the limit
+ * checks below do arithmetic on numbers; the backend caps the limit at 1e9
+ * (validateSubscriptionSpec, internal/servers/subscriptions_server.go), well within a number.
+ * subscriptionText.ts's toTokenLimits reads a TokenRateLimit into it, and the form's refPayload
+ * writes it back as one.
+ */
+export type TokenLimit = { limit: number; window: string };
 
 /**
  * A token limit as the form edits it: count tokens per time unit(s). savedWindow is the window it
@@ -57,10 +66,10 @@ export const formatTokenRateLimitLine = (limit: number, window: string): string 
   `${formatLocaleNumber(limit)} / ${formatWindow(window)}`;
 
 /**
- * Converts a BFF TokenRateLimit to the UI's RateLimit form. A window the form cannot read gets no
+ * Converts a TokenLimit to the UI's RateLimit form. A window the form cannot read gets no
  * time, rather than a guess, and keeps the saved window so the form can name it.
  */
-export const toRateLimit = (trl: TokenRateLimit): RateLimit => {
+export const toRateLimit = (trl: TokenLimit): RateLimit => {
   const parsed = parseWindow(trl.window);
   return parsed
     ? { count: trl.limit, time: parsed.time, unit: parsed.unit }
@@ -73,8 +82,8 @@ export const getSavedWindowMessage = (limit: RateLimit): string | undefined =>
     ? `Saved as "${limit.savedWindow}", which MaaS doesn't accept. Enter a time from 1 to 9999.`
     : undefined;
 
-/** Converts the UI's RateLimit form back to a BFF TokenRateLimit. */
-export const toTokenRateLimit = (rl: RateLimit): TokenRateLimit => ({
+/** Converts the UI's RateLimit form back to a TokenLimit. */
+export const toTokenRateLimit = (rl: RateLimit): TokenLimit => ({
   limit: rl.count,
   window: `${rl.time}${UNIT_TO_WINDOW_SUFFIX[rl.unit]}`,
 });

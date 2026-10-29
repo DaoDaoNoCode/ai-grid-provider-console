@@ -57,7 +57,7 @@ describe('Console build', () => {
 });
 
 describe('the config rows', () => {
-  const rows = ['Console build', 'Data', 'Monitoring', 'Models namespace'];
+  const rows = ['Console build', 'Data', 'Monitoring'];
 
   it('say Loading while the config loads', () => {
     renderAbout({ user: admin });
@@ -83,11 +83,6 @@ describe('the config rows', () => {
   ])('say Monitoring %j as %s', async (monitoring, text) => {
     renderAbout({ config: { ...(await baseConfig()), monitoring } });
     expect(row('Monitoring')).toHaveTextContent(new RegExp(`^${text}$`));
-  });
-
-  it('show the models namespace', async () => {
-    renderAbout({ config: { ...(await baseConfig()), modelsNamespace: 'grid-models' } });
-    expect(row('Models namespace')).toHaveTextContent(/^grid-models$/);
   });
 });
 

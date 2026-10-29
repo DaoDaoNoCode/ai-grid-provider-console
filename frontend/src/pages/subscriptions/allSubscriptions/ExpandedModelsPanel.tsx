@@ -7,27 +7,32 @@
 import { Button, Flex, Label, LabelGroup, Popover, Skeleton } from '@patternfly/react-core';
 import { OutlinedQuestionCircleIcon } from '@patternfly/react-icons';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
-import type { ManagedModel, ModelSubscriptionRef } from '../../../api/types';
 import { TableRowTitleDescription } from '../../../components/TableRowTitleDescription';
-import { isSameModel, modelKey } from '../../../utilities/authpolicies';
+import type { ModelView } from '../../models/modelView';
+import type { SubscriptionModelRef } from '../../../gen/ai_grid/v1/subscription_type_pb';
 import { EMPTY_VALUE } from '../../../utilities/format';
 import { formatTokenRateLimitLine } from '../../../utilities/rateLimits';
 import { locationLabel } from '../../models/modelUtils';
+import { modelForRef, refKey, refTitleOf } from '../subscriptionText';
 
-/** Whether the hub's models have loaded: until then, or when they fail, no locations are known. */
+/** Whether the models have loaded: until then, or when they fail, no locations are known. */
 export type ModelsState = 'loading' | 'loaded' | 'failed';
 
 type Props = {
-  modelRefs: ModelSubscriptionRef[];
-  /** The hub's models, for each reference's locations, display name and description. */
-  models: ManagedModel[];
+  modelRefs: SubscriptionModelRef[];
+  /** The models, for each ref's locations, display name and description. */
+  models: ModelView[];
   modelsState: ModelsState;
   /** Each location's site name, for "Paris DC1 (paris)" as on the Models page. */
   siteNames: Map<string, string>;
 };
 
+/**
+ * Where the model runs: its placement's `location` label values (ModelView.locations, status.placement.locations),
+ * named by their site.
+ */
 const locationsCell = (
-  model: ManagedModel | undefined,
+  model: ModelView | undefined,
   modelsState: ModelsState,
   siteNames: Map<string, string>,
 ): React.ReactNode => {
@@ -51,13 +56,12 @@ const locationsCell = (
   );
 };
 
-const tokenLimits = (ref: ModelSubscriptionRef): string => {
+const tokenLimits = (ref: SubscriptionModelRef): string => {
   if (ref.unlimited) {
     return 'Unlimited';
   }
-  const limits = Array.isArray(ref.tokenRateLimits) ? ref.tokenRateLimits : [];
-  return limits.length
-    ? limits.map(({ limit, window }) => formatTokenRateLimitLine(limit, window)).join(', ')
+  return ref.tokenRateLimits.length
+    ? ref.tokenRateLimits.map(({ limit, window }) => formatTokenRateLimitLine(Number(limit), window)).join(', ')
     : EMPTY_VALUE;
 };
 
@@ -78,11 +82,11 @@ export const ExpandedModelsPanel: React.FC<Props> = ({ modelRefs, models, models
         </Tr>
       ) : (
         modelRefs.map((ref) => {
-          const model = models.find((m) => isSameModel(m, ref));
-          const title = ref.displayName ?? model?.displayName ?? ref.name;
-          const description = ref.description ?? model?.description;
+          const model = modelForRef(models, ref);
+          const title = refTitleOf(ref, model);
+          const description = ref.description || model?.description;
           return (
-            <Tr key={modelKey(ref)} data-testid="expanded-subscription-model-row">
+            <Tr key={refKey(ref)} data-testid="expanded-subscription-model-row">
               <Td dataLabel="Model name">
                 <TableRowTitleDescription
                   title={
