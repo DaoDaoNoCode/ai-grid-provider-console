@@ -69,7 +69,8 @@ export const seedModelObjects = (): Model[] =>
         },
       },
       spec: {
-        model: { uri: `hf://example-org/${id}`, name: `example-org/${id}` },
+        // Served as its id, as the backend serves a model (ModelSource.name defaults to the id).
+        model: { uri: `hf://example-org/${id}`, name: id },
         replicas: 1,
         baseRefs: ['v3-6-0-kserve-config-llm-template-cpu'],
         main: { image: 'quay.io/example/vllm:v1', requests: { cpu: '2', memory: '4Gi' } },
@@ -182,6 +183,8 @@ export class FakeModels {
     }
     const model = object ? clone(ModelSchema, object) : create(ModelSchema);
     model.id = id;
+    // An empty served name is the id (ModelSource.name).
+    if (model.spec?.model && !model.spec.model.name) model.spec.model.name = id;
     await this.checkPlacement(model);
     model.metadata = create(MetadataSchema, {
       name: id,

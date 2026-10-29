@@ -1,7 +1,10 @@
 # Models (LLMInferenceService, Placement, ManifestWorkReplicaSet)
 
 > The Models pages, the AI Grid map and Monitoring call the backend's Models API over Connect
-> (`docs/connect.md`, "The Models area") and run on `make dev-fake-infra`. The BFF's only model
+> (`docs/connect.md`, "The Models area") and run on `make dev-fake-infra`. The Deploy model wizard
+> asks for no served name: the backend serves a model as its id, the name tenants send, so the
+> fixtures' Hugging Face served names below (`modelName`) are the console fake's own, not what a
+> model deployed now carries. The BFF's only model
 > route left is `GET /api/v1/models`, which the Subscriptions pages read until they move too; the
 > fake's model writes below are reached by its own tests only, and go with the fake.
 

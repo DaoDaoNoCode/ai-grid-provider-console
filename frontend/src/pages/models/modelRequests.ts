@@ -18,7 +18,6 @@ export type ModelInput = {
   displayName: string;
   description?: string;
   modelUri: string;
-  modelName: string;
   runtimeImage: string;
   replicas: number;
   cpu: string;
@@ -57,7 +56,9 @@ export const createRequestOf = (input: ModelInput): MessageInitShape<typeof Mode
         },
       },
       spec: {
-        model: { uri: input.modelUri, name: input.modelName.trim() },
+        // No served name: the backend serves a model as its id, the name tenants send
+        // (ModelSource.name defaults to the id).
+        model: { uri: input.modelUri },
         replicas: input.replicas,
         baseRefs: [...input.baseRefs],
         main: {

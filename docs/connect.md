@@ -170,7 +170,9 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   At the pin the backend lists only placed clusters there; an ingress cluster's reports count in
   the phase and `status.message` only.
 - **Writes.** The wizard calls `Models/Create` with the id and `metadata.name`, the annotations,
-  `spec.model`, `replicas`, `base_refs` (the model server's presets), `spec.main` (the image, the
+  `spec.model` (the URI only: no served name, because the backend serves a model as its id, the
+  name tenants send; the wizard starts the id from the URI's last path segment and shows it on
+  Review as "Name tenants call"), `replicas`, `base_refs` (the model server's presets), `spec.main` (the image, the
   requests it asks for and `VLLM_ADDITIONAL_ARGS` for runtime arguments) and a `name In [...]`
   placement over the clusters `Models/ListPlacementClusters` offers. It sets no router, no
   rollout and no limits: the backend's defaults apply (gateway

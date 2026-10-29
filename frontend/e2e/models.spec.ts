@@ -59,10 +59,9 @@ test('deploys a model to a cluster, edits it in the same wizard, and deletes it'
 
   // Source
   await page.getByRole('textbox', { name: /^Model URI/ }).fill(`hf://e2e/${unique}`);
-  await page.getByRole('textbox', { name: /^Model name/ }).fill(`e2e/${unique}`);
   await page.getByRole('button', { name: 'Next' }).click();
 
-  // Deployment: the name starts from the model's.
+  // Deployment: the name starts from the model URI's last segment.
   await expect(page.getByRole('textbox', { name: /^Deployment name/ })).toHaveValue(unique);
   await page.getByRole('textbox', { name: /^Runtime image/ }).fill('quay.io/example/runtime:latest');
   // The model server has no default.
@@ -75,8 +74,9 @@ test('deploys a model to a cluster, edits it in the same wizard, and deletes it'
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Next' }).click();
 
-  // Review
+  // Review: tenants call the model by its resource name.
   await expect(page.getByText(CLUSTER).first()).toBeVisible();
+  await expect(page.getByTestId('model-review')).toContainText(`Name tenants call${unique}`);
   await page.getByRole('button', { name: 'Deploy', exact: true }).click();
   await expect(page.getByText('Model deployed')).toBeVisible();
 

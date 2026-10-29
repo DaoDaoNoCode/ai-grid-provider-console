@@ -313,7 +313,7 @@ no `revision`, `status: Saved`, `hasDeployment`; collections are always present)
 {
   "name": "granite-8b-instruct", "namespace": "ai-grid-models",
   "displayName": "Granite 8B Instruct", "description": "Served on every enrolled and provisioned site.",
-  "modelUri": "hf://example-org/granite-8b-instruct", "modelName": "example-org/granite-8b-instruct",
+  "modelUri": "hf://example-org/granite-8b-instruct", "modelName": "granite-8b-instruct",
   "runtimeImage": "quay.io/example/vllm-cuda:v0.11.0", "replicas": 1,
   "baseRefs": ["v3-6-0-kserve-config-llm-template"],
   "requests": {"cpu": "8", "memory": "32Gi", "nvidia.com/gpu": "1"}, "limits": {"nvidia.com/gpu": "1"}, "env": [],
@@ -344,6 +344,9 @@ no `revision`, `status: Saved`, `hasDeployment`; collections are always present)
 }
 ```
 
+- `modelName` is the name tenants send as the model: the backend serves a model as its id
+  (`ModelSource.name` defaults to the id; ai-grid-provider-backend#47 refuses any other), so it
+  equals `name` for a model the console deploys. A model written earlier can keep another.
 - `phase` is the backend's derivation (`ModelPhase` in `mock/proto/ai_grid/v1/model_type.proto`):
   for a hub deployment from the `Ready` condition (True `ready`; False with a reason that does
   not recover on its own, `ConfigNotFound`, `RefsInvalid` or `GatewaysNotReady`, `failed` with

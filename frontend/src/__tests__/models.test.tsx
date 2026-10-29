@@ -48,8 +48,6 @@ const chooseServer = async (user: User, label = 'vLLM on CPU') =>
 const fillModel = async (user: User) => {
   await user.click(await screen.findByRole('textbox', { name: /Model URI/ }));
   await user.paste('hf://org/widget');
-  await user.click(screen.getByRole('textbox', { name: /^Model name/ }));
-  await user.paste('org/widget');
   await user.click(screen.getByRole('button', { name: 'Next' }));
   await nameDeployment(user, 'Widget');
   await user.click(screen.getByRole('textbox', { name: /Runtime image/ }));
@@ -82,7 +80,7 @@ const widget = (service: MockConsoleService) => {
       id: 'widget',
       metadata: { name: 'widget', version: 1, annotations: { 'openshift.io/display-name': 'Widget' } },
       spec: {
-        model: { uri: 'hf://org/widget', name: 'org/widget' },
+        model: { uri: 'hf://org/widget', name: '' },
         replicas: 1,
         main: { image: 'registry.example/runtime:test', requests: { cpu: '2', memory: '4Gi' } },
         placement: { labelSelector: { matchExpressions: [{ key: 'name', operator: 'In', values: ['site1'] }] } },
@@ -111,8 +109,10 @@ it('walks the deployment wizard, selects locations and creates the model', async
   expect(reviewNav).toBeDisabled();
   const review = await pickAndDeploy(user, [site1, site2], { submit: false });
   expect(review).toHaveTextContent(`${site1}, ${site2}`);
-  // Empty optional fields are left out of the review.
+  // Empty optional fields are left out of the review, and the served name is the resource name.
   expect(review).not.toHaveTextContent('Additional runtime arguments');
+  expect(review).toHaveTextContent('Name tenants callwidget');
+  expect(review).not.toHaveTextContent('Model name');
   await user.click(screen.getByRole('button', { name: 'Deploy' }));
 
   expect(await screen.findByText('Model deployed')).toBeVisible();
@@ -125,7 +125,7 @@ it('walks the deployment wizard, selects locations and creates the model', async
     id: 'widget',
     metadata: { name: 'widget', annotations: { 'openshift.io/display-name': 'Widget' } },
     spec: {
-      model: { uri: 'hf://org/widget', name: 'org/widget' },
+      model: { uri: 'hf://org/widget', name: '' },
       replicas: 1,
       baseRefs: ['v3-6-0-kserve-config-llm-template-cpu'],
       main: { image: 'registry.example/runtime:test', requests: { cpu: '2', memory: '4Gi' }, limits: {}, env: [] },
@@ -454,8 +454,6 @@ it("shows the Model URI rule's message once the user leaves an invalid URI", asy
   const user = userEvent.setup();
   renderAt('/models/deploy', new MockConsoleService());
   const uri = await screen.findByRole('textbox', { name: /Model URI/ });
-  await user.click(screen.getByRole('textbox', { name: /^Model name/ }));
-  await user.paste('org/widget');
   await user.click(uri);
   await user.paste('https:///123.com');
   expect(screen.queryByText('Enter a model URI using hf, oci, s3 or pvc.')).not.toBeInTheDocument();
@@ -469,18 +467,18 @@ it("shows the Model URI rule's message once the user leaves an invalid URI", asy
   expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
 });
 
-it('says a required field is required once the user leaves it empty', async () => {
+it('says a required field is required once the user leaves it empty, and asks for no served name', async () => {
   const user = userEvent.setup();
   renderAt('/models/deploy', new MockConsoleService());
   const uri = await screen.findByRole('textbox', { name: /Model URI/ });
-  const name = screen.getByRole('textbox', { name: /^Model name/ });
-  await user.click(name);
-  await user.paste('org/widget');
-  await user.clear(name);
+  // A model is served as its id, the name tenants send: there is no name to choose for it.
+  expect(screen.queryByRole('textbox', { name: /^Model name/ })).not.toBeInTheDocument();
+  await user.click(uri);
+  await user.paste('hf://org/widget');
+  await user.clear(uri);
   await user.tab();
-  expect(name).toHaveAttribute('aria-invalid', 'true');
+  expect(uri).toHaveAttribute('aria-invalid', 'true');
   expect(screen.getAllByText('Required.')).toHaveLength(1);
-  expect(uri).not.toHaveAttribute('aria-invalid', 'true');
 });
 
 it('says why the deployment step cannot continue when the CPU is invalid', async () => {
@@ -488,8 +486,6 @@ it('says why the deployment step cannot continue when the CPU is invalid', async
   renderAt('/models/deploy', new MockConsoleService());
   await user.click(await screen.findByRole('textbox', { name: /Model URI/ }));
   await user.paste('hf://org/widget');
-  await user.click(screen.getByRole('textbox', { name: /^Model name/ }));
-  await user.paste('org/widget');
   await user.click(screen.getByRole('button', { name: 'Next' }));
   await user.click(screen.getByRole('textbox', { name: /Runtime image/ }));
   await user.paste('registry.example/runtime:test');
@@ -522,8 +518,6 @@ it('sends the URI trimmed and refuses other schemes', async () => {
   const user = userEvent.setup();
   renderAt('/models/deploy', service);
   const uri = await screen.findByRole('textbox', { name: /Model URI/ });
-  await user.click(screen.getByRole('textbox', { name: /^Model name/ }));
-  await user.paste('org/widget');
   await user.click(uri);
   await user.paste('https://models.example.com/widget');
   expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
@@ -678,8 +672,6 @@ it('takes a display name longer than a resource name', async () => {
   renderAt('/models/deploy', new MockConsoleService());
   await user.click(await screen.findByRole('textbox', { name: /Model URI/ }));
   await user.paste('hf://org/widget');
-  await user.click(screen.getByRole('textbox', { name: /^Model name/ }));
-  await user.paste('org/widget');
   await user.click(screen.getByRole('button', { name: 'Next' }));
   await nameDeployment(user, 'W'.repeat(70));
   await user.click(screen.getByRole('textbox', { name: /Runtime image/ }));
@@ -689,14 +681,12 @@ it('takes a display name longer than a resource name', async () => {
   expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
 });
 
-it('starts the deployment name from the model name, and keeps a name the user typed', async () => {
+it('starts the deployment name from the model URI, and keeps a name the user typed', async () => {
   const user = userEvent.setup();
   renderAt('/models/deploy', new MockConsoleService());
   expect(await screen.findByRole('button', { name: 'Back' })).toBeDisabled();
   await user.click(screen.getByRole('textbox', { name: /Model URI/ }));
   await user.paste('hf://org/widget');
-  await user.click(screen.getByRole('textbox', { name: /^Model name/ }));
-  await user.paste('org/widget');
   await user.click(screen.getByRole('button', { name: 'Next' }));
   expect(await screen.findByTestId('model-name-desc-name')).toHaveValue('widget');
   await nameDeployment(user, 'My widget');
@@ -710,8 +700,6 @@ it('folds the runtime arguments away under Advanced settings, with no dead contr
   renderAt('/models/deploy', new MockConsoleService());
   await user.click(await screen.findByRole('textbox', { name: /Model URI/ }));
   await user.paste('hf://org/widget');
-  await user.click(screen.getByRole('textbox', { name: /^Model name/ }));
-  await user.paste('org/widget');
   await user.click(screen.getByRole('button', { name: 'Next' }));
   const args = await screen.findByTestId('runtime-args-textarea');
   expect(args).not.toBeVisible();
@@ -804,8 +792,6 @@ it('takes only whole numbers in the number fields, so the shown and sent counts 
   renderAt('/models/deploy', service);
   await user.click(await screen.findByRole('textbox', { name: /Model URI/ }));
   await user.paste('hf://org/widget');
-  await user.click(screen.getByRole('textbox', { name: /^Model name/ }));
-  await user.paste('org/widget');
   await user.click(screen.getByRole('button', { name: 'Next' }));
   await user.click(screen.getByRole('textbox', { name: /Runtime image/ }));
   await user.paste('registry.example/runtime:test');
@@ -831,8 +817,6 @@ it('keeps an emptied Replicas or GPUs field empty and says it is required', asyn
   renderAt('/models/deploy', new MockConsoleService());
   await user.click(await screen.findByRole('textbox', { name: /Model URI/ }));
   await user.paste('hf://org/widget');
-  await user.click(screen.getByRole('textbox', { name: /^Model name/ }));
-  await user.paste('org/widget');
   await user.click(screen.getByRole('button', { name: 'Next' }));
   await user.selectOptions(screen.getByRole('combobox', { name: 'Model server' }), 'vLLM on NVIDIA GPU');
   for (const name of ['Replicas', 'GPUs']) {
@@ -853,7 +837,6 @@ describe('the model server', () => {
     const create = vi.spyOn(modelsOf(service), 'create');
     renderAt('/models/deploy', service);
     await user.type(await screen.findByRole('textbox', { name: /Model URI/ }), 'hf://org/widget');
-    await user.type(screen.getByRole('textbox', { name: /^Model name/ }), 'org/widget');
     await user.click(screen.getByRole('button', { name: 'Next' }));
     return create;
   };
@@ -1030,6 +1013,23 @@ describe('editing a model deployment', () => {
     const annotations = update.mock.calls[0][0].object?.metadata?.annotations;
     expect(annotations).not.toHaveProperty('openshift.io/display-name');
     expect(annotations).toHaveProperty('openshift.io/description', 'new');
+  });
+
+  it('shows the name tenants send read-only, as the model has it', async () => {
+    const service = new MockConsoleService();
+    // A model written before the backend served models as their ids can keep another name.
+    modelsOf(service).find('granite-3-8b').spec!.model!.name = 'example-org/granite-3-8b';
+    const user = userEvent.setup();
+    renderAt('/models/granite-3-8b/edit', service);
+    const served = await screen.findByRole('textbox', { name: 'Model name' });
+    expect(served).toHaveValue('example-org/granite-3-8b');
+    expect(served).toHaveAttribute('readonly');
+    expect(
+      screen.getByText(/Tenants send this name as the model in their requests, and it can.t be changed here\./),
+    ).toBeInTheDocument();
+    await openStep(user, 'Review');
+    expect(await screen.findByTestId('model-review')).toHaveTextContent('Model nameexample-org/granite-3-8b');
+    expect(screen.getByTestId('model-review')).not.toHaveTextContent('Name tenants call');
   });
 
   it('says a resource the model was deployed without is not set', async () => {
