@@ -61,12 +61,9 @@ type Props = {
   tiles: TileLayerConfig | null | undefined;
 };
 
-// A model is on the clusters its placement chose, by name: on the backend a model's `locations`
-// are cluster names (bff/internal/backend/v1_models.go), on the console's fake `location` labels
-// that several clusters can share, but `selectedClusters` are the decided clusters on both.
+// A model is on the clusters its placement chose, by name (status.placement.selected_clusters): its
+// `locations` are `location` labels, which several clusters can share.
 const matches = (model: ModelView, cluster: FleetCluster) => model.selectedClusters.includes(cluster.name);
-
-const displayName = titleOf;
 
 const siteOf = (cluster: FleetCluster) => cluster.siteName ?? cluster.region ?? cluster.site ?? cluster.name;
 
@@ -153,14 +150,12 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
   const visibleClusters = clusters.filter(
     (c) =>
       (availability === 'all' || c.status === availability) &&
-      `${c.name} ${c.site ?? ''} ${c.siteName ?? ''} ${modelsAt(c).map(displayName).join(' ')}`
+      `${c.name} ${c.site ?? ''} ${c.siteName ?? ''} ${modelsAt(c).map(titleOf).join(' ')}`
         .toLowerCase()
         .includes(query),
   );
   const visibleModels = relevantModels.filter((m) =>
-    `${m.id} ${displayName(m)} ${m.modelName ?? ''} ${clustersOf(m).map(siteOf).join(' ')}`
-      .toLowerCase()
-      .includes(query),
+    `${m.id} ${titleOf(m)} ${m.modelName ?? ''} ${clustersOf(m).map(siteOf).join(' ')}`.toLowerCase().includes(query),
   );
   const isFiltered = search !== '' || (mode === 'cluster' && availability !== 'all');
   const clearFilters = () => {
@@ -221,7 +216,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
       >
         {assigned.map((m) => (
           <Button key={m.id} variant="link" isInline onClick={() => open({ kind: 'model', name: m.id })}>
-            {displayName(m)}
+            {titleOf(m)}
           </Button>
         ))}
       </Flex>
@@ -243,7 +238,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
         </div>
         <Flex alignItems={{ default: 'alignItemsCenter' }} spaceItems={{ default: 'spaceItemsSm' }}>
           <Title headingLevel="h2" size="lg" className="pf-v6-u-text-break-word">
-            {selectedCluster?.name ?? (selectedModel && displayName(selectedModel))}
+            {selectedCluster?.name ?? (selectedModel && titleOf(selectedModel))}
           </Title>
           <StatusLabel isCompact status={selectedCluster?.status ?? selectedModel?.phase ?? 'Unknown'} />
         </Flex>
@@ -393,7 +388,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
                     <SiteText text={siteOf(c)} fromCloudRegion={!c.siteName && c.locationSource === 'cloud region'} />
                     {c.location && ` · ${c.location}`}
                   </span>
-                  <SubtleText>{at.length ? `Models: ${at.map(displayName).join(', ')}` : 'No models'}</SubtleText>
+                  <SubtleText>{at.length ? `Models: ${at.map(titleOf).join(', ')}` : 'No models'}</SubtleText>
                 </FleetCard>
               );
             })
@@ -403,9 +398,9 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
                 <FleetCard
                   key={m.id}
                   id={m.id.replace(/\W/g, '-')}
-                  title={displayName(m)}
+                  title={titleOf(m)}
                   status={m.phase}
-                  actionLabel={`View ${displayName(m)} details`}
+                  actionLabel={`View ${titleOf(m)} details`}
                   onOpen={() => open({ kind: 'model', name: m.id })}
                 >
                   <span>{m.modelName ?? m.id}</span>
