@@ -11,6 +11,7 @@ import { modelsOf } from './connectModels';
 import { ModelPhase } from '../gen/ai_grid/v1/model_type_pb';
 import '../pages/models/ModelsPage';
 import '../pages/subscriptions/SubscriptionsPage';
+import { seedSubscriptionsOf } from './connectSubscriptions';
 import { LoadError } from '../components/LoadError';
 import { OverflowList } from '../components/OverflowList';
 import { PageErrorBoundary } from '../components/PageErrorBoundary';
@@ -48,6 +49,7 @@ it('fills a status label only when it opens something', async () => {
 
 it('gives every status label in one column one variant, whatever the status: /subscriptions', async () => {
   const service = new MockConsoleService();
+  seedSubscriptionsOf(service);
   renderAt('/subscriptions', service);
   const rows = await screen.findByTestId('subscriptions-table');
   const labels = Array.from(rows.querySelectorAll<HTMLElement>('td[data-label="Status"] .pf-v6-c-label'));
