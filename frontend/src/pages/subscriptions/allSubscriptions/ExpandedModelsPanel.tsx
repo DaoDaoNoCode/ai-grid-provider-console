@@ -8,12 +8,12 @@ import { Button, Flex, Label, LabelGroup, Popover, Skeleton } from '@patternfly/
 import { OutlinedQuestionCircleIcon } from '@patternfly/react-icons';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import { TableRowTitleDescription } from '../../../components/TableRowTitleDescription';
-import type { Model } from '../../../gen/ai_grid/v1/model_type_pb';
+import type { ModelView } from '../../models/modelView';
 import type { SubscriptionModelRef } from '../../../gen/ai_grid/v1/subscription_type_pb';
 import { EMPTY_VALUE } from '../../../utilities/format';
 import { formatTokenRateLimitLine } from '../../../utilities/rateLimits';
 import { locationLabel } from '../../models/modelUtils';
-import { descriptionOf, modelForRef, refKey, refTitleOf } from '../subscriptionText';
+import { modelForRef, refKey, refTitleOf } from '../subscriptionText';
 
 /** Whether the models have loaded: until then, or when they fail, no locations are known. */
 export type ModelsState = 'loading' | 'loaded' | 'failed';
@@ -21,18 +21,18 @@ export type ModelsState = 'loading' | 'loaded' | 'failed';
 type Props = {
   modelRefs: SubscriptionModelRef[];
   /** The models, for each ref's locations, display name and description. */
-  models: Model[];
+  models: ModelView[];
   modelsState: ModelsState;
   /** Each location's site name, for "Paris DC1 (paris)" as on the Models page. */
   siteNames: Map<string, string>;
 };
 
 /**
- * Where the model runs: its placement's `location` label values (ModelPlacementStatus.locations),
+ * Where the model runs: its placement's `location` label values (ModelView.locations, status.placement.locations),
  * named by their site.
  */
 const locationsCell = (
-  model: Model | undefined,
+  model: ModelView | undefined,
   modelsState: ModelsState,
   siteNames: Map<string, string>,
 ): React.ReactNode => {
@@ -42,7 +42,7 @@ const locationsCell = (
   if (modelsState === 'failed') {
     return 'Unavailable';
   }
-  const locations = model?.status?.placement?.locations ?? [];
+  const locations = model?.locations ?? [];
   return locations.length ? (
     <LabelGroup numLabels={4}>
       {locations.map((location) => (
@@ -84,7 +84,7 @@ export const ExpandedModelsPanel: React.FC<Props> = ({ modelRefs, models, models
         modelRefs.map((ref) => {
           const model = modelForRef(models, ref);
           const title = refTitleOf(ref, model);
-          const description = ref.description || (model && descriptionOf(model));
+          const description = ref.description || model?.description;
           return (
             <Tr key={refKey(ref)} data-testid="expanded-subscription-model-row">
               <Td dataLabel="Model name">

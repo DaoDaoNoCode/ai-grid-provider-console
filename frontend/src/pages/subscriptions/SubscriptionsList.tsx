@@ -23,18 +23,21 @@ import { SubscriptionsToolbar } from './allSubscriptions/SubscriptionsToolbar';
 import { useDeleteSubscription } from './hooks/useDeleteSubscription';
 import {
   descriptionOf,
-  displayNameOf,
   groupsOf,
   modelForRef,
+  modelIdsOf,
   modelRefsOf,
   organizationIdOf,
   tenantNameOf,
 } from './subscriptionText';
-import { useModelList, useSubscriptionList, useTenantList } from './useSubscriptions';
+import { displayNameOf } from '../models/modelView';
+import { useModelsByIds, useSubscriptionList, useTenantList } from './useSubscriptions';
 
 export const SubscriptionsList: React.FC = () => {
   const { data: subscriptions, loaded, error, refresh: refreshSubscriptions } = useSubscriptionList();
-  const { data: models, loaded: modelsLoaded, error: modelsError, refresh: refreshModels } = useModelList();
+  // Only the models the listed subscriptions name (Models/List filtered by their ids), not the fleet.
+  const modelIds = useMemo(() => modelIdsOf(subscriptions), [subscriptions]);
+  const { data: models, loaded: modelsLoaded, error: modelsError, refresh: refreshModels } = useModelsByIds(modelIds);
   const { data: organizations } = useTenantList();
   const { user } = useConsoleSession();
   /** UI hint only; the backend enforces authorization. */
@@ -91,14 +94,7 @@ export const SubscriptionsList: React.FC = () => {
         (!model ||
           modelRefsOf(sub).some((ref) => {
             const named = modelForRef(models, ref);
-            return matches(
-              model,
-              ref.name,
-              ref.displayName,
-              ref.description,
-              named && displayNameOf(named),
-              named && descriptionOf(named),
-            );
+            return matches(model, ref.name, ref.displayName, ref.description, named?.displayName, named?.description);
           })) &&
         (!group || groupsOf(sub).some((g) => matches(group, g))),
     );

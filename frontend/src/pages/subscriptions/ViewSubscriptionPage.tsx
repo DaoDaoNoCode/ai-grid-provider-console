@@ -16,7 +16,6 @@ import { getBackUrl, getSubscriptionEditUrl, subscriptionNotFound } from '../../
 import { useDeleteSubscription } from './hooks/useDeleteSubscription';
 import { PhaseLabel } from './Phase/PhaseLabel';
 import {
-  displayNameOf,
   groupsOf,
   isDeleting,
   modelRefsOf,
@@ -28,6 +27,7 @@ import {
   tenantNameOf,
   toTokenLimits,
 } from './subscriptionText';
+import { displayNameOf } from '../models/modelView';
 import { useSubscription, useTenantList } from './useSubscriptions';
 import { SubscriptionDetailsSection } from './viewSubscription/SubscriptionDetailsSection';
 import { SubscriptionGroupsSection } from './viewSubscription/SubscriptionGroupsSection';
@@ -69,14 +69,14 @@ const SubscriptionActions: React.FC<ActionsProps> = ({ subscription, returnTo })
 };
 
 export const ViewSubscriptionPage: React.FC = () => {
-  const { subscriptionName = '' } = useParams<{ subscriptionName: string }>();
+  const { id = '' } = useParams<{ id: string }>();
   const location = useLocation();
-  const { data: info, loaded, error, refresh } = useSubscription(subscriptionName);
+  const { data: info, loaded, error, refresh } = useSubscription(id);
   const { data: organizations } = useTenantList();
   const { user } = useConsoleSession();
   const canWrite = !!user?.isProviderAdmin;
   const subscription = info?.object;
-  const title = subscription ? displayNameOf(subscription) : subscriptionName;
+  const title = subscription ? displayNameOf(subscription) : id;
   const backUrl = getBackUrl(location.state, 'subscriptions');
   const organizationId = subscription ? organizationIdOf(subscription) : '';
   const ready = readyConditionOf(subscription?.status?.conditions);
@@ -110,7 +110,7 @@ export const ViewSubscriptionPage: React.FC = () => {
       subject="Subscriptions"
       object="subscription"
       loadingLabel="Loading subscription"
-      notFound={subscriptionNotFound(subscriptionName, backUrl)}
+      notFound={subscriptionNotFound(id, backUrl)}
     >
       {info && subscription && (
         <Flex

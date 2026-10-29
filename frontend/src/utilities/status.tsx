@@ -38,10 +38,6 @@ const tones: Record<string, StatusTone> = {
   'Partially available': 'warning',
   // A model the backend saved to Git in git mode, without reading its status from the clusters.
   'Saved to Git': 'neutral',
-  Invalid: 'danger',
-  Unavailable: 'danger',
-  Unhealthy: 'danger',
-  Degraded: 'warning',
   // A subscription's model that the hub doesn't have.
   'Not found': 'danger',
   // ACM add-ons (feature.open-cluster-management.io/addon-* labels).

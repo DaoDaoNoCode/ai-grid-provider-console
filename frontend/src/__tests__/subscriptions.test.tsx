@@ -18,7 +18,7 @@ import { ServiceError } from '../api/ConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
 import { ConditionStatus } from '../gen/ai_grid/v1/condition_type_pb';
 import { SubscriptionSchema, type Subscription } from '../gen/ai_grid/v1/subscription_type_pb';
-import { ANNOTATION_DISPLAY_NAME } from '../pages/subscriptions/subscriptionText';
+import { DISPLAY_NAME } from '../pages/models/modelView';
 import {
   ACME_ID,
   fleetOf,
@@ -357,7 +357,7 @@ describe('administrator subscription flows', () => {
     const [{ object }] = subscriptionsOf(service).sent('create');
     expect(object).toMatchObject({
       id: 'test-team',
-      metadata: { name: 'test-team', annotations: { [ANNOTATION_DISPLAY_NAME]: 'Test team' } },
+      metadata: { name: 'test-team', annotations: { [DISPLAY_NAME]: 'Test team' } },
       spec: {
         owner: { groups: ['engineering'] },
         organization: { id: ACME_ID },
@@ -401,7 +401,7 @@ describe('administrator subscription flows', () => {
     expect(request.lock).toBe(true);
     expect(request.object?.metadata?.version).toBe(1);
     expect(request.object?.metadata?.annotations).toEqual({
-      [ANNOTATION_DISPLAY_NAME]: 'Engineering',
+      [DISPLAY_NAME]: 'Engineering',
       'openshift.io/description': 'Changed',
       team: 'platform',
     });
@@ -660,7 +660,7 @@ const withPhase = (
   const sub = engineering();
   sub.id = name;
   sub.metadata!.name = name;
-  sub.metadata!.annotations[ANNOTATION_DISPLAY_NAME] = name;
+  sub.metadata!.annotations[DISPLAY_NAME] = name;
   sub.status = {
     $typeName: 'ai_grid.v1.SubscriptionStatus',
     phase,
@@ -671,16 +671,53 @@ const withPhase = (
   return sub;
 };
 
+describe('the models the pages read', () => {
+  /** The filters of the page's Models/List calls; undefined for a call without one. */
+  const modelFilters = (service: MockConsoleService) => {
+    const list = vi.spyOn(fleetOf(service), 'list');
+    return () => list.mock.calls.map(([request]) => request.filter);
+  };
+
+  it('lists only the models the listed subscriptions name', async () => {
+    const service = seeded();
+    const filters = modelFilters(service);
+    renderAt('/subscriptions', service);
+    await screen.findByTestId('subscriptions-table');
+    // engineering names granite-3-8b, data-science granite-3-8b and llama-3-70b, and research a
+    // model the backend joined to none.
+    await waitFor(() => expect(filters()).toContain('this.id in ["granite-3-8b", "llama-3-70b"]'));
+    expect(filters()).not.toContain(undefined);
+  });
+
+  it("lists only the subscription's own models on its edit page, and every model in the picker", async () => {
+    const service = seeded();
+    const filters = modelFilters(service);
+    const user = userEvent.setup();
+    renderAt('/subscriptions/edit/engineering', service);
+    await screen.findByTestId('subscription-models-table');
+    expect(filters()).toEqual(['this.id in ["granite-3-8b"]']);
+    await user.click(screen.getByTestId('add-models-button'));
+    expect(await screen.findByTestId('add-models-table')).toBeVisible();
+    expect(filters()).toContain(undefined);
+  });
+
+  it("reads no models on a subscription's page: the backend joins the names it shows", async () => {
+    const service = seeded();
+    const filters = modelFilters(service);
+    renderAt('/subscriptions/view/engineering', service);
+    expect(await screen.findByTestId('subscription-models-table')).toHaveTextContent('Granite 3.3 8B Instruct');
+    expect(filters()).toEqual([]);
+  });
+});
+
 describe('subscription phases', () => {
-  it('shows the phases as the backend reports them', async () => {
+  it('shows the phases git mode reports, each an outline label that opens nothing', async () => {
     const service = seeded();
     onlySubscriptions(
       service,
       withPhase('unreported-sub', ''),
       withPhase('pending-sub', 'Pending'),
       withPhase('active-sub', 'Active'),
-      // A phase git mode doesn't report reads as it is.
-      withPhase('degraded-sub', 'Degraded', { status: ConditionStatus.FALSE, reason: 'PartialFailure' }),
     );
     renderAt('/subscriptions', service);
     const table = await screen.findByTestId('subscriptions-table');
@@ -689,27 +726,25 @@ describe('subscription phases', () => {
     // No phase yet (no cluster has reported) reads Unknown, as in odh-dashboard's MaaS screens.
     expect(label('unreported-sub')).toHaveTextContent('Unknown');
     expect(label('pending-sub')).toHaveTextContent('Pending');
-    // Active, as its policy's phase reads beside it. Every status is an outline label that opens nothing.
+    // Active, as its policy's phase reads beside it.
     expect(label('active-sub')).toHaveTextContent('Active');
-    expect(label('degraded-sub')).toHaveTextContent('Degraded');
-    for (const name of ['active-sub', 'degraded-sub']) {
+    for (const name of ['unreported-sub', 'pending-sub', 'active-sub']) {
       expect(label(name)).toHaveClass('pf-m-outline');
       expect(within(label(name)).queryByRole('button')).not.toBeInTheDocument();
     }
   });
 
-  it("shows a subscription's Ready message under a Degraded label", async () => {
-    const message = '1 of 1 TokenRateLimitPolicies not accepted';
+  it("says what Pending means, with the Ready condition's message in the tooltip", async () => {
+    const message = 'Not ready on site-b';
     const service = seeded();
     onlySubscriptions(
       service,
-      withPhase('degraded-sub', 'Degraded', { status: ConditionStatus.FALSE, reason: 'PartialFailure', message }),
+      withPhase('pending-sub', 'Pending', { status: ConditionStatus.FALSE, reason: 'NotReady', message }),
     );
     const user = userEvent.setup();
     renderAt('/subscriptions', service);
-    expect(await screen.findByTestId('phase-label-subtext')).toHaveTextContent(message);
-    // The condition's message is the label's tooltip too.
-    await user.hover(within(screen.getByTestId('phase-label')).getByText('Degraded'));
+    expect(await screen.findByTestId('phase-label-subtext')).toHaveTextContent('Setting up subscription');
+    await user.hover(within(screen.getByTestId('phase-label')).getByText('Pending'));
     expect(await screen.findByRole('tooltip')).toHaveTextContent(message);
   });
 });

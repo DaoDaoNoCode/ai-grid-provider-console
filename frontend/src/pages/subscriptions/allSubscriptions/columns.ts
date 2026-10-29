@@ -7,7 +7,8 @@
 import type { ThProps } from '@patternfly/react-table';
 import type { Subscription } from '../../../gen/ai_grid/v1/subscription_type_pb';
 import { normalizePhase } from '../../../utilities/phaseLabelUtils';
-import { displayNameOf, groupsOf, modelRefsOf } from '../subscriptionText';
+import { groupsOf, modelRefsOf } from '../subscriptionText';
+import { displayNameOf } from '../../models/modelView';
 
 export type SubscriptionColumn = {
   label: string;

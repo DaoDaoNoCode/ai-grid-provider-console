@@ -7,7 +7,7 @@
 // groups or models can expand under it.
 import { useMemo, useState } from 'react';
 import { Table, Tbody, Th, Thead, Tr } from '@patternfly/react-table';
-import type { Model } from '../../../gen/ai_grid/v1/model_type_pb';
+import type { ModelView } from '../../models/modelView';
 import type { Subscription } from '../../../gen/ai_grid/v1/subscription_type_pb';
 import { PaginatedTable } from '../../../components/PaginatedTable';
 import { TableEmptyRow } from '../../../components/TableEmptyRow';
@@ -20,7 +20,7 @@ type Props = {
   /** A subscription's organization name, or its id when the organization is unknown. */
   organizationName: (subscription: Subscription) => string;
   /** The models, for the rows' models expansion, and whether they have loaded. */
-  models: Model[];
+  models: ModelView[];
   modelsState: ModelsState;
   /** Each location's site name, from the clusters. */
   siteNames: Map<string, string>;

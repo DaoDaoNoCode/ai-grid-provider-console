@@ -21,7 +21,7 @@ import {
   type Subscription,
 } from '../gen/ai_grid/v1/subscription_type_pb';
 import { TenantSchema } from '../gen/ai_grid/v1/tenant_type_pb';
-import { ANNOTATION_DESCRIPTION, ANNOTATION_DISPLAY_NAME } from '../pages/subscriptions/subscriptionText';
+import { DESCRIPTION, DISPLAY_NAME } from '../pages/models/modelView';
 import { modelsOf, type FakeModels } from './connectModels';
 
 /** The backend's default subscription namespace (AI_GRID_SUBSCRIPTION_NAMESPACE), where refs point. */
@@ -37,8 +37,8 @@ const ready = (message: string) => ({
 });
 
 const annotations = (displayName?: string, description?: string) => ({
-  ...(displayName ? { [ANNOTATION_DISPLAY_NAME]: displayName } : {}),
-  ...(description ? { [ANNOTATION_DESCRIPTION]: description } : {}),
+  ...(displayName ? { [DISPLAY_NAME]: displayName } : {}),
+  ...(description ? { [DESCRIPTION]: description } : {}),
 });
 
 const limits = (...pairs: [number, string][]) => pairs.map(([limit, window]) => ({ limit: BigInt(limit), window }));
@@ -108,7 +108,7 @@ const seedPolicies = (subscriptions: Subscription[]): AuthPolicy[] =>
       id: `${s.id}-policy`,
       metadata: {
         name: `${s.id}-policy`,
-        annotations: annotations(`${s.metadata?.annotations[ANNOTATION_DISPLAY_NAME]} policy`),
+        annotations: annotations(`${s.metadata?.annotations[DISPLAY_NAME]} policy`),
       },
       subjectGroups: s.spec?.owner?.groups ?? [],
       modelRefs: (s.spec?.modelRefs ?? []).map(({ name, namespace }) => ({ name, namespace })),
@@ -208,8 +208,8 @@ export class FakeSubscriptions {
       const namespace = ref.namespace || SUBSCRIPTION_NAMESPACE;
       const model = namespace === SUBSCRIPTION_NAMESPACE && models.find((m) => m.id === ref.name);
       ref.modelId = model ? model.id : '';
-      ref.displayName = model ? (model.metadata?.annotations[ANNOTATION_DISPLAY_NAME] ?? '') : '';
-      ref.description = model ? (model.metadata?.annotations[ANNOTATION_DESCRIPTION] ?? '') : '';
+      ref.displayName = model ? (model.metadata?.annotations[DISPLAY_NAME] ?? '') : '';
+      ref.description = model ? (model.metadata?.annotations[DESCRIPTION] ?? '') : '';
     }
     return out;
   }

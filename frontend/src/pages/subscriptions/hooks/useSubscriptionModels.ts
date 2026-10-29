@@ -4,7 +4,7 @@
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
 import { useCallback, useState } from 'react';
 import { create } from '@bufbuild/protobuf';
-import type { Model } from '../../../gen/ai_grid/v1/model_type_pb';
+import type { ModelView } from '../../models/modelView';
 import { SubscriptionModelRefSchema, type SubscriptionModelRef } from '../../../gen/ai_grid/v1/subscription_type_pb';
 import type { TokenLimit } from '../../../utilities/rateLimits';
 
@@ -15,7 +15,7 @@ import type { TokenLimit } from '../../../utilities/rateLimits';
 export type SubscriptionModelEntry = {
   ref: SubscriptionModelRef;
   /** The model the ref names, when the backend joined it or it was added here. */
-  model?: Model;
+  model?: ModelView;
   /** Whether the subscription had the ref when the form opened. */
   saved: boolean;
   unlimited: boolean;
@@ -34,7 +34,7 @@ export const entryKey = (entry: SubscriptionModelEntry): string =>
   entryModelId(entry) ?? `${entry.ref.namespace}/${entry.ref.name}`;
 
 /** A new entry for a model added in the form: the model's id as name, no namespace. */
-const newEntry = (model: Model): SubscriptionModelEntry => ({
+const newEntry = (model: ModelView): SubscriptionModelEntry => ({
   ref: create(SubscriptionModelRefSchema, { name: model.id }),
   model,
   saved: false,
@@ -62,7 +62,7 @@ export const useSubscriptionModels = (initialModels: SubscriptionModelEntry[] = 
   const allModelsHaveRateLimits = models.every((m) => m.unlimited || m.tokenRateLimits.length > 0);
   const editingModel = editLimitsTarget != null ? models[editLimitsTarget] : null;
 
-  const handleAddModels = useCallback((selected: Model[]) => {
+  const handleAddModels = useCallback((selected: ModelView[]) => {
     setModels((prev) => [
       ...prev,
       ...selected.filter((model) => !prev.some((m) => entryModelId(m) === model.id)).map(newEntry),
@@ -75,7 +75,7 @@ export const useSubscriptionModels = (initialModels: SubscriptionModelEntry[] = 
   }, []);
 
   const handleRemoveModels = useCallback(
-    (removed: Model[]) => {
+    (removed: ModelView[]) => {
       const isRemoved = (m: SubscriptionModelEntry) => removed.some((model) => entryModelId(m) === model.id);
       const removedIndices = models.flatMap((m, i) => (isRemoved(m) ? [i] : []));
       setModels((prev) => prev.filter((m) => !isRemoved(m)));

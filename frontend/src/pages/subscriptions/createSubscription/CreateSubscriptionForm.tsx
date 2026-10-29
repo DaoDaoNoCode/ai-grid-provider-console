@@ -31,7 +31,6 @@ import type { SelectionOptions } from '../../../components/MultiSelection';
 import { MultiSelection } from '../../../components/MultiSelection';
 import { SystemAuthenticatedWarning } from '../../../components/SystemAuthenticatedWarning';
 import { TypeaheadSelect } from '../../../components/TypeaheadSelect';
-import type { Model } from '../../../gen/ai_grid/v1/model_type_pb';
 import {
   SubscriptionModelRefSchema,
   type SubscriptionModelRef,
@@ -44,13 +43,9 @@ import { fieldErrorsOf } from '../../../validation';
 import type { SubscriptionModelEntry } from '../hooks/useSubscriptionModels';
 import { entryKey, useSubscriptionModels } from '../hooks/useSubscriptionModels';
 import {
-  ANNOTATION_DESCRIPTION,
-  ANNOTATION_DISPLAY_NAME,
   descriptionOf,
-  displayNameOf,
   groupsOf,
   modelForRef,
-  modelPhaseOf,
   modelRefsOf,
   organizationIdOf,
   refTitleOf,
@@ -58,12 +53,16 @@ import {
   tenantNameOf,
   toTokenLimits,
 } from '../subscriptionText';
+import { DESCRIPTION, DISPLAY_NAME, displayNameOf, type ModelView } from '../../models/modelView';
 import { useSubscriptionWrites, useTenantList } from '../useSubscriptions';
 import { EditRateLimitsModal } from './EditRateLimitsModal';
 
 type Props = {
-  /** The models the subscription may name, from Models/List. */
-  models: Model[];
+  /**
+   * The models the form starts with: on an edit, those the subscription's refs name (Models/List
+   * filtered by their ids); on a create, every model. The picker loads every model when it opens.
+   */
+  models: ModelView[];
   /** The subscription being edited, as Subscriptions/Get answered it; none on create. */
   subscriptionInfo?: SubscriptionsGetResponse;
   returnTo?: string;
@@ -88,7 +87,7 @@ const subscriptionFormSchema = z.object({
   models: z.array(z.unknown()).min(1, 'One or more models must be added'),
 });
 
-const buildInitialModels = (info: SubscriptionsGetResponse, models: Model[]): SubscriptionModelEntry[] =>
+const buildInitialModels = (info: SubscriptionsGetResponse, models: ModelView[]): SubscriptionModelEntry[] =>
   (info.object ? modelRefsOf(info.object) : []).map((ref) => ({
     ref,
     model: modelForRef(models, ref),
@@ -245,9 +244,9 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ models: availableModel
     };
     const name = nameDescData.name.trim();
     if (!subscription || name !== displayNameOf(subscription)) {
-      set(ANNOTATION_DISPLAY_NAME, name);
+      set(DISPLAY_NAME, name);
     }
-    set(ANNOTATION_DESCRIPTION, nameDescData.description.trim());
+    set(DESCRIPTION, nameDescData.description.trim());
     return annotations;
   };
 
@@ -305,13 +304,13 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ models: availableModel
   };
 
   const showNoModelsWarning = !isEditing && availableModels.length === 0 && models.length === 0;
-  const canAddModels = availableModels.length > 0;
+  const canAddModels = isEditing || availableModels.length > 0;
 
   const rows: SubscriptionModelRow[] = models.map((entry) => {
     const status =
       entry.saved && subscriptionInfo
         ? registrationStatusOf(subscriptionInfo.modelRegistrations, entry.ref)
-        : { status: entry.model ? modelPhaseOf(entry.model) : 'Unknown', reason: entry.model?.status?.message };
+        : { status: entry.model?.phase ?? 'Unknown', reason: entry.model?.statusMessage };
     return {
       key: entryKey(entry),
       title: refTitleOf(entry.ref, entry.model),
@@ -461,7 +460,6 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ models: availableModel
 
         {isAddModelsModalOpen && canAddModels && (
           <AddModelsModal
-            availableModels={availableModels}
             currentModels={models}
             onAdd={(added) => {
               setModelsTouched(true);

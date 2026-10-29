@@ -5,8 +5,12 @@
 import { z } from 'zod';
 
 /**
- * A subscription's token limit: TokenRateLimit with its int64 limit as a number, which
- * validateSubscriptionSpec (the backend's internal/servers/subscriptions_server.go) caps at 1e9.
+ * A subscription's token limit as the form keeps it: the generated TokenRateLimit's fields, with its
+ * int64 limit as a number rather than a bigint, because the form's count fields and the limit
+ * checks below do arithmetic on numbers; the backend caps the limit at 1e9
+ * (validateSubscriptionSpec, internal/servers/subscriptions_server.go), well within a number.
+ * subscriptionText.ts's toTokenLimits reads a TokenRateLimit into it, and the form's refPayload
+ * writes it back as one.
  */
 export type TokenLimit = { limit: number; window: string };
 

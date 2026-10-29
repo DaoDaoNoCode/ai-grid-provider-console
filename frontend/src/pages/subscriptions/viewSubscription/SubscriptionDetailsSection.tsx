@@ -11,7 +11,8 @@ import { DetailsSection } from '../../../components/DetailsSection';
 import { RelativeTime } from '../../../components/RelativeTime';
 import { StatusLabel } from '../../../components/StatusLabel';
 import type { AuthPolicy, Subscription } from '../../../gen/ai_grid/v1/subscription_type_pb';
-import { descriptionOf, displayNameOf, isoTime, readyConditionOf } from '../subscriptionText';
+import { descriptionOf, isoTime, readyConditionOf } from '../subscriptionText';
+import { displayNameOf } from '../../models/modelView';
 
 type Props = {
   subscription: Subscription;

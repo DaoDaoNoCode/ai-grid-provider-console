@@ -10,14 +10,15 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Tooltip } from '@patternfly/react-core';
 import { ExpandableRowContent, TableText, Tbody, Td, Tr } from '@patternfly/react-table';
-import type { Model } from '../../../gen/ai_grid/v1/model_type_pb';
+import type { ModelView } from '../../models/modelView';
 import type { Subscription } from '../../../gen/ai_grid/v1/subscription_type_pb';
 import { PhaseLabel } from '../Phase/PhaseLabel';
 import { SimpleMenuActions } from '../../../components/SimpleMenuActions';
 import { TableRowTitleDescription } from '../../../components/TableRowTitleDescription';
 import { getSubscriptionEditUrl, getSubscriptionViewUrl } from '../../../utilities/maasGovernanceNavigation';
 import { EMPTY_VALUE } from '../../../utilities/format';
-import { descriptionOf, displayNameOf, groupsOf, isDeleting, modelRefsOf, readyConditionOf } from '../subscriptionText';
+import { descriptionOf, groupsOf, isDeleting, modelRefsOf, readyConditionOf } from '../subscriptionText';
+import { displayNameOf } from '../../models/modelView';
 import type { SubscriptionColumn } from './columns';
 import { ExpandedGroupsPanel } from './ExpandedGroupsPanel';
 import type { ModelsState } from './ExpandedModelsPanel';
@@ -28,7 +29,7 @@ type Props = {
   columns: SubscriptionColumn[];
   organization: string;
   /** The models, for the models expansion, and whether they have loaded. */
-  models: Model[];
+  models: ModelView[];
   modelsState: ModelsState;
   siteNames: Map<string, string>;
   canWrite: boolean;

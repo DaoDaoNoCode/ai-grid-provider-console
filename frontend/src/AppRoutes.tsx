@@ -114,7 +114,7 @@ const Pages: React.FC<Props> = ({ service }) => (
     <Route path="/subscriptions" element={<SubscriptionsPage />} />
     <Route path="/subscriptions/create" element={<CreateSubscriptionPage />} />
     <Route
-      path="/subscriptions/view/:subscriptionName"
+      path="/subscriptions/view/:id"
       element={
         <ByParams>
           <ViewSubscriptionPage />
@@ -122,7 +122,7 @@ const Pages: React.FC<Props> = ({ service }) => (
       }
     />
     <Route
-      path="/subscriptions/edit/:subscriptionName"
+      path="/subscriptions/edit/:id"
       element={
         <ByParams>
           <EditSubscriptionPage />

@@ -10,7 +10,7 @@ import { Stack, StackItem } from '@patternfly/react-core';
 import { toServiceError } from '../../../api/connect/errors';
 import { DeleteModal } from '../../../components/DeleteModal';
 import type { Subscription } from '../../../gen/ai_grid/v1/subscription_type_pb';
-import { displayNameOf } from '../subscriptionText';
+import { displayNameOf } from '../../models/modelView';
 import { useSubscriptionWrites } from '../useSubscriptions';
 
 const deleteErrorOf = (err: unknown) => {
@@ -19,7 +19,7 @@ const deleteErrorOf = (err: unknown) => {
     return new Error('Deleting subscriptions is not available on this backend yet.');
   }
   // Aborted: the version sent is not the stored one (gitDelete, internal/servers/subscriptions_git.go).
-  if (error.status === 409) {
+  if (error.isConflict) {
     return new Error('This subscription changed since you opened this dialog. Check it and try again.');
   }
   return error;

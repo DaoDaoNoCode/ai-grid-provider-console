@@ -8,7 +8,7 @@ import { Breadcrumb, BreadcrumbItem } from '@patternfly/react-core';
 import { PageStateSection } from '../../components/states/PageStateSection';
 import { getBackUrl } from '../../utilities/maasGovernanceNavigation';
 import { CreateSubscriptionForm } from './createSubscription/CreateSubscriptionForm';
-import { useModelList } from './useSubscriptions';
+import { useModelList } from '../models/useModels';
 
 export const CreateSubscriptionPage: React.FC = () => {
   const { data: models, loaded, error, refresh } = useModelList();

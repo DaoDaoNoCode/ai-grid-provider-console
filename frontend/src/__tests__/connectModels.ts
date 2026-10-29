@@ -170,8 +170,11 @@ export class FakeModels {
   }
 
   // The RPCs, each a field a test can spy on or replace (vi.spyOn(modelsOf(service), 'update')).
-  list: Impl['list'] = () => {
-    const items = [...this.models].sort((a, b) => a.id.localeCompare(b.id));
+  list: Impl['list'] = ({ filter }) => {
+    // The subscription pages' filter on model ids (useSubscriptions.ts, modelsFilter).
+    const ids = /^this\.id in \[(.*)\]$/.exec(filter ?? '')?.[1];
+    const wanted = ids === undefined ? undefined : [...ids.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+    const items = this.models.filter((m) => !wanted || wanted.includes(m.id)).sort((a, b) => a.id.localeCompare(b.id));
     return { items, size: items.length, total: items.length };
   };
   get: Impl['get'] = ({ id }) => ({ object: this.find(id) });
