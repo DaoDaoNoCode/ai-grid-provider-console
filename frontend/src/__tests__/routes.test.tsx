@@ -161,7 +161,7 @@ describe('routes', () => {
   it('shows the not-found page with a way back', async () => {
     at('/nowhere');
     expect(await screen.findByRole('heading', { level: 1, name: 'Page not found' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Go to Clusters' })).toHaveAttribute('href', '/clusters');
+    expect(screen.getByRole('link', { name: 'Go to AI Grid' })).toHaveAttribute('href', '/ai-grid');
     expect(document.title).toBe('Page not found · Cloud Provider Admin Console');
   });
 

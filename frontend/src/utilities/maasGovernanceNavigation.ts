@@ -35,7 +35,7 @@ export const getBackUrl = (state: unknown, section: GovernanceSection): string =
 /** What a subscription page says when there is no such subscription; the way back is `listPath`. */
 export const subscriptionNotFound = (name: string, listPath: string): NotFound => ({
   what: 'Subscription',
-  body: `There is no subscription ${name}.`,
+  name,
   listPath,
   listLabel: 'Subscriptions',
 });

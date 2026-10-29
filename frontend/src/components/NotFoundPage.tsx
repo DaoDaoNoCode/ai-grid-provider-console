@@ -10,9 +10,9 @@ export const NotFoundPage: React.FC = () => {
       <NotFoundState
         what="Page"
         headingLevel="h1"
-        body="The page you asked for doesn't exist. Check the address, or go back to the clusters."
-        listPath="/clusters"
-        listLabel="Clusters"
+        body="There's no page at this address. Check it, or go to AI Grid, the console's home."
+        listPath="/ai-grid"
+        listLabel="AI Grid"
       />
     </PageSection>
   );

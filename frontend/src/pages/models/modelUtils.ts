@@ -26,7 +26,7 @@ export const locationLabel = (location: string, siteNames: Map<string, string>):
 /** What a model page says when there is no such deployment. */
 export const modelNotFound = (namespace: string, name: string): NotFound => ({
   what: 'Model deployment',
-  body: `There is no model deployment ${name} in ${namespace}.`,
+  name: `${namespace}/${name}`,
   listPath: '/models',
   listLabel: 'Models',
 });
