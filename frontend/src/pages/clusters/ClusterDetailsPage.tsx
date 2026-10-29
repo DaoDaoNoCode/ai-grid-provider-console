@@ -475,7 +475,7 @@ export const ClusterDetailsPage: React.FC = () => {
         loadingLabel="Loading cluster"
         notFound={{
           what: 'Cluster',
-          body: `The hub has no managed cluster ${name}.`,
+          name,
           listPath: '/clusters',
           listLabel: 'Clusters',
         }}

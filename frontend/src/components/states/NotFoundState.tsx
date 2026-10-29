@@ -13,8 +13,13 @@ import { Link } from 'react-router-dom';
 export type NotFound = {
   /** The object type, e.g. "Model deployment"; the title is "<what> not found". */
   what: string;
-  /** Which one was asked for, e.g. "There is no organization acme." */
-  body: React.ReactNode;
+  /**
+   * The name or id the page asked for. The body then says, the same on every page, that there's no
+   * <what> named it, set apart in monospace so an id never reads as part of the sentence.
+   */
+  name?: string;
+  /** Instead of `name`, for a page that isn't one object's (an unknown address). */
+  body?: React.ReactNode;
   /** Its list, and the list's name for the way back ("Go to Models"). */
   listPath: string;
   listLabel: string;
@@ -26,7 +31,7 @@ type Props = NotFound & { headingLevel?: EmptyStateProps['headingLevel'] };
  * An object (or a page) that doesn't exist, or no longer does: PatternFly's full empty state with
  * the path-missing icon and a way back to its list. Retrying would not bring it back.
  */
-export const NotFoundState: React.FC<Props> = ({ what, body, listPath, listLabel, headingLevel = 'h2' }) => (
+export const NotFoundState: React.FC<Props> = ({ what, name, body, listPath, listLabel, headingLevel = 'h2' }) => (
   <EmptyState
     variant="lg"
     titleText={`${what} not found`}
@@ -34,7 +39,16 @@ export const NotFoundState: React.FC<Props> = ({ what, body, listPath, listLabel
     icon={PathMissingIcon}
     data-testid="not-found-state"
   >
-    <EmptyStateBody>{body}</EmptyStateBody>
+    <EmptyStateBody>
+      {name === undefined ? (
+        body
+      ) : (
+        <>
+          There&apos;s no {what.toLowerCase()} named <code>{name}</code>. It may have been deleted, or the link may be
+          wrong.
+        </>
+      )}
+    </EmptyStateBody>
     <EmptyStateFooter>
       <EmptyStateActions>
         <Button variant="primary" component={(props) => <Link {...props} to={listPath} />}>

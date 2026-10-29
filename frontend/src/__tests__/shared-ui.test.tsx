@@ -147,7 +147,7 @@ it('offers a reload when a page fails to load, and tries again on another page',
 });
 
 describe('page states', () => {
-  const notFound = { what: 'Widget', body: 'There is no widget w1.', listPath: '/widgets', listLabel: 'Widgets' };
+  const notFound = { what: 'Widget', name: 'w1', listPath: '/widgets', listLabel: 'Widgets' };
   const renderLoadError = (error: Error, onRetry = vi.fn()) =>
     render(
       <MemoryRouter>
@@ -171,6 +171,8 @@ describe('page states', () => {
     renderLoadError(new ServiceError(404, 'object with identifier w1 not found'));
     const state = screen.getByTestId('not-found-state');
     expect(within(state).getByRole('heading', { name: 'Widget not found' })).toBeVisible();
+    expect(state).toHaveTextContent("There's no widget named w1. It may have been deleted, or the link may be wrong.");
+    expect(within(state).getByText('w1').tagName).toBe('CODE');
     expect(within(state).getByRole('link', { name: 'Go to Widgets' })).toHaveAttribute('href', '/widgets');
     expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
     expect(screen.queryByText(/object with identifier/)).not.toBeInTheDocument();
