@@ -77,8 +77,12 @@ export type ModelWrites = {
 export const useModelWrites = (): ModelWrites => {
   const transport = useTransport();
   const queryClient = useQueryClient();
-  const onSuccess = () =>
-    queryClient.invalidateQueries({ queryKey: createConnectQueryKey({ schema: Models, cardinality: undefined }) });
+  // Refetch every Models query once a write lands, without waiting for it: useMutation waits for
+  // a promise onSuccess returns, and a save is done when the backend answered, not when the pages
+  // have read the model again (each Models/Get reads the Git catalog).
+  const onSuccess = () => {
+    void queryClient.invalidateQueries({ queryKey: createConnectQueryKey({ schema: Models, cardinality: undefined }) });
+  };
   const creating = useMutation(create, { onSuccess });
   const updating = useMutation(update, { onSuccess });
   const deleting = useMutation(delete$, { onSuccess });
