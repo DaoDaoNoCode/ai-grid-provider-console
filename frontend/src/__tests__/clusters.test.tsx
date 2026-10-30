@@ -144,8 +144,9 @@ it('asks for a location label and role before adding', async () => {
   const modal = await screen.findByTestId('cluster-membership-modal');
   await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
   // Nothing is written until both are given; each field says why and describes its error.
-  const location = within(modal).getByRole('textbox', { name: 'Location' });
+  const location = within(modal).getByRole('textbox', { name: 'Location label' });
   const role = within(modal).getByRole('combobox', { name: 'Role' });
+  expect(location).toBeRequired();
   expect(location).toHaveAttribute('aria-invalid', 'true');
   expect(role).toHaveAttribute('aria-invalid', 'true');
   expect(location).toHaveAccessibleDescription(/^Required\./);
@@ -154,6 +155,12 @@ it('asks for a location label and role before adding', async () => {
   await user.paste('us east');
   expect(location).toHaveAccessibleDescription(/Must start and end with a letter or number/);
   expect(service.clusters[1].labels).toEqual({});
+  // What the label is, and that models don't go by it, is in the field's help.
+  await user.click(within(modal).getByRole('button', { name: 'More info for the location label field' }));
+  expect(await screen.findByRole('dialog', { name: 'Location label' })).toHaveTextContent(
+    'Models are placed on clusters by name, not by this label.',
+  );
+  await user.click(within(modal).getByRole('button', { name: 'More info for the location label field' }));
   // The Role field's help explains each role.
   await user.click(within(modal).getByRole('button', { name: 'More info for the role field' }));
   const help = await screen.findByRole('dialog', { name: 'Cluster roles' });
@@ -233,7 +240,7 @@ it('shows the role and location Add wrote while the list reloads', async () => {
   const answer = () => waiting.splice(0).forEach((go) => go());
   service.listClusters = () => new Promise((resolve) => waiting.push(() => resolve(list())));
   const modal = await screen.findByTestId('cluster-membership-modal');
-  await user.click(within(modal).getByRole('textbox', { name: 'Location' }));
+  await user.click(within(modal).getByRole('textbox', { name: 'Location label' }));
   await user.paste('paris');
   await user.click(within(modal).getByRole('combobox', { name: 'Role' }));
   await user.click(await screen.findByRole('option', { name: /Inference/ }));
@@ -657,7 +664,7 @@ it('reloads the cluster in the open dialog after a conflict, keeping the choices
   renderAt('/clusters', service);
   await pick(user, 'site4', 'Add to AI Grid');
   const modal = await screen.findByTestId('cluster-membership-modal');
-  const location = within(modal).getByRole('textbox', { name: 'Location' });
+  const location = within(modal).getByRole('textbox', { name: 'Location label' });
   await user.clear(location);
   await user.paste('us-east');
   await user.click(within(modal).getByRole('combobox', { name: 'Role' }));
@@ -679,7 +686,7 @@ it('reloads the cluster in the open dialog after a conflict, keeping the choices
     ),
   ).toBeVisible();
   expect(within(modal).queryByText(/resource version/)).not.toBeInTheDocument();
-  expect(within(modal).getByRole('textbox', { name: 'Location' })).toHaveValue('us-east');
+  expect(within(modal).getByRole('textbox', { name: 'Location label' })).toHaveValue('us-east');
   expect(within(modal).getByRole('combobox', { name: 'Role' })).toHaveValue('Inference');
 
   await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
@@ -700,7 +707,7 @@ it('shows the location and role someone else set meanwhile instead of sending th
   renderAt('/clusters', service);
   await pick(user, 'site4', 'Add to AI Grid');
   const modal = await screen.findByTestId('cluster-membership-modal');
-  const location = within(modal).getByRole('textbox', { name: 'Location' });
+  const location = within(modal).getByRole('textbox', { name: 'Location label' });
   await user.clear(location);
   await user.paste('us-east');
   await user.click(within(modal).getByRole('combobox', { name: 'Role' }));
@@ -719,10 +726,10 @@ it('shows the location and role someone else set meanwhile instead of sending th
   await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
   expect(
     await within(modal).findByText(
-      "Another user changed this cluster's location or role after this dialog opened. Their values are now shown. Review them and try again.",
+      "Another user changed this cluster's location label or role after this dialog opened. Their values are now shown. Review them and try again.",
     ),
   ).toBeVisible();
-  expect(within(modal).getByRole('textbox', { name: 'Location' })).toHaveValue('eu-west');
+  expect(within(modal).getByRole('textbox', { name: 'Location label' })).toHaveValue('eu-west');
   expect(within(modal).getByRole('combobox', { name: 'Role' })).toHaveValue('Ingress');
 
   await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
@@ -737,7 +744,7 @@ it('says so when the cluster changed and could not be loaded again', async () =>
   renderAt('/clusters', service);
   await pick(user, 'site4', 'Add to AI Grid');
   const modal = await screen.findByTestId('cluster-membership-modal');
-  const location = within(modal).getByRole('textbox', { name: 'Location' });
+  const location = within(modal).getByRole('textbox', { name: 'Location label' });
   await user.clear(location);
   await user.paste('us-east');
   await user.click(within(modal).getByRole('combobox', { name: 'Role' }));
