@@ -63,17 +63,8 @@ const aiGridItems = (c: ClusterView) => {
       'data-testid': 'cluster-membership',
     },
     {
-      term: 'Location',
-      value:
-        c.location ??
-        (c.aiGridEnabled ? (
-          <MissingLabel
-            testId="missing-location"
-            reason="This cluster has no location, so models cannot be deployed to it."
-          >
-            No location
-          </MissingLabel>
-        ) : undefined),
+      term: 'Location label',
+      value: c.location,
     },
     {
       term: 'Role',
