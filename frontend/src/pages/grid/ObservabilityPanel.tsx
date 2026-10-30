@@ -336,7 +336,7 @@ export function ObservabilityPanel({
     </Grid>
   );
   const relevantModels = models.filter(
-    (m) => m.locations.length === 0 || clusters.some((c) => c.location && m.locations.includes(c.location)),
+    (m) => m.selectedClusters.length === 0 || clusters.some((c) => m.selectedClusters.includes(c.name)),
   );
   if (model !== 'all' && !relevantModels.some((m) => m.id === model)) {
     setModel('all');
@@ -472,7 +472,7 @@ export function ObservabilityPanel({
                   <Tr>
                     <Th>Cluster</Th>
                     <Th>Site</Th>
-                    <Th>Location</Th>
+                    <Th>Region</Th>
                     <Th>Status</Th>
                     <Th>Provisioning</Th>
                   </Tr>
@@ -492,8 +492,8 @@ export function ObservabilityPanel({
                       <Td dataLabel="Cluster">
                         <Link to={`/ai-grid?cluster=${encodeURIComponent(c.name)}`}>{c.name}</Link>
                       </Td>
-                      <Td dataLabel="Site">{c.siteName ?? c.site ?? EMPTY_VALUE}</Td>
-                      <Td dataLabel="Location">{c.location ?? EMPTY_VALUE}</Td>
+                      <Td dataLabel="Site">{c.siteName ?? EMPTY_VALUE}</Td>
+                      <Td dataLabel="Region">{c.region ?? EMPTY_VALUE}</Td>
                       <Td dataLabel="Status">
                         <StatusLabel isCompact status={c.status} />
                       </Td>
@@ -532,14 +532,14 @@ export function ObservabilityPanel({
             </Toolbar>
             <Section
               title="Models"
-              help="Target sites are the sites of the clusters selected for each model. They do not confirm that the model is serving there."
+              help="Clusters are the AI Grid clusters each model's placement selected. They do not confirm that the model is serving there."
             >
               <Table aria-label="Models" variant="compact">
                 <Thead>
                   <Tr>
                     <Th>Name</Th>
                     <Th>Model</Th>
-                    <Th>Target sites</Th>
+                    <Th>Clusters</Th>
                     <Th className="console-number">Replicas</Th>
                     <Th>Status</Th>
                   </Tr>
@@ -569,14 +569,11 @@ export function ObservabilityPanel({
                       <Td dataLabel="Model" modifier="breakWord">
                         {m.modelName ?? m.id}
                       </Td>
-                      <Td dataLabel="Target sites">
-                        {[
-                          ...new Set(
-                            clusters
-                              .filter((c) => c.location && m.locations.includes(c.location))
-                              .map((c) => c.siteName ?? c.site ?? c.name),
-                          ),
-                        ].join(', ') || EMPTY_VALUE}
+                      <Td dataLabel="Clusters">
+                        {clusters
+                          .filter((c) => m.selectedClusters.includes(c.name))
+                          .map((c) => c.name)
+                          .join(', ') || EMPTY_VALUE}
                       </Td>
                       <Td dataLabel="Replicas" className="console-number">
                         {m.replicas ?? EMPTY_VALUE}

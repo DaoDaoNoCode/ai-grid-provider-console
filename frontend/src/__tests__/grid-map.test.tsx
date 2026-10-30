@@ -46,7 +46,9 @@ it('uses the reference map-and-drawer layout and opens cluster details from a pi
   const overview = vi.spyOn(service, 'getGridOverview');
   const user = userEvent.setup();
   renderAt('/ai-grid', service);
-  expect(await screen.findByLabelText('AI Grid summary')).toBeVisible();
+  const summary = await screen.findByLabelText('AI Grid summary');
+  expect(summary).toBeVisible();
+  expect(within(summary).getByText('Sites')).toBeVisible();
   expect(screen.queryByText(/simulated/)).not.toBeInTheDocument();
   expect(overview).not.toHaveBeenCalled();
   await user.click(await screen.findByRole('button', { name: 'Map pin site3' }));
@@ -93,15 +95,20 @@ it('switches between clusters and models and follows placement cross-links', asy
   await user.click(await screen.findByRole('button', { name: 'View site3 details' }));
   await user.click(await screen.findByRole('button', { name: model.displayName }));
   expect(screen.getByRole('heading', { name: 'Model configuration' })).toBeVisible();
-  await user.click(screen.getByRole('button', { name: 'Brussels · site3' }));
-  expect(screen.getByRole('heading', { name: 'Site and cluster' })).toBeVisible();
+  await user.click(screen.getByRole('button', { name: 'site3' }));
+  expect(screen.getByRole('heading', { name: 'Cluster' })).toBeVisible();
+  // Each term names its source: Site the site name annotation, Site ID the ai-grid/site label.
+  const details = screen.getByLabelText('Cluster', { selector: 'dl' });
+  expect(details).toHaveTextContent('SiteBrussels');
+  expect(details).toHaveTextContent('Site IDbrussels');
+  expect(details).toHaveTextContent('Location labelsite3');
   await user.click(screen.getByRole('button', { name: 'Back' }));
   expect(screen.getByRole('heading', { name: 'Model configuration' })).toBeVisible();
   await user.click(screen.getByRole('button', { name: 'Back' }));
   await user.click(screen.getByRole('button', { name: 'Clusters' }));
   await user.click(within(screen.getByRole('group', { name: 'Show' })).getByRole('button', { name: 'Models' }));
   expect(screen.getByRole('heading', { name: 'Models' })).toBeVisible();
-  expect(screen.getByText('Sites: Brussels')).toBeVisible();
+  expect(screen.getByText('Clusters: site3')).toBeVisible();
   expect(screen.queryByText('GPU utilization')).not.toBeInTheDocument();
   expect(screen.queryByText('Fleet metrics')).not.toBeInTheDocument();
 });
@@ -117,8 +124,8 @@ it("follows placement cross-links on the BFF's example model JSON", async () => 
   await user.click(await screen.findByRole('button', { name: 'View site-paris-1 details' }));
   await user.click(await screen.findByRole('button', { name: 'Granite 8B Instruct' }));
   expect(screen.getByRole('heading', { name: 'Model configuration' })).toBeVisible();
-  await user.click(screen.getByRole('button', { name: 'Paris DC1 · site-paris-1' }));
-  expect(screen.getByRole('heading', { name: 'Site and cluster' })).toBeVisible();
+  await user.click(screen.getByRole('button', { name: 'site-paris-1' }));
+  expect(screen.getByRole('heading', { name: 'Cluster' })).toBeVisible();
 });
 
 it('places a model on the clusters its placement chose, by name, when they share one location', async () => {
@@ -139,12 +146,12 @@ it('places a model on the clusters its placement chose, by name, when they share
   await user.click(screen.getByRole('button', { name: 'Clusters' }));
   await user.click(screen.getByRole('button', { name: 'View site-b details' }));
   await user.click(screen.getByRole('button', { name: 'Granite 8B Instruct' }));
-  expect(screen.getByRole('button', { name: 'Site B · site-b' })).toBeVisible();
-  expect(screen.queryByRole('button', { name: 'Site A · site-a' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'site-b' })).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'site-a' })).not.toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'Back' }));
   await user.click(screen.getByRole('button', { name: 'Clusters' }));
   await user.click(within(screen.getByRole('group', { name: 'Show' })).getByRole('button', { name: 'Models' }));
-  expect(screen.getByText('Sites: Site B')).toBeVisible();
+  expect(screen.getByText('Clusters: site-b')).toBeVisible();
 });
 
 it('uses the configured tile URL, or none for the bundled land outline', () => {
