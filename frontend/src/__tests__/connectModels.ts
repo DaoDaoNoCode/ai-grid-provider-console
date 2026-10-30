@@ -15,11 +15,14 @@ import { MetadataSchema } from '../gen/ai_grid/v1/metadata_type_pb';
 import {
   ModelClusterStatusSchema,
   ModelContainerSchema,
+  ModelDeploymentState,
   ModelPhase,
   ModelPlacementStatusSchema,
   ModelSchema,
   ModelStatusSchema,
   ModelSpecSchema,
+  ModelState,
+  ModelSyncState,
   type Model,
 } from '../gen/ai_grid/v1/model_type_pb';
 import { SubscriptionSchema, type Subscription } from '../gen/ai_grid/v1/subscription_type_pb';
@@ -87,15 +90,56 @@ export const seedModelObjects = (): Model[] =>
           : { reason: 'Ready' }),
         // The seed clusters' location label is their name.
         placement: { selectedClusters: clusters, locations: clusters, numberOfSelectedClusters: clusters.length },
+        // As the backend reports a ready cluster: synced and running.
         clusters: clusters.map((cluster) => ({
           cluster,
           phase,
           reason: 'Ready',
           message: 'LLMInferenceService ready',
+          deployment: ModelDeploymentState.RUNNING,
+          sync: ModelSyncState.SYNCED,
         })),
       },
     }),
   );
+
+/**
+ * The rollout state the backend sends with a model (ModelStatus.state), for a fake model that
+ * doesn't set one, by the backend's rule (models_git.go clusterRollout and modelRollout): each placed
+ * cluster's from its sync and deployment, the model's summed over them (Ready, Partially ready, then
+ * the first of Failed, Stopped when all are, Starting, Syncing, Synced, Stopped), and Saved to Git
+ * with no placed cluster reporting. A fixture that sets only phases reads as the backend would read
+ * it: nothing reported.
+ */
+const withState = (model: Model): Model => {
+  const status = model.status;
+  if (!status || status.state !== ModelState.UNSPECIFIED) return model;
+  const out = clone(ModelSchema, model);
+  const st = out.status!;
+  for (const c of st.clusters) {
+    if (c.state !== ModelState.UNSPECIFIED) continue;
+    if (c.sync === ModelSyncState.FAILED) c.state = ModelState.FAILED;
+    else if (c.deployment === ModelDeploymentState.STOPPED && c.sync === ModelSyncState.OUT_OF_SYNC)
+      c.state = ModelState.SYNCING;
+    else if (c.deployment === ModelDeploymentState.RUNNING) c.state = ModelState.READY;
+    else if (c.deployment === ModelDeploymentState.STARTING) c.state = ModelState.STARTING;
+    else if (c.deployment === ModelDeploymentState.FAILED) c.state = ModelState.FAILED;
+    else if (c.deployment === ModelDeploymentState.STOPPED) c.state = ModelState.STOPPED;
+    else if (c.sync === ModelSyncState.OUT_OF_SYNC) c.state = ModelState.SYNCING;
+    else if (c.sync === ModelSyncState.SYNCED) c.state = ModelState.SYNCED;
+  }
+  const states = st.clusters.map((c) => c.state);
+  const ready = states.filter((x) => x === ModelState.READY).length;
+  if (states.length > 0 && ready === states.length) st.state = ModelState.READY;
+  else if (ready > 0) st.state = ModelState.PARTIALLY_READY;
+  else if (states.length > 0 && states.every((x) => x === ModelState.STOPPED)) st.state = ModelState.STOPPED;
+  else
+    st.state =
+      [ModelState.FAILED, ModelState.STARTING, ModelState.SYNCING, ModelState.SYNCED, ModelState.STOPPED].find((x) =>
+        states.includes(x),
+      ) ?? ModelState.SAVED_TO_GIT;
+  return out;
+};
 
 /** A subscription whose refs name these models, as the backend joins them (model_id). */
 export const subscriptionUsing = (id: string, modelIds: string[], displayName?: string): Subscription =>
@@ -177,9 +221,9 @@ export class FakeModels {
     const ids = /^this\.id in \[(.*)\]$/.exec(filter ?? '')?.[1];
     const wanted = ids === undefined ? undefined : [...ids.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
     const items = this.models.filter((m) => !wanted || wanted.includes(m.id)).sort((a, b) => a.id.localeCompare(b.id));
-    return { items, size: items.length, total: items.length };
+    return { items: items.map(withState), size: items.length, total: items.length };
   };
-  get: Impl['get'] = ({ id }) => ({ object: this.find(id) });
+  get: Impl['get'] = ({ id }) => ({ object: withState(this.find(id)) });
   listPlacementClusters: Impl['listPlacementClusters'] = async () => ({ clusters: await this.placementClusters() });
   create: Impl['create'] = async ({ object }) => {
     const id = object?.id ?? '';

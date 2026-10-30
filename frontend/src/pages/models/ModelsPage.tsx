@@ -3,8 +3,11 @@
 // and components/global/GlobalDeploymentsView.tsx.
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
 // The UX team's "models per cluster" design (jgiardino/ai-grid-provider-console@ada68ad): a model
-// row expands to its locations and each one's status; the Locations cell shows up to five compact
-// labels. The models are the backend's Models/List over Connect (useModels.ts).
+// row expands to its clusters and each one's status; the Clusters cell shows up to five compact
+// labels. Status and Availability follow the UX design of console #114 (Chris, 2026-11-02): Status
+// is Git sync and deployment in one word (status.state), sorted in rollout order; Availability is
+// the model in MaaS (status.maas). The models are the backend's Models/List over Connect
+// (useModels.ts).
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button, Label, LabelGroup, ToolbarItem } from '@patternfly/react-core';
@@ -20,10 +23,13 @@ import { ToolbarSearch } from '../../components/ToolbarSearch';
 import { TableEmptyRow } from '../../components/TableEmptyRow';
 import { useConsoleSession } from '../../context/useConsoleSession';
 import { EMPTY_VALUE } from '../../utilities/format';
-import { locationLabel, modelPath, siteNamesOf } from './modelUtils';
-import { ModelLocationsTable } from './ModelLocationsTable';
+import { modelPath } from './modelUtils';
+import { ModelClustersTable } from './ModelClustersTable';
 import { NotPlaced } from './NotPlaced';
+import { ModelAvailability } from './ModelAvailability';
 import { ModelStatusLabel } from './ModelStatus';
+import { ModelStatusModal } from './ModelStatusModal';
+import { availabilityOf, stateRank, statusOpens } from './modelStatusInfo';
 import { titleOf, type ModelView } from './modelView';
 import { useDeleteModel } from './useDeleteModel';
 import { useModelList } from './useModels';
@@ -34,22 +40,30 @@ type Column = { label: string; isNumber?: boolean; sort: (a: ModelView, b: Model
 const columns: Column[] = [
   { label: 'Name', sort: (a, b) => titleOf(a).localeCompare(titleOf(b)) },
   { label: 'Model', sort: (a, b) => (a.modelName ?? a.id).localeCompare(b.modelName ?? b.id) },
-  { label: 'Replicas', isNumber: true, sort: (a, b) => (a.replicas ?? 0) - (b.replicas ?? 0) },
-  { label: 'Locations', sort: (a, b) => a.locations.length - b.locations.length },
+  { label: 'Clusters', sort: (a, b) => a.selectedClusters.length - b.selectedClusters.length },
   { label: 'Created', sort: (a, b) => (a.creationTimestamp ?? '').localeCompare(b.creationTimestamp ?? '') },
-  { label: 'Status', sort: (a, b) => a.phase.localeCompare(b.phase) },
+  { label: 'Status', sort: (a, b) => stateRank(a.state) - stateRank(b.state) || titleOf(a).localeCompare(titleOf(b)) },
+  {
+    label: 'Availability',
+    sort: (a, b) => (availabilityOf(a)?.label ?? '').localeCompare(availabilityOf(b)?.label ?? ''),
+  },
 ];
+
+/** The list opens sorted by Status (#114). */
+const STATUS_COLUMN = columns.findIndex((c) => c.label === 'Status');
 
 export const ModelsPage: React.FC = () => {
   const navigate = useNavigate();
   const { data: models, loaded, error, refresh } = useModelList();
   const { data: clusters } = useClusterList();
   const { user } = useConsoleSession();
-  const siteNames = useMemo(() => siteNamesOf(clusters), [clusters]);
   const canWrite = !!user?.isProviderAdmin;
   const [filter, setFilter] = useState('');
-  const [sortBy, setSortBy] = useState<{ index: number; direction: 'asc' | 'desc' }>({ index: 0, direction: 'asc' });
-  // The models whose rows show their locations.
+  const [sortBy, setSortBy] = useState<{ index: number; direction: 'asc' | 'desc' }>({
+    index: STATUS_COLUMN,
+    direction: 'asc',
+  });
+  // The models whose rows show their clusters.
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const setRowExpanded = (id: string, open: boolean) =>
     setExpanded((current) => {
@@ -61,6 +75,8 @@ export const ModelsPage: React.FC = () => {
       }
       return next;
     });
+  // The model whose status dialog is open, by id, so each poll shows its current status.
+  const [statusModelId, setStatusModelId] = useState<string>();
   const [confirmDelete, deleteModal] = useDeleteModel({
     refresh: () => void refresh(),
     onDeleted: () => {
@@ -74,10 +90,14 @@ export const ModelsPage: React.FC = () => {
     const compare = columns[sortBy.index].sort;
     return models
       .filter((m) =>
-        `${m.displayName ?? ''} ${m.id} ${m.modelName ?? ''} ${m.locations.join(' ')}`.toLowerCase().includes(term),
+        `${m.displayName ?? ''} ${m.id} ${m.modelName ?? ''} ${m.selectedClusters.join(' ')}`
+          .toLowerCase()
+          .includes(term),
       )
       .sort((a, b) => (sortBy.direction === 'asc' ? compare(a, b) : compare(b, a)));
   }, [models, filter, sortBy]);
+
+  const statusModel = models.find((m) => m.id === statusModelId);
 
   const deployButton = canWrite ? (
     <Button component={(props) => <Link {...props} to="/models/deploy" />}>Deploy model</Button>
@@ -104,7 +124,7 @@ export const ModelsPage: React.FC = () => {
           <>
             <ToolbarSearch
               label="Filter models"
-              placeholder="Filter by name or location"
+              placeholder="Filter by name or cluster"
               value={filter}
               onChange={setFilter}
             />
@@ -119,7 +139,7 @@ export const ModelsPage: React.FC = () => {
           <Table aria-label="Models" isExpandable data-testid="model-deployments-table">
             <Thead>
               <Tr>
-                <Th screenReaderText="Show locations" />
+                <Th screenReaderText="Show clusters" />
                 {columns.map((c, i) => (
                   <Th
                     key={c.label}
@@ -144,19 +164,20 @@ export const ModelsPage: React.FC = () => {
             ) : (
               pageRows.map((model, rowIndex) => {
                 const title = titleOf(model);
+                const availability = availabilityOf(model);
                 const isExpanded = expanded.has(model.id);
                 const edit = canWrite ? () => navigate(`${modelPath(model)}/edit`) : undefined;
                 return (
                   <Tbody key={model.id} isExpanded={isExpanded}>
                     <Tr isContentExpanded={isExpanded}>
-                      {/* Every row expands: to each placed cluster's status, to the clusters its
-                          placement chose while none has reported, or to say it has none. */}
+                      {/* Every row expands: to each placed cluster's sync and deployment, to the
+                          clusters its placement chose while none has reported, or to say it has none. */}
                       <Td
                         expand={{
                           rowIndex,
                           isExpanded,
                           onToggle: () => setRowExpanded(model.id, !isExpanded),
-                          expandId: `model-locations-toggle-${model.id}`,
+                          expandId: `model-clusters-toggle-${model.id}`,
                         }}
                       />
                       <Td dataLabel="Name">
@@ -165,15 +186,12 @@ export const ModelsPage: React.FC = () => {
                       <Td dataLabel="Model" modifier="breakWord">
                         {model.modelName ?? EMPTY_VALUE}
                       </Td>
-                      <Td dataLabel="Replicas" className="console-number">
-                        {model.replicas ?? EMPTY_VALUE}
-                      </Td>
-                      <Td dataLabel="Locations" data-testid={`model-locations-${model.id}`}>
-                        {model.locations.length ? (
+                      <Td dataLabel="Clusters" data-testid={`model-cluster-names-${model.id}`}>
+                        {model.selectedClusters.length ? (
                           <LabelGroup numLabels={5}>
-                            {model.locations.map((location) => (
-                              <Label key={location} color="grey" isCompact>
-                                {locationLabel(location, siteNames)}
+                            {model.selectedClusters.map((cluster) => (
+                              <Label key={cluster} color="grey" isCompact>
+                                {cluster}
                               </Label>
                             ))}
                           </LabelGroup>
@@ -185,7 +203,10 @@ export const ModelsPage: React.FC = () => {
                         <RelativeTime time={model.creationTimestamp} />
                       </Td>
                       <Td dataLabel="Status">
-                        <ModelStatusLabel model={model} />
+                        <ModelStatusLabel model={model} onOpen={() => setStatusModelId(model.id)} />
+                      </Td>
+                      <Td dataLabel="Availability" data-testid={`model-availability-${model.id}`}>
+                        {availability ? <ModelAvailability model={model} availability={availability} /> : EMPTY_VALUE}
                       </Td>
                       {canWrite && (
                         <Td isActionCell>
@@ -213,13 +234,7 @@ export const ModelsPage: React.FC = () => {
                         <ExpandableRowContent>
                           {isExpanded &&
                             (model.clusters.length > 0 || model.selectedClusters.length > 0 ? (
-                              <ModelLocationsTable
-                                model={model}
-                                clusters={clusters}
-                                siteNames={siteNames}
-                                onEdit={edit}
-                                isNested
-                              />
+                              <ModelClustersTable model={model} clusters={clusters} onEdit={edit} isNested />
                             ) : (
                               <NotPlaced model={model} onEdit={edit} />
                             ))}
@@ -250,6 +265,10 @@ export const ModelsPage: React.FC = () => {
         {body()}
       </PageStateSection>
       {deleteModal}
+      {/* A poll can move the model out of a state that opens the dialog; it closes then. */}
+      {statusModel && statusOpens(statusModel.state) && (
+        <ModelStatusModal model={statusModel} clusters={clusters} onClose={() => setStatusModelId(undefined)} />
+      )}
     </>
   );
 };

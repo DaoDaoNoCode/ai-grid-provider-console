@@ -1,7 +1,7 @@
 import { ExpandableSection, Stack } from '@patternfly/react-core';
-import type { ModelView } from './modelView';
+import { titleOf, type ModelView } from './modelView';
 import { StatusLabel } from '../../components/StatusLabel';
-import { failureExplanations, modelPhase } from './modelStatusInfo';
+import { failureExplanations, modelPhase, statusOpens } from './modelStatusInfo';
 
 /**
  * The status in words: a sentence and the next step for a known failure, else the backend's
@@ -27,12 +27,21 @@ export const ModelStatusDetails: React.FC<{ model: ModelView }> = ({ model }) =>
 };
 
 /**
- * The model's phase as an outline StatusLabel, the backend's message (else its reason) in a tooltip.
- * A model's status opens nothing: its locations are in the row's expanded content and on its page,
- * where each cluster's status opens what that cluster reported.
+ * The model's Status column (#114): the backend's rollout word (status.state). Saved to Git, Syncing
+ * and Partially ready open the model's status dialog through `onOpen`; the other words are outline,
+ * with the backend's message in a tooltip. Without `onOpen` (the model page), nothing opens.
  */
-export const ModelStatusLabel: React.FC<{ model: ModelView }> = ({ model }) => (
-  <span data-testid="model-phase">
-    <StatusLabel isCompact status={modelPhase(model)} reason={model.statusMessage ?? model.reason} />
-  </span>
-);
+export const ModelStatusLabel: React.FC<{ model: ModelView; onOpen?: () => void }> = ({ model, onOpen }) => {
+  const opens = statusOpens(model.state) && !!onOpen;
+  return (
+    <span data-testid="model-phase">
+      <StatusLabel
+        isCompact
+        status={model.state}
+        reason={opens ? undefined : (model.statusMessage ?? model.reason)}
+        onClick={opens ? onOpen : undefined}
+        screenReaderSuffix={onOpen ? ` for ${titleOf(model)}` : undefined}
+      />
+    </span>
+  );
+};

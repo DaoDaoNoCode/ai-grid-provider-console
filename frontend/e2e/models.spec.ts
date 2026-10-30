@@ -75,13 +75,13 @@ test('deploys a model to a cluster, edits it in the same wizard, and deletes it'
   await expect(row).toBeVisible();
   // The backend saved it to Git; no cluster has reported it yet.
   await expect(row.getByTestId('model-phase')).toHaveText('Saved to Git');
-  await expect(row.getByTestId(`model-locations-${unique}`)).toContainText(CLUSTER);
+  await expect(row.getByTestId(`model-cluster-names-${unique}`)).toContainText(CLUSTER);
 
   // The model's page, at /models/<id>.
   await row.getByRole('link', { name: unique, exact: true }).click();
   await expect(page).toHaveURL(`/models/${unique}`);
   await expect(page.getByRole('heading', { name: unique })).toBeVisible();
-  await expect(page.getByTestId('model-locations')).toContainText(CLUSTER);
+  await expect(page.getByTestId('model-clusters')).toContainText(CLUSTER);
 
   // Edit in the deploy wizard: the source is read-only, every step opens directly, and Save sends
   // Models/Update with the changed path and the version the page loaded.
