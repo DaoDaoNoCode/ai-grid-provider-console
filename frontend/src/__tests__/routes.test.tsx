@@ -107,7 +107,7 @@ describe('routes', () => {
     [
       '/models/deploy',
       'models.listPlacementClusters',
-      'Locations are not available on this AI Grid backend.',
+      'Clusters are not available on this AI Grid backend.',
       toLocationsStep,
     ],
     ['/ai-grid', 'listClusters', 'The AI Grid map is not available on this AI Grid backend'],
