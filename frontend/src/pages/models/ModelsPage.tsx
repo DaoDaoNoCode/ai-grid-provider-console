@@ -255,7 +255,7 @@ export const ModelsPage: React.FC = () => {
     <>
       <PageStateSection
         title="Models"
-        description="Deploy models to AI Grid locations and check their status."
+        description="Deploy models to AI Grid clusters and check their status."
         loaded={loaded}
         error={error}
         onRetry={() => void refresh()}
