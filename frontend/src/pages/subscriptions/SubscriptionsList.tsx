@@ -13,8 +13,6 @@ import { PageStateSection } from '../../components/states/PageStateSection';
 import { useConsoleSession } from '../../context/useConsoleSession';
 import type { Subscription } from '../../gen/ai_grid/v1/subscription_type_pb';
 import { getSubscriptionCreateUrl } from '../../utilities/maasGovernanceNavigation';
-import { useClusterList } from '../clusters/useClusters';
-import { siteNamesOf } from '../models/modelUtils';
 import type { SubscriptionsFilterDataType } from './allSubscriptions/const';
 import { initialSubscriptionsFilterData, SubscriptionsFilterOptions } from './allSubscriptions/const';
 import type { ModelsState } from './allSubscriptions/ExpandedModelsPanel';
@@ -46,10 +44,6 @@ export const SubscriptionsList: React.FC = () => {
     void refreshSubscriptions();
     void refreshModels();
   }, [refreshSubscriptions, refreshModels]);
-  // The clusters name the models' locations' sites, as on the Models page. Without a site name (or
-  // without the clusters) a location shows as itself.
-  const { data: clusters } = useClusterList();
-  const siteNames = useMemo(() => siteNamesOf(clusters), [clusters]);
   const [filterData, setFilterData] = useState<SubscriptionsFilterDataType>(initialSubscriptionsFilterData);
   const navigate = useNavigate();
   const [confirmDelete, deleteDialog] = useDeleteSubscription({
@@ -73,7 +67,7 @@ export const SubscriptionsList: React.FC = () => {
     [organizations],
   );
 
-  // The models fill in the models' locations and let the model filter match their display name and
+  // The models fill in the models' clusters and let the model filter match their display name and
   // description. When their last load failed, only what the subscriptions say is known.
   let modelsState: ModelsState = 'loading';
   if (modelsLoaded) {
@@ -134,8 +128,8 @@ export const SubscriptionsList: React.FC = () => {
               actionLinks={<AlertActionLink onClick={refresh}>Retry</AlertActionLink>}
               data-testid="subscriptions-models-unavailable"
             >
-              Model locations are not shown, and the model filter matches only the model names and descriptions saved in
-              each subscription.
+              The clusters each model is deployed to are not shown, and the model filter matches only the model names
+              and descriptions saved in each subscription.
             </Alert>
           </StackItem>
         )}
@@ -145,7 +139,6 @@ export const SubscriptionsList: React.FC = () => {
             organizationName={organizationName}
             models={models}
             modelsState={modelsState}
-            siteNames={siteNames}
             onClearFilters={onClearFilters}
             toolbarContent={
               <SubscriptionsToolbar

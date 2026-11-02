@@ -34,6 +34,7 @@ import '../pages/subscriptions/EditSubscriptionPage';
 import '../pages/subscriptions/SubscriptionsPage';
 import '../pages/subscriptions/ViewSubscriptionPage';
 import { TestApp } from './TestApp';
+import type { Model } from '../gen/ai_grid/v1/model_type_pb';
 
 /** A service whose backend has the PoC's subscriptions (connectSubscriptions.ts, seedSubscriptionsOf). */
 const seeded = () => {
@@ -137,7 +138,7 @@ describe('administrator subscription flows', () => {
     expect(screen.getByTestId('subscription-models-table')).toHaveTextContent('Ready');
   });
 
-  it("expands a row's models, with their locations and token limits, or its groups, one at a time", async () => {
+  it("expands a row's models, with their clusters and token limits, or its groups, one at a time", async () => {
     const user = userEvent.setup();
     renderAt('/subscriptions', seeded());
     const table = await screen.findByTestId('subscriptions-table');
@@ -152,11 +153,13 @@ describe('administrator subscription flows', () => {
     // The display name the backend joined to the ref (SubscriptionModelRef.display_name).
     expect(model).toHaveTextContent('Granite 3.3 8B Instruct');
     expect(model).toHaveTextContent('granite-3-8b');
-    // Where the model's placement put it (its locations), named by its site as on the Models page,
-    // and every limit on one line.
-    expect(within(model).getByTestId('expanded-subscription-model-locations')).toHaveTextContent(
-      'San Francisco (site1)',
-    );
+    // The clusters the model's placement chose, by name, and every limit on one line.
+    expect(
+      within(models)
+        .getAllByRole('columnheader')
+        .map((h) => h.textContent),
+    ).toEqual(['Model name', 'Clusters', 'Token limits']);
+    expect(within(model).getByTestId('expanded-subscription-model-clusters')).toHaveTextContent(/^site1$/);
     expect(within(model).getByTestId('expanded-subscription-model-token-limits')).toHaveTextContent(
       '100,000 / 1 hour, 10,000 / 1 minute',
     );
@@ -178,7 +181,25 @@ describe('administrator subscription flows', () => {
     expect(screen.queryByTestId('subscription-groups-expanded-panel')).not.toBeInTheDocument();
   });
 
-  it('shows a ref the backend joined to no model without locations, and an unlimited model as Unlimited', async () => {
+  it('lists the clusters a model is deployed to by name, not their location labels', async () => {
+    const user = userEvent.setup();
+    const service = seeded();
+    // The model's status names two clusters but one location label value: the cell must show the clusters.
+    const granite = fleetOf(service).get({ id: 'granite-3-8b' } as never, {} as never) as { object?: Model };
+    granite.object!.status!.placement!.selectedClusters = ['site1', 'site2'];
+    granite.object!.status!.placement!.locations = ['us-east'];
+    renderAt('/subscriptions', service);
+    const table = await screen.findByTestId('subscriptions-table');
+    const row = within(table).getByRole('link', { name: 'Engineering' }).closest('tr')!;
+    await user.click(within(within(row).getByTestId('subscription-models')).getByRole('button', { name: '1' }));
+    const cell = within(screen.getByTestId('subscription-models-expanded-panel')).getByTestId(
+      'expanded-subscription-model-clusters',
+    );
+    expect(cell).toHaveTextContent('site1site2');
+    expect(cell).not.toHaveTextContent('us-east');
+  });
+
+  it('shows a ref the backend joined to no model without clusters, and an unlimited model as Unlimited', async () => {
     const user = userEvent.setup();
     const service = seeded();
     const seed = stored(service, 'engineering');
@@ -195,7 +216,7 @@ describe('administrator subscription flows', () => {
     );
     expect(within(granite).getByTestId('expanded-subscription-model-token-limits')).toHaveTextContent('Unlimited');
     expect(retired).toHaveTextContent('retired-llm');
-    expect(within(retired).getByTestId('expanded-subscription-model-locations')).toHaveTextContent('—');
+    expect(within(retired).getByTestId('expanded-subscription-model-clusters')).toHaveTextContent('—');
     expect(within(retired).queryByRole('button', { name: /^About/ })).not.toBeInTheDocument();
   });
 
@@ -309,12 +330,12 @@ describe('administrator subscription flows', () => {
     const table = await screen.findByTestId('subscriptions-table');
     const row = within(table).getByRole('link', { name: 'Engineering' }).closest('tr')!;
     await user.click(within(within(row).getByTestId('subscription-models')).getByRole('button'));
-    expect(screen.getByTestId('expanded-subscription-model-locations')).toHaveTextContent('Loading locations');
+    expect(screen.getByTestId('expanded-subscription-model-clusters')).toHaveTextContent('Loading clusters');
 
     act(() => fail(new ConnectError('backend down', Code.Unavailable)));
     expect(await screen.findByTestId('subscriptions-models-unavailable')).toHaveTextContent('Unable to load models');
-    expect(screen.getByTestId('expanded-subscription-model-locations')).toHaveTextContent(/^—$/);
-    await user.hover(within(screen.getByTestId('expanded-subscription-model-locations')).getByText('—'));
+    expect(screen.getByTestId('expanded-subscription-model-clusters')).toHaveTextContent(/^—$/);
+    await user.hover(within(screen.getByTestId('expanded-subscription-model-clusters')).getByText('—'));
     expect(await screen.findByRole('tooltip')).toHaveTextContent('Unable to load models.');
     // The ref's own name still filters.
     await user.click(screen.getByTestId('subscriptions-filter-attribute'));
