@@ -9,17 +9,15 @@
 # the target's (--platform, linux/amd64 for the hub): the frontend is static files and Go
 # cross-compiles to TARGETOS/TARGETARCH, so an arm64 Mac builds an amd64 image without emulation.
 
-FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi9/nodejs-22:9.8-1793254256@sha256:06f5f49a1f94a0ff6822de8b99a62717945ec227883c914d9371a84103612ea4 AS frontend-builder
+FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi9/nodejs-22:1793597285@sha256:3dabbb65c76405761159315437fdd8795da6906f5a8a422b0d3ab25810a42c8f AS frontend-builder
 WORKDIR /opt/app-root/src/frontend
 RUN npm install -g pnpm@11.22.0
 COPY --chown=1001:0 frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
-# The dependency patches pnpm-workspace.yaml names, which the install applies.
-COPY --chown=1001:0 frontend/patches/ ./patches/
 RUN pnpm install --frozen-lockfile
 COPY --chown=1001:0 frontend/ ./
 RUN pnpm run build
 
-FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi9/go-toolset:1792906350@sha256:c51f0f31cbaa7e91dede6013f636d54fe10dd7d581cfc4cda014ba9d62bcd779 AS bff-builder
+FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi9/go-toolset:1793294324@sha256:cab9089469c52029e4d8a4e9f717e87c51ab22eed448ebcada101b811f97dfe7 AS bff-builder
 ARG TARGETOS
 ARG TARGETARCH
 # Not VERSION: go-toolset sets ENV VERSION (its Go version), which would override the build arg.
@@ -31,7 +29,7 @@ COPY --chown=1001:0 bff/ ./
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
     go build -ldflags "-s -w -X github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/api.Version=${CONSOLE_VERSION}" -o /tmp/out/bff ./cmd
 
-FROM registry.access.redhat.com/ubi9/ubi-minimal:1793050429@sha256:6f3a78179e0b30b930a186e7f68a4af52e51bb82406c9653be10bddd624e40f5
+FROM registry.access.redhat.com/ubi9/ubi-minimal:1793579023@sha256:dfa0eb04abc59221544e74862432496add1f491f915c9b531880f91affc0e12c
 WORKDIR /
 # Owned by root and world-readable, so OpenShift's arbitrary UID (group 0) can run and serve them.
 COPY --from=bff-builder --chown=0:0 /tmp/out/bff /bff
