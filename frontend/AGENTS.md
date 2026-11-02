@@ -116,7 +116,10 @@ odh-dashboard as the reference product. The terms come from [GLOSSARY.md](../GLO
    - _cluster_, not managed cluster or ManagedCluster; _AI Grid cluster_ for a Grid member;
    - _organization_, never tenant; the people who use a subscription are _users_ in its _groups_;
    - _model_, not model deployment;
-   - _location_ (the label models are deployed by) and _site_ (the place's name);
+   - _cluster_ for where a model is deployed, never _location_ or _site_;
+   - each label names the data it shows: _Site_ is the `ai-grid/site-name` annotation, _Site ID_
+     the `ai-grid/site` label, _Region_ the cloud region claim, _Location label_ the `location`
+     label;
    - the roles _Ingress_, _Inference_ and _Combined_;
    - _hub_ (lowercase), _provider admin_, and _your hub administrator_ for whoever grants access;
    - _AI Grid_, never "the grid", "grid" or "fleet".
@@ -152,7 +155,7 @@ odh-dashboard as the reference product. The terms come from [GLOSSARY.md](../GLO
 14. **Helper text says what to enter or what constraint applies.** It doesn't repeat the label or
     explain what the field is. Write examples as "For example, us-east."
 15. **Field errors are one imperative sentence that ends with a period and says how to fix the
-    input**: "Required.", "Enter a number from 1 to 99.", "Select at least one location.". The same
+    input**: "Required.", "Enter a number from 1 to 99.", "Select at least one cluster.". The same
     constraint gets the same words everywhere, and a limit names its value.
 16. **No internal jargon.** Don't write label keys (`ai-grid/enabled`), Kubernetes kinds (Policy,
     ManifestWork, MaaSModelRef), "controller", "pods", "KEDA", "ACM Search", "git mode", "CEL",
