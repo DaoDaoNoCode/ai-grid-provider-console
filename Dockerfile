@@ -9,7 +9,7 @@
 # the target's (--platform, linux/amd64 for the hub): the frontend is static files and Go
 # cross-compiles to TARGETOS/TARGETARCH, so an arm64 Mac builds an amd64 image without emulation.
 
-FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi9/nodejs-22:9.8-1793254256@sha256:06f5f49a1f94a0ff6822de8b99a62717945ec227883c914d9371a84103612ea4 AS frontend-builder
+FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi9/nodejs-22:1793597285@sha256:3dabbb65c76405761159315437fdd8795da6906f5a8a422b0d3ab25810a42c8f AS frontend-builder
 WORKDIR /opt/app-root/src/frontend
 RUN npm install -g pnpm@11.22.0
 COPY --chown=1001:0 frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
