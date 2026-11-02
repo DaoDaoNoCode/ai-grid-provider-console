@@ -98,12 +98,13 @@ describe("the console's wording for zod issues", () => {
       getCountError(limit(1, 'hour', 0)),
       getCountError(limit(1, 'hour', 2 ** 60)),
     ];
+    // The rate limits' own words, as #94 rewrote them (utilities/rateLimits.ts).
     expect(words).toEqual([
-      'At most 8784 hours (366 days)',
-      'Time value must be greater than 0',
-      'Time value exceeds maximum allowed value',
+      'Enter at most 8,784 hours (366 days).',
+      'Enter a time of at least 1.',
+      'Enter a time of at most 9,999.',
       'Enter a whole number.',
-      'Token count must be greater than 0',
+      'Enter a number of at least 1.',
       'Enter a number from 1 to 1000000000.',
     ]);
     expect(words.filter((message) => zodDefault.test(message ?? ''))).toEqual([]);
