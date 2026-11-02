@@ -27,6 +27,7 @@ CHART="${ROOT}/charts/ai-grid-provider-console"
 CLUSTER="${KIND_CLUSTER:-ai-grid-chart}"
 CTX="kind-${CLUSTER}"
 NS=ai-grid
+CATALOG_NS="${CATALOG_NAMESPACE:-openshift-gitops}"
 NAME=ai-grid-provider-console
 SA="system:serviceaccount:${NS}:${NAME}"
 PORT="${LOCAL_PORT:-18443}"
@@ -132,10 +133,13 @@ IMAGES=(--set images.console.repository=localhost/ai-grid-provider-console --set
 # Subscriptions answer 503 until the clone succeeds. .invalid never resolves, so the run needs no
 # network or repository.
 GIT_URL=https://git.invalid/catalog.git
-VALUES=(--set tls.serviceCA=false --set backend.git.url="${GIT_URL}" "${IMAGES[@]}")
+VALUES=(--set tls.serviceCA=false --set backend.git.url="${GIT_URL}"
+  --set-string backend.git.catalogNamespace="${CATALOG_NS}" "${IMAGES[@]}")
 
 step "namespace ${NS} and the secrets the chart expects to exist"
 k create namespace "${NS}" --dry-run=client -o yaml | k apply -f - >/dev/null
+# Argo CD owns this namespace on a hub; kind only needs it for the catalog's read-only RBAC.
+k create namespace "${CATALOG_NS}" --dry-run=client -o yaml | k apply -f - >/dev/null
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=${NAME}.${NS}.svc" \
   -addext "subjectAltName=DNS:${NAME}.${NS}.svc,DNS:localhost" \
   -keyout "${TMP}/tls.key" -out "${TMP}/tls.crt" 2>/dev/null
@@ -363,5 +367,8 @@ left="$(k get clusterrole,clusterrolebinding,validatingadmissionpolicy,validatin
   -l app.kubernetes.io/name="${NAME}" -o name)"
 [[ -z "${left}" ]] || fail "uninstall left: ${left}"
 pass "no cluster-scoped objects remain"
+left="$(k -n "${CATALOG_NS}" get role,rolebinding -l app.kubernetes.io/name="${NAME}" -o name)"
+[[ -z "${left}" ]] || fail "uninstall left catalog RBAC: ${left}"
+pass "no catalog Roles or RoleBindings remain"
 
 echo "test-chart-kind: all checks passed"
