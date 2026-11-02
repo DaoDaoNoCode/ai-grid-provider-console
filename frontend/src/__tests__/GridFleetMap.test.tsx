@@ -178,3 +178,48 @@ it('gives clusters at one position one pin, which names each and lists them to c
   await userEvent.setup().click(within(list).getByRole('button', { name: `us-east-2 · ${b.name} · Offline` }));
   expect(onSelect).toHaveBeenCalledWith(b.name);
 });
+
+it('leaves one label when the selection changes with a shared pin’s list open', async () => {
+  const marker = vi.spyOn(L, 'circleMarker');
+  const [a, b, c] = members;
+  const here = { latitude: 40.42, longitude: -82.91, siteName: undefined, site: undefined, region: 'us-east-2' };
+  const clusters = [{ ...a, ...here }, { ...b, ...here }, c];
+  const props = { clusters, onSelect: () => {}, tiles };
+  const { container, rerender } = render(<GridFleetMap {...props} selected={a.name} />);
+  const shared = marker.mock.results.find((r) => (r.value as L.CircleMarker).getLatLng().lat === 40.42)!
+    .value as L.CircleMarker;
+  // The selected shared pin's label steps aside for its list and comes back when the list closes.
+  act(() => {
+    shared.openPopup();
+  });
+  expect(shared.isTooltipOpen()).toBe(false);
+  act(() => {
+    shared.closePopup();
+  });
+  expect(shared.isTooltipOpen()).toBe(true);
+  // Selecting a cluster elsewhere redraws the pins; the old pin's closing list must not bring its label back.
+  act(() => {
+    shared.openPopup();
+  });
+  rerender(<GridFleetMap {...props} selected={c.name} />);
+  const shown = container.querySelectorAll('.leaflet-tooltip');
+  expect(shown).toHaveLength(1);
+  expect(shown[0]).toHaveTextContent(c.name);
+});
+
+it('leaves one label when the clusters refresh with a shared pin’s list open', () => {
+  const marker = vi.spyOn(L, 'circleMarker');
+  const [a, b, c] = members;
+  const here = { latitude: 40.42, longitude: -82.91, siteName: undefined, site: undefined, region: 'us-east-2' };
+  const clusters = [{ ...a, ...here }, { ...b, ...here }, c];
+  const props = { selected: a.name, onSelect: () => {}, tiles };
+  const { container, rerender } = render(<GridFleetMap clusters={clusters} {...props} />);
+  const shared = marker.mock.results.find((r) => (r.value as L.CircleMarker).getLatLng().lat === 40.42)!
+    .value as L.CircleMarker;
+  act(() => {
+    shared.openPopup();
+  });
+  // New data with the same selection redraws the pins; only the new shared pin's label is shown.
+  rerender(<GridFleetMap clusters={clusters.map((x, i) => (i === 2 ? { ...x, status: 'Offline' } : x))} {...props} />);
+  expect(container.querySelectorAll('.leaflet-tooltip')).toHaveLength(1);
+});
