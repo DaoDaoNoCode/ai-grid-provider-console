@@ -115,6 +115,9 @@ backend:
     # new namespace on its next write, and Argo CD prunes the old copy; models nobody edits stay
     # in the old namespace, so the spokes serve from both until each model is written again.
     modelsNamespace: ""
+    # Argo CD's namespace, where the catalog's Applications report model and subscription status.
+    # The chart grants get/list there and passes the same namespace to the backend.
+    catalogNamespace: openshift-gitops
   resources:
     requests: { cpu: 50m, memory: 64Mi }
     limits: { memory: 256Mi }

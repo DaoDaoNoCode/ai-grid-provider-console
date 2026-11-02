@@ -224,6 +224,8 @@ spec:
               value: {{ .branch | quote }}
             - name: AI_GRID_GIT_TOKEN_FILE
               value: /var/run/secrets/ai-grid-git/token
+            - name: AI_GRID_CATALOG_APP_NAMESPACE
+              value: {{ .catalogNamespace | quote }}
             {{- with .gridNamespace }}
             - name: AI_GRID_GRID_NAMESPACE
               value: {{ . | quote }}

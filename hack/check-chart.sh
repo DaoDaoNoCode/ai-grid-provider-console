@@ -41,10 +41,43 @@ for url in http://github.com/example/catalog.git https://user:token@github.com/e
   'https://?q=/catalog.git' https://:443/catalog.git https://github.com; do
   refused "backend.git.url=${url}" --set-string "backend.git.url=${url}"
 done
-for key in gridNamespace modelsNamespace; do
+for key in gridNamespace modelsNamespace catalogNamespace; do
   refused "backend.git.${key}=Not_A_Namespace" --set-string backend.git.url=https://github.com/example/catalog.git \
     --set-string "backend.git.${key}=Not_A_Namespace"
 done
+refused "backend.git.catalogNamespace is empty" --set-string backend.git.catalogNamespace=
+# Catalog status reads stay in Argo CD's namespace while the binding names the console's account.
+catalog_status() {
+  local catalog_namespace=$1 console_namespace=$2 account=$3 rendered got
+  rendered="$(helm template console "${CHART}" -n "${console_namespace}" \
+    --set-string backend.git.url=https://github.com/example/catalog.git \
+    --set-string "backend.git.catalogNamespace=${catalog_namespace}" --set-string "fullnameOverride=${account}")"
+  got="$(yq -o=json -I=0 'select(.kind == "Role") | .rules' <<<"${rendered}")"
+  [[ "${got}" == '[{"apiGroups":["argoproj.io"],"resources":["applications"],"verbs":["get","list"]}]' ]] || {
+    echo "check-chart: catalog Role grants unexpected permissions: ${got}" >&2; exit 1;
+  }
+  got="$(yq -N 'select(.kind == "Role" or .kind == "RoleBinding") | .metadata.namespace' <<<"${rendered}")"
+  [[ "${got}" == "${catalog_namespace}"$'\n'"${catalog_namespace}" ]] || {
+    echo "check-chart: catalog RBAC namespaces are '${got}', not '${catalog_namespace}'" >&2; exit 1;
+  }
+  got="$(yq -o=json -I=0 'select(.kind == "RoleBinding") | .subjects' <<<"${rendered}")"
+  [[ "${got}" == "[{\"kind\":\"ServiceAccount\",\"name\":\"${account}\",\"namespace\":\"${console_namespace}\"}]" ]] || {
+    echo "check-chart: catalog RoleBinding has unexpected subjects: ${got}" >&2; exit 1;
+  }
+  got="$(yq 'select(.kind == "RoleBinding") | .roleRef.kind + "/" + .roleRef.name' <<<"${rendered}")"
+  [[ "${got}" == "Role/${account}-catalog-status" ]] || {
+    echo "check-chart: catalog RoleBinding refers to '${got}'" >&2; exit 1;
+  }
+  got="$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[] | select(.name == "ai-grid-backend")
+    | .env[] | select(.name == "AI_GRID_CATALOG_APP_NAMESPACE") | .value' <<<"${rendered}")"
+  [[ "${got}" == "${catalog_namespace}" ]] || {
+    echo "check-chart: backend reads catalog namespace '${got}', not '${catalog_namespace}'" >&2; exit 1;
+  }
+}
+catalog_status openshift-gitops ai-grid ai-grid-provider-console
+catalog_status custom-gitops custom-console custom-console-name
+got="$(helm template console "${CHART}" -n ai-grid | yq 'select(.kind == "Role" or .kind == "RoleBinding") | .kind')"
+[[ -z "${got}" ]] || { echo "check-chart: catalog RBAC renders without backend.git.url" >&2; exit 1; }
 # backend.git.modelsNamespace sets AI_GRID_MODELS_NAMESPACE; empty leaves the backend's default.
 models_ns() {
   helm template console "${CHART}" -n ai-grid --set-string backend.git.url=https://github.com/example/catalog.git "$@" |

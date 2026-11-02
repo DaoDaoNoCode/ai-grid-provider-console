@@ -5,6 +5,13 @@ frontend) and `ai-grid-provider-backend`. `hack/deploy.sh` (`make deploy`) insta
 OAuthClient and Secrets it expects; `docs/dev-setup.md`, "Deploy to a cluster", has the details.
 `values.yaml` documents every value and `values.schema.json` refuses any it doesn't list.
 
+With `backend.git.url` set, the chart grants the console's ServiceAccount `get` and `list` on
+Argo CD Applications in `backend.git.catalogNamespace` (default `openshift-gitops`) and configures
+the backend to read that namespace. Without these reads, models stay Saved to Git and
+subscriptions have no observed phase. The namespace must already exist, and the installer needs
+permission to create its Role and RoleBinding. Listing Applications exposes every Application's
+spec in that namespace, including inline Helm values or plugin settings; keep secrets out of them.
+
 ## Images
 
 Each image is `repository:tag`, `repository@digest`, or `repository:tag@digest` when both are set.

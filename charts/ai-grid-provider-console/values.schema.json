@@ -97,7 +97,8 @@
             "branch": { "type": "string", "minLength": 1 },
             "tokenSecretName": { "type": "string", "minLength": 1 },
             "gridNamespace": { "type": "string", "pattern": "^([a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?)?$" },
-            "modelsNamespace": { "type": "string", "pattern": "^([a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?)?$" }
+            "modelsNamespace": { "type": "string", "pattern": "^([a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?)?$" },
+            "catalogNamespace": { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$" }
           }
         },
         "resources": { "$ref": "#/definitions/resources" }

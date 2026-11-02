@@ -378,9 +378,12 @@ namespace, creates it enabled for the grid, and reads model status from it, so s
 `modelsNamespace` commits models that are never delivered, routed or reported. Changing it on a
 live install moves each model to the new namespace on its next write, and Argo CD prunes the old
 copy. Models nobody edits stay in the old namespace, so the spokes serve from both until each
-model is written again. With `url` set, the chart also grants `get` on the two inform-only Policies the
-backend reads the spokes' status from (`ai-grid-models-status`, `ai-grid-catalog-status`, and each
-cluster's copy). Backend images with git mode don't start without `url`; leave it empty for older
+model is written again. With `url` set, the chart grants `get` and `list` on Argo CD Applications in
+`catalogNamespace` (default `openshift-gitops`) and sets `AI_GRID_CATALOG_APP_NAMESPACE` to match.
+The namespace must exist, and the installer needs permission to create its Role and RoleBinding.
+Without those reads, models stay Saved to Git and subscriptions have no observed phase. The grant
+exposes every Application spec in that namespace; keep secrets out of inline Helm values and plugin
+settings. Backend images with git mode don't start without `url`; leave it empty for older
 ones. `hack/deploy.sh` sets it from `GIT_URL`, `GIT_BRANCH`, `GIT_TOKEN`,
 `GIT_GRID_NAMESPACE` (`grid` on the dev hub) and `GIT_MODELS_NAMESPACE`, creating the Secret.
 
