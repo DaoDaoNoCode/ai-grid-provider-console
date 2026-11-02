@@ -149,7 +149,7 @@ export const ModelClustersTable: React.FC<Props> = ({ model, clusters, onEdit, i
   // The open dialog's cluster, not its entry: each poll brings new entries, and the dialog shows the
   // current one, or closes when the model no longer has the cluster.
   const [openCluster, setOpenCluster] = useState<string>();
-  const open = model.clusters.find((c) => c.cluster === openCluster);
+  const open = model.clusters.find((c) => c.cluster === openCluster && c.state);
   const title = titleOf(model);
   const reported = model.clusters.length > 0;
   const rows: { cluster: string; status?: ModelClusterView }[] = reported
@@ -191,7 +191,7 @@ export const ModelClustersTable: React.FC<Props> = ({ model, clusters, onEdit, i
                   <StatusLabel
                     isCompact
                     status={status ? clusterStatus(status) : 'Pending sync'}
-                    onClick={status && opensClusters ? () => setOpenCluster(cluster) : undefined}
+                    onClick={status?.state && opensClusters ? () => setOpenCluster(cluster) : undefined}
                     screenReaderSuffix={` on ${cluster}`}
                     data-testid="model-cluster-status"
                   />

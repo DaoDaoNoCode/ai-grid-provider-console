@@ -107,7 +107,7 @@ const availabilityViews: Record<MaaSWord, AvailabilityView> = {
     label: 'Pending',
     subtext: 'Configuring routing',
     heading: 'Configuring routing',
-    body: 'The model’s HTTPRoute is being created.',
+    body: 'The route for this model is being configured.',
   },
   Unavailable: {
     label: 'Unavailable',

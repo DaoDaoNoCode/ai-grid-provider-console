@@ -649,13 +649,13 @@ describe('a background poll', () => {
     const models = modelsOf(service);
     const granite = models.find('granite-3-8b');
     granite.status!.clusters[0].phase = ModelPhase.PENDING;
-    granite.status!.clusters[0].reason = 'NoReport';
+    granite.status!.clusters[0].reason = 'NotReady';
     granite.status!.clusters[0].deployment = ModelDeploymentState.UNSPECIFIED;
-    granite.status!.clusters[0].sync = ModelSyncState.UNSPECIFIED;
+    granite.status!.clusters[0].sync = ModelSyncState.SYNCED;
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     renderAt('/models', service);
     await user.click(within(await rowOf('granite-3-8b')).getByRole('button', { name: 'Details' }));
-    await user.click(screen.getByRole('button', { name: 'Pending sync on site1' }));
+    await user.click(screen.getByRole('button', { name: 'Synced on site1' }));
     const modal = await screen.findByTestId('cluster-status-modal');
     const deployment = () => within(modal).getByText('Deployment').closest('.pf-v6-c-description-list__group');
     expect(deployment()).toHaveTextContent(/^DeploymentNot on the cluster yet$/);
@@ -812,25 +812,29 @@ describe('polling while a model is still changing', () => {
     expect(list.mock.calls.length).toBe(loaded);
   });
 
-  it('polls sooner while a running model waits for MaaS to publish it', async () => {
-    const service = new MockConsoleService();
-    const granite = modelsOf(service).find('granite-3-8b');
-    granite.status!.clusters[0].deployment = ModelDeploymentState.RUNNING;
-    granite.status!.clusters[0].sync = ModelSyncState.SYNCED;
-    granite.status!.ingress = [
-      create(ModelIngressStatusSchema, {
-        cluster: 'site1',
-        state: ModelMaasState.CONFIGURING_ROUTING,
-        message: 'Governed but backend is not ready',
-      }),
-    ];
-    const list = vi.spyOn(modelsOf(service), 'list');
-    renderAt('/models', service);
-    await rowOf('granite-3-8b');
-    const loaded = list.mock.calls.length;
-    await act(() => vi.advanceTimersByTimeAsync(10_000));
-    await waitFor(() => expect(list.mock.calls.length).toBeGreaterThan(loaded));
-  });
+  it.each([ModelSyncState.SYNCED, ModelSyncState.FAILED])(
+    'polls sooner while a running model waits for MaaS to publish it, with sync %s',
+    async (sync) => {
+      const service = new MockConsoleService();
+      const granite = modelsOf(service).find('granite-3-8b');
+      granite.status!.clusters[0].deployment = ModelDeploymentState.RUNNING;
+      granite.status!.clusters[0].sync = sync;
+      granite.status!.clusters[0].state = sync === ModelSyncState.FAILED ? ModelState.FAILED : ModelState.READY;
+      granite.status!.ingress = [
+        create(ModelIngressStatusSchema, {
+          cluster: 'site1',
+          state: ModelMaasState.CONFIGURING_ROUTING,
+          message: 'Governed but backend is not ready',
+        }),
+      ];
+      const list = vi.spyOn(modelsOf(service), 'list');
+      renderAt('/models', service);
+      await rowOf('granite-3-8b');
+      const loaded = list.mock.calls.length;
+      await act(() => vi.advanceTimersByTimeAsync(10_000));
+      await waitFor(() => expect(list.mock.calls.length).toBeGreaterThan(loaded));
+    },
+  );
 
   it('keeps 30 seconds for a model without a placement, which changes only when edited', async () => {
     const service = new MockConsoleService();
@@ -1604,8 +1608,10 @@ describe('each cluster of a placed model (status.clusters, proposal P13)', () =>
       'Starting on site2',
       'Pending sync on site3',
     ]);
-    // The Status column is all clickable: every reported row's status is a button.
-    for (const r of rows) expect(within(r).getByRole('button')).toBeInTheDocument();
+    expect(within(rows[0]).getByRole('button', { name: 'Ready on site1' })).toBeVisible();
+    expect(within(rows[1]).getByRole('button', { name: 'Starting on site2' })).toBeVisible();
+    expect(within(rows[2]).queryByRole('button')).not.toBeInTheDocument();
+    expect(within(rows[2]).getByTestId('model-cluster-status')).toHaveClass('pf-m-outline');
     // No view_url from the backend: no View link.
     for (const r of rows) expect(within(r).queryByRole('link', { name: /^View/ })).not.toBeInTheDocument();
   });

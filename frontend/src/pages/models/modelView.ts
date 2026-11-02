@@ -354,4 +354,4 @@ export const isUnsettled = (model: Pick<ModelView, 'phase' | 'state' | 'clusters
     (model.clusters.length === 0 && model.phase === 'Pending') ||
     model.clusters.some(clusterUnsettled) ||
     (model.ingress.some((i) => !i.maas || maasChanging.has(i.maas)) &&
-      model.clusters.some((c) => c.state === 'Ready')));
+      model.clusters.some((c) => c.deployment === 'Ready')));
