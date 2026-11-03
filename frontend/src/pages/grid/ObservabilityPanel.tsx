@@ -35,6 +35,7 @@ import { SubtleText } from '../../components/SubtleText';
 import { TableEmptyRow } from '../../components/TableEmptyRow';
 import { SectionEmptyState } from '../../components/states/SectionEmptyState';
 import { TypeaheadSelect } from '../../components/TypeaheadSelect';
+import { TOOLBAR_FIELD_WIDTHS } from '../../components/toolbarField';
 import { EMPTY_VALUE } from '../../utilities/format';
 import { modelMetrics, tenantUsage, total } from '../../services/demoObservability';
 import { modelPath } from '../models/modelUtils';
@@ -513,7 +514,7 @@ export function ObservabilityPanel({
                 <ToolbarItem variant="label">
                   <label htmlFor="observability-model">Model</label>
                 </ToolbarItem>
-                <ToolbarItem className="console-toolbar-field">
+                <ToolbarItem widths={TOOLBAR_FIELD_WIDTHS}>
                   <TypeaheadSelect
                     id="observability-model"
                     aria-label="Select model"

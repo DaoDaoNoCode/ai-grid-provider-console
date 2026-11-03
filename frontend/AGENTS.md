@@ -60,7 +60,9 @@ a failed load.
 - `PaginatedTable`, its toolbar holding the filter, the create button, then refresh.
 - The search box is `ToolbarSearch`, its placeholder "Filter by &lt;fields&gt;", its name "Filter
   &lt;objects&gt;". A list that filters by more than one attribute uses PatternFly's attribute
-  search (the Subscriptions toolbar).
+  search (the Subscriptions toolbar). Every toolbar field (a search box, a filter's select) is as
+  wide as `ToolbarSearch`'s: `widths={TOOLBAR_FIELD_WIDTHS}` (`src/components/toolbarField.ts`) on
+  its `ToolbarItem` or `ToolbarFilter`.
 - Every column sortable.
 - The row menu is `SimpleMenuActions`, last, for users who may write only: View details, Edit, a
   divider, Delete.
