@@ -186,14 +186,18 @@ func (hw ModelHardware) problems() []string {
 // isExtendedResourceName is Kubernetes' rule for an extended resource name
 // (IsExtendedResourceName in k8s.io/kubernetes pkg/apis/core/helper/helpers.go,
 // with IsQualifiedName in k8s.io/apimachinery pkg/util/validation): a prefix
-// that is a DNS subdomain outside kubernetes.io, a slash, and a name of at most
-// 63 characters. It doesn't start with "requests.", and "requests." followed by
-// it is itself a qualified name, which keeps the prefix to 244 characters.
+// that is a DNS subdomain, a slash, and a name of at most 63 characters; not a
+// native resource, which is any name containing "kubernetes.io/" (so
+// kubernetes.io/gpu, gpu.kubernetes.io/x and examplekubernetes.io/gpu alike);
+// not starting with "requests."; and "requests." followed by it a qualified
+// name, which keeps the prefix to 244 characters. It is stricter than
+// Kubernetes in one way: each label of the prefix is at most 63 characters, as
+// in a DNS name.
 func isExtendedResourceName(name string) bool {
 	prefix, rest, ok := strings.Cut(name, "/")
 	switch {
 	case !ok, strings.Contains(rest, "/"), strings.HasPrefix(name, "requests."),
-		prefix == "kubernetes.io", strings.HasSuffix(prefix, ".kubernetes.io"),
+		strings.Contains(name, "kubernetes.io/"),
 		len(rest) > 63, !resourceNamePattern.MatchString(rest),
 		len("requests.")+len(prefix) > 253:
 		return false

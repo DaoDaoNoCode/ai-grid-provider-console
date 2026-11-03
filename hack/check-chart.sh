@@ -71,6 +71,8 @@ refused "console.logLevel=verbose" --set console.logLevel=verbose
 # console.models.hardware: the schema refuses what the BFF would refuse at start
 # (bff/internal/config/hardware.go), and a list is rendered as MODEL_HARDWARE, JSON.
 hw='"id":"gpu","label":"GPU","accelerator":"nvidia.com/gpu"'
+# Unicode spaces, which the BFF trims and refuses in an image (unicode.IsSpace) as the schema does.
+nbsp=$'\u00a0' em_space=$'\u2003'
 # An accelerator is a Kubernetes extended resource name: labels and the name at most 63 characters,
 # the prefix at most 244 (so that requests.<prefix> is a DNS subdomain).
 label63="$(printf 'a%.0s' {1..63})"
@@ -97,6 +99,9 @@ for bad in \
   "[{\"id\":\"gpu\",\"label\":\"GPU\",\"accelerator\":\"${long_prefix}b/gpu\"}]" \
   '[{"id":"gpu","label":"GPU","accelerator":"kubernetes.io/gpu"}]' \
   '[{"id":"gpu","label":"GPU","accelerator":"gpu.kubernetes.io/x"}]' \
+  '[{"id":"gpu","label":"GPU","accelerator":"examplekubernetes.io/gpu"}]' \
+  "[{\"id\":\"cpu\",\"label\":\"${nbsp}\"}]" "[{\"id\":\"cpu\",\"label\":\"${em_space}\"}]" \
+  "[{\"id\":\"cpu\",\"label\":\"CPU\",\"image\":\"quay.io/vllm${nbsp}cpu:1\"}]" \
   '[{"id":"gpu","label":"GPU","accelerator":"requests.nvidia.com/gpu"}]' \
   '[{"id":"cpu","label":"CPU","image":"quay.io/vllm cpu:1"}]' \
   '[{"id":"cpu","label":"CPU","env":{"1THREADS":"4"}}]' \
@@ -131,6 +136,9 @@ golden="$(yq -p=json -o=json -I=0 '.body.data.models.hardware | sort_keys(..)' "
   diff <(yq -p=json -P 'sort_keys(..)' <<<"${got:-null}") <(yq -p=json -P '.' <<<"${golden}") >&2 || true
   exit 1
 }
+# A values file that empties console.models renders, without MODEL_HARDWARE.
+got="$(model_hardware --set console.models=null)"
+[[ -z "${got}" ]] || { echo "check-chart: console.models=null sets MODEL_HARDWARE to '${got}'" >&2; exit 1; }
 # An empty list renders no MODEL_HARDWARE: the BFF's own copy of the defaults applies.
 got="$(model_hardware --set-json 'console.models.hardware=[]')"
 [[ -z "${got}" ]] || { echo "check-chart: console.models.hardware=[] sets MODEL_HARDWARE to '${got}'" >&2; exit 1; }

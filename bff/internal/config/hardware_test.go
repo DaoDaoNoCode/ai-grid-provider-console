@@ -97,6 +97,8 @@ func TestParseModelHardwareRefuses(t *testing.T) {
 		{"an id of 64 characters", `[{"id":"` + strings.Repeat("a", 64) + `","label":"CPU"}]`, "must be a DNS label"},
 		{"a duplicate id", `[{"id":"cpu","label":"CPU"},{"id":"cpu","label":"CPU again"}]`, `entry 2 (cpu): id "cpu" is used by an earlier entry`},
 		{"no label", `[{"id":"cpu","label":" "}]`, "label must not be empty"},
+		{"a label of Unicode spaces", "[{\"id\":\"cpu\",\"label\":\"\u00a0\u2003\"}]", "label must not be empty"},
+		{"an image with a no-break space", "[{\"id\":\"cpu\",\"label\":\"CPU\",\"image\":\"quay.io/vllm\u00a0cpu:1\"}]", "must not contain whitespace"},
 		{"an accelerator without a domain", `[{"id":"gpu","label":"GPU","accelerator":"gpu"}]`, `accelerator "gpu" must be an extended resource name`},
 		{"an accelerator in kubernetes.io", `[{"id":"gpu","label":"GPU","accelerator":"kubernetes.io/gpu"}]`, `accelerator "kubernetes.io/gpu" must be an extended resource name`},
 		{"an image with a space", `[{"id":"cpu","label":"CPU","image":"quay.io/vllm cpu:1"}]`, "must not contain whitespace"},
@@ -145,7 +147,7 @@ func TestHardwareAcceleratorNames(t *testing.T) {
 		"", "gpu", "/gpu", "nvidia.com/", "nvidia.com/gpu/x", "nvidia..com/gpu", ".nvidia.com/gpu", "nvidia.com./gpu",
 		"Nvidia.com/gpu", "nvidia_com/gpu", "-nvidia.com/gpu", "nvidia.com/-gpu", "nvidia.com/gpu-", "nvidia.com/g pu",
 		"example.com/" + label + "a", label + "a.example.com/gpu", longest + "b/gpu",
-		"kubernetes.io/gpu", "gpu.kubernetes.io/x", "a.b.kubernetes.io/x", "requests.nvidia.com/gpu",
+		"kubernetes.io/gpu", "gpu.kubernetes.io/x", "a.b.kubernetes.io/x", "examplekubernetes.io/gpu", "requests.nvidia.com/gpu",
 	} {
 		if isExtendedResourceName(name) {
 			t.Errorf("%q accepted", name)

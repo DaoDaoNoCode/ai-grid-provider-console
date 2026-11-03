@@ -161,7 +161,7 @@ spec:
             {{- end }}
             {{- end }}
             {{- end }}
-            {{- with .Values.console.models.hardware }}
+            {{- with (.Values.console.models | default dict).hardware }}
             {{- /* values.schema.json checks each entry; it can't say that ids are unique. */}}
             {{- $ids := dict }}
             {{- range . }}
