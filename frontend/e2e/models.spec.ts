@@ -54,13 +54,14 @@ test('deploys a model to a cluster, edits it in the same wizard, and deletes it'
 
   // Deployment: the name starts from the model URI's last segment.
   await expect(page.getByRole('textbox', { name: /^Model name/ })).toHaveValue(unique);
-  // Hardware: NVIDIA GPU first, from the console's default list. CPU only fills in its own image, which
-  // the backend at the pin requires (an empty one, the cluster's default, needs a newer backend).
+  // Hardware: NVIDIA GPU first, from the console's default list. CPU only fills in its own image: the
+  // cluster's default image is for NVIDIA GPUs, so off them the image is required.
   await expect(page.getByRole('radio', { name: 'NVIDIA GPU' })).toBeChecked();
   await page.getByRole('radio', { name: 'CPU only' }).check();
   await expect(page.getByRole('textbox', { name: /^Runtime image/ })).toHaveValue(
     /^registry\.redhat\.io\/rhaii\/vllm-cpu-rhel9@/,
   );
+  await expect(page.getByRole('textbox', { name: /^Runtime image/ })).toHaveAttribute('required');
   await page.getByRole('button', { name: 'Next' }).click();
 
   // Clusters: options read the cluster name, then its site and region, from Models/ListPlacementClusters.
@@ -104,6 +105,53 @@ test('deploys a model to a cluster, edits it in the same wizard, and deletes it'
   await expect(page.getByLabel('Deployment', { exact: true })).toContainText(/Replicas\s*2/);
 
   // Delete from its Actions menu.
+  await page.getByRole('button', { name: `Actions for ${unique}` }).click();
+  await page.getByRole('menuitem', { name: 'Delete' }).click();
+  await page.getByLabel(/^Type .* to confirm/).fill(unique);
+  await page.getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(page.getByText('Model deleted')).toBeVisible();
+  await expect(page.getByRole('row').filter({ hasText: unique })).toHaveCount(0);
+});
+
+test("deploys a model on NVIDIA GPUs with the cluster's default image", async ({ page }) => {
+  const unique = `e2e-${Math.random().toString(36).slice(2, 8)}`;
+  await page.goto('/models');
+  await page.getByRole('link', { name: 'Deploy model' }).click();
+  await page.getByRole('textbox', { name: /^Model URI/ }).fill(`hf://e2e/${unique}`);
+  await page.getByRole('button', { name: 'Next' }).click();
+
+  // NVIDIA GPU sends no image and no presets: KServe's default preset sets the cluster's vLLM image
+  // for NVIDIA GPUs, and the backend at the pin accepts the model without either.
+  await expect(page.getByRole('radio', { name: 'NVIDIA GPU' })).toBeChecked();
+  const image = page.getByRole('textbox', { name: /^Runtime image/ });
+  await expect(image).toHaveValue('');
+  await expect(image).not.toHaveAttribute('required');
+  await expect(page.getByText("Leave empty to use the cluster's default vLLM image for NVIDIA GPUs.")).toBeVisible();
+  await expect(page.getByRole('spinbutton', { name: 'GPUs' })).toHaveValue('1');
+  await page.getByRole('button', { name: 'Next' }).click();
+
+  await page.getByRole('combobox', { name: 'Clusters' }).click();
+  await page.getByRole('option', { name: CLUSTER }).click();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Next' }).click();
+
+  const review = page.getByTestId('model-review');
+  await expect(review).toContainText('HardwareNVIDIA GPU');
+  await expect(review).toContainText("Runtime imageDefault (the cluster's vLLM image for NVIDIA GPUs)");
+  await expect(review).toContainText(/GPUs\s*1/);
+  await page.getByRole('button', { name: 'Deploy', exact: true }).click();
+  await expect(page.getByText('Model deployed')).toBeVisible();
+
+  const row = page.getByRole('row').filter({ hasText: unique });
+  await expect(row.getByTestId('model-phase')).toHaveText('Saved to Git');
+
+  // The model's page shows what the backend stored: one NVIDIA GPU, and no image of its own.
+  await row.getByRole('link', { name: unique, exact: true }).click();
+  await expect(page.getByRole('heading', { name: unique })).toBeVisible();
+  const deployment = page.getByLabel('Deployment', { exact: true });
+  await expect(deployment).toContainText(/Accelerators\s*1 GPU \(nvidia\.com\/gpu\)/);
+  await expect(deployment).toContainText(/Runtime image\s*Default \(the cluster's vLLM image for NVIDIA GPUs\)/);
+
   await page.getByRole('button', { name: `Actions for ${unique}` }).click();
   await page.getByRole('menuitem', { name: 'Delete' }).click();
   await page.getByLabel(/^Type .* to confirm/).fill(unique);
