@@ -57,9 +57,10 @@ BFF would refuse at start (an unknown or misspelled field, an id that isn't a DN
 accelerator that isn't a Kubernetes extended resource name, an image with spaces, a CPU or memory
 the wizard doesn't take, accelerators without an accelerator), and the template refuses an id used
 twice. Changing the list restarts the console's pod, since the BFF reads it at start; models already
-deployed keep what they were deployed with. Editing a model starts on the entry it still matches
-exactly (the same accelerator, image and environment variables), if any; selecting another entry
-there applies that entry's image, environment and resources.
+deployed keep what they were deployed with. Editing a model starts on the entry it runs on (its
+accelerator, or for CPU only the entry's environment variables; not its image), if any, without
+changing the model; selecting another entry there applies that entry's image, environment and
+resources.
 
 In GitOps, keep the list with the console's other values in the GitOps repository: the values file,
 or `spec.source.helm.valuesObject`, of the Argo CD Application that installs this chart. For

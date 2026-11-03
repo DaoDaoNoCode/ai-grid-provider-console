@@ -94,7 +94,7 @@ sets the model's runtime image, environment and starting resources, and the acce
 requests per replica. It is not a cluster property: the console doesn't check that a chosen cluster
 has the hardware, beyond a hint from its NVIDIA GPU count. A deployed model's pages show what it
 requests (its accelerators and image), since the list can change; its edit starts on the entry
-the model still matches, if any, and selecting another entry applies that one.
+whose accelerator the model requests, if any, and selecting another entry applies that one.
 _Avoid_: model server, preset, accelerator profile, hardware profile
 
 **Placement**:

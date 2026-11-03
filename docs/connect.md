@@ -167,9 +167,12 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   with a domain, such as `nvidia.com/gpu`), worded as Accelerators ("1 GPU (nvidia.com/gpu)", or
   "None (CPU only)"; `acceleratorsText` in `modelHardware.ts`), and `base_refs` as Presets. A
   model's pages never match it against the config's `models.hardware`, which can change or fail
-  to load. Only its edit does (`matchingHardware`): it starts on the first entry the model has
-  exactly (the same accelerator, image and entry's environment, and no presets), or on none, and
-  then shows the model's accelerators read-only until the user selects one. An empty image is the
+  to load. Only its edit does (`matchingHardware`): it starts on the first entry the model runs on
+  (the same accelerator and no other; for an entry without one, no accelerator and the entry's
+  environment variables; never the image, and no presets, which it checks again once the user
+  removes them), or on none, and then shows the model's accelerators read-only until the user
+  selects one. A matched entry is only preselected: the model keeps its own image, environment
+  and resources until the user selects another entry. An empty image is the
   cluster's default vLLM image for NVIDIA GPUs, so the wizard requires an image unless the
   hardware's accelerator (for an edit without hardware, the model's request) is `nvidia.com/gpu`,
   or the model keeps presets; an edit that keeps the model's hardware and presets requires it only
