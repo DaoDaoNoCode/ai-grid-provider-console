@@ -64,6 +64,8 @@ export const ModelDetailsPage: React.FC = () => {
               { term: 'Model URI', value: model.modelUri },
               // What the model has, not a match against today's hardware list, which may have changed.
               ...(model.baseRefs.length > 0 ? [{ term: 'Presets', value: model.baseRefs.join(', ') }] : []),
+              { term: 'CPU', value: model.cpu },
+              { term: 'Memory', value: model.memory },
               { term: 'Accelerators', value: acceleratorsText(model) },
               { term: 'Runtime image', value: runtimeImageText(model) },
               { term: 'Replicas', value: model.autoscaled ? 'Autoscaled' : model.replicas },
