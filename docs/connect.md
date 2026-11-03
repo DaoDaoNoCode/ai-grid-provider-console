@@ -271,9 +271,16 @@ subscription) are sent from the app root, never from the form (`frontend/src/not
   that exists, or moved on, with other content is someone else's write as far as anyone can
   tell: a warning that the write couldn't be confirmed, with a link to the object, never a
   success. Reads that keep failing are a warning too.
-- A deployed model is then watched every 20 s until its phase, as `toModelView` words it for the
-  Models list, is Ready ("Model <name> is ready on <clusters>") or Failed; it stops without a word
-  after 30 minutes or when the model is gone. An edited model isn't: its status doesn't say which
+- A deployed model is then watched every 20 s until it runs on every cluster it is placed on:
+  each entry of `status.clusters` (one per cluster in `placement.selected_clusters`) READY, which
+  that cluster's LLMInferenceService reports. Then "Model <name> is ready on <clusters>". The
+  model's overall phase isn't used for this: it also counts the ingress clusters that publish the
+  model through MaaS, whose report turns ready only once a subscription covers the model, so a
+  model running on its clusters can read Pending for good. "Ready" means running on its clusters;
+  users reach it through MaaS once a subscription covers it too. An overall Failed (or a cluster
+  reported failed, which git mode doesn't report) is an error. After 30 minutes the watch warns
+  "Model <name> isn't ready yet", naming the clusters it isn't ready on; a model that is gone
+  stops it. One watch per model: deploying an id again replaces its earlier watch. An edited model isn't: its status doesn't say which
   revision it describes, so the previous deployment's Ready would read as the edit's. Edits get a
   readiness watch once the backend reports the revision its status describes.
 - The watches and the notifications are kept in the browser tab's session storage under the
@@ -285,8 +292,8 @@ subscription) are sent from the app root, never from the form (`frontend/src/not
 The words name each stage as it is, since the backend only commits to Git and Argo CD applies the
 change later: "Model <name> saved to Git" with "It's being deployed to <clusters>", "Changes to
 model <name> saved to Git", "Model <name> deleted from Git", and for a subscription that it takes
-effect once the ingress clusters apply it. A model is "ready" only when its clusters serve it, as
-the Models list's status says. The pages raise no success notice of their own for these writes:
+effect once the ingress clusters apply it. A model is "ready" once it runs on every cluster it
+is placed on (each cluster's status), and only then. The pages raise no success notice of their own for these writes:
 the center says it on both paths (`writeText.ts`).
 
 Every toast goes through the notification center (`NotificationToasts`), a page's own success

@@ -198,11 +198,20 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
       const schema = target.subject === 'model' ? Models : Subscriptions;
       void queryClient.invalidateQueries({ queryKey: createConnectQueryKey({ schema, cardinality: undefined }) });
       if (target.subject === 'model' && target.op === 'create') {
+        // One readiness watch per model: a deploy of an id deleted and deployed again within the
+        // first's 30 minutes replaces the first, so "ready" is said once.
+        for (const earlier of records.current) {
+          if (earlier.stage === 'ready' && earlier.subject === 'model' && earlier.id === target.id) {
+            unregisterNotification(earlier.key);
+            registered.current.delete(earlier.key);
+            drop(earlier.key);
+          }
+        }
         startWatchFn({ ...target, key: newKey(), stage: 'ready', since: now() });
       }
     }
     return { startWatch: startWatchFn, landed: landedFn };
-  }, [keep, drop, read, now, registerNotification, queryClient]);
+  }, [keep, drop, read, now, registerNotification, unregisterNotification, queryClient]);
 
   // Storage is read once per user: when the user is first known (a reload resumes that user's
   // watches) and when it changes (the previous user's watches stop and leave the tab). Every run,

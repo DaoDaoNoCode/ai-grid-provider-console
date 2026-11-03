@@ -1,7 +1,8 @@
 // Every word the notification center says about a Models or Subscriptions write, in one place for
 // review. The backend commits these writes to a Git repository, and Argo CD applies them to the
 // clusters later, so the words name each stage as it is: a write is "saved to Git" (or "deleted
-// from Git"), a model is "ready" only when its clusters serve it, as the Models list's status says.
+// from Git"), a model is "ready" only once it runs on every cluster it is placed on (each cluster's
+// status; users reach it through MaaS once a subscription covers it too).
 // They follow frontend/AGENTS.md, "Wording": "Unable to <verb> <object>" for errors, no end
 // punctuation in titles.
 import { modelPath } from '../pages/models/modelUtils';
@@ -92,6 +93,9 @@ const thing = (t: WriteTarget) =>
 
 /** How long a write that outlasts the form is checked for, in the words below. */
 export const READBACK_MINUTES = 2;
+
+/** How long a deployed model is watched until it is ready, in the words below. */
+export const READY_MINUTES = 30;
 
 /** The info entry while the write is out: the form left before the backend answered. */
 export const pendingText = (t: WriteTarget): Text => {
@@ -199,6 +203,19 @@ export const goneText = (t: WriteTarget): Text => ({
 /** A deployed model became ready, on these clusters (none for a model on the hub alone). */
 export const modelReadyText = (id: string, name: string, clusters: string[]): Text => ({
   title: clusters.length ? `Model ${name} is ready on ${listOf(clusters)}` : `Model ${name} is ready`,
+  actions: [{ title: 'View model', to: modelPath({ id }) }],
+});
+
+/**
+ * A deployed model isn't running on every cluster it is placed on after READY_MINUTES: the clusters
+ * it isn't ready on, from each cluster's status, and the model to check. A warning: it may still
+ * come up.
+ */
+export const modelNotReadyText = (id: string, name: string, clusters: string[]): Text => ({
+  title: `Model ${name} isn't ready yet`,
+  message: clusters.length
+    ? `It isn't ready on ${listOf(clusters)} ${READY_MINUTES} minutes after it was saved to Git. Open the model to check each cluster's status.`
+    : `It isn't ready ${READY_MINUTES} minutes after it was saved to Git. Open the model to check its status.`,
   actions: [{ title: 'View model', to: modelPath({ id }) }],
 });
 

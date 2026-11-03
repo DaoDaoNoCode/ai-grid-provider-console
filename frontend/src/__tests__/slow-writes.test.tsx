@@ -6,7 +6,8 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { Code, ConnectError } from '@connectrpc/connect';
 import { MockConsoleService } from '../api/MockConsoleService';
-import { ModelPhase } from '../gen/ai_grid/v1/model_type_pb';
+import { create as create_ } from '@bufbuild/protobuf';
+import { ModelClusterStatusSchema, ModelPhase } from '../gen/ai_grid/v1/model_type_pb';
 import type { Subscription } from '../gen/ai_grid/v1/subscription_type_pb';
 import { watchesKey } from '../notifications/storageKeys';
 
@@ -195,15 +196,20 @@ describe('deploying a model', () => {
     expect(within(screen.getByRole('list', { name: 'Notifications' })).getAllByRole('listitem')).toHaveLength(1);
   });
 
-  it('watches a deployed model until it is ready, and says on which clusters', async () => {
+  it('watches a deployed model until it runs on its clusters, and says on which', async () => {
     const service = new MockConsoleService();
     const models = modelsOf(service);
     const create = models.create;
     vi.spyOn(models, 'create').mockImplementation(async (request, context) => {
       const answer = await create(request, context);
+      // As on the demo hub: site1 reports the model ready, while an ingress cluster's report keeps
+      // the whole model Pending until a subscription covers it.
       const stored = models.find('widget');
-      stored.status!.phase = ModelPhase.READY;
-      stored.status!.reason = 'Ready';
+      stored.status!.phase = ModelPhase.PENDING;
+      stored.status!.message = 'Not ready on site-a; ready on site1';
+      stored.status!.clusters = [
+        create_(ModelClusterStatusSchema, { cluster: 'site1', phase: ModelPhase.READY, reason: 'Ready' }),
+      ];
       return answer;
     });
     const { formWait } = formWaits();

@@ -7,9 +7,11 @@ import { NotificationResponseStatus, type NotificationWatcherResponse } from './
 import { holdsSent, type WriteFields } from './writeFields';
 import {
   READBACK_MINUTES,
+  READY_MINUTES,
   goneText,
   mismatchText,
   modelFailedText,
+  modelNotReadyText,
   modelReadyText,
   notConfirmedText,
   succeededText,
@@ -22,7 +24,7 @@ import {
 export const READBACK_MS = READBACK_MINUTES * 60_000;
 export const READBACK_POLL_MS = 10_000;
 /** How long a deployed model is watched until it is ready, from when the write landed. */
-export const READY_MS = 30 * 60_000;
+export const READY_MS = READY_MINUTES * 60_000;
 /** Each Models/Get reads the Git catalog (seconds on the demo hub), so the ready watch polls slowly. */
 export const READY_POLL_MS = 20_000;
 
@@ -86,17 +88,28 @@ export const readBack = async (
   return readFailed ? warning(unconfirmedText(target)) : error(notConfirmedText(target));
 };
 
-/** The clusters a ready model serves on, as its page lists them. */
-const readyClustersOf = (model: ModelView) => {
-  const ready = model.clusters.filter((c) => c.phase === 'Ready').map((c) => c.cluster);
-  return ready.length ? ready : model.selectedClusters;
+/**
+ * Each cluster the model is placed on (placement.selected_clusters), with its report from
+ * `status.clusters`: one entry per placed cluster, READY once that cluster's LLMInferenceService is
+ * Ready. A cluster that hasn't reported has no entry yet, and isn't ready.
+ */
+const placedClustersOf = (model: ModelView) => {
+  const reports = new Map(model.clusters.map((c) => [c.cluster, c]));
+  const names = model.selectedClusters.length ? model.selectedClusters : model.clusters.map((c) => c.cluster);
+  return names.map((name) => ({ name, report: reports.get(name) }));
 };
 
 /**
- * A deployed or edited model's status, as the Models list derives it (toModelView): Ready is a
- * success naming its clusters, Failed an error with the reason its page gives; any other phase
- * (Pending, Partially available, Saved to Git, Unknown) is checked again until `since` plus
- * READY_MS, then the watch stops without a word. A model that is gone stops it too.
+ * A deployed model until it runs on every cluster it is placed on. Ready is read per cluster, from
+ * `status.clusters`, not from the model's overall phase: the overall phase also counts the ingress
+ * clusters that publish the model through MaaS, whose report turns ready only once a subscription
+ * covers the model, so a model running on its clusters can read Pending for good. "Ready" here means
+ * running on its clusters; users reach it through MaaS once a subscription covers it too.
+ *
+ * Every placed cluster ready is a success naming them; a model the backend calls Failed, or a
+ * cluster it reports failed (git mode reports none today), an error. Anything else is checked again
+ * until `since` plus READY_MS, then a warning names the clusters it isn't ready on. A model that is
+ * gone stops the watch. A model on the hub alone, with no placed cluster, is ready when its phase is.
  */
 export const watchReady = async (
   target: WriteTarget,
@@ -104,17 +117,36 @@ export const watchReady = async (
   read: ReadObject,
   now: () => number,
 ): Promise<NotificationWatcherResponse> => {
+  let waiting: string[] = [];
   try {
     const answer = await read('model', target.id);
     const model = answer?.model;
     if (!model) return stop;
-    if (model.phase === 'Ready') return success(modelReadyText(target.id, target.name, readyClustersOf(model)));
-    if (model.phase === 'Failed') {
+    const placed = placedClustersOf(model);
+    const failedCluster = placed.find((p) => p.report?.phase === 'Failed');
+    if (model.phase === 'Failed' || failedCluster) {
       const known = model.reason ? failureExplanations[model.reason] : undefined;
-      return error(modelFailedText(target.id, target.name, known?.summary ?? model.statusMessage ?? model.reason));
+      const why = failedCluster
+        ? `${failedCluster.name}: ${failedCluster.report?.message ?? failedCluster.report?.reason}`
+        : (known?.summary ?? model.statusMessage ?? model.reason);
+      return error(modelFailedText(target.id, target.name, why));
+    }
+    if (placed.length === 0) {
+      if (model.phase === 'Ready') return success(modelReadyText(target.id, target.name, []));
+    } else {
+      waiting = placed.filter((p) => p.report?.phase !== 'Ready').map((p) => p.name);
+      if (waiting.length === 0) {
+        return success(
+          modelReadyText(
+            target.id,
+            target.name,
+            placed.map((p) => p.name),
+          ),
+        );
+      }
     }
   } catch {
     // A failed read is checked again, as a page's poll is.
   }
-  return now() < since + READY_MS ? repoll : stop;
+  return now() < since + READY_MS ? repoll : warning(modelNotReadyText(target.id, target.name, waiting));
 };

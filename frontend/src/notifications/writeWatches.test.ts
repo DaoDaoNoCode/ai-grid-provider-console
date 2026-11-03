@@ -162,7 +162,7 @@ describe('watchReady', () => {
   const during = () => SINCE + READY_MS - 1;
   const past = () => SINCE + READY_MS;
 
-  it('says a ready model is ready on its clusters, as the list derives its status', async () => {
+  it('says a model is ready when every cluster it is placed on runs it', async () => {
     expect(await watchReady(model('create'), SINCE, reads(view('Ready')), during)).toEqual({
       status: NotificationResponseStatus.SUCCESS,
       title: 'Model Widget is ready on site-b and site-c',
@@ -191,16 +191,59 @@ describe('watchReady', () => {
   });
 
   it.each<ModelView['phase']>(['Pending', 'Partially available', 'Saved to Git', 'Unknown'])(
-    'keeps watching a model that is %s, and stops without a word after 30 minutes',
+    'keeps watching a model that is %s while site-c runs no copy, and warns after 30 minutes',
     async (phase) => {
       expect(await watchReady(model('create'), SINCE, reads(view(phase)), during)).toEqual({
         status: NotificationResponseStatus.REPOLL,
       });
       expect(await watchReady(model('create'), SINCE, reads(view(phase)), past)).toEqual({
-        status: NotificationResponseStatus.STOP,
+        status: NotificationResponseStatus.WARNING,
+        title: "Model Widget isn't ready yet",
+        message:
+          "It isn't ready on site-c 30 minutes after it was saved to Git. Open the model to check each cluster's status.",
+        actions: [{ title: 'View model', to: '/models/widget' }],
       });
     },
   );
+
+  it('is ready when its placed clusters are, whatever an ingress cluster keeps the overall phase at', async () => {
+    // demo1: the model runs on site-b, but site-a, an ingress cluster, reports its MaaSModelRef
+    // not Ready until a subscription covers it, so the whole model reads Pending.
+    const ingressPending = view('Pending', {
+      statusMessage: 'Not ready on site-a; ready on site-b',
+      selectedClusters: ['site-b'],
+      clusters: [{ cluster: 'site-b', phase: 'Ready', reason: 'Ready' }],
+    });
+    expect(await watchReady(model('create'), SINCE, reads(ingressPending), during)).toEqual({
+      status: NotificationResponseStatus.SUCCESS,
+      title: 'Model Widget is ready on site-b',
+      actions: [{ title: 'View model', to: '/models/widget' }],
+    });
+  });
+
+  it('waits for a placed cluster that has no report yet', async () => {
+    const unreported = view('Pending', {
+      selectedClusters: ['site-b', 'site-c'],
+      clusters: [{ cluster: 'site-b', phase: 'Ready', reason: 'Ready' }],
+    });
+    expect(await watchReady(model('create'), SINCE, reads(unreported), during)).toEqual({
+      status: NotificationResponseStatus.REPOLL,
+    });
+  });
+
+  it('says a cluster that failed failed', async () => {
+    const failing = view('Pending', {
+      clusters: [
+        { cluster: 'site-b', phase: 'Ready', reason: 'Ready' },
+        { cluster: 'site-c', phase: 'Failed', reason: 'NotReady', message: 'LLMInferenceService failed' },
+      ],
+    });
+    expect(await watchReady(model('create'), SINCE, reads(failing), during)).toMatchObject({
+      status: NotificationResponseStatus.ERROR,
+      title: 'Unable to deploy model Widget',
+      message: 'site-c: LLMInferenceService failed',
+    });
+  });
 
   it('stops for a model that is gone, and keeps watching through a failed read', async () => {
     expect(await watchReady(model('create'), SINCE, reads(undefined), during)).toEqual({

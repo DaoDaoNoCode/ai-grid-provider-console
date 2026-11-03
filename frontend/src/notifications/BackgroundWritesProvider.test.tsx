@@ -2,9 +2,11 @@
 // notifications and watches go, and the new user's are restored.
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { useEffect } from 'react';
+import { create } from '@bufbuild/protobuf';
 import { Code, ConnectError } from '@connectrpc/connect';
 import { BackendProvider } from '../api/connect/BackendProvider';
 import { fakeClients } from '../api/connect/testing';
+import { ModelPhase, ModelSchema } from '../gen/ai_grid/v1/model_type_pb';
 import { memoryStorage } from '../__tests__/memoryStorage';
 import { deferred } from '../__tests__/render';
 import { BackgroundWritesProvider } from './BackgroundWritesProvider';
@@ -13,6 +15,7 @@ import { notificationsKey, watchesKey } from './storageKeys';
 import { NotificationWatcherProvider } from './NotificationWatcherProvider';
 import { useBackgroundWrites, type BackgroundWritesValue } from './useBackgroundWrites';
 import { useNotifications } from './useNotifications';
+import { READY_MS, READY_POLL_MS } from './writeWatches';
 
 const Titles: React.FC = () => {
   const { notifications } = useNotifications();
@@ -118,4 +121,79 @@ it("publishes nothing of a write into the next user's notifications or storage w
   expect(screen.queryByText('Model Widget saved to Git')).not.toBeInTheDocument();
   expect(storage.values.get(watchesKey('bob'))).toBeUndefined();
   expect(storage.values.get(notificationsKey('bob'))).toBeUndefined();
+});
+
+/** A model placed on site-b, which hasn't reported it ready. */
+const pendingOnSiteB = () =>
+  create(ModelSchema, {
+    id: 'widget',
+    metadata: { name: 'widget', version: 1 },
+    spec: { placement: { labelSelector: { matchExpressions: [{ key: 'name', operator: 'In', values: ['site-b'] }] } } },
+    status: {
+      phase: ModelPhase.PENDING,
+      placement: { selectedClusters: ['site-b'] },
+      clusters: [{ cluster: 'site-b', phase: ModelPhase.PENDING, reason: 'NotReady' }],
+    },
+  });
+
+const readyRecord = (since: number) => ({
+  key: 'r1',
+  subject: 'model',
+  op: 'create',
+  id: 'widget',
+  name: 'Widget',
+  stage: 'ready',
+  since,
+});
+
+const signedIn = (storage: ReturnType<typeof memoryStorage>) => {
+  const { transport } = fakeClients({ models: { get: () => ({ object: pendingOnSiteB() }) } });
+  return render(
+    <BackendProvider transport={transport} checkSession={() => undefined}>
+      <NotificationsProvider storage={storage.get} owner="dev-user">
+        <NotificationWatcherProvider>
+          <BackgroundWritesProvider storage={storage.get} owner="dev-user">
+            <Titles />
+            <Writes />
+          </BackgroundWritesProvider>
+        </NotificationWatcherProvider>
+      </NotificationsProvider>
+    </BackendProvider>,
+  );
+};
+
+it("warns that a deployed model isn't ready yet when its 30 minutes run out, instead of stopping silently", async () => {
+  vi.useFakeTimers();
+  try {
+    // The watch has one check left inside its 30 minutes.
+    const storage = memoryStorage({
+      [watchesKey('dev-user')]: JSON.stringify([readyRecord(Date.now() - READY_MS + READY_POLL_MS / 2)]),
+    });
+    signedIn(storage);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.queryByText("Model Widget isn't ready yet")).not.toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(READY_POLL_MS);
+    });
+    expect(screen.getByText("Model Widget isn't ready yet")).toBeInTheDocument();
+    expect(storage.values.get(watchesKey('dev-user'))).toBeUndefined();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('watches a deployed model once, whatever earlier watch of the same id still runs', async () => {
+  // A watch from a deploy of the same id (deleted and deployed again within its 30 minutes).
+  const storage = memoryStorage({ [watchesKey('dev-user')]: JSON.stringify([readyRecord(Date.now())]) });
+  signedIn(storage);
+  await waitFor(() => expect(submitWrite).toBeDefined());
+  await act(async () => {
+    await submitWrite({ subject: 'model', op: 'create', id: 'widget', name: 'Widget' }, async () => undefined);
+  });
+  const ready = (
+    JSON.parse(storage.values.get(watchesKey('dev-user')) ?? '[]') as { id: string; stage: string }[]
+  ).filter((r) => r.stage === 'ready' && r.id === 'widget');
+  expect(ready).toHaveLength(1);
 });
