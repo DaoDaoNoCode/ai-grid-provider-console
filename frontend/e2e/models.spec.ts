@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext } from '@playwright/test';
-import { callBackend as call } from './backend';
+import { callBackend as call, tryBackend, writeConfirmed } from './backend';
 
 // The backend's own Models API on its fakes (the backend's fixtures/poc), through the BFF's
 // Connect relay. site1 is an Available member, Compliant with the ready Policy; the fixtures give
@@ -75,7 +75,7 @@ test('deploys a model to a cluster, edits it in the same wizard, and deletes it'
   await expect(page.getByTestId('model-review')).toContainText(`Model name in requests${unique}`);
   await expect(page.getByTestId('model-review')).toContainText('HardwareCPU only');
   await page.getByRole('button', { name: 'Deploy', exact: true }).click();
-  await expect(page.getByText('Model deployed')).toBeVisible();
+  await expect(writeConfirmed(page, 'Model', unique, 'deployed')).toBeVisible();
 
   const row = page.getByRole('row').filter({ hasText: unique });
   await expect(row).toBeVisible();
@@ -86,7 +86,7 @@ test('deploys a model to a cluster, edits it in the same wizard, and deletes it'
   // The model's page, at /models/<id>.
   await row.getByRole('link', { name: unique, exact: true }).click();
   await expect(page).toHaveURL(`/models/${unique}`);
-  await expect(page.getByRole('heading', { name: unique })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: unique, exact: true })).toBeVisible();
   await expect(page.getByTestId('model-locations')).toContainText(CLUSTER);
   await expect(page.getByLabel('Deployment', { exact: true })).toContainText(/Accelerators\s*None \(CPU only\)/);
 
@@ -100,8 +100,8 @@ test('deploys a model to a cluster, edits it in the same wizard, and deletes it'
   await page.getByRole('spinbutton', { name: 'Replicas' }).fill('2');
   await page.getByRole('button', { name: 'Review', exact: true }).click();
   await page.getByRole('button', { name: 'Save changes' }).click();
-  await expect(page.getByText('Model updated')).toBeVisible();
-  await expect(page.getByRole('heading', { name: unique })).toBeVisible();
+  await expect(writeConfirmed(page, 'Model', unique, 'updated')).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: unique, exact: true })).toBeVisible();
   await expect(page.getByLabel('Deployment', { exact: true })).toContainText(/Replicas\s*2/);
 
   // Delete from its Actions menu.
@@ -109,7 +109,7 @@ test('deploys a model to a cluster, edits it in the same wizard, and deletes it'
   await page.getByRole('menuitem', { name: 'Delete' }).click();
   await page.getByLabel(/^Type .* to confirm/).fill(unique);
   await page.getByRole('button', { name: 'Delete', exact: true }).click();
-  await expect(page.getByText('Model deleted')).toBeVisible();
+  await expect(writeConfirmed(page, 'Model', unique, 'deleted')).toBeVisible();
   await expect(page.getByRole('row').filter({ hasText: unique })).toHaveCount(0);
 });
 
@@ -140,14 +140,14 @@ test("deploys a model on NVIDIA GPUs with the cluster's default image", async ({
   await expect(review).toContainText("Runtime imageDefault (the cluster's vLLM image for NVIDIA GPUs)");
   await expect(review).toContainText(/GPUs\s*1/);
   await page.getByRole('button', { name: 'Deploy', exact: true }).click();
-  await expect(page.getByText('Model deployed')).toBeVisible();
+  await expect(writeConfirmed(page, 'Model', unique, 'deployed')).toBeVisible();
 
   const row = page.getByRole('row').filter({ hasText: unique });
   await expect(row.getByTestId('model-phase')).toHaveText('Saved to Git');
 
   // The model's page shows what the backend stored: one NVIDIA GPU, and no image of its own.
   await row.getByRole('link', { name: unique, exact: true }).click();
-  await expect(page.getByRole('heading', { name: unique })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: unique, exact: true })).toBeVisible();
   const deployment = page.getByLabel('Deployment', { exact: true });
   await expect(deployment).toContainText(/Accelerators\s*1 GPU \(nvidia\.com\/gpu\)/);
   await expect(deployment).toContainText(/Runtime image\s*Default \(the cluster's vLLM image for NVIDIA GPUs\)/);
@@ -156,8 +156,52 @@ test("deploys a model on NVIDIA GPUs with the cluster's default image", async ({
   await page.getByRole('menuitem', { name: 'Delete' }).click();
   await page.getByLabel(/^Type .* to confirm/).fill(unique);
   await page.getByRole('button', { name: 'Delete', exact: true }).click();
-  await expect(page.getByText('Model deleted')).toBeVisible();
+  await expect(writeConfirmed(page, 'Model', unique, 'deleted')).toBeVisible();
   await expect(page.getByRole('row').filter({ hasText: unique })).toHaveCount(0);
+});
+
+// The bug a slow Git commit caused: the BFF cut Models/Create at its timeout and the wizard said the
+// deploy failed, while the commit landed. Here the create reaches the backend and lands; the browser
+// gets the BFF's 504 instead of its answer, as when the relay times out. The console must not call
+// it a failure: it reads the model back and confirms it.
+test('confirms a deploy whose answer was lost instead of calling it failed', async ({ page, request }) => {
+  const unique = `e2e-${Math.random().toString(36).slice(2, 8)}`;
+  await page.route('**/ai_grid.v1.Models/Create', async (route) => {
+    await route.fetch();
+    await route.fulfill({
+      status: 504,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: 'deadline_exceeded',
+        message: 'The AI Grid backend did not respond in time. Try again.',
+      }),
+    });
+  });
+  try {
+    await page.goto('/models/deploy');
+    await page.getByRole('textbox', { name: /^Model URI/ }).fill(`hf://e2e/${unique}`);
+    await page.getByRole('button', { name: 'Next' }).click();
+    await page.getByRole('radio', { name: 'CPU only' }).check();
+    await page.getByRole('button', { name: 'Next' }).click();
+    await page.getByRole('combobox', { name: 'Clusters' }).click();
+    await page.getByRole('option', { name: CLUSTER }).click();
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Next' }).click();
+    await page.getByRole('button', { name: 'Deploy', exact: true }).click();
+
+    // The form leaves as on success, and the read-back confirms the deploy: the confirmation replaces
+    // the in-progress entry, so it may be the only toast left.
+    await expect(page.getByRole('heading', { level: 1, name: 'Models' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: `Success alert: Model ${unique} deployed` })).toBeVisible();
+    await expect(page.getByText(/Unable to deploy/)).toHaveCount(0);
+    await expect(page.getByRole('row').filter({ hasText: unique })).toBeVisible();
+    // One entry for the write: the confirmation replaced the in-progress entry, and is unread.
+    await page.getByRole('button', { name: 'Notifications, 1 unread' }).click();
+    const drawer = page.getByRole('list', { name: 'Notifications' });
+    await expect(drawer.getByRole('listitem')).toHaveCount(1);
+  } finally {
+    await tryBackend(request, 'Models/Delete', { id: unique });
+  }
 });
 
 test('says when a model page has no model', async ({ page }) => {
