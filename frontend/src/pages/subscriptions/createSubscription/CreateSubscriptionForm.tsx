@@ -59,6 +59,7 @@ import {
 } from '../subscriptionText';
 import { DESCRIPTION, DISPLAY_NAME, displayNameOf, type ModelView } from '../../models/modelView';
 import { useOrganizations, useSubscriptionWrites } from '../useSubscriptions';
+import { doneNotice } from '../../../notifications/writeText';
 import { EditRateLimitsModal } from './EditRateLimitsModal';
 
 type Props = {
@@ -275,29 +276,39 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ models: availableModel
       inferencePriority: loaded?.inferencePriority,
       guardrails: loaded?.guardrails ?? [],
     };
+    // The name the notification center uses if the write outlasts the form.
+    const shownName = nameDescData.name.trim() || nameDescData.k8sName.value;
     try {
+      let outcome;
       if (subscription) {
-        await updateSubscription.mutateAsync({
-          object: {
-            id: subscription.id,
-            metadata: { annotations: annotationsPayload(), version: subscription.metadata?.version ?? 0 },
-            spec,
+        outcome = await updateSubscription(
+          {
+            object: {
+              id: subscription.id,
+              metadata: { annotations: annotationsPayload(), version: subscription.metadata?.version ?? 0 },
+              spec,
+            },
+            updateMask: { paths: ['spec', 'metadata.annotations'] },
+            // The backend answers Aborted when the subscription changed since it was read.
+            lock: true,
           },
-          updateMask: { paths: ['spec', 'metadata.annotations'] },
-          // The backend answers Aborted when the subscription changed since it was read.
-          lock: true,
-        });
+          shownName,
+        );
       } else {
         const id = nameDescData.k8sName.value;
         // The backend creates the managed authorization policy, <id>-policy, with it.
-        await createSubscription.mutateAsync({
-          object: { id, metadata: { name: id, annotations: annotationsPayload() }, spec },
-        });
+        outcome = await createSubscription(
+          { object: { id, metadata: { name: id, annotations: annotationsPayload() }, spec } },
+          shownName,
+        );
       }
       // A created subscription replaces its create form in history, so Back doesn't land on it, empty.
+      // A write that outlasts the form leaves without the notice: the notification center follows it.
       navigate(returnTo ?? getSectionUrl('subscriptions'), {
         replace: !isEditing,
-        state: { notice: isEditing ? 'Subscription updated' : 'Subscription created' },
+        ...(outcome === 'done'
+          ? { state: { notice: doneNotice('subscription', isEditing ? 'update' : 'create', shownName) } }
+          : {}),
       });
     } catch (e) {
       const error = describeError(e);

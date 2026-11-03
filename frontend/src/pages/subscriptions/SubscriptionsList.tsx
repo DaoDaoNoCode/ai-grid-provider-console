@@ -41,7 +41,9 @@ export const SubscriptionsList: React.FC = () => {
   const [confirmDelete, deleteDialog] = useDeleteSubscription({
     // The delete refetches the list. Replace, so the notice doesn't add a second Subscriptions
     // entry to the browser's history.
-    onDeleted: () => void navigate('.', { replace: true, state: { notice: 'Subscription deleted' } }),
+    onDeleted: (notice) => {
+      if (notice) void navigate('.', { replace: true, state: { notice } });
+    },
   });
 
   const onFilterUpdate = useCallback(

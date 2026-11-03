@@ -30,7 +30,7 @@ export const ModelDetailsPage: React.FC = () => {
   const model = error instanceof ServiceError && error.status === 404 ? undefined : loadedModel;
   const [confirmDelete, deleteModal] = useDeleteModel({
     refresh: () => void refresh(),
-    onDeleted: () => navigate('/models', { state: { notice: 'Model deleted' } }),
+    onDeleted: (notice) => navigate('/models', notice ? { state: { notice } } : undefined),
   });
   const title = model ? titleOf(model) : id;
   const siteNames = siteNamesOf(clusters);

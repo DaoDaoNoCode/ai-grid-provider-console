@@ -54,6 +54,7 @@ import { DEFAULT_REPLICAS, sameSet, updateRequestOf, type ModelInput } from './m
 import { titleOf, type ModelView } from './modelView';
 import { OlderServedNameAlert } from './OlderServedNameAlert';
 import { useModelWrites, usePlacementClusters } from './useModels';
+import { doneNotice } from '../../notifications/writeText';
 import { deploymentNameFromUri, modelPath } from './modelUtils';
 import { useClusterList } from '../clusters/useClusters';
 
@@ -342,13 +343,25 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
     setSaving(true);
     setError(undefined);
     try {
+      // A write that outlasts the form's short wait leaves the form as a saved one does, without the
+      // success notice: the notification center has said it is in progress and reports how it ends.
       if (model) {
-        await writes.updateModel(model, edited);
-        navigate(detailsPath, { state: { notice: 'Model updated' } });
+        const outcome = await writes.updateModel(model, edited);
+        navigate(
+          detailsPath,
+          outcome === 'pending'
+            ? undefined
+            : { state: { notice: doneNotice('model', 'update', edited.displayName.trim() || model.id) } },
+        );
       } else {
-        await writes.createModel(input);
+        const outcome = await writes.createModel(input);
         // Replaces the deploy form in history, so Back doesn't land on it, empty.
-        navigate('/models', { replace: true, state: { notice: 'Model deployed' } });
+        navigate('/models', {
+          replace: true,
+          ...(outcome === 'done'
+            ? { state: { notice: doneNotice('model', 'create', input.displayName.trim() || input.name) } }
+            : {}),
+        });
       }
     } catch (err) {
       setError(
