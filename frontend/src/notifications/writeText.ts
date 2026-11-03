@@ -1,6 +1,9 @@
-// Every word the notification center says about a write that outlasts the form, in one place for
-// review. They follow frontend/AGENTS.md, "Wording": "Unable to <verb> <object>" for errors,
-// "<Object> <past participle>" for a success, no end punctuation in titles.
+// Every word the notification center says about a Models or Subscriptions write, in one place for
+// review. The backend commits these writes to a Git repository, and Argo CD applies them to the
+// clusters later, so the words name each stage as it is: a write is "saved to Git" (or "deleted
+// from Git"), a model is "ready" only when its clusters serve it, as the Models list's status says.
+// They follow frontend/AGENTS.md, "Wording": "Unable to <verb> <object>" for errors, no end
+// punctuation in titles.
 import { modelPath } from '../pages/models/modelUtils';
 import {
   getSectionUrl,
@@ -25,9 +28,9 @@ export type WriteTarget = {
   version?: number;
   /** What the write sent (writeFields.ts), which a read-back must find to confirm it. */
   expected?: WriteFields;
+  /** For a model: the clusters the write deploys it to, or removes it from. */
+  clusters?: string[];
 };
-
-type Verbs = { verb: string; past: string; gerund: string };
 
 const subjects: Record<
   WriteSubject,
@@ -39,7 +42,7 @@ const subjects: Record<
     view: (id: string) => string;
     edit: (id: string) => string;
     createPath: string;
-    ops: Record<WriteOp, Verbs>;
+    createAction: string;
   }
 > = {
   model: {
@@ -50,11 +53,7 @@ const subjects: Record<
     view: (id) => modelPath({ id }),
     edit: (id) => `${modelPath({ id })}/edit`,
     createPath: '/models/deploy',
-    ops: {
-      create: { verb: 'deploy', past: 'deployed', gerund: 'Deploying' },
-      update: { verb: 'update', past: 'updated', gerund: 'Updating' },
-      delete: { verb: 'delete', past: 'deleted', gerund: 'Deleting' },
-    },
+    createAction: 'Deploy model',
   },
   subscription: {
     object: 'subscription',
@@ -64,17 +63,11 @@ const subjects: Record<
     view: getSubscriptionViewUrl,
     edit: getSubscriptionEditUrl,
     createPath: getSubscriptionCreateUrl(),
-    ops: {
-      create: { verb: 'create', past: 'created', gerund: 'Creating' },
-      update: { verb: 'update', past: 'updated', gerund: 'Updating' },
-      delete: { verb: 'delete', past: 'deleted', gerund: 'Deleting' },
-    },
+    createAction: 'Create subscription',
   },
 };
 
 type Text = { title: string; message?: string; actions?: NotificationLink[] };
-
-const words = (t: WriteTarget) => ({ ...subjects[t.subject], ...subjects[t.subject].ops[t.op] });
 
 const viewAction = (t: WriteTarget): NotificationLink => {
   const s = subjects[t.subject];
@@ -86,67 +79,98 @@ const listAction = (t: WriteTarget): NotificationLink => {
   return { title: `Go to ${s.list}`, to: s.listPath };
 };
 
+/** "a", "a and b", "a, b, and c" (the Oxford comma, frontend/AGENTS.md wording rule 18). */
+export const listOf = (items: string[]) =>
+  items.length <= 2 ? items.join(' and ') : `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
+
+/** The model's clusters in words, or "its clusters" when the write doesn't name them. */
+const clustersOf = (t: WriteTarget) => (t.clusters?.length ? listOf(t.clusters) : 'its clusters');
+
+/** What the write does, as a title: "model Granite", "changes to model Granite". */
+const thing = (t: WriteTarget) =>
+  t.op === 'update' ? `changes to ${subjects[t.subject].object} ${t.name}` : `${subjects[t.subject].object} ${t.name}`;
+
 /** How long a write that outlasts the form is checked for, in the words below. */
 export const READBACK_MINUTES = 2;
 
-/** The info toast when the form leaves before the backend has answered. */
+/** The info entry while the write is out: the form left before the backend answered. */
 export const pendingText = (t: WriteTarget): Text => {
-  const w = words(t);
-  return { title: `${w.gerund} ${w.object} ${t.name}`, message: "You'll be notified when it's done." };
+  const s = subjects[t.subject];
+  if (t.op === 'delete') {
+    return { title: `Deleting ${s.object} ${t.name}`, message: "You'll be notified when it's deleted from Git." };
+  }
+  return t.op === 'create'
+    ? { title: `Saving ${s.object} ${t.name}`, message: "You'll be notified when it's saved to Git." }
+    : { title: `Saving changes to ${s.object} ${t.name}`, message: "You'll be notified when they're saved to Git." };
 };
 
 /**
- * The success notice of a write the backend answered within the form's wait, in the words the
- * notification center uses for one it confirmed later: "Model <name> deployed".
+ * The write is in Git: what happens next, which the backend doesn't do itself. Argo CD delivers a
+ * model to its clusters, and a subscription to the ingress clusters.
  */
-export const doneNotice = (subject: WriteSubject, op: WriteOp, name: string) =>
-  succeededText({ subject, op, id: '', name }).title;
-
-/** The write landed. */
-export const succeededText = (t: WriteTarget): Text => {
-  const w = words(t);
-  return {
-    title: `${w.Object} ${t.name} ${w.past}`,
-    ...(t.op === 'delete' ? {} : { actions: [viewAction(t)] }),
-  };
+const nextStep = (t: WriteTarget): string => {
+  if (t.subject === 'model') {
+    if (t.op === 'create') return `It's being deployed to ${clustersOf(t)}. You'll be notified when it's ready.`;
+    if (t.op === 'update') return `They're being rolled out to ${clustersOf(t)}.`;
+    return `It's being removed from ${clustersOf(t)}.`;
+  }
+  if (t.op === 'create') return 'It takes effect once the ingress clusters apply it.';
+  if (t.op === 'update') return 'They take effect once the ingress clusters apply them.';
+  return "It's being removed from the ingress clusters.";
 };
+
+/** The write is confirmed: saved to Git (or deleted from it), on the fast path and the read-back alike. */
+export const succeededText = (t: WriteTarget): Text => {
+  const s = subjects[t.subject];
+  const title =
+    t.op === 'delete'
+      ? `${s.Object} ${t.name} deleted from Git`
+      : t.op === 'update'
+        ? `Changes to ${s.object} ${t.name} saved to Git`
+        : `${s.Object} ${t.name} saved to Git`;
+  return { title, message: nextStep(t), ...(t.op === 'delete' ? {} : { actions: [viewAction(t)] }) };
+};
+
+/** The verb of an error title: "Unable to save model Granite", "Unable to delete model Granite". */
+const unable = (t: WriteTarget) => `Unable to ${t.op === 'delete' ? 'delete' : 'save'} ${thing(t)}`;
 
 /** The backend refused the write after the form had left: its message, and the way back to the form. */
 export const failedText = (t: WriteTarget, message: string): Text => {
-  const w = words(t);
   const s = subjects[t.subject];
   const action =
     t.op === 'create'
-      ? { title: `${w.verb === 'deploy' ? 'Deploy' : 'Create'} ${w.object}`, to: s.createPath }
+      ? { title: s.createAction, to: s.createPath }
       : t.op === 'update'
-        ? { title: `Edit ${w.object}`, to: s.edit(t.id) }
+        ? { title: `Edit ${s.object}`, to: s.edit(t.id) }
         : viewAction(t);
-  return { title: `Unable to ${w.verb} ${w.object} ${t.name}`, message, actions: [action] };
+  return { title: unable(t), message, actions: [action] };
 };
 
-/** The backend answered every check, but the write never showed. */
+/** The backend answered every check, but the write never showed in Git. */
 export const notConfirmedText = (t: WriteTarget): Text => {
-  const w = words(t);
+  const s = subjects[t.subject];
   const after = `${READBACK_MINUTES} minutes after`;
   const message =
     t.op === 'create'
-      ? `The ${w.object} wasn't found ${after} it was submitted, and the reason is unknown. If it isn't in the ${w.list} list, ${w.verb} it again.`
+      ? `The ${s.object} wasn't found in Git ${after} it was submitted, and the reason is unknown. If it isn't in the ${s.list} list, ${t.subject === 'model' ? 'deploy' : 'create'} it again.`
       : t.op === 'update'
-        ? `The changes weren't found ${after} they were submitted, and the reason is unknown. Open the ${w.object} to check them, and edit it again if needed.`
-        : `The ${w.object} still exists ${after} it was deleted, and the reason is unknown. If it's still in the ${w.list} list, delete it again.`;
-  return {
-    title: `Unable to ${w.verb} ${w.object} ${t.name}`,
-    message,
-    actions: [t.op === 'create' ? listAction(t) : viewAction(t)],
-  };
+        ? `The changes weren't found in Git ${after} they were submitted, and the reason is unknown. Open the ${s.object} to check them, and edit it again if needed.`
+        : `The ${s.object} is still in Git ${after} it was deleted, and the reason is unknown. If it's still in the ${s.list} list, delete it again.`;
+  return { title: unable(t), message, actions: [t.op === 'create' ? listAction(t) : viewAction(t)] };
 };
 
 /** The checks themselves failed until the end: nobody can say whether the write landed. */
 export const unconfirmedText = (t: WriteTarget): Text => {
-  const w = words(t);
+  const s = subjects[t.subject];
+  const what =
+    t.op === 'delete'
+      ? `the ${s.object} was deleted from Git`
+      : t.op === 'update'
+        ? 'the changes were saved to Git'
+        : `the ${s.object} was saved to Git`;
   return {
-    title: `Unable to confirm ${w.object} ${t.name}`,
-    message: `The AI Grid backend didn't answer for ${READBACK_MINUTES} minutes, so it's unknown whether the ${w.object} was ${w.past}. Check the ${w.list} list.`,
+    title: `Unable to confirm ${s.object} ${t.name}`,
+    message: `The AI Grid backend didn't answer for ${READBACK_MINUTES} minutes, so it's unknown whether ${what}. Check the ${s.list} list.`,
     actions: [listAction(t)],
   };
 };
@@ -157,35 +181,28 @@ export const unconfirmedText = (t: WriteTarget): Text => {
  * outcome is unknown: a warning, with the object to check.
  */
 export const mismatchText = (t: WriteTarget): Text => {
-  const w = words(t);
+  const s = subjects[t.subject];
   const message =
     t.op === 'create'
-      ? `A ${w.object} with this name exists, but it doesn't match what you submitted. Someone else may have ${w.past} it. Open the ${w.object} to check it.`
-      : `The ${w.object} was changed, but not as you submitted. Someone else may have edited it. Open the ${w.object} to check your changes.`;
-  return { title: `Unable to confirm ${w.object} ${t.name}`, message, actions: [viewAction(t)] };
+      ? `A ${s.object} with this name is in Git, but it doesn't match what you submitted. Someone else may have created it. Open the ${s.object} to check it.`
+      : `The ${s.object} was changed in Git, but not as you submitted. Someone else may have edited it. Open the ${s.object} to check your changes.`;
+  return { title: `Unable to confirm ${s.object} ${t.name}`, message, actions: [viewAction(t)] };
 };
 
 /** An update whose object was deleted meanwhile. */
-export const goneText = (t: WriteTarget): Text => {
-  const w = words(t);
-  return {
-    title: `Unable to ${w.verb} ${w.object} ${t.name}`,
-    message: `The ${w.object} no longer exists.`,
-    actions: [listAction(t)],
-  };
-};
+export const goneText = (t: WriteTarget): Text => ({
+  title: unable(t),
+  message: `The ${subjects[t.subject].object} no longer exists.`,
+  actions: [listAction(t)],
+});
 
-/** "a", "a and b", "a, b, and c" (the Oxford comma, frontend/AGENTS.md wording rule 18). */
-export const listOf = (items: string[]) =>
-  items.length <= 2 ? items.join(' and ') : `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
-
-/** A deployed or edited model became ready, on these clusters (none for a model on the hub alone). */
+/** A deployed model became ready, on these clusters (none for a model on the hub alone). */
 export const modelReadyText = (id: string, name: string, clusters: string[]): Text => ({
   title: clusters.length ? `Model ${name} is ready on ${listOf(clusters)}` : `Model ${name} is ready`,
   actions: [{ title: 'View model', to: modelPath({ id }) }],
 });
 
-/** A deployed or edited model failed: why, in the words the model's page uses. */
+/** A deployed model failed: why, in the words the model's page uses. */
 export const modelFailedText = (id: string, name: string, why: string | undefined): Text => ({
   title: `Unable to deploy model ${name}`,
   message: why ?? 'The model failed to deploy. Open it for details.',

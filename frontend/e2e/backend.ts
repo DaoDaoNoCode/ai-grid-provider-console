@@ -1,13 +1,12 @@
 import { expect, type APIRequestContext, type Page } from '@playwright/test';
 
 /**
- * The toast that says a Models or Subscriptions write landed, "Model <name> deployed": the page's
- * own notice when the backend answered within the form's wait (FORM_WAIT_MS), the notification
- * center's when the write took longer, which a busy machine can take on the backend's Git catalog.
- * Both are worded alike; an error matches neither.
+ * The toast that says a Models or Subscriptions write is in Git, such as "Model <name> saved to
+ * Git": the notification center says it when the backend answers, within the form's wait
+ * (FORM_WAIT_MS) or after it. An error or a warning matches nothing here.
  */
-export const writeConfirmed = (page: Page, object: 'Model' | 'Subscription', name: string, past: string) =>
-  page.getByRole('heading', { name: `Success alert: ${object} ${name} ${past}`, exact: true });
+export const writeConfirmed = (page: Page, title: string) =>
+  page.getByRole('heading', { name: `Success alert: ${title}`, exact: true });
 
 // Setup and cleanup the browser specs do on the backend's own API, through the console's origin and
 // the BFF's Connect relay, as the browser's client calls it. The specs assert on the pages, not on

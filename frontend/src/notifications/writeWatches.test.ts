@@ -32,12 +32,17 @@ const subscription = (op: WriteTarget['op'], version?: number): WriteTarget => (
 
 describe('readBack', () => {
   it.each<[string, WriteTarget, ReadAnswer | undefined, string]>([
-    ['a create is confirmed by the object', model('create'), { version: 1 }, 'Model Widget deployed'],
-    ['an update by a version past the one sent', model('update', 3), { version: 4 }, 'Model Widget updated'],
-    ['a delete by NotFound', model('delete'), undefined, 'Model Widget deleted'],
-    ['a subscription create', subscription('create'), { version: 1 }, 'Subscription Team A created'],
-    ['a subscription update', subscription('update', 1), { version: 2 }, 'Subscription Team A updated'],
-    ['a subscription delete', subscription('delete'), undefined, 'Subscription Team A deleted'],
+    ['a create is confirmed by the object', model('create'), { version: 1 }, 'Model Widget saved to Git'],
+    [
+      'an update by a version past the one sent',
+      model('update', 3),
+      { version: 4 },
+      'Changes to model Widget saved to Git',
+    ],
+    ['a delete by NotFound', model('delete'), undefined, 'Model Widget deleted from Git'],
+    ['a subscription create', subscription('create'), { version: 1 }, 'Subscription Team A saved to Git'],
+    ['a subscription update', subscription('update', 1), { version: 2 }, 'Changes to subscription Team A saved to Git'],
+    ['a subscription delete', subscription('delete'), undefined, 'Subscription Team A deleted from Git'],
   ])('confirms: %s', async (_name, target, answer, title) => {
     const response = await readBack(target, SENT, reads(answer), before);
     expect(response).toMatchObject({ status: NotificationResponseStatus.SUCCESS, title });
@@ -56,22 +61,22 @@ describe('readBack', () => {
       'a create never found',
       model('create'),
       undefined,
-      'Unable to deploy model Widget',
-      /wasn't found 2 minutes after it was submitted, and the reason is unknown/,
+      'Unable to save model Widget',
+      /wasn't found in Git 2 minutes after it was submitted, and the reason is unknown/,
     ],
     [
       'an update never seen',
       model('update', 3),
       { version: 3 },
-      'Unable to update model Widget',
-      /changes weren't found 2 minutes after/,
+      'Unable to save changes to model Widget',
+      /changes weren't found in Git 2 minutes after/,
     ],
     [
       'a delete that left the object',
       subscription('delete'),
       { version: 1 },
       'Unable to delete subscription Team A',
-      /still exists 2 minutes after it was deleted/,
+      /is still in Git 2 minutes after it was deleted/,
     ],
   ])('says it was not done after the deadline: %s', async (_name, target, answer, title, message) => {
     const response = await readBack(target, SENT, reads(answer), after);
@@ -87,11 +92,11 @@ describe('readBack', () => {
       const answer = { version: 4, fields: { ...sent, image: 'quay.io/x' } };
       expect(await readBack(withFields(model('create')), SENT, reads(answer), before)).toMatchObject({
         status: NotificationResponseStatus.SUCCESS,
-        title: 'Model Widget deployed',
+        title: 'Model Widget saved to Git',
       });
       expect(await readBack(withFields(model('update', 3)), SENT, reads(answer), before)).toMatchObject({
         status: NotificationResponseStatus.SUCCESS,
-        title: 'Model Widget updated',
+        title: 'Changes to model Widget saved to Git',
       });
     });
 
@@ -101,7 +106,7 @@ describe('readBack', () => {
         status: NotificationResponseStatus.WARNING,
         title: 'Unable to confirm model Widget',
         message:
-          "A model with this name exists, but it doesn't match what you submitted. Someone else may have deployed it. Open the model to check it.",
+          "A model with this name is in Git, but it doesn't match what you submitted. Someone else may have created it. Open the model to check it.",
         actions: [{ title: 'View model', to: '/models/widget' }],
       });
     });
@@ -112,7 +117,7 @@ describe('readBack', () => {
         status: NotificationResponseStatus.WARNING,
         title: 'Unable to confirm model Widget',
         message:
-          'The model was changed, but not as you submitted. Someone else may have edited it. Open the model to check your changes.',
+          'The model was changed in Git, but not as you submitted. Someone else may have edited it. Open the model to check your changes.',
         actions: [{ title: 'View model', to: '/models/widget' }],
       });
     });
@@ -121,7 +126,7 @@ describe('readBack', () => {
   it('says an update failed when its object is gone', async () => {
     expect(await readBack(model('update', 3), SENT, reads(undefined), before)).toMatchObject({
       status: NotificationResponseStatus.ERROR,
-      title: 'Unable to update model Widget',
+      title: 'Unable to save changes to model Widget',
       message: 'The model no longer exists.',
     });
   });

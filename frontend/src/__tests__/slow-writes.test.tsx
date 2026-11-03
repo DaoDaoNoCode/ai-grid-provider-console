@@ -119,12 +119,12 @@ describe('deploying a model', () => {
 
     await endWait();
     expect(await screen.findByRole('heading', { level: 1, name: 'Models' })).toBeVisible();
-    expect(await toast('Deploying model Widget')).toBeVisible();
-    expect(screen.getByText("You'll be notified when it's done.")).toBeVisible();
+    expect(await toast('Saving model Widget')).toBeVisible();
+    expect(screen.getByText("You'll be notified when it's saved to Git.")).toBeVisible();
     expect(screen.queryByText('Model deployed')).not.toBeInTheDocument();
 
     await act(async () => answer.resolve());
-    expect(await toast('Model Widget deployed')).toBeVisible();
+    expect(await toast('Model Widget saved to Git')).toBeVisible();
     expect(await screen.findByTestId('model-locations-widget')).toBeVisible();
     // The answer arrived after the user had moved on: unread.
     expect(screen.getByRole('button', { name: 'Notifications, 1 unread' })).toBeVisible();
@@ -132,7 +132,7 @@ describe('deploying a model', () => {
     await user.click(screen.getByRole('button', { name: 'Notifications, 1 unread' }));
     const items = within(screen.getByRole('list', { name: 'Notifications' })).getAllByRole('listitem');
     expect(items).toHaveLength(1);
-    expect(items[0]).toHaveTextContent('Model Widget deployed');
+    expect(items[0]).toHaveTextContent('Model Widget saved to Git');
     expect(items[0]).not.toHaveClass('pf-m-read');
   });
 
@@ -150,9 +150,9 @@ describe('deploying a model', () => {
     await fillWizard(user);
     await user.click(screen.getByRole('button', { name: 'Deploy' }));
     await endWait();
-    await toast('Deploying model Widget');
+    await toast('Saving model Widget');
     await act(async () => answer.resolve());
-    const alert = (await toast('Unable to deploy model Widget')).closest('.pf-v6-c-alert') as HTMLElement;
+    const alert = (await toast('Unable to save model Widget')).closest('.pf-v6-c-alert') as HTMLElement;
     expect(alert).toHaveTextContent('Model "widget" already exists');
     await user.click(within(alert).getByRole('button', { name: 'Deploy model' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Deploy model' })).toBeVisible();
@@ -189,7 +189,7 @@ describe('deploying a model', () => {
     await user.click(screen.getByRole('button', { name: 'Deploy' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Models' })).toBeVisible();
     // The read-back finds it at once: its outcome replaces the in-progress entry.
-    expect(await toast('Model Widget deployed')).toBeVisible();
+    expect(await toast('Model Widget saved to Git')).toBeVisible();
     expect(screen.queryByText(/Unable to deploy/)).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Notifications, 1 unread' }));
     expect(within(screen.getByRole('list', { name: 'Notifications' })).getAllByRole('listitem')).toHaveLength(1);
@@ -211,7 +211,7 @@ describe('deploying a model', () => {
     renderConsole('/models/deploy', service, formWait);
     await fillWizard(user);
     await user.click(screen.getByRole('button', { name: 'Deploy' }));
-    expect(await toast('Model Widget deployed')).toBeVisible();
+    expect(await toast('Model Widget saved to Git')).toBeVisible();
     expect(await toast('Model Widget is ready on site1')).toBeVisible();
   });
 });
@@ -234,7 +234,7 @@ describe('editing and deleting a model', () => {
     await user.type(replicas, '2');
     await user.click(screen.getByRole('button', { name: /^Review$/ }));
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
-    expect(await toast('Model Widget updated')).toBeVisible();
+    expect(await toast('Changes to model Widget saved to Git')).toBeVisible();
     expect(await screen.findByRole('heading', { level: 1, name: 'Widget' })).toBeVisible();
     expect(screen.queryByText('Model updated')).not.toBeInTheDocument();
   });
@@ -261,7 +261,8 @@ describe('editing and deleting a model', () => {
     expect(screen.queryByTestId('delete-deployment-modal')).not.toBeInTheDocument();
     expect(await toast('Deleting model Widget')).toBeVisible();
     await act(async () => answer.resolve());
-    expect(await toast('Model Widget deleted')).toBeVisible();
+    expect(await toast('Model Widget deleted from Git')).toBeVisible();
+    expect(screen.getByText("It's being removed from site1.")).toBeVisible();
     expect(screen.queryByText('Model deleted')).not.toBeInTheDocument();
   });
 });
@@ -292,9 +293,10 @@ describe('subscriptions', () => {
     await user.click(screen.getByTestId('create-subscription-button'));
     await endWait();
     expect(await screen.findByTestId('subscriptions-table')).toBeVisible();
-    expect(await toast('Creating subscription Test team')).toBeVisible();
+    expect(await toast('Saving subscription Test team')).toBeVisible();
     await act(async () => answer.resolve());
-    expect(await toast('Subscription Test team created')).toBeVisible();
+    expect(await toast('Subscription Test team saved to Git')).toBeVisible();
+    expect(screen.getByText('It takes effect once the ingress clusters apply it.')).toBeVisible();
     expect(await screen.findByRole('link', { name: 'Test team' })).toBeVisible();
   });
 
@@ -321,7 +323,7 @@ describe('subscriptions', () => {
       throw lostAnswer();
     };
     await renameEngineering(service);
-    expect(await toast('Subscription Platform updated')).toBeVisible();
+    expect(await toast('Changes to subscription Platform saved to Git')).toBeVisible();
   });
 
   it("doesn't confirm an edit when the version moved on with someone else's change", async () => {
@@ -339,10 +341,10 @@ describe('subscriptions', () => {
     const alert = (await toast('Unable to confirm subscription Platform')).closest('.pf-v6-c-alert') as HTMLElement;
     expect(alert).toHaveClass('pf-m-warning');
     expect(alert).toHaveTextContent(
-      'The subscription was changed, but not as you submitted. Someone else may have edited it. Open the subscription to check your changes.',
+      'The subscription was changed in Git, but not as you submitted. Someone else may have edited it. Open the subscription to check your changes.',
     );
     expect(within(alert).getByRole('button', { name: 'View subscription' })).toBeVisible();
-    expect(screen.queryByText('Subscription Platform updated')).not.toBeInTheDocument();
+    expect(screen.queryByText('Changes to subscription Platform saved to Git')).not.toBeInTheDocument();
   });
 
   it("reports a delete the backend refused after the wait, with the backend's message", async () => {
@@ -393,7 +395,7 @@ describe('a write still running', () => {
     await fillWizard(user);
     await user.click(screen.getByRole('button', { name: 'Deploy' }));
     await endWait();
-    await toast('Deploying model Widget');
+    await toast('Saving model Widget');
     const sent = () => JSON.parse(storage.values.get(WATCHES) ?? '[]') as { stage: string }[];
     expect(sent().map((r) => r.stage)).toEqual(['sent']);
 
@@ -406,7 +408,7 @@ describe('a write still running', () => {
     expect(sent().map((r) => r.stage)).toEqual(['sent']);
 
     await act(async () => answer.resolve());
-    expect(await toast('Model Widget deployed')).toBeVisible();
+    expect(await toast('Model Widget saved to Git')).toBeVisible();
     expect(sent().map((r) => r.stage)).toEqual(['ready']);
   });
 });
@@ -424,7 +426,7 @@ describe('session storage', () => {
     renderConsole('/models/deploy', service, formWaits().formWait, { get: blockedStorage, values: new Map() });
     await fillWizard(user);
     await user.click(screen.getByRole('button', { name: 'Deploy' }));
-    expect(await toast('Model Widget deployed')).toBeVisible();
+    expect(await toast('Model Widget saved to Git')).toBeVisible();
   });
 
   it('reads back a write whose page was reloaded before it answered', async () => {
@@ -436,7 +438,7 @@ describe('session storage', () => {
       ]),
     });
     renderConsole('/clusters', service, formWaits().formWait, storage);
-    expect(await toast('Model Widget deployed')).toBeVisible();
+    expect(await toast('Model Widget saved to Git')).toBeVisible();
   });
 
   it('says a write was not done once its two minutes have passed without it', async () => {
@@ -455,10 +457,10 @@ describe('session storage', () => {
       ]),
     });
     renderConsole('/clusters', service, formWaits().formWait, storage);
-    expect(await toast('Unable to deploy model Ghost')).toBeVisible();
+    expect(await toast('Unable to save model Ghost')).toBeVisible();
     expect(
       screen.getByText(
-        "The model wasn't found 2 minutes after it was submitted, and the reason is unknown. If it isn't in the Models list, deploy it again.",
+        "The model wasn't found in Git 2 minutes after it was submitted, and the reason is unknown. If it isn't in the Models list, deploy it again.",
       ),
     ).toBeVisible();
     // A final answer drops the watch from storage.
@@ -487,7 +489,7 @@ describe('session storage', () => {
     page.unmount();
     await act(async () => answer.resolve());
     renderConsole('/clusters', service, formWaits().formWait, storage);
-    expect(await toast('Model Widget deployed')).toBeVisible();
+    expect(await toast('Model Widget saved to Git')).toBeVisible();
   });
 });
 
@@ -517,9 +519,9 @@ describe('review findings', () => {
     await user.click(await screen.findByRole('button', { name: 'Deploy' }));
     const alert = (await toast('Unable to confirm model Widget')).closest('.pf-v6-c-alert') as HTMLElement;
     expect(alert).toHaveTextContent(
-      "A model with this name exists, but it doesn't match what you submitted. Someone else may have deployed it. Open the model to check it.",
+      "A model with this name is in Git, but it doesn't match what you submitted. Someone else may have created it. Open the model to check it.",
     );
-    expect(screen.queryByText('Model Widget deployed')).not.toBeInTheDocument();
+    expect(screen.queryByText('Model Widget saved to Git')).not.toBeInTheDocument();
   });
 
   it('confirms an edit without watching for readiness, which the status cannot tell for a new revision', async () => {
@@ -534,18 +536,19 @@ describe('review findings', () => {
     await user.type(replicas, '2');
     await user.click(screen.getByRole('button', { name: /^Review$/ }));
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
-    expect(await toast('Model Widget updated')).toBeVisible();
+    expect(await toast('Changes to model Widget saved to Git')).toBeVisible();
     expect(storage.values.get(WATCHES)).toBeUndefined();
   });
 
-  it('names the model in the success notice of a deploy answered within the wait', async () => {
+  it('says a deploy answered within the wait is saved to Git, not deployed, and where it goes next', async () => {
     const service = new MockConsoleService();
     const user = userEvent.setup();
     renderConsole('/models/deploy', service, formWaits().formWait);
     await fillWizard(user);
     await user.click(screen.getByRole('button', { name: 'Deploy' }));
-    expect(await toast('Model Widget deployed')).toBeVisible();
-    expect(screen.queryByText('Model deployed')).not.toBeInTheDocument();
+    expect(await toast('Model Widget saved to Git')).toBeVisible();
+    expect(screen.getByText("It's being deployed to site1. You'll be notified when it's ready.")).toBeVisible();
+    expect(screen.queryByText(/deployed$/)).not.toBeInTheDocument();
   });
 
   it('registers its watches again from memory when the transport changes, without session storage', async () => {
@@ -567,7 +570,7 @@ describe('review findings', () => {
     );
     await fillWizard(user);
     await user.click(screen.getByRole('button', { name: 'Deploy' }));
-    expect(await toast('Deploying model Widget')).toBeVisible();
+    expect(await toast('Saving model Widget')).toBeVisible();
     await act(async () => {
       await landLater();
     });
@@ -577,6 +580,6 @@ describe('review findings', () => {
         <TestApp service={service} formWait={formWait} storage={blockedStorage} transport={transportFor(service)} />
       </MemoryRouter>,
     );
-    expect(await toast('Model Widget deployed')).toBeVisible();
+    expect(await toast('Model Widget saved to Git')).toBeVisible();
   });
 });

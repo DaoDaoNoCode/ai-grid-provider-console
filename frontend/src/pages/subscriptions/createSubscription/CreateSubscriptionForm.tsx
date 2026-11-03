@@ -59,7 +59,6 @@ import {
 } from '../subscriptionText';
 import { DESCRIPTION, DISPLAY_NAME, displayNameOf, type ModelView } from '../../models/modelView';
 import { useOrganizations, useSubscriptionWrites } from '../useSubscriptions';
-import { doneNotice } from '../../../notifications/writeText';
 import { EditRateLimitsModal } from './EditRateLimitsModal';
 
 type Props = {
@@ -279,9 +278,8 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ models: availableModel
     // The name the notification center uses if the write outlasts the form.
     const shownName = nameDescData.name.trim() || nameDescData.k8sName.value;
     try {
-      let outcome;
       if (subscription) {
-        outcome = await updateSubscription(
+        await updateSubscription(
           {
             object: {
               id: subscription.id,
@@ -297,19 +295,14 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ models: availableModel
       } else {
         const id = nameDescData.k8sName.value;
         // The backend creates the managed authorization policy, <id>-policy, with it.
-        outcome = await createSubscription(
+        await createSubscription(
           { object: { id, metadata: { name: id, annotations: annotationsPayload() }, spec } },
           shownName,
         );
       }
       // A created subscription replaces its create form in history, so Back doesn't land on it, empty.
-      // A write that outlasts the form leaves without the notice: the notification center follows it.
-      navigate(returnTo ?? getSectionUrl('subscriptions'), {
-        replace: !isEditing,
-        ...(outcome === 'done'
-          ? { state: { notice: doneNotice('subscription', isEditing ? 'update' : 'create', shownName) } }
-          : {}),
-      });
+      // The notification center says how the write went (useBackgroundWrites).
+      navigate(returnTo ?? getSectionUrl('subscriptions'), { replace: !isEditing });
     } catch (e) {
       const error = describeError(e);
       setSubmitError(

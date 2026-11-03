@@ -7,7 +7,7 @@
 // over Connect (useSubscriptions).
 import { useCallback, useMemo, useState } from 'react';
 import { Alert, AlertActionLink, Button, Stack, StackItem } from '@patternfly/react-core';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { EmptyListState } from '../../components/states/EmptyListState';
 import { PageStateSection } from '../../components/states/PageStateSection';
 import { useConsoleSession } from '../../context/useConsoleSession';
@@ -37,13 +37,9 @@ export const SubscriptionsList: React.FC = () => {
     void refreshModels();
   }, [refreshSubscriptions, refreshModels]);
   const [filterData, setFilterData] = useState<SubscriptionsFilterDataType>(initialSubscriptionsFilterData);
-  const navigate = useNavigate();
   const [confirmDelete, deleteDialog] = useDeleteSubscription({
-    // The delete refetches the list. Replace, so the notice doesn't add a second Subscriptions
-    // entry to the browser's history.
-    onDeleted: (notice) => {
-      if (notice) void navigate('.', { replace: true, state: { notice } });
-    },
+    // The list refetches once the delete lands; the notification center says how it went.
+    onDeleted: () => undefined,
   });
 
   const onFilterUpdate = useCallback(

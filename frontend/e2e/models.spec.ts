@@ -75,7 +75,7 @@ test('deploys a model to a cluster, edits it in the same wizard, and deletes it'
   await expect(page.getByTestId('model-review')).toContainText(`Model name in requests${unique}`);
   await expect(page.getByTestId('model-review')).toContainText('HardwareCPU only');
   await page.getByRole('button', { name: 'Deploy', exact: true }).click();
-  await expect(writeConfirmed(page, 'Model', unique, 'deployed')).toBeVisible();
+  await expect(writeConfirmed(page, `Model ${unique} saved to Git`)).toBeVisible();
 
   const row = page.getByRole('row').filter({ hasText: unique });
   await expect(row).toBeVisible();
@@ -100,7 +100,7 @@ test('deploys a model to a cluster, edits it in the same wizard, and deletes it'
   await page.getByRole('spinbutton', { name: 'Replicas' }).fill('2');
   await page.getByRole('button', { name: 'Review', exact: true }).click();
   await page.getByRole('button', { name: 'Save changes' }).click();
-  await expect(writeConfirmed(page, 'Model', unique, 'updated')).toBeVisible();
+  await expect(writeConfirmed(page, `Changes to model ${unique} saved to Git`)).toBeVisible();
   await expect(page.getByRole('heading', { level: 1, name: unique, exact: true })).toBeVisible();
   await expect(page.getByLabel('Deployment', { exact: true })).toContainText(/Replicas\s*2/);
 
@@ -109,7 +109,7 @@ test('deploys a model to a cluster, edits it in the same wizard, and deletes it'
   await page.getByRole('menuitem', { name: 'Delete' }).click();
   await page.getByLabel(/^Type .* to confirm/).fill(unique);
   await page.getByRole('button', { name: 'Delete', exact: true }).click();
-  await expect(writeConfirmed(page, 'Model', unique, 'deleted')).toBeVisible();
+  await expect(writeConfirmed(page, `Model ${unique} deleted from Git`)).toBeVisible();
   await expect(page.getByRole('row').filter({ hasText: unique })).toHaveCount(0);
 });
 
@@ -140,7 +140,7 @@ test("deploys a model on NVIDIA GPUs with the cluster's default image", async ({
   await expect(review).toContainText("Runtime imageDefault (the cluster's vLLM image for NVIDIA GPUs)");
   await expect(review).toContainText(/GPUs\s*1/);
   await page.getByRole('button', { name: 'Deploy', exact: true }).click();
-  await expect(writeConfirmed(page, 'Model', unique, 'deployed')).toBeVisible();
+  await expect(writeConfirmed(page, `Model ${unique} saved to Git`)).toBeVisible();
 
   const row = page.getByRole('row').filter({ hasText: unique });
   await expect(row.getByTestId('model-phase')).toHaveText('Saved to Git');
@@ -156,7 +156,7 @@ test("deploys a model on NVIDIA GPUs with the cluster's default image", async ({
   await page.getByRole('menuitem', { name: 'Delete' }).click();
   await page.getByLabel(/^Type .* to confirm/).fill(unique);
   await page.getByRole('button', { name: 'Delete', exact: true }).click();
-  await expect(writeConfirmed(page, 'Model', unique, 'deleted')).toBeVisible();
+  await expect(writeConfirmed(page, `Model ${unique} deleted from Git`)).toBeVisible();
   await expect(page.getByRole('row').filter({ hasText: unique })).toHaveCount(0);
 });
 
@@ -192,7 +192,7 @@ test('confirms a deploy whose answer was lost instead of calling it failed', asy
     // The form leaves as on success, and the read-back confirms the deploy: the confirmation replaces
     // the in-progress entry, so it may be the only toast left.
     await expect(page.getByRole('heading', { level: 1, name: 'Models' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: `Success alert: Model ${unique} deployed` })).toBeVisible();
+    await expect(writeConfirmed(page, `Model ${unique} saved to Git`)).toBeVisible();
     await expect(page.getByText(/Unable to deploy/)).toHaveCount(0);
     await expect(page.getByRole('row').filter({ hasText: unique })).toBeVisible();
     // One entry for the write: the confirmation replaced the in-progress entry, and is unread.

@@ -33,7 +33,7 @@ test('creates, views, edits and deletes a subscription', async ({ page }) => {
     await limits.getByRole('spinbutton', { name: 'Tokens' }).fill('5000');
     await limits.getByRole('button', { name: 'Save' }).click();
     await page.getByRole('button', { name: 'Create subscription' }).click();
-    await expect(writeConfirmed(page, 'Subscription', unique, 'created')).toBeVisible();
+    await expect(writeConfirmed(page, `Subscription ${unique} saved to Git`)).toBeVisible();
 
     // The phase is the backend's: Pending while an ingress cluster hasn't reported the subscription,
     // which no fake cluster does for a new one (withSubscriptionPhase,
@@ -57,7 +57,7 @@ test('creates, views, edits and deletes a subscription', async ({ page }) => {
     await expect(page).toHaveURL(new RegExp(`/subscriptions/edit/${unique}$`));
     await page.getByRole('spinbutton', { name: 'Priority' }).fill('42');
     await page.getByRole('button', { name: 'Save' }).click();
-    await expect(writeConfirmed(page, 'Subscription', unique, 'updated')).toBeVisible();
+    await expect(writeConfirmed(page, `Changes to subscription ${unique} saved to Git`)).toBeVisible();
 
     // Delete from the list with the typed confirmation.
     await expect(row).toContainText('42');

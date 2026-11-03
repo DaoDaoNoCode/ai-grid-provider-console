@@ -66,6 +66,8 @@ const isRecord = (value: unknown): value is WatchRecord =>
   (value.version === undefined || typeof value.version === 'number') &&
   (value.expected === undefined || isFields(value.expected)) &&
   (value.notificationId === undefined || typeof value.notificationId === 'string') &&
+  (value.clusters === undefined ||
+    (Array.isArray(value.clusters) && value.clusters.every((c) => typeof c === 'string'))) &&
   (value.subject === 'model' || value.subject === 'subscription') &&
   (value.op === 'create' || value.op === 'update' || value.op === 'delete') &&
   (value.stage === 'sent' || value.stage === 'readback' || value.stage === 'ready');
@@ -261,6 +263,8 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
         inFlight.current.delete(key);
         if (first.ok) {
           drop(key);
+          // In answer to the user's own click: kept in the drawer as read.
+          notify({ variant: 'success', ...succeededText(target), read: true });
           landed(target);
           return 'done';
         }

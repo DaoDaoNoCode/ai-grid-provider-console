@@ -92,9 +92,10 @@ a failed load.
 - Every delete, and Remove from AI Grid, asks for the object's name typed in (`DeleteModal`).
 - After an action succeeds, a success toast: navigate with `state: { notice }` (`NoticeToast`).
 - A write to the backend's Git catalog (Models, Subscriptions) goes through `submitWrite`
-  (`src/notifications`, `docs/connect.md`, "Writes that take long"): the form waits briefly; past
-  that it leaves as on success but without the notice (`pending`), and the notification center
-  says how the write ended. A refusal within the wait stays on the form, as above.
+  (`src/notifications`, `docs/connect.md`, "Writes that take long"): the form waits briefly, then
+  leaves as on success, without a notice of its own: the notification center says how the write
+  ended, in the words of its stage ("Model <name> saved to Git", never "deployed" before its
+  clusters serve it). A refusal within the wait stays on the form, as above.
 - Toasts: one look for every toast, PatternFly's toast alert group (`NotificationToasts`). Never
   render an `AlertGroup isToast` of a page's own: raise a notice (`NoticeToast`) or a notification
   (`useNotifications().notify`). Every toast is also an entry of the drawer behind the masthead's
@@ -156,9 +157,9 @@ odh-dashboard as the reference product. The terms come from [GLOSSARY.md](../GLO
     hub administrator ...".
 11. **Not found** is "&lt;Object&gt; not found", one sentence, then "Go to &lt;list&gt;".
 12. **Success toasts are "&lt;Object&gt; &lt;past participle&gt;"**: "Organization created", "Model
-    Granite 8B deployed", "local-cluster added to AI Grid". No "successfully" and no period. A
-    Models or Subscriptions write names its object, the same words whether the page or the
-    notification center says it (`doneNotice`).
+    Granite 8B saved to Git", "local-cluster added to AI Grid". No "successfully" and no period.
+    A Models or Subscriptions write names its object and the stage it reached: it is in Git, and
+    a model is deployed only once its clusters serve it (`writeText.ts`).
 13. **Confirmation modals** follow one pattern
     ([modal](https://www.patternfly.org/components/modal/design-guidelines)):
     - the title is "&lt;Verb&gt; &lt;object&gt;?";

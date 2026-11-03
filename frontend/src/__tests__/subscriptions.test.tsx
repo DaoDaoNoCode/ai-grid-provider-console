@@ -375,7 +375,7 @@ describe('administrator subscription flows', () => {
     await user.click(screen.getByTestId('create-subscription-button'));
     await screen.findByTestId('subscriptions-table');
     expect(await screen.findByRole('link', { name: 'Test team' })).toBeVisible();
-    expect(await screen.findByText('Subscription Test team created')).toBeVisible();
+    expect(await screen.findByText('Subscription Test team saved to Git')).toBeVisible();
     // Subscriptions/Create: the id, the display name annotation, the organization, bare groups,
     // and the model by its id with no namespace (SubscriptionModelRef.model_id).
     const [{ object }] = subscriptionsOf(service).sent('create');
@@ -450,7 +450,7 @@ describe('administrator subscription flows', () => {
     await user.click(within(modal).getByRole('button', { name: 'Delete' }));
     await screen.findByTestId('subscriptions-table');
     await waitFor(() => expect(screen.queryByRole('link', { name: 'Engineering' })).not.toBeInTheDocument());
-    expect(await screen.findByText('Subscription Engineering deleted')).toBeVisible();
+    expect(await screen.findByText('Subscription Engineering deleted from Git')).toBeVisible();
     // The delete sends the version read (zero would skip the backend's check).
     expect(subscriptionsOf(service).sent('delete').at(-1)).toMatchObject({ id: 'engineering', resourceVersion: 1 });
   });
@@ -1006,7 +1006,7 @@ it('leaves the create form out of history once the subscription is created, so B
   await pickOrganization(user, 'acme-robotics');
   await fillNewSubscription(user);
   await user.click(screen.getByTestId('create-subscription-button'));
-  expect(await screen.findByText('Subscription Test team created')).toBeVisible();
+  expect(await screen.findByText('Subscription Test team saved to Git')).toBeVisible();
   await act(async () => navigate(-1));
   expect(await screen.findByRole('heading', { level: 1, name: 'Clusters' })).toBeVisible();
 });
@@ -1101,7 +1101,7 @@ it('reloads a subscription after a stale delete, keeping the typed name, so a re
   ).toBeVisible();
   expect(within(modal).getByTestId('delete-modal-input')).toHaveValue('Engineering');
   await user.click(within(modal).getByRole('button', { name: 'Delete' }));
-  expect(await screen.findByText('Subscription Engineering deleted')).toBeVisible();
+  expect(await screen.findByText('Subscription Engineering deleted from Git')).toBeVisible();
   expect(subscriptionsOf(service).subscriptions.some((s) => s.id === 'engineering')).toBe(false);
 });
 

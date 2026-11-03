@@ -12,7 +12,6 @@ import { DeleteModal } from '../../../components/DeleteModal';
 import type { Subscription } from '../../../gen/ai_grid/v1/subscription_type_pb';
 import { displayNameOf } from '../../models/modelView';
 import { useSubscriptionWrites } from '../useSubscriptions';
-import { doneNotice } from '../../../notifications/writeText';
 
 const deleteErrorOf = (err: unknown) => {
   const error = toServiceError(err);
@@ -35,8 +34,8 @@ const deleteErrorOf = (err: unknown) => {
 export const useDeleteSubscription = ({
   onDeleted,
 }: {
-  /** The success notice when the backend confirmed the delete; none when the notification center follows it. */
-  onDeleted: (notice?: string) => void;
+  /** Runs once the delete is sent; the notification center says how it went. */
+  onDeleted: () => void;
 }): [(subscription: Subscription) => void, React.ReactNode] => {
   const { deleteSubscription, reload } = useSubscriptionWrites();
   const [selected, setSelected] = useState<Subscription>();
@@ -59,9 +58,9 @@ export const useDeleteSubscription = ({
     // the backend has now (as a model's delete does) while the typed name stays. The dialog stays
     // busy until that reload is in, so a retry never sends the old version.
     try {
-      const outcome = await deleteSubscription(selected);
+      await deleteSubscription(selected);
       setSelected(undefined);
-      onDeleted(outcome === 'done' ? doneNotice('subscription', 'delete', displayNameOf(selected)) : undefined);
+      onDeleted();
     } catch (err) {
       setError(deleteErrorOf(err));
       try {

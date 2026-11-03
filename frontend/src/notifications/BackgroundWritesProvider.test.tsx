@@ -114,8 +114,8 @@ it("publishes nothing of a write into the next user's notifications or storage w
   await act(async () => waits.shift()?.());
   expect(await outcome).toBe('pending');
   await act(async () => answer.resolve());
-  expect(screen.queryByText('Deploying model Widget')).not.toBeInTheDocument();
-  expect(screen.queryByText('Model Widget deployed')).not.toBeInTheDocument();
+  expect(screen.queryByText('Saving model Widget')).not.toBeInTheDocument();
+  expect(screen.queryByText('Model Widget saved to Git')).not.toBeInTheDocument();
   expect(storage.values.get(watchesKey('bob'))).toBeUndefined();
   expect(storage.values.get(notificationsKey('bob'))).toBeUndefined();
 });

@@ -93,6 +93,7 @@ export const useModelWrites = (): ModelWrites => {
               name: input.displayName.trim() || input.name,
               // What a lost answer's read-back must find to confirm this deploy.
               expected: sentModelFields(request.object),
+              clusters: input.clusters,
             },
             () => callUnaryMethod(transport, create, request),
           ),
@@ -110,6 +111,7 @@ export const useModelWrites = (): ModelWrites => {
               name: input.displayName.trim() || model.id,
               version: model.version,
               expected: sentModelFields(request.object, request.updateMask?.paths),
+              clusters: input.clusters.length ? input.clusters : model.selectedClusters,
             },
             () => callUnaryMethod(transport, update, request),
           ),
@@ -117,9 +119,11 @@ export const useModelWrites = (): ModelWrites => {
       },
       deleteModel: (model) =>
         call(() =>
-          submitWrite({ subject: 'model', op: 'delete', id: model.id, name: titleOf(model) }, () =>
-            // The version the user confirmed: a stale one is Aborted (ModelsDeleteRequest.resource_version).
-            callUnaryMethod(transport, delete$, { id: model.id, resourceVersion: model.version }),
+          submitWrite(
+            { subject: 'model', op: 'delete', id: model.id, name: titleOf(model), clusters: model.selectedClusters },
+            () =>
+              // The version the user confirmed: a stale one is Aborted (ModelsDeleteRequest.resource_version).
+              callUnaryMethod(transport, delete$, { id: model.id, resourceVersion: model.version }),
           ),
         ),
       loadModel: async (id) => {

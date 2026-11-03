@@ -5,7 +5,6 @@ import { DeleteModal } from '../../components/DeleteModal';
 import { ReferencingSubscriptions } from './ModelReferences';
 import { titleOf, type ModelView } from './modelView';
 import { useModelWrites } from './useModels';
-import { doneNotice } from '../../notifications/writeText';
 
 const deleteErrorOf = (err: unknown) =>
   err instanceof ServiceError && err.isNotImplemented
@@ -16,16 +15,15 @@ const deleteErrorOf = (err: unknown) =>
 
 /**
  * Deleting a model deployment, the same from its list row and its page: returns `confirmDelete`
- * and the modal to render. `refresh` reloads the page after a failed delete. `onDeleted` gets
- * the success notice when the backend confirmed the delete, none when it didn't answer within the
- * form's wait: the notification center follows it then, and the page shows no notice of its own.
+ * and the modal to render. `refresh` reloads the page after a failed delete. `onDeleted` runs
+ * once the delete is sent; the notification center says how it went.
  */
 export const useDeleteModel = ({
   refresh,
   onDeleted,
 }: {
   refresh: () => void;
-  onDeleted: (notice?: string) => void;
+  onDeleted: () => void;
 }): [(model: ModelView) => void, React.ReactNode] => {
   const writes = useModelWrites();
   const [selected, setSelected] = useState<ModelView>();
@@ -50,9 +48,9 @@ export const useDeleteModel = ({
     // loads the model again and stays busy until it has, so a retry sends the version the backend
     // has now.
     try {
-      const outcome = await writes.deleteModel(selected);
+      await writes.deleteModel(selected);
       setSelected(undefined);
-      onDeleted(outcome === 'done' ? doneNotice('model', 'delete', titleOf(selected)) : undefined);
+      onDeleted();
     } catch (err) {
       setError(deleteErrorOf(err));
       refresh();

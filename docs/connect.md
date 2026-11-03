@@ -254,12 +254,11 @@ subscription) are sent from the app root, never from the form (`frontend/src/not
 - `useModelWrites` and `useSubscriptionWrites` call `submitWrite` (`useBackgroundWrites`), which
   sends the RPC with `callUnaryMethod` from `BackgroundWritesProvider`. The form waits for it
   `FORM_WAIT_MS` (3 s), with its button busy. An answer within that wait is the form's as it
-  always was: a refusal stays on the form, a success leaves it with the page's notice, worded as
-  the center's ("Model <name> deployed"). Every
+  always was: a refusal stays on the form, and a success leaves it, the center saying so. Every
   refusal the backend gives without touching Git (a field, a conflict, a taken name) comes back
   well inside the wait.
-- Past the wait the form leaves as on success, without the notice, and an info toast says the
-  change is in progress. The request keeps running; its answer becomes the outcome of that same
+- Past the wait the form leaves as on success, and an info toast says the change is being saved
+  ("Saving model <name>"). The request keeps running; its answer becomes the outcome of that same
   entry (one drawer entry per write, unread when it arrives): the success, or the backend's
   refusal with a link back to the form.
 - A write whose outcome is unknown (`isUnknownOutcome`: DeadlineExceeded, Unavailable, Canceled,
@@ -282,6 +281,13 @@ subscription) are sent from the app root, never from the form (`frontend/src/not
   request goes out, and one whose answer the page no longer awaits is read back. When another user
   signs in to the tab, the previous user's records stop and leave it. They belong to that tab
   only: another tab, browser or admin sees none of them.
+
+The words name each stage as it is, since the backend only commits to Git and Argo CD applies the
+change later: "Model <name> saved to Git" with "It's being deployed to <clusters>", "Changes to
+model <name> saved to Git", "Model <name> deleted from Git", and for a subscription that it takes
+effect once the ingress clusters apply it. A model is "ready" only when its clusters serve it, as
+the Models list's status says. The pages raise no success notice of their own for these writes:
+the center says it on both paths (`writeText.ts`).
 
 Every toast goes through the notification center (`NotificationToasts`), a page's own success
 notice (`NoticeToast`) included, and every toast is also in the drawer the masthead's bell opens (on a
