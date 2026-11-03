@@ -21,7 +21,9 @@ export const displayNameOf = (object: { id: string; metadata?: { annotations: { 
 /** The main container's request keys the console reads and writes. */
 const REQUEST_CPU = 'cpu';
 const REQUEST_MEMORY = 'memory';
-export const REQUEST_GPU = 'nvidia.com/gpu';
+
+/** An accelerator a model requests: an extended resource, such as nvidia.com/gpu, and how many. */
+export type AcceleratorRequest = { resource: string; count: string };
 
 /** The reason the backend gives a model it saved to Git that no cluster has reported yet. */
 const SAVED_TO_GIT = 'SavedToGit';
@@ -50,14 +52,18 @@ export type ModelView = {
   modelName?: string;
   modelUri?: string;
   runtimeImage?: string;
-  /** The LLMInferenceServiceConfig presets the model is built on; empty for KServe's default. */
+  /**
+   * The LLMInferenceServiceConfig presets (spec.base_refs) the model is built on; empty for KServe's
+   * default. The console deploys none: preset names carry the OpenShift AI version.
+   */
   baseRefs: string[];
   replicas?: number;
   /** KEDA scales the model (spec.scaling), so it has no fixed replica count. */
   autoscaled: boolean;
   cpu?: string;
   memory?: string;
-  gpuCount?: number;
+  /** The main container's requests for extended resources (a name with a domain), by name. */
+  acceleratorRequests: AcceleratorRequest[];
   env: ModelEnvVar[];
   /** The annotations as read, sent back whole by an edit. */
   annotations: Record<string, string>;
@@ -132,7 +138,6 @@ export const toModelView = (model: Model): ModelView => {
   const spec = model.spec;
   const requests = spec?.main?.requests ?? {};
   const status = model.status;
-  const gpu = requests[REQUEST_GPU];
   const created = model.metadata?.creationTimestamp;
   return {
     id: model.id,
@@ -146,7 +151,10 @@ export const toModelView = (model: Model): ModelView => {
     autoscaled: spec?.scaling !== undefined,
     cpu: nonEmpty(requests[REQUEST_CPU]),
     memory: nonEmpty(requests[REQUEST_MEMORY]),
-    gpuCount: gpu !== undefined && /^\d+$/.test(gpu) ? Number(gpu) : undefined,
+    acceleratorRequests: Object.entries(requests)
+      .filter(([resource]) => resource.includes('/'))
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([resource, count]) => ({ resource, count })),
     env: [...(spec?.main?.env ?? [])],
     annotations: { ...annotations },
     phase: phaseWordOf(status?.phase, status?.reason),

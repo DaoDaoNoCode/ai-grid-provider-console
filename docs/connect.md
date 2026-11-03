@@ -163,7 +163,12 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   Partially available; `UNSPECIFIED` with reason `SavedToGit` is Saved to Git, any other
   unspecified phase Unknown); `status.message` as the status's tooltip and the page's alert;
   `status.url` as the endpoint; `status.placement.locations` (the `location` labels) in the
-  Locations column; and the main container's `requests` as CPU, memory and GPUs. Pages are at
+  Locations column; the main container's `requests` as CPU, memory and accelerators (any request
+  with a domain, such as `nvidia.com/gpu`); and the model's hardware (`modelHardware.ts`,
+  `hardwareOf`): with no `base_refs`, the entry of the config's `models.hardware` whose accelerator
+  the model requests, or, with none, the CPU-only entry whose image and environment it has; a
+  model with `base_refs` shows them as Presets instead, and one that matches nothing shows what it
+  requests. Pages are at
   `/models/:id` and `/models/:id/edit`.
 - **Each cluster.** The expanded row and the model's page list `status.clusters`, the backend's
   status of the model on each cluster its placement names, as it reports them: one row per
@@ -176,14 +181,18 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
 - **Writes.** The wizard calls `Models/Create` with the id and `metadata.name`, the annotations,
   `spec.model` (the URI only: no served name, because the backend serves a model as its id, the
   name users send; the wizard starts the id from the URI's last path segment and shows it on
-  Review as "Model name in requests"), `replicas`, `base_refs` (the model server's presets), `spec.main` (the image, the
-  requests it asks for and `VLLM_ADDITIONAL_ARGS` for runtime arguments) and a `name In [...]`
+  Review as "Model name in requests"), `replicas`, `base_refs` always empty (preset names carry the
+  OpenShift AI version, so they exist only on clusters with it), `spec.main` from the selected
+  Hardware (`models.hardware` in `/api/v1/config`, the chart's `console.models.hardware`): its
+  image, or none for the cluster's default vLLM image for NVIDIA GPUs (KServe's default preset),
+  the requests, its accelerator as `{<accelerator>: N}`, and its environment with
+  `VLLM_ADDITIONAL_ARGS` for runtime arguments) and a `name In [...]`
   placement over the clusters `Models/ListPlacementClusters` offers, and the router
   `{ scheduler: true, managedRoute: true }` (`modelRequests.ts`): the backend defaults the
   scheduler to off, and a model needs it to be routed. It sets no rollout and no limits: the
-  backend's defaults apply (gateway `openshift-ingress/openshift-ai-inference`), and it saves a GPU
-  request as the limit too (`ModelContainer.requests`). An edit calls `Models/Update` with only
-  the paths it changed (`spec.replicas`, `spec.main.image`, `spec.main.env`,
+  backend's defaults apply (gateway `openshift-ingress/openshift-ai-inference`), and it saves an
+  accelerator request as the limit too (`ModelContainer.requests`). An edit calls `Models/Update` with only
+  the paths it changed (`spec.replicas`, `spec.main.image` (an emptied image too), `spec.main.env`,
   `metadata.annotations`, `spec.placement`; the env and the annotations whole, as loaded) and
   `metadata.version` with `lock: true`. Delete calls `Models/Delete` with `resource_version`, the
   version the dialog read; Aborted is the conflict the dialog already handles, and

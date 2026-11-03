@@ -87,6 +87,14 @@ An organization's agreed access to a set of models, carrying its priority, rate 
 authorization policy.
 _Avoid_: plan, entitlement, tier
 
+**Hardware**:
+What a model runs on, selected when it is deployed: one entry of the list the provider admin sets
+in the console's Helm values (`console.models.hardware`), such as NVIDIA GPU or CPU only. An entry
+sets the model's runtime image, environment and starting resources, and the accelerator it
+requests per replica. It is not a cluster property: the console doesn't check that a chosen cluster
+has the hardware, beyond a hint from its NVIDIA GPU count.
+_Avoid_: model server, preset, accelerator profile, hardware profile
+
 **Placement**:
 The rule that selects which grid members a model should run on. It selects; it does not
 deploy.

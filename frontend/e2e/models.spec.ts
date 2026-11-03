@@ -54,9 +54,13 @@ test('deploys a model to a cluster, edits it in the same wizard, and deletes it'
 
   // Deployment: the name starts from the model URI's last segment.
   await expect(page.getByRole('textbox', { name: /^Model name/ })).toHaveValue(unique);
-  await page.getByRole('textbox', { name: /^Runtime image/ }).fill('quay.io/example/runtime:latest');
-  // The model server has no default.
-  await page.getByRole('combobox', { name: 'Model server' }).selectOption({ label: 'vLLM on CPU' });
+  // Hardware: NVIDIA GPU first, from the BFF's built-in list. CPU only fills in its own image, which
+  // the backend at the pin requires (an empty one, the cluster's default, needs a newer backend).
+  await expect(page.getByRole('radio', { name: 'NVIDIA GPU' })).toBeChecked();
+  await page.getByRole('radio', { name: 'CPU only' }).check();
+  await expect(page.getByRole('textbox', { name: /^Runtime image/ })).toHaveValue(
+    /^registry\.redhat\.io\/rhaii\/vllm-cpu-rhel9@/,
+  );
   await page.getByRole('button', { name: 'Next' }).click();
 
   // Clusters: options read the cluster name, then its site and region, from Models/ListPlacementClusters.
@@ -68,6 +72,7 @@ test('deploys a model to a cluster, edits it in the same wizard, and deletes it'
   // Review: users call the model by its resource name.
   await expect(page.getByText(CLUSTER).first()).toBeVisible();
   await expect(page.getByTestId('model-review')).toContainText(`Model name in requests${unique}`);
+  await expect(page.getByTestId('model-review')).toContainText('HardwareCPU only');
   await page.getByRole('button', { name: 'Deploy', exact: true }).click();
   await expect(page.getByText('Model deployed')).toBeVisible();
 
@@ -82,6 +87,7 @@ test('deploys a model to a cluster, edits it in the same wizard, and deletes it'
   await expect(page).toHaveURL(`/models/${unique}`);
   await expect(page.getByRole('heading', { name: unique })).toBeVisible();
   await expect(page.getByTestId('model-locations')).toContainText(CLUSTER);
+  await expect(page.getByLabel('Deployment', { exact: true })).toContainText(/Hardware\s*CPU only/);
 
   // Edit in the deploy wizard: the source is read-only, every step opens directly, and Save sends
   // Models/Update with the changed path and the version the page loaded.

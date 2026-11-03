@@ -142,7 +142,8 @@ export const createModelSchema = z
       .trim()
       .max(2048)
       .regex(/^(hf|oci|s3|pvc):\/\/[^\s]+$/, 'Enter a model URI using hf, oci, s3 or pvc.'),
-    runtimeImage: z.string().trim().min(1).max(2048).regex(/^\S+$/, 'Enter a container image without spaces.'),
+    // Empty: the cluster's default vLLM image, which is for NVIDIA GPUs.
+    runtimeImage: z.string().trim().max(2048).regex(/^\S*$/, 'Enter a container image without spaces.'),
     replicas: z.number().int().min(1).max(99),
     cpu: z
       .string()
@@ -151,9 +152,9 @@ export const createModelSchema = z
         'Enter positive CPU cores or millicores, for example 2 or 500m.',
       ),
     memory: z.string().regex(/^[1-9]\d*(?:Mi|Gi|Ti)$/, 'Enter memory such as 4Gi or 512Mi.'),
-    gpuCount: z.number().int().min(0).max(64),
+    // 0 for hardware without an accelerator; the wizard asks for at least 1 for one that has it.
+    acceleratorCount: z.number().int().min(0).max(64),
     runtimeArgs: z.array(z.string().max(4096)).max(64),
-    baseRefs: z.array(z.string().min(1, 'Enter a preset name.').max(253)).max(8),
     locations: locationsSchema.refine((values) => values.length > 0, 'Select at least one location.'),
   })
   .strict();

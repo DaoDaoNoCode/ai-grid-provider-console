@@ -15,7 +15,7 @@ import { PARTIALLY_AVAILABLE, hasModelStatusDetails, modelPhase, modelStatusTitl
 import { titleOf } from './modelView';
 import { useDeleteModel } from './useDeleteModel';
 import { useModel } from './useModels';
-import { modelServerLabel } from './modelServers';
+import { hardwareText, runtimeImageText } from './modelHardware';
 import { useClusterList } from '../clusters/useClusters';
 
 /** A model deployment at /models/:id: its status explained, its configuration and its locations. */
@@ -24,7 +24,7 @@ export const ModelDetailsPage: React.FC = () => {
   const navigate = useNavigate();
   const { data: loadedModel, loaded, error, refresh } = useModel(id);
   const { data: clusters } = useClusterList();
-  const { user } = useConsoleSession();
+  const { user, config } = useConsoleSession();
   // A 404 means the deployment is gone, even when an earlier answer is still held (PageStateSection
   // shows the not-found state then).
   const model = error instanceof ServiceError && error.status === 404 ? undefined : loadedModel;
@@ -62,8 +62,10 @@ export const ModelDetailsPage: React.FC = () => {
               { term: 'Description', value: model.description },
               { term: 'Model', value: model.modelName },
               { term: 'Model URI', value: model.modelUri },
-              { term: 'Model server', value: modelServerLabel(model.baseRefs) || undefined },
-              { term: 'Runtime image', value: model.runtimeImage },
+              model.baseRefs.length > 0
+                ? { term: 'Presets', value: model.baseRefs.join(', ') }
+                : { term: 'Hardware', value: hardwareText(model, config?.models?.hardware ?? []) },
+              { term: 'Runtime image', value: runtimeImageText(model) },
               { term: 'Replicas', value: model.autoscaled ? 'Autoscaled' : model.replicas },
               { term: 'Endpoint', value: model.url },
               { term: 'Created', value: model.creationTimestamp && <RelativeTime time={model.creationTimestamp} /> },
