@@ -32,7 +32,7 @@ position; models are not placed by it.
 _Avoid_: location, geo, zone
 
 **Site**:
-The name a hub admin gives a cluster's place (annotation `ai-grid/site-name`), shown as Site on
+The name a hub administrator gives a cluster's place (annotation `ai-grid/site-name`), shown as Site on
 the Clusters pages, the AI Grid overview and Monitoring; empty when the annotation isn't set,
 never the region. The cluster's `ai-grid/site` label is its Site ID.
 _Avoid_: data center, location

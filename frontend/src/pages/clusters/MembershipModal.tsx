@@ -154,7 +154,7 @@ export const MembershipModal: React.FC<Props> = ({ cluster, join, onConfirm, onC
               labelHelp={
                 <Popover
                   headerContent="Location label"
-                  bodyContent="The cluster's location label. Models are placed on clusters by name, not by this label."
+                  bodyContent="Models are placed on clusters by name, not by this label."
                 >
                   <FormGroupLabelHelp aria-label="More info for the location label field" />
                 </Popover>

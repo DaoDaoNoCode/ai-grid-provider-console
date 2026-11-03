@@ -532,7 +532,7 @@ export function ObservabilityPanel({
             </Toolbar>
             <Section
               title="Models"
-              help="Clusters are the AI Grid clusters each model's placement selected. They do not confirm that the model is serving there."
+              help="The Clusters column lists the AI Grid clusters selected for each model. Being listed here does not confirm that the model is serving on the cluster."
             >
               <Table aria-label="Models" variant="compact">
                 <Thead>

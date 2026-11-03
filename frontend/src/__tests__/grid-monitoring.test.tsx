@@ -230,7 +230,9 @@ it('explains the clusters column in a help popover', async () => {
   renderAt('/monitoring', withOrganizations());
   await user.click(await screen.findByRole('tab', { name: 'Models' }));
   await user.click(screen.getByRole('button', { name: 'More about models' }));
-  expect(await screen.findByText(/^Clusters are the AI Grid clusters each model's placement selected\./)).toBeVisible();
+  expect(
+    await screen.findByText(/^The Clusters column lists the AI Grid clusters selected for each model\./),
+  ).toBeVisible();
 });
 
 it('does not name Thanos when the backend reports no metrics source', async () => {
