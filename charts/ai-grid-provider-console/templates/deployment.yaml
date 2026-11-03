@@ -161,6 +161,19 @@ spec:
             {{- end }}
             {{- end }}
             {{- end }}
+            {{- with .Values.console.models.hardware }}
+            {{- /* values.schema.json checks each entry; it can't say that ids are unique. */}}
+            {{- $ids := dict }}
+            {{- range . }}
+            {{- if hasKey $ids .id }}
+            {{- fail (printf "console.models.hardware: id %q is used by more than one entry" .id) }}
+            {{- end }}
+            {{- $_ := set $ids .id true }}
+            {{- end }}
+            # The Deploy model wizard's hardware choices; without them the BFF offers its built-in list.
+            - name: MODEL_HARDWARE
+              value: {{ toJson . | quote }}
+            {{- end }}
           # Probed through the proxy (same pod, port 8443): the kubelet cannot
           # reach a loopback port. /readyz also pings the backend, so this one
           # probe gates traffic for all three containers. No liveness probe:

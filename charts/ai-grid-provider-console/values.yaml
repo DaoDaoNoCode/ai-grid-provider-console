@@ -80,6 +80,39 @@ console:
     # every pod gets next to its ServiceAccount token and which issues the Cluster Observability
     # Operator's Perses certificate. Empty: the system roots.
     caFile: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+  # The Deploy model wizard (README.md, "Model hardware").
+  models:
+    # The wizard's Hardware choices, the first one selected. Selecting one fills in the model's
+    # resources and runtime image, and adds its environment variables. Empty: the console's
+    # built-in list, which is the commented example below. A list replaces it whole, so repeat
+    # the built-in entries you keep. Each entry:
+    #   id           a DNS label, unique in the list
+    #   label        what the wizard shows, in sentence case
+    #   description  optional, one sentence
+    #   accelerator  optional: the extended resource requested per accelerator, such as
+    #                nvidia.com/gpu or amd.com/gpu; none means CPU only
+    #   image        optional: the runtime image, with no spaces; none means the cluster's default
+    #                vLLM image, which is for NVIDIA GPUs, so set one for any other hardware
+    #   env          optional: environment variables for the model's container, as name: value;
+    #                not VLLM_ADDITIONAL_ARGS, which the wizard's runtime arguments set
+    #   defaults     optional: the resources the wizard starts from: accelerators (1 to 64, only
+    #                with an accelerator), cpu (cores or millicores, such as 2 or 500m) and memory
+    #                (whole Mi, Gi or Ti, such as 16Gi)
+    hardware: []
+    # hardware:
+    #   - id: nvidia-gpu
+    #     label: NVIDIA GPU
+    #     description: For clusters with NVIDIA GPUs.
+    #     accelerator: nvidia.com/gpu
+    #     defaults: { accelerators: 1, cpu: "2", memory: 16Gi }
+    #   # OpenShift AI 3.6's CPU preset (kserve rhoai-3.6, cpu-config-llm-template.yaml), without
+    #   # its node selector kubernetes.io/arch: amd64, which models can't set.
+    #   - id: cpu
+    #     label: CPU only
+    #     description: For x86_64 clusters without GPUs.
+    #     image: registry.redhat.io/rhaii/vllm-cpu-rhel9@sha256:0ec0f5ff9a5ff263f58db0cfb19e3d7eef24b94c2d8629fe5145f5a8747e28c9
+    #     env: { VLLM_CPU_KVCACHE_SPACE: "4", OMP_NUM_THREADS: "4" }
+    #     defaults: { cpu: "4", memory: 8Gi }
   resources:
     requests: { cpu: 50m, memory: 64Mi }
     limits: { memory: 256Mi }
