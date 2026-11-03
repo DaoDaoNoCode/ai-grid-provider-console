@@ -118,9 +118,7 @@ export const SubscriptionTableRow: React.FC<Props> = ({
         </Td>
         {expandCell('groups', 3, groups.length)}
         {expandCell('models', 4, modelRefs.length)}
-        <Td dataLabel={columns[5].label} className="console-number">
-          {subscription.spec?.priority ?? EMPTY_VALUE}
-        </Td>
+        <Td dataLabel={columns[5].label}>{subscription.spec?.priority ?? EMPTY_VALUE}</Td>
         {canWrite && (
           <Td isActionCell>
             <SimpleMenuActions

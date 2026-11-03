@@ -64,8 +64,8 @@ a failed load.
 - Every column sortable.
 - The row menu is `SimpleMenuActions`, last, for users who may write only: View details, Edit, a
   divider, Delete.
-- "—" (`EMPTY_VALUE`) for a missing value; numbers right-aligned (`className="console-number"` on
-  the `Th` and the `Td`).
+- "—" (`EMPTY_VALUE`) for a missing value; numbers left-aligned like every other column,
+  PatternFly's default, with no class of their own.
 
 ## Status
 

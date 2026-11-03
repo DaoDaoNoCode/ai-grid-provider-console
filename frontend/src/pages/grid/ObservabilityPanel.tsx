@@ -1,8 +1,8 @@
 // Layout and visual styling adapted from the cloned ProviderAdminObservabilityPage.
 // Ported from krisv/ai-grid-cloud-provider-poc src/app/pages/grid/ObservabilityPanel.tsx at 62319b8.
 // The PoC's tenants are the console's organizations; visible text says "organization". The console
-// uses plain section headings, PatternFly tables with right-aligned numbers, round axis ticks, and
-// horizontal usage bars with a legend.
+// uses plain section headings, PatternFly tables (numbers left-aligned like every column), round
+// axis ticks, and horizontal usage bars with a legend.
 import { useId, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
@@ -391,9 +391,9 @@ export function ObservabilityPanel({
             <Thead>
               <Tr>
                 <Th>Organization</Th>
-                <Th className="console-number">Uncached input tokens</Th>
-                <Th className="console-number">Output tokens</Th>
-                <Th className="console-number">Cached input tokens</Th>
+                <Th>Uncached input tokens</Th>
+                <Th>Output tokens</Th>
+                <Th>Cached input tokens</Th>
               </Tr>
             </Thead>
             <Tbody>
@@ -402,15 +402,9 @@ export function ObservabilityPanel({
                   <Td dataLabel="Organization">
                     <Link to={`/organizations/${encodeURIComponent(t.id)}`}>{t.name}</Link>
                   </Td>
-                  <Td dataLabel="Uncached input tokens" className="console-number">
-                    {t.input.toLocaleString()}
-                  </Td>
-                  <Td dataLabel="Output tokens" className="console-number">
-                    {t.output.toLocaleString()}
-                  </Td>
-                  <Td dataLabel="Cached input tokens" className="console-number">
-                    {t.cached.toLocaleString()}
-                  </Td>
+                  <Td dataLabel="Uncached input tokens">{t.input.toLocaleString()}</Td>
+                  <Td dataLabel="Output tokens">{t.output.toLocaleString()}</Td>
+                  <Td dataLabel="Cached input tokens">{t.cached.toLocaleString()}</Td>
                 </Tr>
               ))}
             </Tbody>
@@ -540,7 +534,7 @@ export function ObservabilityPanel({
                     <Th>Name</Th>
                     <Th>Model</Th>
                     <Th>Clusters</Th>
-                    <Th className="console-number">Replicas</Th>
+                    <Th>Replicas</Th>
                     <Th>Status</Th>
                   </Tr>
                 </Thead>
@@ -575,9 +569,7 @@ export function ObservabilityPanel({
                           .map((c) => c.name)
                           .join(', ') || EMPTY_VALUE}
                       </Td>
-                      <Td dataLabel="Replicas" className="console-number">
-                        {m.replicas ?? EMPTY_VALUE}
-                      </Td>
+                      <Td dataLabel="Replicas">{m.replicas ?? EMPTY_VALUE}</Td>
                       <Td dataLabel="Status">
                         <StatusLabel isCompact status={m.phase} />
                       </Td>

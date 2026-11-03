@@ -13,8 +13,6 @@ import { displayNameOf } from '../../models/modelView';
 export type SubscriptionColumn = {
   label: string;
   width?: ThProps['width'];
-  /** A number: right-aligned. */
-  isNumber?: boolean;
   sortable: (a: Subscription, b: Subscription) => number;
 };
 
@@ -47,7 +45,6 @@ export const subscriptionsColumns = (organizationName: (s: Subscription) => stri
   {
     label: 'Priority',
     width: 10,
-    isNumber: true,
     sortable: (a, b) => (a.spec?.priority ?? 0) - (b.spec?.priority ?? 0),
   },
 ];

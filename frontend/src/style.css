@@ -1,6 +1,6 @@
 /* The console's global rules. Layout comes from PatternFly's components and layouts (Stack, Flex,
    Grid, Card, Toolbar); what is left here sets PatternFly's own variables where a component has no
-   prop for it, plus two table and toolbar conventions. */
+   prop for it, plus a few console conventions. */
 /* The masthead's logo is the console's name, not an image. From PatternFly's md breakpoint up, its
    own masthead variables let the name sit on one line: the logo slot fits the text instead of an
    image's width, and the brand column stops taking the sidebar's width (a subgrid). A phone keeps
@@ -44,10 +44,4 @@ dl.console-about-facts {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-}
-
-/* A number in a table: right-aligned, with digits of one width so columns line up. */
-.console-number {
-  text-align: end;
-  font-variant-numeric: tabular-nums;
 }
