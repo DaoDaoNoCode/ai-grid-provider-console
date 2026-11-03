@@ -1189,6 +1189,34 @@ describe('the hardware', () => {
       ).toBeDisabled();
     });
 
+    it('saves an edit of a stored model without an image, NVIDIA GPUs, or presets, leaving its image alone', async () => {
+      const service = deployed({ cpu: '4', memory: '8Gi' }, '');
+      const update = vi.spyOn(modelsOf(service), 'update');
+      const user = userEvent.setup();
+      renderAt('/models/granite-3-8b/edit', service);
+      await openDeploymentStep(user);
+      const description = await screen.findByRole('textbox', { name: 'Description' });
+      await user.clear(description);
+      await user.paste('Edited');
+      await user.click(
+        within(screen.getByRole('navigation', { name: 'Wizard steps' })).getByRole('button', { name: 'Review' }),
+      );
+      await user.click(await screen.findByRole('button', { name: 'Save changes' }));
+      await waitFor(() => expect(update).toHaveBeenCalled());
+      expect(update.mock.calls[0][0].updateMask?.paths).toEqual(['metadata.annotations']);
+    });
+
+    it('says a cleared image runs the presets’ image, on NVIDIA GPUs too', async () => {
+      const service = deployed({ cpu: '2', memory: '16Gi', 'nvidia.com/gpu': '1' }, 'registry.example/vllm-cuda:1');
+      modelsOf(service).find('granite-3-8b').spec!.baseRefs = ['custom-preset'];
+      const user = userEvent.setup();
+      renderAt('/models/granite-3-8b/edit', service);
+      await openDeploymentStep(user);
+      expect(await screen.findByRole('textbox', { name: /Runtime image/ })).toHaveAccessibleDescription(
+        'Leave empty to use the image the presets set.',
+      );
+    });
+
     it('shows its presets read-only, beside what it requests', async () => {
       const service = new MockConsoleService();
       modelsOf(service).find('granite-3-8b').spec!.baseRefs = ['custom-preset'];

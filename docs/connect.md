@@ -169,7 +169,8 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   deployed model is never matched against the config's `models.hardware`, which can change or fail
   to load: only the Deploy wizard names hardware. An empty image is the cluster's default vLLM
   image for NVIDIA GPUs, so the wizard requires an image unless the hardware's accelerator, or a
-  deployed model's request, is `nvidia.com/gpu` (or the model has presets). Pages are at
+  deployed model's request, is `nvidia.com/gpu` (or the model has presets); an edit requires it
+  only where it would clear an image the model has. Pages are at
   `/models/:id` and `/models/:id/edit`.
 - **Each cluster.** The expanded row and the model's page list `status.clusters`, the backend's
   status of the model on each cluster its placement names, as it reports them: one row per

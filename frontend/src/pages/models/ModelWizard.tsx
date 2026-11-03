@@ -278,12 +278,16 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
       ? NVIDIA_GPU
       : undefined
     : accelerator;
-  const imageOptional = mayUseDefaultImage(imageAccelerator) || Boolean(presets);
+  // An edit requires it only where it would clear an image the model has: a model stored without
+  // one keeps none until one is entered, so editing its other fields doesn't depend on it.
+  const imageRequired =
+    !mayUseDefaultImage(imageAccelerator) && !presets && (!model || model.runtimeImage !== undefined);
+  const imageMissing = imageRequired && runtimeImage.trim() === '';
   const runtimeImageError = !touched.has('runtimeImage')
     ? undefined
-    : runtimeImage.trim() || imageOptional
-      ? fieldMessage(modelFieldsSchema.shape.runtimeImage, runtimeImage)
-      : 'Required.';
+    : imageMissing
+      ? 'Required.'
+      : fieldMessage(modelFieldsSchema.shape.runtimeImage, runtimeImage);
   const replicasError = shownError('replicas', replicas, Number);
   const cpuError = shownError('cpu', cpu);
   const memoryError = shownError('memory', memory);
@@ -304,7 +308,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
         .pick({ displayName: true, description: true })
         .safeParse({ displayName: input.displayName, description: input.description }).success &&
       modelFieldsSchema.shape.runtimeImage.safeParse(input.runtimeImage).success &&
-      (imageOptional || runtimeImage.trim() !== '') &&
+      !imageMissing &&
       // The deploy wizard's limits apply to a count the user sets, not to one the model already has.
       (!replicasEditable ||
         replicas === start.replicas ||
@@ -658,7 +662,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
                       reason={fixedReason.presets}
                     />
                   )}
-              <FormGroup label="Runtime image" fieldId="runtime-image" isRequired={!imageOptional}>
+              <FormGroup label="Runtime image" fieldId="runtime-image" isRequired={imageRequired}>
                 <TextInput
                   id="runtime-image"
                   aria-describedby="runtime-image-help"
@@ -666,15 +670,15 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
                   onChange={(_event, value) => setRuntimeImage(value)}
                   onBlur={() => touch('runtimeImage')}
                   validated={runtimeImageError ? 'error' : 'default'}
-                  isRequired={!imageOptional}
+                  isRequired={imageRequired}
                 />
                 <Help id="runtime-image-help" error={runtimeImageError}>
                   {!model
                     ? runtimeImageHelp(hardware)
-                    : mayUseDefaultImage(imageAccelerator)
-                      ? DEFAULT_IMAGE_HELP
-                      : presets
-                        ? 'Leave empty to use the image the presets set.'
+                    : presets
+                      ? 'Leave empty to use the image the presets set.'
+                      : mayUseDefaultImage(imageAccelerator)
+                        ? DEFAULT_IMAGE_HELP
                         : "Enter a vLLM image for the model's hardware."}
                 </Help>
               </FormGroup>
