@@ -239,7 +239,7 @@ func (a *App) listTenants(w http.ResponseWriter, r *http.Request) {
 	if limit != nil {
 		req.Limit = proto.Int32(int32(*limit))
 	}
-	ctx, cancel := a.backend.Context(r.Context())
+	ctx, cancel := a.backendContext(r)
 	defer cancel()
 	resp, err := a.backend.Tenants.ListTenants(ctx, req)
 	if err != nil {
@@ -267,7 +267,7 @@ func pagedOrFiltered(offset, limit *int, filtered bool) bool {
 
 // getTenant answers GET /api/v1/tenants/{id}.
 func (a *App) getTenant(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := a.backend.Context(r.Context())
+	ctx, cancel := a.backendContext(r)
 	defer cancel()
 	resp, err := a.backend.Tenants.GetTenant(ctx, &aigridv1.GetTenantRequest{Id: r.PathValue("id")})
 	if err != nil {
@@ -305,7 +305,7 @@ func (a *App) createTenant(w http.ResponseWriter, r *http.Request) {
 	// backend applies Keycloak's default (true).
 	obj := &aigridv1.Tenant{Name: body.Name, Alias: body.Alias, Description: body.Description, Enabled: body.Enabled, Domains: body.Domains, Attributes: body.Attributes,
 		IdentityProvider: fromIdentityProvider(body.IdentityProvider)}
-	ctx, cancel := a.backend.Context(r.Context())
+	ctx, cancel := a.backendContext(r)
 	defer cancel()
 	resp, err := a.backend.Tenants.CreateTenant(ctx, &aigridv1.CreateTenantRequest{Object: obj})
 	if err != nil {
@@ -398,7 +398,7 @@ func (a *App) patchTenant(w http.ResponseWriter, r *http.Request) {
 		a.respondError(w, r, Errorf(http.StatusUnprocessableEntity, "the request body names no field to change"))
 		return
 	}
-	ctx, cancel := a.backend.Context(r.Context())
+	ctx, cancel := a.backendContext(r)
 	defer cancel()
 	resp, err := a.backend.Tenants.UpdateTenant(ctx, &aigridv1.UpdateTenantRequest{Object: obj, UpdateMask: &fieldmaskpb.FieldMask{Paths: paths}})
 	if err != nil {
@@ -420,7 +420,7 @@ func (a *App) deleteTenant(w http.ResponseWriter, r *http.Request) {
 		a.respondError(w, r, err)
 		return
 	}
-	ctx, cancel := a.backend.Context(r.Context())
+	ctx, cancel := a.backendContext(r)
 	defer cancel()
 	if _, err := a.backend.Tenants.DeleteTenant(ctx, &aigridv1.DeleteTenantRequest{Id: id, ResourceVersion: expected}); err != nil {
 		a.respondError(w, r, err)

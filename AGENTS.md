@@ -72,7 +72,8 @@ What the BFF does:
   `X-Forwarded-*`) and sets the caller exactly as `forwardIdentity` does for gRPC, passes only
   the Connect protocol (POST with a Connect content type, GET), refuses compressed requests,
   limits bodies to 1 MiB, bounds a unary call and every call's wait for headers by
-  `BACKEND_TIMEOUT`, passes back only the response headers a Connect client needs, and never
+  `BACKEND_TIMEOUT` (`BACKEND_WRITE_TIMEOUT` for the procedures its allowlist marks as writes),
+  passes back only the response headers a Connect client needs, and never
   reads a body or compiles against the contract. A
   new RPC needs no transport implementation in the BFF. Until backend authorization lands,
   review it for the procedure allowlist (`docs/plan/bff-api.md`, "The Connect relay").
@@ -184,7 +185,8 @@ when the RPCs allow it.
   provider admin. Left out on purpose: Clusters `Create` and `Delete`, which the console doesn't
   offer, and `Tenants/ListMembers`, because the console never lists an organization's members:
   one organization is one tenant, and the provider must not see a company's internals (decided
-  2026-10-23). A new procedure needs a review and a line in the list. Remove the list once the
+  2026-10-23). A new procedure needs a review and a line in the list, which also says whether it
+  reads or writes (a write gets `BACKEND_WRITE_TIMEOUT`). Remove the list once the
   backend authorizes every RPC itself.
 - `toGridCluster` (`bff/internal/api/clusters.go`), for the clusters of the Monitoring
   fallback's `GET /api/v1/grid/overview` only: the Clusters pages, the map and the site names on
