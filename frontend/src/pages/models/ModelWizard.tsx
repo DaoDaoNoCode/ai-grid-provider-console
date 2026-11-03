@@ -50,6 +50,7 @@ import {
   envWithHardware,
   hardwareEnv,
   matchingHardware,
+  wholeCount,
   mayUseDefaultImage,
   runtimeImageHelp,
 } from './modelHardware';
@@ -232,6 +233,8 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
   const [replicas, setReplicas] = useState(start.replicas);
   // Presets an edit removes (spec.base_refs); none can be added.
   const [removePresets, setRemovePresets] = useState(false);
+  const presets = model?.baseRefs.join(', ');
+  const presetsKept = !!presets && !removePresets;
   // The hardware a new model runs on: the first in the console's list until the user selects
   // another. An edit starts on the entry the model runs on (matchingHardware), or on none, and
   // looks again once its presets are removed; the user can select another. A reopened draft starts
@@ -245,11 +248,12 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
   const accelerator = hardware?.accelerator;
   // The model whose own image, environment and resources an edit shows: a matched entry is only
   // preselected and changes none of them. Selecting another entry applies that one; selecting the
-  // one the model started on again goes back to the model's values.
-  const startHardware = model ? matchingHardware(model, hardwareList) : undefined;
-  const own = model && (!selectedHardware || selectedHardware.id === startHardware?.id) ? model : undefined;
-  // The accelerator count of the model's matching hardware, which an edit starts from.
-  const ownAccelerators = own && accelerator ? own.acceleratorRequests[0]?.count : undefined;
+  // matched one again (with the presets removed, the one matched then) goes back to the model's values.
+  const own = model && (!selectedHardware || selectedHardware.id === matchedHardware?.id) ? model : undefined;
+  // The accelerator count of the model's matching hardware, which an edit starts from, as the
+  // whole-number field shows it ("3000m" is 3).
+  const storedAccelerators = own && accelerator ? own.acceleratorRequests[0]?.count : undefined;
+  const ownAccelerators = storedAccelerators && (wholeCount(storedAccelerators) ?? storedAccelerators);
   // The fields the hardware fills in hold undefined until the user edits them, so they show the
   // selected hardware's value. An edited CPU, memory or accelerator count is kept when the hardware
   // changes; the image is the hardware's, so selecting hardware replaces an edited one with its own
@@ -269,6 +273,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
   const memory = memoryInput ?? (own ? (own.memory ?? '') : (hardware?.defaults?.memory ?? defaults.memory));
   const accelerators =
     acceleratorsInput ?? ownAccelerators ?? String(hardware?.defaults?.accelerators ?? defaults.accelerators);
+  const acceleratorsKept = ownAccelerators !== undefined && accelerators === ownAccelerators;
   // The environment besides the runtime arguments: the hardware's for a new model, the model's own
   // for an edit, with the hardware the user selected applied.
   const env = own
@@ -298,8 +303,9 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
     accelerator,
     // Hardware without an accelerator asks for none.
     acceleratorCount: accelerator ? Number(accelerators) : 0,
-    // An edit without hardware shows the model's accelerators read-only.
-    keepAccelerators: editing && !hardware,
+    // An edit without hardware shows the model's accelerators read-only; one that keeps the model's
+    // hardware and count sends its requests as stored, in whatever quantity form they have.
+    keepAccelerators: editing && (!hardware || (!!own && (!accelerator || acceleratorsKept))),
     env,
     baseRefs: model && (removePresets ? [] : model.baseRefs),
     runtimeArgs: filterRuntimeArgsForContainer(runtimeArgs.args),
@@ -329,8 +335,6 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
   // which the backend took.
   const kept = (value: string, stored: string | undefined) => editing && value.trim() === (stored ?? '');
   const modelUriError = kept(modelUri, model?.modelUri) ? undefined : shownError('modelUri', modelUri);
-  const presets = model?.baseRefs.join(', ');
-  const presetsKept = !!presets && !removePresets;
   // An empty image runs the cluster's default vLLM image, which is for NVIDIA GPUs
   // (requireImageWithoutNvidia): so the hardware's accelerator decides, or for an edit without
   // hardware, what the model requests. A deployed model's presets set an image of their own.
@@ -370,7 +374,6 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
   // Hardware with an accelerator needs at least one: without it the model can't use the hardware.
   const acceleratorsValid =
     /^\d+$/.test(accelerators) && Number(accelerators) >= 1 && Number(accelerators) <= MAX_ACCELERATORS;
-  const acceleratorsKept = ownAccelerators !== undefined && accelerators === ownAccelerators;
   const acceleratorsError =
     !touched.has('accelerators') || acceleratorsKept
       ? undefined
@@ -573,10 +576,12 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
             description={h.description}
             isChecked={h.id === hardware?.id}
             onChange={() => selectHardware(h.id)}
-            isDisabled={saving}
+            // A preset sets an image and environment of its own, which other hardware would conflict with.
+            isDisabled={saving || presetsKept}
           />
         ))}
-        {model && !hardware && (
+        {presetsKept && <Help>Remove presets to select hardware.</Help>}
+        {model && !hardware && !presetsKept && (
           <Help>
             The model&apos;s current settings match none of these. Select one to apply its runtime image, environment,
             and resources.
@@ -774,7 +779,14 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
                     label="Remove presets"
                     description="The model then uses only the runtime image, environment, and resources set here. Presets can't be added back."
                     isChecked={removePresets}
-                    onChange={(_event, checked) => setRemovePresets(checked)}
+                    onChange={(_event, checked) => {
+                      setRemovePresets(checked);
+                      // Keeping the presets puts the model's own hardware back.
+                      if (!checked) {
+                        setHardwareId(undefined);
+                        setRuntimeImage(model?.runtimeImage ?? '');
+                      }
+                    }}
                     isDisabled={saving}
                   />
                 </FormGroup>

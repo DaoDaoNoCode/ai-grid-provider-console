@@ -1922,6 +1922,97 @@ describe('editing what a deployed model runs', () => {
     expect(request.updateMask?.paths).toEqual(['spec.base_refs']);
   });
 
+  it('keeps quantities the console doesn’t write when an edit doesn’t touch them', async () => {
+    // Valid Kubernetes quantities in forms the wizard doesn't write: 3000m is three whole GPUs.
+    const { service, update } = deployed({ cpu: '2000m', memory: '16G', 'nvidia.com/gpu': '3000m' }, '');
+    const user = userEvent.setup();
+    renderAt('/models/granite-3-8b/edit', service);
+    await openStep(user, 'Deployment');
+    expect(await screen.findByRole('radio', { name: 'NVIDIA GPU' })).toBeChecked();
+    expect(screen.getByRole('spinbutton', { name: 'GPUs' })).toHaveValue(3);
+    expect(field(/^CPU/)).toHaveValue('2000m');
+    expect(field(/^Memory/)).toHaveValue('16G');
+    await user.click(screen.getByRole('textbox', { name: 'Description' }));
+    await user.paste(' (edited)');
+    const request = await save(user, update);
+    expect(request.updateMask?.paths).toEqual(['metadata.annotations']);
+  });
+
+  it('sends a GPU count the user edits as a whole number, keeping CPU and memory as stored', async () => {
+    const { service, update } = deployed({ cpu: '2000m', memory: '16G', 'nvidia.com/gpu': '3000m' }, '');
+    const user = userEvent.setup();
+    renderAt('/models/granite-3-8b/edit', service);
+    await openStep(user, 'Deployment');
+    await user.click(await screen.findByRole('button', { name: 'Increase gpus' }));
+    const request = await save(user, update);
+    expect(request.updateMask?.paths).toEqual(['spec.main.requests']);
+    expect(request.object?.spec?.main?.requests).toEqual({ cpu: '2000m', memory: '16G', 'nvidia.com/gpu': '4' });
+  });
+
+  it('selects hardware for a model with presets only once they are removed', async () => {
+    const service = new MockConsoleService();
+    const models = modelsOf(service);
+    const update = vi.spyOn(models, 'update');
+    const user = userEvent.setup();
+    renderAt('/models/granite-3-8b/edit', service);
+    await openStep(user, 'Deployment');
+    // The CPU preset sets an image and environment that other hardware would conflict with.
+    expect(await screen.findByRole('radio', { name: 'NVIDIA GPU' })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: 'CPU only' })).toBeDisabled();
+    expect(screen.getByText('Remove presets to select hardware.')).toBeVisible();
+    expect(screen.queryByText(/match none of these/)).not.toBeInTheDocument();
+    const remove = screen.getByRole('checkbox', { name: 'Remove presets' });
+    await user.click(remove);
+    expect(screen.getByRole('radio', { name: 'CPU only' })).toBeEnabled();
+    expect(screen.queryByText('Remove presets to select hardware.')).not.toBeInTheDocument();
+    await selectHardware(user, 'NVIDIA GPU');
+    // Keeping the presets again puts the model's own hardware back.
+    await user.click(remove);
+    expect(screen.getByRole('radio', { name: 'NVIDIA GPU' })).not.toBeChecked();
+    expect(screen.getByRole('radio', { name: 'NVIDIA GPU' })).toBeDisabled();
+    expect(field(/Runtime image/)).toHaveValue('quay.io/example/vllm:v1');
+    await user.click(remove);
+    await selectHardware(user, 'CPU only');
+    const request = await save(user, update);
+    expect(request.updateMask?.paths).toEqual([
+      'spec.base_refs',
+      'spec.main.image',
+      'spec.main.requests',
+      'spec.main.env',
+    ]);
+    expect(request.object?.spec?.baseRefs).toEqual([]);
+    expect(request.object?.spec?.main?.image).toBe(cpuOnly.image);
+    expect(request.object?.spec?.main?.requests).toEqual({ cpu: '4', memory: '8Gi' });
+    expect(envOf(request.object?.spec?.main?.env)).toEqual([
+      { name: 'OMP_NUM_THREADS', value: '4' },
+      { name: 'VLLM_CPU_KVCACHE_SPACE', value: '4' },
+    ]);
+  });
+
+  it('goes back to the model’s own values when its hardware is selected again after the presets are removed', async () => {
+    const service = new MockConsoleService();
+    const models = modelsOf(service);
+    const granite = models.find('granite-3-8b');
+    granite.spec!.main!.image = 'registry.example/vllm-cuda:mine';
+    granite.spec!.main!.requests = { cpu: '3', memory: '12Gi', 'nvidia.com/gpu': '2' };
+    granite.spec!.main!.env = [{ $typeName: 'ai_grid.v1.ModelEnvVar', name: 'TEAM', value: 'research' }];
+    const update = vi.spyOn(models, 'update');
+    const user = userEvent.setup();
+    renderAt('/models/granite-3-8b/edit', service);
+    await openStep(user, 'Deployment');
+    await user.click(await screen.findByRole('checkbox', { name: 'Remove presets' }));
+    expect(screen.getByRole('radio', { name: 'NVIDIA GPU' })).toBeChecked();
+    await selectHardware(user, 'CPU only');
+    expect(field(/^CPU/)).toHaveValue('4');
+    await selectHardware(user, 'NVIDIA GPU');
+    expect(field(/Runtime image/)).toHaveValue('registry.example/vllm-cuda:mine');
+    expect(field(/^CPU/)).toHaveValue('3');
+    expect(field(/^Memory/)).toHaveValue('12Gi');
+    expect(screen.getByRole('spinbutton', { name: 'GPUs' })).toHaveValue(2);
+    const request = await save(user, update);
+    expect(request.updateMask?.paths).toEqual(['spec.base_refs']);
+  });
+
   it('removes the presets, sending spec.base_refs empty, and says so on Review', async () => {
     const service = new MockConsoleService();
     const models = modelsOf(service);

@@ -2,7 +2,7 @@ import { create } from '@bufbuild/protobuf';
 import { ModelSchema, type ModelSpec } from '../../gen/ai_grid/v1/model_type_pb';
 import configExample from '../../../../mock/examples/get-config.json';
 import type { ModelHardware } from '../../api/types';
-import { envWithHardware, matchingHardware } from './modelHardware';
+import { envWithHardware, matchingHardware, wholeCount } from './modelHardware';
 import { updateRequestOf, type ModelInput } from './modelRequests';
 import { toModelView, type ModelView } from './modelView';
 
@@ -162,6 +162,24 @@ describe('updateRequestOf', () => {
       'spec.main.env',
       'metadata.annotations',
     ]);
+  });
+});
+
+describe('wholeCount', () => {
+  it.each([
+    ['3', '3'],
+    ['3000m', '3'],
+    ['+2', '2'],
+    ['1k', '1000'],
+    ['2e0', '2'],
+    ['1Ki', '1024'],
+    ['3.0', '3'],
+  ])('reads %s as %s', (quantity, count) => {
+    expect(wholeCount(quantity)).toBe(count);
+  });
+
+  it.each(['1500m', '0.5', 'two', ''])('reads %s as no whole number', (quantity) => {
+    expect(wholeCount(quantity)).toBeUndefined();
   });
 });
 

@@ -62,6 +62,37 @@ const acceleratorText = ({ resource, count }: AcceleratorRequest) => {
 export const acceleratorsText = (model: Pick<ModelView, 'acceleratorRequests'>) =>
   model.acceleratorRequests.map(acceleratorText).join(', ') || 'None (CPU only)';
 
+const QUANTITY_SUFFIX: Record<string, number> = {
+  '': 1,
+  m: 1e-3,
+  k: 1e3,
+  M: 1e6,
+  G: 1e9,
+  T: 1e12,
+  P: 1e15,
+  E: 1e18,
+  Ki: 2 ** 10,
+  Mi: 2 ** 20,
+  Gi: 2 ** 30,
+  Ti: 2 ** 40,
+  Pi: 2 ** 50,
+  Ei: 2 ** 60,
+};
+
+/**
+ * A stored accelerator count as the wizard's whole-number field shows it ("3000m" and "3" are both
+ * "3"); undefined for a quantity that isn't a whole number the field can hold.
+ */
+export const wholeCount = (quantity: string): string | undefined => {
+  const match = /^\+?(\d+(?:\.\d*)?|\.\d+)(?:[eE]([-+]?\d+)|(m|k|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei))?$/.exec(quantity.trim());
+  if (!match) return undefined;
+  const [, number, exponent, suffix = ''] = match;
+  const value = Number(number) * (exponent !== undefined ? 10 ** Number(exponent) : QUANTITY_SUFFIX[suffix]);
+  // Rounding keeps 3000m (3000 * 0.001) a whole 3.
+  const rounded = Math.round(value);
+  return Number.isSafeInteger(rounded) && Math.abs(value - rounded) < 1e-9 ? String(rounded) : undefined;
+};
+
 /**
  * The first entry of the list a deployed model runs on, which its edit starts on: for an entry with
  * an accelerator, a model that requests that accelerator and no other; for one without, a model

@@ -172,7 +172,9 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   environment variables; never the image, and no presets, which it checks again once the user
   removes them), or on none, and then shows the model's accelerators read-only until the user
   selects one. A matched entry is only preselected: the model keeps its own image, environment
-  and resources until the user selects another entry. An empty image is the
+  and resources, in the quantity forms they are stored in, until the user selects another entry
+  or edits them. While presets remain, the hardware can't be selected, since a preset's image and
+  environment would conflict with another entry's. An empty image is the
   cluster's default vLLM image for NVIDIA GPUs, so the wizard requires an image unless the
   hardware's accelerator (for an edit without hardware, the model's request) is `nvidia.com/gpu`,
   or the model keeps presets; an edit that keeps the model's hardware and presets requires it only
