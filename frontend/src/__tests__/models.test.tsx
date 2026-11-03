@@ -926,25 +926,34 @@ describe('the hardware', () => {
     ]);
   });
 
-  it('follows the selected hardware, except in the fields the user edited', async () => {
+  it('gives each hardware its own image, and keeps the CPU, memory, and GPUs the user edited', async () => {
     const user = userEvent.setup();
     await openDeployment(user);
-    // CPU only's image goes with it when NVIDIA GPU is selected again.
-    await selectHardware(user, 'CPU only');
-    await selectHardware(user, 'NVIDIA GPU');
-    expect(field(/Runtime image/)).toHaveValue('');
     const cpu = field(/^CPU/);
     await user.clear(cpu);
     await user.paste('3');
+    const memory = field(/^Memory/);
+    await user.clear(memory);
+    await user.paste('12Gi');
+    const gpus = screen.getByRole('spinbutton', { name: 'GPUs' });
+    await user.clear(gpus);
+    await user.type(gpus, '2');
+    // An image typed for NVIDIA GPU is not CPU only's: selecting other hardware replaces it.
     await user.click(field(/Runtime image/));
-    await user.paste('registry.example/vllm:mine');
+    await user.paste('registry.example/vllm-cuda:mine');
     await selectHardware(user, 'CPU only');
+    expect(field(/Runtime image/)).toHaveValue(cpuImage);
+    expect(field(/Runtime image/)).toHaveAccessibleDescription(
+      'Set by the selected hardware. Replace it to use another vLLM image.',
+    );
     expect(field(/^CPU/)).toHaveValue('3');
-    expect(field(/Runtime image/)).toHaveValue('registry.example/vllm:mine');
-    expect(field(/^Memory/)).toHaveValue('8Gi');
+    expect(field(/^Memory/)).toHaveValue('12Gi');
+    await setImage(user, 'registry.example/vllm-cpu:mine');
     await selectHardware(user, 'NVIDIA GPU');
-    expect(field(/^Memory/)).toHaveValue('16Gi');
-    expect(screen.getByRole('spinbutton', { name: 'GPUs' })).toHaveValue(1);
+    expect(field(/Runtime image/)).toHaveValue('');
+    expect(field(/^CPU/)).toHaveValue('3');
+    expect(field(/^Memory/)).toHaveValue('12Gi');
+    expect(screen.getByRole('spinbutton', { name: 'GPUs' })).toHaveValue(2);
   });
 
   it('names the accelerator field after the accelerator, and requests it by its resource', async () => {

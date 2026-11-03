@@ -199,8 +199,14 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
   const hardware = editing ? undefined : (hardwareList.find((h) => h.id === hardwareId) ?? hardwareList[0]);
   const accelerator = hardware?.accelerator;
   // The fields the hardware fills in hold undefined until the user edits them, so they show the
-  // selected hardware's value; one the user edited keeps it when the hardware changes.
+  // selected hardware's value. An edited CPU, memory or accelerator count is kept when the hardware
+  // changes; the image is the hardware's, so selecting hardware replaces an edited one with its own
+  // (or none, for the cluster's default).
   const [imageInput, setRuntimeImage] = useState<string | undefined>(model ? (model.runtimeImage ?? '') : undefined);
+  const selectHardware = (id: string) => {
+    setHardwareId(id);
+    setRuntimeImage(undefined);
+  };
   const [cpuInput, setCpu] = useState<string>();
   const [memoryInput, setMemory] = useState<string>();
   const [acceleratorsInput, setAccelerators] = useState<string>();
@@ -444,7 +450,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
             label={h.label}
             description={h.description}
             isChecked={h.id === hardware?.id}
-            onChange={() => setHardwareId(h.id)}
+            onChange={() => selectHardware(h.id)}
             isDisabled={saving}
           />
         ))}
