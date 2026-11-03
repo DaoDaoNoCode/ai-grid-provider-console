@@ -184,8 +184,35 @@ describe('matchingHardware', () => {
     expect(matchingHardware(cpu, hardwareList)).toBe(cpuOnly);
   });
 
+  it('matches by the accelerator, whatever image the model has of its own', () => {
+    const custom = (image: string) =>
+      stored({
+        main: {
+          $typeName: 'ai_grid.v1.ModelContainer',
+          image,
+          requests: { cpu: '2', memory: '16Gi', 'nvidia.com/gpu': '2' },
+          limits: {},
+          env: [],
+        },
+      });
+    expect(matchingHardware(custom('registry.example/vllm-cuda:mine'), hardwareList)).toBe(nvidia);
+    // CPU only on another CPU image, with CPU only's settings, is still CPU only.
+    const cpu = stored({
+      main: {
+        $typeName: 'ai_grid.v1.ModelContainer',
+        image: 'registry.example/vllm-cpu:mine',
+        requests: { cpu: '4' },
+        limits: {},
+        env: [
+          { $typeName: 'ai_grid.v1.ModelEnvVar', name: 'OMP_NUM_THREADS', value: '4' },
+          { $typeName: 'ai_grid.v1.ModelEnvVar', name: 'VLLM_CPU_KVCACHE_SPACE', value: '4' },
+        ],
+      },
+    });
+    expect(matchingHardware(cpu, hardwareList)).toBe(cpuOnly);
+  });
+
   it.each([
-    ['another image', { image: 'r/vllm-cuda:1', requests: { 'nvidia.com/gpu': '1' }, env: [] }],
     ['another accelerator', { image: '', requests: { 'amd.com/gpu': '1' }, env: [] }],
     ['two accelerators', { image: '', requests: { 'nvidia.com/gpu': '1', 'habana.ai/gaudi': '1' }, env: [] }],
     [

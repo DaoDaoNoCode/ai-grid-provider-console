@@ -1807,7 +1807,8 @@ describe('editing what a deployed model runs', () => {
     await openStep(user, 'Review');
     const review = screen.getByTestId('model-review');
     expect(review).toHaveTextContent('HardwareCPU only');
-    expect(review).toHaveTextContent('AcceleratorsNone (CPU only)');
+    // As Deploy: CPU only has no accelerator row.
+    expect(review).not.toHaveTextContent('Accelerators');
     await openStep(user, 'Deployment');
     await selectHardware(user, 'NVIDIA GPU');
     expect(field(/Runtime image/)).toHaveValue('');
@@ -1868,6 +1869,57 @@ describe('editing what a deployed model runs', () => {
       { name: 'TEAM', value: 'research' },
       { name: 'VLLM_ADDITIONAL_ARGS', value: '--enforce-eager' },
     ]);
+  });
+
+  it('starts a model with an image of its own on NVIDIA GPU, changing nothing, with its GPUs editable', async () => {
+    const { service, update } = deployed(
+      { cpu: '3', memory: '12Gi', 'nvidia.com/gpu': '2' },
+      'registry.example/vllm-cuda:mine',
+      { TEAM: 'research' },
+    );
+    const user = userEvent.setup();
+    renderAt('/models/granite-3-8b/edit', service);
+    await openStep(user, 'Deployment');
+    expect(await screen.findByRole('radio', { name: 'NVIDIA GPU' })).toBeChecked();
+    expect(screen.queryByText(/match none of these/)).not.toBeInTheDocument();
+    // Preselected only: the model's own image, resources, and count stay.
+    expect(field(/Runtime image/)).toHaveValue('registry.example/vllm-cuda:mine');
+    expect(field(/Runtime image/)).toHaveAccessibleDescription(
+      "Leave empty to use the cluster's default vLLM image for NVIDIA GPUs.",
+    );
+    expect(field(/^CPU/)).toHaveValue('3');
+    expect(field(/^Memory/)).toHaveValue('12Gi');
+    const gpus = screen.getByRole('spinbutton', { name: 'GPUs' });
+    expect(gpus).toHaveValue(2);
+    await openStep(user, 'Review');
+    expect(screen.getByTestId('model-review')).toHaveTextContent('HardwareNVIDIA GPU');
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
+    await openStep(user, 'Deployment');
+    await user.clear(screen.getByRole('spinbutton', { name: 'GPUs' }));
+    await user.type(screen.getByRole('spinbutton', { name: 'GPUs' }), '4');
+    const request = await save(user, update);
+    expect(request.updateMask?.paths).toEqual(['spec.main.requests']);
+    expect(request.object?.spec?.main?.requests).toEqual({ cpu: '3', memory: '12Gi', 'nvidia.com/gpu': '4' });
+  });
+
+  it('looks for the model’s hardware again once its presets are removed, changing nothing', async () => {
+    const service = new MockConsoleService();
+    const models = modelsOf(service);
+    const granite = models.find('granite-3-8b');
+    granite.spec!.main!.requests = { cpu: '2', memory: '16Gi', 'nvidia.com/gpu': '1' };
+    const update = vi.spyOn(models, 'update');
+    const user = userEvent.setup();
+    renderAt('/models/granite-3-8b/edit', service);
+    await openStep(user, 'Deployment');
+    expect(await screen.findByRole('radio', { name: 'NVIDIA GPU' })).not.toBeChecked();
+    expect(field('Accelerators')).toHaveAttribute('readonly');
+    await user.click(screen.getByRole('checkbox', { name: 'Remove presets' }));
+    expect(screen.getByRole('radio', { name: 'NVIDIA GPU' })).toBeChecked();
+    expect(screen.getByRole('spinbutton', { name: 'GPUs' })).toHaveValue(1);
+    expect(field(/Runtime image/)).toHaveValue('quay.io/example/vllm:v1');
+    expect(field(/^CPU/)).toHaveValue('2');
+    const request = await save(user, update);
+    expect(request.updateMask?.paths).toEqual(['spec.base_refs']);
   });
 
   it('removes the presets, sending spec.base_refs empty, and says so on Review', async () => {

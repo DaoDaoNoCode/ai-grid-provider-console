@@ -9,7 +9,7 @@
 //
 // A deployed model's pages show it as it is, never matched against today's list: the list can
 // change (a new image digest, an entry removed) or fail to load. Only the edit wizard matches it
-// (matchingHardware), to select the entry it was deployed with; selecting another entry there
+// (matchingHardware), to preselect the entry it runs on; selecting another entry there
 // applies that entry as the Deploy wizard does.
 import type { ModelHardware } from '../../api/types';
 import { RUNTIME_ARGS_ENV, type EnvVar } from './fields/runtimeArgs';
@@ -63,22 +63,26 @@ export const acceleratorsText = (model: Pick<ModelView, 'acceleratorRequests'>) 
   model.acceleratorRequests.map(acceleratorText).join(', ') || 'None (CPU only)';
 
 /**
- * The first entry of the list that a deployed model has exactly as the entry deploys it: the same
- * accelerator (none for an entry without one), the same image (empty for an entry without one),
- * and each of the entry's environment variables with its value. Undefined when none does, and for
- * a model with presets, whose image and environment come partly from the presets.
+ * The first entry of the list a deployed model runs on, which its edit starts on: for an entry with
+ * an accelerator, a model that requests that accelerator and no other; for one without, a model
+ * that requests none and has each of the entry's environment variables with its value. The image is
+ * not compared, so a model with an image of its own still matches its hardware. Undefined when no
+ * entry matches, and for a model with presets, whose image and environment come partly from them.
+ * Matching selects the entry only; the model keeps its own image, environment and resources.
  */
 export const matchingHardware = (
-  model: Pick<ModelView, 'acceleratorRequests' | 'runtimeImage' | 'env' | 'baseRefs'>,
+  model: Pick<ModelView, 'acceleratorRequests' | 'env' | 'baseRefs'>,
   list: readonly ModelHardware[],
 ): ModelHardware | undefined => {
   if (model.baseRefs.length > 0) return undefined;
   const resources = model.acceleratorRequests.map((r) => r.resource);
-  return list.find(
-    (h) =>
-      (h.accelerator ? resources.length === 1 && resources[0] === h.accelerator : resources.length === 0) &&
-      (h.image ?? '') === (model.runtimeImage ?? '') &&
-      Object.entries(h.env ?? {}).every(([name, value]) => model.env.some((v) => v.name === name && v.value === value)),
+  return list.find((h) =>
+    h.accelerator
+      ? resources.length === 1 && resources[0] === h.accelerator
+      : resources.length === 0 &&
+        Object.entries(h.env ?? {}).every(([name, value]) =>
+          model.env.some((v) => v.name === name && v.value === value),
+        ),
   );
 };
 

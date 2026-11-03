@@ -230,17 +230,24 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
   });
   const [modelUri, setModelUri] = useState(start.modelUri);
   const [replicas, setReplicas] = useState(start.replicas);
+  // Presets an edit removes (spec.base_refs); none can be added.
+  const [removePresets, setRemovePresets] = useState(false);
   // The hardware a new model runs on: the first in the console's list until the user selects
-  // another. An edit starts on the entry the model has exactly (matchingHardware), or on none, and
-  // the user can select another. A reopened draft starts on the hardware it was submitted with.
+  // another. An edit starts on the entry the model runs on (matchingHardware), or on none, and
+  // looks again once its presets are removed; the user can select another. A reopened draft starts
+  // on the hardware it was submitted with.
   const [hardwareId, setHardwareId] = useState<string | undefined>(draft?.values.hardwareId);
   const selectedHardware = hardwareList.find((h) => h.id === hardwareId);
-  const matchedHardware = model ? matchingHardware(model, hardwareList) : undefined;
+  const matchedHardware = model
+    ? matchingHardware({ ...model, baseRefs: removePresets ? [] : model.baseRefs }, hardwareList)
+    : undefined;
   const hardware = selectedHardware ?? (model ? matchedHardware : hardwareList[0]);
   const accelerator = hardware?.accelerator;
-  // The model whose own values an edit shows: until the user selects hardware other than the one
-  // the model has. Selecting it again goes back to them.
-  const own = model && (!selectedHardware || selectedHardware.id === matchedHardware?.id) ? model : undefined;
+  // The model whose own image, environment and resources an edit shows: a matched entry is only
+  // preselected and changes none of them. Selecting another entry applies that one; selecting the
+  // one the model started on again goes back to the model's values.
+  const startHardware = model ? matchingHardware(model, hardwareList) : undefined;
+  const own = model && (!selectedHardware || selectedHardware.id === startHardware?.id) ? model : undefined;
   // The accelerator count of the model's matching hardware, which an edit starts from.
   const ownAccelerators = own && accelerator ? own.acceleratorRequests[0]?.count : undefined;
   // The fields the hardware fills in hold undefined until the user edits them, so they show the
@@ -257,9 +264,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
   const [cpuInput, setCpu] = useState<string | undefined>(draft?.values.cpu);
   const [memoryInput, setMemory] = useState<string | undefined>(draft?.values.memory);
   const [acceleratorsInput, setAccelerators] = useState<string | undefined>(draft?.values.accelerators);
-  // Presets an edit removes (spec.base_refs); none can be added.
-  const [removePresets, setRemovePresets] = useState(false);
-  const runtimeImage = imageInput ?? hardware?.image ?? '';
+  const runtimeImage = imageInput ?? (own ? (own.runtimeImage ?? '') : (hardware?.image ?? ''));
   const cpu = cpuInput ?? (own ? (own.cpu ?? '') : (hardware?.defaults?.cpu ?? defaults.cpu));
   const memory = memoryInput ?? (own ? (own.memory ?? '') : (hardware?.defaults?.memory ?? defaults.memory));
   const accelerators =
@@ -609,13 +614,9 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
   ];
   const acceleratorItems: ReviewItem[] = accelerator
     ? [{ term: acceleratorLabel(accelerator), value: accelerators }]
-    : model
-      ? [
-          {
-            term: 'Accelerators',
-            value: hardware ? acceleratorsText({ acceleratorRequests: [] }) : acceleratorsText(model),
-          },
-        ]
+    : // As Deploy: hardware without an accelerator gets no row; an edit without hardware shows the model's.
+      model && !hardware
+      ? [{ term: 'Accelerators', value: acceleratorsText(model) }]
       : [];
   // A new URI changes what users of the model are served, under the same name.
   const uriChanged = !!model && input.modelUri !== (model.modelUri ?? '');
@@ -791,7 +792,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
                 <Help id="runtime-image-help" error={runtimeImageError}>
                   {presetsKept
                     ? 'Leave empty to use the image the presets set.'
-                    : hardware || !model
+                    : !own
                       ? runtimeImageHelp(hardware)
                       : mayUseDefaultImage(imageAccelerator)
                         ? DEFAULT_IMAGE_HELP
