@@ -31,5 +31,5 @@ images:
   # `.backend-api-version`; don't edit by hand.
   - name: ai-grid-backend
     newName: ghcr.io/ai-grid-cloud/ai-grid-provider-backend
-    newTag: sha-e2570b4740e3c1d528b56d9eb2ddcd54b8a4f3fb
-    digest: sha256:51e35c7446bb7183a6781c77000de7daf8aaa7eb40eea1ff2431e7fc4fb215b2
+    newTag: sha-52c9844df4f31c503716cc9dccdf9893d754796e
+    digest: sha256:5adf830ebade8ba3d678a626e701adacc9d85d655c0e803531a0e949331edee6
