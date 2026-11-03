@@ -1,5 +1,5 @@
 import cases from '../../../mock/validation/cases.json';
-import { createModelSchema, fieldErrorsOf, validators } from '.';
+import { fieldErrorsOf, modelFieldsSchema, validators } from '.';
 import { z } from './zod';
 import { getCountError, getTimeDigitError, getTimeError, type RateLimit } from '../utilities/rateLimits';
 
@@ -87,13 +87,13 @@ describe("the console's wording for zod issues", () => {
   it('says the range for a number too large for an integer, whichever issue comes last', () => {
     // 2 ** 54, a 17-digit number, fails zod's safe-integer bound first, then the schema's maximum; the field
     // shows the last message, and both say the range.
-    const result = createModelSchema.shape.replicas.safeParse(2 ** 54);
+    const result = modelFieldsSchema.shape.replicas.safeParse(2 ** 54);
     expect(result.success).toBe(false);
     expect(result.error?.issues.map((issue) => issue.message)).toEqual([
       'Enter a number from 1 to 99.',
       'Enter a number from 1 to 99.',
     ]);
-    expect(fieldErrorsOf(createModelSchema.pick({ replicas: true }), { replicas: 2 ** 54 })).toEqual({
+    expect(fieldErrorsOf(modelFieldsSchema.pick({ replicas: true }), { replicas: 2 ** 54 })).toEqual({
       replicas: 'Enter a number from 1 to 99.',
     });
     // Without a range, the maximum that was broken still comes last.

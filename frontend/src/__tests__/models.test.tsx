@@ -10,6 +10,7 @@ import { Code, ConnectError } from '@connectrpc/connect';
 import { focusManager } from '@tanstack/react-query';
 import { ServiceError } from '../api/ConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
+import configExample from '../../../mock/examples/get-config.json';
 import { ModelPhase } from '../gen/ai_grid/v1/model_type_pb';
 import { modelObject, modelsOf, subscriptionUsing } from './connectModels';
 import { deferred, renderAt, findVisible } from './render';
@@ -41,19 +42,25 @@ const nameDeployment = async (user: User, name: string) => {
   await user.paste(name);
 };
 
-/** Picks the Deployment step's model server, which has no default. */
-const chooseServer = async (user: User, label = 'vLLM on CPU') =>
-  user.selectOptions(screen.getByRole('combobox', { name: 'Model server' }), label);
+/** Selects the Deployment step's hardware, NVIDIA GPU until another is selected. */
+const selectHardware = async (user: User, label: string) => user.click(screen.getByRole('radio', { name: label }));
 
-/** Fills the source and deployment steps and moves on to Clusters. */
+/** Replaces the runtime image, which CPU only fills in. */
+const setImage = async (user: User, image: string) => {
+  const field = screen.getByRole('textbox', { name: /Runtime image/ });
+  await user.clear(field);
+  if (image) await user.paste(image);
+};
+
+/** Fills the source and deployment steps, on CPU only with an image of its own, and moves on to Clusters. */
 const fillModel = async (user: User) => {
   await user.click(await screen.findByRole('textbox', { name: /Model URI/ }));
   await user.paste('hf://org/widget');
   await user.click(screen.getByRole('button', { name: 'Next' }));
   await nameDeployment(user, 'Widget');
+  await selectHardware(user, 'CPU only');
   await user.click(screen.getByRole('textbox', { name: /Runtime image/ }));
-  await user.paste('registry.example/runtime:test');
-  await chooseServer(user);
+  await setImage(user, 'registry.example/runtime:test');
   await user.click(screen.getByRole('button', { name: 'Next' }));
 };
 
@@ -126,8 +133,8 @@ it('walks the deployment wizard, selects clusters and creates the model', async 
   expect(await screen.findByText('Model deployed')).toBeVisible();
   expect(await screen.findByTestId('model-deployments-table')).toHaveTextContent('Widget');
   expect(within(screen.getByTestId('model-locations-widget')).getByText(site1)).toBeVisible();
-  // What Models/Create took: the wizard's fields, and the inference scheduler with a managed route,
-  // which the backend's defaults leave off. No limits: the backend saves a GPU request as its limit.
+  // What Models/Create took: the wizard's fields, CPU only's resources and environment, no presets,
+  // and the inference scheduler with a managed route, which the backend's defaults leave off.
   const [request] = create.mock.calls[0];
   expect(request.object).toMatchObject({
     id: 'widget',
@@ -135,8 +142,16 @@ it('walks the deployment wizard, selects clusters and creates the model', async 
     spec: {
       model: { uri: 'hf://org/widget', name: '' },
       replicas: 1,
-      baseRefs: ['v3-6-0-kserve-config-llm-template-cpu'],
-      main: { image: 'registry.example/runtime:test', requests: { cpu: '2', memory: '4Gi' }, limits: {}, env: [] },
+      baseRefs: [],
+      main: {
+        image: 'registry.example/runtime:test',
+        requests: { cpu: '4', memory: '8Gi' },
+        limits: {},
+        env: [
+          { name: 'OMP_NUM_THREADS', value: '4' },
+          { name: 'VLLM_CPU_KVCACHE_SPACE', value: '4' },
+        ],
+      },
       placement: { labelSelector: { matchExpressions: [{ key: 'name', operator: 'In', values: ['site1', 'site2'] }] } },
     },
   });
@@ -499,9 +514,6 @@ it('says why the deployment step cannot continue when the CPU is invalid', async
   await user.click(await screen.findByRole('textbox', { name: /Model URI/ }));
   await user.paste('hf://org/widget');
   await user.click(screen.getByRole('button', { name: 'Next' }));
-  await user.click(screen.getByRole('textbox', { name: /Runtime image/ }));
-  await user.paste('registry.example/runtime:test');
-  await chooseServer(user);
   const cpu = screen.getByRole('textbox', { name: /^CPU/ });
   await user.clear(cpu);
   await user.paste('2 cores');
@@ -536,9 +548,6 @@ it('sends the URI trimmed and refuses other schemes', async () => {
   await user.clear(uri);
   await user.paste(' hf://org/widget ');
   await user.click(screen.getByRole('button', { name: 'Next' }));
-  await user.click(screen.getByRole('textbox', { name: /Runtime image/ }));
-  await user.paste('registry.example/runtime:test');
-  await chooseServer(user);
   await user.click(screen.getByRole('button', { name: 'Next' }));
   await pickAndDeploy(user, [cluster1]);
   await waitFor(() => expect(create).toHaveBeenCalled());
@@ -686,9 +695,6 @@ it('takes a display name longer than a resource name', async () => {
   await user.paste('hf://org/widget');
   await user.click(screen.getByRole('button', { name: 'Next' }));
   await nameDeployment(user, 'W'.repeat(70));
-  await user.click(screen.getByRole('textbox', { name: /Runtime image/ }));
-  await user.paste('registry.example/runtime:test');
-  await chooseServer(user);
   expect(screen.getByText('w'.repeat(63))).toBeVisible();
   expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
 });
@@ -747,7 +753,8 @@ it("opens a model page with its configuration, its endpoint and each cluster's s
   expect(await screen.findByRole('heading', { level: 1, name: 'Granite 3.3 8B Instruct' })).toBeVisible();
   expect(screen.getByText('hf://example-org/granite-3-8b')).toBeVisible();
   expect(screen.getByText('https://granite.example.com/v1')).toBeVisible();
-  expect(screen.getByText('vLLM on CPU')).toBeVisible();
+  // Deployed on OpenShift AI's CPU preset, before the console stopped sending presets.
+  expect(screen.getByText('v3-6-0-kserve-config-llm-template-cpu')).toBeVisible();
   const locations = screen.getByTestId('model-locations');
   expect(within(locations).getByTestId('model-clusters-granite-3-8b')).toBeVisible();
   expect(within(locations).getByRole('link', { name: 'View on the AI Grid map' })).toHaveAttribute(
@@ -805,9 +812,6 @@ it('takes only whole numbers in the number fields, so the shown and sent counts 
   await user.click(await screen.findByRole('textbox', { name: /Model URI/ }));
   await user.paste('hf://org/widget');
   await user.click(screen.getByRole('button', { name: 'Next' }));
-  await user.click(screen.getByRole('textbox', { name: /Runtime image/ }));
-  await user.paste('registry.example/runtime:test');
-  await chooseServer(user);
   const replicas = screen.getByRole('spinbutton', { name: 'Replicas' });
   // 1e1 and 1.5 would show as 1 but parse as 10 and 1.5: they're refused.
   fireEvent.change(replicas, { target: { value: '1e1' } });
@@ -830,7 +834,6 @@ it('keeps an emptied Replicas or GPUs field empty and says it is required', asyn
   await user.click(await screen.findByRole('textbox', { name: /Model URI/ }));
   await user.paste('hf://org/widget');
   await user.click(screen.getByRole('button', { name: 'Next' }));
-  await user.selectOptions(screen.getByRole('combobox', { name: 'Model server' }), 'vLLM on NVIDIA GPU');
   for (const name of ['Replicas', 'GPUs']) {
     const field = screen.getByRole('spinbutton', { name });
     await user.clear(field);
@@ -841,8 +844,10 @@ it('keeps an emptied Replicas or GPUs field empty and says it is required', asyn
   expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
 });
 
-describe('the model server', () => {
-  const cpuPreset = 'v3-6-0-kserve-config-llm-template-cpu';
+describe('the hardware', () => {
+  const cpuImage =
+    'registry.redhat.io/rhaii/vllm-cpu-rhel9@sha256:0ec0f5ff9a5ff263f58db0cfb19e3d7eef24b94c2d8629fe5145f5a8747e28c9';
+  const defaultImageHelp = "Leave empty to use the cluster's default vLLM image for NVIDIA GPUs.";
 
   /** Fills the source step, opens Deployment, and returns the Models/Create spy. */
   const openDeployment = async (user: User, service = new MockConsoleService()) => {
@@ -858,98 +863,399 @@ describe('the model server', () => {
     return pickAndDeploy(user, [cluster1], { submit });
   };
 
-  it('has no default server: the step waits for a choice, then deploys on the CPU preset with no GPUs', async () => {
+  const field = (name: string | RegExp) => screen.getByRole('textbox', { name });
+
+  it('is the BFF’s built-in list when the chart sets none', () => {
+    expect(new MockConsoleService().config.models).toEqual(configExample.body.data.models);
+  });
+
+  it('starts on NVIDIA GPU and deploys it with no image, no presets, and one GPU', async () => {
     const user = userEvent.setup();
     const create = await openDeployment(user);
-    const server = screen.getByRole('combobox', { name: 'Model server' });
-    expect(server).toHaveValue('');
-    expect(screen.queryByRole('spinbutton', { name: 'GPUs' })).not.toBeInTheDocument();
-    await user.type(screen.getByRole('textbox', { name: /Runtime image/ }), 'registry.example/vllm-cpu:test');
-    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
-    act(() => server.focus());
-    await user.tab();
-    expect(server).toHaveAccessibleDescription(/Required\./);
-    await chooseServer(user);
-    const review = await toReview(user);
-    expect(review).toHaveTextContent('Model servervLLM on CPU');
-    await waitFor(() => expect(create).toHaveBeenCalled());
-    const spec = create.mock.calls[0][0].object?.spec;
-    expect(spec?.baseRefs).toEqual([cpuPreset]);
-    expect(spec?.main?.image).toBe('registry.example/vllm-cpu:test');
-    expect(spec?.main?.requests).not.toHaveProperty('nvidia.com/gpu');
-  });
-
-  it('warns on Review when a chosen cluster doesn’t match the server’s hardware', async () => {
-    const user = userEvent.setup();
-    await openDeployment(user);
-    await user.type(screen.getByRole('textbox', { name: /Runtime image/ }), 'registry.example/vllm-cpu:test');
-    await chooseServer(user);
-    // The mock's member clusters each report 16 GPUs.
-    await toReview(user, false);
-    expect(await screen.findByTestId('model-server-mismatch')).toHaveTextContent(/GPUs that vLLM on CPU doesn.t use/);
-  });
-
-  it('matches the server against the chosen clusters by name, not by location label', async () => {
-    const user = userEvent.setup();
-    const service = new MockConsoleService();
-    // site1 has no GPUs, so the CPU server suits it. site2 has GPUs and a location label that happens
-    // to equal site1's name; it isn't chosen, so it mustn't be warned about.
-    service.clusters = service.clusters.map((c) =>
-      c.name === cluster1 ? { ...c, gpuCapacity: 0 } : c.name === cluster2 ? { ...c, location: cluster1 } : c,
-    );
-    await openDeployment(user, service);
-    await user.type(screen.getByRole('textbox', { name: /Runtime image/ }), 'registry.example/vllm-cpu:test');
-    await chooseServer(user);
-    await toReview(user, false);
-    expect(await screen.findByTestId('model-review')).toBeVisible();
-    expect(screen.queryByTestId('model-server-mismatch')).not.toBeInTheDocument();
-  });
-
-  it('refuses a GPU server with no GPUs, and requests the GPUs, with no presets for KServe’s default', async () => {
-    const user = userEvent.setup();
-    const create = await openDeployment(user);
-    await user.type(screen.getByRole('textbox', { name: /Runtime image/ }), 'registry.example/vllm-cuda:test');
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Model server' }), 'vLLM on NVIDIA GPU');
-    const gpus = screen.getByRole('spinbutton', { name: 'GPUs' });
-    expect(gpus).toHaveValue(1);
-    await user.clear(gpus);
-    await user.type(gpus, '0');
-    await user.tab();
-    expect(gpus).toHaveAccessibleDescription(/A GPU model server needs at least 1 GPU\./);
-    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
-    fireEvent.change(gpus, { target: { value: '2' } });
-    await toReview(user);
+    expect(screen.getByRole('radio', { name: 'NVIDIA GPU' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'CPU only' })).not.toBeChecked();
+    expect(screen.getByText('For x86_64 clusters without GPUs.')).toBeVisible();
+    expect(field(/Runtime image/)).toHaveValue('');
+    expect(field(/Runtime image/)).toHaveAccessibleDescription(defaultImageHelp);
+    expect(field(/^CPU/)).toHaveValue('2');
+    expect(field(/^Memory/)).toHaveValue('16Gi');
+    expect(screen.getByRole('spinbutton', { name: 'GPUs' })).toHaveValue(1);
+    const review = await toReview(user, false);
+    expect(review).toHaveTextContent('HardwareNVIDIA GPU');
+    expect(review).toHaveTextContent("Runtime imageDefault (the cluster's vLLM image for NVIDIA GPUs)");
+    expect(review).toHaveTextContent('GPUs1');
+    await user.click(screen.getByRole('button', { name: 'Deploy' }));
     await waitFor(() => expect(create).toHaveBeenCalled());
     const spec = create.mock.calls[0][0].object?.spec;
     expect(spec?.baseRefs).toEqual([]);
+    expect(spec?.main?.image).toBe('');
     // The request only: the backend saves it as the limit too (ModelContainer.requests).
-    expect(spec?.main?.requests).toEqual({ cpu: '2', memory: '4Gi', 'nvidia.com/gpu': '2' });
+    expect(spec?.main?.requests).toEqual({ cpu: '2', memory: '16Gi', 'nvidia.com/gpu': '1' });
     expect(spec?.main?.limits).toEqual({});
+    expect(spec?.main?.env).toEqual([]);
   });
 
-  it('still refuses an image with spaces', async () => {
+  it('fills in CPU only’s image and resources, and sends its environment with the runtime arguments', async () => {
+    const user = userEvent.setup();
+    const create = await openDeployment(user);
+    await selectHardware(user, 'CPU only');
+    expect(screen.queryByRole('spinbutton', { name: 'GPUs' })).not.toBeInTheDocument();
+    expect(field(/Runtime image/)).toHaveValue(cpuImage);
+    expect(field(/Runtime image/)).toHaveAccessibleDescription(
+      'Set by the selected hardware. Replace it to use another vLLM image.',
+    );
+    expect(field(/^CPU/)).toHaveValue('4');
+    expect(field(/^Memory/)).toHaveValue('8Gi');
+    await user.click(screen.getByRole('button', { name: 'Advanced settings' }));
+    await user.click(screen.getByRole('textbox', { name: 'Additional runtime arguments' }));
+    await user.paste('--max-model-len 4096');
+    const review = await toReview(user, false);
+    expect(review).toHaveTextContent('HardwareCPU only');
+    expect(review).toHaveTextContent(`Runtime image${cpuImage}`);
+    expect(within(review).queryByText('GPUs')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Deploy' }));
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    const spec = create.mock.calls[0][0].object?.spec;
+    expect(spec?.baseRefs).toEqual([]);
+    expect(spec?.main?.image).toBe(cpuImage);
+    expect(spec?.main?.requests).toEqual({ cpu: '4', memory: '8Gi' });
+    expect(spec?.main?.env.map(({ name, value }) => ({ name, value }))).toEqual([
+      { name: 'OMP_NUM_THREADS', value: '4' },
+      { name: 'VLLM_CPU_KVCACHE_SPACE', value: '4' },
+      { name: 'VLLM_ADDITIONAL_ARGS', value: '--max-model-len 4096' },
+    ]);
+  });
+
+  it('gives each hardware its own image, and keeps the CPU, memory, and GPUs the user edited', async () => {
     const user = userEvent.setup();
     await openDeployment(user);
-    await user.type(screen.getByRole('textbox', { name: /Runtime image/ }), 'bad image');
-    await user.tab();
-    expect(screen.getByRole('textbox', { name: /Runtime image/ })).toHaveAccessibleDescription(
-      /Enter a container image without spaces\./,
+    const cpu = field(/^CPU/);
+    await user.clear(cpu);
+    await user.paste('3');
+    const memory = field(/^Memory/);
+    await user.clear(memory);
+    await user.paste('12Gi');
+    const gpus = screen.getByRole('spinbutton', { name: 'GPUs' });
+    await user.clear(gpus);
+    await user.type(gpus, '2');
+    // An image typed for NVIDIA GPU is not CPU only's: selecting other hardware replaces it.
+    await user.click(field(/Runtime image/));
+    await user.paste('registry.example/vllm-cuda:mine');
+    await selectHardware(user, 'CPU only');
+    expect(field(/Runtime image/)).toHaveValue(cpuImage);
+    expect(field(/Runtime image/)).toHaveAccessibleDescription(
+      'Set by the selected hardware. Replace it to use another vLLM image.',
     );
+    expect(field(/^CPU/)).toHaveValue('3');
+    expect(field(/^Memory/)).toHaveValue('12Gi');
+    await setImage(user, 'registry.example/vllm-cpu:mine');
+    await selectHardware(user, 'NVIDIA GPU');
+    expect(field(/Runtime image/)).toHaveValue('');
+    expect(field(/^CPU/)).toHaveValue('3');
+    expect(field(/^Memory/)).toHaveValue('12Gi');
+    expect(screen.getByRole('spinbutton', { name: 'GPUs' })).toHaveValue(2);
+  });
+
+  it('names the accelerator field after the accelerator, and requests it by its resource', async () => {
+    const user = userEvent.setup();
+    const service = new MockConsoleService();
+    service.config = {
+      ...service.config,
+      models: {
+        hardware: [
+          {
+            id: 'amd-gpu',
+            label: 'AMD GPU',
+            accelerator: 'amd.com/gpu',
+            defaults: { accelerators: 2, cpu: '4', memory: '32Gi' },
+          },
+          { id: 'gaudi', label: 'Intel Gaudi', accelerator: 'habana.ai/gaudi', image: 'registry.example/vllm-gaudi:1' },
+        ],
+      },
+    };
+    const create = await openDeployment(user, service);
+    expect(screen.getByRole('spinbutton', { name: 'GPUs' })).toHaveValue(2);
+    // The cluster's default image is for NVIDIA GPUs: other hardware needs an image of its own.
+    expect(field(/Runtime image/)).toBeRequired();
+    expect(field(/Runtime image/)).toHaveAccessibleDescription('Enter a vLLM image for this hardware.');
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+    await user.click(field(/Runtime image/));
+    await user.tab();
+    expect(field(/Runtime image/)).toHaveAccessibleDescription(/Required\./);
+    await selectHardware(user, 'Intel Gaudi');
+    expect(screen.getByRole('spinbutton', { name: 'Accelerators' })).toHaveValue(1);
+    expect(field(/^Memory/)).toHaveValue('4Gi');
+    await selectHardware(user, 'AMD GPU');
+    await user.click(field(/Runtime image/));
+    await user.paste('registry.example/vllm-rocm:1');
+    await toReview(user);
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0][0].object?.spec?.main?.requests).toEqual({
+      cpu: '4',
+      memory: '32Gi',
+      'amd.com/gpu': '2',
+    });
+  });
+
+  it('refuses fewer than one GPU', async () => {
+    const user = userEvent.setup();
+    await openDeployment(user);
+    const gpus = screen.getByRole('spinbutton', { name: 'GPUs' });
+    await user.clear(gpus);
+    await user.type(gpus, '0');
+    await user.tab();
+    expect(gpus).toHaveAccessibleDescription(/Enter a number from 1 to 64\./);
     expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
   });
 
-  it('shows the server a deployed model runs on, read-only, and presets the console doesn’t offer by name', async () => {
-    const service = new MockConsoleService();
-    modelsOf(service).find('granite-3-8b').spec!.baseRefs = ['custom-preset'];
+  it('refuses an image with spaces, and takes an emptied one', async () => {
     const user = userEvent.setup();
-    renderAt('/models/granite-3-8b/edit', service);
-    await user.click(
-      within(await screen.findByRole('navigation', { name: 'Wizard steps' })).getByRole('button', {
-        name: 'Deployment',
-      }),
-    );
-    expect(await screen.findByRole('textbox', { name: 'Model server' })).toHaveValue('custom-preset');
-    expect(screen.getByRole('textbox', { name: 'Model server' })).toHaveAttribute('readonly');
+    await openDeployment(user);
+    await user.type(field(/Runtime image/), 'bad image');
+    await user.tab();
+    expect(field(/Runtime image/)).toHaveAccessibleDescription(/Enter a container image without spaces\./);
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+    await setImage(user, '');
+    expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
+    expect(field(/Runtime image/)).not.toBeRequired();
+  });
+
+  it('requires an image for CPU only: the cluster’s default is for NVIDIA GPUs', async () => {
+    const user = userEvent.setup();
+    await openDeployment(user);
+    await selectHardware(user, 'CPU only');
+    expect(field(/Runtime image/)).toBeRequired();
+    await setImage(user, '');
+    await user.tab();
+    expect(field(/Runtime image/)).toHaveAccessibleDescription(/Required\./);
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+  });
+
+  it('says on CPU that long-context models need --max-model-len', async () => {
+    const user = userEvent.setup();
+    await openDeployment(user);
+    const hint = 'For long-context models on CPU, set --max-model-len in Advanced settings.';
+    expect(field(/^Memory/)).not.toHaveAccessibleDescription(new RegExp(hint));
+    await selectHardware(user, 'CPU only');
+    expect(field(/^Memory/)).toHaveAccessibleDescription(`For example, 4Gi or 512Mi. ${hint}`);
+  });
+
+  it('waits for the console’s settings, and offers Retry when they fail to load', async () => {
+    const user = userEvent.setup();
+    const service = new MockConsoleService();
+    const getConfig = service.getConfig;
+    service.getConfig = () => Promise.reject(new ServiceError(503, 'The console server is unavailable.'));
+    await openDeployment(user, service);
+    const alert = await screen.findByText('Unable to load hardware');
+    expect(alert).toBeVisible();
+    expect(screen.getByText('The console server is unavailable.')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+    service.getConfig = getConfig;
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByRole('radio', { name: 'NVIDIA GPU' })).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
+  });
+
+  describe('a hint on Review when the chosen clusters don’t suit the hardware', () => {
+    const withGpus = (gpuCapacity: number) => {
+      const service = new MockConsoleService();
+      service.clusters = service.clusters.map((c) => (c.name === cluster1 ? { ...c, gpuCapacity } : c));
+      return service;
+    };
+
+    it('says a cluster without NVIDIA GPUs can’t run NVIDIA GPU', async () => {
+      const user = userEvent.setup();
+      await openDeployment(user, withGpus(0));
+      await toReview(user, false);
+      expect(await screen.findByTestId('model-hardware-mismatch')).toHaveTextContent(
+        "site1 reports no NVIDIA GPUs, so the model can't run there",
+      );
+    });
+
+    it('says CPU only leaves a GPU cluster’s GPUs unused', async () => {
+      const user = userEvent.setup();
+      // The mock's member clusters each report 16 GPUs.
+      await openDeployment(user);
+      await selectHardware(user, 'CPU only');
+      await toReview(user, false);
+      expect(await screen.findByTestId('model-hardware-mismatch')).toHaveTextContent(
+        "site1 has GPUs that the model doesn't use with CPU only",
+      );
+    });
+
+    it('gives no hint for other accelerators: the clusters count NVIDIA GPUs only', async () => {
+      const user = userEvent.setup();
+      const service = withGpus(0);
+      service.config = {
+        ...service.config,
+        models: { hardware: [{ id: 'amd-gpu', label: 'AMD GPU', accelerator: 'amd.com/gpu', image: 'r/rocm:1' }] },
+      };
+      await openDeployment(user, service);
+      await toReview(user, false);
+      expect(await screen.findByTestId('model-review')).toBeVisible();
+      expect(screen.queryByTestId('model-hardware-mismatch')).not.toBeInTheDocument();
+    });
+
+    it('matches the chosen clusters by name, not by location label', async () => {
+      const user = userEvent.setup();
+      const service = new MockConsoleService();
+      // site1 has GPUs, so NVIDIA GPU suits it. site2 has none and a location label that happens to
+      // equal site1's name; it isn't chosen, so it mustn't be warned about.
+      service.clusters = service.clusters.map((c) =>
+        c.name === cluster2 ? { ...c, gpuCapacity: 0, location: cluster1 } : c,
+      );
+      await openDeployment(user, service);
+      await toReview(user, false);
+      expect(await screen.findByTestId('model-review')).toBeVisible();
+      expect(screen.queryByTestId('model-hardware-mismatch')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('a deployed model', () => {
+    const openDeploymentStep = async (user: User) =>
+      user.click(
+        within(await screen.findByRole('navigation', { name: 'Wizard steps' })).getByRole('button', {
+          name: 'Deployment',
+        }),
+      );
+
+    /** granite-3-8b deployed without presets, with these requests, image and env. */
+    const deployed = (requests: Record<string, string>, image: string, env: Record<string, string> = {}) => {
+      const service = new MockConsoleService();
+      const granite = modelsOf(service).find('granite-3-8b');
+      granite.spec!.baseRefs = [];
+      granite.spec!.main!.requests = requests;
+      granite.spec!.main!.image = image;
+      granite.spec!.main!.env = Object.entries(env).map(([name, value]) => ({
+        $typeName: 'ai_grid.v1.ModelEnvVar',
+        name,
+        value,
+      }));
+      return service;
+    };
+
+    it('shows the accelerator it requests and its image, on its page, in the edit and on Review', async () => {
+      const service = deployed({ cpu: '2', memory: '16Gi', 'nvidia.com/gpu': '1' }, '');
+      const page = renderAt('/models/granite-3-8b', service);
+      const details = await screen.findByLabelText('Deployment');
+      expect(details).toHaveTextContent('Accelerators1 GPU (nvidia.com/gpu)');
+      expect(details).toHaveTextContent("Runtime imageDefault (the cluster's vLLM image for NVIDIA GPUs)");
+      expect(details).not.toHaveTextContent('Hardware');
+      expect(details).not.toHaveTextContent('Presets');
+      page.unmount();
+      const user = userEvent.setup();
+      renderAt('/models/granite-3-8b/edit', service);
+      await openDeploymentStep(user);
+      const accelerators = await screen.findByRole('textbox', { name: 'Accelerators' });
+      expect(accelerators).toHaveValue('1 GPU (nvidia.com/gpu)');
+      expect(accelerators).toHaveAttribute('readonly');
+      expect(screen.queryByRole('textbox', { name: 'Hardware' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('radio')).not.toBeInTheDocument();
+      await user.click(
+        within(screen.getByRole('navigation', { name: 'Wizard steps' })).getByRole('button', { name: 'Review' }),
+      );
+      const review = await screen.findByTestId('model-review');
+      expect(review).toHaveTextContent('Accelerators1 GPU (nvidia.com/gpu)');
+      expect(review).not.toHaveTextContent('Hardware');
+    });
+
+    it('words what a model requests without the console’s hardware list, which may have changed or not load', async () => {
+      const cpu = deployed({ cpu: '4', memory: '8Gi' }, 'registry.example/vllm-cpu:old', { OMP_NUM_THREADS: '4' });
+      cpu.getConfig = () => Promise.reject(new ServiceError(503, 'The console server is unavailable.'));
+      const first = renderAt('/models/granite-3-8b', cpu);
+      const details = await screen.findByLabelText('Deployment');
+      expect(details).toHaveTextContent('AcceleratorsNone (CPU only)');
+      expect(details).toHaveTextContent('Runtime imageregistry.example/vllm-cpu:old');
+      first.unmount();
+      renderAt('/models/granite-3-8b', deployed({ 'amd.com/gpu': '2', 'habana.ai/gaudi': '1' }, 'r/vllm:1'));
+      expect(await screen.findByLabelText('Deployment')).toHaveTextContent(
+        'Accelerators2 GPUs (amd.com/gpu), 1 accelerator (habana.ai/gaudi)',
+      );
+    });
+
+    it('keeps an image on a model without NVIDIA GPUs: the cluster’s default is for NVIDIA GPUs', async () => {
+      const service = deployed({ cpu: '4', memory: '8Gi' }, cpuImage);
+      const user = userEvent.setup();
+      renderAt('/models/granite-3-8b/edit', service);
+      await openDeploymentStep(user);
+      const image = await screen.findByRole('textbox', { name: /Runtime image/ });
+      expect(image).toBeRequired();
+      expect(image).toHaveAccessibleDescription("Enter a vLLM image for the model's hardware.");
+      await setImage(user, '');
+      await user.tab();
+      expect(screen.getByRole('textbox', { name: /Runtime image/ })).toHaveAccessibleDescription(/Required\./);
+      expect(
+        within(screen.getByRole('navigation', { name: 'Wizard steps' })).getByRole('button', { name: 'Review' }),
+      ).toBeDisabled();
+    });
+
+    it('saves an edit of a stored model without an image, NVIDIA GPUs, or presets, leaving its image alone', async () => {
+      const service = deployed({ cpu: '4', memory: '8Gi' }, '');
+      const update = vi.spyOn(modelsOf(service), 'update');
+      const user = userEvent.setup();
+      renderAt('/models/granite-3-8b/edit', service);
+      await openDeploymentStep(user);
+      const description = await screen.findByRole('textbox', { name: 'Description' });
+      await user.clear(description);
+      await user.paste('Edited');
+      await user.click(
+        within(screen.getByRole('navigation', { name: 'Wizard steps' })).getByRole('button', { name: 'Review' }),
+      );
+      await user.click(await screen.findByRole('button', { name: 'Save changes' }));
+      await waitFor(() => expect(update).toHaveBeenCalled());
+      expect(update.mock.calls[0][0].updateMask?.paths).toEqual(['metadata.annotations']);
+    });
+
+    it('says a cleared image runs the presets’ image, on NVIDIA GPUs too', async () => {
+      const service = deployed({ cpu: '2', memory: '16Gi', 'nvidia.com/gpu': '1' }, 'registry.example/vllm-cuda:1');
+      modelsOf(service).find('granite-3-8b').spec!.baseRefs = ['custom-preset'];
+      const user = userEvent.setup();
+      renderAt('/models/granite-3-8b/edit', service);
+      await openDeploymentStep(user);
+      expect(await screen.findByRole('textbox', { name: /Runtime image/ })).toHaveAccessibleDescription(
+        'Leave empty to use the image the presets set.',
+      );
+    });
+
+    it('shows its presets read-only, beside what it requests', async () => {
+      const service = new MockConsoleService();
+      modelsOf(service).find('granite-3-8b').spec!.baseRefs = ['custom-preset'];
+      const user = userEvent.setup();
+      renderAt('/models/granite-3-8b/edit', service);
+      await openDeploymentStep(user);
+      const presets = await screen.findByRole('textbox', { name: 'Presets' });
+      expect(presets).toHaveValue('custom-preset');
+      expect(presets).toHaveAttribute('readonly');
+      expect(presets).toHaveAccessibleDescription(
+        'Set when the model was deployed. New models are deployed without presets.',
+      );
+      expect(screen.queryByRole('textbox', { name: 'Hardware' })).not.toBeInTheDocument();
+      expect(screen.getByRole('textbox', { name: 'Accelerators' })).toHaveValue('None (CPU only)');
+    });
+
+    it('clears the image of a model on NVIDIA GPUs in an edit, and sends no presets', async () => {
+      const service = deployed({ cpu: '2', memory: '16Gi', 'nvidia.com/gpu': '1' }, 'registry.example/vllm-cuda:1');
+      const update = vi.spyOn(modelsOf(service), 'update');
+      const user = userEvent.setup();
+      renderAt('/models/granite-3-8b/edit', service);
+      await openDeploymentStep(user);
+      expect(await screen.findByRole('textbox', { name: /Runtime image/ })).toHaveAccessibleDescription(
+        defaultImageHelp,
+      );
+      await setImage(user, '');
+      await user.click(
+        within(screen.getByRole('navigation', { name: 'Wizard steps' })).getByRole('button', { name: 'Review' }),
+      );
+      expect(await screen.findByTestId('model-review')).toHaveTextContent(
+        "Runtime imageDefault (the cluster's vLLM image for NVIDIA GPUs)",
+      );
+      await user.click(screen.getByRole('button', { name: 'Save changes' }));
+      await waitFor(() => expect(update).toHaveBeenCalled());
+      const [request] = update.mock.calls[0];
+      expect(request.updateMask?.paths).toEqual(['spec.main.image']);
+      expect(request.object?.spec?.main?.image).toBe('');
+      expect(request.object?.spec?.baseRefs).toEqual([]);
+    });
   });
 });
 
@@ -971,7 +1277,7 @@ describe('editing a model deployment', () => {
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
     await openStep(user, 'Deployment');
     expect(screen.getByRole('textbox', { name: 'CPU' })).toHaveAttribute('readonly');
-    expect(screen.getByRole('textbox', { name: 'GPUs' })).toHaveAttribute('readonly');
+    expect(screen.getByRole('textbox', { name: 'Presets' })).toHaveAttribute('readonly');
     const replicas = screen.getByRole('spinbutton', { name: 'Replicas' });
     await user.clear(replicas);
     await user.paste('3');

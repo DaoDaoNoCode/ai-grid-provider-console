@@ -15,11 +15,10 @@ import {
   Form,
   FormGroup,
   FormHelperText,
-  FormSelect,
-  FormSelectOption,
   HelperText,
   HelperTextItem,
   PageSection,
+  Radio,
   Spinner,
   TextInput,
   Wizard,
@@ -36,16 +35,26 @@ import { useK8sNameDescriptionFieldData } from '../../components/K8sNameDescript
 import { MultiSelection } from '../../components/MultiSelection';
 import { PageHeader } from '../../components/PageHeader';
 import { ReadOnlyField } from '../../components/ReadOnlyField';
+import { useConsoleSession } from '../../context/useConsoleSession';
 import { useConfirmDiscard } from '../../hooks/useConfirmDiscard';
-import { createModelSchema, fieldMessage } from '../../validation';
+import { fieldMessage, modelFieldsSchema, requireImageWithoutNvidia } from '../../validation';
 import { RuntimeArgsField } from './fields/RuntimeArgsField';
 import { filterRuntimeArgsForContainer, runtimeArgsOf, type RuntimeArgsFieldData } from './fields/runtimeArgs';
+import {
+  DEFAULT_IMAGE,
+  DEFAULT_IMAGE_HELP,
+  NVIDIA_GPU,
+  acceleratorLabel,
+  acceleratorsText,
+  hardwareEnv,
+  mayUseDefaultImage,
+  runtimeImageHelp,
+} from './modelHardware';
 import { DEFAULT_REPLICAS, sameSet, updateRequestOf, type ModelInput } from './modelRequests';
 import { titleOf, type ModelView } from './modelView';
 import { OlderServedNameAlert } from './OlderServedNameAlert';
 import { useModelWrites, usePlacementClusters } from './useModels';
 import { deploymentNameFromUri, modelPath } from './modelUtils';
-import { type ModelServer, modelServerLabel, modelServers } from './modelServers';
 import { useClusterList } from '../clusters/useClusters';
 
 type Props = {
@@ -56,11 +65,22 @@ type Props = {
 const steps = {
   source: 'source-model-step',
   deployment: 'model-deployment-step',
-  locations: 'locations-step',
+  clusters: 'clusters-step',
   review: 'summary-step',
 } as const;
 
-const defaults = { replicas: String(DEFAULT_REPLICAS), cpu: '2', memory: '4Gi', gpuCount: '0' };
+/** What the wizard starts from where the selected hardware sets no default. */
+const defaults = { replicas: String(DEFAULT_REPLICAS), cpu: '2', memory: '4Gi', accelerators: '1' };
+
+/** The most accelerators the wizard requests (modelFieldsSchema's acceleratorCount). */
+const MAX_ACCELERATORS = 64;
+
+/**
+ * vLLM on CPU sizes its KV cache for the model's whole context: Qwen3-0.6B's default of 40,960
+ * tokens needs 4.38 GiB, more than CPU only's VLLM_CPU_KVCACHE_SPACE of 4 GiB, and runs with
+ * --max-model-len=8192.
+ */
+const CPU_CONTEXT_HINT = 'For long-context models on CPU, set --max-model-len in Advanced settings.';
 
 /** A resource the model was deployed without, shown in its read-only field. */
 const NOT_SET = 'Not set';
@@ -71,19 +91,16 @@ const fixedReason = {
   // written before the backend served models as their ids can keep another.
   served: 'Users send this name as the model in their requests. It cannot be edited.',
   resources: 'Resources are set when the model is deployed. Deploy it again to change them.',
+  presets: 'Set when the model was deployed. New models are deployed without presets.',
 };
 
 /** The wizard's starting values: the defaults when deploying, the model's own when editing. */
 const initialValues = (model?: ModelView) => ({
   modelUri: model?.modelUri ?? '',
-  runtimeImage: model?.runtimeImage ?? '',
   replicas: model?.replicas !== undefined ? String(model.replicas) : defaults.replicas,
-  cpu: model ? (model.cpu ?? '') : defaults.cpu,
-  memory: model ? (model.memory ?? '') : defaults.memory,
-  gpuCount: model ? String(model.gpuCount ?? 0) : defaults.gpuCount,
   runtimeArgs: runtimeArgsOf(model?.env),
   // Only a `name In [...]` placement can be edited as a list of clusters (placementClustersOf).
-  locations: model?.placementClusters ?? [],
+  clusterNames: model?.placementClusters ?? [],
 });
 
 /** A field's help line, replaced by the field's error while it has one. */
@@ -99,17 +116,19 @@ const notAvailable = (err: unknown, what: string) =>
   err instanceof ServiceError && err.isNotImplemented ? `${what} not available on this AI Grid backend.` : undefined;
 
 /** Says which chosen clusters are no longer offered; undefined when none are. */
-const goneLocationsError = (names: string[]) =>
+const goneClustersError = (names: string[]) =>
   names.length === 0
     ? undefined
     : `${names.join(', ')} ${names.length === 1 ? 'is' : 'are'} no longer available. Remove ${names.length === 1 ? 'it' : 'them'} to continue.`;
+
+type ReviewItem = { term: string; value?: string };
 
 /**
  * The Review step: an alert about the choices or the model first, if there is one, spaced as the
  * sections are; each section's Edit link goes back to its step.
  */
 const ReviewStep: React.FC<{
-  sections: { title: string; step: string; items: { term: string; value?: string }[] }[];
+  sections: { title: string; step: string; items: ReviewItem[] }[];
   alert?: React.ReactNode;
 }> = ({ sections, alert }) => {
   const { goToStepById } = useWizardContext();
@@ -141,14 +160,16 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
   const editing = !!model;
   const [start] = useState(() => initialValues(model));
   // Editing any other placement as a list of clusters would change what else it selects.
-  const locationsEditable = !model || model.placementClusters !== undefined;
+  const clustersEditable = !model || model.placementClusters !== undefined;
   const replicasEditable = !model?.autoscaled;
   const writes = useModelWrites();
+  const { config, configError, reloadConfig } = useConsoleSession();
+  const hardwareList = config?.models?.hardware ?? [];
   const {
-    data: availableLocations,
-    loaded: locationsLoaded,
-    error: locationsError,
-    refresh: reloadLocations,
+    data: placementClusters,
+    loaded: placementClustersLoaded,
+    error: placementClustersError,
+    refresh: reloadPlacementClusters,
   } = usePlacementClusters();
   const { data: clusters, refresh: reloadClusters } = useClusterList();
   // Each offered cluster's site and region, the description under its name.
@@ -164,38 +185,43 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
   );
   // AI Grid members ListPlacementClusters doesn't offer: not Available, not Compliant, or not a cluster
   // that serves models (role inference or combined).
-  const unavailableMembers = clusters.filter((c) => c.aiGridEnabled && !availableLocations.includes(c.name)).length;
-  const [locations, setLocations] = useState<string[]>(start.locations);
-  // True from entering the Locations step until its locations reload answers; Next waits for it.
-  const [reloadingLocations, setReloadingLocations] = useState(false);
+  const unavailableMembers = clusters.filter((c) => c.aiGridEnabled && !placementClusters.includes(c.name)).length;
+  const [clusterNames, setClusterNames] = useState<string[]>(start.clusterNames);
+  // True from entering the Clusters step until its placement clusters reload answers; Next waits for it.
+  const [reloadingPlacementClusters, setReloadingPlacementClusters] = useState(false);
   const reloadRef = useRef(0);
-  // Chosen locations that a reload no longer offers. They stay as chips, so the user sees why Next is disabled.
-  const goneLocations = locationsLoaded ? locations.filter((location) => !availableLocations.includes(location)) : [];
+  // Chosen clusters that a reload no longer offers. They stay as chips, so the user sees why Next is disabled.
+  const goneClusters = placementClustersLoaded ? clusterNames.filter((name) => !placementClusters.includes(name)) : [];
   // Like the text fields, Clusters shows its error only once the user has changed it.
-  const [locationsTouched, setLocationsTouched] = useState(false);
+  const [clusterNamesTouched, setClusterNamesTouched] = useState(false);
   const { data: nameDescData, onDataChange: onNameDescChange } = useK8sNameDescriptionFieldData({
     maxLength: 63,
     // A k8sName makes the resource name read-only, as a deployed one is.
     initialData: model ? { name: titleOf(model), description: model.description ?? '', k8sName: model.id } : undefined,
   });
   const [modelUri, setModelUri] = useState(start.modelUri);
-  const [runtimeImage, setRuntimeImage] = useState(start.runtimeImage);
   const [replicas, setReplicas] = useState(start.replicas);
-  const [cpu, setCpu] = useState(start.cpu);
-  const [memory, setMemory] = useState(start.memory);
-  const [gpuCount, setGpuCount] = useState(start.gpuCount);
-  // A deployed model keeps its presets; the choice is only made when deploying.
-  // No default: the grid's sites can be GPU or CPU-only clusters, so the user picks one.
-  const [serverId, setServerId] = useState<ModelServer['id'] | ''>('');
-  const server = modelServers.find((s) => s.id === serverId);
-  const chooseServer = (id: ModelServer['id']) => {
-    setServerId(id);
-    // A GPU server starts at one GPU (none is what crash-loops); a CPU server hides the field,
-    // so it goes back to its default rather than keep a value nobody can see or fix.
-    if (!modelServers.find((s) => s.id === id)?.usesGpus) setGpuCount(defaults.gpuCount);
-    else if (gpuCount === defaults.gpuCount || gpuCount === '') setGpuCount('1');
+  // The hardware a new model runs on: the first in the console's list until the user selects
+  // another. A deployed model keeps its own, read-only.
+  const [hardwareId, setHardwareId] = useState<string>();
+  const hardware = editing ? undefined : (hardwareList.find((h) => h.id === hardwareId) ?? hardwareList[0]);
+  const accelerator = hardware?.accelerator;
+  // The fields the hardware fills in hold undefined until the user edits them, so they show the
+  // selected hardware's value. An edited CPU, memory or accelerator count is kept when the hardware
+  // changes; the image is the hardware's, so selecting hardware replaces an edited one with its own
+  // (or none, for the cluster's default).
+  const [imageInput, setRuntimeImage] = useState<string | undefined>(model ? (model.runtimeImage ?? '') : undefined);
+  const selectHardware = (id: string) => {
+    setHardwareId(id);
+    setRuntimeImage(undefined);
   };
-  const usesGpus = editing || Boolean(server?.usesGpus);
+  const [cpuInput, setCpu] = useState<string>();
+  const [memoryInput, setMemory] = useState<string>();
+  const [acceleratorsInput, setAccelerators] = useState<string>();
+  const runtimeImage = imageInput ?? hardware?.image ?? '';
+  const cpu = model ? (model.cpu ?? '') : (cpuInput ?? hardware?.defaults?.cpu ?? defaults.cpu);
+  const memory = model ? (model.memory ?? '') : (memoryInput ?? hardware?.defaults?.memory ?? defaults.memory);
+  const accelerators = acceleratorsInput ?? String(hardware?.defaults?.accelerators ?? defaults.accelerators);
   const [runtimeArgs, setRuntimeArgs] = useState<RuntimeArgsFieldData>({
     enabled: start.runtimeArgs.length > 0,
     args: start.runtimeArgs,
@@ -215,80 +241,104 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
     replicas: Number(replicas),
     cpu,
     memory,
-    // A CPU server asks for no GPUs, whatever the hidden field last held.
-    gpuCount: usesGpus ? Number(gpuCount) : 0,
+    accelerator,
+    // Hardware without an accelerator asks for none.
+    acceleratorCount: accelerator ? Number(accelerators) : 0,
+    env: hardwareEnv(hardware),
     runtimeArgs: filterRuntimeArgsForContainer(runtimeArgs.args),
-    baseRefs: model ? model.baseRefs : (server?.baseRefs ?? []),
-    clusters: locations,
+    clusters: clusterNames,
   };
-  const edited: ModelInput = { ...input, clusters: locationsEditable ? locations : start.locations };
+  const edited: ModelInput = { ...input, clusters: clustersEditable ? clusterNames : start.clusterNames };
   const isDirty = model
     ? updateRequestOf(model, edited) !== undefined
-    : [modelUri, runtimeImage, nameDescData.name, nameDescData.description].some((v) => v !== '') ||
+    : [modelUri, nameDescData.name, nameDescData.description].some((v) => v !== '') ||
+      [imageInput, cpuInput, memoryInput, acceleratorsInput].some((v) => v !== undefined) ||
+      (hardwareId !== undefined && hardwareId !== hardwareList[0]?.id) ||
       replicas !== defaults.replicas ||
-      cpu !== defaults.cpu ||
-      memory !== defaults.memory ||
-      gpuCount !== defaults.gpuCount ||
-      serverId !== '' ||
       runtimeArgs.enabled ||
-      locations.length > 0;
+      clusterNames.length > 0;
   const detailsPath = model ? modelPath(model) : '';
   const leave = () => navigate(model ? detailsPath : '/models');
   const [requestLeave, discardModal] = useConfirmDiscard(isDirty && !saving, leave);
 
   // Every field this checks is required, so a field the user left empty says so.
-  const shownError = (field: keyof typeof createModelSchema.shape, value: string, parse?: (text: string) => unknown) =>
+  const shownError = (field: keyof typeof modelFieldsSchema.shape, value: string, parse?: (text: string) => unknown) =>
     !touched.has(field)
       ? undefined
       : value.trim()
-        ? fieldMessage(createModelSchema.shape[field], value, parse)
+        ? fieldMessage(modelFieldsSchema.shape[field], value, parse)
         : 'Required.';
   const modelUriError = shownError('modelUri', modelUri);
-  const runtimeImageError = shownError('runtimeImage', runtimeImage);
+  const presets = model?.baseRefs.join(', ');
+  // An empty image runs the cluster's default vLLM image, which is for NVIDIA GPUs
+  // (requireImageWithoutNvidia): so the selected hardware's accelerator decides for a new model, and
+  // what a deployed model requests for an edit. A deployed model's presets set an image of their own.
+  const imageAccelerator = model
+    ? model.acceleratorRequests.some((r) => r.resource === NVIDIA_GPU)
+      ? NVIDIA_GPU
+      : undefined
+    : accelerator;
+  // An edit requires it only where it would clear an image the model has: a model stored without
+  // one keeps none until one is entered, so editing its other fields doesn't depend on it.
+  const imageRequired =
+    !mayUseDefaultImage(imageAccelerator) && !presets && (!model || model.runtimeImage !== undefined);
+  const imageMissing = imageRequired && runtimeImage.trim() === '';
+  const runtimeImageError = !touched.has('runtimeImage')
+    ? undefined
+    : imageMissing
+      ? 'Required.'
+      : fieldMessage(modelFieldsSchema.shape.runtimeImage, runtimeImage);
   const replicasError = shownError('replicas', replicas, Number);
   const cpuError = shownError('cpu', cpu);
   const memoryError = shownError('memory', memory);
-  // KServe's GPU preset with no GPUs is what crash-loops on a CPU-only node.
-  const gpusMissing = !editing && Boolean(server?.usesGpus) && gpuCount !== '' && Number(gpuCount) < 1;
-  const serverError = !editing && touched.has('server') && !server ? 'Required.' : undefined;
-  const gpuCountError =
-    shownError('gpuCount', gpuCount, Number) ??
-    (touched.has('gpuCount') && gpusMissing ? 'A GPU model server needs at least 1 GPU.' : undefined);
+  // Hardware with an accelerator needs at least one: without it the model can't use the hardware.
+  const acceleratorsValid =
+    /^\d+$/.test(accelerators) && Number(accelerators) >= 1 && Number(accelerators) <= MAX_ACCELERATORS;
+  const acceleratorsError = !touched.has('accelerators')
+    ? undefined
+    : accelerators === ''
+      ? 'Required.'
+      : acceleratorsValid
+        ? undefined
+        : `Enter a number from 1 to ${MAX_ACCELERATORS}.`;
   // A deployed model's source, name and resources are fixed, so only what an edit can change is checked.
-  const sourceValid = editing || createModelSchema.pick({ modelUri: true }).safeParse({ modelUri }).success;
+  const sourceValid = editing || modelFieldsSchema.pick({ modelUri: true }).safeParse({ modelUri }).success;
   const deploymentValid = editing
-    ? createModelSchema
+    ? modelFieldsSchema
         .pick({ displayName: true, description: true })
         .safeParse({ displayName: input.displayName, description: input.description }).success &&
-      // A model deployed without an image keeps none until one is entered.
-      (runtimeImage === start.runtimeImage ||
-        createModelSchema.shape.runtimeImage.safeParse(input.runtimeImage).success) &&
+      modelFieldsSchema.shape.runtimeImage.safeParse(input.runtimeImage).success &&
+      !imageMissing &&
       // The deploy wizard's limits apply to a count the user sets, not to one the model already has.
       (!replicasEditable ||
         replicas === start.replicas ||
-        (replicas !== '' && createModelSchema.shape.replicas.safeParse(input.replicas).success))
-    : server !== undefined &&
+        (replicas !== '' && modelFieldsSchema.shape.replicas.safeParse(input.replicas).success))
+    : hardware !== undefined &&
       replicas !== '' &&
-      gpuCount !== '' &&
-      !gpusMissing &&
-      createModelSchema.omit({ locations: true }).strip().safeParse(input).success;
-  // An edit that keeps the locations doesn't depend on which locations are offered right now.
-  const locationsChanged = !editing || !sameSet(locations, start.locations);
-  const locationsValid =
-    !locationsEditable ||
-    (!locationsChanged && locations.length > 0) ||
-    (locationsLoaded && !reloadingLocations && !locationsError && locations.length > 0 && goneLocations.length === 0);
+      (!accelerator || acceleratorsValid) &&
+      modelFieldsSchema.omit({ locations: true }).strip().superRefine(requireImageWithoutNvidia).safeParse(input)
+        .success;
+  // An edit that keeps its clusters doesn't depend on which clusters are offered right now.
+  const clusterNamesChanged = !editing || !sameSet(clusterNames, start.clusterNames);
+  const clusterNamesValid =
+    !clustersEditable ||
+    (!clusterNamesChanged && clusterNames.length > 0) ||
+    (placementClustersLoaded &&
+      !reloadingPlacementClusters &&
+      !placementClustersError &&
+      clusterNames.length > 0 &&
+      goneClusters.length === 0);
   const isStepValid = (step: string) =>
     step === steps.source
       ? sourceValid
       : sourceValid &&
         deploymentValid &&
-        (step === steps.deployment || locationsValid) &&
+        (step === steps.deployment || clusterNamesValid) &&
         // Saving an edit that changes nothing would only bump the version.
         (step !== steps.review || !editing || isDirty);
 
   const save = async () => {
-    if (saving || !sourceValid || !deploymentValid || !locationsValid || (editing && !isDirty)) return;
+    if (saving || !sourceValid || !deploymentValid || !clusterNamesValid || (editing && !isDirty)) return;
     setSaving(true);
     setError(undefined);
     try {
@@ -321,12 +371,12 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
     return model.selectedClusters.length > 0 ? model.selectedClusters.join(', ') : 'No clusters selected';
   };
 
-  const locationsStep = () => {
-    if (!locationsEditable) {
+  const clustersStep = () => {
+    if (!clustersEditable) {
       return (
         <ReadOnlyField
           label="Clusters"
-          fieldId="model-locations"
+          fieldId="model-clusters"
           value={placedAt()}
           reason={
             model?.placed
@@ -336,23 +386,23 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
         />
       );
     }
-    if (locationsError) {
+    if (placementClustersError) {
       return (
         <Alert
           isInline
           variant="danger"
           title="Unable to load clusters"
-          actionLinks={<AlertActionLink onClick={() => void reloadLocations()}>Retry</AlertActionLink>}
+          actionLinks={<AlertActionLink onClick={() => void reloadPlacementClusters()}>Retry</AlertActionLink>}
         >
-          {notAvailable(locationsError, 'Clusters are') ?? locationsError.message}
+          {notAvailable(placementClustersError, 'Clusters are') ?? placementClustersError.message}
         </Alert>
       );
     }
-    if (!locationsLoaded) {
+    if (!placementClustersLoaded) {
       return <Spinner size="lg" aria-label="Loading clusters" />;
     }
     // With chosen clusters to show, the field stays, so the user can see and remove them.
-    if (availableLocations.length === 0 && goneLocations.length === 0) {
+    if (placementClusters.length === 0 && goneClusters.length === 0) {
       return (
         <Alert isInline variant="warning" title="No clusters available">
           A cluster appears here when it is an AI Grid cluster that serves models, and is Ready and Provisioned.
@@ -360,32 +410,32 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
       );
     }
     return (
-      <FormGroup label="Clusters" fieldId="model-locations" isRequired>
+      <FormGroup label="Clusters" fieldId="model-clusters" isRequired>
         <MultiSelection
-          id="model-locations-select"
-          inputId="model-locations"
+          id="model-clusters-select"
+          inputId="model-clusters"
           ariaLabel="Clusters"
           placeholder="Select clusters"
-          selectionRequired={locationsTouched}
+          selectionRequired={clusterNamesTouched}
           noSelectedOptionsMessage="Select at least one cluster."
-          errorMessage={locationsChanged ? goneLocationsError(goneLocations) : undefined}
+          errorMessage={clusterNamesChanged ? goneClustersError(goneClusters) : undefined}
           value={[
-            ...availableLocations.map((location) => ({
-              id: location,
-              name: location,
-              description: clusterDescriptions.get(location),
-              selected: locations.includes(location),
+            ...placementClusters.map((name) => ({
+              id: name,
+              name,
+              description: clusterDescriptions.get(name),
+              selected: clusterNames.includes(name),
             })),
-            ...goneLocations.map((location) => ({
-              id: location,
-              name: location,
+            ...goneClusters.map((name) => ({
+              id: name,
+              name,
               selected: true,
               chipOnly: true,
             })),
           ]}
           setValue={(options) => {
-            setLocationsTouched(true);
-            setLocations(options.filter((option) => option.selected).map((o) => String(o.id)));
+            setClusterNamesTouched(true);
+            setClusterNames(options.filter((option) => option.selected).map((o) => String(o.id)));
           }}
           isDisabled={saving}
         />
@@ -398,23 +448,73 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
     );
   };
 
-  // A hint only, from the GPU counts the clusters list already carries: a GPU server on a cluster
-  // with no GPUs never schedules, and a CPU server on a GPU cluster leaves its GPUs unused.
-  const serverMismatch = (() => {
-    if (editing || !server) return undefined;
+  // The Hardware choice of a new model, from the console's config, which App loads once.
+  const hardwareField = () => {
+    if (!config && configError) {
+      return (
+        <Alert
+          isInline
+          variant="danger"
+          title="Unable to load hardware"
+          actionLinks={reloadConfig && <AlertActionLink onClick={() => void reloadConfig()}>Retry</AlertActionLink>}
+        >
+          {configError.message}
+        </Alert>
+      );
+    }
+    if (!config) {
+      return <Spinner size="lg" aria-label="Loading hardware" />;
+    }
+    return (
+      <FormGroup role="radiogroup" isStack fieldId="model-hardware" label="Hardware">
+        {hardwareList.map((h) => (
+          <Radio
+            key={h.id}
+            id={`model-hardware-${h.id}`}
+            name="model-hardware"
+            label={h.label}
+            description={h.description}
+            isChecked={h.id === hardware?.id}
+            onChange={() => selectHardware(h.id)}
+            isDisabled={saving}
+          />
+        ))}
+      </FormGroup>
+    );
+  };
+
+  // A hint only, from the GPU counts the clusters list carries, which count NVIDIA GPUs only (the
+  // backend reads them from NVIDIA's GPU discovery): NVIDIA hardware on a cluster with none never
+  // schedules, and CPU-only hardware on a GPU cluster leaves its GPUs unused. Other accelerators
+  // get no hint.
+  const hardwareMismatch = (() => {
+    if (editing || !hardware || (accelerator && accelerator !== NVIDIA_GPU)) return undefined;
     // The chosen ids are cluster names, never `location` labels.
-    const chosen = clusters.filter((c) => c.aiGridEnabled && locations.includes(c.name));
+    const chosen = clusters.filter((c) => c.aiGridEnabled && clusterNames.includes(c.name));
     const mismatched = chosen
-      .filter((c) => c.gpuCapacity !== undefined && (server.usesGpus ? c.gpuCapacity === 0 : c.gpuCapacity > 0))
+      .filter((c) => c.gpuCapacity !== undefined && (accelerator ? c.gpuCapacity === 0 : c.gpuCapacity > 0))
       .map((c) => c.name)
       .sort();
     if (mismatched.length === 0) return undefined;
     const names = mismatched.join(', ');
-    return server.usesGpus
-      ? `${names} ${mismatched.length === 1 ? 'reports' : 'report'} no GPUs, so ${server.label} can't run there.`
-      : `${names} ${mismatched.length === 1 ? 'has' : 'have'} GPUs that ${server.label} doesn't use.`;
+    const one = mismatched.length === 1;
+    return accelerator
+      ? `${names} ${one ? 'reports' : 'report'} no NVIDIA GPUs, so the model can't run there`
+      : `${names} ${one ? 'has' : 'have'} GPUs that the model doesn't use with ${hardware.label}`;
   })();
 
+  // A new model names the hardware selected from the list; a deployed one shows what it has, which
+  // the list, as it is now, may no longer describe.
+  const hardwareItems: ReviewItem[] = model
+    ? presets
+      ? [{ term: 'Presets', value: presets }]
+      : []
+    : [{ term: 'Hardware', value: hardware?.label }];
+  const acceleratorItems: ReviewItem[] = model
+    ? [{ term: 'Accelerators', value: acceleratorsText(model) }]
+    : accelerator
+      ? [{ term: acceleratorLabel(accelerator), value: accelerators }]
+      : [];
   const review = [
     {
       title: 'Source',
@@ -432,22 +532,23 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
         { term: 'Model name', value: nameDescData.name },
         ...(model ? [] : [{ term: 'Model name in requests', value: nameDescData.k8sName.value }]),
         { term: 'Description', value: nameDescData.description },
-        { term: 'Model server', value: modelServerLabel(input.baseRefs) },
-        { term: 'Runtime image', value: runtimeImage },
+        ...hardwareItems,
+        // An empty image with presets runs theirs; without presets, the cluster's default.
+        { term: 'Runtime image', value: runtimeImage.trim() || (presets ? undefined : DEFAULT_IMAGE) },
         { term: 'Replicas', value: replicasEditable ? replicas : 'Autoscaled' },
         { term: 'CPU', value: cpu },
         { term: 'Memory', value: memory },
-        { term: 'GPUs', value: String(input.gpuCount) },
+        ...acceleratorItems,
         { term: 'Additional runtime arguments', value: input.runtimeArgs.join(' ') },
       ],
     },
     {
       title: 'Clusters',
-      step: steps.locations,
+      step: steps.clusters,
       items: [
         {
           term: 'Clusters',
-          value: locationsEditable ? locations.join(', ') : placedAt(),
+          value: clustersEditable ? clusterNames.join(', ') : placedAt(),
         },
       ],
     },
@@ -482,11 +583,11 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
               onNameDescChange('name', deploymentNameFromUri(modelUri));
             }
             // A cluster can change state while the earlier steps are filled in, so offer what is available now.
-            if (current.id === steps.locations && locationsEditable) {
+            if (current.id === steps.clusters && clustersEditable) {
               const reload = ++reloadRef.current;
-              setReloadingLocations(true);
-              void reloadLocations().then(() => {
-                if (reload === reloadRef.current) setReloadingLocations(false);
+              setReloadingPlacementClusters(true);
+              void reloadPlacementClusters().then(() => {
+                if (reload === reloadRef.current) setReloadingPlacementClusters(false);
               });
               // The clusters only describe the options and count the unlisted members, so Next doesn't wait for them.
               void reloadClusters();
@@ -551,36 +652,17 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
                     : 'Users send the resource name as the model in their requests. Up to 63 characters.'
                 }
               />
-              {editing ? (
-                <ReadOnlyField
-                  label="Model server"
-                  fieldId="model-server"
-                  value={modelServerLabel(input.baseRefs)}
-                  reason={fixedReason.resources}
-                />
-              ) : (
-                <FormGroup label="Model server" fieldId="model-server" isRequired>
-                  <FormSelect
-                    id="model-server"
-                    aria-describedby="model-server-help"
-                    value={serverId}
-                    onChange={(_event, value) => chooseServer(value as ModelServer['id'])}
-                    onBlur={() => touch('server')}
-                    validated={serverError ? 'error' : 'default'}
-                    isRequired
-                  >
-                    <FormSelectOption isPlaceholder isDisabled value="" label="Select a model server" />
-                    {modelServers.map((s) => (
-                      <FormSelectOption key={s.id} value={s.id} label={s.label} />
-                    ))}
-                  </FormSelect>
-                  <Help id="model-server-help" error={serverError}>
-                    {server?.description ??
-                      'Select the model server that matches the hardware of the selected clusters.'}
-                  </Help>
-                </FormGroup>
-              )}
-              <FormGroup label="Runtime image" fieldId="runtime-image" isRequired>
+              {!model
+                ? hardwareField()
+                : presets && (
+                    <ReadOnlyField
+                      label="Presets"
+                      fieldId="model-presets"
+                      value={presets}
+                      reason={fixedReason.presets}
+                    />
+                  )}
+              <FormGroup label="Runtime image" fieldId="runtime-image" isRequired={imageRequired}>
                 <TextInput
                   id="runtime-image"
                   aria-describedby="runtime-image-help"
@@ -588,10 +670,16 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
                   onChange={(_event, value) => setRuntimeImage(value)}
                   onBlur={() => touch('runtimeImage')}
                   validated={runtimeImageError ? 'error' : 'default'}
-                  isRequired
+                  isRequired={imageRequired}
                 />
                 <Help id="runtime-image-help" error={runtimeImageError}>
-                  Must match the model server. For example, use a vLLM CPU image for vLLM on CPU.
+                  {!model
+                    ? runtimeImageHelp(hardware)
+                    : presets
+                      ? 'Leave empty to use the image the presets set.'
+                      : mayUseDefaultImage(imageAccelerator)
+                        ? DEFAULT_IMAGE_HELP
+                        : "Enter a vLLM image for the model's hardware."}
                 </Help>
               </FormGroup>
               {replicasEditable ? (
@@ -619,7 +707,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
                   reason="This model scales automatically, so it has no fixed replica count."
                 />
               )}
-              {editing ? (
+              {model ? (
                 <>
                   {/* A model deployed without requests has none to show. */}
                   <ReadOnlyField
@@ -635,9 +723,9 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
                     reason={fixedReason.resources}
                   />
                   <ReadOnlyField
-                    label="GPUs"
-                    fieldId="deployment-gpus"
-                    value={gpuCount}
+                    label="Accelerators"
+                    fieldId="deployment-accelerators"
+                    value={acceleratorsText(model)}
                     reason={fixedReason.resources}
                   />
                 </>
@@ -669,23 +757,25 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
                     />
                     <Help id="deployment-memory-help" error={memoryError}>
                       For example, 4Gi or 512Mi.
+                      {/* vLLM sizes its KV cache for the model's whole context, which on CPU often doesn't fit. */}
+                      {hardware && !accelerator && ' ' + CPU_CONTEXT_HINT}
                     </Help>
                   </FormGroup>
-                  {usesGpus && (
-                    <FormGroup label="GPUs" fieldId="deployment-gpus" isRequired>
+                  {accelerator && (
+                    <FormGroup label={acceleratorLabel(accelerator)} fieldId="deployment-accelerators" isRequired>
                       <CountInput
-                        id="deployment-gpus"
-                        label="GPUs"
+                        id="deployment-accelerators"
+                        label={acceleratorLabel(accelerator)}
                         min={1}
-                        max={64}
-                        value={gpuCount}
-                        onChange={setGpuCount}
-                        onBlur={() => touch('gpuCount')}
-                        describedBy="deployment-gpus-help"
-                        validated={gpuCountError ? 'error' : 'default'}
+                        max={MAX_ACCELERATORS}
+                        value={accelerators}
+                        onChange={setAccelerators}
+                        onBlur={() => touch('accelerators')}
+                        describedBy="deployment-accelerators-help"
+                        validated={acceleratorsError ? 'error' : 'default'}
                       />
-                      <Help id="deployment-gpus-help" error={gpuCountError}>
-                        From 1 to 64.
+                      <Help id="deployment-accelerators-help" error={acceleratorsError}>
+                        From 1 to {MAX_ACCELERATORS}.
                       </Help>
                     </FormGroup>
                   )}
@@ -696,13 +786,13 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
               </ExpandableSection>
             </Form>
           </WizardStep>
-          <WizardStep name="Clusters" id={steps.locations} isDisabled={!sourceValid || !deploymentValid || saving}>
-            <Form maxWidth="750px">{locationsStep()}</Form>
+          <WizardStep name="Clusters" id={steps.clusters} isDisabled={!sourceValid || !deploymentValid || saving}>
+            <Form maxWidth="750px">{clustersStep()}</Form>
           </WizardStep>
           <WizardStep
             name="Review"
             id={steps.review}
-            isDisabled={!sourceValid || !deploymentValid || !locationsValid || saving}
+            isDisabled={!sourceValid || !deploymentValid || !clusterNamesValid || saving}
           >
             <ReviewStep
               sections={review}
@@ -710,8 +800,8 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
                 model ? (
                   <OlderServedNameAlert model={model} />
                 ) : (
-                  serverMismatch && (
-                    <Alert isInline variant="warning" title={serverMismatch} data-testid="model-server-mismatch" />
+                  hardwareMismatch && (
+                    <Alert isInline variant="warning" title={hardwareMismatch} data-testid="model-hardware-mismatch" />
                   )
                 )
               }

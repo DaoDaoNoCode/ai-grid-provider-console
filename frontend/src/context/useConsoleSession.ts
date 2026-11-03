@@ -13,6 +13,8 @@ export type ConsoleSession = {
   userError?: Error;
   config?: ConsoleConfig;
   configError?: Error;
+  /** Loads the config again, for a page that offers Retry after it failed. */
+  reloadConfig?: () => Promise<void>;
   /** A call has answered 401: the console goes through the login again instead of the pages, which stop polling. */
   sessionEnded?: boolean;
   /**

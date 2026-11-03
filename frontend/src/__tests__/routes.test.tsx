@@ -87,19 +87,17 @@ describe('routes', () => {
   const orgs = 'Organizations are not available on this AI Grid backend';
   const subs = 'Subscriptions are not available on this AI Grid backend';
   /** The deploy wizard loads locations up front but shows them on its third step. */
-  const toLocationsStep = async (user: ReturnType<typeof userEvent.setup>) => {
+  const toClustersStep = async (user: ReturnType<typeof userEvent.setup>) => {
     await user.click(await screen.findByRole('textbox', { name: /Model URI/ }));
     await user.paste('hf://org/widget');
     await user.click(screen.getByRole('button', { name: 'Next' }));
     await user.click(await screen.findByTestId('model-name-desc-name'));
     await user.paste('Widget');
-    await user.click(screen.getByRole('textbox', { name: /Runtime image/ }));
-    await user.paste('registry.example/runtime:test');
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Model server' }), 'vLLM on CPU');
+    // The first hardware, NVIDIA GPU, needs no runtime image.
     await user.click(screen.getByRole('button', { name: 'Next' }));
     await user.click(screen.getByRole('button', { name: 'Next' }));
   };
-  it.each<[path: string, methods: string, text: string, open?: typeof toLocationsStep]>([
+  it.each<[path: string, methods: string, text: string, open?: typeof toClustersStep]>([
     ['/organizations', 'listOrganizations', orgs],
     ['/organizations/org-1', 'getOrganization', orgs],
     ['/organizations/org-1/edit', 'getOrganization', orgs],
@@ -108,7 +106,7 @@ describe('routes', () => {
       '/models/deploy',
       'models.listPlacementClusters',
       'Clusters are not available on this AI Grid backend.',
-      toLocationsStep,
+      toClustersStep,
     ],
     ['/ai-grid', 'listClusters', 'The AI Grid map is not available on this AI Grid backend'],
     ['/monitoring', 'getGridOverview', 'Monitoring is not available on this AI Grid backend'],

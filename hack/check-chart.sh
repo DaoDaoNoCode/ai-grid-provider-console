@@ -68,6 +68,89 @@ done
 helm template console "${CHART}" -n ai-grid --set console.logLevel=INFO >/dev/null
 refused "console.logLevel=verbose" --set console.logLevel=verbose
 
+# console.models.hardware: the schema refuses what the BFF would refuse at start
+# (bff/internal/config/hardware.go), and a list is rendered as MODEL_HARDWARE, JSON.
+hw='"id":"gpu","label":"GPU","accelerator":"nvidia.com/gpu"'
+# Unicode spaces, which the BFF trims and refuses in an image (unicode.IsSpace) as the schema does.
+nbsp=$'\u00a0' em_space=$'\u2003'
+# An accelerator is a Kubernetes extended resource name: labels and the name at most 63 characters,
+# the prefix at most 244 (so that requests.<prefix> is a DNS subdomain).
+label63="$(printf 'a%.0s' {1..63})"
+long_name="${label63}a" long_label="${label63}a"
+long_prefix="${label63}.${label63}.${label63}.$(printf 'b%.0s' {1..52})"
+for ok in "${long_prefix}/gpu" "nvidia.com/${label63}" amd.com/gpu habana.ai/gaudi nvidia.com/mig-1g.10gb; do
+  helm template console "${CHART}" -n ai-grid \
+    --set-json "console.models.hardware=[{\"id\":\"gpu\",\"label\":\"GPU\",\"accelerator\":\"${ok}\"}]" >/dev/null || {
+    echo "check-chart: accelerator ${ok} doesn't render; values.schema.json must accept it" >&2
+    exit 1
+  }
+done
+for bad in \
+  '[{"id":"cpu","label":"CPU","nodeSelector":{"kubernetes.io/arch":"amd64"}}]' \
+  '[{"id":"gpu","label":"GPU","acelerator":"nvidia.com/gpu"}]' \
+  '[{"id":"cpu","label":"CPU","defaults":{"memroy":"8Gi"}}]' \
+  '[{"label":"CPU"}]' '[{"id":"cpu"}]' '[{"id":"CPU","label":"CPU"}]' '[{"id":"cpu-","label":"CPU"}]' \
+  '[{"id":"gpu","label":"GPU","accelerator":"gpu"}]' \
+  '[{"id":"gpu","label":"GPU","accelerator":"nvidia..com/gpu"}]' \
+  '[{"id":"gpu","label":"GPU","accelerator":"Nvidia.com/gpu"}]' \
+  '[{"id":"gpu","label":"GPU","accelerator":"nvidia.com/gpu/x"}]' \
+  "[{\"id\":\"gpu\",\"label\":\"GPU\",\"accelerator\":\"nvidia.com/${long_name}\"}]" \
+  "[{\"id\":\"gpu\",\"label\":\"GPU\",\"accelerator\":\"${long_label}.com/gpu\"}]" \
+  "[{\"id\":\"gpu\",\"label\":\"GPU\",\"accelerator\":\"${long_prefix}b/gpu\"}]" \
+  '[{"id":"gpu","label":"GPU","accelerator":"kubernetes.io/gpu"}]' \
+  '[{"id":"gpu","label":"GPU","accelerator":"gpu.kubernetes.io/x"}]' \
+  '[{"id":"gpu","label":"GPU","accelerator":"examplekubernetes.io/gpu"}]' \
+  "[{\"id\":\"cpu\",\"label\":\"${nbsp}\"}]" "[{\"id\":\"cpu\",\"label\":\"${em_space}\"}]" \
+  "[{\"id\":\"cpu\",\"label\":\"CPU\",\"image\":\"quay.io/vllm${nbsp}cpu:1\"}]" \
+  '[{"id":"gpu","label":"GPU","accelerator":"requests.nvidia.com/gpu"}]' \
+  '[{"id":"cpu","label":"CPU","image":"quay.io/vllm cpu:1"}]' \
+  '[{"id":"cpu","label":"CPU","env":{"1THREADS":"4"}}]' \
+  '[{"id":"cpu","label":"CPU","env":{"VLLM_ADDITIONAL_ARGS":"--x"}}]' \
+  '[{"id":"cpu","label":"CPU","env":{"OMP_NUM_THREADS":4}}]' \
+  '[{"id":"cpu","label":"CPU","defaults":{"accelerators":1}}]' \
+  '[{"id":"cpu","label":"CPU","accelerator":"","defaults":{"accelerators":1}}]' \
+  "[{${hw},\"defaults\":{\"accelerators\":0}}]" "[{${hw},\"defaults\":{\"accelerators\":65}}]" \
+  "[{${hw},\"defaults\":{\"accelerators\":1.5}}]" \
+  '[{"id":"cpu","label":"CPU","defaults":{"cpu":"2 cores"}}]' '[{"id":"cpu","label":"CPU","defaults":{"cpu":"0"}}]' \
+  '[{"id":"cpu","label":"CPU","defaults":{"memory":"16G"}}]' '[{"id":"cpu","label":"CPU","defaults":{"memory":16}}]'; do
+  refused "console.models.hardware=${bad}" --set-json "console.models.hardware=${bad}"
+done
+# A schema can't refuse a duplicate id; the template does.
+if out="$(helm template console "${CHART}" -n ai-grid \
+  --set-json 'console.models.hardware=[{"id":"cpu","label":"CPU"},{"id":"cpu","label":"CPU again"}]' 2>&1 >/dev/null)" ||
+  ! grep -q 'console.models.hardware: id "cpu" is used by more than one entry' <<<"${out}"; then
+  echo "check-chart: a duplicate console.models.hardware id must fail the render: ${out}" >&2
+  exit 1
+fi
+model_hardware() {
+  helm template console "${CHART}" -n ai-grid "$@" |
+    yq 'select(.kind == "Deployment") | .spec.template.spec.containers[] | select(.name == "bff")
+      | .env[] | select(.name == "MODEL_HARDWARE") | .value'
+}
+# The chart's default list is the BFF's own (config.DefaultModelHardware, which a local run without
+# MODEL_HARDWARE uses), as the BFF's golden GET /api/v1/config records it.
+got="$(model_hardware)"
+golden="$(yq -p=json -o=json -I=0 '.body.data.models.hardware | sort_keys(..)' "${ROOT}/mock/examples/get-config.json")"
+[[ -n "${got}" && "$(yq -p=json -o=json -I=0 'sort_keys(..)' <<<"${got}")" == "${golden}" ]] || {
+  echo "check-chart: the default console.models.hardware differs from the BFF's built-in list (mock/examples/get-config.json):" >&2
+  diff <(yq -p=json -P 'sort_keys(..)' <<<"${got:-null}") <(yq -p=json -P '.' <<<"${golden}") >&2 || true
+  exit 1
+}
+# A values file that empties console.models renders, without MODEL_HARDWARE.
+got="$(model_hardware --set console.models=null)"
+[[ -z "${got}" ]] || { echo "check-chart: console.models=null sets MODEL_HARDWARE to '${got}'" >&2; exit 1; }
+# An empty list renders no MODEL_HARDWARE: the BFF's own copy of the defaults applies.
+got="$(model_hardware --set-json 'console.models.hardware=[]')"
+[[ -z "${got}" ]] || { echo "check-chart: console.models.hardware=[] sets MODEL_HARDWARE to '${got}'" >&2; exit 1; }
+list='[{"id":"amd-gpu","label":"AMD GPU","description":"For clusters with AMD GPUs.","accelerator":"amd.com/gpu",
+  "image":"quay.io/example/vllm-rocm:1","env":{"VLLM_USE_TRITON_FLASH_ATTN":"0"},"defaults":{"accelerators":2,"cpu":"500m","memory":"32Gi"}},
+  {"id":"cpu","label":"CPU only","accelerator":""}]'
+got="$(model_hardware --set-json "console.models.hardware=${list}")"
+[[ "$(yq -p=json -o=json -I=0 'sort_keys(..)' <<<"${got}")" == "$(yq -p=json -o=json -I=0 'sort_keys(..)' <<<"${list}")" ]] || {
+  echo "check-chart: console.models.hardware renders MODEL_HARDWARE as '${got}'" >&2
+  exit 1
+}
+
 # One line per object, keys sorted, Helm's labels dropped, in a stable order.
 canonical() {
   yq -o=json -I=0 'select(. != null and .kind != "Namespace")

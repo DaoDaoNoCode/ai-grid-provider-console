@@ -138,7 +138,7 @@ export const App: React.FC<Props> = ({
   const sessionEnded = ended !== undefined;
   // Loaded once here and given to every page through the session context.
   const [user, userLoaded, userError, reloadUser] = useServiceData(() => service.getUser(), undefined, 0);
-  const [config, , configError] = useServiceData(() => service.getConfig(), undefined, 0);
+  const [config, , configError, reloadConfig] = useServiceData(() => service.getConfig(), undefined, 0);
   // Only the config says whether a login proxy runs: the fake backend has none. Without it (it
   // failed to load, for whatever reason) the console can't tell, so it doesn't redirect on its own
   // and offers both Try again and Reload.
@@ -167,8 +167,8 @@ export const App: React.FC<Props> = ({
       });
   }, [service, sessionEnded]);
   const session = useMemo(
-    () => ({ user, userLoaded, userError, config, configError, sessionEnded, checkSession }),
-    [user, userLoaded, userError, config, configError, sessionEnded, checkSession],
+    () => ({ user, userLoaded, userError, config, configError, reloadConfig, sessionEnded, checkSession }),
+    [user, userLoaded, userError, config, configError, reloadConfig, sessionEnded, checkSession],
   );
   const { pathname, search, hash } = useLocation();
   const signInAgain = signInAgainUrl(pathname + search + hash);

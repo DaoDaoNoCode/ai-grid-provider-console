@@ -18,6 +18,29 @@ export type ConsoleConfig = {
   fakeBackend: boolean;
   /** The Monitoring page's Perses relay at /perses/api. */
   monitoring: MonitoringConfig;
+  /** The Deploy model wizard's settings. */
+  models: ModelsConfig;
+};
+
+export type ModelsConfig = {
+  /** The wizard's Hardware choices, the first one selected; never empty (the BFF's MODEL_HARDWARE, or its built-in list). */
+  hardware: ModelHardware[];
+};
+
+/** One hardware choice (bff/internal/config/hardware.go, ModelHardware). */
+export type ModelHardware = {
+  /** A DNS label, unique in the list. */
+  id: string;
+  label: string;
+  description?: string;
+  /** The extended resource a model requests per accelerator, such as nvidia.com/gpu; none for CPU only. */
+  accelerator?: string;
+  /** The runtime image a new model gets; none for the cluster's default vLLM image, which is for NVIDIA GPUs. */
+  image?: string;
+  /** Environment variables for the model's main container. */
+  env?: Record<string, string>;
+  /** The resources the wizard starts from. */
+  defaults?: { accelerators?: number; cpu?: string; memory?: string };
 };
 
 export type MonitoringConfig = {

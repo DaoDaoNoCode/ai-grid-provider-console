@@ -23,3 +23,63 @@ Each image is `repository:tag`, `repository@digest`, or `repository:tag@digest` 
   values.yaml", before `helm package`).
 - **Proxy** (`images.authProxy`): `quay.io/opendatahub/odh-kube-auth-proxy:latest`; the kind test
   pins a digest.
+
+## Model hardware
+
+The Deploy model wizard offers a **Hardware** choice: each one fills in the model's CPU, memory and
+accelerators, sets its runtime image, and adds its environment variables. The provider admin
+defines the list in `console.models.hardware`. The chart passes it to the BFF as `MODEL_HARDWARE`
+(JSON), and the wizard reads it from `GET /api/v1/config`. The defaults live in `values.yaml`, which
+documents each field: **NVIDIA GPU** (selected first; no image, so the cluster's default vLLM image
+for NVIDIA GPUs runs) and **CPU only** (OpenShift AI 3.6's vLLM CPU image and settings). The BFF
+keeps a copy of the same two (`config.DefaultModelHardware`) for a local run without
+`MODEL_HARDWARE`, and for an empty list; `hack/check-chart.sh` fails when the two copies differ.
+
+A hub's list, in its GitOps repository, replaces the default one whole, and its first entry is the
+wizard's default. Repeat the default entries you keep. `values.schema.json` refuses an entry the
+BFF would refuse at start (an unknown or misspelled field, an id that isn't a DNS label, an
+accelerator that isn't a Kubernetes extended resource name, an image with spaces, a CPU or memory
+the wizard doesn't take, accelerators without an accelerator), and the template refuses an id used
+twice. Changing the list restarts the console's pod, since the BFF reads it at start; models already
+deployed keep what they were deployed with.
+
+In GitOps, keep the list with the console's other values in the GitOps repository: the values file,
+or `spec.source.helm.valuesObject`, of the Argo CD Application that installs this chart. For
+example, NVIDIA GPU first, then AMD GPU and CPU only:
+
+```yaml
+console:
+  models:
+    hardware:
+      - id: nvidia-gpu
+        label: NVIDIA GPU
+        description: For clusters with NVIDIA GPUs.
+        accelerator: nvidia.com/gpu
+        defaults: { accelerators: 1, cpu: "2", memory: 16Gi }
+      - id: amd-gpu
+        label: AMD GPU
+        description: For clusters with AMD Instinct GPUs.
+        accelerator: amd.com/gpu
+        # An image built for ROCm: without one, the cluster's default vLLM image, built for NVIDIA
+        # GPUs, would run.
+        image: registry.example.com/vllm/vllm-rocm@sha256:<digest>
+        defaults: { accelerators: 1, cpu: "4", memory: 32Gi }
+      - id: cpu
+        label: CPU only
+        description: For x86_64 clusters without GPUs.
+        image: registry.redhat.io/rhaii/vllm-cpu-rhel9@sha256:0ec0f5ff9a5ff263f58db0cfb19e3d7eef24b94c2d8629fe5145f5a8747e28c9
+        env: { VLLM_CPU_KVCACHE_SPACE: "4", OMP_NUM_THREADS: "4" }
+        defaults: { cpu: "4", memory: 8Gi }
+```
+
+The wizard sends no presets (`spec.base_refs`), whose names carry the OpenShift AI version and so
+exist only on clusters with that version. A model's own image and environment are applied over
+KServe's default preset, which is for NVIDIA GPUs. So the wizard lets a model leave the runtime
+image empty only on `nvidia.com/gpu`, where the cluster's default vLLM image runs; any other
+hardware needs an image, from its entry or typed in.
+
+This console needs a backend that accepts a model without a runtime image and without presets.
+With an older backend, deploying NVIDIA GPU with an empty image is refused with the backend's
+message: enter an image, or move the backend (`images.backend`) to a build that accepts it. Nothing in a model selects nodes by
+architecture: OpenShift AI's CPU preset also sets `kubernetes.io/arch: amd64`, which the backend's
+model API has no field for, so place a CPU model on x86_64 clusters only.

@@ -10,6 +10,7 @@ import type {
   GridCluster,
   GridOverview,
   GridRange,
+  ModelHardware,
   Organization,
   OrganizationInput,
   User,
@@ -31,6 +32,7 @@ export class MockConsoleService implements ConsoleService {
       version: 'mock',
       fakeBackend: false,
       monitoring: { enabled: false, persesProject: '' },
+      models: { hardware: builtInModelHardware() },
     },
   ) {}
 
@@ -206,6 +208,30 @@ export class MockConsoleService implements ConsoleService {
 const organizationChanged = (id: string, stored: string, carried: string) =>
   `object with identifier '${id}' has resource version ${stored}, the request carries "${carried}"; fetch it again and retry`;
 const organizationRenamed = 'The organization name cannot be changed.';
+
+/**
+ * The BFF's built-in hardware list (bff/internal/config/hardware.go, DefaultModelHardware), which
+ * GET /api/v1/config serves without MODEL_HARDWARE; models.test.tsx checks it against
+ * mock/examples/get-config.json.
+ */
+export const builtInModelHardware = (): ModelHardware[] => [
+  {
+    id: 'nvidia-gpu',
+    label: 'NVIDIA GPU',
+    description: 'For clusters with NVIDIA GPUs.',
+    accelerator: 'nvidia.com/gpu',
+    defaults: { accelerators: 1, cpu: '2', memory: '16Gi' },
+  },
+  {
+    id: 'cpu',
+    label: 'CPU only',
+    description: 'For x86_64 clusters without GPUs.',
+    image:
+      'registry.redhat.io/rhaii/vllm-cpu-rhel9@sha256:0ec0f5ff9a5ff263f58db0cfb19e3d7eef24b94c2d8629fe5145f5a8747e28c9',
+    env: { OMP_NUM_THREADS: '4', VLLM_CPU_KVCACHE_SPACE: '4' },
+    defaults: { cpu: '4', memory: '8Gi' },
+  },
+];
 
 // The PoC's Git-backend seed (shared/grid-clusters.mjs seedClusters at 62319b8),
 // the same clusters as mock/fixtures/managedclusters.json.

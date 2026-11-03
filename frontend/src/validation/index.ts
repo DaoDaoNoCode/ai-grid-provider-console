@@ -132,7 +132,8 @@ export const locationsSchema = z
   .array(locationSchema)
   .max(64)
   .refine((values) => new Set(values).size === values.length, 'Locations must be unique.');
-export const createModelSchema = z
+/** The Deploy model wizard's fields, each checked on its own; createModelSchema adds the image rule. */
+export const modelFieldsSchema = z
   .object({
     name: modelNameSchema,
     displayName: z.string().trim().min(1).max(253),
@@ -142,7 +143,8 @@ export const createModelSchema = z
       .trim()
       .max(2048)
       .regex(/^(hf|oci|s3|pvc):\/\/[^\s]+$/, 'Enter a model URI using hf, oci, s3 or pvc.'),
-    runtimeImage: z.string().trim().min(1).max(2048).regex(/^\S+$/, 'Enter a container image without spaces.'),
+    // Empty: the cluster's default vLLM image, which is for NVIDIA GPUs (requireImageWithoutNvidia).
+    runtimeImage: z.string().trim().max(2048).regex(/^\S*$/, 'Enter a container image without spaces.'),
     replicas: z.number().int().min(1).max(99),
     cpu: z
       .string()
@@ -151,12 +153,29 @@ export const createModelSchema = z
         'Enter positive CPU cores or millicores, for example 2 or 500m.',
       ),
     memory: z.string().regex(/^[1-9]\d*(?:Mi|Gi|Ti)$/, 'Enter memory such as 4Gi or 512Mi.'),
-    gpuCount: z.number().int().min(0).max(64),
+    // The hardware's extended resource, such as nvidia.com/gpu; none for CPU only.
+    accelerator: z.string().optional(),
+    // 0 for hardware without an accelerator; the wizard asks for at least 1 for one that has it.
+    acceleratorCount: z.number().int().min(0).max(64),
     runtimeArgs: z.array(z.string().max(4096)).max(64),
-    baseRefs: z.array(z.string().min(1, 'Enter a preset name.').max(253)).max(8),
-    locations: locationsSchema.refine((values) => values.length > 0, 'Select at least one location.'),
+    locations: locationsSchema.refine((values) => values.length > 0, 'Select at least one cluster.'),
   })
   .strict();
+
+/**
+ * An empty image runs the cluster's default vLLM image, which is for NVIDIA GPUs and never becomes
+ * ready on any other hardware, so only a model on nvidia.com/gpu may leave it empty.
+ */
+export const requireImageWithoutNvidia = (
+  value: { runtimeImage?: string; accelerator?: string },
+  ctx: z.RefinementCtx,
+) => {
+  if (typeof value.runtimeImage === 'string' && !value.runtimeImage.trim() && value.accelerator !== 'nvidia.com/gpu') {
+    ctx.addIssue({ code: 'custom', path: ['runtimeImage'], message: 'Required.' });
+  }
+};
+
+export const createModelSchema = modelFieldsSchema.superRefine(requireImageWithoutNvidia);
 
 /** One validator per schema name in mock/validation/cases.json. */
 export const validators = {

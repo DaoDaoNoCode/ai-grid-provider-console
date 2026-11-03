@@ -42,6 +42,7 @@ import { LOCATION_DOCS_URL } from '../clusters/site';
 import { GridFleetMap } from './GridFleetMap';
 import type { TileLayerConfig } from './tiles';
 import './grid-fleet.css';
+import { runtimeImageText } from '../models/modelHardware';
 
 /** What the map and its drawer show of a cluster (clusterView.ts). */
 export type FleetCluster = Pick<
@@ -330,7 +331,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
             { term: 'Model', value: model.modelName },
             { term: 'Replicas', value: model.replicas },
             { term: 'Model URI', value: model.modelUri },
-            { term: 'Runtime image', value: model.runtimeImage },
+            { term: 'Runtime image', value: runtimeImageText(model) },
           ]}
         />
       </DetailsSection>
