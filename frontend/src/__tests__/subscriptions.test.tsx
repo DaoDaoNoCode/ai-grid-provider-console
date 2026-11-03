@@ -555,11 +555,11 @@ it('requires an organization and shows it in the table', async () => {
   expect(create).toBeDisabled();
   // Tabbing past the empty select says why Create is disabled.
   const organization = screen.getByRole('combobox', { name: 'Organization' });
-  expect(screen.queryByText('Select an organization')).not.toBeInTheDocument();
+  expect(screen.queryByText('Select an organization.')).not.toBeInTheDocument();
   organization.focus();
   await user.tab();
   expect(organization).toHaveAttribute('aria-invalid', 'true');
-  expect(screen.getByText('Select an organization')).toBeVisible();
+  expect(screen.getByText('Select an organization.')).toBeVisible();
   await pickOrganization(user, 'globex-research');
   expect(organization).toHaveAttribute('aria-invalid', 'false');
   expect(screen.getByRole('combobox', { name: 'Organization' })).toHaveValue('globex-research');
@@ -890,7 +890,7 @@ it('says straight away that a subscription saved without an organization needs o
   renderAt('/subscriptions/edit/data-science', service);
   const organization = await screen.findByRole('combobox', { name: 'Organization' });
   expect(organization).toHaveAttribute('aria-invalid', 'true');
-  expect(screen.getByText('Select an organization')).toBeVisible();
+  expect(screen.getByText('Select an organization.')).toBeVisible();
 });
 
 it('keeps a set organization read-only when editing', async () => {

@@ -38,6 +38,7 @@ import {
 } from '../../../gen/ai_grid/v1/subscription_type_pb';
 import type { SubscriptionsGetResponse } from '../../../gen/ai_grid/v1/subscriptions_service_pb';
 import { useConfirmDiscard } from '../../../hooks/useConfirmDiscard';
+import { formatLocaleNumber } from '../../../utilities/format';
 import { getSectionUrl } from '../../../utilities/maasGovernanceNavigation';
 import { fieldErrorsOf } from '../../../validation';
 import type { SubscriptionModelEntry } from '../hooks/useSubscriptionModels';
@@ -70,7 +71,10 @@ type Props = {
 
 const MAX_PRIORITY = 1000000;
 const MIN_PRIORITY = -1000000;
+const PRIORITY_RANGE = `Enter a number from ${formatLocaleNumber(MIN_PRIORITY)} to ${formatLocaleNumber(MAX_PRIORITY)}.`;
 const SELECT_ORGANIZATION = 'Select an organization';
+/** The field error, a sentence; the placeholder above is a prompt and has no period. */
+const ORGANIZATION_REQUIRED = 'Select an organization.';
 /**
  * The longest subscription id the backend takes: 63 less the managed policy's "-policy" suffix
  * (maxSubscriptionIDLen, internal/servers/subscription_mapper.go).
@@ -81,8 +85,8 @@ const subscriptionFormSchema = z.object({
   priority: z
     .number({ error: 'Required.' })
     .int('Enter a whole number.')
-    .min(MIN_PRIORITY, `Enter a number from ${MIN_PRIORITY} to ${MAX_PRIORITY}.`)
-    .max(MAX_PRIORITY, `Enter a number from ${MIN_PRIORITY} to ${MAX_PRIORITY}.`),
+    .min(MIN_PRIORITY, PRIORITY_RANGE)
+    .max(MAX_PRIORITY, PRIORITY_RANGE),
   groups: z.array(z.string()).min(1, 'Add at least one group.'),
   models: z.array(z.unknown()).min(1, 'Add at least one model.'),
 });
@@ -335,7 +339,7 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ models: availableModel
   if (organizationsError) {
     organizationHelper = errorText(`Unable to load organizations: ${organizationsError.message}`);
   } else if (organizationTouched && organizationMissing) {
-    organizationHelper = errorText(SELECT_ORGANIZATION);
+    organizationHelper = errorText(ORGANIZATION_REQUIRED);
   }
 
   return (
