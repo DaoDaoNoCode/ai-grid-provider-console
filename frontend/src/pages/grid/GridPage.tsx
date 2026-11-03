@@ -148,7 +148,7 @@ export const GridPage: React.FC<Props> = ({ service, monitoring = false, map = n
       description={
         monitoring
           ? 'Cluster availability, gateway performance, and resource use across AI Grid.'
-          : 'View the locations of AI Grid clusters and the models they serve.'
+          : 'View AI Grid clusters on a map and the models they serve.'
       }
       headerAction={toolbar}
       loaded={loaded}

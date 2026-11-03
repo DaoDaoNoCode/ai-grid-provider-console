@@ -45,7 +45,7 @@ const nameDeployment = async (user: User, name: string) => {
 const chooseServer = async (user: User, label = 'vLLM on CPU') =>
   user.selectOptions(screen.getByRole('combobox', { name: 'Model server' }), label);
 
-/** Fills the source and deployment steps and moves on to Locations. */
+/** Fills the source and deployment steps and moves on to Clusters. */
 const fillModel = async (user: User) => {
   await user.click(await screen.findByRole('textbox', { name: /Model URI/ }));
   await user.paste('hf://org/widget');
@@ -57,10 +57,10 @@ const fillModel = async (user: User) => {
   await user.click(screen.getByRole('button', { name: 'Next' }));
 };
 
-/** Picks these locations on the Locations step, opens Review and, unless told not to, deploys. */
+/** Picks these clusters on the Clusters step, opens Review and, unless told not to, deploys. */
 const pickAndDeploy = async (user: User, names: string[], { submit = true } = {}) => {
-  await user.click(await screen.findByRole('combobox', { name: 'Locations' }));
-  for (const name of names) await user.click(screen.getByRole('option', { name }));
+  await user.click(await screen.findByRole('combobox', { name: 'Clusters' }));
+  for (const name of names) await user.click(screen.getByRole('option', { name: optionName(name) }));
   await user.keyboard('{Escape}');
   await user.click(screen.getByRole('button', { name: 'Next' }));
   const review = await screen.findByTestId('model-review');
@@ -68,10 +68,16 @@ const pickAndDeploy = async (user: User, names: string[], { submit = true } = {}
   return review;
 };
 
-/** The mock's clusters, as the wizard names them: the site, then the cluster. */
+/** The mock's clusters, as a model's page names them: the site, then the cluster. */
 const site1 = 'San Francisco (site1)';
 const site2 = 'New York (site2)';
 const site3 = 'Brussels (site3)';
+/** The same clusters as the Deploy wizard offers them: by cluster name. */
+const cluster1 = 'site1';
+const cluster2 = 'site2';
+const cluster3 = 'site3';
+/** A Clusters option by its cluster name: its accessible name goes on with the site and region. */
+const optionName = (cluster: string) => new RegExp(`^${cluster}( |$)`);
 
 /** A model "widget" the backend has, at version 1, on site1. */
 const widget = (service: MockConsoleService) => {
@@ -94,7 +100,7 @@ const widget = (service: MockConsoleService) => {
 
 const rowOf = async (id: string) => (await screen.findByTestId(`model-locations-${id}`)).closest('tr') as HTMLElement;
 
-it('walks the deployment wizard, selects locations and creates the model', async () => {
+it('walks the deployment wizard, selects clusters and creates the model', async () => {
   const service = new MockConsoleService();
   const models = modelsOf(service);
   const create = vi.spyOn(models, 'create');
@@ -108,8 +114,8 @@ it('walks the deployment wizard, selects locations and creates the model', async
     name: /Review/,
   });
   expect(reviewNav).toBeDisabled();
-  const review = await pickAndDeploy(user, [site1, site2], { submit: false });
-  expect(review).toHaveTextContent(`${site1}, ${site2}`);
+  const review = await pickAndDeploy(user, [cluster1, cluster2], { submit: false });
+  expect(review).toHaveTextContent(`${cluster1}, ${cluster2}`);
   // Empty optional fields are left out of the review, and the served name is the resource name.
   expect(review).not.toHaveTextContent('Additional runtime arguments');
   expect(review).toHaveTextContent('Model nameWidget');
@@ -170,7 +176,7 @@ it('leaves the deploy form out of history once the model is deployed, so Back sk
     </MemoryRouter>,
   );
   await fillModel(user);
-  await pickAndDeploy(user, [site1]);
+  await pickAndDeploy(user, [cluster1]);
   expect(await screen.findByText('Model deployed')).toBeVisible();
   await act(async () => navigate(-1));
   expect(await screen.findByRole('heading', { level: 1, name: 'Clusters' })).toBeVisible();
@@ -229,7 +235,7 @@ it('leaves Delete to the backend when the subscriptions fail to load, and keeps 
   expect(models.models.some((m) => m.id === 'widget')).toBe(true);
 });
 
-it('keeps the wizard usable after a location failure and retries', async () => {
+it('keeps the wizard usable after a cluster-list failure and retries', async () => {
   const service = new MockConsoleService();
   const models = modelsOf(service);
   const list = models.placementClusters;
@@ -245,47 +251,51 @@ it('keeps the wizard usable after a location failure and retries', async () => {
   expect(await screen.findByText('Location catalog unavailable.')).toBeVisible();
   expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
   await user.click(screen.getByRole('button', { name: 'Retry' }));
-  await pickAndDeploy(user, [site1], { submit: false });
+  await pickAndDeploy(user, [cluster1], { submit: false });
   expect(screen.getByText('hf://org/widget')).toBeVisible();
   expect(screen.getByRole('button', { name: 'Deploy' })).toBeEnabled();
 });
 
-it('loads the placement clusters again when the Locations step opens', async () => {
+it('loads the placement clusters again when the Clusters step opens', async () => {
   const service = new MockConsoleService();
   const models = modelsOf(service);
   const list = models.placementClusters;
-  // When the wizard opens only site1 is offered; by the Locations step all three are.
+  // When the wizard opens only site1 is offered; by the Clusters step all three are.
   let calls = 0;
   models.placementClusters = async () => (calls++ === 0 ? ['site1'] : list());
   const user = userEvent.setup();
   renderAt('/models/deploy', service);
   await fillModel(user);
-  await user.click(await screen.findByRole('combobox', { name: 'Locations' }));
-  await findVisible('option', site3);
-  expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual([site1, site2, site3]);
+  await user.click(await screen.findByRole('combobox', { name: 'Clusters' }));
+  await findVisible('option', optionName(cluster3));
+  expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual([
+    `${cluster1}San Francisco · us-west`,
+    `${cluster2}New York · us-east`,
+    `${cluster3}Brussels · europe-west`,
+  ]);
 });
 
-it('keeps a chosen location the reload no longer offers, and says to remove it', async () => {
+it('keeps a chosen cluster the reload no longer offers, and says to remove it', async () => {
   const service = new MockConsoleService();
   const models = modelsOf(service);
   const list = models.placementClusters;
-  // site2 drops out after the first visit to the Locations step.
+  // site2 drops out after the first visit to the Clusters step.
   let calls = 0;
   models.placementClusters = async () => (calls++ < 2 ? list() : ['site1', 'site3']);
   const user = userEvent.setup();
   renderAt('/models/deploy', service);
   await fillModel(user);
-  await pickAndDeploy(user, [site1, site2], { submit: false });
+  await pickAndDeploy(user, [cluster1, cluster2], { submit: false });
   await user.click(screen.getByRole('button', { name: 'Back' }));
-  expect(await screen.findByText(`${site2} is no longer available. Remove it to continue.`)).toBeVisible();
+  expect(await screen.findByText(`${cluster2} is no longer available. Remove it to continue.`)).toBeVisible();
   expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
-  await user.click(screen.getByRole('button', { name: `Remove ${site2}` }));
+  await user.click(screen.getByRole('button', { name: `Remove ${cluster2}` }));
   expect(screen.queryByText(/no longer available/)).not.toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'Next' }));
-  expect(within(await screen.findByTestId('model-review')).getByText(site1)).toBeVisible();
+  expect(within(await screen.findByTestId('model-review')).getByText(cluster1)).toBeVisible();
 });
 
-it('keeps Next disabled until the Locations reload answers', async () => {
+it('keeps Next disabled until the Clusters reload answers', async () => {
   const service = new MockConsoleService();
   const models = modelsOf(service);
   const list = models.placementClusters;
@@ -299,15 +309,15 @@ it('keeps Next disabled until the Locations reload answers', async () => {
   const user = userEvent.setup();
   renderAt('/models/deploy', service);
   await fillModel(user);
-  await user.click(await screen.findByRole('combobox', { name: 'Locations' }));
-  await user.click(screen.getByRole('option', { name: site1 }));
+  await user.click(await screen.findByRole('combobox', { name: 'Clusters' }));
+  await user.click(screen.getByRole('option', { name: optionName(cluster1) }));
   await user.keyboard('{Escape}');
   expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
   await act(async () => held.resolve());
   await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
 });
 
-it('keeps chosen locations visible when the reload offers none', async () => {
+it('keeps chosen clusters visible when the reload offers none', async () => {
   const service = new MockConsoleService();
   const models = modelsOf(service);
   const list = models.placementClusters;
@@ -316,15 +326,15 @@ it('keeps chosen locations visible when the reload offers none', async () => {
   const user = userEvent.setup();
   renderAt('/models/deploy', service);
   await fillModel(user);
-  await pickAndDeploy(user, [site1], { submit: false });
+  await pickAndDeploy(user, [cluster1], { submit: false });
   await user.click(screen.getByRole('button', { name: 'Back' }));
-  expect(await screen.findByText(`${site1} is no longer available. Remove it to continue.`)).toBeVisible();
-  expect(screen.getByRole('combobox', { name: 'Locations' })).toHaveAttribute('aria-invalid', 'true');
-  await user.click(screen.getByRole('button', { name: `Remove ${site1}` }));
-  expect(await screen.findByText('No locations available')).toBeVisible();
+  expect(await screen.findByText(`${cluster1} is no longer available. Remove it to continue.`)).toBeVisible();
+  expect(screen.getByRole('combobox', { name: 'Clusters' })).toHaveAttribute('aria-invalid', 'true');
+  await user.click(screen.getByRole('button', { name: `Remove ${cluster1}` }));
+  expect(await screen.findByText('No clusters available')).toBeVisible();
 });
 
-it('counts the AI Grid members the Locations step leaves out', async () => {
+it('counts the AI Grid members the Clusters step leaves out', async () => {
   const hint = /AI Grid clusters? (is|are) not listed/;
   const service = new MockConsoleService();
   const models = modelsOf(service);
@@ -332,12 +342,12 @@ it('counts the AI Grid members the Locations step leaves out', async () => {
   const user = userEvent.setup();
   renderAt('/models/deploy', service);
   await fillModel(user);
-  await screen.findByRole('combobox', { name: 'Locations' });
+  await screen.findByRole('combobox', { name: 'Clusters' });
   expect(await screen.findByText(hint)).toHaveTextContent('1 AI Grid cluster is not listed');
   models.placementClusters = async () => ['site1', 'site2', 'site3'];
   await user.click(screen.getByRole('button', { name: 'Back' }));
   await user.click(screen.getByRole('button', { name: 'Next' }));
-  await screen.findByRole('combobox', { name: 'Locations' });
+  await screen.findByRole('combobox', { name: 'Clusters' });
   await waitFor(() => expect(screen.queryByText(hint)).not.toBeInTheDocument());
 });
 
@@ -347,7 +357,7 @@ it("keeps input when saving fails, with the backend's message", async () => {
   const user = userEvent.setup();
   renderAt('/models/deploy', service);
   await fillModel(user);
-  await pickAndDeploy(user, [site3]);
+  await pickAndDeploy(user, [cluster3]);
   expect(await screen.findByText('Model "widget" already exists')).toBeVisible();
   expect(screen.getByText('Unable to deploy model')).toBeVisible();
   expect(screen.getByText('hf://org/widget')).toBeVisible();
@@ -500,17 +510,17 @@ it('says why the deployment step cannot continue when the CPU is invalid', async
   expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
 });
 
-it('shows the Locations error only after the user clears a selection', async () => {
+it('shows the Clusters error only after the user clears a selection', async () => {
   const user = userEvent.setup();
   renderAt('/models/deploy', new MockConsoleService());
   await fillModel(user);
-  const combobox = await screen.findByRole('combobox', { name: 'Locations' });
-  expect(screen.queryByText('Select at least one location.')).not.toBeInTheDocument();
+  const combobox = await screen.findByRole('combobox', { name: 'Clusters' });
+  expect(screen.queryByText('Select at least one cluster.')).not.toBeInTheDocument();
   await user.click(combobox);
-  await user.click(screen.getByRole('option', { name: site1 }));
-  await user.click(screen.getByRole('option', { name: site1 }));
+  await user.click(screen.getByRole('option', { name: optionName(cluster1) }));
+  await user.click(screen.getByRole('option', { name: optionName(cluster1) }));
   await user.keyboard('{Escape}');
-  expect(screen.getByText('Select at least one location.')).toBeVisible();
+  expect(screen.getByText('Select at least one cluster.')).toBeVisible();
   expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
 });
 
@@ -530,7 +540,7 @@ it('sends the URI trimmed and refuses other schemes', async () => {
   await user.paste('registry.example/runtime:test');
   await chooseServer(user);
   await user.click(screen.getByRole('button', { name: 'Next' }));
-  await pickAndDeploy(user, [site1]);
+  await pickAndDeploy(user, [cluster1]);
   await waitFor(() => expect(create).toHaveBeenCalled());
   expect(create.mock.calls[0][0].object?.spec?.model?.uri).toBe('hf://org/widget');
 });
@@ -807,7 +817,7 @@ it('takes only whole numbers in the number fields, so the shown and sent counts 
   fireEvent.change(replicas, { target: { value: '3' } });
   expect(replicas).toHaveValue(3);
   await user.click(screen.getByRole('button', { name: 'Next' }));
-  const review = await pickAndDeploy(user, [site1], { submit: false });
+  const review = await pickAndDeploy(user, [cluster1], { submit: false });
   expect(review).toHaveTextContent('Replicas3');
   await user.click(screen.getByRole('button', { name: 'Deploy' }));
   await waitFor(() => expect(create).toHaveBeenCalled());
@@ -845,7 +855,7 @@ describe('the model server', () => {
 
   const toReview = async (user: User, submit = true) => {
     await user.click(screen.getByRole('button', { name: 'Next' }));
-    return pickAndDeploy(user, [site1], { submit });
+    return pickAndDeploy(user, [cluster1], { submit });
   };
 
   it('has no default server: the step waits for a choice, then deploys on the CPU preset with no GPUs', async () => {
@@ -869,7 +879,7 @@ describe('the model server', () => {
     expect(spec?.main?.requests).not.toHaveProperty('nvidia.com/gpu');
   });
 
-  it('warns on Review when a chosen location doesn’t match the server’s hardware', async () => {
+  it('warns on Review when a chosen cluster doesn’t match the server’s hardware', async () => {
     const user = userEvent.setup();
     await openDeployment(user);
     await user.type(screen.getByRole('textbox', { name: /Runtime image/ }), 'registry.example/vllm-cpu:test');
@@ -877,6 +887,22 @@ describe('the model server', () => {
     // The mock's member clusters each report 16 GPUs.
     await toReview(user, false);
     expect(await screen.findByTestId('model-server-mismatch')).toHaveTextContent(/GPUs that vLLM on CPU doesn.t use/);
+  });
+
+  it('matches the server against the chosen clusters by name, not by location label', async () => {
+    const user = userEvent.setup();
+    const service = new MockConsoleService();
+    // site1 has no GPUs, so the CPU server suits it. site2 has GPUs and a location label that happens
+    // to equal site1's name; it isn't chosen, so it mustn't be warned about.
+    service.clusters = service.clusters.map((c) =>
+      c.name === cluster1 ? { ...c, gpuCapacity: 0 } : c.name === cluster2 ? { ...c, location: cluster1 } : c,
+    );
+    await openDeployment(user, service);
+    await user.type(screen.getByRole('textbox', { name: /Runtime image/ }), 'registry.example/vllm-cpu:test');
+    await chooseServer(user);
+    await toReview(user, false);
+    expect(await screen.findByTestId('model-review')).toBeVisible();
+    expect(screen.queryByTestId('model-server-mismatch')).not.toBeInTheDocument();
   });
 
   it('refuses a GPU server with no GPUs, and requests the GPUs, with no presets for KServe’s default', async () => {
@@ -928,7 +954,7 @@ describe('the model server', () => {
 });
 
 describe('editing a model deployment', () => {
-  const openStep = async (user: User, name: 'Source' | 'Deployment' | 'Locations' | 'Review') =>
+  const openStep = async (user: User, name: 'Source' | 'Deployment' | 'Clusters' | 'Review') =>
     user.click(within(await screen.findByRole('navigation', { name: 'Wizard steps' })).getByRole('button', { name }));
 
   it('reuses the deploy wizard: fixed fields read-only, every step open, and only the changed paths sent', async () => {
@@ -949,9 +975,9 @@ describe('editing a model deployment', () => {
     const replicas = screen.getByRole('spinbutton', { name: 'Replicas' });
     await user.clear(replicas);
     await user.paste('3');
-    await openStep(user, 'Locations');
-    await user.click(await screen.findByRole('combobox', { name: 'Locations' }));
-    await user.click(screen.getByRole('option', { name: site2 }));
+    await openStep(user, 'Clusters');
+    await user.click(await screen.findByRole('combobox', { name: 'Clusters' }));
+    await user.click(screen.getByRole('option', { name: optionName(cluster2) }));
     await user.keyboard('{Escape}');
     await openStep(user, 'Review');
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
@@ -1113,12 +1139,16 @@ describe('editing a model deployment', () => {
     const models = modelsOf(service);
     const granite = models.find('granite-3-8b');
     granite.spec!.placement!.clusterSets = ['global'];
+    // Its location labels differ from its clusters' names: the step shows the clusters.
+    granite.status!.placement!.locations = ['somewhere'];
     const update = vi.spyOn(models, 'update');
     const user = userEvent.setup();
     renderAt('/models/granite-3-8b/edit', service);
-    await openStep(user, 'Locations');
-    expect(await screen.findByRole('textbox', { name: 'Locations' })).toHaveAttribute('readonly');
-    expect(screen.getByText(/uses rules other than location/)).toBeVisible();
+    await openStep(user, 'Clusters');
+    const placed = await screen.findByRole('textbox', { name: 'Clusters' });
+    expect(placed).toHaveAttribute('readonly');
+    expect(placed).toHaveValue(granite.status!.placement!.selectedClusters.join(', '));
+    expect(screen.getByText(/selects clusters by more than their names/)).toBeVisible();
     await openStep(user, 'Deployment');
     const replicas = screen.getByRole('spinbutton', { name: 'Replicas' });
     await user.clear(replicas);
@@ -1177,7 +1207,7 @@ describe('editing a model deployment', () => {
     ).toBeVisible();
   });
 
-  it('saves an unrelated change while a kept location is not offered, or the locations fail to load', async () => {
+  it('saves an unrelated change while a kept cluster is not offered, or the clusters fail to load', async () => {
     const service = new MockConsoleService();
     const models = modelsOf(service);
     const update = vi.spyOn(models, 'update');
@@ -1188,7 +1218,7 @@ describe('editing a model deployment', () => {
     };
     const user = userEvent.setup();
     renderAt('/models/granite-3-8b/edit', service);
-    await openStep(user, 'Locations');
+    await openStep(user, 'Clusters');
     await openStep(user, 'Deployment');
     const description = await screen.findByRole('textbox', { name: 'Description' });
     await user.clear(description);
