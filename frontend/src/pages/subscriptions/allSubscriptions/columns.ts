@@ -7,7 +7,7 @@
 import type { ThProps } from '@patternfly/react-table';
 import type { Subscription } from '../../../gen/ai_grid/v1/subscription_type_pb';
 import { normalizePhase } from '../../../utilities/phaseLabelUtils';
-import { groupsOf, modelRefsOf } from '../subscriptionText';
+import { groupsOf, modelRefsOf, type OrganizationRef } from '../subscriptionText';
 import { displayNameOf } from '../../models/modelView';
 
 export type SubscriptionColumn = {
@@ -16,8 +16,8 @@ export type SubscriptionColumn = {
   sortable: (a: Subscription, b: Subscription) => number;
 };
 
-/** The list's columns; organizationName shows a subscription's organization. */
-export const subscriptionsColumns = (organizationName: (s: Subscription) => string): SubscriptionColumn[] => [
+/** The list's columns; organizationOf gives a subscription's organization, sorted by its name. */
+export const subscriptionsColumns = (organizationOf: (s: Subscription) => OrganizationRef): SubscriptionColumn[] => [
   {
     label: 'Subscription',
     sortable: (a, b) => displayNameOf(a).localeCompare(displayNameOf(b)),
@@ -25,7 +25,7 @@ export const subscriptionsColumns = (organizationName: (s: Subscription) => stri
   {
     label: 'Organization',
     width: 15,
-    sortable: (a, b) => organizationName(a).localeCompare(organizationName(b)),
+    sortable: (a, b) => organizationOf(a).name.localeCompare(organizationOf(b).name),
   },
   {
     label: 'Status',

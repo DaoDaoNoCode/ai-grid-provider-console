@@ -592,9 +592,45 @@ it('requires an organization and shows it in the table', async () => {
   expect(within(table).getByRole('columnheader', { name: /Organization/ })).toBeVisible();
   expect(await rowOf('Test team')).toHaveTextContent('globex-research');
   expect(await rowOf('Engineering')).toHaveTextContent('acme-robotics');
-  // An organization the backend doesn't list shows its raw id.
-  expect(await rowOf('Data science')).toHaveTextContent('retired-org');
+  // An organization the backend doesn't list is marked missing, with its id and what to do in the tooltip.
+  const retired = within(await rowOf('Data science')).getByTestId('subscription-organization-missing');
+  expect(retired).toHaveTextContent(/^Organization not found$/);
+  await user.hover(retired);
+  expect(await screen.findByRole('tooltip')).toHaveTextContent(
+    'No organization has the ID retired-org. It was deleted, or created again with a new ID. The organization of a subscription can’t be changed, so delete this subscription and create it again for the organization.',
+  );
   expect(stored(service, 'test-team').spec?.organization?.id).toBe('8d2e7b31-0c4f-4a9d-b5e6-7f8a9b0c1d2e');
+});
+
+it('shows a missing organization on the subscription page and the edit form, not before the organizations load', async () => {
+  const service = seeded();
+  stored(service, 'data-science').spec!.organization = {
+    $typeName: 'ai_grid.v1.SubscriptionOrganization',
+    id: 'retired-org',
+  };
+  const { unmount } = renderAt('/subscriptions/view/data-science', service);
+  expect(await screen.findByTestId('subscription-organization-missing')).toHaveTextContent(/^Organization not found$/);
+  unmount();
+
+  renderAt('/subscriptions/edit/data-science', service);
+  const organization = await screen.findByTestId('subscription-organization');
+  expect(organization).toHaveAttribute('readonly');
+  expect(organization).toHaveValue('retired-org');
+  expect(
+    await screen.findByText(
+      'Organization not found. No organization has the ID retired-org. It was deleted, or created again with a new ID. The organization of a subscription can’t be changed, so delete this subscription and create it again for the organization.',
+    ),
+  ).toBeVisible();
+});
+
+it('shows an organization id, not a missing one, when the organizations fail to load', async () => {
+  const service = seeded();
+  service.listOrganizations = () => Promise.reject(new ServiceError(503, 'keycloak is unreachable'));
+  renderAt('/subscriptions', service);
+  const table = await screen.findByTestId('subscriptions-table');
+  const row = (await within(table).findByRole('link', { name: 'Engineering' })).closest('tr')!;
+  await waitFor(() => expect(within(row).getByTestId('subscription-organization')).toHaveTextContent(ACME_ID));
+  expect(screen.queryByTestId('subscription-organization-missing')).not.toBeInTheDocument();
 });
 
 it('hides write actions until it knows the user is a provider admin', async () => {

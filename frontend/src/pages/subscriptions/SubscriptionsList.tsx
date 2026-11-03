@@ -19,15 +19,7 @@ import type { ModelsState } from './allSubscriptions/ExpandedModelsPanel';
 import { SubscriptionsTable } from './allSubscriptions/SubscriptionsTable';
 import { SubscriptionsToolbar } from './allSubscriptions/SubscriptionsToolbar';
 import { useDeleteSubscription } from './hooks/useDeleteSubscription';
-import {
-  descriptionOf,
-  groupsOf,
-  modelForRef,
-  modelIdsOf,
-  modelRefsOf,
-  organizationIdOf,
-  tenantNameOf,
-} from './subscriptionText';
+import { descriptionOf, groupsOf, modelForRef, modelIdsOf, modelRefsOf, organizationRefOf } from './subscriptionText';
 import { displayNameOf } from '../models/modelView';
 import { useModelsByIds, useSubscriptionList, useTenantList } from './useSubscriptions';
 
@@ -36,7 +28,7 @@ export const SubscriptionsList: React.FC = () => {
   // Only the models the listed subscriptions name (Models/List filtered by their ids), not the fleet.
   const modelIds = useMemo(() => modelIdsOf(subscriptions), [subscriptions]);
   const { data: models, loaded: modelsLoaded, error: modelsError, refresh: refreshModels } = useModelsByIds(modelIds);
-  const { data: organizations } = useTenantList();
+  const { data: organizations, loaded: organizationsLoaded, error: organizationsError } = useTenantList();
   const { user } = useConsoleSession();
   /** UI hint only; the backend enforces authorization. */
   const canWrite = !!user?.isProviderAdmin;
@@ -58,13 +50,9 @@ export const SubscriptionsList: React.FC = () => {
   );
   const onClearFilters = useCallback(() => setFilterData(initialSubscriptionsFilterData), []);
 
-  const organizationName = useCallback(
-    (s: Subscription) => {
-      const id = organizationIdOf(s);
-      const organization = organizations.find((o) => o.id === id);
-      return organization ? tenantNameOf(organization) : id;
-    },
-    [organizations],
+  const organizationOf = useCallback(
+    (s: Subscription) => organizationRefOf(s, organizations, organizationsLoaded && !organizationsError),
+    [organizations, organizationsLoaded, organizationsError],
   );
 
   // The models fill in the models' clusters and let the model filter match their display name and
@@ -136,7 +124,7 @@ export const SubscriptionsList: React.FC = () => {
         <StackItem>
           <SubscriptionsTable
             subscriptions={filteredSubscriptions}
-            organizationName={organizationName}
+            organizationOf={organizationOf}
             models={models}
             modelsState={modelsState}
             onClearFilters={onClearFilters}

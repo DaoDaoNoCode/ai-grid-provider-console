@@ -13,12 +13,13 @@ import { PaginatedTable } from '../../../components/PaginatedTable';
 import { TableEmptyRow } from '../../../components/TableEmptyRow';
 import { subscriptionsColumns } from './columns';
 import type { ModelsState } from './ExpandedModelsPanel';
+import type { OrganizationRef } from '../subscriptionText';
 import { SubscriptionTableRow } from './SubscriptionTableRow';
 
 type Props = {
   subscriptions: Subscription[];
-  /** A subscription's organization name, or its id when the organization is unknown. */
-  organizationName: (subscription: Subscription) => string;
+  /** A subscription's organization: its name, its id while unknown, or missing (organizationRefOf). */
+  organizationOf: (subscription: Subscription) => OrganizationRef;
   /** The models, for the rows' models expansion, and whether they have loaded. */
   models: ModelView[];
   modelsState: ModelsState;
@@ -30,7 +31,7 @@ type Props = {
 
 export const SubscriptionsTable: React.FC<Props> = ({
   subscriptions,
-  organizationName,
+  organizationOf,
   models,
   modelsState,
   toolbarContent,
@@ -39,7 +40,7 @@ export const SubscriptionsTable: React.FC<Props> = ({
   onDelete,
 }) => {
   const [sortBy, setSortBy] = useState<{ index: number; direction: 'asc' | 'desc' }>({ index: 0, direction: 'asc' });
-  const columns = useMemo(() => subscriptionsColumns(organizationName), [organizationName]);
+  const columns = useMemo(() => subscriptionsColumns(organizationOf), [organizationOf]);
   const sorted = useMemo(() => {
     const compare = columns[sortBy.index].sortable;
     return [...subscriptions].sort((a, b) => compare(a, b) * (sortBy.direction === 'asc' ? 1 : -1));
@@ -75,7 +76,7 @@ export const SubscriptionsTable: React.FC<Props> = ({
                   key={subscription.id}
                   subscription={subscription}
                   columns={columns}
-                  organization={organizationName(subscription)}
+                  organization={organizationOf(subscription)}
                   models={models}
                   modelsState={modelsState}
                   canWrite={canWrite}

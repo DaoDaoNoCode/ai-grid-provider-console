@@ -40,6 +40,30 @@ export const organizationIdOf = (subscription: Subscription): string => subscrip
 /** The organization's name (metadata.name), else its id. */
 export const tenantNameOf = (tenant: Tenant): string => tenant.metadata?.name || tenant.id;
 
+/**
+ * A subscription's organization as the pages show it: its name, or its id while the organizations
+ * haven't loaded. `missing` once they have loaded without error and none has its id: the
+ * organization was deleted, or created again under a new id, as Keycloak does to the organizations
+ * made in the console when it rebuilds its realm on start.
+ */
+export type OrganizationRef = { id: string; name: string; missing: boolean };
+
+export const organizationRefOf = (
+  subscription: Subscription,
+  organizations: Tenant[],
+  organizationsKnown: boolean,
+): OrganizationRef => {
+  const id = organizationIdOf(subscription);
+  const tenant = organizations.find((o) => o.id === id);
+  return { id, name: tenant ? tenantNameOf(tenant) : id, missing: organizationsKnown && id !== '' && !tenant };
+};
+
+export const MISSING_ORGANIZATION = 'Organization not found';
+
+/** What a missing organization means, and what to do: the backend refuses a changed organization. */
+export const missingOrganizationReason = (id: string): string =>
+  `No organization has the ID ${id}. It was deleted, or created again with a new ID. The organization of a subscription can’t be changed, so delete this subscription and create it again for the organization.`;
+
 /** The subscription's owner groups, as the backend answers them: bare group names. */
 export const groupsOf = (subscription: Subscription): string[] => subscription.spec?.owner?.groups ?? [];
 

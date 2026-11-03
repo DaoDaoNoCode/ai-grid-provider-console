@@ -53,6 +53,8 @@ import {
   registrationStatusOf,
   tenantNameOf,
   toTokenLimits,
+  MISSING_ORGANIZATION,
+  missingOrganizationReason,
 } from '../subscriptionText';
 import { DESCRIPTION, DISPLAY_NAME, displayNameOf, type ModelView } from '../../models/modelView';
 import { useSubscriptionWrites, useTenantList } from '../useSubscriptions';
@@ -125,7 +127,7 @@ const errorText = (message: string) => (
 
 export const CreateSubscriptionForm: React.FC<Props> = ({ models: availableModels, subscriptionInfo, returnTo }) => {
   const navigate = useNavigate();
-  const { data: organizations, error: organizationsError } = useTenantList();
+  const { data: organizations, loaded: organizationsLoaded, error: organizationsError } = useTenantList();
   const { createSubscription, updateSubscription } = useSubscriptionWrites();
   const isEditing = !!subscriptionInfo?.object;
   const subscription = subscriptionInfo?.object;
@@ -336,8 +338,25 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ models: availableModel
       </HelperText>
     </FormHelperText>
   );
+  // A set organization that no longer exists can't be changed here (the backend refuses a changed
+  // one), so the form says so and what to do instead.
+  const savedOrganizationGone =
+    organizationLocked &&
+    organizationsLoaded &&
+    !organizationsError &&
+    !organizations.some((o) => o.id === organizationId);
   if (organizationsError) {
     organizationHelper = errorText(`Unable to load organizations: ${organizationsError.message}`);
+  } else if (savedOrganizationGone) {
+    organizationHelper = (
+      <FormHelperText>
+        <HelperText>
+          <HelperTextItem variant="warning" data-testid="subscription-organization-missing">
+            {`${MISSING_ORGANIZATION}. ${missingOrganizationReason(organizationId)}`}
+          </HelperTextItem>
+        </HelperText>
+      </FormHelperText>
+    );
   } else if (organizationTouched && organizationMissing) {
     organizationHelper = errorText(ORGANIZATION_REQUIRED);
   }
