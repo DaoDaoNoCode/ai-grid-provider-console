@@ -15,6 +15,7 @@ import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 import { Code, ConnectError } from '@connectrpc/connect';
 import { focusManager } from '@tanstack/react-query';
 import { ServiceError } from '../api/ConsoleService';
+import type { Organization } from '../api/types';
 import { MockConsoleService } from '../api/MockConsoleService';
 import { ConditionStatus } from '../gen/ai_grid/v1/condition_type_pb';
 import { SubscriptionSchema, type Subscription } from '../gen/ai_grid/v1/subscription_type_pb';
@@ -602,25 +603,105 @@ it('requires an organization and shows it in the table', async () => {
   expect(stored(service, 'test-team').spec?.organization?.id).toBe('8d2e7b31-0c4f-4a9d-b5e6-7f8a9b0c1d2e');
 });
 
-it('shows a missing organization on the subscription page and the edit form, not before the organizations load', async () => {
+/** Sets a stored subscription's organization id. */
+const setOrganization = (service: MockConsoleService, id: string, organizationId: string) => {
+  stored(service, id).spec!.organization = { $typeName: 'ai_grid.v1.SubscriptionOrganization', id: organizationId };
+};
+
+/** Answers the next Tenants/List calls with a promise the test settles. */
+const deferOrganizations = (service: MockConsoleService) => {
+  const answer = deferred<Organization[]>();
+  const listOrganizations = vi.fn(() => answer.promise);
+  service.listOrganizations = listOrganizations;
+  return { ...answer, listOrganizations };
+};
+
+it('shows a missing organization on the subscription page and the edit form only once the organizations load', async () => {
   const service = seeded();
-  stored(service, 'data-science').spec!.organization = {
-    $typeName: 'ai_grid.v1.SubscriptionOrganization',
-    id: 'retired-org',
-  };
+  setOrganization(service, 'data-science', 'retired-org');
+  const organizations = service.organizations;
+  const view = deferOrganizations(service);
   const { unmount } = renderAt('/subscriptions/view/data-science', service);
+  // While the organizations load, the id stands in for the name.
+  await waitFor(() => expect(screen.getByTestId('subscription-organization')).toHaveTextContent('retired-org'));
+  expect(view.listOrganizations).toHaveBeenCalled();
+  expect(screen.queryByTestId('subscription-organization-missing')).not.toBeInTheDocument();
+  await act(async () => view.resolve(organizations));
   expect(await screen.findByTestId('subscription-organization-missing')).toHaveTextContent(/^Organization not found$/);
   unmount();
 
+  const edit = deferOrganizations(service);
   renderAt('/subscriptions/edit/data-science', service);
   const organization = await screen.findByTestId('subscription-organization');
   expect(organization).toHaveAttribute('readonly');
   expect(organization).toHaveValue('retired-org');
+  expect(edit.listOrganizations).toHaveBeenCalled();
+  expect(screen.queryByTestId('subscription-organization-missing')).not.toBeInTheDocument();
+  await act(async () => edit.resolve(organizations));
   expect(
     await screen.findByText(
       'Organization not found. No organization has the ID retired-org. It was deleted, or created again with a new ID. The organization of a subscription can’t be changed, so delete this subscription and create it again for the organization.',
     ),
   ).toBeVisible();
+  expect(organization).toHaveValue('retired-org');
+});
+
+describe('organizations the console loaded before the subscription', () => {
+  const NEW_ID = '0b6f2c4e-9d1a-4e7b-8f3c-5a2d1e0f9b8c';
+
+  /** What the page shows for data-science's organization. */
+  const shownOrganization = (path: string) => {
+    if (path.startsWith('/subscriptions/edit/')) {
+      return (screen.getByTestId('subscription-organization') as HTMLInputElement).value;
+    }
+    const scope =
+      path === '/subscriptions' ? screen.getByRole('link', { name: 'Data science' }).closest('tr')! : document.body;
+    return within(scope).getByTestId('subscription-organization').textContent;
+  };
+
+  it.each([
+    ['/subscriptions', 'created since', true],
+    ['/subscriptions', 'deleted', false],
+    ['/subscriptions/view/data-science', 'created since', true],
+    ['/subscriptions/view/data-science', 'deleted', false],
+    ['/subscriptions/edit/data-science', 'created since', true],
+    ['/subscriptions/edit/data-science', 'deleted', false],
+  ])('on %s, waits for a fresh list before calling an organization missing (%s)', async (path, _, listed) => {
+    let navigate: NavigateFunction = () => undefined;
+    const Navigator = () => {
+      navigate = useNavigate();
+      return null;
+    };
+    const service = seeded();
+    render(
+      <MemoryRouter initialEntries={['/subscriptions/view/engineering']}>
+        <Navigator />
+        <TestApp service={service} />
+      </MemoryRouter>,
+    );
+    // The organizations are loaded, and cached, before the new one exists.
+    await waitFor(() => expect(screen.getByTestId('subscription-organization')).toHaveTextContent('acme-robotics'));
+    service.organizations.push({ ...service.organizations[2], id: NEW_ID, name: 'new-team' });
+    setOrganization(service, 'data-science', NEW_ID);
+    const fresh = deferOrganizations(service);
+
+    await act(async () => navigate(path));
+    // The cached list doesn't have it, and the fresh one hasn't arrived: the id, not a warning.
+    await waitFor(() => expect(shownOrganization(path)).toBe(NEW_ID));
+    expect(fresh.listOrganizations).toHaveBeenCalled();
+    expect(screen.queryByTestId('subscription-organization-missing')).not.toBeInTheDocument();
+
+    const organizations = service.organizations.filter((o) => listed || o.id !== NEW_ID);
+    await act(async () => fresh.resolve(organizations));
+    if (listed) {
+      await waitFor(() => expect(shownOrganization(path)).toBe('new-team'));
+      expect(screen.queryByTestId('subscription-organization-missing')).not.toBeInTheDocument();
+    } else {
+      expect(await screen.findByTestId('subscription-organization-missing')).toHaveTextContent(
+        /Organization not found/,
+      );
+    }
+  });
 });
 
 it('shows an organization id, not a missing one, when the organizations fail to load', async () => {

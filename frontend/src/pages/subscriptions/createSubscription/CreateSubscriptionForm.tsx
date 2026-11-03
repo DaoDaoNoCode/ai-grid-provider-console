@@ -127,7 +127,7 @@ const errorText = (message: string) => (
 
 export const CreateSubscriptionForm: React.FC<Props> = ({ models: availableModels, subscriptionInfo, returnTo }) => {
   const navigate = useNavigate();
-  const { data: organizations, loaded: organizationsLoaded, error: organizationsError } = useTenantList();
+  const { data: organizations, fresh: organizationsFresh, error: organizationsError } = useTenantList();
   const { createSubscription, updateSubscription } = useSubscriptionWrites();
   const isEditing = !!subscriptionInfo?.object;
   const subscription = subscriptionInfo?.object;
@@ -339,10 +339,11 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ models: availableModel
     </FormHelperText>
   );
   // A set organization that no longer exists can't be changed here (the backend refuses a changed
-  // one), so the form says so and what to do instead.
+  // one), so the form says so and what to do instead, once the organizations are known
+  // (organizationRefOf says when).
   const savedOrganizationGone =
     organizationLocked &&
-    organizationsLoaded &&
+    organizationsFresh &&
     !organizationsError &&
     !organizations.some((o) => o.id === organizationId);
   if (organizationsError) {

@@ -72,7 +72,7 @@ export const ViewSubscriptionPage: React.FC = () => {
   const { id = '' } = useParams<{ id: string }>();
   const location = useLocation();
   const { data: info, loaded, error, refresh } = useSubscription(id);
-  const { data: organizations, loaded: organizationsLoaded, error: organizationsError } = useTenantList();
+  const { data: organizations, fresh: organizationsFresh, error: organizationsError } = useTenantList();
   const { user } = useConsoleSession();
   const canWrite = !!user?.isProviderAdmin;
   const subscription = info?.object;
@@ -80,7 +80,7 @@ export const ViewSubscriptionPage: React.FC = () => {
   const backUrl = getBackUrl(location.state, 'subscriptions');
   const ready = readyConditionOf(subscription?.status?.conditions);
   const organization = subscription
-    ? organizationRefOf(subscription, organizations, organizationsLoaded && !organizationsError)
+    ? organizationRefOf(subscription, organizations, organizationsFresh && !organizationsError)
     : undefined;
 
   return (

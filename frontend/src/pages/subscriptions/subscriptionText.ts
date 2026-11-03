@@ -42,9 +42,11 @@ export const tenantNameOf = (tenant: Tenant): string => tenant.metadata?.name ||
 
 /**
  * A subscription's organization as the pages show it: its name, or its id while the organizations
- * haven't loaded. `missing` once they have loaded without error and none has its id: the
- * organization was deleted, or created again under a new id, as Keycloak does to the organizations
- * made in the console when it rebuilds its realm on start.
+ * aren't known. They are known once listed without an error since the page mounted (Loaded's
+ * `fresh`): a list the cache kept from an earlier page may predate an organization created since.
+ * `missing` once they are known and none has its id: the organization was deleted, or created
+ * again under a new id, as Keycloak does to the organizations made in the console when it rebuilds
+ * its realm on start.
  */
 export type OrganizationRef = { id: string; name: string; missing: boolean };
 
