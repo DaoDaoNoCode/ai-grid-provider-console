@@ -62,6 +62,10 @@ export const organizationRefOf = (
 
 export const MISSING_ORGANIZATION = 'Organization not found';
 
+/** What the pages show for the organization (OrganizationName), as the list sorts it. */
+export const organizationLabelOf = (organization: OrganizationRef): string =>
+  organization.missing ? MISSING_ORGANIZATION : organization.name;
+
 /** What a missing organization means, and what to do: the backend refuses a changed organization. */
 export const missingOrganizationReason = (id: string): string =>
   `No organization has the ID ${id}. It was deleted, or created again with a new ID. The organization of a subscription can’t be changed, so delete this subscription and create it again for the organization.`;

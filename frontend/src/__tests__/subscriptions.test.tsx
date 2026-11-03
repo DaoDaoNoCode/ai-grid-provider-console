@@ -704,6 +704,37 @@ describe('organizations the console loaded before the subscription', () => {
   });
 });
 
+/** The fixture organization globex-research (MockConsoleService's seedOrganizations). */
+const GLOBEX_ID = '8d2e7b31-0c4f-4a9d-b5e6-7f8a9b0c1d2e';
+
+it('sorts the organization column by what it shows, a missing organization as Organization not found', async () => {
+  const service = seeded();
+  const globex = engineering();
+  globex.id = 'globex';
+  globex.metadata!.name = 'globex';
+  globex.metadata!.annotations[DISPLAY_NAME] = 'Globex';
+  globex.spec!.organization = { $typeName: 'ai_grid.v1.SubscriptionOrganization', id: GLOBEX_ID };
+  subscriptionsOf(service).subscriptions.push(globex);
+  // Their ids sort before and after the names shown: the label decides, the id breaks the tie.
+  setOrganization(service, 'data-science', 'zzz-retired');
+  setOrganization(service, 'research', 'aaa-retired');
+  const user = userEvent.setup();
+  renderAt('/subscriptions', service);
+  const table = await screen.findByTestId('subscriptions-table');
+  await waitFor(() => expect(within(table).getAllByTestId('subscription-organization-missing')).toHaveLength(2));
+  const names = () =>
+    within(table)
+      .getAllByRole('link')
+      .map((link) => link.textContent);
+  const sortButton = within(within(table).getByRole('columnheader', { name: /^Organization/ })).getByRole('button', {
+    name: 'Organization',
+  });
+  await user.click(sortButton);
+  expect(names()).toEqual(['Engineering', 'Globex', 'Research', 'Data science']);
+  await user.click(sortButton);
+  expect(names()).toEqual(['Data science', 'Research', 'Globex', 'Engineering']);
+});
+
 it('shows an organization id, not a missing one, when the organizations fail to load', async () => {
   const service = seeded();
   service.listOrganizations = () => Promise.reject(new ServiceError(503, 'keycloak is unreachable'));
