@@ -27,7 +27,7 @@ import {
   toTokenLimits,
 } from './subscriptionText';
 import { displayNameOf } from '../models/modelView';
-import { useSubscription, useTenantList } from './useSubscriptions';
+import { useOrganizations, useSubscription } from './useSubscriptions';
 import { OrganizationName } from './OrganizationName';
 import { SubscriptionDetailsSection } from './viewSubscription/SubscriptionDetailsSection';
 import { SubscriptionGroupsSection } from './viewSubscription/SubscriptionGroupsSection';
@@ -72,16 +72,14 @@ export const ViewSubscriptionPage: React.FC = () => {
   const { id = '' } = useParams<{ id: string }>();
   const location = useLocation();
   const { data: info, loaded, error, refresh } = useSubscription(id);
-  const { data: organizations, fresh: organizationsFresh, error: organizationsError } = useTenantList();
+  const { data: organizations, known: organizationsKnown } = useOrganizations();
   const { user } = useConsoleSession();
   const canWrite = !!user?.isProviderAdmin;
   const subscription = info?.object;
   const title = subscription ? displayNameOf(subscription) : id;
   const backUrl = getBackUrl(location.state, 'subscriptions');
   const ready = readyConditionOf(subscription?.status?.conditions);
-  const organization = subscription
-    ? organizationRefOf(subscription, organizations, organizationsFresh && !organizationsError)
-    : undefined;
+  const organization = subscription ? organizationRefOf(subscription, organizations, organizationsKnown) : undefined;
 
   return (
     <PageStateSection

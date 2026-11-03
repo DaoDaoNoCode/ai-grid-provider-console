@@ -21,14 +21,14 @@ import { SubscriptionsToolbar } from './allSubscriptions/SubscriptionsToolbar';
 import { useDeleteSubscription } from './hooks/useDeleteSubscription';
 import { descriptionOf, groupsOf, modelForRef, modelIdsOf, modelRefsOf, organizationRefOf } from './subscriptionText';
 import { displayNameOf } from '../models/modelView';
-import { useModelsByIds, useSubscriptionList, useTenantList } from './useSubscriptions';
+import { useModelsByIds, useOrganizations, useSubscriptionList } from './useSubscriptions';
 
 export const SubscriptionsList: React.FC = () => {
   const { data: subscriptions, loaded, error, refresh: refreshSubscriptions } = useSubscriptionList();
   // Only the models the listed subscriptions name (Models/List filtered by their ids), not the fleet.
   const modelIds = useMemo(() => modelIdsOf(subscriptions), [subscriptions]);
   const { data: models, loaded: modelsLoaded, error: modelsError, refresh: refreshModels } = useModelsByIds(modelIds);
-  const { data: organizations, fresh: organizationsFresh, error: organizationsError } = useTenantList();
+  const { data: organizations, known: organizationsKnown } = useOrganizations();
   const { user } = useConsoleSession();
   /** UI hint only; the backend enforces authorization. */
   const canWrite = !!user?.isProviderAdmin;
@@ -51,8 +51,8 @@ export const SubscriptionsList: React.FC = () => {
   const onClearFilters = useCallback(() => setFilterData(initialSubscriptionsFilterData), []);
 
   const organizationOf = useCallback(
-    (s: Subscription) => organizationRefOf(s, organizations, organizationsFresh && !organizationsError),
-    [organizations, organizationsFresh, organizationsError],
+    (s: Subscription) => organizationRefOf(s, organizations, organizationsKnown),
+    [organizations, organizationsKnown],
   );
 
   // The models fill in the models' clusters and let the model filter match their display name and

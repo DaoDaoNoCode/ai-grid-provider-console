@@ -41,23 +41,27 @@ export const organizationIdOf = (subscription: Subscription): string => subscrip
 export const tenantNameOf = (tenant: Tenant): string => tenant.metadata?.name || tenant.id;
 
 /**
+ * Whether no organization has the id, decided only from a known list (useOrganizations' `known`):
+ * the organization was deleted, or created again under a new id, as Keycloak does to the
+ * organizations made in the console when it rebuilds its realm on start.
+ */
+export const isOrganizationMissing = (id: string, organizations: Tenant[], known: boolean): boolean =>
+  known && id !== '' && !organizations.some((o) => o.id === id);
+
+/**
  * A subscription's organization as the pages show it: its name, or its id while the organizations
- * aren't known. They are known once listed without an error since the page mounted (Loaded's
- * `fresh`): a list the cache kept from an earlier page may predate an organization created since.
- * `missing` once they are known and none has its id: the organization was deleted, or created
- * again under a new id, as Keycloak does to the organizations made in the console when it rebuilds
- * its realm on start.
+ * aren't known, and whether it is missing (isOrganizationMissing).
  */
 export type OrganizationRef = { id: string; name: string; missing: boolean };
 
 export const organizationRefOf = (
   subscription: Subscription,
   organizations: Tenant[],
-  organizationsKnown: boolean,
+  known: boolean,
 ): OrganizationRef => {
   const id = organizationIdOf(subscription);
   const tenant = organizations.find((o) => o.id === id);
-  return { id, name: tenant ? tenantNameOf(tenant) : id, missing: organizationsKnown && id !== '' && !tenant };
+  return { id, name: tenant ? tenantNameOf(tenant) : id, missing: isOrganizationMissing(id, organizations, known) };
 };
 
 export const MISSING_ORGANIZATION = 'Organization not found';
