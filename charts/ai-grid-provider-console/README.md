@@ -74,6 +74,12 @@ console:
 
 The wizard sends no presets (`spec.base_refs`), whose names carry the OpenShift AI version and so
 exist only on clusters with that version. A model's own image and environment are applied over
-KServe's default preset, which is for NVIDIA GPUs. Nothing in a model selects nodes by
+KServe's default preset, which is for NVIDIA GPUs. So the wizard lets a model leave the runtime
+image empty only on `nvidia.com/gpu`, where the cluster's default vLLM image runs; any other
+hardware needs an image, from its entry or typed in.
+
+This console needs a backend that accepts a model without a runtime image and without presets.
+With an older backend, deploying NVIDIA GPU with an empty image is refused with the backend's
+message: enter an image, or move the backend (`images.backend`) to a build that accepts it. Nothing in a model selects nodes by
 architecture: OpenShift AI's CPU preset also sets `kubernetes.io/arch: amd64`, which the backend's
 model API has no field for, so place a CPU model on x86_64 clusters only.

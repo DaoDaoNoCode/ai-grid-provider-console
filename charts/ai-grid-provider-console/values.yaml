@@ -92,8 +92,9 @@ console:
     #   description  optional, one sentence
     #   accelerator  optional: the Kubernetes extended resource requested per accelerator, such as
     #                nvidia.com/gpu or amd.com/gpu; none means CPU only
-    #   image        optional: the runtime image, with no spaces; none means the cluster's default
-    #                vLLM image, which is for NVIDIA GPUs, so set one for any other hardware
+    #   image        optional: the runtime image, with no spaces. None leaves the wizard's field empty:
+    #                for nvidia.com/gpu that runs the cluster's default vLLM image, which is for
+    #                NVIDIA GPUs; for any other hardware the user must enter one
     #   env          optional: environment variables for the model's container, as name: value;
     #                not VLLM_ADDITIONAL_ARGS, which the wizard's runtime arguments set
     #   defaults     optional: the resources the wizard starts from: accelerators (1 to 64, only
