@@ -95,6 +95,15 @@ it('marks all read, removes one, and clears all from the drawer', async () => {
   expect(screen.getByRole('button', { name: 'Notifications' })).toHaveAttribute('aria-expanded', 'false');
 });
 
+it("shows the unread count on the user menu's toggle, where a phone has no bell", async () => {
+  renderConsole('/clusters', memoryStorage({ [NOTIFICATIONS_KEY]: JSON.stringify(stored) }).get);
+  const toggle = await screen.findByRole('button', { name: /^User menu/ });
+  // PatternFly's badge in the toggle, shown below the md breakpoint only, where the bell is hidden.
+  const count = await within(toggle).findByText('2');
+  expect(count.closest('.pf-v6-c-badge')).toHaveClass('pf-m-unread', 'pf-v6-u-display-none-on-md');
+  expect(within(toggle).getByText('unread notifications')).toBeInTheDocument();
+});
+
 it('opens the drawer from the user menu, where a phone finds it, with the unread count', async () => {
   const user = userEvent.setup();
   renderConsole('/clusters', memoryStorage({ [NOTIFICATIONS_KEY]: JSON.stringify(stored) }).get);

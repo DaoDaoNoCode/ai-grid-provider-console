@@ -1,5 +1,13 @@
 import { useState } from 'react';
-import { Divider, Dropdown, DropdownGroup, DropdownItem, DropdownList, MenuToggle } from '@patternfly/react-core';
+import {
+  Badge,
+  Divider,
+  Dropdown,
+  DropdownGroup,
+  DropdownItem,
+  DropdownList,
+  MenuToggle,
+} from '@patternfly/react-core';
 import { UserIcon } from '@patternfly/react-icons';
 import { ServiceError } from '../api/ConsoleService';
 import type { User } from '../api/types';
@@ -37,6 +45,8 @@ type Props = {
 export const UserMenu: React.FC<Props> = ({ user, loaded, error, canSignOut, onAbout, onNotifications }) => {
   const [isOpen, setIsOpen] = useState(false);
   const { unreadCount } = useNotifications();
+  // Only where the menu offers the notifications (not on a full-page state).
+  const unread = onNotifications ? unreadCount : 0;
   const { choice, setChoice } = useTheme();
   // Only a 401 means nobody is signed in; any other failure is the console failing to say who is.
   const who = error
@@ -60,9 +70,18 @@ export const UserMenu: React.FC<Props> = ({ user, loaded, error, canSignOut, onA
           ref={toggleRef}
           variant="plainText"
           icon={<UserIcon />}
-          aria-label={`User menu: ${name}`}
+          aria-label={`User menu: ${name}${unread > 0 ? `, ${unread} unread notifications` : ''}`}
           isExpanded={isOpen}
           onClick={() => setIsOpen((open) => !open)}
+          // On a phone, where the masthead has no room for the bell, the toggle shows the unread count
+          // (PatternFly's badge in a menu toggle); from md up the bell shows it.
+          badge={
+            unread > 0 ? (
+              <Badge isRead={false} screenReaderText="unread notifications" className="pf-v6-u-display-none-on-md">
+                {unread}
+              </Badge>
+            ) : undefined
+          }
         >
           {/* A phone shows the icon only, so the console's name keeps the room it needs. */}
           <span data-testid="masthead-user" className="pf-v6-u-display-none pf-v6-u-display-inline-on-md">
