@@ -5,7 +5,7 @@
 // The console adds the Organization and Priority cells, and the row menu is the console's
 // SimpleMenuActions, for writers only, as on every list. As in
 // the org admin's view, the description sits under the name, and the Groups and Models counts
-// open the row's groups or its models with their locations and token limits (compound expansion).
+// open the row's groups or its models with their clusters and token limits (compound expansion).
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Tooltip } from '@patternfly/react-core';
@@ -31,7 +31,6 @@ type Props = {
   /** The models, for the models expansion, and whether they have loaded. */
   models: ModelView[];
   modelsState: ModelsState;
-  siteNames: Map<string, string>;
   canWrite: boolean;
   onDelete: (subscription: Subscription) => void;
 };
@@ -44,7 +43,6 @@ export const SubscriptionTableRow: React.FC<Props> = ({
   organization,
   models,
   modelsState,
-  siteNames,
   canWrite,
   onDelete,
 }) => {
@@ -164,12 +162,7 @@ export const SubscriptionTableRow: React.FC<Props> = ({
         <Td colSpan={columns.length + (canWrite ? 1 : 0)}>
           <ExpandableRowContent>
             {expanded === 'models' && (
-              <ExpandedModelsPanel
-                modelRefs={modelRefs}
-                models={models}
-                modelsState={modelsState}
-                siteNames={siteNames}
-              />
+              <ExpandedModelsPanel modelRefs={modelRefs} models={models} modelsState={modelsState} />
             )}
           </ExpandableRowContent>
         </Td>
