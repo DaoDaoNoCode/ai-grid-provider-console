@@ -22,7 +22,7 @@ so a schema written without a single message still reads well:
 1. Add it to its schema in `index.ts` with the rules alone: `z.string().trim().min(1).max(253)`.
 2. Write a message only where a field-specific sentence helps the user more than the default: a
    pattern (`'Use lowercase letters, numbers, and hyphens.'`, since "Enter a valid value." doesn't say
-   what is valid), a refinement, or a rule that names the field (`'Select an organization'`). A
+   what is valid), a refinement, or a rule that names the field (`'Select an organization.'`). A
    schema's own message always wins over the map.
 3. Show it with `fieldErrorsOf` (every field's last message) or `fieldMessage` (one text field).
 
