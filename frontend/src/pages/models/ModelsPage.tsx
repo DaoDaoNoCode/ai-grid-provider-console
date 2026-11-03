@@ -29,12 +29,12 @@ import { useDeleteModel } from './useDeleteModel';
 import { useModelList } from './useModels';
 import { useClusterList } from '../clusters/useClusters';
 
-type Column = { label: string; isNumber?: boolean; sort: (a: ModelView, b: ModelView) => number };
+type Column = { label: string; sort: (a: ModelView, b: ModelView) => number };
 
 const columns: Column[] = [
   { label: 'Name', sort: (a, b) => titleOf(a).localeCompare(titleOf(b)) },
   { label: 'Model', sort: (a, b) => (a.modelName ?? a.id).localeCompare(b.modelName ?? b.id) },
-  { label: 'Replicas', isNumber: true, sort: (a, b) => (a.replicas ?? 0) - (b.replicas ?? 0) },
+  { label: 'Replicas', sort: (a, b) => (a.replicas ?? 0) - (b.replicas ?? 0) },
   { label: 'Locations', sort: (a, b) => a.locations.length - b.locations.length },
   { label: 'Created', sort: (a, b) => (a.creationTimestamp ?? '').localeCompare(b.creationTimestamp ?? '') },
   { label: 'Status', sort: (a, b) => a.phase.localeCompare(b.phase) },
@@ -121,12 +121,7 @@ export const ModelsPage: React.FC = () => {
               <Tr>
                 <Th screenReaderText="Show locations" />
                 {columns.map((c, i) => (
-                  <Th
-                    key={c.label}
-                    sort={sortParams(i)}
-                    modifier="wrap"
-                    className={c.isNumber ? 'console-number' : undefined}
-                  >
+                  <Th key={c.label} sort={sortParams(i)} modifier="wrap">
                     {c.label}
                   </Th>
                 ))}
@@ -165,9 +160,7 @@ export const ModelsPage: React.FC = () => {
                       <Td dataLabel="Model" modifier="breakWord">
                         {model.modelName ?? EMPTY_VALUE}
                       </Td>
-                      <Td dataLabel="Replicas" className="console-number">
-                        {model.replicas ?? EMPTY_VALUE}
-                      </Td>
+                      <Td dataLabel="Replicas">{model.replicas ?? EMPTY_VALUE}</Td>
                       <Td dataLabel="Locations" data-testid={`model-locations-${model.id}`}>
                         {model.locations.length ? (
                           <LabelGroup numLabels={5}>

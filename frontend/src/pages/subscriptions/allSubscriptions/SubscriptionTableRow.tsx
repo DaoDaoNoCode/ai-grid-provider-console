@@ -17,7 +17,15 @@ import { SimpleMenuActions } from '../../../components/SimpleMenuActions';
 import { TableRowTitleDescription } from '../../../components/TableRowTitleDescription';
 import { getSubscriptionEditUrl, getSubscriptionViewUrl } from '../../../utilities/maasGovernanceNavigation';
 import { EMPTY_VALUE } from '../../../utilities/format';
-import { descriptionOf, groupsOf, isDeleting, modelRefsOf, readyConditionOf } from '../subscriptionText';
+import {
+  descriptionOf,
+  groupsOf,
+  isDeleting,
+  modelRefsOf,
+  readyConditionOf,
+  type OrganizationRef,
+} from '../subscriptionText';
+import { OrganizationName } from '../OrganizationName';
 import { displayNameOf } from '../../models/modelView';
 import type { SubscriptionColumn } from './columns';
 import { ExpandedGroupsPanel } from './ExpandedGroupsPanel';
@@ -27,7 +35,7 @@ import { ExpandedModelsPanel } from './ExpandedModelsPanel';
 type Props = {
   subscription: Subscription;
   columns: SubscriptionColumn[];
-  organization: string;
+  organization: OrganizationRef;
   /** The models, for the models expansion, and whether they have loaded. */
   models: ModelView[];
   modelsState: ModelsState;
@@ -111,16 +119,14 @@ export const SubscriptionTableRow: React.FC<Props> = ({
           />
         </Td>
         <Td dataLabel={columns[1].label} data-testid="subscription-organization">
-          {organization || EMPTY_VALUE}
+          <OrganizationName organization={organization} />
         </Td>
         <Td dataLabel={columns[2].label}>
           <PhaseLabel phase={subscription.status?.phase} statusMessage={ready.statusMessage} reason={ready.reason} />
         </Td>
         {expandCell('groups', 3, groups.length)}
         {expandCell('models', 4, modelRefs.length)}
-        <Td dataLabel={columns[5].label} className="console-number">
-          {subscription.spec?.priority ?? EMPTY_VALUE}
-        </Td>
+        <Td dataLabel={columns[5].label}>{subscription.spec?.priority ?? EMPTY_VALUE}</Td>
         {canWrite && (
           <Td isActionCell>
             <SimpleMenuActions

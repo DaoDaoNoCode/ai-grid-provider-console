@@ -1,4 +1,5 @@
 import { SearchInput, ToolbarItem } from '@patternfly/react-core';
+import { TOOLBAR_FIELD_WIDTHS } from './toolbarField';
 
 type Props = {
   /** The accessible name, for example "Search clusters". */
@@ -11,7 +12,7 @@ type Props = {
 
 /** A list's search box, the same width on every list page so its placeholder isn't cut off. */
 export const ToolbarSearch: React.FC<Props> = ({ label, placeholder, value, onChange, 'data-testid': testId }) => (
-  <ToolbarItem className="console-toolbar-field">
+  <ToolbarItem widths={TOOLBAR_FIELD_WIDTHS}>
     <SearchInput
       aria-label={label}
       placeholder={placeholder}

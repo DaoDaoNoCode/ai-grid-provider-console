@@ -20,6 +20,11 @@ export type Loaded<T> = {
   data: T;
   /** The answer has arrived (or failed) at least once. */
   loaded: boolean;
+  /**
+   * An answer (or a failure) has arrived since the page mounted: `data` is not only what the cache
+   * kept from an earlier page, which may predate what the page shows next to it.
+   */
+  fresh: boolean;
   error?: Error;
   /** When the answer last arrived (ms since the epoch). */
   updatedAt?: number;
@@ -41,8 +46,9 @@ export const loadErrorOf = (hasData: boolean, raw: unknown): Error | undefined =
 /**
  * A Connect query as the pages read it: `select` turns the answer into what the page shows (a
  * module-level function, so its result stays the same object between renders); `loaded` once the
- * answer has arrived or failed; `error` as loadErrorOf says, with data meaning both an answer and
- * something selected from it; `refresh` loads again and says whether that worked.
+ * answer has arrived or failed; `fresh` once that happened after the page mounted; `error` as
+ * loadErrorOf says, with data meaning both an answer and something selected from it; `refresh`
+ * loads again and says whether that worked.
  */
 export const useLoaded = <R, T>(query: UseQueryResult<R, unknown>, select: (answer: R | undefined) => T): Loaded<T> => {
   const { refetch, data: answer } = query;
@@ -51,6 +57,7 @@ export const useLoaded = <R, T>(query: UseQueryResult<R, unknown>, select: (answ
   return {
     data,
     loaded: query.isFetched,
+    fresh: query.isFetchedAfterMount,
     error: loadErrorOf(answer !== undefined && data !== undefined, query.error),
     updatedAt: answer !== undefined ? query.dataUpdatedAt : undefined,
     refresh,

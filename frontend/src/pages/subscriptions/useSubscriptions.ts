@@ -62,6 +62,16 @@ export const useTenantList = (): Loaded<Tenant[]> =>
   useLoaded(useQuery(listTenants, {}, useLoadOptions()), tenantItems);
 
 /**
+ * The organizations, and whether they are `known`: listed without an error since the page mounted
+ * (Loaded's `fresh`). A list the cache kept from an earlier page may predate an organization
+ * created since, so only a known list may call an organization missing (isOrganizationMissing).
+ */
+export const useOrganizations = (): Loaded<Tenant[]> & { known: boolean } => {
+  const organizations = useTenantList();
+  return { ...organizations, known: organizations.fresh && !organizations.error };
+};
+
+/**
  * One subscription with its auth policies and model registrations, from Subscriptions/Get, loaded
  * once. The edit page keeps the first answer (EditSubscriptionPage), so a save is checked against
  * the version it started from.
