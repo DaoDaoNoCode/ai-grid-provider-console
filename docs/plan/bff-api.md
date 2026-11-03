@@ -446,7 +446,7 @@ no image: the cluster's default vLLM image for NVIDIA GPUs) and **CPU only** (Op
 vLLM CPU image with `VLLM_CPU_KVCACHE_SPACE=4` and `OMP_NUM_THREADS=4`, CPU 4, memory 8Gi). The BFF
 reads it strictly at start and doesn't start when an entry breaks a rule `values.schema.json`
 also checks: an unknown field, an id that isn't a DNS label or is used twice, an empty label, an
-accelerator that isn't a domain-qualified resource, an image with whitespace, an environment
+accelerator that isn't a Kubernetes extended resource name (a domain outside kubernetes.io, a slash, a name), an image with whitespace, an environment
 variable that isn't a valid name or is `VLLM_ADDITIONAL_ARGS` (the wizard's runtime arguments),
 `defaults.accelerators` outside 1 to 64 or without an accelerator, and a `defaults.cpu` or
 `defaults.memory` the wizard doesn't take. It decides nothing about a model: the wizard sends an

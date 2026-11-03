@@ -71,12 +71,33 @@ refused "console.logLevel=verbose" --set console.logLevel=verbose
 # console.models.hardware: the schema refuses what the BFF would refuse at start
 # (bff/internal/config/hardware.go), and a list is rendered as MODEL_HARDWARE, JSON.
 hw='"id":"gpu","label":"GPU","accelerator":"nvidia.com/gpu"'
+# An accelerator is a Kubernetes extended resource name: labels and the name at most 63 characters,
+# the prefix at most 244 (so that requests.<prefix> is a DNS subdomain).
+label63="$(printf 'a%.0s' {1..63})"
+long_name="${label63}a" long_label="${label63}a"
+long_prefix="${label63}.${label63}.${label63}.$(printf 'b%.0s' {1..52})"
+for ok in "${long_prefix}/gpu" "nvidia.com/${label63}" amd.com/gpu habana.ai/gaudi nvidia.com/mig-1g.10gb; do
+  helm template console "${CHART}" -n ai-grid \
+    --set-json "console.models.hardware=[{\"id\":\"gpu\",\"label\":\"GPU\",\"accelerator\":\"${ok}\"}]" >/dev/null || {
+    echo "check-chart: accelerator ${ok} doesn't render; values.schema.json must accept it" >&2
+    exit 1
+  }
+done
 for bad in \
   '[{"id":"cpu","label":"CPU","nodeSelector":{"kubernetes.io/arch":"amd64"}}]' \
   '[{"id":"gpu","label":"GPU","acelerator":"nvidia.com/gpu"}]' \
   '[{"id":"cpu","label":"CPU","defaults":{"memroy":"8Gi"}}]' \
   '[{"label":"CPU"}]' '[{"id":"cpu"}]' '[{"id":"CPU","label":"CPU"}]' '[{"id":"cpu-","label":"CPU"}]' \
   '[{"id":"gpu","label":"GPU","accelerator":"gpu"}]' \
+  '[{"id":"gpu","label":"GPU","accelerator":"nvidia..com/gpu"}]' \
+  '[{"id":"gpu","label":"GPU","accelerator":"Nvidia.com/gpu"}]' \
+  '[{"id":"gpu","label":"GPU","accelerator":"nvidia.com/gpu/x"}]' \
+  "[{\"id\":\"gpu\",\"label\":\"GPU\",\"accelerator\":\"nvidia.com/${long_name}\"}]" \
+  "[{\"id\":\"gpu\",\"label\":\"GPU\",\"accelerator\":\"${long_label}.com/gpu\"}]" \
+  "[{\"id\":\"gpu\",\"label\":\"GPU\",\"accelerator\":\"${long_prefix}b/gpu\"}]" \
+  '[{"id":"gpu","label":"GPU","accelerator":"kubernetes.io/gpu"}]' \
+  '[{"id":"gpu","label":"GPU","accelerator":"gpu.kubernetes.io/x"}]' \
+  '[{"id":"gpu","label":"GPU","accelerator":"requests.nvidia.com/gpu"}]' \
   '[{"id":"cpu","label":"CPU","image":"quay.io/vllm cpu:1"}]' \
   '[{"id":"cpu","label":"CPU","env":{"1THREADS":"4"}}]' \
   '[{"id":"cpu","label":"CPU","env":{"VLLM_ADDITIONAL_ARGS":"--x"}}]' \

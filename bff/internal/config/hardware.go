@@ -56,11 +56,12 @@ const runtimeArgsEnv = "VLLM_ADDITIONAL_ARGS"
 // a subset of Kubernetes quantities, so the wizard never starts from a default
 // it refuses.
 var (
-	hardwareIDPattern  = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
-	acceleratorPattern = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?/[A-Za-z0-9]([-A-Za-z0-9_.]*[A-Za-z0-9])?$`)
-	envNamePattern     = regexp.MustCompile(`^[-._a-zA-Z][-._a-zA-Z0-9]*$`)
-	cpuPattern         = regexp.MustCompile(`^([1-9][0-9]*|0\.[0-9]*[1-9][0-9]*|[1-9][0-9]*\.[0-9]+|[1-9][0-9]*m)$`)
-	memoryPattern      = regexp.MustCompile(`^[1-9][0-9]*(Mi|Gi|Ti)$`)
+	hardwareIDPattern   = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
+	dnsLabelPattern     = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+	resourceNamePattern = regexp.MustCompile(`^[A-Za-z0-9]([-A-Za-z0-9_.]*[A-Za-z0-9])?$`)
+	envNamePattern      = regexp.MustCompile(`^[-._a-zA-Z][-._a-zA-Z0-9]*$`)
+	cpuPattern          = regexp.MustCompile(`^([1-9][0-9]*|0\.[0-9]*[1-9][0-9]*|[1-9][0-9]*\.[0-9]+|[1-9][0-9]*m)$`)
+	memoryPattern       = regexp.MustCompile(`^[1-9][0-9]*(Mi|Gi|Ti)$`)
 )
 
 // cpuImage is the vLLM CPU image of OpenShift AI 3.6: kserve-llm-d-cpu in
@@ -146,8 +147,8 @@ func (hw ModelHardware) problems() []string {
 	if strings.TrimSpace(hw.Label) == "" {
 		out = append(out, "label must not be empty")
 	}
-	if hw.Accelerator != "" && !acceleratorPattern.MatchString(hw.Accelerator) {
-		out = append(out, fmt.Sprintf("accelerator %q must be an extended resource name with a domain, such as nvidia.com/gpu", hw.Accelerator))
+	if hw.Accelerator != "" && !isExtendedResourceName(hw.Accelerator) {
+		out = append(out, fmt.Sprintf("accelerator %q must be an extended resource name: a domain outside kubernetes.io, a slash and a name, such as nvidia.com/gpu", hw.Accelerator))
 	}
 	if strings.ContainsFunc(hw.Image, unicode.IsSpace) {
 		out = append(out, fmt.Sprintf("image %q must not contain whitespace", hw.Image))
@@ -177,4 +178,27 @@ func (hw ModelHardware) problems() []string {
 		}
 	}
 	return out
+}
+
+// isExtendedResourceName is Kubernetes' rule for an extended resource name
+// (IsExtendedResourceName in k8s.io/kubernetes pkg/apis/core/helper/helpers.go,
+// with IsQualifiedName in k8s.io/apimachinery pkg/util/validation): a prefix
+// that is a DNS subdomain outside kubernetes.io, a slash, and a name of at most
+// 63 characters. It doesn't start with "requests.", and "requests." followed by
+// it is itself a qualified name, which keeps the prefix to 244 characters.
+func isExtendedResourceName(name string) bool {
+	prefix, rest, ok := strings.Cut(name, "/")
+	switch {
+	case !ok, strings.Contains(rest, "/"), strings.HasPrefix(name, "requests."),
+		prefix == "kubernetes.io", strings.HasSuffix(prefix, ".kubernetes.io"),
+		len(rest) > 63, !resourceNamePattern.MatchString(rest),
+		len("requests.")+len(prefix) > 253:
+		return false
+	}
+	for _, label := range strings.Split(prefix, ".") {
+		if len(label) > 63 || !dnsLabelPattern.MatchString(label) {
+			return false
+		}
+	}
+	return true
 }

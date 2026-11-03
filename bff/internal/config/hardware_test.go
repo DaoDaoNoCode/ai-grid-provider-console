@@ -98,6 +98,7 @@ func TestParseModelHardwareRefuses(t *testing.T) {
 		{"a duplicate id", `[{"id":"cpu","label":"CPU"},{"id":"cpu","label":"CPU again"}]`, `entry 2 (cpu): id "cpu" is used by an earlier entry`},
 		{"no label", `[{"id":"cpu","label":" "}]`, "label must not be empty"},
 		{"an accelerator without a domain", `[{"id":"gpu","label":"GPU","accelerator":"gpu"}]`, `accelerator "gpu" must be an extended resource name`},
+		{"an accelerator in kubernetes.io", `[{"id":"gpu","label":"GPU","accelerator":"kubernetes.io/gpu"}]`, `accelerator "kubernetes.io/gpu" must be an extended resource name`},
 		{"an image with a space", `[{"id":"cpu","label":"CPU","image":"quay.io/vllm cpu:1"}]`, "must not contain whitespace"},
 		{"an image with a tab", `[{"id":"cpu","label":"CPU","image":"quay.io/vllm\tcpu:1"}]`, "must not contain whitespace"},
 		{"a bad env name", `[{"id":"cpu","label":"CPU","env":{"1THREADS":"4"}}]`, `env name "1THREADS"`},
@@ -122,6 +123,32 @@ func TestParseModelHardwareRefuses(t *testing.T) {
 	for _, want := range []string{"DNS label", "label must not be empty", "whitespace"} {
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("three problems: %v, want %q among them", err, want)
+		}
+	}
+}
+
+// An accelerator is a Kubernetes extended resource name, which a model can request.
+func TestHardwareAcceleratorNames(t *testing.T) {
+	t.Parallel()
+	label := strings.Repeat("a", 63)
+	// 244 characters: "requests." and this prefix make 253.
+	longest := strings.Join([]string{label, label, label, strings.Repeat("b", 52)}, ".")
+	for _, name := range []string{
+		"nvidia.com/gpu", "amd.com/gpu", "habana.ai/gaudi", "example.com/" + label, "nvidia.com/mig-1g.10gb",
+		"example.com/GPU_x", label + ".example.com/gpu", longest + "/gpu", "kubernetes.io.example.com/gpu",
+	} {
+		if !isExtendedResourceName(name) {
+			t.Errorf("%q refused", name)
+		}
+	}
+	for _, name := range []string{
+		"", "gpu", "/gpu", "nvidia.com/", "nvidia.com/gpu/x", "nvidia..com/gpu", ".nvidia.com/gpu", "nvidia.com./gpu",
+		"Nvidia.com/gpu", "nvidia_com/gpu", "-nvidia.com/gpu", "nvidia.com/-gpu", "nvidia.com/gpu-", "nvidia.com/g pu",
+		"example.com/" + label + "a", label + "a.example.com/gpu", longest + "b/gpu",
+		"kubernetes.io/gpu", "gpu.kubernetes.io/x", "a.b.kubernetes.io/x", "requests.nvidia.com/gpu",
+	} {
+		if isExtendedResourceName(name) {
+			t.Errorf("%q accepted", name)
 		}
 	}
 }
