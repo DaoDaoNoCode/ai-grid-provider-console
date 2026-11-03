@@ -64,6 +64,8 @@ export type ModelView = {
   memory?: string;
   /** The main container's requests for extended resources (a name with a domain), by name. */
   acceleratorRequests: AcceleratorRequest[];
+  /** The main container's requests as read, every resource, sent back whole by an edit that changes one. */
+  requests: Record<string, string>;
   env: ModelEnvVar[];
   /** The annotations as read, sent back whole by an edit. */
   annotations: Record<string, string>;
@@ -155,6 +157,7 @@ export const toModelView = (model: Model): ModelView => {
       .filter(([resource]) => resource.includes('/'))
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([resource, count]) => ({ resource, count })),
+    requests: { ...requests },
     env: [...(spec?.main?.env ?? [])],
     annotations: { ...annotations },
     phase: phaseWordOf(status?.phase, status?.reason),

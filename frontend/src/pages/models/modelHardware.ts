@@ -7,10 +7,12 @@
 // pkg/controller/v1alpha2/llmisvc/config_merge.go). That image never becomes ready without NVIDIA
 // GPUs, so only NVIDIA hardware may leave the image empty.
 //
-// A deployed model is shown as it is, never matched against today's list: the list can change (a
-// new image digest, an entry removed) or fail to load.
+// A deployed model's pages show it as it is, never matched against today's list: the list can
+// change (a new image digest, an entry removed) or fail to load. Only the edit wizard matches it
+// (matchingHardware), to select the entry it was deployed with; selecting another entry there
+// applies that entry as the Deploy wizard does.
 import type { ModelHardware } from '../../api/types';
-import type { EnvVar } from './fields/runtimeArgs';
+import { RUNTIME_ARGS_ENV, type EnvVar } from './fields/runtimeArgs';
 import type { AcceleratorRequest, ModelView } from './modelView';
 
 /** The extended resources of NVIDIA and AMD GPUs; the clusters' GPU counts are NVIDIA's only. */
@@ -59,3 +61,42 @@ const acceleratorText = ({ resource, count }: AcceleratorRequest) => {
  */
 export const acceleratorsText = (model: Pick<ModelView, 'acceleratorRequests'>) =>
   model.acceleratorRequests.map(acceleratorText).join(', ') || 'None (CPU only)';
+
+/**
+ * The first entry of the list that a deployed model has exactly as the entry deploys it: the same
+ * accelerator (none for an entry without one), the same image (empty for an entry without one),
+ * and each of the entry's environment variables with its value. Undefined when none does, and for
+ * a model with presets, whose image and environment come partly from the presets.
+ */
+export const matchingHardware = (
+  model: Pick<ModelView, 'acceleratorRequests' | 'runtimeImage' | 'env' | 'baseRefs'>,
+  list: readonly ModelHardware[],
+): ModelHardware | undefined => {
+  if (model.baseRefs.length > 0) return undefined;
+  const resources = model.acceleratorRequests.map((r) => r.resource);
+  return list.find(
+    (h) =>
+      (h.accelerator ? resources.length === 1 && resources[0] === h.accelerator : resources.length === 0) &&
+      (h.image ?? '') === (model.runtimeImage ?? '') &&
+      Object.entries(h.env ?? {}).every(([name, value]) => model.env.some((v) => v.name === name && v.value === value)),
+  );
+};
+
+/**
+ * A deployed model's environment with this hardware selected in the edit wizard: the variables any
+ * entry of the list sets give way to this entry's, and every other variable stays in its place. The
+ * runtime arguments are left out; the wizard adds them back.
+ */
+export const envWithHardware = (
+  env: readonly EnvVar[],
+  hardware: ModelHardware,
+  list: readonly ModelHardware[],
+): EnvVar[] => {
+  const hardwareNames = new Set(list.flatMap((h) => Object.keys(h.env ?? {})));
+  return [
+    ...env
+      .filter((v) => v.name !== RUNTIME_ARGS_ENV && !hardwareNames.has(v.name))
+      .map(({ name, value }) => ({ name, value })),
+    ...hardwareEnv(hardware),
+  ];
+};

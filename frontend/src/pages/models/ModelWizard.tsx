@@ -10,6 +10,7 @@ import {
   AlertActionLink,
   Breadcrumb,
   BreadcrumbItem,
+  Checkbox,
   ExpandableSection,
   Flex,
   Form,
@@ -46,7 +47,9 @@ import {
   NVIDIA_GPU,
   acceleratorLabel,
   acceleratorsText,
+  envWithHardware,
   hardwareEnv,
+  matchingHardware,
   mayUseDefaultImage,
   runtimeImageHelp,
 } from './modelHardware';
@@ -84,17 +87,13 @@ const MAX_ACCELERATORS = 64;
  */
 const CPU_CONTEXT_HINT = 'For long-context models on CPU, set --max-model-len in Advanced settings.';
 
-/** A resource the model was deployed without, shown in its read-only field. */
-const NOT_SET = 'Not set';
-
-const fixedReason = {
-  source: 'The model a deployment serves is fixed. Deploy a new model to serve another one.',
-  // Says what the field is without claiming a model deployed earlier serves its resource name: one
-  // written before the backend served models as their ids can keep another.
-  served: 'Users send this name as the model in their requests. It cannot be edited.',
-  resources: 'Resources are set when the model is deployed. Deploy it again to change them.',
-  presets: 'Set when the model was deployed. New models are deployed without presets.',
-};
+/**
+ * Why an edit can't change the name users send: the backend serves every model as its id and
+ * refuses any other name (normalizeServedName in the backend's models_git.go). Says what the field
+ * is without claiming a model deployed earlier serves its id: one written before the backend served
+ * models as their ids keeps another name until its next update.
+ */
+const SERVED_NAME_FIXED = 'Users send this name as the model in their requests. It cannot be edited.';
 
 /** The wizard's starting values: the defaults when deploying, the model's own when editing. */
 const initialValues = (model?: ModelView) => ({
@@ -153,9 +152,11 @@ const ReviewStep: React.FC<{
 
 /**
  * The four-step deploy wizard at /models/deploy: source, deployment, clusters, review. With
- * `model` it edits that deployment at /models/:id/edit through the same steps: every step can be
- * opened from the start, the fields the console doesn't edit are read-only, and Save changes sends
- * only what changed (Models/Update with its mask).
+ * `model` it edits that deployment at /models/:id/edit through the same steps, as OpenShift AI's
+ * deployment wizard edits one: every step can be opened from the start, the model URI, hardware,
+ * resources and presets can be changed, only the id and the name users send stay fixed (with
+ * replicas under autoscaling, and clusters a placement selects by more than their names), and Save
+ * changes sends only what changed (Models/Update with its mask).
  */
 export const ModelWizard: React.FC<Props> = ({ model }) => {
   const navigate = useNavigate();
@@ -230,10 +231,18 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
   const [modelUri, setModelUri] = useState(start.modelUri);
   const [replicas, setReplicas] = useState(start.replicas);
   // The hardware a new model runs on: the first in the console's list until the user selects
-  // another. A deployed model keeps its own, read-only.
+  // another. An edit starts on the entry the model has exactly (matchingHardware), or on none, and
+  // the user can select another. A reopened draft starts on the hardware it was submitted with.
   const [hardwareId, setHardwareId] = useState<string | undefined>(draft?.values.hardwareId);
-  const hardware = editing ? undefined : (hardwareList.find((h) => h.id === hardwareId) ?? hardwareList[0]);
+  const selectedHardware = hardwareList.find((h) => h.id === hardwareId);
+  const matchedHardware = model ? matchingHardware(model, hardwareList) : undefined;
+  const hardware = selectedHardware ?? (model ? matchedHardware : hardwareList[0]);
   const accelerator = hardware?.accelerator;
+  // The model whose own values an edit shows: until the user selects hardware other than the one
+  // the model has. Selecting it again goes back to them.
+  const own = model && (!selectedHardware || selectedHardware.id === matchedHardware?.id) ? model : undefined;
+  // The accelerator count of the model's matching hardware, which an edit starts from.
+  const ownAccelerators = own && accelerator ? own.acceleratorRequests[0]?.count : undefined;
   // The fields the hardware fills in hold undefined until the user edits them, so they show the
   // selected hardware's value. An edited CPU, memory or accelerator count is kept when the hardware
   // changes; the image is the hardware's, so selecting hardware replaces an edited one with its own
@@ -248,10 +257,20 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
   const [cpuInput, setCpu] = useState<string | undefined>(draft?.values.cpu);
   const [memoryInput, setMemory] = useState<string | undefined>(draft?.values.memory);
   const [acceleratorsInput, setAccelerators] = useState<string | undefined>(draft?.values.accelerators);
+  // Presets an edit removes (spec.base_refs); none can be added.
+  const [removePresets, setRemovePresets] = useState(false);
   const runtimeImage = imageInput ?? hardware?.image ?? '';
-  const cpu = model ? (model.cpu ?? '') : (cpuInput ?? hardware?.defaults?.cpu ?? defaults.cpu);
-  const memory = model ? (model.memory ?? '') : (memoryInput ?? hardware?.defaults?.memory ?? defaults.memory);
-  const accelerators = acceleratorsInput ?? String(hardware?.defaults?.accelerators ?? defaults.accelerators);
+  const cpu = cpuInput ?? (own ? (own.cpu ?? '') : (hardware?.defaults?.cpu ?? defaults.cpu));
+  const memory = memoryInput ?? (own ? (own.memory ?? '') : (hardware?.defaults?.memory ?? defaults.memory));
+  const accelerators =
+    acceleratorsInput ?? ownAccelerators ?? String(hardware?.defaults?.accelerators ?? defaults.accelerators);
+  // The environment besides the runtime arguments: the hardware's for a new model, the model's own
+  // for an edit, with the hardware the user selected applied.
+  const env = own
+    ? own.env.map(({ name, value }) => ({ name, value }))
+    : model && hardware
+      ? envWithHardware(model.env, hardware, hardwareList)
+      : hardwareEnv(hardware);
   const [runtimeArgs, setRuntimeArgs] = useState<RuntimeArgsFieldData>({
     enabled: draft ? draft.values.runtimeArgsEnabled : start.runtimeArgs.length > 0,
     args: start.runtimeArgs,
@@ -274,7 +293,10 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
     accelerator,
     // Hardware without an accelerator asks for none.
     acceleratorCount: accelerator ? Number(accelerators) : 0,
-    env: hardwareEnv(hardware),
+    // An edit without hardware shows the model's accelerators read-only.
+    keepAccelerators: editing && !hardware,
+    env,
+    baseRefs: model && (removePresets ? [] : model.baseRefs),
     runtimeArgs: filterRuntimeArgsForContainer(runtimeArgs.args),
     clusters: clusterNames,
   };
@@ -298,48 +320,72 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
       : value.trim()
         ? fieldMessage(modelFieldsSchema.shape[field], value, parse)
         : 'Required.';
-  const modelUriError = shownError('modelUri', modelUri);
+  // The deploy wizard's limits apply to a value an edit sets, not to one the model already has,
+  // which the backend took.
+  const kept = (value: string, stored: string | undefined) => editing && value.trim() === (stored ?? '');
+  const modelUriError = kept(modelUri, model?.modelUri) ? undefined : shownError('modelUri', modelUri);
   const presets = model?.baseRefs.join(', ');
+  const presetsKept = !!presets && !removePresets;
   // An empty image runs the cluster's default vLLM image, which is for NVIDIA GPUs
-  // (requireImageWithoutNvidia): so the selected hardware's accelerator decides for a new model, and
-  // what a deployed model requests for an edit. A deployed model's presets set an image of their own.
-  const imageAccelerator = model
-    ? model.acceleratorRequests.some((r) => r.resource === NVIDIA_GPU)
-      ? NVIDIA_GPU
-      : undefined
-    : accelerator;
-  // An edit requires it only where it would clear an image the model has: a model stored without
-  // one keeps none until one is entered, so editing its other fields doesn't depend on it.
+  // (requireImageWithoutNvidia): so the hardware's accelerator decides, or for an edit without
+  // hardware, what the model requests. A deployed model's presets set an image of their own.
+  const imageAccelerator =
+    hardware || !model
+      ? accelerator
+      : model.acceleratorRequests.some((r) => r.resource === NVIDIA_GPU)
+        ? NVIDIA_GPU
+        : undefined;
+  // An edit that keeps the model's hardware and presets requires it only where it would clear an
+  // image the model has: a model stored without one keeps none until one is entered, so editing its
+  // other fields doesn't depend on it. Other hardware, or removing the presets, is checked as Deploy is.
   const imageRequired =
-    !mayUseDefaultImage(imageAccelerator) && !presets && (!model || model.runtimeImage !== undefined);
+    !mayUseDefaultImage(imageAccelerator) && !presetsKept && (!own || own.runtimeImage !== undefined || removePresets);
   const imageMissing = imageRequired && runtimeImage.trim() === '';
+  // Hardware without an accelerator, or an edit without hardware of a model that requests none.
+  const cpuOnly = hardware ? !accelerator : !!model && model.acceleratorRequests.length === 0;
   const runtimeImageError = !touched.has('runtimeImage')
     ? undefined
     : imageMissing
       ? 'Required.'
       : fieldMessage(modelFieldsSchema.shape.runtimeImage, runtimeImage);
   const replicasError = shownError('replicas', replicas, Number);
-  const cpuError = shownError('cpu', cpu);
-  const memoryError = shownError('memory', memory);
+  // A model deployed without a CPU or memory request keeps none until one is entered.
+  const cpuRequired = !own || own.cpu !== undefined;
+  const memoryRequired = !own || own.memory !== undefined;
+  const resourceError = (field: 'cpu' | 'memory', value: string, required: boolean, stored?: string) =>
+    !touched.has(field) || kept(value, stored)
+      ? undefined
+      : value.trim() || required
+        ? shownError(field, value)
+        : undefined;
+  const cpuError = resourceError('cpu', cpu, cpuRequired, model?.cpu);
+  const memoryError = resourceError('memory', memory, memoryRequired, model?.memory);
+  const resourceValid = (field: 'cpu' | 'memory', value: string, required: boolean, stored?: string) =>
+    kept(value, stored) || (value.trim() === '' ? !required : modelFieldsSchema.shape[field].safeParse(value).success);
   // Hardware with an accelerator needs at least one: without it the model can't use the hardware.
   const acceleratorsValid =
     /^\d+$/.test(accelerators) && Number(accelerators) >= 1 && Number(accelerators) <= MAX_ACCELERATORS;
-  const acceleratorsError = !touched.has('accelerators')
-    ? undefined
-    : accelerators === ''
-      ? 'Required.'
-      : acceleratorsValid
-        ? undefined
-        : `Enter a number from 1 to ${MAX_ACCELERATORS}.`;
-  // A deployed model's source, name and resources are fixed, so only what an edit can change is checked.
-  const sourceValid = editing || modelFieldsSchema.pick({ modelUri: true }).safeParse({ modelUri }).success;
+  const acceleratorsKept = ownAccelerators !== undefined && accelerators === ownAccelerators;
+  const acceleratorsError =
+    !touched.has('accelerators') || acceleratorsKept
+      ? undefined
+      : accelerators === ''
+        ? 'Required.'
+        : acceleratorsValid
+          ? undefined
+          : `Enter a number from 1 to ${MAX_ACCELERATORS}.`;
+  const sourceValid =
+    kept(modelUri, model?.modelUri) || modelFieldsSchema.pick({ modelUri: true }).safeParse({ modelUri }).success;
+  // The source is checked above; an edit checks the fields it can change, each as Deploy does.
   const deploymentValid = editing
     ? modelFieldsSchema
         .pick({ displayName: true, description: true })
         .safeParse({ displayName: input.displayName, description: input.description }).success &&
       modelFieldsSchema.shape.runtimeImage.safeParse(input.runtimeImage).success &&
       !imageMissing &&
-      // The deploy wizard's limits apply to a count the user sets, not to one the model already has.
+      resourceValid('cpu', cpu, cpuRequired, model?.cpu) &&
+      resourceValid('memory', memory, memoryRequired, model?.memory) &&
+      (!accelerator || acceleratorsKept || acceleratorsValid) &&
       (!replicasEditable ||
         replicas === start.replicas ||
         (replicas !== '' && modelFieldsSchema.shape.replicas.safeParse(input.replicas).success))
@@ -494,7 +540,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
     );
   };
 
-  // The Hardware choice of a new model, from the console's config, which App loads once.
+  // The Hardware choice, from the console's config, which App loads once. An edit can save without it.
   const hardwareField = () => {
     if (!config && configError) {
       return (
@@ -525,6 +571,12 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
             isDisabled={saving}
           />
         ))}
+        {model && !hardware && (
+          <Help>
+            The model&apos;s current settings match none of these. Select one to apply its runtime image, environment,
+            and resources.
+          </Help>
+        )}
       </FormGroup>
     );
   };
@@ -549,18 +601,24 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
       : `${names} ${one ? 'has' : 'have'} GPUs that the model doesn't use with ${hardware.label}`;
   })();
 
-  // A new model names the hardware selected from the list; a deployed one shows what it has, which
-  // the list, as it is now, may no longer describe.
-  const hardwareItems: ReviewItem[] = model
-    ? presets
-      ? [{ term: 'Presets', value: presets }]
-      : []
-    : [{ term: 'Hardware', value: hardware?.label }];
-  const acceleratorItems: ReviewItem[] = model
-    ? [{ term: 'Accelerators', value: acceleratorsText(model) }]
-    : accelerator
-      ? [{ term: acceleratorLabel(accelerator), value: accelerators }]
+  // The hardware selected from the list, or the one the model matches; an edit without either shows
+  // what the model requests, which the list, as it is now, may no longer describe.
+  const hardwareItems: ReviewItem[] = [
+    { term: 'Hardware', value: hardware?.label },
+    ...(presets ? [{ term: 'Presets', value: removePresets ? `None (${presets} removed)` : presets }] : []),
+  ];
+  const acceleratorItems: ReviewItem[] = accelerator
+    ? [{ term: acceleratorLabel(accelerator), value: accelerators }]
+    : model
+      ? [
+          {
+            term: 'Accelerators',
+            value: hardware ? acceleratorsText({ acceleratorRequests: [] }) : acceleratorsText(model),
+          },
+        ]
       : [];
+  // A new URI changes what users of the model are served, under the same name.
+  const uriChanged = !!model && input.modelUri !== (model.modelUri ?? '');
   const review = [
     {
       title: 'Source',
@@ -580,7 +638,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
         { term: 'Description', value: nameDescData.description },
         ...hardwareItems,
         // An empty image with presets runs theirs; without presets, the cluster's default.
-        { term: 'Runtime image', value: runtimeImage.trim() || (presets ? undefined : DEFAULT_IMAGE) },
+        { term: 'Runtime image', value: runtimeImage.trim() || (presetsKept ? undefined : DEFAULT_IMAGE) },
         { term: 'Replicas', value: replicasEditable ? replicas : 'Autoscaled' },
         { term: 'CPU', value: cpu },
         { term: 'Memory', value: memory },
@@ -656,34 +714,28 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
         >
           <WizardStep name="Source" id={steps.source}>
             <Form maxWidth="750px">
-              {editing ? (
-                <>
-                  {model && <OlderServedNameAlert model={model} />}
-                  <ReadOnlyField label="Model URI" fieldId="model-uri" value={modelUri} reason={fixedReason.source} />
-                  <ReadOnlyField
-                    label="Model name in requests"
-                    fieldId="model-alias"
-                    value={model?.modelName ?? model?.id ?? ''}
-                    reason={fixedReason.served}
-                  />
-                </>
-              ) : (
-                <>
-                  <FormGroup label="Model URI" fieldId="model-uri" isRequired>
-                    <TextInput
-                      id="model-uri"
-                      aria-describedby="model-uri-help"
-                      value={modelUri}
-                      onChange={(_event, value) => setModelUri(value)}
-                      onBlur={() => touch('modelUri')}
-                      validated={modelUriError ? 'error' : 'default'}
-                      isRequired
-                    />
-                    <Help id="model-uri-help" error={modelUriError}>
-                      For example, hf://org/model, oci://registry/model:tag, s3://bucket/path, or pvc://claim/path.
-                    </Help>
-                  </FormGroup>
-                </>
+              {model && <OlderServedNameAlert model={model} />}
+              <FormGroup label="Model URI" fieldId="model-uri" isRequired>
+                <TextInput
+                  id="model-uri"
+                  aria-describedby="model-uri-help"
+                  value={modelUri}
+                  onChange={(_event, value) => setModelUri(value)}
+                  onBlur={() => touch('modelUri')}
+                  validated={modelUriError ? 'error' : 'default'}
+                  isRequired
+                />
+                <Help id="model-uri-help" error={modelUriError}>
+                  For example, hf://org/model, oci://registry/model:tag, s3://bucket/path, or pvc://claim/path.
+                </Help>
+              </FormGroup>
+              {model && (
+                <ReadOnlyField
+                  label="Model name in requests"
+                  fieldId="model-alias"
+                  value={model.modelName ?? model.id}
+                  reason={SERVED_NAME_FIXED}
+                />
               )}
             </Form>
           </WizardStep>
@@ -700,16 +752,32 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
                     : 'Users send the resource name as the model in their requests. Up to 63 characters.'
                 }
               />
-              {!model
-                ? hardwareField()
-                : presets && (
-                    <ReadOnlyField
-                      label="Presets"
-                      fieldId="model-presets"
-                      value={presets}
-                      reason={fixedReason.presets}
-                    />
-                  )}
+              {hardwareField()}
+              {presets && (
+                <FormGroup label="Presets" fieldId="model-presets">
+                  <TextInput
+                    id="model-presets"
+                    value={presets}
+                    readOnlyVariant="default"
+                    aria-describedby="model-presets-help"
+                  />
+                  <FormHelperText>
+                    <HelperText id="model-presets-help">
+                      <HelperTextItem>
+                        Set when the model was deployed. New models are deployed without presets.
+                      </HelperTextItem>
+                    </HelperText>
+                  </FormHelperText>
+                  <Checkbox
+                    id="model-remove-presets"
+                    label="Remove presets"
+                    description="The model then uses only the runtime image, environment, and resources set here. Presets can't be added back."
+                    isChecked={removePresets}
+                    onChange={(_event, checked) => setRemovePresets(checked)}
+                    isDisabled={saving}
+                  />
+                </FormGroup>
+              )}
               <FormGroup label="Runtime image" fieldId="runtime-image" isRequired={imageRequired}>
                 <TextInput
                   id="runtime-image"
@@ -721,10 +789,10 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
                   isRequired={imageRequired}
                 />
                 <Help id="runtime-image-help" error={runtimeImageError}>
-                  {!model
-                    ? runtimeImageHelp(hardware)
-                    : presets
-                      ? 'Leave empty to use the image the presets set.'
+                  {presetsKept
+                    ? 'Leave empty to use the image the presets set.'
+                    : hardware || !model
+                      ? runtimeImageHelp(hardware)
                       : mayUseDefaultImage(imageAccelerator)
                         ? DEFAULT_IMAGE_HELP
                         : "Enter a vLLM image for the model's hardware."}
@@ -755,79 +823,64 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
                   reason="This model scales automatically, so it has no fixed replica count."
                 />
               )}
-              {model ? (
-                <>
-                  {/* A model deployed without requests has none to show. */}
-                  <ReadOnlyField
-                    label="CPU"
-                    fieldId="deployment-cpu"
-                    value={cpu || NOT_SET}
-                    reason={fixedReason.resources}
+              <FormGroup label="CPU" fieldId="deployment-cpu" isRequired={cpuRequired}>
+                <TextInput
+                  id="deployment-cpu"
+                  aria-describedby="deployment-cpu-help"
+                  value={cpu}
+                  onChange={(_event, value) => setCpu(value)}
+                  onBlur={() => touch('cpu')}
+                  validated={cpuError ? 'error' : 'default'}
+                  isRequired={cpuRequired}
+                />
+                <Help id="deployment-cpu-help" error={cpuError}>
+                  In cores or millicores. For example, 2 or 500m.
+                </Help>
+              </FormGroup>
+              <FormGroup label="Memory" fieldId="deployment-memory" isRequired={memoryRequired}>
+                <TextInput
+                  id="deployment-memory"
+                  aria-describedby="deployment-memory-help"
+                  value={memory}
+                  onChange={(_event, value) => setMemory(value)}
+                  onBlur={() => touch('memory')}
+                  validated={memoryError ? 'error' : 'default'}
+                  isRequired={memoryRequired}
+                />
+                <Help id="deployment-memory-help" error={memoryError}>
+                  For example, 4Gi or 512Mi.
+                  {/* vLLM sizes its KV cache for the model's whole context, which on CPU often doesn't fit. */}
+                  {cpuOnly && ' ' + CPU_CONTEXT_HINT}
+                </Help>
+              </FormGroup>
+              {accelerator ? (
+                <FormGroup label={acceleratorLabel(accelerator)} fieldId="deployment-accelerators" isRequired>
+                  <CountInput
+                    id="deployment-accelerators"
+                    label={acceleratorLabel(accelerator)}
+                    min={1}
+                    max={MAX_ACCELERATORS}
+                    value={accelerators}
+                    onChange={setAccelerators}
+                    onBlur={() => touch('accelerators')}
+                    describedBy="deployment-accelerators-help"
+                    validated={acceleratorsError ? 'error' : 'default'}
                   />
-                  <ReadOnlyField
-                    label="Memory"
-                    fieldId="deployment-memory"
-                    value={memory || NOT_SET}
-                    reason={fixedReason.resources}
-                  />
+                  <Help id="deployment-accelerators-help" error={acceleratorsError}>
+                    From 1 to {MAX_ACCELERATORS}.
+                  </Help>
+                </FormGroup>
+              ) : (
+                // An edit without hardware shows what the model requests, which the list may not describe.
+                model &&
+                !hardware && (
                   <ReadOnlyField
                     label="Accelerators"
                     fieldId="deployment-accelerators"
                     value={acceleratorsText(model)}
-                    reason={fixedReason.resources}
+                    reason="Select hardware to edit the accelerators."
                   />
-                </>
-              ) : (
-                <>
-                  <FormGroup label="CPU" fieldId="deployment-cpu" isRequired>
-                    <TextInput
-                      id="deployment-cpu"
-                      aria-describedby="deployment-cpu-help"
-                      value={cpu}
-                      onChange={(_event, value) => setCpu(value)}
-                      onBlur={() => touch('cpu')}
-                      validated={cpuError ? 'error' : 'default'}
-                      isRequired
-                    />
-                    <Help id="deployment-cpu-help" error={cpuError}>
-                      In cores or millicores. For example, 2 or 500m.
-                    </Help>
-                  </FormGroup>
-                  <FormGroup label="Memory" fieldId="deployment-memory" isRequired>
-                    <TextInput
-                      id="deployment-memory"
-                      aria-describedby="deployment-memory-help"
-                      value={memory}
-                      onChange={(_event, value) => setMemory(value)}
-                      onBlur={() => touch('memory')}
-                      validated={memoryError ? 'error' : 'default'}
-                      isRequired
-                    />
-                    <Help id="deployment-memory-help" error={memoryError}>
-                      For example, 4Gi or 512Mi.
-                      {/* vLLM sizes its KV cache for the model's whole context, which on CPU often doesn't fit. */}
-                      {hardware && !accelerator && ' ' + CPU_CONTEXT_HINT}
-                    </Help>
-                  </FormGroup>
-                  {accelerator && (
-                    <FormGroup label={acceleratorLabel(accelerator)} fieldId="deployment-accelerators" isRequired>
-                      <CountInput
-                        id="deployment-accelerators"
-                        label={acceleratorLabel(accelerator)}
-                        min={1}
-                        max={MAX_ACCELERATORS}
-                        value={accelerators}
-                        onChange={setAccelerators}
-                        onBlur={() => touch('accelerators')}
-                        describedBy="deployment-accelerators-help"
-                        validated={acceleratorsError ? 'error' : 'default'}
-                      />
-                      <Help id="deployment-accelerators-help" error={acceleratorsError}>
-                        From 1 to {MAX_ACCELERATORS}.
-                      </Help>
-                    </FormGroup>
-                  )}
-                </>
+                )
               )}
               <ExpandableSection toggleText="Advanced settings" isIndented>
                 <RuntimeArgsField data={runtimeArgs} onChange={setRuntimeArgs} />
@@ -846,7 +899,20 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
               sections={review}
               alert={
                 model ? (
-                  <OlderServedNameAlert model={model} />
+                  <>
+                    <OlderServedNameAlert model={model} />
+                    {uriChanged && (
+                      <Alert
+                        isInline
+                        variant="warning"
+                        title="This changes the model users are served"
+                        data-testid="model-uri-changed"
+                      >
+                        Once the change rolls out, requests for <code>{model.id}</code> are answered by the model at the
+                        new URI. Subscriptions that include this model serve the new one under the same name.
+                      </Alert>
+                    )}
+                  </>
                 ) : (
                   hardwareMismatch && (
                     <Alert isInline variant="warning" title={hardwareMismatch} data-testid="model-hardware-mismatch" />
