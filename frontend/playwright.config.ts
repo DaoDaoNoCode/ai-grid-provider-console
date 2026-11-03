@@ -16,9 +16,17 @@ const fakesBffPort = process.env.E2E_FAKES_BFF_PORT ?? '8280';
 const fakesBackendPort = Number(process.env.E2E_FAKES_BACKEND_PORT ?? '9290');
 const fakesOrigin = `http://127.0.0.1:${fakesPort}`;
 const browser = { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } };
-// The specs that change fixture objects (and put them back), one test at a time.
-const fixtureWriters = ['cluster-membership.spec.ts', 'models.spec.ts'];
-const onBackendFakes = ['clusters.spec.ts', 'grid.spec.ts', 'subscriptions.spec.ts'];
+// The specs on the backend's own fakes. They share one backend, whose Git catalog of models and
+// subscriptions it fetches on every read and writes under one lock, so a write queues behind every
+// other call on the catalog; some change a fixture cluster and put it back (cluster-membership adds
+// site4 to AI Grid and removes it; models gives site1 a role for its run).
+const onBackendFakes = [
+  'clusters.spec.ts',
+  'grid.spec.ts',
+  'cluster-membership.spec.ts',
+  'models.spec.ts',
+  'subscriptions.spec.ts',
+];
 
 export default defineConfig({
   testDir: './e2e',
@@ -37,13 +45,13 @@ export default defineConfig({
     navigationTimeout: 15_000,
   },
   projects: [
-    { name: 'chromium', use: browser, testIgnore: [...fixtureWriters, ...onBackendFakes] },
-    { name: 'backend fakes', use: { ...browser, baseURL: fakesOrigin }, testMatch: onBackendFakes },
-    // Every other spec leaves the fixtures as it found them, or changes only objects it created
-    // under a name of its own, so they can run side by side. These change a fixture cluster and put
-    // it back (cluster-membership adds site4 to AI Grid and removes it; models gives site1 a role
-    // for its run): one test at a time.
-    { name: 'fixture writers', use: { ...browser, baseURL: fakesOrigin }, testMatch: fixtureWriters, workers: 1 },
+    { name: 'chromium', use: browser, testIgnore: onBackendFakes },
+    // One test at a time. A Models or Subscriptions write must be confirmed within the form's short
+    // wait plus an assertion's, as a user sees it confirmed; run beside another spec's catalog
+    // reads and writes, it queued behind them past both (the deploy flow failed so in CI). Alone,
+    // each write takes the time the backend needs for it, and the fixture clusters the writers
+    // change are theirs for the run.
+    { name: 'backend fakes', use: { ...browser, baseURL: fakesOrigin }, testMatch: onBackendFakes, workers: 1 },
   ],
   // The console's fake stack on the PoC preset (mock/fixtures-poc), with the frontend as it ships: the production bundle,
   // served by `vite preview`, whose proxy is the dev server's (vite.config.ts), so the identity
