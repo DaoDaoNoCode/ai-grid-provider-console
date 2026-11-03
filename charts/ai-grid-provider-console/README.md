@@ -29,14 +29,16 @@ Each image is `repository:tag`, `repository@digest`, or `repository:tag@digest` 
 The Deploy model wizard offers a **Hardware** choice: each one fills in the model's CPU, memory and
 accelerators, sets its runtime image, and adds its environment variables. The provider admin
 defines the list in `console.models.hardware`. The chart passes it to the BFF as `MODEL_HARDWARE`
-(JSON), and the wizard reads it from `GET /api/v1/config`. With the default empty list the console
-offers its built-in two: **NVIDIA GPU** (selected first; no image, so the cluster's default vLLM
-image for NVIDIA GPUs runs) and **CPU only** (OpenShift AI 3.6's vLLM CPU image and settings).
-`values.yaml` documents each field and shows the built-in list as values.
+(JSON), and the wizard reads it from `GET /api/v1/config`. The defaults live in `values.yaml`, which
+documents each field: **NVIDIA GPU** (selected first; no image, so the cluster's default vLLM image
+for NVIDIA GPUs runs) and **CPU only** (OpenShift AI 3.6's vLLM CPU image and settings). The BFF
+keeps a copy of the same two (`config.DefaultModelHardware`) for a local run without
+`MODEL_HARDWARE`, and for an empty list; `hack/check-chart.sh` fails when the two copies differ.
 
-A list replaces the built-in one whole, and its first entry is the wizard's default. Repeat the
-built-in entries you keep. `values.schema.json` refuses an entry the BFF would refuse at start (an
-unknown or misspelled field, an id that isn't a DNS label, an image with spaces, a CPU or memory
+A hub's list, in its GitOps repository, replaces the default one whole, and its first entry is the
+wizard's default. Repeat the default entries you keep. `values.schema.json` refuses an entry the
+BFF would refuse at start (an unknown or misspelled field, an id that isn't a DNS label, an
+accelerator that isn't a Kubernetes extended resource name, an image with spaces, a CPU or memory
 the wizard doesn't take, accelerators without an accelerator), and the template refuses an id used
 twice. Changing the list restarts the console's pod, since the BFF reads it at start; models already
 deployed keep what they were deployed with.

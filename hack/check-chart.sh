@@ -122,8 +122,18 @@ model_hardware() {
     yq 'select(.kind == "Deployment") | .spec.template.spec.containers[] | select(.name == "bff")
       | .env[] | select(.name == "MODEL_HARDWARE") | .value'
 }
+# The chart's default list is the BFF's own (config.DefaultModelHardware, which a local run without
+# MODEL_HARDWARE uses), as the BFF's golden GET /api/v1/config records it.
 got="$(model_hardware)"
-[[ -z "${got}" ]] || { echo "check-chart: without console.models.hardware, MODEL_HARDWARE is '${got}'" >&2; exit 1; }
+golden="$(yq -p=json -o=json -I=0 '.body.data.models.hardware | sort_keys(..)' "${ROOT}/mock/examples/get-config.json")"
+[[ -n "${got}" && "$(yq -p=json -o=json -I=0 'sort_keys(..)' <<<"${got}")" == "${golden}" ]] || {
+  echo "check-chart: the default console.models.hardware differs from the BFF's built-in list (mock/examples/get-config.json):" >&2
+  diff <(yq -p=json -P 'sort_keys(..)' <<<"${got:-null}") <(yq -p=json -P '.' <<<"${golden}") >&2 || true
+  exit 1
+}
+# An empty list renders no MODEL_HARDWARE: the BFF's own copy of the defaults applies.
+got="$(model_hardware --set-json 'console.models.hardware=[]')"
+[[ -z "${got}" ]] || { echo "check-chart: console.models.hardware=[] sets MODEL_HARDWARE to '${got}'" >&2; exit 1; }
 list='[{"id":"amd-gpu","label":"AMD GPU","description":"For clusters with AMD GPUs.","accelerator":"amd.com/gpu",
   "image":"quay.io/example/vllm-rocm:1","env":{"VLLM_USE_TRITON_FLASH_ATTN":"0"},"defaults":{"accelerators":2,"cpu":"500m","memory":"32Gi"}},
   {"id":"cpu","label":"CPU only","accelerator":""}]'

@@ -70,7 +70,10 @@ var (
 const cpuImage = "registry.redhat.io/rhaii/vllm-cpu-rhel9@sha256:0ec0f5ff9a5ff263f58db0cfb19e3d7eef24b94c2d8629fe5145f5a8747e28c9"
 
 // DefaultModelHardware is the list the console offers when MODEL_HARDWARE is
-// empty or unset. NVIDIA GPU sets no image: with no image and no presets
+// empty or unset, as in a local run: a copy of the chart's default
+// console.models.hardware, where the defaults live, which hack/check-chart.sh
+// keeps equal to this list through mock/examples/get-config.json. NVIDIA GPU
+// sets no image: with no image and no presets
 // (spec.base_refs), KServe runs its default preset's vLLM image, which is for
 // NVIDIA GPUs. CPU only copies OpenShift AI 3.6's CPU preset
 // (config/overlays/odh/accelerators/cpu-config-llm-template.yaml on

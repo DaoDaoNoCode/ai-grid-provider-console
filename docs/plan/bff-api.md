@@ -440,11 +440,14 @@ for what to check and which message to send.
 `models.hardware` in `/api/v1/config` is console configuration, like the map's tiles: the
 choices the Deploy model wizard offers, which the provider admin sets in the chart's
 `console.models.hardware` (`charts/ai-grid-provider-console/README.md`, "Model hardware"). The
-chart renders it as `MODEL_HARDWARE`, a JSON list; empty or unset is the built-in list
-(`config.DefaultModelHardware`): **NVIDIA GPU** (`nvidia.com/gpu`, one GPU, CPU 2, memory 16Gi,
+chart renders it as `MODEL_HARDWARE`, a JSON list. The defaults live in the chart's `values.yaml`:
+**NVIDIA GPU** (`nvidia.com/gpu`, one GPU, CPU 2, memory 16Gi,
 no image: the cluster's default vLLM image for NVIDIA GPUs) and **CPU only** (OpenShift AI 3.6's
-vLLM CPU image with `VLLM_CPU_KVCACHE_SPACE=4` and `OMP_NUM_THREADS=4`, CPU 4, memory 8Gi). The BFF
-reads it strictly at start and doesn't start when an entry breaks a rule `values.schema.json`
+vLLM CPU image with `VLLM_CPU_KVCACHE_SPACE=4` and `OMP_NUM_THREADS=4`, CPU 4, memory 8Gi).
+`MODEL_HARDWARE` empty or unset (a local run, `make dev`, or the chart with an empty list) falls
+back to the BFF's copy of the same two, `config.DefaultModelHardware`; `hack/check-chart.sh` fails
+when the chart's defaults differ from it, as `mock/examples/get-config.json` records it. The BFF
+reads the list strictly at start and doesn't start when an entry breaks a rule `values.schema.json`
 also checks: an unknown field, an id that isn't a DNS label or is used twice, an empty label, an
 accelerator that isn't a Kubernetes extended resource name (a domain outside kubernetes.io, a slash, a name), an image with whitespace, an environment
 variable that isn't a valid name or is `VLLM_ADDITIONAL_ARGS` (the wizard's runtime arguments),

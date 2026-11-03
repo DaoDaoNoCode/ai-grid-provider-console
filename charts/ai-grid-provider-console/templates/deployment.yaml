@@ -170,7 +170,7 @@ spec:
             {{- end }}
             {{- $_ := set $ids .id true }}
             {{- end }}
-            # The Deploy model wizard's hardware choices; without them the BFF offers its built-in list.
+            # The Deploy model wizard's hardware choices; an empty list leaves the BFF's own copy of the defaults.
             - name: MODEL_HARDWARE
               value: {{ toJson . | quote }}
             {{- end }}
