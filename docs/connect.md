@@ -244,6 +244,49 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   backend's fakes and commits a model of its own first (`e2e/backend.ts`).
 - The BFF has no `/api/v1/subscriptions` or `/api/v1/models` routes and no `--models-namespace`.
 
+### Writes that take long
+
+The backend commits Models and Subscriptions to a Git repository: a write takes seconds, and on
+a slow day longer than the BFF waits (`BACKEND_WRITE_TIMEOUT`, 30 s, `docs/plan/bff-api.md`, "The
+Connect relay"). So these writes (deploy, edit and delete a model; create, edit and delete a
+subscription) are sent from the app root, never from the form (`frontend/src/notifications`):
+
+- `useModelWrites` and `useSubscriptionWrites` call `submitWrite` (`useBackgroundWrites`), which
+  sends the RPC with `callUnaryMethod` from `BackgroundWritesProvider`. The form waits for it
+  `FORM_WAIT_MS` (3 s), with its button busy. An answer within that wait is the form's as it
+  always was: a refusal stays on the form, a success leaves it with the page's notice, worded as
+  the center's ("Model <name> deployed"). Every
+  refusal the backend gives without touching Git (a field, a conflict, a taken name) comes back
+  well inside the wait.
+- Past the wait the form leaves as on success, without the notice, and an info toast says the
+  change is in progress. The request keeps running; its answer becomes the outcome of that same
+  entry (one drawer entry per write, unread when it arrives): the success, or the backend's
+  refusal with a link back to the form.
+- A write whose outcome is unknown (`isUnknownOutcome`: DeadlineExceeded, Unavailable, Canceled,
+  a failed fetch; never a 4xx or an error the backend answered itself) is not an error: the
+  center reads the object back every 10 s and says it was not done after 2 minutes. A create is
+  done when `Get` finds the object holding what it sent, an update when the version moved past
+  the one sent and the object holds what it sent (`writeFields.ts`: a model's display name,
+  source, image, runtime arguments, resources, clusters and replicas; a subscription's names,
+  groups, organization, priority and models), a delete when `Get` answers NotFound. An object
+  that exists, or moved on, with other content is someone else's write as far as anyone can
+  tell: a warning that the write couldn't be confirmed, with a link to the object, never a
+  success. Reads that keep failing are a warning too.
+- A deployed model is then watched every 20 s until its phase, as `toModelView` words it for the
+  Models list, is Ready ("Model <name> is ready on <clusters>") or Failed; it stops without a word
+  after 30 minutes or when the model is gone. An edited model isn't: its status doesn't say which
+  revision it describes, so the previous deployment's Ready would read as the edit's. Edits get a
+  readiness watch once the backend reports the revision its status describes.
+- The watches and the notifications are kept in the browser tab's session storage under the
+  signed-in user (`storageKeys.ts`), so a reload resumes them: a write's record is kept before its
+  request goes out, and one whose answer the page no longer awaits is read back. When another user
+  signs in to the tab, the previous user's records stop and leave it. They belong to that tab
+  only: another tab, browser or admin sees none of them.
+
+Every toast goes through the notification center (`NotificationToasts`), a page's own success
+notice (`NoticeToast`) included, and every toast is also in the drawer the masthead's bell opens (on a
+phone, the user menu's Notifications item, as it offers the theme there).
+
 ### Perses on Query v5
 
 The `@perses-dev` packages that use Query (dashboards, explore, plugin-system, and the Prometheus
