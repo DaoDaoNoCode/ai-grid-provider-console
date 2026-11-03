@@ -690,7 +690,7 @@
         "locations": []
       },
       "fieldErrors": {
-        "locations": "Select at least one location."
+        "locations": "Select at least one cluster."
       }
     },
     {
@@ -834,7 +834,7 @@
     },
     {
       "schema": "model",
-      "name": "empty runtime image, for the cluster's default",
+      "name": "empty runtime image on NVIDIA GPUs, for the cluster's default",
       "input": {
         "name": "granite-3-8b",
         "displayName": "Granite 3.3 8B Instruct",
@@ -844,11 +844,53 @@
         "replicas": 1,
         "cpu": "2",
         "memory": "4Gi",
+        "accelerator": "nvidia.com/gpu",
         "acceleratorCount": 1,
         "runtimeArgs": ["--max-model-len=8192"],
         "locations": ["site1", "site2"]
       },
       "fieldErrors": {}
+    },
+    {
+      "schema": "model",
+      "name": "empty runtime image without NVIDIA GPUs",
+      "input": {
+        "name": "granite-3-8b",
+        "displayName": "Granite 3.3 8B Instruct",
+        "description": "Enterprise language model",
+        "modelUri": "hf://example-org/granite-8b-instruct",
+        "runtimeImage": "",
+        "replicas": 1,
+        "cpu": "2",
+        "memory": "4Gi",
+        "accelerator": "amd.com/gpu",
+        "acceleratorCount": 1,
+        "runtimeArgs": ["--max-model-len=8192"],
+        "locations": ["site1", "site2"]
+      },
+      "fieldErrors": {
+        "runtimeImage": "Required."
+      }
+    },
+    {
+      "schema": "model",
+      "name": "empty runtime image on CPU",
+      "input": {
+        "name": "granite-3-8b",
+        "displayName": "Granite 3.3 8B Instruct",
+        "description": "Enterprise language model",
+        "modelUri": "hf://example-org/granite-8b-instruct",
+        "runtimeImage": "",
+        "replicas": 1,
+        "cpu": "2",
+        "memory": "4Gi",
+        "acceleratorCount": 0,
+        "runtimeArgs": ["--max-model-len=8192"],
+        "locations": ["site1", "site2"]
+      },
+      "fieldErrors": {
+        "runtimeImage": "Required."
+      }
     },
     {
       "schema": "model",

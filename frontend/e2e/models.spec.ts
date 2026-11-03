@@ -54,7 +54,7 @@ test('deploys a model to a cluster, edits it in the same wizard, and deletes it'
 
   // Deployment: the name starts from the model URI's last segment.
   await expect(page.getByRole('textbox', { name: /^Model name/ })).toHaveValue(unique);
-  // Hardware: NVIDIA GPU first, from the BFF's built-in list. CPU only fills in its own image, which
+  // Hardware: NVIDIA GPU first, from the console's default list. CPU only fills in its own image, which
   // the backend at the pin requires (an empty one, the cluster's default, needs a newer backend).
   await expect(page.getByRole('radio', { name: 'NVIDIA GPU' })).toBeChecked();
   await page.getByRole('radio', { name: 'CPU only' }).check();
@@ -87,7 +87,7 @@ test('deploys a model to a cluster, edits it in the same wizard, and deletes it'
   await expect(page).toHaveURL(`/models/${unique}`);
   await expect(page.getByRole('heading', { name: unique })).toBeVisible();
   await expect(page.getByTestId('model-locations')).toContainText(CLUSTER);
-  await expect(page.getByLabel('Deployment', { exact: true })).toContainText(/Hardware\s*CPU only/);
+  await expect(page.getByLabel('Deployment', { exact: true })).toContainText(/Accelerators\s*None \(CPU only\)/);
 
   // Edit in the deploy wizard: the source is read-only, every step opens directly, and Save sends
   // Models/Update with the changed path and the version the page loaded.

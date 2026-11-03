@@ -37,15 +37,17 @@ import { PageHeader } from '../../components/PageHeader';
 import { ReadOnlyField } from '../../components/ReadOnlyField';
 import { useConsoleSession } from '../../context/useConsoleSession';
 import { useConfirmDiscard } from '../../hooks/useConfirmDiscard';
-import { createModelSchema, fieldMessage } from '../../validation';
+import { fieldMessage, modelFieldsSchema, requireImageWithoutNvidia } from '../../validation';
 import { RuntimeArgsField } from './fields/RuntimeArgsField';
 import { filterRuntimeArgsForContainer, runtimeArgsOf, type RuntimeArgsFieldData } from './fields/runtimeArgs';
 import {
   DEFAULT_IMAGE,
+  DEFAULT_IMAGE_HELP,
   NVIDIA_GPU,
   acceleratorLabel,
+  acceleratorsText,
   hardwareEnv,
-  hardwareText,
+  mayUseDefaultImage,
   runtimeImageHelp,
 } from './modelHardware';
 import { DEFAULT_REPLICAS, sameSet, updateRequestOf, type ModelInput } from './modelRequests';
@@ -70,8 +72,15 @@ const steps = {
 /** What the wizard starts from where the selected hardware sets no default. */
 const defaults = { replicas: String(DEFAULT_REPLICAS), cpu: '2', memory: '4Gi', accelerators: '1' };
 
-/** The most accelerators the wizard requests (createModelSchema's acceleratorCount). */
+/** The most accelerators the wizard requests (modelFieldsSchema's acceleratorCount). */
 const MAX_ACCELERATORS = 64;
+
+/**
+ * vLLM on CPU sizes its KV cache for the model's whole context: Qwen3-0.6B's default of 40,960
+ * tokens needs 4.38 GiB, more than CPU only's VLLM_CPU_KVCACHE_SPACE of 4 GiB, and runs with
+ * --max-model-len=8192.
+ */
+const CPU_CONTEXT_HINT = 'For long-context models on CPU, set --max-model-len in Advanced settings.';
 
 /** A resource the model was deployed without, shown in its read-only field. */
 const NOT_SET = 'Not set';
@@ -82,7 +91,6 @@ const fixedReason = {
   // written before the backend served models as their ids can keep another.
   served: 'Users send this name as the model in their requests. It cannot be edited.',
   resources: 'Resources are set when the model is deployed. Deploy it again to change them.',
-  hardware: 'Hardware is set when the model is deployed. Deploy it again to change it.',
   presets: 'Set when the model was deployed. New models are deployed without presets.',
 };
 
@@ -254,17 +262,28 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
   const [requestLeave, discardModal] = useConfirmDiscard(isDirty && !saving, leave);
 
   // Every field this checks is required, so a field the user left empty says so.
-  const shownError = (field: keyof typeof createModelSchema.shape, value: string, parse?: (text: string) => unknown) =>
+  const shownError = (field: keyof typeof modelFieldsSchema.shape, value: string, parse?: (text: string) => unknown) =>
     !touched.has(field)
       ? undefined
       : value.trim()
-        ? fieldMessage(createModelSchema.shape[field], value, parse)
+        ? fieldMessage(modelFieldsSchema.shape[field], value, parse)
         : 'Required.';
   const modelUriError = shownError('modelUri', modelUri);
-  // The image may be empty: the cluster's default.
-  const runtimeImageError = touched.has('runtimeImage')
-    ? fieldMessage(createModelSchema.shape.runtimeImage, runtimeImage)
-    : undefined;
+  const presets = model?.baseRefs.join(', ');
+  // An empty image runs the cluster's default vLLM image, which is for NVIDIA GPUs
+  // (requireImageWithoutNvidia): so the selected hardware's accelerator decides for a new model, and
+  // what a deployed model requests for an edit. A deployed model's presets set an image of their own.
+  const imageAccelerator = model
+    ? model.acceleratorRequests.some((r) => r.resource === NVIDIA_GPU)
+      ? NVIDIA_GPU
+      : undefined
+    : accelerator;
+  const imageOptional = mayUseDefaultImage(imageAccelerator) || Boolean(presets);
+  const runtimeImageError = !touched.has('runtimeImage')
+    ? undefined
+    : runtimeImage.trim() || imageOptional
+      ? fieldMessage(modelFieldsSchema.shape.runtimeImage, runtimeImage)
+      : 'Required.';
   const replicasError = shownError('replicas', replicas, Number);
   const cpuError = shownError('cpu', cpu);
   const memoryError = shownError('memory', memory);
@@ -279,20 +298,22 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
         ? undefined
         : `Enter a number from 1 to ${MAX_ACCELERATORS}.`;
   // A deployed model's source, name and resources are fixed, so only what an edit can change is checked.
-  const sourceValid = editing || createModelSchema.pick({ modelUri: true }).safeParse({ modelUri }).success;
+  const sourceValid = editing || modelFieldsSchema.pick({ modelUri: true }).safeParse({ modelUri }).success;
   const deploymentValid = editing
-    ? createModelSchema
+    ? modelFieldsSchema
         .pick({ displayName: true, description: true })
         .safeParse({ displayName: input.displayName, description: input.description }).success &&
-      createModelSchema.shape.runtimeImage.safeParse(input.runtimeImage).success &&
+      modelFieldsSchema.shape.runtimeImage.safeParse(input.runtimeImage).success &&
+      (imageOptional || runtimeImage.trim() !== '') &&
       // The deploy wizard's limits apply to a count the user sets, not to one the model already has.
       (!replicasEditable ||
         replicas === start.replicas ||
-        (replicas !== '' && createModelSchema.shape.replicas.safeParse(input.replicas).success))
+        (replicas !== '' && modelFieldsSchema.shape.replicas.safeParse(input.replicas).success))
     : hardware !== undefined &&
       replicas !== '' &&
       (!accelerator || acceleratorsValid) &&
-      createModelSchema.omit({ locations: true }).strip().safeParse(input).success;
+      modelFieldsSchema.omit({ locations: true }).strip().superRefine(requireImageWithoutNvidia).safeParse(input)
+        .success;
   // An edit that keeps its clusters doesn't depend on which clusters are offered right now.
   const clusterNamesChanged = !editing || !sameSet(clusterNames, start.clusterNames);
   const clusterNamesValid =
@@ -478,14 +499,15 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
       : `${names} ${one ? 'has' : 'have'} GPUs that the model doesn't use with ${hardware.label}`;
   })();
 
-  const presets = model?.baseRefs.join(', ');
-  const hardwareItem: ReviewItem = model
+  // A new model names the hardware selected from the list; a deployed one shows what it has, which
+  // the list, as it is now, may no longer describe.
+  const hardwareItems: ReviewItem[] = model
     ? presets
-      ? { term: 'Presets', value: presets }
-      : { term: 'Hardware', value: hardwareText(model, hardwareList) }
-    : { term: 'Hardware', value: hardware?.label };
+      ? [{ term: 'Presets', value: presets }]
+      : []
+    : [{ term: 'Hardware', value: hardware?.label }];
   const acceleratorItems: ReviewItem[] = model
-    ? model.acceleratorRequests.map((r) => ({ term: acceleratorLabel(r.resource), value: r.count }))
+    ? [{ term: 'Accelerators', value: acceleratorsText(model) }]
     : accelerator
       ? [{ term: acceleratorLabel(accelerator), value: accelerators }]
       : [];
@@ -506,7 +528,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
         { term: 'Model name', value: nameDescData.name },
         ...(model ? [] : [{ term: 'Model name in requests', value: nameDescData.k8sName.value }]),
         { term: 'Description', value: nameDescData.description },
-        hardwareItem,
+        ...hardwareItems,
         // An empty image with presets runs theirs; without presets, the cluster's default.
         { term: 'Runtime image', value: runtimeImage.trim() || (presets ? undefined : DEFAULT_IMAGE) },
         { term: 'Replicas', value: replicasEditable ? replicas : 'Autoscaled' },
@@ -626,19 +648,17 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
                     : 'Users send the resource name as the model in their requests. Up to 63 characters.'
                 }
               />
-              {!model ? (
-                hardwareField()
-              ) : presets ? (
-                <ReadOnlyField label="Presets" fieldId="model-presets" value={presets} reason={fixedReason.presets} />
-              ) : (
-                <ReadOnlyField
-                  label="Hardware"
-                  fieldId="model-hardware"
-                  value={hardwareText(model, hardwareList) ?? ''}
-                  reason={fixedReason.hardware}
-                />
-              )}
-              <FormGroup label="Runtime image" fieldId="runtime-image">
+              {!model
+                ? hardwareField()
+                : presets && (
+                    <ReadOnlyField
+                      label="Presets"
+                      fieldId="model-presets"
+                      value={presets}
+                      reason={fixedReason.presets}
+                    />
+                  )}
+              <FormGroup label="Runtime image" fieldId="runtime-image" isRequired={!imageOptional}>
                 <TextInput
                   id="runtime-image"
                   aria-describedby="runtime-image-help"
@@ -646,13 +666,16 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
                   onChange={(_event, value) => setRuntimeImage(value)}
                   onBlur={() => touch('runtimeImage')}
                   validated={runtimeImageError ? 'error' : 'default'}
+                  isRequired={!imageOptional}
                 />
                 <Help id="runtime-image-help" error={runtimeImageError}>
                   {!model
                     ? runtimeImageHelp(hardware)
-                    : presets
-                      ? 'Leave empty to use the image the presets set.'
-                      : runtimeImageHelp(undefined)}
+                    : mayUseDefaultImage(imageAccelerator)
+                      ? DEFAULT_IMAGE_HELP
+                      : presets
+                        ? 'Leave empty to use the image the presets set.'
+                        : "Enter a vLLM image for the model's hardware."}
                 </Help>
               </FormGroup>
               {replicasEditable ? (
@@ -695,15 +718,12 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
                     value={memory || NOT_SET}
                     reason={fixedReason.resources}
                   />
-                  {model.acceleratorRequests.map((r, i) => (
-                    <ReadOnlyField
-                      key={r.resource}
-                      label={acceleratorLabel(r.resource)}
-                      fieldId={`deployment-accelerators${i ? `-${i}` : ''}`}
-                      value={r.count}
-                      reason={fixedReason.resources}
-                    />
-                  ))}
+                  <ReadOnlyField
+                    label="Accelerators"
+                    fieldId="deployment-accelerators"
+                    value={acceleratorsText(model)}
+                    reason={fixedReason.resources}
+                  />
                 </>
               ) : (
                 <>
@@ -733,6 +753,8 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
                     />
                     <Help id="deployment-memory-help" error={memoryError}>
                       For example, 4Gi or 512Mi.
+                      {/* vLLM sizes its KV cache for the model's whole context, which on CPU often doesn't fit. */}
+                      {hardware && !accelerator && ' ' + CPU_CONTEXT_HINT}
                     </Help>
                   </FormGroup>
                   {accelerator && (

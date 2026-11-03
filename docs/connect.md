@@ -164,11 +164,12 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   unspecified phase Unknown); `status.message` as the status's tooltip and the page's alert;
   `status.url` as the endpoint; `status.placement.locations` (the `location` labels) in the
   Locations column; the main container's `requests` as CPU, memory and accelerators (any request
-  with a domain, such as `nvidia.com/gpu`); and the model's hardware (`modelHardware.ts`,
-  `hardwareOf`): with no `base_refs`, the entry of the config's `models.hardware` whose accelerator
-  the model requests, or, with none, the CPU-only entry whose image and environment it has; a
-  model with `base_refs` shows them as Presets instead, and one that matches nothing shows what it
-  requests. Pages are at
+  with a domain, such as `nvidia.com/gpu`), worded as Accelerators ("1 GPU (nvidia.com/gpu)", or
+  "None (CPU only)"; `acceleratorsText` in `modelHardware.ts`), and `base_refs` as Presets. A
+  deployed model is never matched against the config's `models.hardware`, which can change or fail
+  to load: only the Deploy wizard names hardware. An empty image is the cluster's default vLLM
+  image for NVIDIA GPUs, so the wizard requires an image unless the hardware's accelerator, or a
+  deployed model's request, is `nvidia.com/gpu` (or the model has presets). Pages are at
   `/models/:id` and `/models/:id/edit`.
 - **Each cluster.** The expanded row and the model's page list `status.clusters`, the backend's
   status of the model on each cluster its placement names, as it reports them: one row per

@@ -15,7 +15,7 @@ import { PARTIALLY_AVAILABLE, hasModelStatusDetails, modelPhase, modelStatusTitl
 import { titleOf } from './modelView';
 import { useDeleteModel } from './useDeleteModel';
 import { useModel } from './useModels';
-import { hardwareText, runtimeImageText } from './modelHardware';
+import { acceleratorsText, runtimeImageText } from './modelHardware';
 import { useClusterList } from '../clusters/useClusters';
 
 /** A model deployment at /models/:id: its status explained, its configuration and its locations. */
@@ -24,7 +24,7 @@ export const ModelDetailsPage: React.FC = () => {
   const navigate = useNavigate();
   const { data: loadedModel, loaded, error, refresh } = useModel(id);
   const { data: clusters } = useClusterList();
-  const { user, config } = useConsoleSession();
+  const { user } = useConsoleSession();
   // A 404 means the deployment is gone, even when an earlier answer is still held (PageStateSection
   // shows the not-found state then).
   const model = error instanceof ServiceError && error.status === 404 ? undefined : loadedModel;
@@ -62,9 +62,9 @@ export const ModelDetailsPage: React.FC = () => {
               { term: 'Description', value: model.description },
               { term: 'Model', value: model.modelName },
               { term: 'Model URI', value: model.modelUri },
-              model.baseRefs.length > 0
-                ? { term: 'Presets', value: model.baseRefs.join(', ') }
-                : { term: 'Hardware', value: hardwareText(model, config?.models?.hardware ?? []) },
+              // What the model has, not a match against today's hardware list, which may have changed.
+              ...(model.baseRefs.length > 0 ? [{ term: 'Presets', value: model.baseRefs.join(', ') }] : []),
+              { term: 'Accelerators', value: acceleratorsText(model) },
               { term: 'Runtime image', value: runtimeImageText(model) },
               { term: 'Replicas', value: model.autoscaled ? 'Autoscaled' : model.replicas },
               { term: 'Endpoint', value: model.url },
