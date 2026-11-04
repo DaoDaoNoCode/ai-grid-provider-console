@@ -206,7 +206,9 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   only; Review warns that users of the model get the new one under the same name),
   `spec.replicas`, `spec.base_refs` (empty once the user removes the presets; none can be added),
   `spec.main.image` (an emptied image too), `spec.main.requests` (CPU, memory and the accelerator,
-  every other resource as loaded; the backend moves an accelerator's limit with its request),
+  every other resource as loaded: hardware replaces only the accelerators the console knows,
+  NVIDIA and AMD GPUs and those the hardware list names, so a hand-written model's `rdma/hca`
+  stays; the backend moves an accelerator's limit with its request),
   `spec.main.env`, `metadata.annotations` and `spec.placement`; the requests, the env and the
   annotations whole, as loaded with the change applied, and `metadata.version` with `lock: true`.
   Selecting other hardware applies it as Deploy does: its image, its environment in place of the

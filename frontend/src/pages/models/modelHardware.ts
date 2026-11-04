@@ -21,6 +21,15 @@ const AMD_GPU = 'amd.com/gpu';
 
 const isGPU = (resource: string) => resource === NVIDIA_GPU || resource === AMD_GPU;
 
+/**
+ * The accelerators the console knows, which an edit that applies hardware replaces: NVIDIA and AMD
+ * GPUs, and every accelerator an entry of the list requests. A model's request for any other
+ * resource with a `/` in its name (rdma/hca on a model written by hand) is not the console's.
+ */
+export const knownAccelerators = (list: readonly ModelHardware[]): string[] => [
+  ...new Set([NVIDIA_GPU, AMD_GPU, ...list.flatMap((h) => (h.accelerator ? [h.accelerator] : []))]),
+];
+
 /** The accelerator count's label: GPUs for NVIDIA and AMD GPUs, Accelerators for any other. */
 export const acceleratorLabel = (resource: string) => (isGPU(resource) ? 'GPUs' : 'Accelerators');
 

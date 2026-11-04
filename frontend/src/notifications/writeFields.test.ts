@@ -4,6 +4,7 @@ import { create } from '@bufbuild/protobuf';
 import { ModelSchema } from '../gen/ai_grid/v1/model_type_pb';
 import { SubscriptionSchema } from '../gen/ai_grid/v1/subscription_type_pb';
 import { RUNTIME_ARGS_ENV, runtimeArgsOf, type EnvVar } from '../pages/models/fields/runtimeArgs';
+import { knownAccelerators } from '../pages/models/modelHardware';
 import { createRequestOf, updateRequestOf, type ModelInput } from '../pages/models/modelRequests';
 import { toModelView } from '../pages/models/modelView';
 import { holdsSent, modelFields, sentModelFields, sentSubscriptionFields, subscriptionFields } from './writeFields';
@@ -66,6 +67,7 @@ const unchanged = (): ModelInput => {
     baseRefs: model.baseRefs,
     runtimeArgs: runtimeArgsOf(model.env),
     clusters: [],
+    knownAccelerators: knownAccelerators([]),
   };
 };
 

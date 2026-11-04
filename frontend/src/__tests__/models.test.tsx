@@ -1758,6 +1758,27 @@ describe('editing what a deployed model runs', () => {
     expect(request.object?.spec?.main?.requests).toEqual({ cpu: '2', memory: '16Gi', 'nvidia.com/gpu': '2' });
   });
 
+  it.each([
+    ['NVIDIA GPU', { cpu: '2', memory: '16Gi', 'nvidia.com/gpu': '2', 'rdma/hca': '1' }],
+    ['CPU only', { cpu: '4', memory: '8Gi', 'rdma/hca': '1' }],
+  ])(
+    'replaces only the known accelerator of a model that also requests another resource, on %s',
+    async (label, requests) => {
+      const { service, update } = deployed({ cpu: '2', memory: '16Gi', 'nvidia.com/gpu': '1', 'rdma/hca': '1' }, '');
+      const user = userEvent.setup();
+      renderAt('/models/granite-3-8b/edit', service);
+      await openStep(user, 'Deployment');
+      // Two resources with a `/` match no hardware, so the edit shows them read-only until one is selected.
+      expect(await screen.findByRole('textbox', { name: 'Accelerators' })).toHaveValue(
+        '1 GPU (nvidia.com/gpu), 1 accelerator (rdma/hca)',
+      );
+      await selectHardware(user, label);
+      if (label === 'NVIDIA GPU') await user.click(screen.getByRole('button', { name: 'Increase gpus' }));
+      const request = await save(user, update);
+      expect(request.object?.spec?.main?.requests).toEqual(requests);
+    },
+  );
+
   it('checks CPU, memory, and GPUs as Deploy does, and keeps values the model already has', async () => {
     // Values the backend took that the Deploy wizard doesn't write: 16G (not Gi) and 80 GPUs (over 64).
     const { service } = deployed({ cpu: '2', memory: '16G', 'nvidia.com/gpu': '80' }, '');

@@ -49,6 +49,7 @@ import {
   acceleratorsText,
   envWithHardware,
   hardwareEnv,
+  knownAccelerators,
   matchingHardware,
   wholeCount,
   mayUseDefaultImage,
@@ -306,6 +307,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
     // An edit without hardware shows the model's accelerators read-only; one that keeps the model's
     // hardware and count sends its requests as stored, in whatever quantity form they have.
     keepAccelerators: editing && (!hardware || (!!own && (!accelerator || acceleratorsKept))),
+    knownAccelerators: knownAccelerators(hardwareList),
     env,
     baseRefs: model && (removePresets ? [] : model.baseRefs),
     runtimeArgs: filterRuntimeArgsForContainer(runtimeArgs.args),

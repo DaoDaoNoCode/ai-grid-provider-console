@@ -2,13 +2,14 @@ import { create } from '@bufbuild/protobuf';
 import { ModelSchema, type ModelSpec } from '../../gen/ai_grid/v1/model_type_pb';
 import configExample from '../../../../mock/examples/get-config.json';
 import type { ModelHardware } from '../../api/types';
-import { envWithHardware, matchingHardware, wholeCount } from './modelHardware';
+import { envWithHardware, knownAccelerators, matchingHardware, wholeCount } from './modelHardware';
 import { updateRequestOf, type ModelInput } from './modelRequests';
 import { toModelView, type ModelView } from './modelView';
 
 const hardwareList: ModelHardware[] = configExample.body.data.models.hardware;
 const cpuOnly = hardwareList.find((h) => h.id === 'cpu')!;
 const nvidia = hardwareList.find((h) => h.id === 'nvidia-gpu')!;
+const gaudi: ModelHardware = { id: 'gaudi', label: 'Intel Gaudi', accelerator: 'habana.ai/gaudi' };
 
 /** A stored model, as Models/Get answers it, on one NVIDIA GPU unless the spec says otherwise. */
 const stored = (spec: Partial<Omit<ModelSpec, '$typeName'>> = {}): ModelView =>
@@ -41,6 +42,7 @@ const unchanged = (model: ModelView): ModelInput => ({
   baseRefs: model.baseRefs,
   runtimeArgs: [],
   clusters: [],
+  knownAccelerators: knownAccelerators(hardwareList),
 });
 
 describe('updateRequestOf', () => {
@@ -80,6 +82,66 @@ describe('updateRequestOf', () => {
     expect(amd?.object?.spec?.main?.requests).toEqual({ cpu: '2', memory: '16Gi', 'amd.com/gpu': '2' });
     const cpu = updateRequestOf(model, { ...unchanged(model), accelerator: undefined, acceleratorCount: 0 });
     expect(cpu?.object?.spec?.main?.requests).toEqual({ cpu: '2', memory: '16Gi' });
+  });
+
+  describe('a model that also requests a resource no hardware names', () => {
+    const withRdma = (accelerator: string) =>
+      stored({
+        main: {
+          $typeName: 'ai_grid.v1.ModelContainer',
+          image: '',
+          requests: { cpu: '2', memory: '16Gi', [accelerator]: '1', 'rdma/hca': '1' },
+          limits: {},
+          env: [],
+        },
+      });
+    // A list with an entry for an accelerator that isn't a GPU.
+    const listed = knownAccelerators([...hardwareList, gaudi]);
+
+    it('keeps that resource when the accelerator count changes', () => {
+      const model = withRdma('nvidia.com/gpu');
+      const request = updateRequestOf(model, {
+        ...unchanged(model),
+        accelerator: 'nvidia.com/gpu',
+        acceleratorCount: 3,
+      });
+      expect(request?.updateMask).toEqual({ paths: ['spec.main.requests'] });
+      expect(request?.object?.spec?.main?.requests).toEqual({
+        cpu: '2',
+        memory: '16Gi',
+        'nvidia.com/gpu': '3',
+        'rdma/hca': '1',
+      });
+    });
+
+    it.each([
+      ['nvidia.com/gpu', 'amd.com/gpu'],
+      ['nvidia.com/gpu', 'habana.ai/gaudi'],
+      ['habana.ai/gaudi', 'nvidia.com/gpu'],
+    ])('keeps that resource when other hardware replaces %s with %s', (from, to) => {
+      const model = withRdma(from);
+      const request = updateRequestOf(model, {
+        ...unchanged(model),
+        accelerator: to,
+        acceleratorCount: 2,
+        knownAccelerators: listed,
+      });
+      expect(request?.object?.spec?.main?.requests).toEqual({ cpu: '2', memory: '16Gi', [to]: '2', 'rdma/hca': '1' });
+    });
+
+    it.each(['nvidia.com/gpu', 'amd.com/gpu', 'habana.ai/gaudi'])(
+      'removes only the known accelerator %s when CPU only is selected',
+      (accelerator) => {
+        const model = withRdma(accelerator);
+        const request = updateRequestOf(model, {
+          ...unchanged(model),
+          accelerator: undefined,
+          acceleratorCount: 0,
+          knownAccelerators: listed,
+        });
+        expect(request?.object?.spec?.main?.requests).toEqual({ cpu: '2', memory: '16Gi', 'rdma/hca': '1' });
+      },
+    );
   });
 
   it('keeps the accelerators as stored when the edit keeps them, and removes an emptied CPU request', () => {

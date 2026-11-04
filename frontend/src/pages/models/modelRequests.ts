@@ -37,6 +37,12 @@ export type ModelInput = {
    */
   keepAccelerators?: boolean;
   /**
+   * The accelerators the console knows (knownAccelerators: NVIDIA and AMD GPUs and the hardware
+   * list's). An edit that replaces the model's accelerators removes only these and `accelerator`: a
+   * request for any other resource, such as rdma/hca on a model written by hand, stays as read.
+   */
+  knownAccelerators: string[];
+  /**
    * The environment besides the runtime arguments, sent with them: the hardware's for a new model;
    * for an edit, the model's, with the hardware the user selected applied (envWithHardware).
    */
@@ -113,8 +119,8 @@ const envEntries = (env: readonly EnvVar[]) =>
 
 /**
  * The main container's requests after an edit: the model's, CPU and memory as entered (empty
- * removes one), and its accelerator requests replaced by the input's unless it keeps them. Every
- * other resource stays as read.
+ * removes one), and, unless it keeps them, the accelerators the console knows replaced by the
+ * input's. Every other resource, rdma/hca or ephemeral-storage, stays as read.
  */
 const editedRequests = (model: ModelView, input: ModelInput): Record<string, string> => {
   const requests = { ...model.requests };
@@ -126,7 +132,8 @@ const editedRequests = (model: ModelView, input: ModelInput): Record<string, str
     else delete requests[resource];
   }
   if (!input.keepAccelerators) {
-    for (const { resource } of model.acceleratorRequests) delete requests[resource];
+    for (const resource of input.knownAccelerators) delete requests[resource];
+    if (input.accelerator) delete requests[input.accelerator];
     if (input.accelerator && input.acceleratorCount > 0) requests[input.accelerator] = String(input.acceleratorCount);
   }
   return requests;
