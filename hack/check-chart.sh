@@ -230,6 +230,8 @@ got="$(helm template console "${CHART}" -n ai-grid --set-string backend.idpSecre
 [[ "${got}" == '!!str' ]] || { echo "check-chart: backend.idpSecrets.namespace=123 renders as ${got}, not a string" >&2; exit 1; }
 refused "backend.idpSecrets.namespace=Not_A_Namespace" --set-string backend.idpSecrets.namespace=Not_A_Namespace
 refused "backend.idpSecrets.namespace empty" --set-string backend.idpSecrets.namespace=
+# A null namespace would get past the release-namespace guard and put the Role in the release namespace.
+refused "backend.idpSecrets.namespace=null" --set backend.idpSecrets.namespace=null --set backend.idpSecrets.createNamespace=false
 # The backend can get every Secret in that namespace, so it must not be the console's own.
 if out="$(helm template console "${CHART}" -n ai-grid --set backend.idpSecrets.namespace=ai-grid \
   --set backend.idpSecrets.createNamespace=false 2>&1 >/dev/null)" ||
