@@ -613,6 +613,22 @@ it('requires an organization and shows it in the table', async () => {
   expect(stored(service, 'test-team').spec?.organization?.id).toBe('8d2e7b31-0c4f-4a9d-b5e6-7f8a9b0c1d2e');
 });
 
+it('names an organization without a name by its id, as the select shows it, for the notification that the subscription is active', async () => {
+  const service = seeded();
+  service.organizations.push({ ...service.organizations[2], id: 'nameless-org', name: '' });
+  const user = userEvent.setup();
+  renderAt('/subscriptions/create', service);
+  await fillNewSubscription(user);
+  await pickOrganization(user, 'nameless-org');
+  expect(screen.getByRole('combobox', { name: 'Organization' })).toHaveValue('nameless-org');
+  await user.click(screen.getByTestId('create-subscription-button'));
+  expect(await screen.findByText('Subscription Test team saved to Git')).toBeVisible();
+  // The watch that says it is active names its organization as the select did.
+  expect(JSON.parse(window.sessionStorage.getItem(watchesKey('dev-user')) ?? '[]')).toContainEqual(
+    expect.objectContaining({ subject: 'subscription', id: 'test-team', stage: 'ready', organization: 'nameless-org' }),
+  );
+});
+
 /** Sets a stored subscription's organization id. */
 const setOrganization = (service: MockConsoleService, id: string, organizationId: string) => {
   stored(service, id).spec!.organization = { $typeName: 'ai_grid.v1.SubscriptionOrganization', id: organizationId };

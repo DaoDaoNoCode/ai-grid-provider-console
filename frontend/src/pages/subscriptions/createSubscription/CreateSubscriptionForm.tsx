@@ -315,11 +315,12 @@ export const CreateSubscriptionForm: React.FC<Props> = ({
         // The subscription as sent, kept should the backend refuse it after the form has left, and
         // the organization's name as the select shows it, for the notification that it is active
         // (none when the organizations didn't load).
+        const organization = organizations.find((o) => o.id === organizationId);
         await createSubscription(
           { object },
           shownName,
           toJson(SubscriptionSchema, create(SubscriptionSchema, object)),
-          organizations.find((o) => o.id === organizationId)?.metadata?.name,
+          organization && tenantNameOf(organization),
         );
       }
       // A created subscription replaces its create form in history, so Back doesn't land on it, empty.
