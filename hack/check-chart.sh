@@ -210,6 +210,13 @@ got="$(idp_ns_env <<<"${defaults}")"
 got="$(yq 'select(.kind == "Namespace" and .metadata.name == "ai-grid-idp-secrets")
   | .metadata.annotations["helm.sh/resource-policy"]' <<<"${defaults}")"
 [[ "${got}" == keep ]] || { echo "check-chart: the IdP secret namespace's resource-policy is '${got}', want keep" >&2; exit 1; }
+# Argo CD ignores Helm's keep when it prunes: the namespace carries its own sync options.
+got="$(yq 'select(.kind == "Namespace" and .metadata.name == "ai-grid-idp-secrets")
+  | .metadata.annotations["argocd.argoproj.io/sync-options"]' <<<"${defaults}")"
+[[ "${got}" == Delete=false,Prune=false ]] || {
+  echo "check-chart: the IdP secret namespace's Argo CD sync options are '${got}', want Delete=false,Prune=false" >&2
+  exit 1
+}
 custom="$(helm template console "${CHART}" -n ai-grid --set backend.idpSecrets.namespace=tenant-idp)"
 got="$(idp_ns_env <<<"${custom}")"
 [[ "${got}" == tenant-idp ]] || { echo "check-chart: backend.idpSecrets.namespace=tenant-idp sets AI_GRID_IDP_SECRET_NAMESPACE to '${got}'" >&2; exit 1; }

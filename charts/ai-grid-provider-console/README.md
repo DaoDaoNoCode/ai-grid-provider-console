@@ -42,7 +42,8 @@ Replace `CLIENT_SECRET` with the client secret from the organization's identity 
   secrets in it, because the backend can get every Secret there. The chart refuses the release
   namespace, which holds the console's own credentials.
 - `backend.idpSecrets.createNamespace=false` uses a namespace that already exists or something else
-  owns. Helm keeps the namespace it creates on uninstall, so the Secrets in it survive.
+  owns. Helm keeps the namespace it creates on uninstall, so the Secrets in it survive. Argo CD keeps it
+  too: it doesn't prune it or delete it with the Application.
 - `backend.idpSecrets.enabled=false` renders none of this. Creating an organization with an identity
   provider then fails.
 
