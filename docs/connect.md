@@ -363,8 +363,8 @@ subscription) are sent from the app root, never from the form (`frontend/src/not
   both phases from the ingress clusters' reports (`withSubscriptionPhase` and
   `withAuthPolicyStatus` in its `internal/servers/subscriptions_git.go`): Active when every
   ingress cluster has the object active, Pending while any doesn't have it yet, has it otherwise
-  or hasn't reported, and empty when no ingress cluster reports at all. There is no Failed phase and no per-cluster list for a
-  subscription, so the watch has no error to report. After 30 minutes it warns "Subscription
+  or hasn't reported, and empty when no ingress cluster reports at all. There is no Failed phase
+  and no per-cluster list for a subscription, so the watch has no error to report. After 30 minutes it warns "Subscription
   <name> isn't active yet", saying whether the subscription or its policy isn't active (from the
   last read that found a status) and where to look; when its last read failed, or no read found a
   status, it says "Unable to confirm subscription <name> is active" instead, as a model's watch
@@ -373,8 +373,10 @@ subscription) are sent from the app root, never from the form (`frontend/src/not
   evaluated it), not the subscription, so three empty reads in a row (about 40 s) stop the watch
   without a word, rather than polling Git for 30 minutes to say nothing. After a status has been
   found it means the backend couldn't read the clusters' reports this time (its `readReports`
-  logs that and reports nothing), and the watch goes on. The count is kept in the watch's record,
-  so a reload goes on counting. A subscription that is gone stops it.
+  logs that and reports nothing), and the watch goes on. A failed read isn't an empty one: it says
+  nothing about the reports, and ends a run of empty reads, so empty, failed, empty, failed,
+  empty goes on to the deadline and ends in "Unable to confirm". The count is kept in the watch's
+  record, so a reload goes on counting. A subscription that is gone stops it.
 - An edited subscription is watched every 20 s for 30 minutes too, and never said to be active:
   the clusters' reports name objects, not versions, and the previous version stays Active while
   the new one is applied. It has nothing to fail on, so it only has the pages refetch when the

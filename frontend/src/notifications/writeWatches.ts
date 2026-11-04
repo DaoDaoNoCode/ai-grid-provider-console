@@ -42,7 +42,8 @@ export const READY_MS = READY_MINUTES * 60_000;
 export const READY_POLL_MS = 20_000;
 /**
  * How many reads in a row must find a subscription's phase empty, with no status found before,
- * for its watch to stop silently: three, about 40 s at READY_POLL_MS. An empty phase means the
+ * for its watch to stop silently: three, about 40 s at READY_POLL_MS. A failed read between them
+ * ends the run, as it says nothing about the reports (nextHistory). An empty phase means the
  * backend has no report from any ingress cluster: the status Policy isn't deployed or nothing has
  * evaluated it, which no write changes, or the backend's read of the reports failed this once
  * (readReports logs it and reports nothing; withSubscriptionPhase in the backend's
@@ -81,8 +82,17 @@ export type SubscriptionHistory = { empties: number; last?: Verdict };
 
 export const NO_HISTORY: SubscriptionHistory = { empties: 0 };
 
-/** The history after one more read; a read that found no subscription, or failed, leaves it as it was. */
-export const nextHistory = (history: SubscriptionHistory, answer: ReadAnswer | undefined): SubscriptionHistory => {
+/**
+ * The history after one more read: `answer` is what it found (undefined when no subscription), or
+ * `'failed'` when the read itself failed. A failed read isn't an empty one: it ends a run of empty
+ * reads, so only NO_STATUS_READS empty reads with nothing between them stop a watch. A read that
+ * found no subscription leaves the history as it was (the watch stops on it).
+ */
+export const nextHistory = (
+  history: SubscriptionHistory,
+  answer: ReadAnswer | undefined | 'failed',
+): SubscriptionHistory => {
+  if (answer === 'failed') return { ...history, empties: 0 };
   const status = answer?.subscription;
   if (!status) return history;
   return status.phase === '' ? { ...history, empties: history.empties + 1 } : { empties: 0, last: verdictOf(status) };
@@ -283,7 +293,7 @@ export const watchChanges = async (
 
 /**
  * Whether a subscription watch has found nothing to go on: NO_STATUS_READS reads in a row without
- * a status, and none with one before.
+ * a status, no failed read between them, and none with one before.
  */
 const noStatusAvailable = (history: SubscriptionHistory) =>
   history.last === undefined && history.empties >= NO_STATUS_READS;

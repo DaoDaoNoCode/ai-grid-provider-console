@@ -287,10 +287,17 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
         notificationId,
         callbackDelay: followsStatus ? READY_POLL_MS : READBACK_POLL_MS,
         callback: async (signal) => {
-          // What this poll read, to tell whether the object changed since the last one.
-          const seen: { answered: boolean; answer?: ReadAnswer } = { answered: false };
+          // What this poll read, to tell whether the object changed since the last one, or that the
+          // read failed.
+          const seen: { answered: boolean; failed: boolean; answer?: ReadAnswer } = { answered: false, failed: false };
           const observe: ReadObject = async (subject, id) => {
-            const answer = await read(subject, id);
+            let answer: ReadAnswer | undefined;
+            try {
+              answer = await read(subject, id);
+            } catch (err) {
+              seen.failed = true;
+              throw err;
+            }
             seen.answered = true;
             seen.answer = answer;
             return answer;
@@ -311,20 +318,21 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
           // A status watch that sees the object's status change (a model's phase or any cluster's,
           // a subscription's phase or its policy's) has every page showing objects of its kind
           // refetch at once, rather than on its next poll; so does any watch that ends. A poll that
-          // sees no change refetches nothing.
+          // sees no change refetches nothing. A failed read leaves the status as it was, and ends a
+          // run of empty reads (nextHistory).
           let changed = false;
-          if (followsStatus && seen.answered) {
-            const status = statusOf(seen.answer);
-            const nextStatusHistory = nextHistory(history, seen.answer);
+          if (followsStatus && (seen.answered || seen.failed)) {
+            const status = seen.answered ? statusOf(seen.answer) : before;
+            const nextStatusHistory = nextHistory(history, seen.answered ? seen.answer : 'failed');
             changed = before !== undefined && before !== status;
-            lastStatus.current.set(key, status);
+            if (status !== undefined) lastStatus.current.set(key, status);
             const historyMoved =
               nextStatusHistory.empties !== history.empties || nextStatusHistory.last !== history.last;
             history = nextStatusHistory;
             if (!final && (status !== before || historyMoved)) {
               keep({
                 ...(records.current.find((r) => r.key === key) ?? record),
-                status,
+                ...(status === undefined ? {} : { status }),
                 empties: history.empties,
                 ...(history.last ? { lastVerdict: history.last } : {}),
               });

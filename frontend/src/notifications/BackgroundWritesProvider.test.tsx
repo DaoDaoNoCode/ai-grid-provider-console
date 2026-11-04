@@ -527,7 +527,14 @@ const SubscriptionPages: React.FC = () => {
   );
 };
 
-type SubscriptionState = { answer: ReturnType<typeof teamA>; gone: boolean; gets: number; lists: number };
+type SubscriptionState = {
+  answer: ReturnType<typeof teamA>;
+  gone: boolean;
+  gets: number;
+  lists: number;
+  /** Get fails (Unavailable) while set. */
+  failing?: boolean;
+};
 
 /**
  * The console around subscription team-a, whose status the test changes, or deletes. Given the
@@ -543,6 +550,7 @@ const subscribing = (
       get: () => {
         state.gets += 1;
         if (state.gone) throw new ConnectError('Subscription "team-a" not found', Code.NotFound);
+        if (state.failing) throw new ConnectError('the Git catalog is unreachable', Code.Unavailable);
         return state.answer;
       },
       list: () => {
@@ -727,6 +735,32 @@ describe('a subscription watch', () => {
     await pass(READY_MS);
     expect(second.state.gets).toBe(gets);
     expect(screen.getByRole('list', { name: 'Titles' }).children).toHaveLength(0);
+  });
+
+  it("takes a failed read for the end of a run of empty reads, across a reload, and says it can't confirm at the deadline", async () => {
+    const first = subscribing([activeRecord(Date.now())]);
+    first.state.answer = teamA('');
+    // Two empty reads, then a failed one: the run of empty reads starts again, in storage too.
+    await pass(0);
+    await pass(READY_POLL_MS);
+    expect(subscriptionWatches(first.storage)).toMatchObject([{ key: 's1', empties: 2 }]);
+    first.state.failing = true;
+    await pass(READY_POLL_MS);
+    expect(subscriptionWatches(first.storage)).toMatchObject([{ key: 's1', empties: 0 }]);
+    first.unmount();
+
+    // After the reload: two empty reads go on, not stop, then empty and failed reads take turns.
+    first.state.failing = false;
+    const second = subscribing([], first);
+    await pass(0);
+    await pass(READY_POLL_MS);
+    expect(subscriptionWatches(second.storage)).toMatchObject([{ key: 's1', empties: 2 }]);
+    for (let poll = 0; poll < READY_MS / READY_POLL_MS; poll += 1) {
+      second.state.failing = !second.state.failing;
+      await pass(READY_POLL_MS);
+    }
+    expect(subscriptionWatches(second.storage)).toEqual([]);
+    expect(screen.getAllByText('Unable to confirm subscription Team A is active')).toHaveLength(1);
   });
 
   it('goes on through empty reads once it has found a status: Pending, then empty, then Active', async () => {

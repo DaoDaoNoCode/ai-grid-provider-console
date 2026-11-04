@@ -5,6 +5,7 @@ import {
   NO_STATUS_READS,
   READBACK_MS,
   READY_MS,
+  nextHistory,
   readBack,
   statusOf,
   watchActive,
@@ -550,6 +551,29 @@ describe('watchSubscriptionChanges', () => {
     expect(await watchSubscriptionChanges(subscription('update'), SINCE, reads(new Error('x')), during)).toEqual({
       status: NotificationResponseStatus.REPOLL,
     });
+  });
+});
+
+describe('nextHistory', () => {
+  const status = (phase: string): ReadAnswer => ({
+    version: 1,
+    subscription: { phase, policies: [{ id: 'team-a-policy', phase }] },
+  });
+
+  it('counts empty reads in a row, and a failed read ends the run without forgetting the last verdict', () => {
+    expect(nextHistory({ empties: 2 }, status(''))).toEqual({ empties: 3 });
+    expect(nextHistory({ empties: 2 }, 'failed')).toEqual({ empties: 0 });
+    expect(nextHistory({ empties: 2, last: 'policy' }, 'failed')).toEqual({ empties: 0, last: 'policy' });
+    expect(nextHistory({ empties: 2 }, status('Pending'))).toEqual({ empties: 0, last: 'subscription' });
+    expect(nextHistory({ empties: 2 }, undefined)).toEqual({ empties: 2 });
+  });
+
+  it('never stops a watch on empty reads with failed reads between them', async () => {
+    // empty, failed, empty, failed, empty: no three empty reads in a row.
+    let history = NO_HISTORY;
+    for (const answer of [status(''), 'failed', status(''), 'failed'] as const) history = nextHistory(history, answer);
+    const lastEmpty = await watchActive(subscription('create'), 0, reads(status('')), () => 0, history);
+    expect(lastEmpty).toEqual({ status: NotificationResponseStatus.REPOLL });
   });
 });
 
