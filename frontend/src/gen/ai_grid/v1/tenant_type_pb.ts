@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file ai_grid/v1/tenant_type.proto.
  */
 export const file_ai_grid_v1_tenant_type: GenFile = /*@__PURE__*/
-  fileDesc("ChxhaV9ncmlkL3YxL3RlbmFudF90eXBlLnByb3RvEgphaV9ncmlkLnYxIowBCgZUZW5hbnQSCgoCaWQYASABKAkSJgoIbWV0YWRhdGEYAiABKAsyFC5haV9ncmlkLnYxLk1ldGFkYXRhEiQKBHNwZWMYAyABKAsyFi5haV9ncmlkLnYxLlRlbmFudFNwZWMSKAoGc3RhdHVzGAQgASgLMhguYWlfZ3JpZC52MS5UZW5hbnRTdGF0dXMiHQoKVGVuYW50U3BlYxIPCgdkb21haW5zGAEgAygJIg4KDFRlbmFudFN0YXR1cyJzCgxUZW5hbnRNZW1iZXISCgoCaWQYASABKAkSEAoIdXNlcm5hbWUYAiABKAkSDQoFZW1haWwYAyABKAkSEgoKZmlyc3RfbmFtZRgEIAEoCRIRCglsYXN0X25hbWUYBSABKAkSDwoHZW5hYmxlZBgGIAEoCEJKWkhnaXRodWIuY29tL29zYWMtcHJvamVjdC9haS1ncmlkLXByb3ZpZGVyLWJhY2tlbmQvZ2VuL2FpX2dyaWQvdjE7YWlncmlkdjFiBnByb3RvMw", [file_ai_grid_v1_metadata_type]);
+  fileDesc("ChxhaV9ncmlkL3YxL3RlbmFudF90eXBlLnByb3RvEgphaV9ncmlkLnYxIowBCgZUZW5hbnQSCgoCaWQYASABKAkSJgoIbWV0YWRhdGEYAiABKAsyFC5haV9ncmlkLnYxLk1ldGFkYXRhEiQKBHNwZWMYAyABKAsyFi5haV9ncmlkLnYxLlRlbmFudFNwZWMSKAoGc3RhdHVzGAQgASgLMhguYWlfZ3JpZC52MS5UZW5hbnRTdGF0dXMiVgoKVGVuYW50U3BlYxIPCgdkb21haW5zGAEgAygJEjcKEWlkZW50aXR5X3Byb3ZpZGVyGAIgASgLMhwuYWlfZ3JpZC52MS5JZGVudGl0eVByb3ZpZGVyIg4KDFRlbmFudFN0YXR1cyKAAQoQSWRlbnRpdHlQcm92aWRlchINCgV0aXRsZRgBIAEoCRITCgtkZXNjcmlwdGlvbhgCIAEoCRIUCgdlbmFibGVkGAMgASgISACIAQESJgoGY29uZmlnGAQgASgLMhYuYWlfZ3JpZC52MS5PaWRjQ29uZmlnQgoKCF9lbmFibGVkIo0CCgpPaWRjQ29uZmlnEhEKCWNsaWVudF9pZBgBIAEoCRIhChljbGllbnRfc2VjcmV0X3NlY3JldF9uYW1lGAIgASgJEg4KBmlzc3VlchgDIAEoCRIZChFhdXRob3JpemF0aW9uX3VybBgEIAEoCRIRCgl0b2tlbl91cmwYBSABKAkSFgoOZGVmYXVsdF9zY29wZXMYBiABKAkSFQoNdXNlcl9pbmZvX3VybBgHIAEoCRIQCghqd2tzX3VybBgIIAEoCRISCgpsb2dvdXRfdXJsGAkgASgJEh8KEnZhbGlkYXRlX3NpZ25hdHVyZRgKIAEoCEgAiAEBQhUKE192YWxpZGF0ZV9zaWduYXR1cmUicwoMVGVuYW50TWVtYmVyEgoKAmlkGAEgASgJEhAKCHVzZXJuYW1lGAIgASgJEg0KBWVtYWlsGAMgASgJEhIKCmZpcnN0X25hbWUYBCABKAkSEQoJbGFzdF9uYW1lGAUgASgJEg8KB2VuYWJsZWQYBiABKAhCSlpIZ2l0aHViLmNvbS9vc2FjLXByb2plY3QvYWktZ3JpZC1wcm92aWRlci1iYWNrZW5kL2dlbi9haV9ncmlkL3YxO2FpZ3JpZHYxYgZwcm90bzM", [file_ai_grid_v1_metadata_type]);
 
 /**
  * A tenant groups resources and users.
@@ -69,6 +69,16 @@ export type TenantSpec = Message<"ai_grid.v1.TenantSpec"> & {
    * @generated from field: repeated string domains = 1;
    */
   domains: string[];
+
+  /**
+   * Optional OIDC identity provider for this organization. Set only on Create;
+   * immutable afterward (Update may repeat the same normalized value; add,
+   * change, or remove returns InvalidArgument). The API stores only the
+   * Secret name in config.client_secret_secret_name, never the secret value.
+   *
+   * @generated from field: ai_grid.v1.IdentityProvider identity_provider = 2;
+   */
+  identityProvider?: IdentityProvider | undefined;
 };
 
 /**
@@ -90,6 +100,135 @@ export type TenantStatus = Message<"ai_grid.v1.TenantStatus"> & {
  */
 export const TenantStatusSchema: GenMessage<TenantStatus> = /*@__PURE__*/
   messageDesc(file_ai_grid_v1_tenant_type, 2);
+
+/**
+ * An organization's OIDC identity provider (realm IdP linked to the Keycloak
+ * Organization). Field numbers match the draft proposal.
+ *
+ * @generated from message ai_grid.v1.IdentityProvider
+ */
+export type IdentityProvider = Message<"ai_grid.v1.IdentityProvider"> & {
+  /**
+   * Display title. At most 253 characters after trimming. Empty on Create
+   * normalizes to the organization create-time name.
+   *
+   * @generated from field: string title = 1;
+   */
+  title: string;
+
+  /**
+   * Free text. At most 4000 characters.
+   *
+   * @generated from field: string description = 2;
+   */
+  description: string;
+
+  /**
+   * Unset means true. Always set on output. Must be true when set.
+   *
+   * @generated from field: optional bool enabled = 3;
+   */
+  enabled?: boolean | undefined;
+
+  /**
+   * Required OIDC client configuration.
+   *
+   * @generated from field: ai_grid.v1.OidcConfig config = 4;
+   */
+  config?: OidcConfig | undefined;
+};
+
+/**
+ * Describes the message ai_grid.v1.IdentityProvider.
+ * Use `create(IdentityProviderSchema)` to create a new message.
+ */
+export const IdentityProviderSchema: GenMessage<IdentityProvider> = /*@__PURE__*/
+  messageDesc(file_ai_grid_v1_tenant_type, 3);
+
+/**
+ * OIDC client configuration for an IdentityProvider. Only the name of the
+ * Secret that holds the client secret is stored, never the secret itself.
+ *
+ * @generated from message ai_grid.v1.OidcConfig
+ */
+export type OidcConfig = Message<"ai_grid.v1.OidcConfig"> & {
+  /**
+   * Required; at most 253 characters after trimming.
+   *
+   * @generated from field: string client_id = 1;
+   */
+  clientId: string;
+
+  /**
+   * Name of the Secret holding the client secret (key client-secret): required,
+   * a DNS subdomain name, at most 253 characters.
+   *
+   * @generated from field: string client_secret_secret_name = 2;
+   */
+  clientSecretSecretName: string;
+
+  /**
+   * Required HTTP or HTTPS URLs, at most 2048 characters after trimming.
+   *
+   * @generated from field: string issuer = 3;
+   */
+  issuer: string;
+
+  /**
+   * @generated from field: string authorization_url = 4;
+   */
+  authorizationUrl: string;
+
+  /**
+   * @generated from field: string token_url = 5;
+   */
+  tokenUrl: string;
+
+  /**
+   * Space-separated scopes, at most 2048 characters after trimming.
+   * Empty/unset normalizes to "openid profile email".
+   *
+   * @generated from field: string default_scopes = 6;
+   */
+  defaultScopes: string;
+
+  /**
+   * Optional HTTP or HTTPS URLs; empty when unset.
+   *
+   * @generated from field: string user_info_url = 7;
+   */
+  userInfoUrl: string;
+
+  /**
+   * HTTP or HTTPS URL. Required when validate_signature is true (the default):
+   * Keycloak rejects broker logins when signature checks are on and it has no JWKS.
+   * Empty only when validate_signature is false.
+   *
+   * @generated from field: string jwks_url = 8;
+   */
+  jwksUrl: string;
+
+  /**
+   * Optional HTTP or HTTPS URL; empty when unset.
+   *
+   * @generated from field: string logout_url = 9;
+   */
+  logoutUrl: string;
+
+  /**
+   * Unset means true. Always set on output. When true, jwks_url is required.
+   *
+   * @generated from field: optional bool validate_signature = 10;
+   */
+  validateSignature?: boolean | undefined;
+};
+
+/**
+ * Describes the message ai_grid.v1.OidcConfig.
+ * Use `create(OidcConfigSchema)` to create a new message.
+ */
+export const OidcConfigSchema: GenMessage<OidcConfig> = /*@__PURE__*/
+  messageDesc(file_ai_grid_v1_tenant_type, 4);
 
 /**
  * TenantMember is a Keycloak user that belongs to the tenant's Organization.
@@ -142,5 +281,5 @@ export type TenantMember = Message<"ai_grid.v1.TenantMember"> & {
  * Use `create(TenantMemberSchema)` to create a new message.
  */
 export const TenantMemberSchema: GenMessage<TenantMember> = /*@__PURE__*/
-  messageDesc(file_ai_grid_v1_tenant_type, 3);
+  messageDesc(file_ai_grid_v1_tenant_type, 5);
 
