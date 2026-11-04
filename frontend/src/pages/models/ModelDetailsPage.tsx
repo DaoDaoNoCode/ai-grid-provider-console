@@ -44,7 +44,6 @@ export const ModelDetailsPage: React.FC = () => {
       return null;
     }
     const availability = availabilityOf(model);
-    const edit = user?.isProviderAdmin ? () => navigate(`${modelPath(model)}/edit`) : undefined;
     return (
       <Flex direction={{ default: 'column' }} flexWrap={{ default: 'nowrap' }} spaceItems={{ default: 'spaceItemsXl' }}>
         {/* The alert explains the header's Status word (status.state). Ready, Saved to Git and
@@ -97,7 +96,7 @@ export const ModelDetailsPage: React.FC = () => {
             // model-clusters names the section either way: each cluster's sync and deployment once
             // one reports, the clusters the placement chose until then.
             <Stack hasGutter data-testid="model-clusters">
-              <ModelClustersTable model={model} clusters={clusters} onEdit={edit} />
+              <ModelClustersTable model={model} clusters={clusters} />
               <Link to={`/ai-grid?model=${encodeURIComponent(model.id)}`}>View on the AI Grid map</Link>
             </Stack>
           ) : (

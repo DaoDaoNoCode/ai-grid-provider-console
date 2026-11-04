@@ -27,7 +27,7 @@ export const ModelStatusDetails: React.FC<{ model: ModelView }> = ({ model }) =>
 };
 
 /**
- * The model's Status column (#114): the backend's rollout word (status.state). Saved to Git, Syncing
+ * The model's Status column (ModelStatus.state): the backend's rollout word (status.state). Saved to Git, Syncing
  * and Partially ready open the model's status dialog through `onOpen`; the other words are outline,
  * with the backend's message in a tooltip. Without `onOpen` (the model page), nothing opens.
  */

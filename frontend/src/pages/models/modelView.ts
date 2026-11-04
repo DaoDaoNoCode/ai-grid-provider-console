@@ -43,7 +43,7 @@ export type ModelPhaseWord = 'Ready' | 'Pending' | 'Failed' | 'Partially ready' 
 
 /**
  * A model's rollout, Git sync and deployment in one word, as the Status column shows it
- * (ModelState, in the UX design of console #114): Saved to Git, Syncing, Synced, Starting, Ready,
+ * (the backend's ModelState): Saved to Git, Syncing, Synced, Starting, Ready,
  * Partially ready (a model only), Failed, Stopped; Unknown for a value newer than the pin.
  */
 export type StateWord =

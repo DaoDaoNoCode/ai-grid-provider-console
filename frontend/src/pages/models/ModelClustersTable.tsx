@@ -1,4 +1,5 @@
-// The model on each cluster its placement names, as in the UX design of console #114's expanded row:
+// The model on each cluster its placement names, following
+// jgiardino/ai-grid-provider-console@a4e6090 ModelLocationsTable.tsx:
 // Cluster, Region, Status and View. Status is the backend's word for the cluster
 // (ModelClusterStatus.state: Syncing, Synced, Starting, Ready, Failed, Stopped) and opens what the
 // cluster reported; View opens OpenShift AI's model deployments there, or the OpenShift console where
@@ -19,7 +20,6 @@ import {
   Label,
   Modal,
   ModalBody,
-  ModalFooter,
   ModalHeader,
   Stack,
   Title,
@@ -38,8 +38,6 @@ import { statusModalLayout } from './statusModalLayout';
 type Props = {
   model: ModelView;
   clusters: ClusterRegions;
-  /** Opens the model's edit page from a cluster's dialog; absent for a viewer. */
-  onEdit?: () => void;
   /** Inside the Models page's expanded row, or a dialog. */
   isNested?: boolean;
   /**
@@ -86,8 +84,7 @@ const ClusterStatusModal: React.FC<{
   status: ModelClusterView;
   region: string;
   onClose: () => void;
-  onEdit?: () => void;
-}> = ({ model, status, region, onClose, onEdit }) => {
+}> = ({ model, status, region, onClose }) => {
   const word = clusterStatus(status);
   const gitMessage = gitStatusMessage[word as keyof typeof gitStatusMessage];
   const row = (term: string, value: React.ReactNode) => (
@@ -133,19 +130,12 @@ const ClusterStatusModal: React.FC<{
           </DescriptionList>
         </Stack>
       </ModalBody>
-      {onEdit && (
-        <ModalFooter>
-          <Button variant="link" onClick={onEdit}>
-            Edit model
-          </Button>
-        </ModalFooter>
-      )}
     </Modal>
   );
 };
 
 /** The model's clusters: each placed cluster's status and View link, or the clusters the placement chose. */
-export const ModelClustersTable: React.FC<Props> = ({ model, clusters, onEdit, isNested, opensClusters = true }) => {
+export const ModelClustersTable: React.FC<Props> = ({ model, clusters, isNested, opensClusters = true }) => {
   // The open dialog's cluster, not its entry: each poll brings new entries, and the dialog shows the
   // current one, or closes when the model no longer has the cluster.
   const [openCluster, setOpenCluster] = useState<string>();
@@ -210,7 +200,6 @@ export const ModelClustersTable: React.FC<Props> = ({ model, clusters, onEdit, i
           status={open}
           region={regionOf(clusters, open.cluster)}
           onClose={() => setOpenCluster(undefined)}
-          onEdit={onEdit}
         />
       )}
     </>

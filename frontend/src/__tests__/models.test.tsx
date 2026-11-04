@@ -1949,18 +1949,27 @@ describe('each cluster of a placed model (status.clusters, proposal P13)', () =>
     for (const r of rows) expect(within(r).queryByRole('link', { name: /^View/ })).not.toBeInTheDocument();
   });
 
-  it('opens what a cluster reported, and offers Edit model', async () => {
-    const user = userEvent.setup();
-    renderAt('/models', partial());
-    await user.click(within(await rowOf('mistral-7b-instruct')).getByRole('button', { name: 'Details' }));
-    await user.click(screen.getByRole('button', { name: 'Starting on site2' }));
-    const modal = await screen.findByTestId('cluster-status-modal');
-    expect(within(modal).getByRole('heading', { name: /Mistral 7B Instruct status/ })).toBeVisible();
-    expect(modal).toHaveTextContent('us-east');
-    expect(modal).toHaveTextContent('LLMInferenceService not ready');
-    await user.click(within(modal).getByRole('button', { name: 'Edit model' }));
-    expect(await screen.findByRole('heading', { name: /^Edit / })).toBeVisible();
-  });
+  it.each(['/models', '/models/mistral-7b-instruct'])(
+    'keeps cluster status informational and page editing available on %s',
+    async (path) => {
+      const user = userEvent.setup();
+      renderAt(path, partial());
+      if (path === '/models') {
+        await user.click(within(await rowOf('mistral-7b-instruct')).getByRole('button', { name: 'Details' }));
+      }
+      await user.click(await screen.findByRole('button', { name: 'Starting on site2' }));
+      const modal = await screen.findByTestId('cluster-status-modal');
+      expect(within(modal).getByRole('heading', { name: /Mistral 7B Instruct status/ })).toBeVisible();
+      expect(modal).toHaveTextContent('us-east');
+      expect(modal).toHaveTextContent('LLMInferenceService not ready');
+      expect(within(modal).queryByRole('button', { name: /Edit|Stop/ })).not.toBeInTheDocument();
+      await user.keyboard('{Escape}');
+      expect(screen.queryByTestId('cluster-status-modal')).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Actions for Mistral 7B Instruct' }));
+      await user.click(screen.getByRole('menuitem', { name: 'Edit' }));
+      expect(await screen.findByRole('heading', { name: /^Edit / })).toBeVisible();
+    },
+  );
 
   it('lists the same clusters on the model page', async () => {
     renderAt('/models/mistral-7b-instruct', partial());

@@ -4,7 +4,7 @@
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
 // The UX team's "models per cluster" design (jgiardino/ai-grid-provider-console@ada68ad): a model
 // row expands to its clusters and each one's status; the Clusters cell shows up to five compact
-// labels. Status and Availability follow the UX design of console #114 (Chris, 2026-11-02): Status
+// labels. Status and Availability follow jgiardino/ai-grid-provider-console@a4e6090: Status
 // is Git sync and deployment in one word (status.state), sorted in rollout order; Availability is
 // the model in MaaS (status.maas). The models are the backend's Models/List over Connect
 // (useModels.ts).
@@ -49,7 +49,7 @@ const columns: Column[] = [
   },
 ];
 
-/** The list opens sorted by Status (#114). */
+/** The list opens sorted by Status through stateRank. */
 const STATUS_COLUMN = columns.findIndex((c) => c.label === 'Status');
 
 export const ModelsPage: React.FC = () => {
@@ -230,7 +230,7 @@ export const ModelsPage: React.FC = () => {
                         <ExpandableRowContent>
                           {isExpanded &&
                             (model.clusters.length > 0 || model.selectedClusters.length > 0 ? (
-                              <ModelClustersTable model={model} clusters={clusters} onEdit={edit} isNested />
+                              <ModelClustersTable model={model} clusters={clusters} isNested />
                             ) : (
                               <NotPlaced model={model} onEdit={edit} />
                             ))}

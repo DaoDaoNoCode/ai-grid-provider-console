@@ -1,5 +1,5 @@
-// The model's status dialog from the Models list, in the UX design of console #114 (Jenn Giardino,
-// ModelStatusModal.tsx): Saved to Git and Syncing say what Git and Argo CD are doing; Partially ready
+// The model's status dialog from the Models list, following
+// jgiardino/ai-grid-provider-console@a4e6090 ModelStatusModal.tsx: Saved to Git and Syncing say what Git and Argo CD are doing; Partially ready
 // lists each cluster's status. The design's Sync now button waits until after the 11-06 freeze.
 import { Flex, FlexItem, Label, Modal, ModalBody, ModalHeader, Stack, Title } from '@patternfly/react-core';
 import { statusLabelProps } from '../../utilities/status';

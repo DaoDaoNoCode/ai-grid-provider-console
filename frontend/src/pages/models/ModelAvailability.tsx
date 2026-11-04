@@ -1,5 +1,5 @@
-// The Availability column and its dialog, in the UX design of console #114 (Jenn Giardino,
-// jgiardino/duel-status-UX a4e6090, ModelAvailability.tsx): a compact label, the short reason under
+// The Availability column and its dialog, following
+// jgiardino/ai-grid-provider-console@a4e6090 ModelAvailability.tsx: a compact label, the short reason under
 // it, and a dialog with the longer explanation. The state is the backend's (ModelStatus.maas); the
 // dialog also lists MaaS's own message for each ingress cluster (ModelStatus.ingress), because MaaS
 // has more pending reasons than the design's copy names.
