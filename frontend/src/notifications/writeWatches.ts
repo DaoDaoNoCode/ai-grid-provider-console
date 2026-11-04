@@ -1,6 +1,7 @@
 // The checks the notification center runs for a write that outlasted the form: a read-back that
-// confirms an unknown outcome, and, for a model, a watch until it is ready on its clusters. Each is
-// one call of a NotificationWatcherCallback; the provider (BackgroundWritesProvider) polls it.
+// confirms an unknown outcome, and, for a model, a watch until it is ready on its clusters (a
+// deploy) or while its changes roll out (an edit). Each is one call of a
+// NotificationWatcherCallback; the provider (BackgroundWritesProvider) polls it.
 import { failureExplanations } from '../pages/models/modelStatusInfo';
 import type { ModelView } from '../pages/models/modelView';
 import { NotificationResponseStatus, type NotificationWatcherResponse } from './useNotificationWatcher';
@@ -10,6 +11,7 @@ import {
   READY_MINUTES,
   goneText,
   mismatchText,
+  modelChangesFailedText,
   modelFailedText,
   modelNotReadyText,
   modelReadyText,
@@ -23,9 +25,9 @@ import {
 /** How long a write whose outcome is unknown is read back, from when it was sent. */
 export const READBACK_MS = READBACK_MINUTES * 60_000;
 export const READBACK_POLL_MS = 10_000;
-/** How long a deployed model is watched until it is ready, from when the write landed. */
+/** How long a deployed model is watched until it is ready, and an edited one at all, from when the write landed. */
 export const READY_MS = READY_MINUTES * 60_000;
-/** Each Models/Get reads the Git catalog (seconds on the demo hub), so the ready watch polls slowly. */
+/** Each Models/Get reads the Git catalog (seconds on the demo hub), so the model watches poll slowly. */
 export const READY_POLL_MS = 20_000;
 
 /**
@@ -36,6 +38,20 @@ export type ReadAnswer = { version: number; fields?: WriteFields; model?: ModelV
 
 /** Reads one object: undefined when the backend says it doesn't exist; throws on any other failure. */
 export type ReadObject = (subject: WriteSubject, id: string) => Promise<ReadAnswer | undefined>;
+
+/**
+ * A model's status as the model watches compare it: its phase and reason, and each cluster's;
+ * "gone" when the model is. A change is what has the pages refetch, and what an edit's watch
+ * reports a failure on.
+ */
+export const statusOf = (answer: ReadAnswer | undefined) =>
+  answer?.model
+    ? JSON.stringify([
+        answer.model.phase,
+        answer.model.reason,
+        answer.model.clusters.map((c) => [c.cluster, c.phase, c.reason]),
+      ])
+    : 'gone';
 
 type Text = { title: string; message?: string; actions?: { title: string; to: string }[] };
 const repoll = { status: NotificationResponseStatus.REPOLL } as const;
@@ -100,6 +116,22 @@ const placedClustersOf = (model: ModelView) => {
 };
 
 /**
+ * Why a model failed, when the backend calls it Failed or reports a cluster it is placed on failed
+ * (git mode reports none today): the cluster and its message, else the model's page's words for a
+ * known reason, else the backend's message. Undefined while it hasn't failed.
+ */
+const failureOf = (model: ModelView): { why: string | undefined } | undefined => {
+  const failedCluster = placedClustersOf(model).find((p) => p.report?.phase === 'Failed');
+  if (model.phase !== 'Failed' && !failedCluster) return undefined;
+  const known = model.reason ? failureExplanations[model.reason] : undefined;
+  return {
+    why: failedCluster
+      ? `${failedCluster.name}: ${failedCluster.report?.message ?? failedCluster.report?.reason}`
+      : (known?.summary ?? model.statusMessage ?? model.reason),
+  };
+};
+
+/**
  * A deployed model until it runs on every cluster it is placed on. Ready is read per cluster, from
  * `status.clusters`, not from the model's overall phase: the overall phase also counts the ingress
  * clusters that publish the model through MaaS, whose report turns ready only once a subscription
@@ -122,15 +154,9 @@ export const watchReady = async (
     const answer = await read('model', target.id);
     const model = answer?.model;
     if (!model) return stop;
+    const failure = failureOf(model);
+    if (failure) return error(modelFailedText(target.id, target.name, failure.why));
     const placed = placedClustersOf(model);
-    const failedCluster = placed.find((p) => p.report?.phase === 'Failed');
-    if (model.phase === 'Failed' || failedCluster) {
-      const known = model.reason ? failureExplanations[model.reason] : undefined;
-      const why = failedCluster
-        ? `${failedCluster.name}: ${failedCluster.report?.message ?? failedCluster.report?.reason}`
-        : (known?.summary ?? model.statusMessage ?? model.reason);
-      return error(modelFailedText(target.id, target.name, why));
-    }
     if (placed.length === 0) {
       if (model.phase === 'Ready') return success(modelReadyText(target.id, target.name, []));
     } else {
@@ -149,4 +175,34 @@ export const watchReady = async (
     // A failed read is checked again, as a page's poll is.
   }
   return now() < since + READY_MS ? repoll : warning(modelNotReadyText(target.id, target.name, waiting));
+};
+
+/**
+ * An edited model while its changes roll out, until `since` plus READY_MS; then it ends silently. It
+ * never says "ready": the status doesn't say which revision it describes, and during a rolling update
+ * the previous pod keeps its cluster Ready. It reports one thing, a failure, and only one it saw
+ * happen: `before` is the status the watch saw last (statusOf), none on its first read, which comes
+ * as the edit lands, before Argo CD can have applied it. A model already failed then is the previous
+ * revision's failure, reported only once its status changes (a new failure). A model that is gone
+ * stops the watch.
+ */
+export const watchChanges = async (
+  target: WriteTarget,
+  since: number,
+  read: ReadObject,
+  now: () => number,
+  before: string | undefined,
+): Promise<NotificationWatcherResponse> => {
+  try {
+    const answer = await read('model', target.id);
+    const model = answer?.model;
+    if (!model) return stop;
+    const failure = failureOf(model);
+    if (failure && before !== undefined && statusOf(answer) !== before) {
+      return error(modelChangesFailedText(target.id, target.name, failure.why));
+    }
+  } catch {
+    // A failed read is checked again, as a page's poll is.
+  }
+  return now() < since + READY_MS ? repoll : stop;
 };

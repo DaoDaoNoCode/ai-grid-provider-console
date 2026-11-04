@@ -267,3 +267,140 @@ it('refreshes the lists when a readiness watch sees the status change, and not o
     vi.useRealTimers();
   }
 });
+
+/** The console with a Models list that polls nothing itself, around a model the test changes. */
+const editing = (stored: object[] = []) => {
+  const state = { model: pendingOnSiteB(), listCalls: 0 };
+  const { transport } = fakeClients({
+    models: {
+      get: () => ({ object: state.model }),
+      list: () => {
+        state.listCalls += 1;
+        return { items: [state.model], size: 1, total: 1 };
+      },
+    },
+  });
+  const storage = memoryStorage({ [watchesKey('dev-user')]: JSON.stringify(stored) });
+  render(
+    <BackendProvider transport={transport} checkSession={() => undefined}>
+      <NotificationsProvider storage={storage.get} owner="dev-user">
+        <NotificationWatcherProvider>
+          <BackgroundWritesProvider storage={storage.get} owner="dev-user">
+            <SiteBStatus />
+            <Titles />
+            <Writes />
+          </BackgroundWritesProvider>
+        </NotificationWatcherProvider>
+      </NotificationsProvider>
+    </BackendProvider>,
+  );
+  return { state, storage };
+};
+
+const edit = { subject: 'model', op: 'update', id: 'widget', name: 'Widget', version: 1 } as const;
+
+/** Lets every timer due within `ms` run, and what they start settle. */
+const pass = (ms: number) =>
+  act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+
+/** The watches that follow the model's status, as the tab keeps them. */
+const modelWatches = (storage: ReturnType<typeof memoryStorage>) =>
+  (
+    JSON.parse(storage.values.get(watchesKey('dev-user')) ?? '[]') as { key: string; id: string; stage: string }[]
+  ).filter((r) => r.id === 'widget' && (r.stage === 'ready' || r.stage === 'changes'));
+
+it("refreshes the lists when an edited model's status changes, not on a poll that sees none, and never says ready", async () => {
+  vi.useFakeTimers();
+  try {
+    const { state, storage } = editing();
+    await pass(0);
+    await act(async () => {
+      expect(await submitWrite(edit, async () => undefined)).toBe('done');
+    });
+    await pass(0);
+    expect(screen.getByText('Changes to model Widget saved to Git')).toBeInTheDocument();
+    expect(modelWatches(storage)).toMatchObject([{ stage: 'changes' }]);
+    const afterLanding = state.listCalls;
+
+    // A poll that sees the same status leaves the list alone.
+    await pass(READY_POLL_MS);
+    expect(state.listCalls).toBe(afterLanding);
+
+    // site-b runs the new revision: the list shows it at once, and nothing says "ready".
+    state.model = pendingOnSiteB();
+    state.model.status!.clusters = [
+      create(ModelClusterStatusSchema, { cluster: 'site-b', phase: ModelPhase.READY, reason: 'Ready' }),
+    ];
+    await pass(READY_POLL_MS);
+    expect(state.listCalls).toBe(afterLanding + 1);
+    // The refetch's answer reaches the page: the query cache tells it with a setTimeout(0), which
+    // fake timers run 1 ms on when it is set during an advance.
+    await pass(1);
+    expect(screen.getByText('site-b ready')).toBeInTheDocument();
+    expect(screen.queryByText(/is ready/)).not.toBeInTheDocument();
+
+    // After 30 minutes the watch ends without a word.
+    await pass(READY_MS);
+    expect(modelWatches(storage)).toEqual([]);
+    expect(screen.getByRole('list', { name: 'Titles' }).children).toHaveLength(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('says once that an edited model failed to roll out its changes', async () => {
+  vi.useFakeTimers();
+  try {
+    const { state, storage } = editing();
+    await pass(0);
+    await act(async () => {
+      await submitWrite(edit, async () => undefined);
+    });
+    await pass(READY_POLL_MS);
+
+    state.model = pendingOnSiteB();
+    state.model.status!.phase = ModelPhase.FAILED;
+    state.model.status!.reason = 'ConfigNotFound';
+    await pass(READY_POLL_MS);
+    expect(screen.getAllByText('Unable to roll out changes to model Widget')).toHaveLength(1);
+    expect(modelWatches(storage)).toEqual([]);
+
+    await pass(READY_MS);
+    expect(screen.getAllByText('Unable to roll out changes to model Widget')).toHaveLength(1);
+    expect(screen.queryByText('Unable to deploy model Widget')).not.toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("adds no watch to an edited model whose deploy's readiness watch still runs", async () => {
+  const { storage } = editing([readyRecord(Date.now())]);
+  await waitFor(() => expect(modelWatches(storage)).toHaveLength(1));
+  await act(async () => {
+    await submitWrite(edit, async () => undefined);
+  });
+  expect(modelWatches(storage)).toMatchObject([{ key: 'r1', stage: 'ready' }]);
+});
+
+it("replaces an edited model's watch on the next edit, and stops it when the model is deleted", async () => {
+  const { storage } = editing();
+  await waitFor(() => expect(submitWrite).toBeDefined());
+  await act(async () => {
+    await submitWrite(edit, async () => undefined);
+  });
+  const [first] = modelWatches(storage);
+  expect(first).toMatchObject({ stage: 'changes' });
+  await act(async () => {
+    await submitWrite({ ...edit, version: 2 }, async () => undefined);
+  });
+  const watches = modelWatches(storage);
+  expect(watches).toMatchObject([{ stage: 'changes' }]);
+  expect(watches[0].key).not.toBe(first.key);
+
+  await act(async () => {
+    await submitWrite({ ...edit, op: 'delete' }, async () => undefined);
+  });
+  expect(modelWatches(storage)).toEqual([]);
+});

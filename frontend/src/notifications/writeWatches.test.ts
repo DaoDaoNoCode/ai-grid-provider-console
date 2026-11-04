@@ -1,6 +1,15 @@
 import type { ModelView } from '../pages/models/modelView';
 import { NotificationResponseStatus } from './useNotificationWatcher';
-import { READBACK_MS, READY_MS, readBack, watchReady, type ReadAnswer, type ReadObject } from './writeWatches';
+import {
+  READBACK_MS,
+  READY_MS,
+  readBack,
+  statusOf,
+  watchChanges,
+  watchReady,
+  type ReadAnswer,
+  type ReadObject,
+} from './writeWatches';
 import type { WriteTarget } from './writeText';
 
 const SENT = 1_000_000;
@@ -250,6 +259,88 @@ describe('watchReady', () => {
       status: NotificationResponseStatus.STOP,
     });
     expect(await watchReady(model('create'), SINCE, reads(new Error('x')), during)).toEqual({
+      status: NotificationResponseStatus.REPOLL,
+    });
+  });
+});
+
+describe('watchChanges', () => {
+  const SINCE = 5_000_000;
+  const view = (
+    phase: ModelView['phase'],
+    siteB: ModelView['phase'] = 'Ready',
+    extra: Partial<ModelView> = {},
+  ): ReadAnswer => ({
+    version: 3,
+    model: {
+      phase,
+      clusters: [{ cluster: 'site-b', phase: siteB, reason: siteB === 'Ready' ? 'Ready' : 'NotReady' }],
+      selectedClusters: ['site-b'],
+      ...extra,
+    } as ModelView,
+  });
+  const during = () => SINCE + READY_MS - 1;
+  const past = () => SINCE + READY_MS;
+  const ready = view('Ready');
+
+  it('never says ready: it keeps following a ready model, and ends silently after 30 minutes', async () => {
+    expect(await watchChanges(model('update'), SINCE, reads(ready), during, undefined)).toEqual({
+      status: NotificationResponseStatus.REPOLL,
+    });
+    expect(await watchChanges(model('update'), SINCE, reads(ready), during, statusOf(ready))).toEqual({
+      status: NotificationResponseStatus.REPOLL,
+    });
+    expect(await watchChanges(model('update'), SINCE, reads(ready), past, statusOf(ready))).toEqual({
+      status: NotificationResponseStatus.STOP,
+    });
+  });
+
+  it('says the changes failed when it sees the model turn failed, in the words of its page', async () => {
+    const failed = view('Failed', 'Ready', { reason: 'ConfigNotFound' });
+    expect(await watchChanges(model('update'), SINCE, reads(failed), during, statusOf(ready))).toEqual({
+      status: NotificationResponseStatus.ERROR,
+      title: 'Unable to roll out changes to model Widget',
+      message: 'A runtime template this model needs isn’t installed on the hub.',
+      actions: [{ title: 'View model', to: '/models/widget' }],
+    });
+  });
+
+  it('says the changes failed when a placed cluster turns failed', async () => {
+    const failing = view('Pending', 'Failed', {
+      clusters: [{ cluster: 'site-b', phase: 'Failed', reason: 'NotReady', message: 'LLMInferenceService failed' }],
+    });
+    expect(await watchChanges(model('update'), SINCE, reads(failing), during, statusOf(ready))).toMatchObject({
+      status: NotificationResponseStatus.ERROR,
+      title: 'Unable to roll out changes to model Widget',
+      message: 'site-b: LLMInferenceService failed',
+    });
+  });
+
+  it("doesn't blame the edit for a failure it found when it started, until that failure changes", async () => {
+    const failedBefore = view('Failed', 'Failed', { statusMessage: 'image pull failed' });
+    // The first read, as the edit lands: the previous revision's failure.
+    expect(await watchChanges(model('update'), SINCE, reads(failedBefore), during, undefined)).toEqual({
+      status: NotificationResponseStatus.REPOLL,
+    });
+    expect(await watchChanges(model('update'), SINCE, reads(failedBefore), during, statusOf(failedBefore))).toEqual({
+      status: NotificationResponseStatus.REPOLL,
+    });
+    // A new failure, with another reason, is the edit's.
+    const failedAgain = view('Failed', 'Ready', { reason: 'ConfigNotFound' });
+    expect(
+      await watchChanges(model('update'), SINCE, reads(failedAgain), during, statusOf(failedBefore)),
+    ).toMatchObject({
+      status: NotificationResponseStatus.ERROR,
+      title: 'Unable to roll out changes to model Widget',
+      message: 'A runtime template this model needs isn’t installed on the hub.',
+    });
+  });
+
+  it('stops for a model that is gone, and keeps watching through a failed read', async () => {
+    expect(await watchChanges(model('update'), SINCE, reads(undefined), during, statusOf(ready))).toEqual({
+      status: NotificationResponseStatus.STOP,
+    });
+    expect(await watchChanges(model('update'), SINCE, reads(new Error('x')), during, statusOf(ready))).toEqual({
       status: NotificationResponseStatus.REPOLL,
     });
   });

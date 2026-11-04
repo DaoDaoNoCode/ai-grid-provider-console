@@ -285,9 +285,24 @@ subscription) are sent from the app root, never from the form (`frontend/src/not
   users reach it through MaaS once a subscription covers it too. An overall Failed (or a cluster
   reported failed, which git mode doesn't report) is an error. After 30 minutes the watch warns
   "Model <name> isn't ready yet", naming the clusters it isn't ready on; a model that is gone
-  stops it. One watch per model: deploying an id again replaces its earlier watch. An edited model isn't: its status doesn't say which
-  revision it describes, so the previous deployment's Ready would read as the edit's. Edits get a
-  readiness watch once the backend reports the revision its status describes.
+  stops it.
+- An edited model is watched the same way, every 20 s for 30 minutes, but never said to be ready:
+  its status doesn't say which revision it describes, and during a rolling update the previous pod
+  keeps its cluster Ready, so the previous revision's Ready would read as the edit's. It reports
+  one thing, a failure it sees happen: "Unable to roll out changes to model <name>", with the
+  reason and a link to the model, when the model, or a cluster it is placed on, turns Failed. Its
+  first read comes as the edit lands, before Argo CD can have applied it, so a model already
+  failed then is the previous revision's failure, reported only if its status changes. After 30
+  minutes it ends without a word; a model that is gone stops it. Edits get a "ready" once the
+  backend reports the revision its status describes.
+- One watch follows a model at a time, so nothing is said twice: deploying an id again replaces
+  its earlier watch; an edit replaces the previous edit's watch, and adds none while a deploy's
+  readiness watch of the model still runs, as that one follows the same status and reports the
+  same failures; a delete stops the model's watch at once.
+- The pages refetch what a watch learns at once, rather than on their own next poll: every
+  Models query (lists and `Get`s alike) when a model's watch sees its status change (its phase or
+  reason, or any `status.clusters` entry), and every query of the object's kind, Models or
+  Subscriptions, when any watch ends. A poll that sees no change refetches nothing.
 - The watches and the notifications are kept in the browser tab's session storage under the
   signed-in user (`storageKeys.ts`), so a reload resumes them: a write's record is kept before its
   request goes out, and one whose answer the page no longer awaits is read back. When another user

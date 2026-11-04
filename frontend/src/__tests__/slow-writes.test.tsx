@@ -1,7 +1,7 @@
 // Writes that outlast their form: the form waits briefly (FORM_WAIT_MS), then leaves as on success
 // and the notification center reports how the write ended. The wait is the test's own (formWait),
 // ended by hand, and a slow backend is a promise the test settles: nothing here waits on a clock.
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { Code, ConnectError } from '@connectrpc/connect';
@@ -625,9 +625,20 @@ describe('review findings', () => {
     expect(screen.queryByText('Model Widget saved to Git')).not.toBeInTheDocument();
   });
 
-  it('confirms an edit without watching for readiness, which the status cannot tell for a new revision', async () => {
+  it('confirms an edit and follows its changes, never saying ready, which the status cannot tell for a new revision', async () => {
     const service = new MockConsoleService();
-    widget(service);
+    const models = widget(service);
+    const update = models.update;
+    vi.spyOn(models, 'update').mockImplementation(async (request, context) => {
+      const answer = await update(request, context);
+      // site1 still reports Ready: the previous revision's pod, as far as anyone can tell.
+      const stored = models.find('widget');
+      stored.status!.phase = ModelPhase.READY;
+      stored.status!.clusters = [
+        create_(ModelClusterStatusSchema, { cluster: 'site1', phase: ModelPhase.READY, reason: 'Ready' }),
+      ];
+      return answer;
+    });
     const storage = memoryStorage();
     const user = userEvent.setup();
     renderConsole('/models/widget/edit', service, formWaits().formWait, storage);
@@ -638,7 +649,13 @@ describe('review findings', () => {
     await user.click(screen.getByRole('button', { name: /^Review$/ }));
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
     expect(await toast('Changes to model Widget saved to Git')).toBeVisible();
-    expect(storage.values.get(WATCHES)).toBeUndefined();
+    // The change watch has read the model ready on site1, and says nothing of it.
+    await waitFor(() =>
+      expect(JSON.parse(storage.values.get(WATCHES) ?? '[]')).toMatchObject([
+        { id: 'widget', stage: 'changes', status: expect.stringContaining('"site1"') },
+      ]),
+    );
+    expect(screen.queryByText(/is ready/)).not.toBeInTheDocument();
   });
 
   it('says a deploy answered within the wait is saved to Git, not deployed, and where it goes next', async () => {

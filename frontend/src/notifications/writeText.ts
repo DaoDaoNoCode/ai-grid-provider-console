@@ -94,7 +94,7 @@ const thing = (t: WriteTarget) =>
 /** How long a write that outlasts the form is checked for, in the words below. */
 export const READBACK_MINUTES = 2;
 
-/** How long a deployed model is watched until it is ready, in the words below. */
+/** How long a deployed model is watched until it is ready (and an edited one at all), in the words below. */
 export const READY_MINUTES = 30;
 
 /** The info entry while the write is out: the form left before the backend answered. */
@@ -230,5 +230,12 @@ export const modelNotReadyText = (id: string, name: string, clusters: string[]):
 export const modelFailedText = (id: string, name: string, why: string | undefined): Text => ({
   title: `Unable to deploy model ${name}`,
   message: why ?? 'The model failed to deploy. Open it for details.',
+  actions: [{ title: 'View model', to: modelPath({ id }) }],
+});
+
+/** An edited model failed while its changes rolled out: why, in the words the model's page uses. */
+export const modelChangesFailedText = (id: string, name: string, why: string | undefined): Text => ({
+  title: `Unable to roll out changes to model ${name}`,
+  message: why ?? 'The model failed after the changes were saved to Git. Open it for details.',
   actions: [{ title: 'View model', to: modelPath({ id }) }],
 });
