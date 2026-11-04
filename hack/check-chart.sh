@@ -224,6 +224,10 @@ got="$(helm template console "${CHART}" -n ai-grid --set backend.idpSecrets.crea
 off="$(helm template console "${CHART}" -n ai-grid --set backend.idpSecrets.enabled=false)"
 got="$(idp_ns_env <<<"${off}")$(yq 'select(.metadata.namespace == "ai-grid-idp-secrets" or .metadata.name == "ai-grid-idp-secrets") | .kind' <<<"${off}")"
 [[ -z "${got}" ]] || { echo "check-chart: backend.idpSecrets.enabled=false still renders: ${got}" >&2; exit 1; }
+# An all-digit name is a valid namespace; unquoted, YAML would read it as a number.
+got="$(helm template console "${CHART}" -n ai-grid --set-string backend.idpSecrets.namespace=123 |
+  yq 'select(.kind == "Namespace" or .kind == "Role" or .kind == "RoleBinding") | (.metadata.namespace // .metadata.name) | type' | grep -v '^---$' | sort -u)"
+[[ "${got}" == '!!str' ]] || { echo "check-chart: backend.idpSecrets.namespace=123 renders as ${got}, not a string" >&2; exit 1; }
 refused "backend.idpSecrets.namespace=Not_A_Namespace" --set-string backend.idpSecrets.namespace=Not_A_Namespace
 refused "backend.idpSecrets.namespace empty" --set-string backend.idpSecrets.namespace=
 # The backend can get every Secret in that namespace, so it must not be the console's own.
