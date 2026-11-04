@@ -389,6 +389,40 @@ it("adds no watch to an edited model whose deploy's readiness watch still runs",
   expect(modelWatches(storage)).toMatchObject([{ key: 'r1', stage: 'ready' }]);
 });
 
+it("follows a model edited at 29 minutes of its deploy's watch until 59 minutes, after the deploy's warning", async () => {
+  vi.useFakeTimers();
+  try {
+    const { state, storage } = editing([readyRecord(Date.now())]);
+    await pass(0);
+    await pass(29 * 60_000);
+    await act(async () => {
+      await submitWrite(edit, async () => undefined);
+    });
+    // The deploy's 30 minutes run out: its warning, once, and the edit's watch goes on.
+    await pass(3 * READY_POLL_MS);
+    expect(screen.getAllByText("Model Widget isn't ready yet")).toHaveLength(1);
+    expect(modelWatches(storage)).toMatchObject([{ stage: 'changes' }]);
+
+    // At about 45 minutes site-b runs it: the list refetches.
+    await pass(14 * 60_000);
+    const lists = state.listCalls;
+    state.model = pendingOnSiteB();
+    state.model.status!.clusters = [
+      create(ModelClusterStatusSchema, { cluster: 'site-b', phase: ModelPhase.READY, reason: 'Ready' }),
+    ];
+    await pass(READY_POLL_MS);
+    expect(state.listCalls).toBe(lists + 1);
+
+    // Past 59 minutes it ends without a word.
+    await pass(15 * 60_000);
+    expect(modelWatches(storage)).toEqual([]);
+    expect(screen.getAllByText("Model Widget isn't ready yet")).toHaveLength(1);
+    expect(screen.queryByText(/is ready/)).not.toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it("replaces an edited model's watch on the next edit, and stops it when the model is deleted", async () => {
   const { storage } = editing();
   await waitFor(() => expect(submitWrite).toBeDefined());
@@ -680,6 +714,40 @@ describe('a subscription watch', () => {
     await pass(READY_MS);
     expect(subscriptionWatches(storage)).toEqual([]);
     expect(screen.getByRole('list', { name: 'Titles' }).children).toHaveLength(1);
+  });
+
+  it('follows an edit made at 29 minutes until 59 minutes, after saying once that the subscription is active', async () => {
+    const { state, storage } = subscribing([activeRecord(Date.now())]);
+    await pass(0);
+    await pass(29 * 60_000);
+    await act(async () => {
+      await submitWrite(editTeamA, async () => undefined);
+    });
+    expect(subscriptionWatches(storage)).toMatchObject([{ key: 's1', stage: 'ready', edit: { name: 'Team A' } }]);
+
+    state.answer = teamA('Active');
+    await pass(READY_POLL_MS);
+    expect(screen.getAllByText('Subscription Team A is active')).toHaveLength(1);
+    expect(subscriptionWatches(storage)).toMatchObject([{ stage: 'changes' }]);
+
+    // At about 45 minutes the phase changes: the pages refetch.
+    await pass(15 * 60_000);
+    let lists = state.lists;
+    state.answer = teamA('Pending');
+    await pass(READY_POLL_MS);
+    expect(state.lists).toBe(lists + 1);
+    // At about 58 minutes, again.
+    await pass(13 * 60_000);
+    lists = state.lists;
+    state.answer = teamA('Active');
+    await pass(READY_POLL_MS);
+    expect(state.lists).toBe(lists + 1);
+
+    // Past 59 minutes, 30 after the edit, it ends without a word.
+    await pass(2 * 60_000);
+    expect(subscriptionWatches(storage)).toEqual([]);
+    expect(screen.getAllByText('Subscription Team A is active')).toHaveLength(1);
+    expect(screen.queryByText(/isn't active/)).not.toBeInTheDocument();
   });
 
   it("adds no watch to an edited subscription whose create's readiness watch still runs", async () => {

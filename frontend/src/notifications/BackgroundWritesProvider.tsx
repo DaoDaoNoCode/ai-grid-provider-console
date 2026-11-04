@@ -27,6 +27,7 @@ import { modelFields, subscriptionFields } from './writeFields';
 import { failedText, pendingText, succeededText, type WriteTarget } from './writeText';
 import {
   READBACK_POLL_MS,
+  READY_MS,
   READY_POLL_MS,
   nextHistory,
   readBack,
@@ -65,6 +66,9 @@ const defaultFormWait = (signal: AbortSignal) =>
  * `notificationId` is the write's in-progress entry, which its outcome replaces. `status`: a status
  * watch's last seen status (statusOf), so a reload still tells a change from none. `empties` and
  * `lastVerdict`: a subscription watch's history (SubscriptionHistory), so a reload goes on counting.
+ * `edit`: on a `ready` watch, the latest edit of the object made while it ran (its name and when it
+ * landed), which the watch goes on following as a `changes` watch once it ends, until that edit's
+ * own READY_MS has run out.
  */
 type WatchRecord = WriteTarget & {
   key: string;
@@ -74,6 +78,7 @@ type WatchRecord = WriteTarget & {
   status?: string;
   empties?: number;
   lastVerdict?: Verdict;
+  edit?: { name: string; since: number };
 };
 
 /** The write a record follows, without the record's own bookkeeping. */
@@ -116,6 +121,11 @@ const isRecord = (value: unknown): value is WatchRecord =>
     value.lastVerdict === 'active' ||
     value.lastVerdict === 'policy' ||
     value.lastVerdict === 'subscription') &&
+  (value.edit === undefined ||
+    (isObject(value.edit) &&
+      typeof value.edit.name === 'string' &&
+      typeof value.edit.since === 'number' &&
+      Number.isFinite(value.edit.since))) &&
   (value.clusters === undefined ||
     (Array.isArray(value.clusters) && value.clusters.every((c) => typeof c === 'string'))) &&
   (value.subject === 'model' || value.subject === 'subscription') &&
@@ -309,8 +319,33 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
           }
           if (final || changed) refreshFn(target.subject);
           if (final) {
+            const current = records.current.find((r) => r.key === key) ?? record;
+            const seenStatus = lastStatus.current.get(key);
             lastStatus.current.delete(key);
             registered.current.delete(key);
+            // A create's watch that reached its own end (ready or active, failed, or out of time)
+            // while an edit made meanwhile still has time goes on following the object for that
+            // edit, silently, until the edit's READY_MS runs out. A watch that stopped (the object is
+            // gone, or no status) has nothing to follow.
+            const edit = current.edit;
+            if (
+              stage === 'ready' &&
+              response.status !== NotificationResponseStatus.STOP &&
+              edit &&
+              now() < edit.since + READY_MS
+            ) {
+              startWatchFn({
+                ...targetOf(current),
+                op: 'update',
+                name: edit.name,
+                key: newKey(),
+                stage: 'changes',
+                since: edit.since,
+                ...(seenStatus === undefined ? {} : { status: seenStatus }),
+                empties: history.empties,
+                ...(history.last ? { lastVerdict: history.last } : {}),
+              });
+            }
             drop(key);
             if (response.status === NotificationResponseStatus.SUCCESS && !followsStatus) {
               landedFn(target);
@@ -329,8 +364,9 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
      * - an edit is watched while its changes are applied (watchChanges, watchSubscriptionChanges:
      *   never "ready" or "active", as the status doesn't say which version it describes),
      *   replacing the previous edit's watch; while a create's readiness watch of the object still
-     *   runs, that one goes on alone, as it follows the same status (and, for a model, reports the
-     *   same failures);
+     *   runs, that one goes on as the one watch, as it follows the same status (and, for a model,
+     *   reports the same failures), and records the edit: when it ends, it goes on as the edit's
+     *   watch until the edit's own 30 minutes run out;
      * - a delete stops the object's watches at once.
      */
     function landedFn(target: WriteTarget) {
@@ -338,7 +374,11 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
       const watches = records.current.filter(
         (r) => statusStages.has(r.stage) && r.subject === target.subject && r.id === target.id,
       );
-      if (target.op === 'update' && watches.some((r) => r.stage === 'ready')) return;
+      const ready = watches.find((r) => r.stage === 'ready');
+      if (target.op === 'update' && ready) {
+        keep({ ...ready, edit: { name: target.name, since: now() } });
+        return;
+      }
       for (const earlier of watches) {
         unregisterNotification(earlier.key);
         registered.current.delete(earlier.key);
