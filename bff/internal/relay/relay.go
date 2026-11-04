@@ -15,13 +15,15 @@
 // behind. Only the procedures in allowedProcedures pass, and only the Connect
 // protocol: POST with a Connect content type (unary and streaming calls) and
 // GET (for methods without side effects), uncompressed, with a body of at most
-// MaxBodyBytes. A unary call is bounded by the backend
-// timeout, and any call waits at most that long for the backend's headers. Of
+// MaxBodyBytes. A unary call is bounded by the backend timeout, a write
+// procedure's by the backend write timeout, and any call waits at most that
+// long for the backend's headers. Of
 // the answer, only the headers a Connect client and the browser need pass.
 package relay
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -57,28 +59,45 @@ var procedure = regexp.MustCompile(`^/ai_grid\.v1\.[A-Za-z_][A-Za-z0-9_]*/[A-Za-
 // console never lists an organization's members: one organization is one
 // tenant, and the provider must not see a company's internals (decided
 // 2026-10-23).
-var allowedProcedures = map[string]struct{}{
-	"/ai_grid.v1.AiGrid/Ping":                  {},
-	"/ai_grid.v1.Clusters/List":                {},
-	"/ai_grid.v1.Clusters/Get":                 {},
-	"/ai_grid.v1.Clusters/Update":              {},
-	"/ai_grid.v1.Tenants/List":                 {},
-	"/ai_grid.v1.Tenants/Get":                  {},
-	"/ai_grid.v1.Tenants/Create":               {},
-	"/ai_grid.v1.Tenants/Update":               {},
-	"/ai_grid.v1.Tenants/Delete":               {},
-	"/ai_grid.v1.Models/List":                  {},
-	"/ai_grid.v1.Models/Get":                   {},
-	"/ai_grid.v1.Models/Create":                {},
-	"/ai_grid.v1.Models/Update":                {},
-	"/ai_grid.v1.Models/Delete":                {},
-	"/ai_grid.v1.Models/ListPlacementClusters": {},
-	"/ai_grid.v1.Subscriptions/List":           {},
-	"/ai_grid.v1.Subscriptions/Get":            {},
-	"/ai_grid.v1.Subscriptions/Create":         {},
-	"/ai_grid.v1.Subscriptions/Update":         {},
-	"/ai_grid.v1.Subscriptions/Delete":         {},
+//
+// Each procedure also says whether it reads or writes: a write is bounded by
+// the backend's write timeout instead of its read timeout, because the backend
+// commits Models and Subscriptions to a Git repository, which can outlast a
+// read's bound while the write still lands.
+var allowedProcedures = map[string]access{
+	"/ai_grid.v1.AiGrid/Ping":                  reads,
+	"/ai_grid.v1.Clusters/List":                reads,
+	"/ai_grid.v1.Clusters/Get":                 reads,
+	"/ai_grid.v1.Clusters/Update":              writes,
+	"/ai_grid.v1.Tenants/List":                 reads,
+	"/ai_grid.v1.Tenants/Get":                  reads,
+	"/ai_grid.v1.Tenants/Create":               writes,
+	"/ai_grid.v1.Tenants/Update":               writes,
+	"/ai_grid.v1.Tenants/Delete":               writes,
+	"/ai_grid.v1.Models/List":                  reads,
+	"/ai_grid.v1.Models/Get":                   reads,
+	"/ai_grid.v1.Models/Create":                writes,
+	"/ai_grid.v1.Models/Update":                writes,
+	"/ai_grid.v1.Models/Delete":                writes,
+	"/ai_grid.v1.Models/ListPlacementClusters": reads,
+	"/ai_grid.v1.Subscriptions/List":           reads,
+	"/ai_grid.v1.Subscriptions/Get":            reads,
+	"/ai_grid.v1.Subscriptions/Create":         writes,
+	"/ai_grid.v1.Subscriptions/Update":         writes,
+	"/ai_grid.v1.Subscriptions/Delete":         writes,
 }
+
+// access is whether a procedure only reads or changes data.
+type access int
+
+const (
+	reads access = iota
+	writes
+)
+
+// IsWrite reports whether path is an allowed procedure that changes data, the
+// ones bounded by the write timeout.
+func IsWrite(path string) bool { return allowedProcedures[path] == writes }
 
 // Handles reports whether a path belongs to the relay: the BFF routes it here,
 // and answers its own refusals on it as Connect errors (WriteError).
@@ -88,7 +107,9 @@ func Handles(path string) bool { return strings.HasPrefix(path, Prefix) }
 type Config struct {
 	// Backend is the BFF's backend connection: Address, and CAFile,
 	// ServerName and Insecure under backend.Config.TLS's rules. Timeout bounds
-	// each unary call (zero: 10 seconds, as for the gRPC client).
+	// each unary call of a procedure that reads, WriteTimeout of one that
+	// writes (allowedProcedures), with the gRPC client's defaults
+	// (backend.Config.Timeouts).
 	Backend backend.Config
 	// IdentityHeaders are the request headers the BFF reads the caller from
 	// (AUTH_TOKEN_HEADER, AUTH_USER_HEADER, ...). They never reach the backend
@@ -102,10 +123,17 @@ type Config struct {
 // caller's identity on the request context (identity.WithIdentity), as the
 // BFF's requireIdentity puts it there.
 type Relay struct {
-	target  *neturl.URL
+	target *neturl.URL
+	strip  []string
+	logger *slog.Logger
+	// read relays the procedures that read, write those that write, each
+	// bounded by its own timeout.
+	read, write bounded
+}
+
+// bounded is a proxy whose calls are bounded by one timeout.
+type bounded struct {
 	timeout time.Duration
-	strip   []string
-	logger  *slog.Logger
 	proxy   *httputil.ReverseProxy
 }
 
@@ -116,18 +144,9 @@ func New(cfg Config) (*Relay, error) {
 	if err != nil {
 		return nil, err
 	}
-	timeout := cfg.Backend.Timeout
-	if timeout <= 0 {
-		timeout = 10 * time.Second
-	}
 	scheme := "http"
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	// A backend that sends no headers within the timeout can't hold a call, a stream
-	// included; a stream whose headers came runs on uncut.
-	transport.ResponseHeaderTimeout = timeout
 	if tlsCfg != nil {
 		scheme = "https"
-		transport.TLSClientConfig = tlsCfg
 	}
 	target := &neturl.URL{Scheme: scheme, Host: cfg.Backend.Address}
 	logger := cfg.Logger
@@ -140,8 +159,22 @@ func New(cfg Config) (*Relay, error) {
 			strip = append(strip, h)
 		}
 	}
-	r := &Relay{target: target, timeout: timeout, strip: strip, logger: logger}
-	r.proxy = &httputil.ReverseProxy{
+	r := &Relay{target: target, strip: strip, logger: logger}
+	readTimeout, writeTimeout := cfg.Backend.Timeouts()
+	r.read = r.boundedProxy(readTimeout, tlsCfg)
+	r.write = r.boundedProxy(writeTimeout, tlsCfg)
+	return r, nil
+}
+
+func (r *Relay) boundedProxy(timeout time.Duration, tlsCfg *tls.Config) bounded {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	// A backend that sends no headers within the timeout can't hold a call, a stream
+	// included; a stream whose headers came runs on uncut.
+	transport.ResponseHeaderTimeout = timeout
+	if tlsCfg != nil {
+		transport.TLSClientConfig = tlsCfg
+	}
+	return bounded{timeout: timeout, proxy: &httputil.ReverseProxy{
 		Rewrite:        r.rewrite,
 		Transport:      transport,
 		ModifyResponse: modifyResponse,
@@ -149,9 +182,16 @@ func New(cfg Config) (*Relay, error) {
 		// What the proxy reports itself, such as an answer cut while it is
 		// copied (the browser or the backend went away), goes to the relay's
 		// logger instead of the log package.
-		ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelDebug),
+		ErrorLog: slog.NewLogLogger(r.logger.Handler(), slog.LevelDebug),
+	}}
+}
+
+// boundFor is the proxy and timeout for the procedure at path.
+func (r *Relay) boundFor(path string) bounded {
+	if IsWrite(path) {
+		return r.write
 	}
-	return r, nil
+	return r.read
 }
 
 // URL is the backend the relay forwards to, for the startup log.
@@ -203,12 +243,13 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	req.Body = http.MaxBytesReader(w, req.Body, MaxBodyBytes)
+	bound := r.boundFor(req.URL.Path)
 	if !streaming {
-		ctx, cancel := context.WithTimeout(req.Context(), r.timeout)
+		ctx, cancel := context.WithTimeout(req.Context(), bound.timeout)
 		defer cancel()
 		req = req.WithContext(ctx)
 	}
-	r.proxy.ServeHTTP(w, req)
+	bound.proxy.ServeHTTP(w, req)
 }
 
 var tooLarge = fmt.Sprintf("a request body must be at most %d bytes", MaxBodyBytes)
@@ -318,7 +359,7 @@ func (r *Relay) errorHandler(w http.ResponseWriter, req *http.Request, err error
 		// The browser went away; nobody reads the answer.
 		w.WriteHeader(499)
 	case errors.Is(err, context.DeadlineExceeded), errors.As(err, &netErr) && netErr.Timeout():
-		r.logger.Warn("backend call timed out", "path", req.URL.Path, "timeout", r.timeout, "error", err)
+		r.logger.Warn("backend call timed out", "path", req.URL.Path, "timeout", r.boundFor(req.URL.Path).timeout, "error", err)
 		WriteError(w, http.StatusGatewayTimeout, "The AI Grid backend did not respond in time. Try again.")
 	default:
 		r.logger.Warn("backend call failed", "path", req.URL.Path, "error", err)

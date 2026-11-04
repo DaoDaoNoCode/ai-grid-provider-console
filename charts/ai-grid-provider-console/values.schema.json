@@ -54,7 +54,12 @@
       "properties": {
         "enabled": { "type": "boolean" },
         "host": { "type": "string" },
-        "destinationCACertificate": { "type": "string" }
+        "destinationCACertificate": { "type": "string" },
+        "timeout": {
+          "description": "The router's timeout (haproxy.router.openshift.io/timeout), such as 70s: longer than authProxy.upstreamTimeout.",
+          "type": "string",
+          "pattern": "^[1-9][0-9]*(s|m|h)$"
+        }
       }
     },
     "console": {
@@ -119,6 +124,11 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "upstreamTimeout": {
+          "description": "kube-auth-proxy's --upstream-timeout, such as 65s: longer than the BFF's 60s server write timeout.",
+          "type": "string",
+          "pattern": "^[1-9][0-9]*(s|m|h)$"
+        },
         "resources": { "$ref": "#/definitions/resources" }
       }
     }

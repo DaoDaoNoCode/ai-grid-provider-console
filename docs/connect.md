@@ -244,6 +244,82 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   backend's fakes and commits a model of its own first (`e2e/backend.ts`).
 - The BFF has no `/api/v1/subscriptions` or `/api/v1/models` routes and no `--models-namespace`.
 
+### Writes that take long
+
+The backend commits Models and Subscriptions to a Git repository: a write takes seconds, and on
+a slow day longer than the BFF waits (`BACKEND_WRITE_TIMEOUT`, 30 s, `docs/plan/bff-api.md`, "The
+Connect relay"). So these writes (deploy, edit and delete a model; create, edit and delete a
+subscription) are sent from the app root, never from the form (`frontend/src/notifications`):
+
+- `useModelWrites` and `useSubscriptionWrites` call `submitWrite` (`useBackgroundWrites`), which
+  sends the RPC with `callUnaryMethod` from `BackgroundWritesProvider`. The form waits for it
+  `FORM_WAIT_MS` (3 s), with its button busy. An answer within that wait is the form's as it
+  always was, whatever its code: a refusal, or the backend unreachable (Unavailable), stays on the
+  form as its error, and a success leaves it, the center saying so. Refusals usually come back
+  within the wait, but not always: in git mode a create's name check and an update's version check
+  run after the backend reads the Git head, which can take seconds once its cache has expired.
+- Past the wait the form leaves as on success, and an info toast says the change is being saved
+  ("Saving model <name>"). The request keeps running; its answer becomes the outcome of that same
+  entry (one drawer entry per write, unread when it arrives): the success, or the backend's
+  refusal with a link back to the form. A create refused after the form left keeps what was
+  submitted (the provider's drafts, per user in the tab's storage): the link (`?draft=`) reopens the
+  wizard or the create form with it, on Review for a model, the refusal as the form's error and the
+  resource name editable. An edit refused after the form left says the changes weren't saved, and
+  its link opens the edit page on the object as it is now.
+- An answer lost after the form left (`isUnknownOutcome`: DeadlineExceeded, Unavailable,
+  Canceled, a failed fetch; never a 4xx or an error the backend answered itself) is not an error: the
+  center reads the object back every 10 s and says it was not done after 2 minutes. A create is
+  done when `Get` finds the object holding what it sent, an update when the version moved past
+  the one sent and the object holds what it sent (`writeFields.ts`: a model's display name,
+  source, image, runtime arguments, resources, clusters and replicas; a subscription's names,
+  groups, organization, priority and models), a delete when `Get` answers NotFound. An object
+  that exists, or moved on, with other content is someone else's write as far as anyone can
+  tell: a warning that the write couldn't be confirmed, with a link to the object, never a
+  success. Reads that keep failing are a warning too.
+- A deployed model is then watched every 20 s until it runs on every cluster it is placed on:
+  each entry of `status.clusters` (one per cluster in `placement.selected_clusters`) READY, which
+  that cluster's LLMInferenceService reports. Then "Model <name> is ready on <clusters>". The
+  model's overall phase isn't used for this: it also counts the ingress clusters that publish the
+  model through MaaS, whose report turns ready only once a subscription covers the model, so a
+  model running on its clusters can read Pending for good. "Ready" means running on its clusters;
+  users reach it through MaaS once a subscription covers it too. An overall Failed (or a cluster
+  reported failed, which git mode doesn't report) is an error. After 30 minutes the watch warns
+  "Model <name> isn't ready yet", naming the clusters it isn't ready on; a model that is gone
+  stops it.
+- An edited model is watched the same way, every 20 s for 30 minutes, but never said to be ready:
+  its status doesn't say which revision it describes, and during a rolling update the previous pod
+  keeps its cluster Ready, so the previous revision's Ready would read as the edit's. It reports
+  one thing, a failure it sees happen: "Unable to roll out changes to model <name>", with the
+  reason and a link to the model, when the model, or a cluster it is placed on, turns Failed. Its
+  first read comes as the edit lands, before Argo CD can have applied it, so a model already
+  failed then is the previous revision's failure, reported only if its status changes. After 30
+  minutes it ends without a word; a model that is gone stops it. Edits get a "ready" once the
+  backend reports the revision its status describes.
+- One watch follows a model at a time, so nothing is said twice: deploying an id again replaces
+  its earlier watch; an edit replaces the previous edit's watch, and adds none while a deploy's
+  readiness watch of the model still runs, as that one follows the same status and reports the
+  same failures; a delete stops the model's watch at once.
+- The pages refetch what a watch learns at once, rather than on their own next poll: every
+  Models query (lists and `Get`s alike) when a model's watch sees its status change (its phase or
+  reason, or any `status.clusters` entry), and every query of the object's kind, Models or
+  Subscriptions, when any watch ends. A poll that sees no change refetches nothing.
+- The watches and the notifications are kept in the browser tab's session storage under the
+  signed-in user (`storageKeys.ts`), so a reload resumes them: a write's record is kept before its
+  request goes out, and one whose answer the page no longer awaits is read back. When another user
+  signs in to the tab, the previous user's records stop and leave it. They belong to that tab
+  only: another tab, browser or admin sees none of them.
+
+The words name each stage as it is, since the backend only commits to Git and Argo CD applies the
+change later: "Model <name> saved to Git" with "It's being deployed to <clusters>", "Changes to
+model <name> saved to Git", "Model <name> deleted from Git", and for a subscription that it takes
+effect once the ingress clusters apply it. A model is "ready" once it runs on every cluster it
+is placed on (each cluster's status), and only then. The pages raise no success notice of their own for these writes:
+the center says it on both paths (`writeText.ts`).
+
+Every toast goes through the notification center (`NotificationToasts`), a page's own success
+notice (`NoticeToast`) included, and every toast is also in the drawer the masthead's bell opens (on a
+phone, the user menu's Notifications item, as it offers the theme there).
+
 ### Perses on Query v5
 
 The `@perses-dev` packages that use Query (dashboards, explore, plugin-system, and the Prometheus

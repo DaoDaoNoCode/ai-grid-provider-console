@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { createModel, tryBackend } from './backend';
+import { createModel, tryBackend, writeConfirmed } from './backend';
 
 // On the backend's own fakes (playwright.config.ts, "backend fakes"): the pages read and write the
 // backend's Subscriptions API over Connect. The organization is the PoC's in the backend's fake
@@ -33,7 +33,7 @@ test('creates, views, edits and deletes a subscription', async ({ page }) => {
     await limits.getByRole('spinbutton', { name: 'Tokens' }).fill('5000');
     await limits.getByRole('button', { name: 'Save' }).click();
     await page.getByRole('button', { name: 'Create subscription' }).click();
-    await expect(page.getByText('Subscription created')).toBeVisible();
+    await expect(writeConfirmed(page, `Subscription ${unique} saved to Git`)).toBeVisible();
 
     // The phase is the backend's: Pending while an ingress cluster hasn't reported the subscription,
     // which no fake cluster does for a new one (withSubscriptionPhase,
@@ -44,10 +44,10 @@ test('creates, views, edits and deletes a subscription', async ({ page }) => {
 
     // The view page opens directly and survives a reload.
     await page.goto(`/subscriptions/view/${unique}`);
-    await expect(page.getByRole('heading', { name: unique })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: unique, exact: true })).toBeVisible();
     await expect(page.getByText(ORGANIZATION).first()).toBeVisible();
     await page.reload();
-    await expect(page.getByRole('heading', { name: unique })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: unique, exact: true })).toBeVisible();
     await expect(page.getByRole('grid', { name: 'subscription models' })).toContainText('5,000');
     await expect(page.getByTestId('subscription-priority')).toHaveText('0');
 
@@ -57,7 +57,7 @@ test('creates, views, edits and deletes a subscription', async ({ page }) => {
     await expect(page).toHaveURL(new RegExp(`/subscriptions/edit/${unique}$`));
     await page.getByRole('spinbutton', { name: 'Priority' }).fill('42');
     await page.getByRole('button', { name: 'Save' }).click();
-    await expect(page.getByText('Subscription updated')).toBeVisible();
+    await expect(writeConfirmed(page, `Changes to subscription ${unique} saved to Git`)).toBeVisible();
 
     // Delete from the list with the typed confirmation.
     await expect(row).toContainText('42');

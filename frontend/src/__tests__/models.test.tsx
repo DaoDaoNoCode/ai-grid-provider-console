@@ -130,9 +130,10 @@ it('walks the deployment wizard, selects clusters and creates the model', async 
   expect(within(review).getAllByText('Model name in requests')).toHaveLength(1);
   await user.click(screen.getByRole('button', { name: 'Deploy' }));
 
-  expect(await screen.findByText('Model deployed')).toBeVisible();
-  expect(await screen.findByTestId('model-deployments-table')).toHaveTextContent('Widget');
-  expect(within(screen.getByTestId('model-locations-widget')).getByText(site1)).toBeVisible();
+  expect(await screen.findByText('Model Widget saved to Git')).toBeVisible();
+  // The confirmation comes with the answer; the list shows the model once its refetch is in.
+  expect(within(await screen.findByTestId('model-locations-widget')).getByText(site1)).toBeVisible();
+  expect(screen.getByTestId('model-deployments-table')).toHaveTextContent('Widget');
   // What Models/Create took: the wizard's fields, CPU only's resources and environment, no presets,
   // and the inference scheduler with a managed route, which the backend's defaults leave off.
   const [request] = create.mock.calls[0];
@@ -172,7 +173,7 @@ it('removes a model after its name is typed', async () => {
   await user.click(within(dialog).getByTestId('delete-modal-input'));
   await user.paste('Widget');
   await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
-  expect(await screen.findByText('Model deleted')).toBeVisible();
+  expect(await screen.findByText('Model Widget deleted from Git')).toBeVisible();
   await waitFor(() => expect(screen.queryByTestId('model-actions-widget')).not.toBeInTheDocument());
   expect(models.models.some((m) => m.id === 'widget')).toBe(false);
 });
@@ -192,7 +193,7 @@ it('leaves the deploy form out of history once the model is deployed, so Back sk
   );
   await fillModel(user);
   await pickAndDeploy(user, [cluster1]);
-  expect(await screen.findByText('Model deployed')).toBeVisible();
+  expect(await screen.findByText('Model Widget saved to Git')).toBeVisible();
   await act(async () => navigate(-1));
   expect(await screen.findByRole('heading', { level: 1, name: 'Clusters' })).toBeVisible();
 });
@@ -781,7 +782,7 @@ it('deletes a model from its page and returns to the list', async () => {
   await user.click(within(dialog).getByTestId('delete-modal-input'));
   await user.paste('Granite research endpoint');
   await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
-  expect(await screen.findByText('Model deleted')).toBeVisible();
+  expect(await screen.findByText('Model Granite research endpoint deleted from Git')).toBeVisible();
   expect(await screen.findByTestId('model-deployments-table')).not.toHaveTextContent('Granite research endpoint');
 });
 
@@ -1287,7 +1288,7 @@ describe('editing a model deployment', () => {
     await user.keyboard('{Escape}');
     await openStep(user, 'Review');
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
-    expect(await screen.findByText('Model updated')).toBeVisible();
+    expect(await screen.findByText('Changes to model Granite 3.3 8B Instruct saved to Git')).toBeVisible();
     const [request] = update.mock.calls[0];
     expect(request.updateMask?.paths).toEqual(['spec.replicas', 'spec.placement']);
     expect(request.lock).toBe(true);
@@ -1393,7 +1394,7 @@ describe('editing a model deployment', () => {
     await openStep(user, 'Review');
     expect(within(screen.getByTestId('model-review')).getByTestId('model-older-name')).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
-    expect(await screen.findByText('Model updated')).toBeVisible();
+    expect(await screen.findByText('Changes to model Granite 3.3 8B Instruct saved to Git')).toBeVisible();
     // The edit sends no served name: the backend switches the model to its id on any update.
     const [request] = update.mock.calls[0];
     expect(request.updateMask?.paths).toEqual(['metadata.annotations']);

@@ -22,7 +22,7 @@ func TestParseDefaults(t *testing.T) {
 	if cfg.Port != 8080 || cfg.AuthTokenHeader != DefaultAuthTokenHeader || cfg.AuthUserHeader != DefaultAuthUserHeader || cfg.BackendAddress != DefaultBackendAddress {
 		t.Fatalf("unexpected defaults: %+v", cfg)
 	}
-	if cfg.BackendTimeout != 10*time.Second || cfg.BindAddress != DefaultBindAddress || cfg.HubCAFile != "" {
+	if cfg.BackendTimeout != 10*time.Second || cfg.BackendWriteTimeout != 30*time.Second || cfg.BindAddress != DefaultBindAddress || cfg.HubCAFile != "" {
 		t.Fatalf("unexpected defaults: %+v", cfg)
 	}
 	if cfg.TLSEnabled() {
@@ -56,7 +56,7 @@ func TestParseInClusterDefaults(t *testing.T) {
 
 func TestParseEnvThenFlags(t *testing.T) {
 	t.Parallel()
-	env := map[string]string{"PORT": "9000", "BACKEND_ADDRESS": "from-env:1", "LOG_LEVEL": "debug", "BACKEND_TIMEOUT": "3s", "HUB_API_URL": "https://hub.example", "BIND_ADDRESS": "0.0.0.0"}
+	env := map[string]string{"PORT": "9000", "BACKEND_ADDRESS": "from-env:1", "LOG_LEVEL": "debug", "BACKEND_TIMEOUT": "3s", "BACKEND_WRITE_TIMEOUT": "45s", "HUB_API_URL": "https://hub.example", "BIND_ADDRESS": "0.0.0.0"}
 	cfg, err := Parse([]string{"--backend-address=from-flag:2"}, lookup(env))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -69,6 +69,9 @@ func TestParseEnvThenFlags(t *testing.T) {
 	}
 	if cfg.BackendTimeout != 3*time.Second {
 		t.Errorf("BackendTimeout = %s", cfg.BackendTimeout)
+	}
+	if cfg.BackendWriteTimeout != 45*time.Second {
+		t.Errorf("BackendWriteTimeout = %s", cfg.BackendWriteTimeout)
 	}
 	if cfg.ListenAddr() != "0.0.0.0:9000" {
 		t.Errorf("ListenAddr = %q", cfg.ListenAddr())
@@ -103,6 +106,12 @@ func TestParsePerses(t *testing.T) {
 	if cfg, err := Parse([]string{hub, "--backend-timeout=50s"}, lookup(nil)); err != nil || cfg.BackendTimeout != MaxBackendTimeout {
 		t.Fatalf("the longest backend timeout: %+v, %v", cfg, err)
 	}
+	if cfg, err := Parse([]string{hub, "--backend-write-timeout=50s"}, lookup(nil)); err != nil || cfg.BackendWriteTimeout != MaxBackendTimeout {
+		t.Fatalf("the longest backend write timeout: %+v, %v", cfg, err)
+	}
+	if _, err := Parse([]string{hub}, lookup(map[string]string{"BACKEND_WRITE_TIMEOUT": "2m"})); err == nil || !strings.Contains(err.Error(), "backend-write-timeout") {
+		t.Fatalf("BACKEND_WRITE_TIMEOUT past the write timeout: %v, want an error naming backend-write-timeout", err)
+	}
 	if cfg, err := Parse([]string{hub, "--perses-timeout=50s"}, lookup(nil)); err != nil || cfg.PersesTimeout != MaxPersesTimeout {
 		t.Fatalf("the longest Perses timeout: %+v, %v", cfg, err)
 	}
@@ -134,6 +143,7 @@ func TestParseRejectsBadEnvValues(t *testing.T) {
 		{"FAKE_BACKEND", "on"},
 		{"PERSES_INSECURE", "maybe"},
 		{"BACKEND_TIMEOUT", "10"},
+		{"BACKEND_WRITE_TIMEOUT", "30"},
 		{"PERSES_TIMEOUT", "90"},
 		{"PERSES_TIMEOUT", "thirty seconds"},
 	}
@@ -169,6 +179,7 @@ func TestParseFlagOverridesBadEnvValue(t *testing.T) {
 		{"FAKE_BACKEND", "on", "--fake-backend", func(c Config) bool { return c.FakeBackend }},
 		{"PERSES_INSECURE", "maybe", "--perses-insecure=false", func(c Config) bool { return !c.PersesInsecure }},
 		{"BACKEND_TIMEOUT", "10", "--backend-timeout=3s", func(c Config) bool { return c.BackendTimeout == 3*time.Second }},
+		{"BACKEND_WRITE_TIMEOUT", "later", "--backend-write-timeout=20s", func(c Config) bool { return c.BackendWriteTimeout == 20*time.Second }},
 		{"PERSES_TIMEOUT", "soon", "--perses-timeout=20s", func(c Config) bool { return c.PersesTimeout == 20*time.Second }},
 	}
 	for _, tc := range cases {
@@ -201,6 +212,9 @@ func TestParseRejectsBadInput(t *testing.T) {
 		{"--perses-timeout=0", hub},
 		{"--perses-timeout=51s", hub},
 		{"--backend-timeout=51s", hub},
+		{"--backend-write-timeout=0", hub},
+		{"--backend-write-timeout=-1s", hub},
+		{"--backend-write-timeout=51s", hub},
 		{"--log-level=loud", hub},
 		{}, // no hub API URL outside a pod
 	}

@@ -63,10 +63,8 @@ export const ModelsPage: React.FC = () => {
     });
   const [confirmDelete, deleteModal] = useDeleteModel({
     refresh: () => void refresh(),
-    onDeleted: () => {
-      // Replace, so the notice doesn't add a second Models entry to the browser's history.
-      void navigate('.', { replace: true, state: { notice: 'Model deleted' } });
-    },
+    // The list refetches once the delete lands; the notification center says how it went.
+    onDeleted: () => undefined,
   });
 
   const rows = useMemo(() => {

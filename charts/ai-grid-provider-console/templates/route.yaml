@@ -9,6 +9,8 @@ metadata:
   annotations:
     # Browsers that have seen the console keep to HTTPS for a year.
     haproxy.router.openshift.io/hsts_header: max-age=31536000
+    # Longer than kube-auth-proxy's upstream timeout, so a slow write ends in the console's own answer.
+    haproxy.router.openshift.io/timeout: {{ .Values.route.timeout | quote }}
 spec:
   {{- with .Values.route.host }}
   host: {{ . }}

@@ -27,3 +27,9 @@ if (typeof window !== 'undefined') {
 // No test reaches the network. A test that needs fetch stubs it (vi.stubGlobal, vi.spyOn, or a
 // fetch passed in); one that forgets fails with the URL instead of calling the real one.
 globalThis.fetch = (input) => Promise.reject(new Error(`unstubbed fetch: ${String(input)}`));
+
+// The console keeps the notification center's list and its write watches in the tab's session
+// storage; every test starts with an empty one, as a new tab does.
+if (typeof window !== 'undefined') {
+  afterEach(() => window.sessionStorage.clear());
+}

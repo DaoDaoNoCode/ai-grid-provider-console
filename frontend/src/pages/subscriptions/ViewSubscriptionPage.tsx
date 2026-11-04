@@ -37,7 +37,7 @@ type ActionsProps = { subscription: Subscription; returnTo: string };
 const SubscriptionActions: React.FC<ActionsProps> = ({ subscription, returnTo }) => {
   const navigate = useNavigate();
   const [confirmDelete, deleteDialog] = useDeleteSubscription({
-    onDeleted: () => void navigate(returnTo, { state: { notice: 'Subscription deleted' } }),
+    onDeleted: () => void navigate(returnTo),
   });
   const deleting = isDeleting(subscription);
   return (

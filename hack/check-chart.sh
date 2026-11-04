@@ -168,4 +168,15 @@ if [[ "${chart}" != "${base}" ]]; then
   diff <(yq -p=json -P '.' <<<"${chart}") <(yq -p=json -P '.' <<<"${base}") >&2 || true
   exit 1
 fi
+# The router and kube-auth-proxy wait longer than the BFF's longest answer (its 60s server write
+# timeout): the router 70s, the proxy 65s by default, and the schema refuses a timeout that isn't a duration.
+defaults="$(helm template console "${CHART}" -n ai-grid)"
+got="$(yq 'select(.kind == "Route") | .metadata.annotations["haproxy.router.openshift.io/timeout"]' <<<"${defaults}")"
+[[ "${got}" == 70s ]] || { echo "check-chart: the Route's timeout is '${got}', want 70s" >&2; exit 1; }
+got="$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[] | select(.name == "kube-auth-proxy")
+  | .args[] | select(test("^--upstream-timeout="))' <<<"${defaults}")"
+[[ "${got}" == --upstream-timeout=65s ]] || { echo "check-chart: kube-auth-proxy's upstream timeout is '${got}', want 65s" >&2; exit 1; }
+refused "route.timeout=soon" --set route.timeout=soon
+refused "authProxy.upstreamTimeout=65" --set-string authProxy.upstreamTimeout=65
+
 echo "check-chart: lint passes; the chart's defaults render manifests/base"

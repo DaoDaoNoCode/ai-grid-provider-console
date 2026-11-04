@@ -72,7 +72,7 @@ func (a *App) getGridOverview(w http.ResponseWriter, r *http.Request) {
 		req.Site = &site
 	}
 
-	ctx, cancel := a.backend.Context(r.Context())
+	ctx, cancel := a.backendContext(r)
 	defer cancel()
 	resp, err := a.backend.Grid.GetOverview(ctx, req)
 	if err != nil {

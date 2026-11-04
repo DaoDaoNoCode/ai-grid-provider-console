@@ -2,6 +2,7 @@
 package api
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 
@@ -90,6 +91,18 @@ func (a *App) Handler() http.Handler {
 	})
 
 	return a.recoverPanic(a.logRequests(compress(routes)))
+}
+
+// backendContext bounds the backend calls of one request: a POST, PATCH, PUT or
+// DELETE changes data and gets the write timeout (BACKEND_WRITE_TIMEOUT), any
+// other request the read timeout (BACKEND_TIMEOUT).
+func (a *App) backendContext(r *http.Request) (context.Context, context.CancelFunc) {
+	switch r.Method {
+	case http.MethodPost, http.MethodPatch, http.MethodPut, http.MethodDelete:
+		return a.backend.WriteContext(r.Context())
+	default:
+		return a.backend.Context(r.Context())
+	}
 }
 
 // relayPerses forwards an allowed Perses call with the caller's own token (perses.Relay decides

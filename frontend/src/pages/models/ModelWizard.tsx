@@ -4,7 +4,7 @@
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
 // Standalone fields replace cluster catalogs and dynamic deployment plugins.
 import { useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Alert,
   AlertActionLink,
@@ -53,6 +53,8 @@ import {
 import { DEFAULT_REPLICAS, sameSet, updateRequestOf, type ModelInput } from './modelRequests';
 import { titleOf, type ModelView } from './modelView';
 import { OlderServedNameAlert } from './OlderServedNameAlert';
+import { isModelDraft } from './modelDraft';
+import { useBackgroundWrites } from '../../notifications/useBackgroundWrites';
 import { useModelWrites, usePlacementClusters } from './useModels';
 import { deploymentNameFromUri, modelPath } from './modelUtils';
 import { useClusterList } from '../clusters/useClusters';
@@ -158,7 +160,27 @@ const ReviewStep: React.FC<{
 export const ModelWizard: React.FC<Props> = ({ model }) => {
   const navigate = useNavigate();
   const editing = !!model;
-  const [start] = useState(() => initialValues(model));
+  // A deploy the backend refused after the wizard had left reopens it (the toast's ?draft= link)
+  // with exactly what was submitted, on Review, with the refusal as the form's error.
+  const { draftOf } = useBackgroundWrites();
+  const [searchParams] = useSearchParams();
+  const [draft] = useState(() => {
+    const id = model ? null : searchParams.get('draft');
+    const kept = id ? draftOf(id) : undefined;
+    return kept?.subject === 'model' && isModelDraft(kept.values)
+      ? { values: kept.values, error: kept.error }
+      : undefined;
+  });
+  const [start] = useState(() =>
+    draft
+      ? {
+          modelUri: draft.values.modelUri,
+          replicas: draft.values.replicas,
+          runtimeArgs: draft.values.runtimeArgs,
+          clusterNames: draft.values.clusters,
+        }
+      : initialValues(model),
+  );
   // Editing any other placement as a list of clusters would change what else it selects.
   const clustersEditable = !model || model.placementClusters !== undefined;
   const replicasEditable = !model?.autoscaled;
@@ -196,41 +218,49 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
   const [clusterNamesTouched, setClusterNamesTouched] = useState(false);
   const { data: nameDescData, onDataChange: onNameDescChange } = useK8sNameDescriptionFieldData({
     maxLength: 63,
-    // A k8sName makes the resource name read-only, as a deployed one is.
-    initialData: model ? { name: titleOf(model), description: model.description ?? '', k8sName: model.id } : undefined,
+    // A k8sName makes the resource name read-only, as a deployed one is; a draft's stays editable,
+    // since a taken name is a reason the backend refuses a deploy.
+    initialData: model
+      ? { name: titleOf(model), description: model.description ?? '', k8sName: model.id }
+      : draft
+        ? { name: draft.values.displayName, description: draft.values.description, k8sName: draft.values.name }
+        : undefined,
+    editableK8sName: !model && !!draft,
   });
   const [modelUri, setModelUri] = useState(start.modelUri);
   const [replicas, setReplicas] = useState(start.replicas);
   // The hardware a new model runs on: the first in the console's list until the user selects
   // another. A deployed model keeps its own, read-only.
-  const [hardwareId, setHardwareId] = useState<string>();
+  const [hardwareId, setHardwareId] = useState<string | undefined>(draft?.values.hardwareId);
   const hardware = editing ? undefined : (hardwareList.find((h) => h.id === hardwareId) ?? hardwareList[0]);
   const accelerator = hardware?.accelerator;
   // The fields the hardware fills in hold undefined until the user edits them, so they show the
   // selected hardware's value. An edited CPU, memory or accelerator count is kept when the hardware
   // changes; the image is the hardware's, so selecting hardware replaces an edited one with its own
   // (or none, for the cluster's default).
-  const [imageInput, setRuntimeImage] = useState<string | undefined>(model ? (model.runtimeImage ?? '') : undefined);
+  const [imageInput, setRuntimeImage] = useState<string | undefined>(
+    model ? (model.runtimeImage ?? '') : draft?.values.image,
+  );
   const selectHardware = (id: string) => {
     setHardwareId(id);
     setRuntimeImage(undefined);
   };
-  const [cpuInput, setCpu] = useState<string>();
-  const [memoryInput, setMemory] = useState<string>();
-  const [acceleratorsInput, setAccelerators] = useState<string>();
+  const [cpuInput, setCpu] = useState<string | undefined>(draft?.values.cpu);
+  const [memoryInput, setMemory] = useState<string | undefined>(draft?.values.memory);
+  const [acceleratorsInput, setAccelerators] = useState<string | undefined>(draft?.values.accelerators);
   const runtimeImage = imageInput ?? hardware?.image ?? '';
   const cpu = model ? (model.cpu ?? '') : (cpuInput ?? hardware?.defaults?.cpu ?? defaults.cpu);
   const memory = model ? (model.memory ?? '') : (memoryInput ?? hardware?.defaults?.memory ?? defaults.memory);
   const accelerators = acceleratorsInput ?? String(hardware?.defaults?.accelerators ?? defaults.accelerators);
   const [runtimeArgs, setRuntimeArgs] = useState<RuntimeArgsFieldData>({
-    enabled: start.runtimeArgs.length > 0,
+    enabled: draft ? draft.values.runtimeArgsEnabled : start.runtimeArgs.length > 0,
     args: start.runtimeArgs,
   });
   // A field shows its error only once the user has left it, as Clusters does.
   const [touched, setTouched] = useState<ReadonlySet<string>>(new Set());
   const touch = (field: string) => setTouched((prev) => (prev.has(field) ? prev : new Set(prev).add(field)));
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<string | undefined>(draft?.error);
 
   const input: ModelInput = {
     name: nameDescData.k8sName.value,
@@ -342,13 +372,29 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
     setSaving(true);
     setError(undefined);
     try {
+      // The notification center says how the write went, whether the backend answered within the
+      // form's short wait or after the form had left (useBackgroundWrites).
       if (model) {
         await writes.updateModel(model, edited);
-        navigate(detailsPath, { state: { notice: 'Model updated' } });
+        navigate(detailsPath);
       } else {
-        await writes.createModel(input);
+        await writes.createModel(input, {
+          displayName: nameDescData.name,
+          name: nameDescData.k8sName.value,
+          description: nameDescData.description,
+          modelUri,
+          replicas,
+          hardwareId: hardware?.id,
+          image: imageInput,
+          cpu: cpuInput,
+          memory: memoryInput,
+          accelerators: acceleratorsInput,
+          runtimeArgsEnabled: runtimeArgs.enabled,
+          runtimeArgs: runtimeArgs.args,
+          clusters: clusterNames,
+        });
         // Replaces the deploy form in history, so Back doesn't land on it, empty.
-        navigate('/models', { replace: true, state: { notice: 'Model deployed' } });
+        navigate('/models', { replace: true });
       }
     } catch (err) {
       setError(
@@ -575,6 +621,8 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
       />
       <PageSection type="wizard" hasBodyWrapper={false} isFilled>
         <Wizard
+          // A reopened draft starts on Review, where its refusal shows.
+          startIndex={draft ? 4 : 1}
           isProgressive={false}
           onClose={requestLeave}
           onStepChange={(_event, current, previous) => {

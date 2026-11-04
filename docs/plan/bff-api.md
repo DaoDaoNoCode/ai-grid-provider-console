@@ -608,7 +608,17 @@ What the relay owns is the boundary:
 - **How long.** A unary call (every GET, and a unary POST) is bounded by `BACKEND_TIMEOUT` (10s,
   at most 50s so that the 504 fits in the server's 60s write timeout), as an RPC from the BFF
   is: past it the relay answers 504 (`deadline_exceeded`). Every call, a stream included, waits
-  at most `BACKEND_TIMEOUT` for the backend's headers (504 likewise). A stream whose headers came
+  at most `BACKEND_TIMEOUT` for the backend's headers (504 likewise). The procedures that change
+  data take `BACKEND_WRITE_TIMEOUT` (30s, at most 50s) for both instead: the allowlist marks each
+  procedure as a read or a write (`allowedProcedures`; today every `Create`, `Update` and
+  `Delete`), and the relay decides by the path, never by the body. The backend commits Models and
+  Subscriptions to a Git repository, which can take longer than a read, and a write the relay cut
+  at the read timeout could still land, so its 504 would say nothing about the outcome (the
+  console treats such a write as unknown and checks it, `docs/connect.md`, "Writes that take
+  long"). The router and kube-auth-proxy in front of the BFF wait longer than its 60s server write
+  timeout (the chart's `route.timeout`, 70s, and `authProxy.upstreamTimeout`, 65s; their defaults,
+  30s, would cut a write first; `charts/ai-grid-provider-console/README.md`, "Timeouts").
+  A stream whose headers came
   runs until it ends or the server's 60s write timeout cuts it, and reaches the browser as the
   backend flushes it; when the browser goes away, the backend's call is canceled. A backend that
   can't be reached, or whose certificate isn't trusted, is 502 (`unavailable`), with the detail
@@ -681,7 +691,7 @@ exists; the frontend uses the mock service meanwhile.
 | `/ai_grid.v1.*` path that is not `/ai_grid.v1.<Service>/<Method>`; a method other than `POST` and `GET` | 404, 405 with `Allow: GET, POST`; Connect error `unimplemented` |
 | `/ai_grid.v1.*` body over 1 MiB | 413, Connect error `resource_exhausted` |
 | `/ai_grid.v1.*` POST that is not the Connect protocol (gRPC, gRPC-Web, any other `Content-Type`) | 415, Connect error `unimplemented` |
-| `/ai_grid.v1.*` backend unreachable or untrusted; a unary call slower than `BACKEND_TIMEOUT`, or any call whose headers take longer | 502 `unavailable`; 504 `deadline_exceeded` |
+| `/ai_grid.v1.*` backend unreachable or untrusted; a unary call slower than `BACKEND_TIMEOUT` (`BACKEND_WRITE_TIMEOUT` for a write procedure), or any call whose headers take longer | 502 `unavailable`; 504 `deadline_exceeded` |
 | Any answer from the backend on `/ai_grid.v1.*` (its Connect errors included) | the backend's status and body unchanged, with only the headers a Connect client needs |
 | Backend `InvalidArgument`, `OutOfRange`: Keycloak's validation messages ("Name can not be null", "Invalid domain format: x", "Cannot change the alias", "Domain x is already linked to organization y in realm ai-grid"), the API server's and the CRD's for a model (the DNS-1123 name message, the schema's "spec.replicas: Invalid value: -1: spec.replicas in body should be greater than or equal to 0" and "spec.scaling.maxReplicas: Required value", "replicas and scaling are mutually exclusive; ...", "at least one trigger is required when using direct KEDA scaling", "minReplicas cannot exceed maxReplicas"), and the backend's own checks with the console's proposed wording (URI scheme, Placement operators, rollout fields, `spec.rollout requires spec.placement`, the reserved tenant version attribute, an `ai-grid/latitude` or `ai-grid/longitude` annotation that is not a number in range, a list `filter` that does not compile, is not a bool or fails on an object) | 422, backend message kept; with `fieldErrors` for `InvalidArgument` only |
 | Backend `AlreadyExists` (Keycloak: "A organization with the same name already exists.", also for a blank name on update), `Aborted` (the object is not at the `If-Match` version) | 409, backend message kept |
@@ -689,7 +699,7 @@ exists; the frontend uses the mock service meanwhile.
 | Backend `ResourceExhausted` | 429 |
 | Backend `Unimplemented` | 501 |
 | Backend `Unavailable` (hub or Keycloak unreachable), `Canceled` | 503 |
-| Backend `DeadlineExceeded` or BFF timeout (`BACKEND_TIMEOUT`, 10s) | 504 |
+| Backend `DeadlineExceeded` or BFF timeout (`BACKEND_TIMEOUT`, 10s; `BACKEND_WRITE_TIMEOUT`, 30s, for a POST, PATCH, PUT or DELETE) | 504 |
 | Any other backend code | 502, generic message, detail in the BFF log |
 
 ## Out of scope for the BFF

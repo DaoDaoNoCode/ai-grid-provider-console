@@ -44,8 +44,11 @@ type Config struct {
 	Insecure bool
 	// ServerName overrides the expected TLS server name.
 	ServerName string
-	// Timeout bounds every RPC.
+	// Timeout bounds every RPC that reads. Zero means 10 seconds.
 	Timeout time.Duration
+	// WriteTimeout bounds every RPC that changes data (Client.WriteContext,
+	// and the relay's write procedures). Zero means 30 seconds.
+	WriteTimeout time.Duration
 	// DraftAPI says the backend serves the console's draft proto (the fake).
 	// Otherwise tenants use the backend's real RPCs (v1.go).
 	DraftAPI bool
@@ -53,11 +56,12 @@ type Config struct {
 
 // Client wraps the generated service clients.
 type Client struct {
-	conn    *grpc.ClientConn
-	timeout time.Duration
-	Health  aigridv1.AiGridClient
-	Tenants aigridv1.TenantsClient
-	Grid    aigridv1.GridClient
+	conn         *grpc.ClientConn
+	timeout      time.Duration
+	writeTimeout time.Duration
+	Health       aigridv1.AiGridClient
+	Tenants      aigridv1.TenantsClient
+	Grid         aigridv1.GridClient
 }
 
 // Dial creates the connection. It does not connect until the first RPC, so a
@@ -79,21 +83,32 @@ func Dial(cfg Config, extra ...grpc.DialOption) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("connect to backend %s: %w", cfg.Address, err)
 	}
-	timeout := cfg.Timeout
-	if timeout <= 0 {
-		timeout = 10 * time.Second
-	}
+	timeout, writeTimeout := cfg.Timeouts()
 	var tenants aigridv1.TenantsClient = v1Tenants{conn}
 	if cfg.DraftAPI {
 		tenants = aigridv1.NewTenantsClient(conn)
 	}
 	return &Client{
-		conn:    conn,
-		timeout: timeout,
-		Health:  aigridv1.NewAiGridClient(conn),
-		Tenants: tenants,
-		Grid:    aigridv1.NewGridClient(conn),
+		conn:         conn,
+		timeout:      timeout,
+		writeTimeout: writeTimeout,
+		Health:       aigridv1.NewAiGridClient(conn),
+		Tenants:      tenants,
+		Grid:         aigridv1.NewGridClient(conn),
 	}, nil
+}
+
+// Timeouts are Timeout and WriteTimeout, each with its default when unset,
+// for the gRPC client and the Connect relay alike.
+func (cfg Config) Timeouts() (read, write time.Duration) {
+	read, write = cfg.Timeout, cfg.WriteTimeout
+	if read <= 0 {
+		read = 10 * time.Second
+	}
+	if write <= 0 {
+		write = 30 * time.Second
+	}
+	return read, write
 }
 
 // TLS says how to reach the backend, for the gRPC client and the Connect relay
@@ -138,9 +153,16 @@ func IsLoopback(address string) bool {
 // Close releases the connection.
 func (c *Client) Close() error { return c.conn.Close() }
 
-// Context bounds an RPC with the configured timeout.
+// Context bounds an RPC that reads with the configured timeout.
 func (c *Client) Context(parent context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(parent, c.timeout)
+}
+
+// WriteContext bounds an RPC that changes data with the configured write
+// timeout: a write the BFF cuts may still complete in the backend, and the
+// caller is then told nothing about its outcome.
+func (c *Client) WriteContext(parent context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(parent, c.writeTimeout)
 }
 
 // forwardIdentity copies the caller's identity from the context into gRPC
