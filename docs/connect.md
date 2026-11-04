@@ -230,8 +230,10 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   and a View link (`view_url`, `view_target`), the model's `deployment`, `maas` and `state`
   summaries, and each ingress cluster's MaaS state (`status.ingress`), for the Status and
   Availability columns the Models pages don't show yet. `toModelView` reads only
-  `clusters[].deployment` today, as `running`, for the readiness watch ("Writes that take
-  long").
+  `clusters[].deployment` and `deployment_message`, `status.maas` and each `status.ingress`
+  entry's failure and message today, for the notification center's watches ("Writes that take
+  long"). The pages still show the phase: a model that runs while MaaS failed to publish it reads
+  Failed ("Deployment failed") there.
 - **Writes.** The wizard calls `Models/Create` with the id and `metadata.name`, the annotations,
   `spec.model` (the URI only: no served name, because the backend serves a model as its id, the
   name users send; the wizard starts the id from the URI's last path segment and shows it on
@@ -358,19 +360,28 @@ subscription) are sent from the app root, never from the form (`frontend/src/not
   the overall phase also counts the ingress clusters that publish the model through MaaS, and a
   combined cluster's phase its MaaSModelRef and ExternalModel, which stay pending while MaaS sets
   up the route, and a model whose Argo CD sync reads OutOfSync while it runs. "Ready" means
-  running on its clusters; users reach it through MaaS once a subscription covers it too. An
-  overall Failed, or a placed cluster reported Failed, is an error ("Unable to deploy model
-  <name>"); the backend reports Failed for an object Degraded for a reason that isn't a step still
-  under way, MaaS's objects on an ingress cluster included, and for a sync Argo CD gave up on. A
+  running on its clusters; users reach it through MaaS once its route is set up and a subscription
+  covers it (a model waiting only for a subscription reads Ready in the backend too). Only a
+  placed cluster whose deployment KServe reports failed (`deployment` FAILED) is an error,
+  "Unable to deploy model <name>", with the cluster and KServe's message (`deployment_message`).
+  The model's overall Failed isn't: the backend also reports it when MaaS fails to publish the
+  model on an ingress cluster, or when Argo CD gives up a sync. When every placed cluster runs the
+  model but MaaS failed (`status.maas`, or a `status.ingress` entry, FAILED), the watch ends with
+  a warning instead of "ready": "Model <name> is running but isn't available to users", "It runs
+  on <clusters>. MaaS couldn't publish it on <ingress cluster>: <MaaS's message>. Open the model
+  to check its status." MaaS still routing, or waiting for a subscription, isn't a failure. A
   model stopped on a cluster isn't running there. After 30 minutes the watch warns "Model <name>
-  isn't ready yet", naming the clusters it isn't ready on; a model that is gone stops it.
+  isn't ready yet", naming the clusters it isn't ready on (a sync Argo CD gave up on included);
+  a model that is gone stops it.
 - An edited model is watched the same way, every 20 s for 30 minutes, but never said to be ready:
   its status doesn't say which revision it describes, and during a rolling update the previous pod
   keeps its cluster Ready, so the previous revision's Ready would read as the edit's. It reports
   one thing, a failure it sees happen: "Unable to roll out changes to model <name>", with the
-  reason and a link to the model, when the model, or a cluster it is placed on, turns Failed. Its
-  first read comes as the edit lands, before Argo CD can have applied it, so a model already
-  failed then is the previous revision's failure, reported only if its status changes. After 30
+  cluster, KServe's message and a link to the model, when a placed cluster's deployment turns
+  failed (MaaS failing to publish the model isn't one). Its first read comes as the edit lands,
+  before Argo CD can have applied it, so a deployment already failed then is the previous
+  revision's failure, reported only if its status (each cluster's phase, reason and deployment)
+  changes. After 30
   minutes it ends without a word; a model that is gone stops it. Edits get a "ready" once the
   backend reports the revision its status describes.
 - A created subscription is watched the same way, every 20 s for up to 30 minutes, through
@@ -437,7 +448,8 @@ The words name each stage as it is, since the backend only commits to Git and Ar
 change later: "Model <name> saved to Git" with "It's being deployed to <clusters>", "Changes to
 model <name> saved to Git", "Model <name> deleted from Git", and for a subscription that it takes
 effect once the ingress clusters apply it. A model is "ready" once it runs on every cluster it
-is placed on (each cluster's status), and only then; a subscription is "active" once it and its
+is placed on (each cluster's deployment), and only then, unless MaaS failed to publish it, when it
+"is running but isn't available to users"; a subscription is "active" once it and its
 authorization policy are active on every ingress cluster, and only then. The pages raise no success notice of their own for these writes:
 the center says it on both paths (`writeText.ts`).
 

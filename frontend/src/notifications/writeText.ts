@@ -2,8 +2,9 @@
 // review. The backend commits these writes to a Git repository, and Argo CD applies them to the
 // clusters later, so the words name each stage as it is: a write is "saved to Git" (or "deleted
 // from Git"), a model is "ready" only once it runs on every cluster it is placed on (each cluster's
-// status; users reach it through MaaS once a subscription covers it too), and a subscription is
-// "active" only once it and its authorization policy are active on every ingress cluster.
+// deployment; users reach it through MaaS once a subscription covers it too), "running but isn't
+// available to users" when it runs but MaaS failed to publish it, and a subscription is "active"
+// only once it and its authorization policy are active on every ingress cluster.
 // They follow frontend/AGENTS.md, "Wording": "Unable to <verb> <object>" for errors, no end
 // punctuation in titles.
 import { modelPath } from '../pages/models/modelUtils';
@@ -252,6 +253,32 @@ export const modelFailedText = (id: string, name: string, why: string | undefine
   message: why ?? 'The model failed to deploy. Open it for details.',
   actions: [{ title: 'View model', to: modelPath({ id }) }],
 });
+
+/** A message as the end of a sentence of ours: trimmed, without its own final period. */
+const clause = (message: string) => message.trim().replace(/\.+$/, '');
+
+/**
+ * A deployed model runs on every cluster it is placed on, but MaaS failed to publish it on an
+ * ingress cluster, so users can't call it: a warning, not "ready" and not "Unable to deploy". It
+ * names the clusters it runs on, and each ingress cluster MaaS failed on with MaaS's (or Argo CD's)
+ * message, for example "It runs on site-b. MaaS couldn't publish it on site-a: <message>. Open the
+ * model to check its status."
+ */
+export const modelUnavailableText = (
+  id: string,
+  name: string,
+  runsOn: string[],
+  failedOn: { cluster: string; message?: string }[],
+): Text => {
+  const where = failedOn.map((f) => (f.message ? `on ${f.cluster}: ${clause(f.message)}` : `on ${f.cluster}`));
+  const runs = runsOn.length ? `It runs on ${listOf(runsOn)}. ` : '';
+  const maas = where.length ? `MaaS couldn't publish it ${where.join('; ')}.` : "MaaS couldn't publish it.";
+  return {
+    title: `Model ${name} is running but isn't available to users`,
+    message: `${runs}${maas} Open the model to check its status.`,
+    actions: [{ title: 'View model', to: modelPath({ id }) }],
+  };
+};
 
 /** An edited model failed while its changes rolled out: why, in the words the model's page uses. */
 export const modelChangesFailedText = (id: string, name: string, why: string | undefined): Text => ({

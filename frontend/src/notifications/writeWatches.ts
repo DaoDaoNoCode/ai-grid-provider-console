@@ -3,7 +3,6 @@
 // or while its changes roll out (an edit); for a subscription, a watch until it is active on the
 // ingress clusters (a create) or while its changes are applied (an edit). Each is one call of a
 // NotificationWatcherCallback; the provider (BackgroundWritesProvider) polls it.
-import { failureExplanations } from '../pages/models/modelStatusInfo';
 import type { ModelView } from '../pages/models/modelView';
 import { NotificationResponseStatus, type NotificationWatcherResponse } from './useNotificationWatcher';
 import { holdsSent, type WriteFields } from './writeFields';
@@ -16,6 +15,7 @@ import {
   modelFailedText,
   modelNotReadyText,
   modelReadyText,
+  modelUnavailableText,
   modelUnconfirmedText,
   notConfirmedText,
   subscriptionActiveText,
@@ -117,7 +117,7 @@ export type ReadObject = (subject: WriteSubject, id: string) => Promise<ReadAnsw
 
 /**
  * An object's status as the status watches compare it: a model's phase and reason, and each
- * cluster's; a subscription's phase and its policies'; "gone" when the object is. A change is what
+ * cluster's with its deployment; a subscription's phase and its policies'; "gone" when the object is. A change is what
  * has the pages refetch, and what a model edit's watch reports a failure on.
  */
 export const statusOf = (answer: ReadAnswer | undefined) => {
@@ -125,7 +125,7 @@ export const statusOf = (answer: ReadAnswer | undefined) => {
     return JSON.stringify([
       answer.model.phase,
       answer.model.reason,
-      answer.model.clusters.map((c) => [c.cluster, c.phase, c.reason]),
+      answer.model.clusters.map((c) => [c.cluster, c.phase, c.reason, c.deployment]),
     ]);
   }
   if (answer?.subscription) {
@@ -187,8 +187,8 @@ export const readBack = async (
 
 /**
  * Each cluster the model is placed on (placement.selected_clusters), with its report from
- * `status.clusters`: one entry per placed cluster, running once that cluster's LLMInferenceService
- * is Ready (ModelClusterView.running). A cluster that hasn't reported has no entry yet, and isn't
+ * `status.clusters`: one entry per placed cluster, with what that cluster's LLMInferenceService
+ * reports (ModelClusterView.deployment). A cluster that hasn't reported has no entry yet, and isn't
  * running.
  */
 const placedClustersOf = (model: ModelView) => {
@@ -198,20 +198,26 @@ const placedClustersOf = (model: ModelView) => {
 };
 
 /**
- * Why a model failed, when the backend calls it Failed or reports a cluster it is placed on failed
- * (a report of one of its objects there Degraded for a reason that isn't a step under way, or Argo
- * CD's sync of it failed for good): the cluster and its message, else the model's page's words for
- * a known reason, else the backend's message. Undefined while it hasn't failed.
+ * Why a model's deployment failed: the first placed cluster whose LLMInferenceService KServe reports
+ * failed (`deployment` FAILED), with KServe's message there. Undefined while none has. The model's
+ * overall Failed isn't one: it also covers MaaS failing to publish the model on an ingress cluster,
+ * and an Argo CD sync given up on, while the model may run (modelUnavailableOf).
  */
-const failureOf = (model: ModelView): { why: string | undefined } | undefined => {
-  const failedCluster = placedClustersOf(model).find((p) => p.report?.phase === 'Failed');
-  if (model.phase !== 'Failed' && !failedCluster) return undefined;
-  const known = model.reason ? failureExplanations[model.reason] : undefined;
-  return {
-    why: failedCluster
-      ? `${failedCluster.name}: ${failedCluster.report?.message ?? failedCluster.report?.reason}`
-      : (known?.summary ?? model.statusMessage ?? model.reason),
-  };
+const failureOf = (model: ModelView): { why: string } | undefined => {
+  const failed = placedClustersOf(model).find((p) => p.report?.deployment === 'Failed');
+  if (!failed) return undefined;
+  const report = failed.report;
+  return { why: `${failed.name}: ${report?.deploymentMessage ?? report?.message ?? report?.reason}` };
+};
+
+/**
+ * The ingress clusters where MaaS failed to publish the model (`status.ingress` FAILED), with its
+ * message; undefined while MaaS hasn't failed (`status.maas` isn't FAILED and no entry is). Still
+ * routing, or waiting for a subscription, isn't failed: users reach the model once that is done.
+ */
+const maasFailureOf = (model: ModelView): { cluster: string; message?: string }[] | undefined => {
+  const failed = model.ingress.filter((i) => i.failed);
+  return failed.length || model.maasFailed ? failed : undefined;
 };
 
 /**
@@ -220,13 +226,16 @@ const failureOf = (model: ModelView): { why: string | undefined } | undefined =>
  * model's overall phase nor the cluster's: those also count MaaS, the ingress clusters that publish
  * the model and, on a combined cluster, its MaaSModelRef and ExternalModel, which can stay pending
  * while the route is set up, and an Argo CD sync that reads OutOfSync while the model runs. "Ready"
- * here means running on its clusters; users reach it through MaaS once a subscription covers it too.
+ * here means running on its clusters; users reach it through MaaS once its route is set up and a
+ * subscription covers it (a model waiting only for that reads Ready in the backend too).
  *
- * Every placed cluster running is a success naming them; a model the backend calls Failed, or a
- * cluster it reports failed, an error. Anything else is checked again until `since` plus READY_MS,
- * then a warning names the clusters it isn't ready on, or, when that last read failed, says the
- * console couldn't confirm it. A model that is gone stops the watch. A model on the hub alone, with
- * no placed cluster, is ready when its phase is.
+ * A placed cluster whose deployment failed is an error, "Unable to deploy", with KServe's message.
+ * Every placed cluster running is a success naming them, unless MaaS failed to publish the model on
+ * an ingress cluster: then a warning that it runs but isn't available to users, naming where MaaS
+ * failed and why. Anything else is checked again until `since` plus READY_MS, then a warning names
+ * the clusters it isn't ready on, or, when that last read failed, says the console couldn't confirm
+ * it. A model that is gone stops the watch. A model on the hub alone, with no placed cluster, is
+ * ready when its phase is.
  */
 export const watchReady = async (
   target: WriteTarget,
@@ -246,15 +255,12 @@ export const watchReady = async (
     if (placed.length === 0) {
       if (model.phase === 'Ready') return success(modelReadyText(target.id, target.name, []));
     } else {
-      waiting = placed.filter((p) => !p.report?.running).map((p) => p.name);
+      waiting = placed.filter((p) => p.report?.deployment !== 'Running').map((p) => p.name);
       if (waiting.length === 0) {
-        return success(
-          modelReadyText(
-            target.id,
-            target.name,
-            placed.map((p) => p.name),
-          ),
-        );
+        const runsOn = placed.map((p) => p.name);
+        const maasFailure = maasFailureOf(model);
+        if (maasFailure) return warning(modelUnavailableText(target.id, target.name, runsOn, maasFailure));
+        return success(modelReadyText(target.id, target.name, runsOn));
       }
     }
   } catch {
@@ -271,9 +277,10 @@ export const watchReady = async (
 /**
  * An edited model while its changes roll out, until `since` plus READY_MS; then it ends silently. It
  * never says "ready": the status doesn't say which revision it describes, and during a rolling update
- * the previous pod keeps its cluster Ready. It reports one thing, a failure, and only one it saw
- * happen: `before` is the status the watch saw last (statusOf), none on its first read, which comes
- * as the edit lands, before Argo CD can have applied it. A model already failed then is the previous
+ * the previous pod keeps its cluster Ready. It reports one thing, a placed cluster's deployment
+ * failed (failureOf; MaaS failing to publish the model isn't one), and only one it saw happen:
+ * `before` is the status the watch saw last (statusOf), none on its first read, which comes as the
+ * edit lands, before Argo CD can have applied it. A deployment already failed then is the previous
  * revision's failure, reported only once its status changes (a new failure). A model that is gone
  * stops the watch.
  */

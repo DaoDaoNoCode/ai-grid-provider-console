@@ -6,6 +6,7 @@
 import { timestampDate } from '@bufbuild/protobuf/wkt';
 import {
   ModelDeploymentState,
+  ModelMaasState,
   ModelPhase,
   type Model,
   type ModelEnvVar,
@@ -50,11 +51,31 @@ export type ModelClusterView = {
   /** What the cluster reported, for example "LLMInferenceService not ready". */
   message?: string;
   /**
-   * Whether the cluster runs the model: its LLMInferenceService reports Ready (`deployment`
-   * RUNNING), whatever MaaS reports on a combined cluster.
+   * What the cluster's LLMInferenceService reports (`deployment`), whatever MaaS reports on a
+   * combined cluster and Argo CD's sync: Running (Ready), Starting, Stopped, Failed, or Unknown
+   * while it isn't on the cluster.
    */
-  running: boolean;
+  deployment: ModelDeploymentWord;
+  /** KServe's message about the deployment, for example "Deployment does not have minimum availability.". */
+  deploymentMessage?: string;
 };
+
+/** What a placed cluster's LLMInferenceService reports, in words (ModelDeploymentState). */
+export type ModelDeploymentWord = 'Running' | 'Starting' | 'Stopped' | 'Failed' | 'Unknown';
+
+const deploymentWords: Record<ModelDeploymentState, ModelDeploymentWord> = {
+  [ModelDeploymentState.UNSPECIFIED]: 'Unknown',
+  [ModelDeploymentState.STARTING]: 'Starting',
+  [ModelDeploymentState.RUNNING]: 'Running',
+  [ModelDeploymentState.FAILED]: 'Failed',
+  [ModelDeploymentState.STOPPED]: 'Stopped',
+};
+
+/**
+ * The model in MaaS on one ingress cluster (`status.ingress`): whether MaaS or Argo CD reports it
+ * failed there, and their message.
+ */
+export type ModelIngressView = { cluster: string; failed: boolean; message?: string };
 
 /** A Model as the pages show it. */
 export type ModelView = {
@@ -97,6 +118,13 @@ export type ModelView = {
   selectedClusters: string[];
   /** Each placed cluster's status; empty while no cluster has reported the model. */
   clusters: ModelClusterView[];
+  /**
+   * Whether the model failed in MaaS (`status.maas` FAILED): MaaS or the AI gateway reports it
+   * failed on an ingress cluster, or Argo CD couldn't sync it there.
+   */
+  maasFailed: boolean;
+  /** The model in MaaS on each ingress cluster (`status.ingress`); empty while none has reported. */
+  ingress: ModelIngressView[];
   /**
    * The clusters a `name In [...]` placement names, the only shape the console edits; undefined
    * for a model without a placement or with any other one.
@@ -187,7 +215,14 @@ export const toModelView = (model: Model): ModelView => {
       phase: phaseWordOf(c.phase, c.reason),
       reason: c.reason,
       message: nonEmpty(c.message),
-      running: c.deployment === ModelDeploymentState.RUNNING,
+      deployment: deploymentWords[c.deployment] ?? 'Unknown',
+      deploymentMessage: nonEmpty(c.deploymentMessage),
+    })),
+    maasFailed: status?.maas === ModelMaasState.FAILED,
+    ingress: (status?.ingress ?? []).map((i) => ({
+      cluster: i.cluster,
+      failed: i.state === ModelMaasState.FAILED,
+      message: nonEmpty(i.message),
     })),
     placementClusters: placementClustersOf(spec),
     placed: spec?.placement !== undefined,

@@ -10,6 +10,8 @@ import { fakeClients } from '../api/connect/testing';
 import {
   ModelClusterStatusSchema,
   ModelDeploymentState,
+  ModelIngressStatusSchema,
+  ModelMaasState,
   ModelPhase,
   ModelSchema,
   ModelState,
@@ -389,7 +391,17 @@ it('says once that an edited model failed to roll out its changes', async () => 
 
     state.model = pendingOnSiteB();
     state.model.status!.phase = ModelPhase.FAILED;
-    state.model.status!.reason = 'ConfigNotFound';
+    state.model.status!.reason = 'Failed';
+    state.model.status!.clusters = [
+      create(ModelClusterStatusSchema, {
+        cluster: 'site-b',
+        phase: ModelPhase.FAILED,
+        reason: 'Failed',
+        deployment: ModelDeploymentState.FAILED,
+        deploymentMessage: 'OOMKilled',
+        state: ModelState.FAILED,
+      }),
+    ];
     await pass(READY_POLL_MS);
     expect(screen.getAllByText('Unable to roll out changes to model Widget')).toHaveLength(1);
     expect(modelWatches(storage)).toEqual([]);
@@ -475,6 +487,44 @@ it('names a model renamed while its deploy is watched by the new name when it is
     await pass(READY_POLL_MS);
     expect(screen.getByText('Model Widget Pro is ready on site-b')).toBeInTheDocument();
     expect(screen.queryByText(/^Model Widget is/)).not.toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('warns, by its new name, that a model renamed during its deploy runs but MaaS failed to publish it', async () => {
+  vi.useFakeTimers();
+  try {
+    const { state } = editing([readyRecord(Date.now())]);
+    await pass(0);
+    await act(async () => {
+      await submitWrite({ ...edit, name: 'Widget Pro' }, async () => undefined);
+    });
+
+    // The backend calls the whole model Failed: it runs on site-b, but MaaS failed on site-a.
+    state.model = pendingOnSiteB();
+    state.model.status!.phase = ModelPhase.FAILED;
+    state.model.status!.reason = 'Failed';
+    state.model.status!.maas = ModelMaasState.FAILED;
+    state.model.status!.ingress = [
+      create(ModelIngressStatusSchema, {
+        cluster: 'site-a',
+        state: ModelMaasState.FAILED,
+        message: 'HTTPRoute rejected by the gateway',
+      }),
+    ];
+    state.model.status!.clusters = [
+      create(ModelClusterStatusSchema, {
+        cluster: 'site-b',
+        phase: ModelPhase.READY,
+        reason: 'Ready',
+        deployment: ModelDeploymentState.RUNNING,
+        state: ModelState.READY,
+      }),
+    ];
+    await pass(READY_POLL_MS);
+    expect(screen.getByText("Model Widget Pro is running but isn't available to users")).toBeInTheDocument();
+    expect(screen.queryByText(/Unable to deploy|is ready|^Model Widget is/)).not.toBeInTheDocument();
   } finally {
     vi.useRealTimers();
   }
