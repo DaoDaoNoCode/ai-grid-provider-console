@@ -12,8 +12,6 @@ func (a *App) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+APIPrefix+"/user", a.getUser)
 	mux.HandleFunc("GET "+APIPrefix+"/config", a.getConfig)
 
-	mux.HandleFunc("GET "+APIPrefix+"/grid/overview", a.getGridOverview)
-
 	// Unknown API paths get a JSON 404 instead of the SPA fallback, and a known
 	// path asked with another method a JSON 405.
 	mux.HandleFunc(apiCatchAll, func(w http.ResponseWriter, r *http.Request) { a.noRoute(mux, w, r) })

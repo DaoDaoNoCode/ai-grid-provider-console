@@ -1,5 +1,5 @@
 {
-  "request": "GET /api/v1/grid/overview?range=1h",
+  "request": "GET /perses/api/api/v1/projects/ai-grid/dashboards",
   "token": "viewer-token",
   "user": "viewer",
   "status": 403,

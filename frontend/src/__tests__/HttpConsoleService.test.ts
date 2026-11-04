@@ -33,7 +33,7 @@ describe('HttpConsoleService', () => {
       },
     };
     const fetchFn = vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status: 422 }));
-    await expect(new HttpConsoleService(fetchFn).request('GET', '/grid/overview?range=1h')).rejects.toMatchObject({
+    await expect(new HttpConsoleService(fetchFn).request('GET', '/config')).rejects.toMatchObject({
       status: 422,
       fieldErrors: { name: 'Use lowercase letters, numbers, and hyphens.' },
       isConflict: false,
@@ -41,7 +41,7 @@ describe('HttpConsoleService', () => {
     const conflict = vi
       .fn()
       .mockResolvedValue(new Response(JSON.stringify({ error: { code: '409', message: 'changed' } }), { status: 409 }));
-    await expect(new HttpConsoleService(conflict).request('GET', '/grid/overview?range=1h')).rejects.toMatchObject({
+    await expect(new HttpConsoleService(conflict).request('GET', '/config')).rejects.toMatchObject({
       isConflict: true,
     });
   });

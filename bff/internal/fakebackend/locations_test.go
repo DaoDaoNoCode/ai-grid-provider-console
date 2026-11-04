@@ -9,8 +9,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
-
-	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/api"
 )
 
 // gridMember is a ready, provisioned combined AI Grid member at location.
@@ -74,19 +72,6 @@ func TestListLocationsFromTheFixtures(t *testing.T) {
 	resp, err := s.ListLocations(authed(t.Context()), &aigridv1.ListLocationsRequest{})
 	if err != nil || !slices.Equal(resp.GetLocations(), []string{"site-paris-1"}) {
 		t.Fatalf("locations %v %v", resp, err)
-	}
-}
-
-// TestConsoleLabelsMatchTheBFF: the fake and the BFF name the same labels.
-func TestConsoleLabelsMatchTheBFF(t *testing.T) {
-	t.Parallel()
-	for fake, bff := range map[string]string{
-		LabelAIGridEnabled: api.LabelEnabled, LabelAIGridProvisioned: api.LabelProvisioned, LabelLocation: api.LabelLocation,
-		LabelAIGridSite: api.LabelSite, LabelAIGridRegion: api.LabelRegion,
-	} {
-		if fake != bff {
-			t.Errorf("fake label %q, BFF label %q", fake, bff)
-		}
 	}
 }
 

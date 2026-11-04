@@ -15,10 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"google.golang.org/protobuf/proto"
-
-	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/backend/backendtest"
+	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/config"
 )
 
 func gunzip(t *testing.T, body []byte) []byte {
@@ -52,11 +50,6 @@ func assertPlain(t *testing.T, what string, rec *httptest.ResponseRecorder, want
 
 func TestGzipCompressesJSONAndAssets(t *testing.T) {
 	t.Parallel()
-	fake := &backendtest.Fake{}
-	for i := range 20 {
-		c := proto.Clone(member(fmt.Sprintf("site-%02d", i), "brussels")).(*aigridv1.ManagedCluster)
-		fake.Clusters = append(fake.Clusters, c)
-	}
 	dir := t.TempDir()
 	js := []byte(strings.Repeat("export const answer = 42;\n", 200))
 	if err := os.MkdirAll(filepath.Join(dir, "assets"), 0o755); err != nil {
@@ -70,24 +63,28 @@ func TestGzipCompressesJSONAndAssets(t *testing.T) {
 	}
 	cfg := testConfig(t)
 	cfg.StaticAssetsDir = dir
-	app := newTestApp(t, cfg, fake)
+	// A config long enough to be worth compressing: twenty hardware choices.
+	for i := range 20 {
+		cfg.ModelHardware = append(cfg.ModelHardware, config.ModelHardware{ID: fmt.Sprintf("gpu-%02d", i), Label: fmt.Sprintf("GPU %02d", i), Accelerator: "nvidia.com/gpu"})
+	}
+	app := newTestApp(t, cfg, &backendtest.Fake{})
 
-	plain := serve(app, asUser(http.MethodGet, "/api/v1/grid/overview?metrics=false"))
+	plain := serve(app, asUser(http.MethodGet, "/api/v1/config"))
 	if plain.Code != http.StatusOK || plain.Body.Len() < gzipMinSize {
-		t.Fatalf("list: %d, %d bytes", plain.Code, plain.Body.Len())
+		t.Fatalf("config: %d, %d bytes", plain.Code, plain.Body.Len())
 	}
 	if plain.Header().Get("Content-Encoding") != "" || plain.Header().Get("Vary") != "Accept-Encoding" {
 		t.Fatalf("a client without gzip: headers %v", plain.Header())
 	}
-	zipped := serve(app, withGzip(asUser(http.MethodGet, "/api/v1/grid/overview?metrics=false")))
+	zipped := serve(app, withGzip(asUser(http.MethodGet, "/api/v1/config")))
 	if zipped.Header().Get("Content-Encoding") != "gzip" || zipped.Header().Get("Vary") != "Accept-Encoding" || zipped.Header().Get("Content-Length") != "" {
-		t.Fatalf("list with gzip: headers %v", zipped.Header())
+		t.Fatalf("config with gzip: headers %v", zipped.Header())
 	}
 	if got := gunzip(t, zipped.Body.Bytes()); !bytes.Equal(got, plain.Body.Bytes()) {
-		t.Fatalf("the gzipped list decodes to %q, want %q", got, plain.Body.String())
+		t.Fatalf("the gzipped config decodes to %q, want %q", got, plain.Body.String())
 	}
 	if zipped.Body.Len() >= plain.Body.Len() {
-		t.Errorf("gzip did not shrink the list: %d >= %d bytes", zipped.Body.Len(), plain.Body.Len())
+		t.Errorf("gzip did not shrink the config: %d >= %d bytes", zipped.Body.Len(), plain.Body.Len())
 	}
 
 	asset := serve(app, withGzip(httptest.NewRequest(http.MethodGet, "/assets/index-BPyNsiKc.js", nil)))
@@ -115,9 +112,9 @@ func TestGzipCompressesJSONAndAssets(t *testing.T) {
 	assertPlain(t, "Range", rec, js[:10])
 
 	// A small answer is not worth it.
-	small := serve(app, withGzip(asUser(http.MethodGet, "/api/v1/config")))
+	small := serve(app, withGzip(asUser(http.MethodGet, "/api/v1/user")))
 	if small.Code != http.StatusOK || small.Body.Len() >= gzipMinSize {
-		t.Fatalf("config: %d, %d bytes", small.Code, small.Body.Len())
+		t.Fatalf("user: %d, %d bytes", small.Code, small.Body.Len())
 	}
 	assertPlain(t, "small JSON", small, nil)
 	if small.Header().Get("Vary") != "Accept-Encoding" {

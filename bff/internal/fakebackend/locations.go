@@ -10,8 +10,7 @@ import (
 )
 
 // Labels the console reads and writes on a ManagedCluster, the conventions of
-// the PoC (shared/grid-clusters.mjs at 62319b8); the BFF names the same ones
-// (api.LabelEnabled and its neighbours).
+// the PoC (shared/grid-clusters.mjs at 62319b8).
 const (
 	LabelAIGridEnabled     = "ai-grid/enabled"
 	LabelAIGridProvisioned = "ai-grid/provisioned"

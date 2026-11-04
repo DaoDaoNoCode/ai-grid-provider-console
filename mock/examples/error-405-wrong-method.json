@@ -1,5 +1,5 @@
 {
-  "request": "POST /api/v1/grid/overview",
+  "request": "POST /api/v1/config",
   "requestBody": {},
   "token": "dev-token",
   "user": "dev-user",
@@ -10,7 +10,7 @@
   "body": {
     "error": {
       "code": "405",
-      "message": "POST is not allowed on /api/v1/grid/overview; use GET, HEAD"
+      "message": "POST is not allowed on /api/v1/config; use GET, HEAD"
     }
   }
 }

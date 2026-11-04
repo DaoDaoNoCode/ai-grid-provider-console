@@ -46,7 +46,6 @@ type Server struct {
 	aigridv1.UnimplementedManagedClustersServer
 	// Services whose shape is drafted but not agreed answer Unimplemented, as
 	// the real server does for a stub; see mock/proto/ai_grid/v1/*_service.proto.
-	aigridv1.UnimplementedGridServer
 	aigridv1.UnimplementedModelsServer
 	aigridv1.UnimplementedCatalogItemsServer
 
@@ -214,7 +213,6 @@ func (s *Server) SetClock(clock func() time.Time) {
 func (s *Server) Register(srv *grpc.Server) {
 	aigridv1.RegisterAiGridServer(srv, s)
 	aigridv1.RegisterManagedClustersServer(srv, s)
-	aigridv1.RegisterGridServer(srv, s)
 	aigridv1.RegisterModelsServer(srv, s)
 	aigridv1.RegisterCatalogItemsServer(srv, s)
 	h := health.NewServer()

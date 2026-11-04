@@ -16,9 +16,9 @@ import (
 
 // V1 answers the backend's own API, ai_grid.v1 as ai-grid-provider-backend
 // serves it, as far as the BFF calls it over gRPC: AiGrid/Ping, which /readyz
-// sends. The backend has no Grid service and no capabilities, so those answer
-// Unimplemented, and so does every other method: the pages call the backend's
-// other RPCs over Connect, through the relay, not through this client.
+// sends. The backend has no capabilities, so those answer Unimplemented, and so
+// does every other method: the pages call the backend's other RPCs over
+// Connect, through the relay, not through this client.
 //
 // Each call is handled under a lock, so concurrent calls are safe; read Calls
 // and Metadata after a call returned.
