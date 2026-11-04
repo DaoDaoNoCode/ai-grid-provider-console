@@ -133,7 +133,11 @@ regression passing when updating these dependencies.
   read with `ai-grid/enabled`, `ai-grid/role` and `location` set (or `ai-grid/enabled` dropped),
   `update_mask: metadata.labels`, `metadata.version` with `lock: true`. Aborted is the conflict
   the dialog already handles, and the answer's `ai_grid_member` confirms the change. The BFF has
-  no `/api/v1/clusters` routes any more.
+  no `/api/v1/clusters` routes any more. Remove's dialog for an Ingress or Combined cluster warns
+  that the subscriptions lose their API keys: Argo CD deletes the cluster's copies of the
+  subscriptions, and MaaS then revokes their keys in the shared database, on every cluster. The
+  backend refusing it (FailedPrecondition, while subscriptions exist) shows in its words, with the
+  form kept.
 - **Edit** (`EditClusterModal.tsx`, `gridSettings.ts`, its words in `editClusterText.ts`), for AI
   Grid clusters, in the list's row menu and the cluster page's Actions: the location label
   (checked as Add checks it), and the role only of a cluster without one (no `ai-grid/role`, or a

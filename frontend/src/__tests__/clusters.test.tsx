@@ -131,6 +131,66 @@ it('does not say the hub is disconnected when removing local-cluster', async () 
   );
 });
 
+const SUBSCRIPTIONS_WARNING =
+  "This cluster receives requests from organizations' users. Removing it deletes its copies of the subscriptions, and their API keys are then revoked on every cluster, not only this one.";
+
+it.each<[string, string | undefined, boolean]>([
+  ['an Ingress', 'ingress', true],
+  ['a Combined', 'combined', true],
+  ['an Inference', 'inference', false],
+  ['a no-role', undefined, false],
+])('warns about the API keys when removing %s cluster only where it receives requests', async (_, role, warns) => {
+  const user = userEvent.setup();
+  renderAt(
+    '/clusters',
+    serviceWith([
+      cluster('site-a', 'Ready', {
+        'ai-grid/enabled': 'true',
+        location: 'eu',
+        ...(role ? { 'ai-grid/role': role } : {}),
+      }),
+    ]),
+  );
+  await pick(user, 'site-a', 'Remove from AI Grid');
+  const modal = await screen.findByTestId('cluster-membership-modal');
+  if (warns) {
+    const warning = within(modal).getByRole('heading', { name: 'Warning alert: Subscriptions lose their API keys' });
+    expect(warning).toBeVisible();
+    expect(modal).toHaveTextContent(SUBSCRIPTIONS_WARNING);
+  } else {
+    expect(within(modal).queryByText('Subscriptions lose their API keys')).not.toBeInTheDocument();
+    expect(modal).not.toHaveTextContent('API keys');
+  }
+});
+
+it('shows the backend refusing to remove an ingress cluster while subscriptions exist, with the form kept', async () => {
+  const user = userEvent.setup();
+  const service = serviceWith([
+    cluster('site-a', 'Ready', { 'ai-grid/enabled': 'true', 'ai-grid/role': 'ingress', location: 'eu' }),
+  ]);
+  const message =
+    'Cluster "site-a" serves ingress, and 3 subscriptions exist. Removing it would revoke their API keys on every cluster; delete the subscriptions first.';
+  // 412 is FailedPrecondition over Connect (connectClusters.ts).
+  vi.spyOn(service, 'removeClusterFromGrid').mockRejectedValueOnce(new ServiceError(412, message));
+  renderAt('/clusters', service);
+  await pick(user, 'site-a', 'Remove from AI Grid');
+  const modal = await screen.findByTestId('cluster-membership-modal');
+  const reload = vi.spyOn(service, 'getCluster');
+  const typed = within(modal).getByRole('textbox', { name: 'Type site-a to confirm:' });
+  await user.click(typed);
+  await user.paste('site-a');
+  await user.click(within(modal).getByRole('button', { name: 'Remove' }));
+  expect(await within(modal).findByText(message)).toBeVisible();
+  // The warning and the typed name stay, so Remove can be sent again once the subscriptions are gone.
+  expect(modal).toHaveTextContent(SUBSCRIPTIONS_WARNING);
+  expect(typed).toHaveValue('site-a');
+  expect(within(modal).getByRole('button', { name: 'Remove' })).toBeEnabled();
+  expect(modal).not.toHaveTextContent('This cluster was changed after this dialog opened');
+  // A refusal isn't a stale version: nothing is loaded again into the dialog.
+  expect(reload).not.toHaveBeenCalled();
+  expect(service.clusters[0].aiGridEnabled).toBe(true);
+});
+
 it('asks for a location label and role before adding', async () => {
   const user = userEvent.setup();
   const service = serviceWith([

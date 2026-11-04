@@ -4,6 +4,7 @@ import type { ClusterRole, GridMembership } from '../../api/clusters';
 import { ServiceError } from '../../api/ConsoleService';
 import { DeleteModal } from '../../components/DeleteModal';
 import { changedMessage, ClusterChangedError } from './ClusterChangedError';
+import { removeText } from './clusterInfo';
 import type { ClusterView } from './clusterView';
 import { locationError } from './gridSettings';
 import { LocationLabelField, RoleField } from './MembershipFields';
@@ -20,6 +21,12 @@ type Props = MembershipChange & {
 /** The cluster's role label when it's one of ours; otherwise combined for the hub itself. */
 const defaultRole = (cluster: ClusterView): ClusterRole | '' => {
   return roleOf(cluster.labels)?.value ?? (cluster.name === 'local-cluster' ? 'combined' : '');
+};
+
+/** An Ingress or Combined cluster, which holds the subscriptions' copies (removeText). */
+const receivesRequests = (cluster: ClusterView) => {
+  const role = roleOf(cluster.labels)?.value;
+  return role === 'ingress' || role === 'combined';
 };
 
 const errorMessage = (err: unknown, join: boolean) => {
@@ -90,6 +97,11 @@ export const MembershipModal: React.FC<Props> = ({ cluster, join, onConfirm, onC
         testId="cluster-membership-modal"
       >
         <Stack hasGutter>
+          {receivesRequests(cluster) && (
+            <Alert isInline variant="warning" title={removeText.subscriptionsTitle}>
+              {removeText.subscriptionsBody}
+            </Alert>
+          )}
           {/* Every cluster but the hub's own also leaves the cross-cluster network (Submariner):
               ai-grid-env-setup's network Placement selects local-cluster plus the members.
               A model deployed from the Models page (a ManifestWorkReplicaSet) is removed with the
