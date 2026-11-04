@@ -132,7 +132,7 @@ describe('deploying a model', () => {
 
     await act(async () => answer.resolve());
     expect(await toast('Model Widget saved to Git')).toBeVisible();
-    expect(await screen.findByTestId('model-locations-widget')).toBeVisible();
+    expect(await screen.findByTestId('model-cluster-names-widget')).toBeVisible();
     // The answer arrived after the user had moved on: unread.
     expect(screen.getByRole('button', { name: 'Notifications, 1 unread' })).toBeVisible();
     // One entry for the write: the outcome replaced the in-progress entry, and is unread.
