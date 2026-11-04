@@ -1,4 +1,7 @@
 import { expect, test } from '@playwright/test';
+import { create, fromJsonString, toJsonString } from '@bufbuild/protobuf';
+import { ModelsListResponseSchema } from '../src/gen/ai_grid/v1/models_service_pb';
+import { ModelClusterStatusSchema, ModelState, ModelStatusSchema } from '../src/gen/ai_grid/v1/model_type_pb';
 import { createModel, tryBackend, writeConfirmed } from './backend';
 
 // On the backend's own fakes (playwright.config.ts, "backend fakes"): the pages read and write the
@@ -13,6 +16,22 @@ test('creates, views, edits and deletes a subscription', async ({ page }) => {
   const modelId = `${unique}-model`;
   const MODEL = `E2E model ${unique}`;
   await createModel(page.request, modelId, MODEL);
+  // The fake hub doesn't report deployments for newly created models. Supply the read-only
+  // rollout report at the Connect boundary; subscription writes still reach the real backend.
+  await page.route('**/ai_grid.v1.Models/List*', async (route) => {
+    const response = await route.fetch();
+    const answer = fromJsonString(ModelsListResponseSchema, await response.text());
+    const model = answer.items.find((item) => item.id === modelId);
+    if (model) {
+      model.status ??= create(ModelStatusSchema);
+      model.status.state = ModelState.PARTIALLY_READY;
+      model.status.clusters = [
+        create(ModelClusterStatusSchema, { cluster: 'site1', state: ModelState.READY }),
+        create(ModelClusterStatusSchema, { cluster: 'site2', state: ModelState.STARTING, message: 'Starting model' }),
+      ];
+    }
+    await route.fulfill({ response, body: toJsonString(ModelsListResponseSchema, answer) });
+  });
   try {
     await page.goto('/subscriptions');
     await page.getByRole('link', { name: 'Create subscription' }).click();
@@ -25,9 +44,23 @@ test('creates, views, edits and deletes a subscription', async ({ page }) => {
     await page.keyboard.press('Escape');
 
     await page.getByRole('button', { name: 'Add models' }).click();
-    const addModels = page.getByRole('dialog');
+    const addModels = page.getByRole('dialog', { name: 'Add models', exact: true });
     await addModels.getByRole('checkbox', { name: `Select ${MODEL}` }).check();
+    const statusTrigger = addModels.getByRole('button', { name: `Partially ready for ${MODEL}`, exact: true });
+    await statusTrigger.click();
+    const statusDialog = page.getByRole('dialog', { name: `${MODEL} status`, exact: true });
+    await expect(statusDialog).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(1);
+    await expect(statusDialog).toContainText('site2');
+    await page.keyboard.press('Escape');
+    await expect(addModels).toBeVisible();
+    await expect(statusTrigger).toBeFocused();
+    await expect(addModels.getByRole('checkbox', { name: `Select ${MODEL}` })).toBeChecked();
     await addModels.getByRole('button', { name: 'Add models' }).click();
+    await page.getByRole('button', { name: `Partially ready for ${MODEL}`, exact: true }).click();
+    await expect(statusDialog).toBeVisible();
+    await statusDialog.getByRole('button', { name: 'Close' }).click();
+    await expect(page.getByRole('textbox', { name: 'Name', exact: true })).toHaveValue(unique);
     await page.getByRole('button', { name: 'Add token limit' }).click();
     const limits = page.getByRole('dialog', { name: 'Edit token limits' });
     await limits.getByRole('spinbutton', { name: 'Tokens' }).fill('5000');
