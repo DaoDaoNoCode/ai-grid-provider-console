@@ -1,12 +1,17 @@
 import type { ModelView } from '../pages/models/modelView';
 import { NotificationResponseStatus } from './useNotificationWatcher';
 import {
+  NO_HISTORY,
+  NO_STATUS_READS,
   READBACK_MS,
   READY_MS,
+  nextHistory,
   readBack,
   statusOf,
+  watchActive,
   watchChanges,
   watchReady,
+  watchSubscriptionChanges,
   type ReadAnswer,
   type ReadObject,
 } from './writeWatches';
@@ -254,6 +259,16 @@ describe('watchReady', () => {
     });
   });
 
+  it("doesn't call a model not ready when its last read failed: it says it can't confirm", async () => {
+    expect(await watchReady(model('create'), SINCE, reads(new Error('unavailable')), past)).toEqual({
+      status: NotificationResponseStatus.WARNING,
+      title: 'Unable to confirm model Widget is ready',
+      message:
+        "The console couldn't read its status 30 minutes after it was saved to Git. Open the model to check its status.",
+      actions: [{ title: 'View model', to: '/models/widget' }],
+    });
+  });
+
   it('stops for a model that is gone, and keeps watching through a failed read', async () => {
     expect(await watchReady(model('create'), SINCE, reads(undefined), during)).toEqual({
       status: NotificationResponseStatus.STOP,
@@ -343,5 +358,232 @@ describe('watchChanges', () => {
     expect(await watchChanges(model('update'), SINCE, reads(new Error('x')), during, statusOf(ready))).toEqual({
       status: NotificationResponseStatus.REPOLL,
     });
+  });
+});
+
+describe('watchActive', () => {
+  const SINCE = 5_000_000;
+  const created = (organization?: string): WriteTarget => ({
+    ...subscription('create'),
+    ...(organization === undefined ? {} : { organization }),
+  });
+  const status = (phase: string, policy = phase): ReadAnswer => ({
+    version: 1,
+    subscription: { phase, policies: [{ id: 'team-a-policy', phase: policy }] },
+  });
+  const during = () => SINCE + READY_MS - 1;
+  const past = () => SINCE + READY_MS;
+
+  it('says a subscription is active once it and its authorization policy are, naming the organization', async () => {
+    expect(await watchActive(created('Acme Robotics'), SINCE, reads(status('Active')), during)).toEqual({
+      status: NotificationResponseStatus.SUCCESS,
+      title: 'Subscription Team A is active',
+      message: 'Users in its groups in the Acme Robotics organization can use its models.',
+      actions: [{ title: 'View subscription', to: '/subscriptions/view/team-a' }],
+    });
+  });
+
+  it("leaves the organization out when the form didn't know its name", async () => {
+    expect(await watchActive(created(), SINCE, reads(status('Active')), during)).toMatchObject({
+      status: NotificationResponseStatus.SUCCESS,
+      message: 'Users in its groups can use its models.',
+    });
+  });
+
+  it("isn't active while Get lists no authorization policy: it waits, then warns about the policy", async () => {
+    // Without the policy its users can't call its models; the backend creates it with the
+    // subscription, so none listed is a policy not there yet, not one the subscription can do without.
+    const alone: ReadAnswer = { version: 1, subscription: { phase: 'Active', policies: [] } };
+    expect(await watchActive(created(), SINCE, reads(alone), during)).toEqual({
+      status: NotificationResponseStatus.REPOLL,
+    });
+    expect(await watchActive(created(), SINCE, reads(alone), past)).toEqual({
+      status: NotificationResponseStatus.WARNING,
+      title: "Subscription Team A isn't active yet",
+      message:
+        "Its authorization policy isn't active on every ingress cluster 30 minutes after it was saved to Git, so users in its groups might not be able to use its models. Open the subscription to check the policy's status.",
+      actions: [{ title: 'View subscription', to: '/subscriptions/view/team-a' }],
+    });
+  });
+
+  it('keeps watching a pending subscription, and warns after 30 minutes', async () => {
+    expect(await watchActive(created('Acme Robotics'), SINCE, reads(status('Pending')), during)).toEqual({
+      status: NotificationResponseStatus.REPOLL,
+    });
+    expect(await watchActive(created('Acme Robotics'), SINCE, reads(status('Pending')), past)).toEqual({
+      status: NotificationResponseStatus.WARNING,
+      title: "Subscription Team A isn't active yet",
+      message:
+        "It isn't active on every ingress cluster 30 minutes after it was saved to Git, so users in its groups in the Acme Robotics organization might not be able to use its models. Open the subscription to check its status and its models' status.",
+      actions: [{ title: 'View subscription', to: '/subscriptions/view/team-a' }],
+    });
+  });
+
+  it("waits for its authorization policy, without which users can't call its models", async () => {
+    // MaaS needs both: the policy grants access to the models, the subscription the quota.
+    const policyPending = status('Active', 'Pending');
+    expect(await watchActive(created(), SINCE, reads(policyPending), during)).toEqual({
+      status: NotificationResponseStatus.REPOLL,
+    });
+    expect(await watchActive(created(), SINCE, reads(policyPending), past)).toEqual({
+      status: NotificationResponseStatus.WARNING,
+      title: "Subscription Team A isn't active yet",
+      message:
+        "Its authorization policy isn't active on every ingress cluster 30 minutes after it was saved to Git, so users in its groups might not be able to use its models. Open the subscription to check the policy's status.",
+      actions: [{ title: 'View subscription', to: '/subscriptions/view/team-a' }],
+    });
+  });
+
+  describe('an empty phase', () => {
+    const none = reads(status('', ''));
+
+    it('claims nothing when no ingress cluster ever reports a status: it stops silently on the third empty read in a row', async () => {
+      expect(await watchActive(created(), SINCE, none, () => SINCE, NO_HISTORY)).toEqual({
+        status: NotificationResponseStatus.REPOLL,
+      });
+      expect(await watchActive(created(), SINCE, none, () => SINCE, { empties: 1 })).toEqual({
+        status: NotificationResponseStatus.REPOLL,
+      });
+      expect(await watchActive(created(), SINCE, none, () => SINCE, { empties: NO_STATUS_READS - 1 })).toEqual({
+        status: NotificationResponseStatus.STOP,
+      });
+    });
+
+    it("doesn't stop on one empty read that comes late, as after a delayed first read", async () => {
+      expect(await watchActive(created(), SINCE, none, () => SINCE + 5 * 60_000, NO_HISTORY)).toEqual({
+        status: NotificationResponseStatus.REPOLL,
+      });
+    });
+
+    it('takes empty reads after a status for a status unavailable for now, and goes on', async () => {
+      expect(
+        await watchActive(created(), SINCE, none, during, { empties: NO_STATUS_READS + 10, last: 'subscription' }),
+      ).toEqual({ status: NotificationResponseStatus.REPOLL });
+    });
+
+    it('warns at the deadline from the last read that found a status, when the last one finds none', async () => {
+      expect(await watchActive(created(), SINCE, none, past, { empties: 40, last: 'subscription' })).toMatchObject({
+        status: NotificationResponseStatus.WARNING,
+        title: "Subscription Team A isn't active yet",
+        message: expect.stringMatching(/^It isn't active on every ingress cluster/),
+      });
+      // The policy-only variant: the last status had the subscription Active and its policy Pending.
+      expect(await watchActive(created(), SINCE, none, past, { empties: 2, last: 'policy' })).toMatchObject({
+        status: NotificationResponseStatus.WARNING,
+        title: "Subscription Team A isn't active yet",
+        message: expect.stringMatching(/^Its authorization policy isn't active/),
+      });
+    });
+
+    it("says it can't confirm at the deadline when no read found a status", async () => {
+      expect(await watchActive(created(), SINCE, none, past, { empties: 1 })).toMatchObject({
+        status: NotificationResponseStatus.WARNING,
+        title: 'Unable to confirm subscription Team A is active',
+      });
+    });
+
+    it('is active on the read that finds it so, whatever came before', async () => {
+      expect(
+        await watchActive(created(), SINCE, reads(status('Active')), during, { empties: 2, last: 'subscription' }),
+      ).toMatchObject({ status: NotificationResponseStatus.SUCCESS, title: 'Subscription Team A is active' });
+    });
+  });
+
+  it("doesn't call a subscription inactive when its last read failed: it says it can't confirm", async () => {
+    expect(await watchActive(created(), SINCE, reads(new Error('unavailable')), past)).toEqual({
+      status: NotificationResponseStatus.WARNING,
+      title: 'Unable to confirm subscription Team A is active',
+      message:
+        "The console couldn't read its status 30 minutes after it was saved to Git. Open the subscription to check its status.",
+      actions: [{ title: 'View subscription', to: '/subscriptions/view/team-a' }],
+    });
+  });
+
+  it('stops for a subscription that is gone, and keeps watching through a failed read', async () => {
+    expect(await watchActive(created(), SINCE, reads(undefined), during)).toEqual({
+      status: NotificationResponseStatus.STOP,
+    });
+    expect(await watchActive(created(), SINCE, reads(new Error('x')), during)).toEqual({
+      status: NotificationResponseStatus.REPOLL,
+    });
+  });
+});
+
+describe('watchSubscriptionChanges', () => {
+  const SINCE = 5_000_000;
+  const status = (phase: string): ReadAnswer => ({
+    version: 2,
+    subscription: { phase, policies: [{ id: 'team-a-policy', phase }] },
+  });
+  const during = () => SINCE + READY_MS - 1;
+  const past = () => SINCE + READY_MS;
+
+  it.each(['Active', 'Pending'])(
+    'says nothing of a subscription that is %s, and ends after 30 minutes',
+    async (phase) => {
+      expect(await watchSubscriptionChanges(subscription('update'), SINCE, reads(status(phase)), during)).toEqual({
+        status: NotificationResponseStatus.REPOLL,
+      });
+      expect(await watchSubscriptionChanges(subscription('update'), SINCE, reads(status(phase)), past)).toEqual({
+        status: NotificationResponseStatus.STOP,
+      });
+    },
+  );
+
+  it('stops on the third empty read in a row when no read found a status, and not after one', async () => {
+    const none = reads(status(''));
+    const edited = subscription('update');
+    expect(await watchSubscriptionChanges(edited, SINCE, none, () => SINCE + 5 * 60_000, NO_HISTORY)).toEqual({
+      status: NotificationResponseStatus.REPOLL,
+    });
+    expect(await watchSubscriptionChanges(edited, SINCE, none, during, { empties: NO_STATUS_READS - 1 })).toEqual({
+      status: NotificationResponseStatus.STOP,
+    });
+    expect(
+      await watchSubscriptionChanges(edited, SINCE, none, during, { empties: NO_STATUS_READS - 1, last: 'active' }),
+    ).toEqual({ status: NotificationResponseStatus.REPOLL });
+  });
+
+  it('stops for a subscription that is gone, and keeps watching through a failed read', async () => {
+    expect(await watchSubscriptionChanges(subscription('update'), SINCE, reads(undefined), during)).toEqual({
+      status: NotificationResponseStatus.STOP,
+    });
+    expect(await watchSubscriptionChanges(subscription('update'), SINCE, reads(new Error('x')), during)).toEqual({
+      status: NotificationResponseStatus.REPOLL,
+    });
+  });
+});
+
+describe('nextHistory', () => {
+  const status = (phase: string): ReadAnswer => ({
+    version: 1,
+    subscription: { phase, policies: [{ id: 'team-a-policy', phase }] },
+  });
+
+  it('counts empty reads in a row, and a failed read ends the run without forgetting the last verdict', () => {
+    expect(nextHistory({ empties: 2 }, status(''))).toEqual({ empties: 3 });
+    expect(nextHistory({ empties: 2 }, 'failed')).toEqual({ empties: 0 });
+    expect(nextHistory({ empties: 2, last: 'policy' }, 'failed')).toEqual({ empties: 0, last: 'policy' });
+    expect(nextHistory({ empties: 2 }, status('Pending'))).toEqual({ empties: 0, last: 'subscription' });
+    expect(nextHistory({ empties: 2 }, undefined)).toEqual({ empties: 2 });
+  });
+
+  it('never stops a watch on empty reads with failed reads between them', async () => {
+    // empty, failed, empty, failed, empty: no three empty reads in a row.
+    let history = NO_HISTORY;
+    for (const answer of [status(''), 'failed', status(''), 'failed'] as const) history = nextHistory(history, answer);
+    const lastEmpty = await watchActive(subscription('create'), 0, reads(status('')), () => 0, history);
+    expect(lastEmpty).toEqual({ status: NotificationResponseStatus.REPOLL });
+  });
+});
+
+describe('statusOf', () => {
+  it("tells a subscription's phase, and its authorization policy's, apart", () => {
+    const of = (phase: string, policy: string) =>
+      statusOf({ version: 1, subscription: { phase, policies: [{ id: 'team-a-policy', phase: policy }] } });
+    expect(of('Pending', 'Pending')).not.toBe(of('Active', 'Pending'));
+    expect(of('Active', 'Pending')).not.toBe(of('Active', 'Active'));
+    expect(of('Active', 'Active')).toBe(of('Active', 'Active'));
+    expect(statusOf(undefined)).toBe('gone');
   });
 });

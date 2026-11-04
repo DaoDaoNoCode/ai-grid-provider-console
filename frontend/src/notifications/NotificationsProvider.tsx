@@ -88,7 +88,10 @@ export const NotificationsProvider: React.FC<Props> = ({ children, storage, owne
     }
     previous.current = loadedFor;
   }, [storage, loadedFor]);
+  // The list as last committed, and its user, for notify to keep storage up to date at once.
+  const committed = useRef<{ owner?: string; list: ConsoleNotification[] }>({ list: [] });
   useEffect(() => {
+    committed.current = { owner: loadedFor, list: notifications };
     if (loadedFor !== undefined) writeRecords(storage, notificationsKey(loadedFor), notifications);
   }, [storage, loadedFor, notifications]);
 
@@ -105,11 +108,21 @@ export const NotificationsProvider: React.FC<Props> = ({ children, storage, owne
         read,
       };
       // An entry with the same id (a write's in-progress entry) is replaced, newest first again.
-      setNotifications((prev) => [entry, ...prev.filter((n) => n.id !== id)].slice(0, MAX_NOTIFICATIONS));
+      const add = (list: ConsoleNotification[]) =>
+        [entry, ...list.filter((n) => n.id !== id)].slice(0, MAX_NOTIFICATIONS);
+      // Kept in storage now, not after the next render: a caller that then forgets what raised it
+      // (a write watch dropping its record) leaves the notification behind if the page reloads in
+      // between. The render's own write follows with the same list.
+      const { owner: keptFor, list } = committed.current;
+      if (keptFor !== undefined) {
+        committed.current = { owner: keptFor, list: add(list) };
+        writeRecords(storage, notificationsKey(keptFor), committed.current.list);
+      }
+      setNotifications(add);
       setToasts((prev) => [...prev.filter((t) => t.id !== id), page ? { id, page } : { id }]);
       return id;
     },
-    [now],
+    [now, storage],
   );
   const dismissToast = useCallback((id: string) => setToasts((prev) => prev.filter((t) => t.id !== id)), []);
   const markRead = useCallback(
