@@ -274,6 +274,15 @@ pods_gone
 step "2. helm install"
 helm --kube-context "${CTX}" install console "${CHART}" -n "${NS}" "${VALUES[@]}" >/dev/null
 rollout
+# backend.idpSecrets: the backend gets an organization's IdP client secret by name, and nothing more.
+sa="system:serviceaccount:${NS}:${NAME}"
+[[ "$(k auth can-i get secrets -n ai-grid-idp-secrets --as "${sa}")" == yes ]] ||
+  fail "the backend can't get Secrets in ai-grid-idp-secrets"
+for verb in list watch create; do
+  [[ "$(k auth can-i "${verb}" secrets -n ai-grid-idp-secrets --as "${sa}" || true)" == no ]] ||
+    fail "the backend can ${verb} Secrets in ai-grid-idp-secrets"
+done
+pass "the backend can only get Secrets in ai-grid-idp-secrets"
 forward
 u="https://127.0.0.1:${PORT}"
 expect 200 "readyz without a login, and the backend answers its ping" "${u}/readyz"

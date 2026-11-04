@@ -223,6 +223,9 @@ spec:
                 secretKeyRef:
                   name: ai-grid-backend-keycloak
                   key: password
+            # Where organization identity providers' client secrets are (../idp-secrets).
+            - name: AI_GRID_IDP_SECRET_NAMESPACE
+              value: ai-grid-idp-secrets
           resources:
             requests:
               cpu: 50m

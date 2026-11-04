@@ -135,6 +135,18 @@ backend:
   # installs a ValidatingAdmissionPolicy that limits the backend's writes to the ai-grid/* and
   # location labels and the ai-grid/* annotations. Off: the backend only reads clusters.
   clusterWrites: false
+  # Organization identity providers (ai-grid-provider-backend#64): an organization's provider names
+  # the Secret that holds its OIDC client secret (key client-secret), which a provider admin creates
+  # by hand in this namespace before creating the organization. The backend gets those Secrets by
+  # name and can't list, watch or write them, there or anywhere else. Off: no namespace and no
+  # Role, and creating an organization with an identity provider fails.
+  idpSecrets:
+    enabled: true
+    # Sets the backend's AI_GRID_IDP_SECRET_NAMESPACE.
+    namespace: ai-grid-idp-secrets
+    # Create the namespace. Helm keeps it on uninstall (helm.sh/resource-policy: keep), so the
+    # Secrets in it survive. Set false when the namespace already exists or something else owns it.
+    createNamespace: true
   # Git mode (ai-grid-provider-backend#29): the backend commits Models and Subscriptions to this
   # repository, and Argo CD delivers them to the spokes. Backend images with git mode do not start
   # without git.url. Empty url: no git settings, for backend images from before git mode.
