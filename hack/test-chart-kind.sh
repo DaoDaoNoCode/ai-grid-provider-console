@@ -38,7 +38,7 @@ PORT="${LOCAL_PORT:-18443}"
 # 2026-10-28 from opendatahub-io/kube-auth-proxy 099df59, on ubi9/ubi-minimal release 1793050346,
 # whose ca-certificates distrusts eMudhra, CVE-2026-114406). busybox runs netstat for step 2.
 BACKEND_PIN="$(cat "${ROOT}/.backend-api-version")"
-BACKEND_IMAGE="${BACKEND_IMAGE:-ghcr.io/ai-grid-cloud/ai-grid-provider-backend:sha-064ebd3699e6fff1613670ba4000ff2a343d5bdc@sha256:6cd3b20e26c41c87bf4eb2393e1004668138a357d822b398d7941a69ac2705e1}"
+BACKEND_IMAGE="${BACKEND_IMAGE:-ghcr.io/ai-grid-cloud/ai-grid-provider-backend:sha-17d6b7d74f83e37b773ae90437a9b0e0c2d2ae28@sha256:9e57eafd5d059bfcaadd443be0521a25ee62f6d66a48bf1537016ea14f8d765e}"
 PROXY_IMAGE="${PROXY_IMAGE:-quay.io/opendatahub/odh-kube-auth-proxy@sha256:5dc37f1a1e30927abe2dffbbfcb5a31ed8692cf498fb2684cca1b747b98b00a0}"
 BUSYBOX_IMAGE=docker.io/library/busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
 ROUTE_CRD=https://raw.githubusercontent.com/openshift/api/a9b3f04dd8db4c20aacca607afeff8ddbc25d863/route/v1/zz_generated.crd-manifests/routes.crd.yaml

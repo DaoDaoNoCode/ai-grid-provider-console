@@ -136,8 +136,19 @@ regression passing when updating these dependencies.
   no `/api/v1/clusters` routes any more. Remove's dialog for an Ingress or Combined cluster warns
   that the subscriptions lose their API keys: Argo CD deletes the cluster's copies of the
   subscriptions, and MaaS then revokes their keys in the shared database, on every cluster. The
-  backend refusing it (FailedPrecondition, while subscriptions exist) shows in its words, with the
-  form kept.
+  backend refuses such a Remove while subscriptions exist (below), and the dialog shows that in
+  its words, with the form kept.
+- **The backend's role rules.** The pinned backend checks every `Clusters/Update`, after the
+  version, and answers the first rule that refuses (its `docs/UI_API_REFERENCE.md`, "Roles"):
+  InvalidArgument for an `ai-grid/role` the update sets or changes to anything but `ingress`,
+  `inference` or `combined`; then, for an AI Grid member whose role changes or that leaves AI
+  Grid, FailedPrecondition when it stops serving ingress while any subscription exists, when it
+  stops serving ingress and no other member does (the last member may leave), and when it stops
+  serving inference, or leaves whatever its role, while models are placed on it; Unavailable when
+  the Git catalog can't be read for those checks. A cluster joining AI Grid isn't checked. So a
+  cluster that is AI Grid's only ingress cluster stays in it until another cluster serves ingress,
+  or until it is the last member. Edit and Remove show each refusal in the dialog, in the
+  backend's words, with the form kept; Unavailable reads as the console's own text.
 - **Edit** (`EditClusterModal.tsx`, `gridSettings.ts`, its words in `editClusterText.ts`), for AI
   Grid clusters, in the list's row menu and the cluster page's Actions: the location label
   (checked as Add checks it), and the role only of a cluster without one (no `ai-grid/role`, or a

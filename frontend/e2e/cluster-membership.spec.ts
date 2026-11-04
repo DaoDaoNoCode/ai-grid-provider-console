@@ -5,7 +5,10 @@ const ENROLLABLE = 'site4';
 
 // The one spec that changes a fixture object, so it puts it back: it adds site4 to AI Grid and
 // removes it again. Its project in playwright.config.ts runs one test at a time, so two runs of it
-// (--repeat-each) never change site4 at once.
+// (--repeat-each) never change site4 at once. It adds site4 as Inference: the backend refuses to
+// remove AI Grid's only ingress cluster while other members stay (docs/connect.md, "The backend's
+// role rules"), and the fixtures give no member a role, so site4 added as Ingress or Combined could
+// not be removed again.
 test('adds an enrollable cluster to the AI Grid, keeps it after a reload, and removes it', async ({ page }) => {
   await page.goto('/clusters');
   const row = page.getByRole('row').filter({ has: page.getByRole('gridcell', { name: ENROLLABLE, exact: true }) });
@@ -18,7 +21,7 @@ test('adds an enrollable cluster to the AI Grid, keeps it after a reload, and re
   const add = page.getByRole('dialog', { name: `Add ${ENROLLABLE} to AI Grid?` });
   await expect(add.getByRole('textbox', { name: 'Location label' })).toHaveValue(ENROLLABLE);
   await add.getByRole('combobox', { name: 'Role' }).click();
-  await page.getByRole('option', { name: /Combined/ }).click();
+  await page.getByRole('option', { name: /^Inference/ }).click();
   await add.getByRole('button', { name: 'Add to AI Grid' }).click();
   await expect(page.getByText(`${ENROLLABLE} added to AI Grid`)).toBeVisible();
 

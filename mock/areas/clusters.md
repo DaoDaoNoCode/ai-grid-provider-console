@@ -74,8 +74,11 @@ column sticks to the table's right edge, so a narrow window scrolls the table un
 hiding it. The page adds a cluster to AI Grid or removes it, edits an AI Grid cluster's location
 label, and its role only while it has none (Edit: one `Clusters/Update` of the labels,
 `docs/connect.md`, "The Clusters area"; a role a cluster has, the site name and the map position
-aren't edited in the console; this fake has no part in it), and links each name to the cluster's
-details page (`ClusterDetailsPage.tsx`, `/clusters/:name`). That page shows the membership (status,
+aren't edited in the console; this fake has no part in it; the backend refuses a role it doesn't
+know, and a Remove or role change that would revoke subscriptions' keys, leave AI Grid without an
+ingress cluster or strand placed models: `docs/connect.md`, "The backend's role rules"), and
+links each name to the cluster's details page (`ClusterDetailsPage.tsx`, `/clusters/:name`). That
+page shows the membership (status,
 location, role, in the list's order), the cluster as the hub knows it (its connection status, the
 OpenShift version when it is OpenShift, the Kubernetes version, platform, product, creation time,
 console link), its capacity (with "Schedulable GPUs": the hub's `nvidia.com/gpu` as `gpuCapacity`, and the GPU Feature

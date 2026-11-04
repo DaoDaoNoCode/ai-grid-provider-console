@@ -105,7 +105,29 @@ test('deploys a model to a cluster, edits it in the same wizard, and deletes it'
   await expect(page.getByRole('heading', { level: 1, name: unique, exact: true })).toBeVisible();
   await expect(page.getByLabel('Deployment', { exact: true })).toContainText(/Replicas\s*2/);
 
-  // Delete from its Actions menu.
+  // While the model is placed on the cluster, the backend refuses to remove the cluster from AI Grid
+  // (docs/connect.md, "The backend's role rules"): the dialog says so in its words and keeps the
+  // typed name.
+  await page.goto('/clusters');
+  await page.getByRole('button', { name: `Actions for ${CLUSTER}` }).click();
+  await page.getByRole('menuitem', { name: 'Remove from AI Grid' }).click();
+  const remove = page.getByRole('dialog', { name: `Remove ${CLUSTER} from AI Grid?` });
+  const typed = remove.getByRole('textbox', { name: `Type ${CLUSTER} to confirm:` });
+  await typed.fill(CLUSTER);
+  await remove.getByRole('button', { name: 'Remove', exact: true }).click();
+  await expect(
+    remove.getByRole('heading', { name: 'Danger alert: Unable to remove cluster from AI Grid' }),
+  ).toBeVisible();
+  await expect(remove).toContainText(
+    `Cluster "${CLUSTER}" has 1 model placed on it (${unique}). Move it to another cluster before removing it from AI Grid.`,
+  );
+  await expect(typed).toHaveValue(CLUSTER);
+  await remove.getByRole('button', { name: 'Cancel' }).click();
+  await expect(remove).toHaveCount(0);
+
+  // Delete from its Actions menu, on the model's page.
+  await page.goto(`/models/${unique}`);
+  await expect(page.getByRole('heading', { level: 1, name: unique, exact: true })).toBeVisible();
   await page.getByRole('button', { name: `Actions for ${unique}` }).click();
   await page.getByRole('menuitem', { name: 'Delete' }).click();
   await page.getByLabel(/^Type .* to confirm/).fill(unique);
