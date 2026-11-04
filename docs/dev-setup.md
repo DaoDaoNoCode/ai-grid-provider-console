@@ -380,10 +380,13 @@ namespace, creates it enabled for the grid, and reads model status from it, so s
 `modelsNamespace` commits models that are never delivered, routed or reported. Changing it on a
 live install moves each model to the new namespace on its next write, and Argo CD prunes the old
 copy. Models nobody edits stay in the old namespace, so the spokes serve from both until each
-model is written again. With `url` set, the chart also grants `get` on the two inform-only Policies the
-backend reads the spokes' status from (`ai-grid-models-status`, `ai-grid-catalog-status`, and each
-cluster's copy). Backend images with git mode don't start without `url`; leave it empty for older
-ones. `hack/deploy.sh` sets it from `GIT_URL`, `GIT_BRANCH`, `GIT_TOKEN`,
+model is written again. With `url` set, the chart also grants `get` and `list` on Argo CD
+Applications in `openshift-gitops` (a Role and RoleBinding there): the backend reads the spokes'
+status of models and subscriptions from the health the catalog's Applications
+(`acm-models-catalog-{models,ingress,subscriptions}-<cluster>`) record. Without it every model
+stays Saved to Git and no subscription has a phase. `list` can't be limited by name, so keep
+secrets out of the Application specs in that namespace. Backend images with git mode don't start
+without `url`; leave it empty for older ones. `hack/deploy.sh` sets it from `GIT_URL`, `GIT_BRANCH`, `GIT_TOKEN`,
 `GIT_GRID_NAMESPACE` (`grid` on the dev hub) and `GIT_MODELS_NAMESPACE`, creating the Secret.
 
 The chart doesn't create the `OAuthClient`, the proxy's Secret, the backend's Keycloak Secret or its Git token Secret:
