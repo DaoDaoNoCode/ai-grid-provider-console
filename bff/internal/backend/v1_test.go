@@ -227,6 +227,55 @@ func TestV1TenantIdentityProvider(t *testing.T) {
 	}
 }
 
+// Absent optional booleans stay absent both ways, so the backend applies its defaults (true), and
+// a provider without config stays without one: the adapter neither fills nor drops anything.
+func TestV1TenantIdentityProviderAbsentFields(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	for name, tc := range map[string]struct {
+		draft   *aigridv1.IdentityProvider
+		backend *backendv1.IdentityProvider
+	}{
+		"no enabled or validate_signature": {
+			&aigridv1.IdentityProvider{Title: "SSO", Config: &aigridv1.OidcConfig{ClientId: "console", JwksUrl: "https://idp.example.com/jwks"}},
+			&backendv1.IdentityProvider{Title: "SSO", Config: &backendv1.OidcConfig{ClientId: "console", JwksUrl: "https://idp.example.com/jwks"}},
+		},
+		"no config": {
+			&aigridv1.IdentityProvider{Title: "SSO", Enabled: proto.Bool(true)},
+			&backendv1.IdentityProvider{Title: "SSO", Enabled: proto.Bool(true)},
+		},
+		"empty config": {
+			&aigridv1.IdentityProvider{Title: "SSO", Config: &aigridv1.OidcConfig{}},
+			&backendv1.IdentityProvider{Title: "SSO", Config: &backendv1.OidcConfig{}},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			stored := &backendv1.Tenant{Id: "t1", Metadata: &backendv1.Metadata{Name: "org1", Version: 1},
+				Spec: &backendv1.TenantSpec{IdentityProvider: tc.backend}}
+			conn := &recordingConn{reply: &backendv1.TenantsCreateResponse{Object: stored}}
+			created, err := v1Tenants{conn}.CreateTenant(ctx, &aigridv1.CreateTenantRequest{Object: &aigridv1.Tenant{Name: "org1", IdentityProvider: tc.draft}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			sent := conn.req.(*backendv1.TenantsCreateRequest).GetObject().GetSpec().GetIdentityProvider()
+			if !proto.Equal(sent, tc.backend) {
+				t.Fatalf("CreateTenant sent %v, want %v", sent, tc.backend)
+			}
+			// An absent boolean stays absent, so the backend applies its default.
+			if (sent.Enabled == nil) != (tc.backend.Enabled == nil) || sent.GetConfig().GetValidateSignature() {
+				t.Fatalf("CreateTenant set an absent boolean: %v", sent)
+			}
+			if (sent.Config == nil) != (tc.backend.Config == nil) {
+				t.Fatalf("CreateTenant config presence = %v, want %v", sent.Config != nil, tc.backend.Config != nil)
+			}
+			read := created.GetObject().GetIdentityProvider()
+			if !proto.Equal(read, tc.draft) || (read.Config == nil) != (tc.draft.Config == nil) {
+				t.Fatalf("read back %v, want %v", read, tc.draft)
+			}
+		})
+	}
+}
+
 // methodConn answers each method with its own reply or error, and records the methods called.
 type methodConn struct {
 	replies map[string]proto.Message
