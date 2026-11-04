@@ -255,7 +255,7 @@ export const modelFailedText = (id: string, name: string, why: string | undefine
 });
 
 /** A message as the end of a sentence of ours: trimmed, without its own final period. */
-const clause = (message: string) => message.trim().replace(/\.+$/, '');
+const withoutPeriod = (message: string) => message.trim().replace(/\.+$/, '');
 
 /**
  * A deployed model runs on every cluster it is placed on, but MaaS failed to publish it on an
@@ -270,7 +270,7 @@ export const modelUnavailableText = (
   runsOn: string[],
   failedOn: { cluster: string; message?: string }[],
 ): Text => {
-  const where = failedOn.map((f) => (f.message ? `on ${f.cluster}: ${clause(f.message)}` : `on ${f.cluster}`));
+  const where = failedOn.map((f) => (f.message ? `on ${f.cluster}: ${withoutPeriod(f.message)}` : `on ${f.cluster}`));
   const runs = runsOn.length ? `It runs on ${listOf(runsOn)}. ` : '';
   const maas = where.length ? `MaaS couldn't publish it ${where.join('; ')}.` : "MaaS couldn't publish it.";
   return {

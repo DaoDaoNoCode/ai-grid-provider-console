@@ -117,8 +117,8 @@ export type ReadObject = (subject: WriteSubject, id: string) => Promise<ReadAnsw
 
 /**
  * An object's status as the status watches compare it: a model's phase and reason, and each
- * cluster's with its deployment; a subscription's phase and its policies'; "gone" when the object is. A change is what
- * has the pages refetch, and what a model edit's watch reports a failure on.
+ * cluster's with its deployment; a subscription's phase and its policies'; "gone" when the object
+ * is. A change is what has the pages refetch, and what a model edit's watch reports a failure on.
  */
 export const statusOf = (answer: ReadAnswer | undefined) => {
   if (answer?.model) {

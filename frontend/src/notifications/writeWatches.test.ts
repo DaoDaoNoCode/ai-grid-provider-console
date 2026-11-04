@@ -557,9 +557,8 @@ describe('watchActive', () => {
   });
 
   it('keeps watching a degraded subscription, which turns active once its model is published', async () => {
-    // MaaS calls a subscription Failed or Degraded while a model it names has no MaaSModelRef or
-    // route on the cluster yet, and the catalog Applications' health check reads both as Degraded
-    // (maasPhase in the backend): not an end, as a subscription created with its model reads so.
+    // Degraded isn't an end: a subscription created with its model reads so until the model is
+    // published (watchActive).
     const degraded = status('Degraded', 'Pending');
     expect(await watchActive(created(), SINCE, reads(degraded), during)).toEqual({
       status: NotificationResponseStatus.REPOLL,

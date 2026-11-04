@@ -138,6 +138,16 @@ it("publishes nothing of a write into the next user's notifications or storage w
   expect(storage.values.get(notificationsKey('bob'))).toBeUndefined();
 });
 
+/** site-b's report once the model's deployment runs there. */
+const runningOnSiteB = () =>
+  create(ModelClusterStatusSchema, {
+    cluster: 'site-b',
+    phase: ModelPhase.READY,
+    reason: 'Ready',
+    deployment: ModelDeploymentState.RUNNING,
+    state: ModelState.READY,
+  });
+
 /** A model placed on site-b, which hasn't reported it ready. */
 const pendingOnSiteB = () =>
   create(ModelSchema, {
@@ -263,15 +273,7 @@ it('refreshes the lists when a readiness watch sees the status change, and not o
     // site-b becomes ready (the whole model stays Pending, as an ingress cluster keeps it): the
     // watch says so, and the list shows it at once.
     model = pendingOnSiteB();
-    model.status!.clusters = [
-      create(ModelClusterStatusSchema, {
-        cluster: 'site-b',
-        phase: ModelPhase.READY,
-        reason: 'Ready',
-        deployment: ModelDeploymentState.RUNNING,
-        state: ModelState.READY,
-      }),
-    ];
+    model.status!.clusters = [runningOnSiteB()];
     await act(async () => {
       await vi.advanceTimersByTimeAsync(READY_POLL_MS);
     });
@@ -353,15 +355,7 @@ it("refreshes the lists when an edited model's status changes, not on a poll tha
 
     // site-b runs the new revision: the list shows it at once, and nothing says "ready".
     state.model = pendingOnSiteB();
-    state.model.status!.clusters = [
-      create(ModelClusterStatusSchema, {
-        cluster: 'site-b',
-        phase: ModelPhase.READY,
-        reason: 'Ready',
-        deployment: ModelDeploymentState.RUNNING,
-        state: ModelState.READY,
-      }),
-    ];
+    state.model.status!.clusters = [runningOnSiteB()];
     await pass(READY_POLL_MS);
     expect(state.listCalls).toBe(afterLanding + 1);
     // The refetch's answer reaches the page: the query cache tells it with a setTimeout(0), which
@@ -441,15 +435,7 @@ it("follows a model edited at 29 minutes of its deploy's watch until 59 minutes,
     await pass(14 * 60_000);
     const lists = state.listCalls;
     state.model = pendingOnSiteB();
-    state.model.status!.clusters = [
-      create(ModelClusterStatusSchema, {
-        cluster: 'site-b',
-        phase: ModelPhase.READY,
-        reason: 'Ready',
-        deployment: ModelDeploymentState.RUNNING,
-        state: ModelState.READY,
-      }),
-    ];
+    state.model.status!.clusters = [runningOnSiteB()];
     await pass(READY_POLL_MS);
     expect(state.listCalls).toBe(lists + 1);
 
@@ -475,15 +461,7 @@ it('names a model renamed while its deploy is watched by the new name when it is
     expect(modelWatches(storage)).toMatchObject([{ key: 'r1', stage: 'ready' }]);
 
     state.model = pendingOnSiteB();
-    state.model.status!.clusters = [
-      create(ModelClusterStatusSchema, {
-        cluster: 'site-b',
-        phase: ModelPhase.READY,
-        reason: 'Ready',
-        deployment: ModelDeploymentState.RUNNING,
-        state: ModelState.READY,
-      }),
-    ];
+    state.model.status!.clusters = [runningOnSiteB()];
     await pass(READY_POLL_MS);
     expect(screen.getByText('Model Widget Pro is ready on site-b')).toBeInTheDocument();
     expect(screen.queryByText(/^Model Widget is/)).not.toBeInTheDocument();
@@ -513,15 +491,7 @@ it('warns, by its new name, that a model renamed during its deploy runs but MaaS
         message: 'HTTPRoute rejected by the gateway',
       }),
     ];
-    state.model.status!.clusters = [
-      create(ModelClusterStatusSchema, {
-        cluster: 'site-b',
-        phase: ModelPhase.READY,
-        reason: 'Ready',
-        deployment: ModelDeploymentState.RUNNING,
-        state: ModelState.READY,
-      }),
-    ];
+    state.model.status!.clusters = [runningOnSiteB()];
     await pass(READY_POLL_MS);
     expect(screen.getByText("Model Widget Pro is running but isn't available to users")).toBeInTheDocument();
     expect(screen.queryByText(/Unable to deploy|is ready|^Model Widget is/)).not.toBeInTheDocument();
