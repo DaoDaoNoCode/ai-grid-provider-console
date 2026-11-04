@@ -134,7 +134,10 @@ regression passing when updating these dependencies.
 - **Writes.** Add and Remove call `Clusters/Update` (in the relay's allowlist): the labels map as
   read with `ai-grid/enabled`, `ai-grid/role` and `location` set (or `ai-grid/enabled` dropped),
   `update_mask: metadata.labels`, `metadata.version` with `lock: true`. Aborted is the conflict
-  the dialog already handles, and the answer's `ai_grid_member` confirms the change. The BFF has
+  the dialog already handles, and the answer's `ai_grid_member` confirms the change. The dialog
+  waits for the answer and keeps every refusal; once the backend answers, the notification
+  center says so and follows what the hub does next ("Writes that take long"), in place of a page
+  toast of its own. The BFF has
   no `/api/v1/clusters` routes any more. Remove's dialog for an Ingress or Combined cluster warns
   that the subscriptions lose their API keys: Argo CD deletes the cluster's copies of the
   subscriptions, and MaaS then revokes their keys in the shared database, on every cluster. The
@@ -516,6 +519,48 @@ subscription) are sent from the app root, never from the form (`frontend/src/not
   the new one is applied. Degraded may be a model not published yet (above), so it only has the
   pages refetch when the phase changes, and ends without a word (or after three empty phases in a
   row with no status found, as above).
+- A cluster's write is a labels update the backend makes at once, so its dialog sends it itself
+  and keeps every refusal (InvalidArgument and FailedPrecondition from the role rules, 403,
+  Aborted) with no notification. Once the backend answers, the page hands the write to the center
+  (`followWrite`), which says it was saved, as read, and follows the hub with the same records,
+  storage and outcome ids as the watches above (`watchCluster`, a `cluster` record of stage
+  `ready`), reading `Clusters/Get` every 30 s for up to 60 minutes (an OpenShift AI install is
+  slow):
+  - Add to AI Grid, or an Edit that sets the role a cluster lacked: "Cluster <name> added to AI
+    Grid" (or "Changes to cluster <name> saved") with "The hub is installing what its <Role> role
+    needs. You'll be notified when it's provisioned.", then, once the cluster is a member whose
+    `status.provisioning` is `Compliant` (what the pages show as Provisioned), "Cluster <name> is
+    provisioned". That is the hub's ai-grid-ready Policy, which checks OpenShift AI and the AI
+    Grid operator and never MaaS, so the body claims no more: for an Inference cluster "You can
+    select it when you deploy a model" (`Models/ListPlacementClusters` offers a provisioned one),
+    for an Ingress cluster "Whether users can reach models through it depends on MaaS, which the
+    hub's check doesn't cover", for a Combined cluster both. After 60 minutes, "Cluster <name>
+    isn't provisioned yet", or "Unable to confirm cluster <name> is provisioned" when the last
+    read failed or no read found a status, with a link to the cluster. An empty `provisioning`
+    (the Policy doesn't list the cluster, or can't be read) follows the subscriptions' rule: three
+    in a row before any status stop the watch without a word, and a failed read ends the run.
+  - Remove from AI Grid: "Cluster <name> removed from AI Grid", then "Cluster <name> left AI
+    Grid" once the cluster is no longer a member and the ready Policy no longer lists it
+    (`provisioning` empty). Membership alone wouldn't do: the backend reads `ai_grid_member` from
+    the `ai-grid/enabled` label the write removed, so the write's own answer already says it,
+    while the Policy lets the cluster go once the hub's placement does. After 60 minutes, "Cluster
+    <name> hasn't left AI Grid yet" (or "Unable to confirm ...").
+  - An Edit of the location label alone: "Changes to cluster <name> saved", and no watch.
+  - One watch per cluster: an Add, a role set or a Remove replaces the cluster's earlier watch; a
+    location-only edit leaves it running, since it changes neither what the hub installs nor the
+    name (clusters can't be renamed). A cluster that leaves AI Grid during a provisioning watch,
+    joins it again during a remove watch, or is gone from the hub stops the watch without a word.
+  - Every status change a cluster watch sees, and every end, invalidates the Clusters queries
+    (the list, a cluster's page and the AI Grid map), as the model and subscription watches do.
+  - On the backend's fake hub (`make dev-fake-infra`), the ready Policy is computed from the
+    clusters: one added without an `ai-grid/provisioned` fixture label reads Pending for 5 s,
+    NonCompliant until 20 s, then Compliant, and one with the label keeps what it says
+    (`mock/areas/clusters.md`).
+- An organization's save is complete, or rolled back, when the backend answers (a Keycloak
+  write), so it isn't watched: the form or the delete dialog waits as it always did and keeps its
+  errors there, and a success goes to the center as read: "Organization <name> created",
+  "Changes to organization <name> saved" (both with View organization) and "Organization <name>
+  deleted", with the name the backend answered with (the dialog's for a delete).
 - One watch follows a model, and one a subscription, at a time, so nothing is said twice:
   deploying or creating an id again replaces its earlier watch; an edit replaces the previous
   edit's watch. An edit made while a create's readiness watch of the object still runs adds no

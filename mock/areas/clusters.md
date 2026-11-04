@@ -76,9 +76,16 @@ label, and its role only while it has none (Edit: one `Clusters/Update` of the l
 `docs/connect.md`, "The Clusters area"; a role a cluster has, the site name and the map position
 aren't edited in the console; this fake has no part in it; the backend refuses a role it doesn't
 know, and a Remove or role change that would revoke subscriptions' keys, leave AI Grid without an
-ingress cluster or strand placed models: `docs/connect.md`, "The backend's role rules"), and
-links each name to the cluster's details page (`ClusterDetailsPage.tsx`, `/clusters/:name`). That
-page shows the membership (status,
+ingress cluster or strand placed models: `docs/connect.md`, "The backend's role rules"). A
+refusal stays in the dialog; a write the backend answers goes to the notification center
+(`docs/connect.md`, "Writes that take long"), which says it was saved and, after Add, Remove or
+an Edit that sets a role, follows `Clusters/Get` until the hub's ready check reports the cluster
+provisioned, or no longer lists it after Remove. On the backend's fake hub (`make
+dev-fake-infra`), a cluster added without an `ai-grid/provisioned` fixture label reads Pending for
+5 s, NonCompliant until 20 s and Compliant after, so the watch says "provisioned" about 30 s after
+Add; a fixture label pins its compliance (`fixtures/poc`'s `site4` reads NonCompliant for good,
+`site1` to `site3` Compliant). The page links each name to the cluster's details page
+(`ClusterDetailsPage.tsx`, `/clusters/:name`). That page shows the membership (status,
 location, role, in the list's order), the cluster as the hub knows it (its connection status, the
 OpenShift version when it is OpenShift, the Kubernetes version, platform, product, creation time,
 console link), its capacity (with "Schedulable GPUs": the hub's `nvidia.com/gpu` as `gpuCapacity`, and the GPU Feature
