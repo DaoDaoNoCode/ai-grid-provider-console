@@ -58,6 +58,7 @@ const (
 	msgURL           = "Enter a valid HTTP or HTTPS URL."
 	msgHTTP          = "Use HTTP or HTTPS."
 	msgIdPDisabled   = "Only true is allowed."
+	msgJWKS          = "Enter the JWKS URL, or turn off Validate signature."
 )
 
 var (
@@ -109,6 +110,10 @@ func checkIdentityProvider(in *aigridv1.IdentityProvider) (*aigridv1.IdentityPro
 	c.LogoutUrl = checkURL(errs, cp+"logoutUrl", c.GetLogoutUrl(), true)
 	if c.ValidateSignature == nil {
 		c.ValidateSignature = proto.Bool(true)
+	}
+	// Keycloak validates signatures with the keys at the JWKS URL: without one, every sign-in fails.
+	if c.GetValidateSignature() && c.JwksUrl == "" {
+		errs[cp+"jwksUrl"] = msgJWKS
 	}
 	return out, errs
 }
