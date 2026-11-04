@@ -811,34 +811,27 @@ const enter = async (user: User, dialog: HTMLElement, name: string, value: strin
 };
 
 // The page tests' shared Clusters fake (connectClusters.ts) writes what the backend's Update does:
-// only the maps the mask names. Called directly, since no page sends annotations.
+// the labels as the mask names them. Called directly, to check the cases no page reaches.
 describe('the shared Clusters fake', () => {
   const clustersClient = (service: MockConsoleService) => createClient(Clusters, transportFor(service)([]));
 
-  it('writes an annotations-only update as an edit, not as a removal from AI Grid', async () => {
+  it('refuses an annotations update rather than take it for a removal from AI Grid', async () => {
     const service = new MockConsoleService();
-    const remove = vi.spyOn(service, 'removeClusterFromGrid');
     const before = service.clusters.find((c) => c.name === 'site1')!;
-    await clustersClient(service).update({
-      object: {
-        id: 'site1',
-        metadata: {
-          annotations: {
-            'ai-grid/site-name': 'San Francisco DC2',
-            'ai-grid/latitude': '37.7749',
-            'ai-grid/longitude': '-122.4194',
+    await expect(
+      clustersClient(service).update({
+        object: {
+          id: 'site1',
+          metadata: {
+            annotations: { 'ai-grid/site-name': 'San Francisco DC2' },
+            version: Number(before.resourceVersion),
           },
-          version: Number(before.resourceVersion),
         },
-      },
-      updateMask: { paths: ['metadata.annotations'] },
-      lock: true,
-    });
-    expect(remove).not.toHaveBeenCalled();
-    const after = service.clusters.find((c) => c.name === 'site1')!;
-    expect(after.aiGridEnabled).toBe(true);
-    expect(after.labels).toEqual(before.labels);
-    expect(after.siteName).toBe('San Francisco DC2');
+        updateMask: { paths: ['metadata.annotations'] },
+        lock: true,
+      }),
+    ).rejects.toThrow(/doesn't write annotations/);
+    expect(service.clusters.find((c) => c.name === 'site1')).toEqual(before);
   });
 
   it('takes the console keys of a sent map as the whole set and keeps every other key', async () => {

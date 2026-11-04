@@ -115,7 +115,8 @@ export const EditClusterModal: React.FC<Props> = ({ cluster, onConfirm, onClose 
               />
             )}
             {role && (
-              <Alert isInline variant="info" title={role.title} data-testid="cluster-role-change">
+              // A live region, so a screen reader announces what Save will install when a role is selected.
+              <Alert isInline isLiveRegion variant="info" title={role.title} data-testid="cluster-role-change">
                 <List>
                   <ListItem>{role.installs}</ListItem>
                   <ListItem>{role.settling}</ListItem>

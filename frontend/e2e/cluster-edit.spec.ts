@@ -65,9 +65,9 @@ test("edits a cluster's location label, and sets the role of a cluster without o
   await dialog.getByRole('combobox', { name: 'Role' }).click();
   await page.getByRole('option', { name: /^Inference/ }).click();
   const change = dialog.getByTestId('cluster-role-change');
-  await expect(change).toContainText('Role set to Inference');
+  await expect(change).toContainText('What the hub installs');
   await expect(change).toContainText(
-    'The hub installs KServe model serving, the provider gateway, and the GPU operators on this cluster.',
+    'Saving sets the role to Inference. The hub then installs KServe model serving, the provider gateway, and the GPU operators on this cluster.',
   );
   await expect(dialog.getByRole('textbox', { name: new RegExp(`^Type ${WITHOUT_ROLE} to confirm`) })).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Save' }).click();

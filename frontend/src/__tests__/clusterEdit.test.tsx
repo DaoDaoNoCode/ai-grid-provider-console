@@ -135,7 +135,7 @@ const renderList = (clusters: ManagedCluster[]) => {
 };
 
 const ROLE_FIXED =
-  "Changing the role of a cluster in AI Grid isn't supported yet: the hub doesn't fully remove what the old role installed.";
+  "Changing the role of a cluster in AI Grid isn't supported: the hub doesn't fully remove what the old role installed.";
 const SETTLES = 'The cluster shows Provisioning until the installation finishes.';
 
 it('offers Edit for AI Grid clusters on the cluster page, before Remove from AI Grid', async () => {
@@ -257,20 +257,20 @@ it.each([
   [
     'Ingress',
     'ingress',
-    'The hub installs MaaS, the consumer gateway, the MaaS portal, and the database replica on this cluster.',
+    'Saving sets the role to Ingress. The hub then installs MaaS, the consumer gateway, the MaaS portal, and the database replica on this cluster.',
   ],
   [
     'Inference',
     'inference',
-    'The hub installs KServe model serving, the provider gateway, and the GPU operators on this cluster.',
+    'Saving sets the role to Inference. The hub then installs KServe model serving, the provider gateway, and the GPU operators on this cluster.',
   ],
   [
     'Combined',
     'combined',
-    'The hub installs MaaS, the consumer gateway, the MaaS portal, the database replica, KServe model serving, the provider gateway, and the GPU operators on this cluster.',
+    'Saving sets the role to Combined. The hub then installs MaaS, the consumer gateway, the MaaS portal, the database replica, KServe model serving, the provider gateway, and the GPU operators on this cluster.',
   ],
 ])(
-  'sets %s on a cluster without a role, says what the hub installs, and asks for no name',
+  'sets %s on a cluster without a role, says what the hub will install, and asks for no name',
   async (label, value, installs) => {
     const user = userEvent.setup();
     const { requests } = renderList([noRole()]);
@@ -279,7 +279,7 @@ it.each([
     expect(within(dialog).queryByTestId('cluster-role-change')).not.toBeInTheDocument();
     await selectRole(user, dialog, label);
     const change = within(dialog).getByTestId('cluster-role-change');
-    expect(within(change).getByText(`Role set to ${label}`)).toBeVisible();
+    expect(within(change).getByRole('heading', { name: 'Info alert: What the hub installs' })).toBeVisible();
     expect(
       within(within(change).getByRole('list'))
         .getAllByRole('listitem')
@@ -307,10 +307,24 @@ it('lets a role label that is not one of the three be replaced by one', async ()
   const dialog = await openEdit(user, 'odd-1');
   expect(within(dialog).getByRole('combobox', { name: 'Role' })).toHaveValue('');
   await selectRole(user, dialog, 'Inference');
-  expect(within(dialog).getByTestId('cluster-role-change')).toHaveTextContent('Role set to Inference');
+  expect(within(dialog).getByTestId('cluster-role-change')).toHaveTextContent('Saving sets the role to Inference.');
   await user.click(save(dialog));
   expect(await screen.findByText('odd-1 updated')).toBeVisible();
   expect(requests[0].object?.metadata?.labels['ai-grid/role']).toBe('inference');
+});
+
+it('announces what Save will install: the alert is a polite live region, and follows the role selected', async () => {
+  const user = userEvent.setup();
+  renderList([noRole()]);
+  const dialog = await openEdit(user, 'no-role');
+  await selectRole(user, dialog, 'Ingress');
+  const change = within(dialog).getByTestId('cluster-role-change');
+  expect(change).toHaveAttribute('aria-live', 'polite');
+  expect(change).toHaveTextContent('Saving sets the role to Ingress.');
+  await selectRole(user, dialog, 'Inference');
+  // The same region, so the new role's text is announced as a change.
+  expect(within(dialog).getByTestId('cluster-role-change')).toBe(change);
+  expect(change).toHaveTextContent('Saving sets the role to Inference.');
 });
 
 it('asks for a role before saving a location label on a cluster without one', async () => {

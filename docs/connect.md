@@ -138,11 +138,12 @@ regression passing when updating these dependencies.
   Grid clusters, in the list's row menu and the cluster page's Actions: the location label
   (checked as Add checks it), and the role only of a cluster without one (no `ai-grid/role`, or a
   value that isn't one of the three). A role a cluster has is shown read-only: changing it isn't
-  supported yet, because the hub doesn't fully remove what the old role installed (leaving
+  supported, because the hub doesn't fully remove what the old role installed (leaving
   inference uninstalls the GPU operators, leaving ingress leaves objects behind, its database
-  credentials among them, and adding ingress needs per-cluster config in Git). Setting a role
-  says first what the hub installs and that the cluster shows Provisioning until it finishes; it
-  only adds, so no name is typed. Save sends one `Clusters/Update` of the labels map as read with
+  credentials among them, and adding ingress needs per-cluster config in Git). Selecting a role
+  shows, before Save, what Save sets, what the hub then installs, and that the cluster shows
+  Provisioning until it finishes, in an info alert that is a live region, so a screen reader
+  announces it; it only adds, so no name is typed. Save sends one `Clusters/Update` of the labels map as read with
   those keys set, `update_mask: metadata.labels`, `metadata.version` with `lock: true`; it is off
   until something changes. Aborted reloads the cluster into the dialog as Add does; any other
   refusal (InvalidArgument for a value, FailedPrecondition for a change the backend won't make)

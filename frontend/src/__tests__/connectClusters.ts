@@ -2,7 +2,8 @@
 // Clusters/List, Get and Update over Connect (fakeClients: the generated messages, serialized as
 // JSON), so a test that changes `service.clusters`, or replaces `listClusters`, `getCluster`,
 // `enrollCluster`, `removeClusterFromGrid` or `updateCluster`, changes what the pages read. Update
-// honours the mask as the backend does (clusters_server.go, updatePaths and managedKeysPatch).
+// writes the labels as the backend does (clusters_server.go, updatePaths and managedKeysPatch), and
+// refuses the annotations, which no page writes.
 import { create } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 import { Code, ConnectError } from '@connectrpc/connect';
@@ -21,7 +22,7 @@ import {
 
 /**
  * The mock's clusters, as the tests' Clusters backend reads them; `clusters`, when the service
- * keeps them, is what Update checks the version against and merges a sent map into.
+ * keeps them, is what Update checks the version against and merges the sent labels into.
  */
 export type ClusterSource = {
   listClusters: () => Promise<GridCluster[]>;
@@ -33,10 +34,7 @@ export type ClusterSource = {
 type Writes = {
   enrollCluster?: (cluster: GridCluster, membership: GridMembership) => Promise<GridCluster>;
   removeClusterFromGrid?: (cluster: GridCluster) => Promise<GridCluster>;
-  updateCluster?: (
-    cluster: GridCluster,
-    change: { labels?: Record<string, string>; annotations?: Record<string, string> },
-  ) => Promise<GridCluster>;
+  updateCluster?: (cluster: GridCluster, labels: Record<string, string>) => Promise<GridCluster>;
 };
 
 const codes: Record<number, Code> = {
@@ -153,9 +151,9 @@ export const toManagedCluster = (c: GridCluster): ManagedCluster => {
 };
 
 /**
- * Which maps an Update writes, as the backend's updatePaths reads its mask: `metadata` both,
- * `metadata.labels` or `metadata.annotations` (or a path under one) that one; without a mask, the
- * maps the request sets.
+ * Whether an Update writes the labels or the annotations, as the backend's updatePaths reads its
+ * mask: `metadata` both, `metadata.labels` or `metadata.annotations` (or a path under one) that one;
+ * without a mask, the maps the request sets.
  */
 const maskedMaps = (paths: string[], sent: { labels: object; annotations: object }) => {
   if (paths.length === 0) {
@@ -169,32 +167,26 @@ const maskedMaps = (paths: string[], sent: { labels: object; annotations: object
   return { labels: names('labels'), annotations: names('annotations') };
 };
 
-/** The backend's keys for the console: the ai-grid/* keys, and the location label. */
-const isConsoleKey = (kind: 'label' | 'annotation', key: string) =>
-  key.startsWith('ai-grid/') || (kind === 'label' && key === 'location');
+/** The backend's label keys for the console: the ai-grid/* keys, and the location label. */
+const isConsoleKey = (key: string) => key.startsWith('ai-grid/') || key === 'location';
 
 /**
- * A sent map as the backend stores it (checkConsoleKeys and managedKeysPatch): another key may only
- * come back as stored (InvalidArgument otherwise) and is kept as stored; the console's keys are the
- * whole set sent, so one left out is removed.
+ * Sent labels as the backend stores them (checkConsoleKeys and managedKeysPatch): another key may
+ * only come back as stored (InvalidArgument otherwise) and is kept as stored; the console's keys are
+ * the whole set sent, so one left out is removed.
  */
-const applyMap = (
-  kind: 'label' | 'annotation',
-  current: Record<string, string>,
-  sent: Record<string, string>,
-  checkKeys: boolean,
-) => {
+const applyLabels = (current: Record<string, string>, sent: Record<string, string>, checkKeys: boolean) => {
   for (const [key, value] of Object.entries(sent)) {
-    if (checkKeys && !isConsoleKey(kind, key) && current[key] !== value) {
+    if (checkKeys && !isConsoleKey(key) && current[key] !== value) {
       throw new ConnectError(
-        `${kind} "${key}" cannot be changed through the console; only ai-grid/* labels and annotations and the location label can`,
+        `label "${key}" cannot be changed through the console; only ai-grid/* labels and annotations and the location label can`,
         Code.InvalidArgument,
       );
     }
   }
   const next: Record<string, string> = {};
-  for (const [key, value] of Object.entries(current)) if (!isConsoleKey(kind, key)) next[key] = value;
-  for (const [key, value] of Object.entries(sent)) if (isConsoleKey(kind, key)) next[key] = value;
+  for (const [key, value] of Object.entries(current)) if (!isConsoleKey(key)) next[key] = value;
+  for (const [key, value] of Object.entries(sent)) if (isConsoleKey(key)) next[key] = value;
   return next;
 };
 
@@ -209,23 +201,24 @@ export const clustersBackend = (service: ClusterSource & Writes) =>
     update: async ({ object, updateMask }) => {
       const id = object?.id ?? '';
       const sentLabels = object?.metadata?.labels ?? {};
-      const sentAnnotations = object?.metadata?.annotations ?? {};
       const version = object?.metadata?.version ?? 0;
-      const { labels: sendsLabels, annotations: sendsAnnotations } = maskedMaps(updateMask?.paths ?? [], {
+      const sends = maskedMaps(updateMask?.paths ?? [], {
         labels: sentLabels,
-        annotations: sentAnnotations,
+        annotations: object?.metadata?.annotations ?? {},
       });
+      // No page writes the annotations (a hub admin sets the site name and position with oc
+      // annotate), so the fake refuses them rather than answer an update it didn't store.
+      if (sends.annotations) {
+        throw new ConnectError("the tests' Clusters fake doesn't write annotations", Code.Unimplemented);
+      }
       // The cluster as stored, read without going through listClusters or getCluster, which tests
-      // replace to stall or fail the page's reads. Without stored clusters, the request's maps are
+      // replace to stall or fail the page's reads. Without stored clusters, the request's labels are
       // taken as what is stored. The mock's writes check the version (409, so Aborted).
       const stored = service.clusters?.find((c) => c.name === id);
       const current = stored ? toManagedCluster(stored).metadata : undefined;
       // The backend checks the version before the keys: a stale request is Aborted whatever it sends.
       const stale = !!stored && !!version && String(version) !== (stored.resourceVersion ?? '');
-      const labels = sendsLabels ? applyMap('label', current?.labels ?? sentLabels, sentLabels, !stale) : undefined;
-      const annotations = sendsAnnotations
-        ? applyMap('annotation', current?.annotations ?? sentAnnotations, sentAnnotations, !stale)
-        : undefined;
+      const labels = sends.labels ? applyLabels(current?.labels ?? sentLabels, sentLabels, !stale) : undefined;
       // What the mock's writes read of the cluster they are given: its name, labels and version.
       const cluster: GridCluster = {
         name: id,
@@ -251,13 +244,8 @@ export const clustersBackend = (service: ClusterSource & Writes) =>
         if (labels && labels['ai-grid/enabled'] !== 'true' && service.removeClusterFromGrid) {
           return service.removeClusterFromGrid(cluster);
         }
-        // Anything else is an edit: the masked maps as the backend stores them.
-        if (service.updateCluster) {
-          return service.updateCluster(cluster, {
-            ...(labels ? { labels } : {}),
-            ...(annotations ? { annotations } : {}),
-          });
-        }
+        // Anything else is an edit: the labels as the backend stores them.
+        if (service.updateCluster) return service.updateCluster(cluster, cluster.labels);
         throw new ServiceError(501, 'The AI Grid backend does not support this operation.');
       });
       return { object: toManagedCluster(updated) };

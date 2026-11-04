@@ -23,13 +23,16 @@ const installs: Record<ClusterRole, string> = {
 
 const roleLabel = (role: ClusterRole) => clusterRoles.find((r) => r.value === role)?.label ?? role;
 
-/** What setting a role on a cluster without one does, as the dialog shows it before saving. */
+/**
+ * What setting a role on a cluster without one will do, as the dialog shows it before Save: so
+ * worded as what follows Save, not as done.
+ */
 export type RoleSet = { title: string; installs: string; settling: string };
 
 /** Setting a role on a cluster that has none: it only installs, so it asks for no typed name. */
 export const roleSet = (role: ClusterRole): RoleSet => ({
-  title: `Role set to ${roleLabel(role)}`,
-  installs: `The hub installs ${installs[role]} on this cluster.`,
+  title: 'What the hub installs',
+  installs: `Saving sets the role to ${roleLabel(role)}. The hub then installs ${installs[role]} on this cluster.`,
   settling: 'The cluster shows Provisioning until the installation finishes.',
 });
 
@@ -40,7 +43,7 @@ export const editText = {
   title: (cluster: string) => `Edit ${cluster}`,
   /** Under the role of a cluster that has one, shown read-only. */
   roleFixed:
-    "Changing the role of a cluster in AI Grid isn't supported yet: the hub doesn't fully remove what the old role installed.",
+    "Changing the role of a cluster in AI Grid isn't supported: the hub doesn't fully remove what the old role installed.",
   errorTitle: 'Unable to update cluster',
   notAvailable: 'Editing a cluster is not available on this AI Grid backend.',
   changedByOther:
