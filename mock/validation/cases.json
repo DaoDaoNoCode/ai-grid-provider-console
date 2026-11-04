@@ -417,6 +417,66 @@
     },
     {
       "schema": "organization",
+      "name": "JWKS URL of spaces with Validate signature on",
+      "input": {
+        "name": "acme-robotics",
+        "domains": ["acme-robotics.example.com", "acme.example.org"],
+        "identityProvider": {
+          "title": "Acme SSO",
+          "description": "Acme employees sign in here.",
+          "enabled": true,
+          "config": {
+            "clientId": "ai-grid",
+            "clientSecretSecret": {
+              "name": "acme-oidc-client"
+            },
+            "issuer": "https://sso.acme-robotics.example.com/realms/acme",
+            "authorizationUrl": "https://sso.acme-robotics.example.com/realms/acme/protocol/openid-connect/auth",
+            "tokenUrl": "https://sso.acme-robotics.example.com/realms/acme/protocol/openid-connect/token",
+            "defaultScopes": "openid profile email",
+            "userInfoUrl": "",
+            "jwksUrl": "   ",
+            "logoutUrl": "",
+            "validateSignature": true
+          }
+        }
+      },
+      "fieldErrors": {
+        "identityProvider.config.jwksUrl": "Enter the JWKS URL, or turn off Validate signature."
+      }
+    },
+    {
+      "schema": "organization",
+      "name": "JWKS URL of spaces with Validate signature off",
+      "input": {
+        "name": "acme-robotics",
+        "domains": ["acme-robotics.example.com", "acme.example.org"],
+        "identityProvider": {
+          "title": "Acme SSO",
+          "description": "Acme employees sign in here.",
+          "enabled": true,
+          "config": {
+            "clientId": "ai-grid",
+            "clientSecretSecret": {
+              "name": "acme-oidc-client"
+            },
+            "issuer": "https://sso.acme-robotics.example.com/realms/acme",
+            "authorizationUrl": "https://sso.acme-robotics.example.com/realms/acme/protocol/openid-connect/auth",
+            "tokenUrl": "https://sso.acme-robotics.example.com/realms/acme/protocol/openid-connect/token",
+            "defaultScopes": "openid profile email",
+            "userInfoUrl": "",
+            "jwksUrl": "   ",
+            "logoutUrl": "",
+            "validateSignature": false
+          }
+        }
+      },
+      "fieldErrors": {
+        "identityProvider.config.jwksUrl": "Use HTTP or HTTPS."
+      }
+    },
+    {
+      "schema": "organization",
       "name": "empty JWKS URL with Validate signature off is valid",
       "input": {
         "name": "acme-robotics",
