@@ -615,7 +615,9 @@ What the relay owns is the boundary:
   Subscriptions to a Git repository, which can take longer than a read, and a write the relay cut
   at the read timeout could still land, so its 504 would say nothing about the outcome (the
   console treats such a write as unknown and checks it, `docs/connect.md`, "Writes that take
-  long").
+  long"). The router and kube-auth-proxy in front of the BFF wait longer than its 60s server write
+  timeout (the chart's `route.timeout`, 70s, and `authProxy.upstreamTimeout`, 65s; their defaults,
+  30s, would cut a write first; `charts/ai-grid-provider-console/README.md`, "Timeouts").
   A stream whose headers came
   runs until it ends or the server's 60s write timeout cuts it, and reaches the browser as the
   backend flushes it; when the browser goes away, the backend's call is canceled. A backend that

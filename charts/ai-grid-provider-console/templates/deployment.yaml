@@ -49,6 +49,9 @@ spec:
             - --tls-cert-file=/etc/tls/private/tls.crt
             - --tls-key-file=/etc/tls/private/tls.key
             - --upstream=http://127.0.0.1:8080/
+            # Longer than the BFF's longest answer (its 60s server write timeout), so a slow write
+            # ends in the BFF's own answer; the default, 30s, would cut BACKEND_WRITE_TIMEOUT's.
+            - --upstream-timeout={{ .Values.authProxy.upstreamTimeout }}
             - --redirect-url=$(OAUTH2_PROXY_REDIRECT_URL)
             - --email-domain=*
             - --scope=user:full

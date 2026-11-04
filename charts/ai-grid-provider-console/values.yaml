@@ -52,6 +52,11 @@ route:
   # PEM CA the router trusts for the proxy's certificate. Not needed with tls.serviceCA: the
   # router trusts the service CA. Set it when tls.secretName holds a certificate from another CA.
   destinationCACertificate: ""
+  # How long the router waits for the console's answer (haproxy.router.openshift.io/timeout;
+  # OpenShift's default is 30s). Longer than kube-auth-proxy's upstreamTimeout below, which is longer
+  # than the BFF's longest answer (its 60s server write timeout, BACKEND_WRITE_TIMEOUT at most 50s):
+  # a slow model or subscription write then ends in the BFF's own answer, not the router's 504.
+  timeout: 70s
 
 # The console container (BFF and frontend).
 console:
@@ -157,6 +162,10 @@ backend:
     limits: { memory: 256Mi }
 
 authProxy:
+  # How long kube-auth-proxy waits for the BFF's answer (--upstream-timeout; its default is 30s, as
+  # long as BACKEND_WRITE_TIMEOUT's default). Longer than the BFF's 60s server write timeout, shorter
+  # than route.timeout.
+  upstreamTimeout: 65s
   resources:
     requests: { cpu: 50m, memory: 64Mi }
     limits: { memory: 128Mi }

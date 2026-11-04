@@ -24,6 +24,22 @@ Each image is `repository:tag`, `repository@digest`, or `repository:tag@digest` 
 - **Proxy** (`images.authProxy`): `quay.io/opendatahub/odh-kube-auth-proxy:latest`; the kind test
   pins a digest.
 
+## Timeouts
+
+A call goes through the OpenShift router, then kube-auth-proxy, then the BFF, and each waits for the
+next. The BFF answers within its 60s server write timeout (a write to the backend is bounded by
+`BACKEND_WRITE_TIMEOUT`, 30s by default and at most 50s; `docs/plan/bff-api.md`). So the two in
+front of it wait longer, and a slow model or subscription write ends in the BFF's own answer rather
+than a proxy's 504:
+
+- `route.timeout` (default `70s`): the Route's `haproxy.router.openshift.io/timeout`. OpenShift's
+  default is 30s.
+- `authProxy.upstreamTimeout` (default `65s`): kube-auth-proxy's `--upstream-timeout`. Its own
+  default is 30s.
+
+Keep `route.timeout` longer than `authProxy.upstreamTimeout`, and both longer than 60s.
+`hack/check-chart.sh` checks the defaults, and the schema refuses a value that isn't a duration.
+
 ## Model hardware
 
 The Deploy model wizard offers a **Hardware** choice: each one fills in the model's CPU, memory and
