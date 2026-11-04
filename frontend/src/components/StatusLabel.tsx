@@ -20,7 +20,7 @@ type Props = {
  * A status as PatternFly's status pattern shows it, the same on every page: a label in the status
  * colour with its icon, the word and colour from utilities/status. A status label is an outline label
  * with its reason in a tooltip, and opens nothing. It is clickable (filled, with onClick) where the
- * Models design (console #114) opens a dialog: a model's clusters table's Status column (what a
+ * Models interaction pattern (frontend/AGENTS.md, Status) opens a dialog: a model's clusters table's Status column (what a
  * cluster reported), and on the Models list the Status words Saved to Git, Syncing and Partially
  * ready beside outline ones (frontend/AGENTS.md, Status).
  */

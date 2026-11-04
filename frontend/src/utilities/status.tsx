@@ -35,7 +35,7 @@ const tones: Record<string, StatusTone> = {
   Active: 'success',
   Pending: 'info',
   Failed: 'danger',
-  // A model's Status column (ModelState) and each cluster's, as in the UX design of console #114:
+  // A model's Status column and each cluster's (the backend's ModelState):
   // Partially ready when clusters disagree; the Git states Saved to Git (grey), Syncing (blue) and
   // Synced; Starting (blue, not PatternFly's purple info); Stopped (grey). Pending sync: a placed
   // cluster that hasn't reported yet.
@@ -88,8 +88,7 @@ export const statusLabelProps = (status: string | undefined): Pick<LabelProps, '
   if (status === 'Stopped') {
     return { color: 'grey', icon: <RhUiOffIcon /> };
   }
-  // Pending sync, and the MaaS words that are Pending in the Availability column (#114's purple
-  // hourglass).
+  // Pending sync, and the MaaS words that are Pending in ModelAvailability, use the purple hourglass.
   if (
     status === 'Pending sync' ||
     status === 'Awaiting subscription' ||
