@@ -129,22 +129,101 @@ func TestV1TenantFieldsNotInBackend(t *testing.T) {
 	ctx := t.Context()
 	conn := &recordingConn{}
 	_, err := v1Tenants{conn}.CreateTenant(ctx, &aigridv1.CreateTenantRequest{Object: &aigridv1.Tenant{
-		Name: "org1", IdentityProvider: &aigridv1.IdentityProvider{Title: "SSO"},
+		Name: "org1", Description: "about org1",
 	}})
 	if status.Code(err) != codes.Unimplemented || conn.method != "" {
-		t.Fatalf("create with an identity provider: %v, sent %q", err, conn.method)
+		t.Fatalf("create with a description: %v, sent %q", err, conn.method)
 	}
 	_, err = v1Tenants{conn}.UpdateTenant(ctx, &aigridv1.UpdateTenantRequest{
-		Object:     &aigridv1.Tenant{Id: "t1", ResourceVersion: "1"},
-		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"domains", "identity_provider"}},
+		Object:     &aigridv1.Tenant{Id: "t1", ResourceVersion: "1", Description: "about org1"},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"domains", "description"}},
 	})
 	if status.Code(err) != codes.Unimplemented || conn.method != "" {
-		t.Fatalf("update of identity_provider: %v, sent %q", err, conn.method)
+		t.Fatalf("update of description: %v, sent %q", err, conn.method)
 	}
 	// Keycloak's defaults are what the backend sets anyway.
 	conn.reply = &backendv1.TenantsCreateResponse{}
 	if _, err := (v1Tenants{conn}).CreateTenant(ctx, &aigridv1.CreateTenantRequest{Object: &aigridv1.Tenant{Name: "org1", Alias: "org1", Enabled: proto.Bool(true)}}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// The identity provider goes to the backend on create and update and comes back on a read,
+// every field in its place. Each field holds a different value, so a swapped pair shows.
+func TestV1TenantIdentityProvider(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	draft := &aigridv1.IdentityProvider{
+		Title: "SSO", Description: "corporate sign-in", Enabled: proto.Bool(true),
+		Config: &aigridv1.OidcConfig{
+			ClientId: "console", ClientSecretSecretName: "org1-idp", Issuer: "https://idp.example.com",
+			AuthorizationUrl: "https://idp.example.com/auth", TokenUrl: "https://idp.example.com/token",
+			DefaultScopes: "openid email", UserInfoUrl: "https://idp.example.com/userinfo",
+			JwksUrl: "https://idp.example.com/jwks", LogoutUrl: "https://idp.example.com/logout",
+			ValidateSignature: proto.Bool(false),
+		},
+	}
+	backend := &backendv1.IdentityProvider{
+		Title: "SSO", Description: "corporate sign-in", Enabled: proto.Bool(true),
+		Config: &backendv1.OidcConfig{
+			ClientId: "console", ClientSecretSecretName: "org1-idp", Issuer: "https://idp.example.com",
+			AuthorizationUrl: "https://idp.example.com/auth", TokenUrl: "https://idp.example.com/token",
+			DefaultScopes: "openid email", UserInfoUrl: "https://idp.example.com/userinfo",
+			JwksUrl: "https://idp.example.com/jwks", LogoutUrl: "https://idp.example.com/logout",
+			ValidateSignature: proto.Bool(false),
+		},
+	}
+	stored := &backendv1.Tenant{Id: "t1", Metadata: &backendv1.Metadata{Name: "org1", Version: 2},
+		Spec: &backendv1.TenantSpec{Domains: []string{"org1.example.com"}, IdentityProvider: backend}}
+
+	conn := &recordingConn{reply: &backendv1.TenantsCreateResponse{Object: stored}}
+	created, err := v1Tenants{conn}.CreateTenant(ctx, &aigridv1.CreateTenantRequest{Object: &aigridv1.Tenant{
+		Name: "org1", Domains: []string{"org1.example.com"}, IdentityProvider: draft,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := conn.req.(*backendv1.TenantsCreateRequest).GetObject().GetSpec().GetIdentityProvider(); !proto.Equal(got, backend) {
+		t.Fatalf("CreateTenant sent identity provider %v, want %v", got, backend)
+	}
+	if !proto.Equal(created.GetObject().GetIdentityProvider(), draft) {
+		t.Fatalf("CreateTenant() identity provider = %v, want %v", created.GetObject().GetIdentityProvider(), draft)
+	}
+
+	// The edit form sends the domains with the identity provider it read; the backend
+	// accepts that unchanged value and refuses any other, so the BFF passes it on as is.
+	conn = &recordingConn{reply: &backendv1.TenantsUpdateResponse{Object: stored}}
+	if _, err := (v1Tenants{conn}).UpdateTenant(ctx, &aigridv1.UpdateTenantRequest{
+		Object:     &aigridv1.Tenant{Id: "t1", ResourceVersion: "2", Domains: []string{"org1.example.com"}, IdentityProvider: draft},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"domains", "identity_provider"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	wantUpdate := &backendv1.TenantsUpdateRequest{
+		Object: &backendv1.Tenant{Id: "t1", Metadata: &backendv1.Metadata{Version: 2},
+			Spec: &backendv1.TenantSpec{Domains: []string{"org1.example.com"}, IdentityProvider: backend}},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"spec.domains", "spec.identity_provider"}},
+		Lock:       true,
+	}
+	if !proto.Equal(conn.req.(proto.Message), wantUpdate) {
+		t.Fatalf("UpdateTenant sent %v, want %v", conn.req, wantUpdate)
+	}
+
+	// A domains-only edit sends only the domains, even when the object carries an identity provider.
+	conn = &recordingConn{reply: &backendv1.TenantsUpdateResponse{Object: stored}}
+	if _, err := (v1Tenants{conn}).UpdateTenant(ctx, &aigridv1.UpdateTenantRequest{
+		Object:     &aigridv1.Tenant{Id: "t1", ResourceVersion: "2", Domains: []string{"org1.example.com"}, IdentityProvider: draft},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"domains"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if paths := conn.req.(*backendv1.TenantsUpdateRequest).GetUpdateMask().GetPaths(); !slices.Equal(paths, []string{"spec.domains"}) {
+		t.Fatalf("domains-only UpdateTenant sent mask %v, want [spec.domains]", paths)
+	}
+
+	// A tenant without one reads back without one.
+	if got := FromV1Tenant(&backendv1.Tenant{Id: "t2"}).GetIdentityProvider(); got != nil {
+		t.Fatalf("FromV1Tenant() identity provider = %v, want none", got)
 	}
 }
 
