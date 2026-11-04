@@ -2,7 +2,7 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import { callBackend as call } from './backend';
 
 // Edit on the backend's own fakes (its fixtures/poc), through the BFF's Connect relay. The fixtures
-// give no member a role: this spec gives site2 the ingress role first, as Add to AI Grid writes it,
+// give no member a role: this spec gives site2 the inference role first, as Add to AI Grid writes it,
 // and edits its location label in the browser (its role is then read-only), and sets a role on
 // site3 in the browser. It puts both clusters' labels back afterwards: its project in
 // playwright.config.ts runs one test at a time, so the other specs see them as the fixture has them.
@@ -29,7 +29,7 @@ const original: Record<string, Labels> = {};
 
 test.beforeAll(async ({ request }) => {
   for (const id of [WITH_ROLE, WITHOUT_ROLE]) original[id] = { ...(await labelsOf(request, id)).labels };
-  await writeLabels(request, WITH_ROLE, { ...original[WITH_ROLE], 'ai-grid/role': 'ingress' });
+  await writeLabels(request, WITH_ROLE, { ...original[WITH_ROLE], 'ai-grid/role': 'inference' });
 });
 
 test.afterAll(async ({ request }) => {
@@ -52,7 +52,7 @@ test("edits a cluster's location label, and sets the role of a cluster without o
   // A cluster with a role: only its location label can be edited.
   let dialog = await openEdit(page, WITH_ROLE);
   const role = dialog.getByRole('textbox', { name: 'Role' });
-  await expect(role).toHaveValue('Ingress');
+  await expect(role).toHaveValue('Inference');
   await expect(role).toHaveAttribute('readonly', '');
   await expect(dialog.getByRole('textbox', { name: 'Location label' })).toHaveValue(WITH_ROLE);
   await expect(dialog.getByRole('button', { name: 'Save' })).toBeDisabled();
@@ -76,7 +76,7 @@ test("edits a cluster's location label, and sets the role of a cluster without o
   // The backend kept both: the list after a reload, then the clusters' pages.
   await page.reload();
   await expect(rowOf(page, WITH_ROLE)).toContainText('us-east-edge');
-  await expect(rowOf(page, WITH_ROLE)).toContainText('Ingress');
+  await expect(rowOf(page, WITH_ROLE)).toContainText('Inference');
   await expect(rowOf(page, WITHOUT_ROLE)).toContainText('Inference');
 
   await rowOf(page, WITH_ROLE).getByRole('link', { name: WITH_ROLE, exact: true }).click();
