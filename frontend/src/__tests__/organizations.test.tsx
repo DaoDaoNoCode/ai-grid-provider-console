@@ -752,3 +752,17 @@ it('heads the wizard sections at h2, moves focus to an added domain, and names t
   const modal = await screen.findByTestId('delete-organization-modal');
   expect(within(modal).getByRole('textbox', { name: `Type ${organization.name} to confirm:` })).toBeVisible();
 });
+
+it('edit: an identity provider saved without a JWKS URL says why at once', async () => {
+  const service = new MockConsoleService();
+  const [organization] = service.organizations;
+  // Saved before the JWKS rule, with Validate signature on.
+  organization.identityProvider = {
+    ...input.identityProvider,
+    config: { ...input.identityProvider.config, jwksUrl: '', validateSignature: true },
+  };
+  const user = userEvent.setup();
+  renderAt(`/organizations/${encodeURIComponent(organization.id)}/edit`, service);
+  await openStep(user, 'Identity provider');
+  expect(await screen.findByText('Enter the JWKS URL, or turn off Validate signature.')).toBeVisible();
+});

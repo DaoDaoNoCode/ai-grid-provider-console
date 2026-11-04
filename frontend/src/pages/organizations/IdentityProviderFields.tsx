@@ -40,6 +40,11 @@ type Props = {
   serverErrors?: Record<string, string>;
   /** While the form saves, so nothing changes under the request. */
   isDisabled?: boolean;
+  /**
+   * Editing a saved provider: a JWKS URL it was saved without shows its message from the start, so
+   * a disabled Next or Save comes with a reason.
+   */
+  isEditing?: boolean;
 };
 
 /** A field's error, or its help when it has none (PatternFly: the error replaces the help). */
@@ -56,8 +61,14 @@ const Help: React.FC<{ error?: string; children?: React.ReactNode }> = ({ error,
  * An organization's OIDC identity provider: who it is, how the console connects (client and
  * issuer), and the provider's endpoints. Renders form fields only; the caller supplies the Form.
  */
-export const IdentityProviderFields: React.FC<Props> = ({ value, onChange, serverErrors = {}, isDisabled }) => {
-  const [touched, setTouched] = useState<Set<string>>(() => new Set());
+export const IdentityProviderFields: React.FC<Props> = ({
+  value,
+  onChange,
+  serverErrors = {},
+  isDisabled,
+  isEditing,
+}) => {
+  const [touched, setTouched] = useState<Set<string>>(() => new Set(isEditing ? ['config.jwksUrl'] : []));
   const errors = fieldErrorsOf(identityProviderSchema, value);
   const error = (path: string): string | undefined =>
     serverErrors[path] ?? (touched.has(path) ? errors[path] : undefined);
