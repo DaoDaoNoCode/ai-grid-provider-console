@@ -289,7 +289,8 @@ subscription) are sent from the app root, never from the form (`frontend/src/not
   center reads the object back every 10 s and says it was not done after 2 minutes. A create is
   done when `Get` finds the object holding what it sent, an update when the version moved past
   the one sent and the object holds what it sent (`writeFields.ts`: a model's display name,
-  source, image, runtime arguments, resources, clusters and replicas; a subscription's names,
+  source, presets, image, runtime arguments and the rest of its environment, resources, clusters
+  and replicas, of an edit the ones its mask names; a subscription's names,
   groups, organization, priority and models), a delete when `Get` answers NotFound. An object
   that exists, or moved on, with other content is someone else's write as far as anyone can
   tell: a warning that the write couldn't be confirmed, with a link to the object, never a
