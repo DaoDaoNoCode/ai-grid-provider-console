@@ -19,6 +19,7 @@ import {
   modelUnconfirmedText,
   notConfirmedText,
   subscriptionActiveText,
+  subscriptionFailedText,
   subscriptionNotActiveText,
   subscriptionUnconfirmedText,
   succeededText,
@@ -55,33 +56,47 @@ export const NO_STATUS_READS = 3;
 
 /**
  * A subscription's status as its watches read it from Subscriptions/Get: its phase, and its
- * authorization policies' (the managed `<id>-policy`, the one Get returns in git mode). Each phase
- * is Active, Pending, Degraded, or empty when no cluster reports.
+ * authorization policies' (the managed `<id>-policy`, the one Get returns in git mode), each with
+ * its Ready condition's message when it has one. Each phase is Active, Pending, Degraded, or empty
+ * when no cluster reports. In git mode the subscription has no condition, and the policy's says
+ * which cluster reports it how ("Failed on site-a; ready on site-b").
  */
-export type SubscriptionStatusView = { phase: string; policies: { id: string; phase: string }[] };
+export type SubscriptionStatusView = {
+  phase: string;
+  message?: string;
+  policies: { id: string; phase: string; message?: string }[];
+};
 
 /**
- * What a status says for the users: `active` when the subscription and its policies are Active,
- * `policy` when the subscription is but a policy isn't, or Get lists none, `subscription` when the
- * subscription isn't. A subscription without a policy gives its users no access to its models, and
- * the backend creates the policy with it, so none listed is a policy not active yet. Degraded is
- * not active either, and not an end: it is also how a subscription reads while a model it names
- * isn't published on a cluster yet (watchActive).
+ * What a status says for the users: `active` when the subscription and its policies are Active;
+ * `subscriptionDegraded` when an ingress cluster reports the subscription failed (Degraded), and
+ * `policyDegraded` when one reports a policy failed; `policy` when the subscription is Active but a
+ * policy isn't, or Get lists none; `subscription` when the subscription isn't. A subscription
+ * without a policy gives its users no access to its models, and the backend creates the policy with
+ * it, so none listed is a policy not active yet. Degraded isn't an end: it is also how a
+ * subscription reads while a model it names isn't published on a cluster yet (watchActive).
  */
-export type Verdict = 'active' | 'policy' | 'subscription';
+export type Verdict = 'active' | 'policy' | 'subscription' | 'policyDegraded' | 'subscriptionDegraded';
 
-const verdictOf = (status: SubscriptionStatusView): Verdict => {
-  if (status.phase !== 'Active') return 'subscription';
+const DEGRADED = 'Degraded';
+
+/** A status's verdict, with the backend's message for a Degraded one. */
+const verdictOf = (status: SubscriptionStatusView): { verdict: Verdict; message?: string } => {
+  if (status.phase === DEGRADED) return { verdict: 'subscriptionDegraded', message: status.message };
+  const degraded = status.policies.find((p) => p.phase === DEGRADED);
+  if (degraded) return { verdict: 'policyDegraded', message: degraded.message };
+  if (status.phase !== 'Active') return { verdict: 'subscription' };
   const { policies } = status;
-  return policies.length > 0 && policies.every((p) => p.phase === 'Active') ? 'active' : 'policy';
+  return { verdict: policies.length > 0 && policies.every((p) => p.phase === 'Active') ? 'active' : 'policy' };
 };
 
 /**
  * What a subscription watch learned from its reads so far, kept in its record so a reload goes on
  * from it: how many reads in a row found no status (`empties`), and the verdict of the last read
- * that found one (`last`, none while no read has).
+ * that found one (`last`, none while no read has), with the backend's message when that verdict is
+ * a Degraded one (`message`).
  */
-export type SubscriptionHistory = { empties: number; last?: Verdict };
+export type SubscriptionHistory = { empties: number; last?: Verdict; message?: string };
 
 export const NO_HISTORY: SubscriptionHistory = { empties: 0 };
 
@@ -98,7 +113,9 @@ export const nextHistory = (
   if (answer === 'failed') return { ...history, empties: 0 };
   const status = answer?.subscription;
   if (!status) return history;
-  return status.phase === '' ? { ...history, empties: history.empties + 1 } : { empties: 0, last: verdictOf(status) };
+  if (status.phase === '') return { ...history, empties: history.empties + 1 };
+  const { verdict, message } = verdictOf(status);
+  return { empties: 0, last: verdict, ...(message ? { message } : {}) };
 };
 
 /**
@@ -117,15 +134,23 @@ export type ReadObject = (subject: WriteSubject, id: string) => Promise<ReadAnsw
 
 /**
  * An object's status as the status watches compare it: a model's phase and reason, and each
- * cluster's with its deployment; a subscription's phase and its policies'; "gone" when the object
- * is. A change is what has the pages refetch, and what a model edit's watch reports a failure on.
+ * cluster's with its deployment and whether its sync failed; a subscription's phase and its
+ * policies'; "gone" when the object is. A change is what has the pages refetch, and what a model
+ * edit's watch reports a failure on. A cluster's failed sync is added only when it failed, so a
+ * status kept before it counted reads the same.
  */
 export const statusOf = (answer: ReadAnswer | undefined) => {
   if (answer?.model) {
     return JSON.stringify([
       answer.model.phase,
       answer.model.reason,
-      answer.model.clusters.map((c) => [c.cluster, c.phase, c.reason, c.deployment]),
+      answer.model.clusters.map((c) => [
+        c.cluster,
+        c.phase,
+        c.reason,
+        c.deployment,
+        ...(c.syncFailed ? ['SyncFailed'] : []),
+      ]),
     ]);
   }
   if (answer?.subscription) {
@@ -199,15 +224,20 @@ const placedClustersOf = (model: ModelView) => {
 
 /**
  * Why a model's deployment failed: the first placed cluster whose LLMInferenceService KServe reports
- * failed (`deployment` FAILED), with KServe's message there. Undefined while none has. The model's
- * overall Failed isn't one: it also covers MaaS failing to publish the model on an ingress cluster,
- * and an Argo CD sync given up on, while the model may run (modelUnavailableOf).
+ * failed (`deployment` FAILED), with KServe's message there, or whose sync Argo CD gave up on
+ * (`sync` FAILED: an admission refusal, a bad manifest), with Argo CD's message: that revision never
+ * lands on the cluster. Undefined while none has. The model's overall Failed isn't one while a
+ * cluster is placed: it also covers MaaS failing to publish the model on an ingress cluster, while
+ * the model runs (maasFailureOf).
  */
 const failureOf = (model: ModelView): { why: string } | undefined => {
-  const failed = placedClustersOf(model).find((p) => p.report?.deployment === 'Failed');
-  if (!failed) return undefined;
-  const report = failed.report;
-  return { why: `${failed.name}: ${report?.deploymentMessage ?? report?.message ?? report?.reason}` };
+  for (const { name, report } of placedClustersOf(model)) {
+    if (report?.deployment === 'Failed') {
+      return { why: `${name}: ${report.deploymentMessage ?? report.message ?? report.reason}` };
+    }
+    if (report?.syncFailed) return { why: `${name}: ${report.syncMessage ?? report.message ?? report.reason}` };
+  }
+  return undefined;
 };
 
 /**
@@ -229,13 +259,14 @@ const maasFailureOf = (model: ModelView): { cluster: string; message?: string }[
  * here means running on its clusters; users reach it through MaaS once its route is set up and a
  * subscription covers it (a model waiting only for that reads Ready in the backend too).
  *
- * A placed cluster whose deployment failed is an error, "Unable to deploy", with KServe's message.
- * Every placed cluster running is a success naming them, unless MaaS failed to publish the model on
- * an ingress cluster: then a warning that it runs but isn't available to users, naming where MaaS
- * failed and why. Anything else is checked again until `since` plus READY_MS, then a warning names
- * the clusters it isn't ready on, or, when that last read failed, says the console couldn't confirm
- * it. A model that is gone stops the watch. A model on the hub alone, with no placed cluster, is
- * ready when its phase is.
+ * A placed cluster whose deployment failed, or whose sync Argo CD gave up on, is an error, "Unable
+ * to deploy", with KServe's or Argo CD's message (failureOf). Every placed cluster running is a
+ * success naming them, unless MaaS failed to publish the model on an ingress cluster: then a warning
+ * that it runs but isn't available to users, naming where MaaS failed and why. Anything else is
+ * checked again until `since` plus READY_MS, then a warning names the clusters it isn't ready on, or,
+ * when that last read failed, says the console couldn't confirm it. A model that is gone stops the
+ * watch. A model with no placed cluster (on the hub alone) is ready when its phase is Ready, and
+ * failed, "Unable to deploy" with the model's message, when its phase is Failed.
  */
 export const watchReady = async (
   target: WriteTarget,
@@ -254,6 +285,7 @@ export const watchReady = async (
     const placed = placedClustersOf(model);
     if (placed.length === 0) {
       if (model.phase === 'Ready') return success(modelReadyText(target.id, target.name, []));
+      if (model.phase === 'Failed') return error(modelFailedText(target.id, target.name, model.statusMessage));
     } else {
       waiting = placed.filter((p) => p.report?.deployment !== 'Running').map((p) => p.name);
       if (waiting.length === 0) {
@@ -278,7 +310,8 @@ export const watchReady = async (
  * An edited model while its changes roll out, until `since` plus READY_MS; then it ends silently. It
  * never says "ready": the status doesn't say which revision it describes, and during a rolling update
  * the previous pod keeps its cluster Ready. It reports one thing, a placed cluster's deployment
- * failed (failureOf; MaaS failing to publish the model isn't one), and only one it saw happen:
+ * failed or its sync was given up on (failureOf; MaaS failing to publish the model isn't one), and
+ * only one it saw happen:
  * `before` is the status the watch saw last (statusOf), none on its first read, which comes as the
  * edit lands, before Argo CD can have applied it. A deployment already failed then is the previous
  * revision's failure, reported only once its status changes (a new failure). A model that is gone
@@ -321,16 +354,20 @@ const noStatusAvailable = (history: SubscriptionHistory) =>
  * Degraded while a model it names has no MaaSModelRef or route on the cluster yet
  * (deriveFinalPhase, models-as-a-service's maassubscription_controller.go), and the Applications'
  * health check reads both as Degraded, so a subscription created with its model reads Degraded
- * until the model is published there, then Active.
+ * until the model is published there, then Active. Get's model registrations say when a model is
+ * published, but nothing says how long MaaS and Argo CD take to turn the subscription Active after
+ * that, so a Degraded that persists is told only at the deadline.
  *
  * Active needs the authorization policy Active too: in MaaS the policy gives the users access to
  * the models and the subscription their quota, and a user needs both. Both active is a success; a
  * subscription Get lists no policy for isn't active, as its policy isn't there yet (verdictOf);
- * anything else is checked again until `since` plus READY_MS, then a warning says which of the two
- * isn't active, from the last read that found a status (the last one may find none, while the
- * backend can't read the reports), or, when the last read failed or no read found a status, that
- * the console couldn't confirm it. An empty phase claims nothing either way: with no status found
- * before, NO_STATUS_READS of them in a row stop the watch silently. `history` is what the earlier
+ * anything else is checked again until `since` plus READY_MS, then a warning from the last read
+ * that found a status (the last one may find none, while the backend can't read the reports): that
+ * an ingress cluster reports the subscription, or its policy, failed, with the backend's message,
+ * when that read had either Degraded; else which of the two isn't active; or, when the last read
+ * failed or no read found a status, that the console couldn't confirm it. An empty phase claims
+ * nothing either way: with no status found before, NO_STATUS_READS of them in a row stop the watch
+ * silently. `history` is what the earlier
  * reads found (nextHistory). A subscription that is gone stops the watch.
  */
 export const watchActive = async (
@@ -342,32 +379,38 @@ export const watchActive = async (
 ): Promise<NotificationWatcherResponse> => {
   // The verdict to judge by: this read's, or, when it found no status, the last read's that did;
   // none when this read failed.
-  let verdict: Verdict | undefined;
+  let judged: SubscriptionHistory | undefined;
   try {
     const answer = await read('subscription', target.id);
     if (!answer?.subscription) return stop;
     const next = nextHistory(history, answer);
     if (noStatusAvailable(next)) return stop;
-    verdict = next.last;
-    if (answer.subscription.phase !== '' && verdict === 'active') return success(subscriptionActiveText(target));
+    judged = next;
+    if (answer.subscription.phase !== '' && next.last === 'active') return success(subscriptionActiveText(target));
   } catch {
     // A failed read is checked again, as a page's poll is.
   }
   if (now() < since + READY_MS) return repoll;
-  // Without a status to judge by, the outcome is unknown: never "isn't active".
-  return warning(
-    verdict === 'subscription' || verdict === 'policy'
-      ? subscriptionNotActiveText(target, verdict)
-      : subscriptionUnconfirmedText(target),
-  );
+  switch (judged?.last) {
+    case 'subscriptionDegraded':
+      return warning(subscriptionFailedText(target, 'subscription', judged.message));
+    case 'policyDegraded':
+      return warning(subscriptionFailedText(target, 'policy', judged.message));
+    case 'subscription':
+    case 'policy':
+      return warning(subscriptionNotActiveText(target, judged.last));
+    default:
+      // Without a status to judge by, the outcome is unknown: never "isn't active".
+      return warning(subscriptionUnconfirmedText(target));
+  }
 };
 
 /**
  * An edited subscription while the ingress clusters apply its changes, until `since` plus READY_MS;
  * then it ends silently. It says nothing: Active doesn't say which version it describes (the
  * clusters' reports name objects, not versions, and the previous version stays active while the
- * new one is applied), and Degraded isn't a failure to report (watchActive). It is there so the
- * pages refetch when the phase changes. Empty phases stop it as they stop watchActive; a
+ * new one is applied), and Degraded may be a model not published yet (watchActive). It is there so
+ * the pages refetch when the phase changes. Empty phases stop it as they stop watchActive; a
  * subscription that is gone stops it.
  */
 export const watchSubscriptionChanges = async (

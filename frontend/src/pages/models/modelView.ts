@@ -8,6 +8,7 @@ import {
   ModelDeploymentState,
   ModelMaasState,
   ModelPhase,
+  ModelSyncState,
   type Model,
   type ModelEnvVar,
   type ModelSpec,
@@ -58,6 +59,13 @@ export type ModelClusterView = {
   deployment: ModelDeploymentWord;
   /** KServe's message about the deployment, for example "Deployment does not have minimum availability.". */
   deploymentMessage?: string;
+  /**
+   * Whether Argo CD's sync of the model to the cluster failed and it stopped retrying (`sync`
+   * FAILED): the revision Git holds never lands there, an admission refusal or a bad manifest.
+   */
+  syncFailed?: boolean;
+  /** Argo CD's sync operation message while the sync failed or is being retried (`sync_message`). */
+  syncMessage?: string;
 };
 
 /** What a placed cluster's LLMInferenceService reports, in words (ModelDeploymentState). */
@@ -217,6 +225,8 @@ export const toModelView = (model: Model): ModelView => {
       message: nonEmpty(c.message),
       deployment: deploymentWords[c.deployment] ?? 'Unknown',
       deploymentMessage: nonEmpty(c.deploymentMessage),
+      syncFailed: c.sync === ModelSyncState.FAILED,
+      syncMessage: nonEmpty(c.syncMessage),
     })),
     maasFailed: status?.maas === ModelMaasState.FAILED,
     ingress: (status?.ingress ?? []).map((i) => ({

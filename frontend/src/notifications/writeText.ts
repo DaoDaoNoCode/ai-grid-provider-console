@@ -327,6 +327,28 @@ export const subscriptionNotActiveText = (t: WriteTarget, inactive: 'subscriptio
 };
 
 /**
+ * A created subscription's watch reached READY_MINUTES with an ingress cluster reporting the
+ * subscription, or its authorization policy, failed (Degraded): a reported failure, so not "yet",
+ * with the backend's message when the status carries one. A warning, not an error: Degraded is also
+ * how a subscription reads while a model it names isn't published yet.
+ */
+export const subscriptionFailedText = (
+  t: WriteTarget,
+  failed: 'subscription' | 'policy',
+  message: string | undefined,
+): Text => {
+  const what = failed === 'policy' ? 'its authorization policy' : 'it';
+  const reported = message
+    ? `An ingress cluster reports ${what} failed: ${withoutPeriod(message)}.`
+    : `An ingress cluster reports ${what} failed.`;
+  const check =
+    failed === 'policy'
+      ? "Open the subscription to check the policy's status."
+      : "Open the subscription to check its status and its models' status.";
+  return { title: `Subscription ${t.name} isn't active`, message: `${reported} ${check}`, actions: [viewAction(t)] };
+};
+
+/**
  * A created subscription's watch reached READY_MINUTES without a status to judge by: its last read
  * failed, or found no status (the backend's read of the clusters' reports failed). Whether it is
  * active is unknown, so a warning that says so, not that it isn't active.

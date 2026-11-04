@@ -16,6 +16,7 @@ import { get as getModel } from '../gen/ai_grid/v1/models_service-Models_connect
 import { Subscriptions } from '../gen/ai_grid/v1/subscriptions_service_pb';
 import { get as getSubscription } from '../gen/ai_grid/v1/subscriptions_service-Subscriptions_connectquery';
 import { toModelView } from '../pages/models/modelView';
+import { readyConditionOf } from '../pages/subscriptions/subscriptionText';
 import type { GetStorage } from '../utilities/signInAgain';
 import { isObject, readRecords, removeRecords, writeRecords } from './sessionRecords';
 import { draftsKey, watchesKey } from './storageKeys';
@@ -64,8 +65,9 @@ const defaultFormWait = (signal: AbortSignal) =>
  * subscription until it is active (watchActive). `changes`: an edited model while its changes roll
  * out (watchChanges), an edited subscription while they are applied (watchSubscriptionChanges).
  * `notificationId` is the write's in-progress entry, which its outcome replaces. `status`: a status
- * watch's last seen status (statusOf), so a reload still tells a change from none. `empties` and
- * `lastVerdict`: a subscription watch's history (SubscriptionHistory), so a reload goes on counting.
+ * watch's last seen status (statusOf), so a reload still tells a change from none. `empties`,
+ * `lastVerdict` and `lastMessage`: a subscription watch's history (SubscriptionHistory), so a reload
+ * goes on counting.
  * `edit`: on a `ready` watch, the latest edit of the object made while it ran (its name and when it
  * landed), whose name the watch's outcome uses (a rename), and which the watch goes on following as
  * a `changes` watch once it ends, until that edit's own READY_MS has run out.
@@ -78,6 +80,7 @@ type WatchRecord = WriteTarget & {
   status?: string;
   empties?: number;
   lastVerdict?: Verdict;
+  lastMessage?: string;
   edit?: { name: string; since: number };
 };
 
@@ -109,6 +112,7 @@ const targetOf = ({ subject, op, id, name, version, expected, clusters, organiza
 const historyOf = (record: WatchRecord): SubscriptionHistory => ({
   empties: record.empties ?? 0,
   ...(record.lastVerdict ? { last: record.lastVerdict } : {}),
+  ...(record.lastMessage ? { message: record.lastMessage } : {}),
 });
 
 /** The watches that follow an object's status after its write landed. */
@@ -133,7 +137,10 @@ const isRecord = (value: unknown): value is WatchRecord =>
   (value.lastVerdict === undefined ||
     value.lastVerdict === 'active' ||
     value.lastVerdict === 'policy' ||
-    value.lastVerdict === 'subscription') &&
+    value.lastVerdict === 'subscription' ||
+    value.lastVerdict === 'policyDegraded' ||
+    value.lastVerdict === 'subscriptionDegraded') &&
+  (value.lastMessage === undefined || typeof value.lastMessage === 'string') &&
   (value.edit === undefined ||
     (isObject(value.edit) &&
       typeof value.edit.name === 'string' &&
@@ -255,7 +262,12 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
             fields: subscriptionFields(object),
             subscription: {
               phase: object.status?.phase.trim() ?? '',
-              policies: authPolicies.map((p) => ({ id: p.id, phase: p.phase.trim() })),
+              message: readyConditionOf(object.status?.conditions).statusMessage?.trim() || undefined,
+              policies: authPolicies.map((p) => ({
+                id: p.id,
+                phase: p.phase.trim(),
+                message: readyConditionOf(p.conditions).statusMessage?.trim() || undefined,
+              })),
             },
           }
         );
@@ -330,7 +342,9 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
             changed = before !== undefined && before !== status;
             if (status !== undefined) lastStatus.current.set(key, status);
             const historyMoved =
-              nextStatusHistory.empties !== history.empties || nextStatusHistory.last !== history.last;
+              nextStatusHistory.empties !== history.empties ||
+              nextStatusHistory.last !== history.last ||
+              nextStatusHistory.message !== history.message;
             history = nextStatusHistory;
             if (!final && (status !== before || historyMoved)) {
               keep({
@@ -338,6 +352,7 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
                 ...(status === undefined ? {} : { status }),
                 empties: history.empties,
                 ...(history.last ? { lastVerdict: history.last } : {}),
+                lastMessage: history.message,
               });
             }
           }
@@ -381,6 +396,7 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
                 ...(seenStatus === undefined ? {} : { status: seenStatus }),
                 empties: history.empties,
                 ...(history.last ? { lastVerdict: history.last } : {}),
+                lastMessage: history.message,
               });
             }
             drop(key);

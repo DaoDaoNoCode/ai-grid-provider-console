@@ -14,6 +14,7 @@ import {
   watchSubscriptionChanges,
   type ReadAnswer,
   type ReadObject,
+  type SubscriptionHistory,
 } from './writeWatches';
 import type { WriteTarget } from './writeText';
 
@@ -231,6 +232,46 @@ describe('watchReady', () => {
     });
   });
 
+  it("says the model couldn't be deployed when Argo CD gave up its sync on a placed cluster, in Argo CD's words", async () => {
+    // The LLMInferenceService never lands on site-c, so its deployment stays Unknown.
+    const refused = view('Failed', {
+      reason: 'Failed',
+      clusters: [
+        running,
+        {
+          cluster: 'site-c',
+          phase: 'Failed',
+          reason: 'Failed',
+          message: 'Sync failed',
+          deployment: 'Unknown',
+          syncFailed: true,
+          syncMessage: 'admission webhook "validating.kserve.io" denied the request: invalid model URI',
+        },
+      ],
+    });
+    expect(await watchReady(model('create'), SINCE, reads(refused), during)).toEqual({
+      status: NotificationResponseStatus.ERROR,
+      title: 'Unable to deploy model Widget',
+      message: 'site-c: admission webhook "validating.kserve.io" denied the request: invalid model URI',
+      actions: [{ title: 'View model', to: '/models/widget' }],
+    });
+  });
+
+  it("says the model couldn't be deployed when it has no placed cluster and its phase is Failed, in the model's words", async () => {
+    const failed = view('Failed', {
+      reason: 'Failed',
+      statusMessage: 'MaaSModelRef on site-a: HTTPRoute rejected',
+      clusters: [],
+      selectedClusters: [],
+    });
+    expect(await watchReady(model('create'), SINCE, reads(failed), during)).toEqual({
+      status: NotificationResponseStatus.ERROR,
+      title: 'Unable to deploy model Widget',
+      message: 'MaaSModelRef on site-a: HTTPRoute rejected',
+      actions: [{ title: 'View model', to: '/models/widget' }],
+    });
+  });
+
   it('says it runs but users cannot reach it when MaaS failed to publish it, not that it failed to deploy', async () => {
     // The backend calls the whole model Failed, but its deployment runs on every placed cluster.
     expect(await watchReady(model('create'), SINCE, reads(maasFailed), during)).toEqual({
@@ -429,6 +470,27 @@ describe('watchChanges', () => {
     });
   });
 
+  it('says the changes failed when Argo CD gives up their sync on a placed cluster, while the previous revision runs', async () => {
+    const refused = view('Failed', 'Running', {
+      clusters: [
+        {
+          cluster: 'site-b',
+          phase: 'Failed',
+          reason: 'Failed',
+          deployment: 'Running',
+          syncFailed: true,
+          syncMessage: 'one or more objects failed to apply',
+        },
+      ],
+    });
+    expect(await watchChanges(model('update'), SINCE, reads(refused), during, statusOf(ready))).toEqual({
+      status: NotificationResponseStatus.ERROR,
+      title: 'Unable to roll out changes to model Widget',
+      message: 'site-b: one or more objects failed to apply',
+      actions: [{ title: 'View model', to: '/models/widget' }],
+    });
+  });
+
   it('says nothing when only MaaS fails after the edit: the deployment runs', async () => {
     const maasFailed = view('Failed', 'Running', {
       reason: 'Failed',
@@ -568,21 +630,66 @@ describe('watchActive', () => {
       status: NotificationResponseStatus.SUCCESS,
       title: 'Subscription Team A is active',
     });
-    expect(await watchActive(created(), SINCE, reads(degraded), past, history)).toMatchObject({
+    expect(await watchActive(created(), SINCE, reads(degraded), past, history)).toEqual({
       status: NotificationResponseStatus.WARNING,
-      title: "Subscription Team A isn't active yet",
-      message: expect.stringMatching(/^It isn't active on every ingress cluster/),
+      title: "Subscription Team A isn't active",
+      message:
+        "An ingress cluster reports it failed. Open the subscription to check its status and its models' status.",
+      actions: [{ title: 'View subscription', to: '/subscriptions/view/team-a' }],
     });
   });
 
-  it('warns about the policy when only its policy is degraded', async () => {
-    const policyDegraded = status('Active', 'Degraded');
+  it("says at the deadline that an ingress cluster reports the subscription failed, in the backend's words", async () => {
+    const degraded: ReadAnswer = {
+      version: 1,
+      subscription: {
+        phase: 'Degraded',
+        message: 'MaaSModelRef granite not found.',
+        policies: [{ id: 'team-a-policy', phase: 'Pending' }],
+      },
+    };
+    expect(await watchActive(created(), SINCE, reads(degraded), during)).toEqual({
+      status: NotificationResponseStatus.REPOLL,
+    });
+    expect(await watchActive(created(), SINCE, reads(degraded), past)).toEqual({
+      status: NotificationResponseStatus.WARNING,
+      title: "Subscription Team A isn't active",
+      message:
+        "An ingress cluster reports it failed: MaaSModelRef granite not found. Open the subscription to check its status and its models' status.",
+      actions: [{ title: 'View subscription', to: '/subscriptions/view/team-a' }],
+    });
+  });
+
+  it("says at the deadline that an ingress cluster reports its policy failed, with the policy's message", async () => {
+    const policyDegraded: ReadAnswer = {
+      version: 1,
+      subscription: {
+        phase: 'Active',
+        policies: [{ id: 'team-a-policy', phase: 'Degraded', message: 'Failed on site-a; ready on site-b' }],
+      },
+    };
     expect(await watchActive(created(), SINCE, reads(policyDegraded), during)).toEqual({
       status: NotificationResponseStatus.REPOLL,
     });
-    expect(await watchActive(created(), SINCE, reads(policyDegraded), past)).toMatchObject({
+    expect(await watchActive(created(), SINCE, reads(policyDegraded), past)).toEqual({
       status: NotificationResponseStatus.WARNING,
-      message: expect.stringMatching(/^Its authorization policy isn't active on every ingress cluster/),
+      title: "Subscription Team A isn't active",
+      message:
+        "An ingress cluster reports its authorization policy failed: Failed on site-a; ready on site-b. Open the subscription to check the policy's status.",
+      actions: [{ title: 'View subscription', to: '/subscriptions/view/team-a' }],
+    });
+    // A pending subscription with a failed policy: the reported failure is what the warning says.
+    expect(await watchActive(created(), SINCE, reads(status('Pending', 'Degraded')), past)).toMatchObject({
+      title: "Subscription Team A isn't active",
+      message: expect.stringMatching(/^An ingress cluster reports its authorization policy failed\. /),
+    });
+  });
+
+  it('says only what the last status says: a Degraded subscription that turned Pending is not active yet', async () => {
+    const history = nextHistory(NO_HISTORY, status('Degraded'));
+    expect(await watchActive(created(), SINCE, reads(status('Pending')), past, history)).toMatchObject({
+      title: "Subscription Team A isn't active yet",
+      message: expect.stringMatching(/^It isn't active on every ingress cluster/),
     });
   });
 
@@ -624,6 +731,16 @@ describe('watchActive', () => {
         status: NotificationResponseStatus.WARNING,
         title: "Subscription Team A isn't active yet",
         message: expect.stringMatching(/^Its authorization policy isn't active/),
+      });
+    });
+
+    it('says the failure the last status reported, with its message, when the last read finds none', async () => {
+      const history = { empties: 5, last: 'subscriptionDegraded', message: 'MaaSModelRef granite not found' } as const;
+      expect(await watchActive(created(), SINCE, none, past, history)).toMatchObject({
+        status: NotificationResponseStatus.WARNING,
+        title: "Subscription Team A isn't active",
+        message:
+          "An ingress cluster reports it failed: MaaSModelRef granite not found. Open the subscription to check its status and its models' status.",
       });
     });
 
@@ -720,6 +837,22 @@ describe('nextHistory', () => {
     expect(nextHistory({ empties: 2 }, undefined)).toEqual({ empties: 2 });
   });
 
+  it("keeps a Degraded verdict's message through empty and failed reads, and drops it with the next status", () => {
+    const degraded: ReadAnswer = {
+      version: 1,
+      subscription: { phase: 'Degraded', message: 'MaaSModelRef granite not found', policies: [] },
+    };
+    const failed: SubscriptionHistory = {
+      empties: 0,
+      last: 'subscriptionDegraded',
+      message: 'MaaSModelRef granite not found',
+    };
+    expect(nextHistory(NO_HISTORY, degraded)).toEqual(failed);
+    expect(nextHistory(failed, status(''))).toEqual({ ...failed, empties: 1 });
+    expect(nextHistory(failed, 'failed')).toEqual(failed);
+    expect(nextHistory(failed, status('Pending'))).toEqual({ empties: 0, last: 'subscription' });
+  });
+
   it('never stops a watch on empty reads with failed reads between them', async () => {
     // empty, failed, empty, failed, empty: no three empty reads in a row.
     let history = NO_HISTORY;
@@ -737,5 +870,19 @@ describe('statusOf', () => {
     expect(of('Active', 'Pending')).not.toBe(of('Active', 'Active'));
     expect(of('Active', 'Active')).toBe(of('Active', 'Active'));
     expect(statusOf(undefined)).toBe('gone');
+  });
+
+  it('tells a cluster whose sync Argo CD gave up on from one still syncing, and reads the same as before otherwise', () => {
+    const of = (syncFailed?: boolean) =>
+      statusOf({
+        version: 1,
+        model: {
+          phase: 'Failed',
+          clusters: [{ cluster: 'site-b', phase: 'Failed', reason: 'Failed', deployment: 'Running', syncFailed }],
+        } as ModelView,
+      });
+    expect(of(true)).not.toBe(of(false));
+    expect(of(false)).toBe(of(undefined));
+    expect(of(false)).toBe(JSON.stringify(['Failed', null, [['site-b', 'Failed', 'Failed', 'Running']]]));
   });
 });

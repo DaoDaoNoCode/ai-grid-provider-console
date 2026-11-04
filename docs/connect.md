@@ -230,8 +230,9 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   and a View link (`view_url`, `view_target`), the model's `deployment`, `maas` and `state`
   summaries, and each ingress cluster's MaaS state (`status.ingress`), for the Status and
   Availability columns the Models pages don't show yet. `toModelView` reads only
-  `clusters[].deployment` and `deployment_message`, `status.maas` and each `status.ingress`
-  entry's failure and message today, for the notification center's watches ("Writes that take
+  `clusters[].deployment` and `deployment_message`, whether `clusters[].sync` is FAILED and its
+  `sync_message`, `status.maas` and each `status.ingress` entry's failure and message today, for
+  the notification center's watches ("Writes that take
   long"). The pages still show the phase: a model that runs while MaaS failed to publish it reads
   Failed ("Deployment failed") there.
 - **Writes.** The wizard calls `Models/Create` with the id and `metadata.name`, the annotations,
@@ -361,27 +362,32 @@ subscription) are sent from the app root, never from the form (`frontend/src/not
   combined cluster's phase its MaaSModelRef and ExternalModel, which stay pending while MaaS sets
   up the route, and a model whose Argo CD sync reads OutOfSync while it runs. "Ready" means
   running on its clusters; users reach it through MaaS once its route is set up and a subscription
-  covers it (a model waiting only for a subscription reads Ready in the backend too). Only a
-  placed cluster whose deployment KServe reports failed (`deployment` FAILED) is an error,
-  "Unable to deploy model <name>", with the cluster and KServe's message (`deployment_message`).
-  The model's overall Failed isn't: the backend also reports it when MaaS fails to publish the
-  model on an ingress cluster, or when Argo CD gives up a sync. When every placed cluster runs the
+  covers it (a model waiting only for a subscription reads Ready in the backend too). A placed
+  cluster whose deployment KServe reports failed (`deployment` FAILED) is an error, "Unable to
+  deploy model <name>", with the cluster and KServe's message (`deployment_message`); so is a
+  placed cluster whose sync Argo CD gave up on (`sync` FAILED: an admission refusal, a bad
+  manifest), with the cluster and Argo CD's message (`sync_message`), as the LLMInferenceService
+  never lands there and its deployment would stay Unknown. A model with no placed cluster (on the
+  hub alone) is ready when its phase is Ready, and "Unable to deploy model <name>", with the
+  model's `status.message`, when its phase is Failed. Otherwise the model's overall Failed isn't
+  a failure: the backend also reports it when MaaS fails to publish the model on an ingress
+  cluster. When every placed cluster runs the
   model but MaaS failed (`status.maas`, or a `status.ingress` entry, FAILED), the watch ends with
   a warning instead of "ready": "Model <name> is running but isn't available to users", "It runs
   on <clusters>. MaaS couldn't publish it on <ingress cluster>: <MaaS's message>. Open the model
   to check its status." MaaS still routing, or waiting for a subscription, isn't a failure. A
   model stopped on a cluster isn't running there. After 30 minutes the watch warns "Model <name>
-  isn't ready yet", naming the clusters it isn't ready on (a sync Argo CD gave up on included);
-  a model that is gone stops it.
+  isn't ready yet", naming the clusters it isn't ready on; a model that is gone stops it.
 - An edited model is watched the same way, every 20 s for 30 minutes, but never said to be ready:
   its status doesn't say which revision it describes, and during a rolling update the previous pod
   keeps its cluster Ready, so the previous revision's Ready would read as the edit's. It reports
   one thing, a failure it sees happen: "Unable to roll out changes to model <name>", with the
   cluster, KServe's message and a link to the model, when a placed cluster's deployment turns
-  failed (MaaS failing to publish the model isn't one). Its first read comes as the edit lands,
+  failed, or with Argo CD's message when it gives up the sync of the changes on a placed cluster
+  (MaaS failing to publish the model isn't one). Its first read comes as the edit lands,
   before Argo CD can have applied it, so a deployment already failed then is the previous
-  revision's failure, reported only if its status (each cluster's phase, reason and deployment)
-  changes. After 30
+  revision's failure, reported only if its status (each cluster's phase, reason and deployment,
+  and whether its sync failed) changes. After 30
   minutes it ends without a word; a model that is gone stops it. Edits get a "ready" once the
   backend reports the revision its status describes.
 - A created subscription is watched the same way, every 20 s for up to 30 minutes, through
@@ -398,12 +404,22 @@ subscription) are sent from the app root, never from the form (`frontend/src/not
   cluster reports the object ready, Degraded when any reports it failed, Pending while any
   reports it pending or doesn't list it yet, and empty when no cluster has an Application in that
   ApplicationSet (or the backend can't list them). Degraded doesn't end the watch, and it reports
-  no error: MaaS calls a subscription Degraded or Failed while a model it names has no
-  MaaSModelRef or route on the cluster yet, which the health check reads as Degraded, so a
-  subscription created with its model reads Degraded until the model is published, then Active.
-  There is no per-cluster list for a subscription. After 30 minutes it warns "Subscription
-  <name> isn't active yet", saying whether the subscription or its policy isn't active (from the
-  last read that found a status) and where to look; when its last read failed, or no read found a
+  no error before the deadline: MaaS calls a subscription Degraded or Failed while a model it
+  names has no MaaSModelRef or route on the cluster yet, which the health check reads as Degraded,
+  so a subscription created with its model reads Degraded until the model is published, then
+  Active. `Get`'s `model_registrations` say when each model is published, but nothing says how
+  long MaaS and Argo CD take to turn the subscription Active after that, so the watch doesn't end
+  early on a Degraded that persists. There is no per-cluster list for a subscription. After 30
+  minutes, when the last read that found a status had the subscription or its policy Degraded,
+  it warns "Subscription <name> isn't active" (no "yet": a cluster reported a failure): "An
+  ingress cluster reports it failed: <message>. Open the subscription to check its status and its
+  models' status.", or for the policy "An ingress cluster reports its authorization policy
+  failed: <message>. Open the subscription to check the policy's status." The message is the
+  Ready condition's (`status.conditions` for the subscription, which git mode leaves empty, so
+  the sentence ends at "failed"; the policy's says which cluster reports it how, "Failed on
+  site-a; ready on site-b"). Otherwise it warns "Subscription <name> isn't active yet", saying
+  whether the subscription or its policy isn't active (from the last read that found a status)
+  and where to look; when its last read failed, or no read found a
   status, it says "Unable to confirm subscription <name> is active" instead, as a model's watch
   says "Unable to confirm model <name> is ready". An empty phase claims nothing. Before any status
   has been found it describes the environment (no cluster has a catalog Application for
@@ -417,9 +433,9 @@ subscription) are sent from the app root, never from the form (`frontend/src/not
   record, so a reload goes on counting. A subscription that is gone stops it.
 - An edited subscription is watched every 20 s for 30 minutes too, and never said to be active:
   the clusters' reports name objects, not versions, and the previous version stays Active while
-  the new one is applied. Degraded isn't a failure to report either (above), so it only has the
-  pages refetch when the phase changes, and ends without a word (or after three empty phases in a row with no status
-  found, as above).
+  the new one is applied. Degraded may be a model not published yet (above), so it only has the
+  pages refetch when the phase changes, and ends without a word (or after three empty phases in a
+  row with no status found, as above).
 - One watch follows a model, and one a subscription, at a time, so nothing is said twice:
   deploying or creating an id again replaces its earlier watch; an edit replaces the previous
   edit's watch. An edit made while a create's readiness watch of the object still runs adds no

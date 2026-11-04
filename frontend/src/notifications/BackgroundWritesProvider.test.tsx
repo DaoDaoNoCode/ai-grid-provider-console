@@ -15,8 +15,10 @@ import {
   ModelPhase,
   ModelSchema,
   ModelState,
+  ModelSyncState,
 } from '../gen/ai_grid/v1/model_type_pb';
 import { list as listModels } from '../gen/ai_grid/v1/models_service-Models_connectquery';
+import { ConditionStatus } from '../gen/ai_grid/v1/condition_type_pb';
 import { AuthPolicySchema, SubscriptionSchema } from '../gen/ai_grid/v1/subscription_type_pb';
 import {
   get as getSubscription,
@@ -408,6 +410,42 @@ it('says once that an edited model failed to roll out its changes', async () => 
   }
 });
 
+/** The notifications the tab keeps for the user, with their messages. */
+const storedNotifications = (storage: ReturnType<typeof memoryStorage>) =>
+  JSON.parse(storage.values.get(notificationsKey('dev-user')) ?? '[]') as { title: string; message?: string }[];
+
+it("says a deployed model couldn't be deployed as soon as Argo CD gives up its sync on a placed cluster", async () => {
+  vi.useFakeTimers();
+  try {
+    const { state, storage } = editing([readyRecord(Date.now())]);
+    // The LLMInferenceService never lands on site-b: its deployment has no report.
+    state.model.status!.phase = ModelPhase.FAILED;
+    state.model.status!.reason = 'Failed';
+    state.model.status!.clusters = [
+      create(ModelClusterStatusSchema, {
+        cluster: 'site-b',
+        phase: ModelPhase.FAILED,
+        reason: 'Failed',
+        message: 'Sync failed',
+        sync: ModelSyncState.FAILED,
+        syncMessage: 'admission webhook "validating.kserve.io" denied the request',
+        state: ModelState.FAILED,
+      }),
+    ];
+    await pass(0);
+    expect(screen.getAllByText('Unable to deploy model Widget')).toHaveLength(1);
+    expect(storedNotifications(storage)).toContainEqual(
+      expect.objectContaining({
+        title: 'Unable to deploy model Widget',
+        message: 'site-b: admission webhook "validating.kserve.io" denied the request',
+      }),
+    );
+    expect(modelWatches(storage)).toEqual([]);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it("adds no watch to an edited model whose deploy's readiness watch still runs", async () => {
   const { storage } = editing([readyRecord(Date.now())]);
   await waitFor(() => expect(modelWatches(storage)).toHaveLength(1));
@@ -787,6 +825,47 @@ describe('a subscription watch', () => {
     await pass(READY_POLL_MS);
     expect(screen.getByText("Subscription Team A isn't active yet")).toBeInTheDocument();
     expect(subscriptionWatches(storage)).toEqual([]);
+  });
+
+  it("says at the deadline, after a reload, that an ingress cluster reports its policy failed, in the policy's words", async () => {
+    const first = subscribing([activeRecord(Date.now())]);
+    // Subscriptions/Get: the policy's Ready condition says where it failed (withAuthPolicyStatus).
+    first.state.answer = {
+      ...teamA('Active'),
+      authPolicies: [
+        create(AuthPolicySchema, {
+          id: 'team-a-policy',
+          phase: 'Degraded',
+          conditions: [
+            {
+              type: 'Ready',
+              status: ConditionStatus.FALSE,
+              reason: 'Failed',
+              message: 'Failed on site-a; ready on site-b',
+            },
+          ],
+        }),
+      ],
+    };
+    await pass(0);
+    expect(subscriptionWatches(first.storage)).toMatchObject([
+      { key: 's1', lastVerdict: 'policyDegraded', lastMessage: 'Failed on site-a; ready on site-b' },
+    ]);
+    first.unmount();
+
+    // After the reload the backend can't read the clusters' reports: the kept status is what it says.
+    first.state.answer = teamA('');
+    const second = subscribing([], first);
+    await pass(READY_MS);
+    expect(screen.getAllByText("Subscription Team A isn't active")).toHaveLength(1);
+    expect(storedNotifications(second.storage)).toContainEqual(
+      expect.objectContaining({
+        title: "Subscription Team A isn't active",
+        message:
+          "An ingress cluster reports its authorization policy failed: Failed on site-a; ready on site-b. Open the subscription to check the policy's status.",
+      }),
+    );
+    expect(subscriptionWatches(second.storage)).toEqual([]);
   });
 
   it("resumes a created subscription's watch after a reload", async () => {
