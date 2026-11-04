@@ -1657,6 +1657,13 @@ describe('editing what a deployed model runs', () => {
     return update.mock.calls[0][0];
   };
 
+  // The model page after a save. The Review step has a list labelled Deployment too, so wait for the
+  // wizard to leave before reading the page's.
+  const deploymentAfterSave = async () => {
+    await waitFor(() => expect(screen.queryByTestId('model-review')).not.toBeInTheDocument());
+    return screen.findByLabelText('Deployment');
+  };
+
   const envOf = (env: { name: string; value: string }[] | undefined) =>
     env?.map(({ name, value }) => ({ name, value }));
 
@@ -1686,9 +1693,7 @@ describe('editing what a deployed model runs', () => {
       expect.objectContaining({ uri: 'hf://example-org/granite-3.3-8b-instruct', name: '' }),
     );
     expect(await screen.findByText('Changes to model Granite 3.3 8B Instruct saved to Git')).toBeVisible();
-    expect(await screen.findByLabelText('Deployment')).toHaveTextContent(
-      'Model URIhf://example-org/granite-3.3-8b-instruct',
-    );
+    expect(await deploymentAfterSave()).toHaveTextContent('Model URIhf://example-org/granite-3.3-8b-instruct');
   });
 
   it('checks a new model URI as Deploy does, and keeps one the model already has', async () => {
@@ -1735,7 +1740,7 @@ describe('editing what a deployed model runs', () => {
       'nvidia.com/gpu': '1',
       'ephemeral-storage': '20Gi',
     });
-    const details = await screen.findByLabelText('Deployment');
+    const details = await deploymentAfterSave();
     expect(details).toHaveTextContent('CPU4');
     expect(details).toHaveTextContent('Memory32Gi');
   });
@@ -2038,7 +2043,7 @@ describe('editing what a deployed model runs', () => {
     expect(request.object?.spec?.baseRefs).toEqual([]);
     expect(await screen.findByText('Changes to model Granite 3.3 8B Instruct saved to Git')).toBeVisible();
     expect(models.find('granite-3-8b').spec?.baseRefs).toEqual([]);
-    expect(await screen.findByLabelText('Deployment')).not.toHaveTextContent('Presets');
+    expect(await deploymentAfterSave()).not.toHaveTextContent('Presets');
   });
 
   it('requires an image once the presets that set it are removed, off NVIDIA GPUs', async () => {
