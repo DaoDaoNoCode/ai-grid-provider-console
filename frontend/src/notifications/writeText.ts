@@ -483,3 +483,19 @@ export const clusterLeftUnconfirmedText = (t: WriteTarget): Text => ({
   message: clusterUnreadStatus(t),
   actions: [viewCluster(t)],
 });
+
+/**
+ * An organization saved or deleted. The backend writes it to Keycloak and answers once the write
+ * is complete (or rolled back), so there is nothing to follow, and a refusal stays on the form or
+ * in the dialog. `name` is the one the backend answered with; for a delete, the dialog's.
+ */
+export const organizationSavedText = (
+  op: 'create' | 'update' | 'delete',
+  { id, name }: { id: string; name: string },
+): Text => {
+  if (op === 'delete') return { title: `Organization ${name} deleted` };
+  return {
+    title: op === 'create' ? `Organization ${name} created` : `Changes to organization ${name} saved`,
+    actions: [{ title: 'View organization', to: `/organizations/${encodeURIComponent(id)}` }],
+  };
+};

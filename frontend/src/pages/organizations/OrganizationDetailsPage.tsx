@@ -16,7 +16,7 @@ export const OrganizationDetailsPage: React.FC = () => {
   const { user } = useConsoleSession();
   const [confirmDelete, deleteModal] = useDeleteOrganization({
     refresh: () => void refresh(),
-    onDeleted: () => navigate('/organizations', { state: { notice: 'Organization deleted' } }),
+    onDeleted: () => navigate('/organizations'),
   });
 
   const actions = organization && user?.isProviderAdmin && (

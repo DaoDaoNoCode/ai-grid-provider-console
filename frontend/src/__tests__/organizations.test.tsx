@@ -21,6 +21,7 @@ import { deferred, renderAt, findVisible } from './render';
 import '../pages/organizations/OrganizationDetailsPage';
 import '../pages/organizations/OrganizationListPage';
 import '../pages/organizations/OrganizationWizardPage';
+import { notificationsKey } from '../notifications/storageKeys';
 import { TestApp } from './TestApp';
 
 const input: Required<OrganizationInput> = {
@@ -158,7 +159,7 @@ it('onboards organization details then IdP, saves only after review and orders n
   const table = await screen.findByTestId('organizations-table');
   expect(table).toHaveTextContent('Tenant 1 SSO');
   expect(table).toHaveTextContent('tenant1.example.com');
-  expect(await screen.findByText('Organization created')).toBeVisible();
+  expect(await screen.findByText('Organization tenant1 created')).toBeVisible();
   const [sent] = tenantsOf(service).sent('create');
   expect(sent.object?.metadata?.name).toBe('tenant1');
   expect(sent.object?.spec?.domains).toEqual(['tenant1.example.com']);
@@ -195,7 +196,7 @@ it('opens an organization from the list and edits its domains, its identity prov
   await user.clear(domain);
   await user.paste('updated.example.com');
   await saveEdit(user);
-  expect(await screen.findByText('Organization updated')).toBeVisible();
+  expect(await screen.findByText('Changes to organization tenant1 saved')).toBeVisible();
   const details = await screen.findByTestId('organization-configuration-details');
   expect(details).toHaveTextContent('updated.example.com');
   expect(details).toHaveTextContent('https://sso.example.com/tenant1');
@@ -216,10 +217,51 @@ it('deletes an organization from its page after its name is typed', async () => 
   await user.click(within(modal).getByTestId('delete-modal-input'));
   await user.paste('tenant1');
   await user.click(within(modal).getByRole('button', { name: 'Delete' }));
-  expect(await screen.findByText('Organization deleted')).toBeVisible();
+  expect(await screen.findByText('Organization tenant1 deleted')).toBeVisible();
   // The list reloads after the delete; the toast can show before it does.
   expect(await screen.findByRole('heading', { name: 'No organizations' })).toBeVisible();
   expect(tenantsOf(service).tenants).toEqual([]);
+});
+
+it('keeps a refused create on the form, without a notification of its own', async () => {
+  const service = emptyService();
+  addOrganization(service, input);
+  const user = userEvent.setup();
+  renderAt('/organizations/create', service);
+  await user.click(await screen.findByRole('textbox', { name: 'Name' }));
+  await user.paste('tenant1');
+  await user.click(screen.getByRole('button', { name: 'Next' }));
+  await user.click(screen.getByRole('button', { name: 'Next' }));
+  await user.click(screen.getByRole('button', { name: 'Create organization' }));
+  // The backend's AlreadyExists, in its words.
+  expect(await screen.findByText('tenant "tenant1" already exists')).toBeVisible();
+  // The form says it once; the notification center says nothing.
+  expect(screen.getAllByText('tenant "tenant1" already exists')).toHaveLength(1);
+  expect(window.sessionStorage.getItem(notificationsKey('dev-user'))).toBeNull();
+});
+
+it('keeps each organization write in the drawer, named, with a link to the organization', async () => {
+  const service = emptyService();
+  const created = addOrganization(service, input);
+  const user = userEvent.setup();
+  renderAt(`/organizations/${created.id}/edit`, service);
+  await user.click(await screen.findByRole('textbox', { name: 'Domain 1' }));
+  await user.paste('x');
+  await saveEdit(user);
+  expect(await screen.findByText('Changes to organization tenant1 saved')).toBeVisible();
+  const stored = JSON.parse(window.sessionStorage.getItem(notificationsKey('dev-user')) ?? '[]') as {
+    title: string;
+    read: boolean;
+    actions?: { title: string; to: string }[];
+  }[];
+  // In answer to the user's own click: kept as read.
+  expect(stored).toMatchObject([
+    {
+      title: 'Changes to organization tenant1 saved',
+      read: true,
+      actions: [{ title: 'View organization', to: `/organizations/${created.id}` }],
+    },
+  ]);
 });
 
 it('keeps onboarding input on conflicts and allows cancel without saving', async () => {
@@ -424,7 +466,7 @@ it('deletes an organization from the list and says so', async () => {
   await user.click(within(modal).getByRole('textbox'));
   await user.paste('tenant1');
   await user.click(within(modal).getByRole('button', { name: 'Delete' }));
-  expect(await screen.findByText('Organization deleted')).toBeVisible();
+  expect(await screen.findByText('Organization tenant1 deleted')).toBeVisible();
   expect(await screen.findByRole('heading', { name: 'No organizations' })).toBeVisible();
 });
 
@@ -495,7 +537,7 @@ it('edit sends Tenants/Update with the domains, their mask and the version read,
   await user.clear(domain);
   await user.paste('acme.example.net');
   await saveEdit(user);
-  expect(await screen.findByText('Organization updated')).toBeVisible();
+  expect(await screen.findByText('Changes to organization acme-robotics saved')).toBeVisible();
 
   const [update] = tenantsOf(service).sent('update');
   expect(update.object?.id).toBe(ACME_ID);
@@ -540,7 +582,7 @@ it('leaves the create form out of history once the organization is created, so B
   await user.click(screen.getByRole('button', { name: 'Next' }));
   await user.click(screen.getByRole('button', { name: 'Next' }));
   await user.click(screen.getByRole('button', { name: 'Create organization' }));
-  expect(await screen.findByText('Organization created')).toBeVisible();
+  expect(await screen.findByText('Organization frontfix-1 created')).toBeVisible();
   await act(async () => navigate(-1));
   expect(await screen.findByRole('heading', { level: 1, name: 'Clusters' })).toBeVisible();
 });
@@ -557,7 +599,7 @@ it('create without an identity provider sends none, and Review says so', async (
     'No identity provider is configured.',
   );
   await user.click(screen.getByRole('button', { name: 'Create organization' }));
-  expect(await screen.findByText('Organization created')).toBeVisible();
+  expect(await screen.findByText('Organization tenant1 created')).toBeVisible();
   const [sent] = tenantsOf(service).sent('create');
   expect(sent.object?.metadata?.name).toBe('tenant1');
   expect(sent.object?.spec?.domains).toEqual([]);
@@ -638,7 +680,7 @@ it('locks the edit wizard while it saves', async () => {
   expect(screen.getByRole('button', { name: 'Back' })).toBeDisabled();
   expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
   await act(async () => saving.resolve());
-  expect(await screen.findByText('Organization updated')).toBeVisible();
+  expect(await screen.findByText('Changes to organization acme-robotics saved')).toBeVisible();
 });
 
 it('moves an edit refused for a field to that field, once, and lets the user return to Review', async () => {
@@ -679,7 +721,7 @@ it('edit: an organization without an identity provider says one can be added onl
   await user.click(screen.getByRole('textbox', { name: 'Domain 1' }));
   await user.paste('x');
   await saveEdit(user);
-  expect(await screen.findByText('Organization updated')).toBeVisible();
+  expect(await screen.findByText(`Changes to organization ${organization.name} saved`)).toBeVisible();
   expect(tenantsOf(service).sent('update')[0].object?.spec?.identityProvider).toBeUndefined();
 });
 
@@ -703,7 +745,7 @@ it('reloads an organization after a stale delete from its page, keeping the type
   ).toBeVisible();
   expect(within(modal).getByTestId('delete-modal-input')).toHaveValue(organization.name);
   await user.click(within(modal).getByRole('button', { name: 'Delete' }));
-  expect(await screen.findByText('Organization deleted')).toBeVisible();
+  expect(await screen.findByText(`Organization ${organization.name} deleted`)).toBeVisible();
   expect(storedIds(service)).not.toContain(organization.id);
 });
 
@@ -797,6 +839,6 @@ it('edit: an identity provider saved without a JWKS URL is kept, and the domains
   await user.click(await screen.findByRole('textbox', { name: 'Domain 1' }));
   await user.paste('x');
   await saveEdit(user);
-  expect(await screen.findByText('Organization updated')).toBeVisible();
+  expect(await screen.findByText('Changes to organization acme-robotics saved')).toBeVisible();
   expect(tenantsOf(service).sent('update')[0].object?.spec?.identityProvider).toBeUndefined();
 });
