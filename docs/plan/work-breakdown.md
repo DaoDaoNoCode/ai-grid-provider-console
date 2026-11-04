@@ -88,7 +88,10 @@ Owner: console team. A handler per RPC, nothing else.
 Owner: console team.
 
 1. Port the POC pages onto PatternFly 6 against the mock service: Clusters with enrol and
-   location editing, Models with the deploy wizard and per-site status, Subscriptions,
+   location editing (over Connect: Add to AI Grid, and Edit for the location label and the role
+   of a cluster without one; changing a role a cluster has waits for the hub to fully remove what
+   the old role installed, and the site name and map position stay read-only, set with
+   `oc annotate`), Models with the deploy wizard and per-site status, Subscriptions,
    Tenants, the AI Grid map (Leaflet, site and coordinate conventions from the POC) and
    Monitoring (Cluster, Models and Usage tabs with demo banners). Pages never call `fetch`;
    `ConsoleService` grows one method per endpoint.

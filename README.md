@@ -48,7 +48,10 @@ its repository, fetched into `.cache/backend/`, or your checkout with `BACKEND_D
 The console has pages for clusters (`/clusters`), organizations (`/organizations`), models
 (`/models`), subscriptions (`/subscriptions`), and the AI Grid map and Monitoring
 (`/ai-grid`, `/monitoring`). They are ported from the cloud provider PoC; `NOTICE` lists
-the attributions. Run them all against the fake backend with `make dev-fake`, as
+the attributions. On the Clusters pages, Edit changes an AI Grid cluster's location label, and
+its role only while it has none; a role a cluster has, the site name and the map position aren't
+edited in the console (a hub admin sets the latter two with `oc annotate`, as the backend's README
+describes). Run them all against the fake backend with `make dev-fake`, as
 `docs/dev-setup.md` describes.
 
 ## Status
@@ -56,7 +59,7 @@ the attributions. Run them all against the fake backend with `make dev-fake`, as
 Implemented in the BFF and the fake backend: login, user, config, clusters (list, get,
 enroll), organizations and the grid overview, with readiness tied to the backend. The Models and
 Subscriptions pages call the backend's own API over Connect (`docs/connect.md`). The shipped `ai-grid-backend` serves clusters (list, get, and the update
-behind Add to AI Grid and Remove) and tenants, the console's organizations (list, get, create,
+behind Add to AI Grid, Edit and Remove) and tenants, the console's organizations (list, get, create,
 update, delete). A tenant create or update that sets a field the backend's tenant doesn't have
 answers 501 instead of dropping it. Against it, the grid overview is 501, and so is a list request with `filter`, `offset` or `limit`, which it
 doesn't apply; the pages show these as not available on this AI Grid backend. `/user` and

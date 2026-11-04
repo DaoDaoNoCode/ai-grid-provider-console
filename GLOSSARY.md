@@ -34,11 +34,12 @@ _Avoid_: location, geo, zone
 **Site**:
 The name a hub administrator gives a cluster's place (annotation `ai-grid/site-name`), shown as Site on
 the Clusters pages, the AI Grid overview and Monitoring; empty when the annotation isn't set,
-never the region. The cluster's `ai-grid/site` label is its Site ID.
+never the region. The cluster's `ai-grid/site` label is its Site ID. The console doesn't edit it:
+a hub administrator sets it, and the map position, with `oc annotate`.
 _Avoid_: data center, location
 
 **Location label**:
-The cluster's `location` label, which Add to AI Grid can write. Nothing in delivery or routing
+The cluster's `location` label, which Add to AI Grid and Edit write. Nothing in delivery or routing
 reads it; models are placed on clusters by name. Whether it becomes the grid's region is open.
 _Avoid_: location (alone)
 
@@ -63,6 +64,10 @@ KServe are the tools the roles use; they are not the roles' names.
 - **Inference** (`inference`): serves models with KServe. Requests reach it through an ingress
   cluster.
 - **Combined** (`combined`): does both: receives requests through MaaS and serves models.
+
+A provider admin sets a cluster's role with Add to AI Grid, or with Edit while the cluster has
+none. The console doesn't change a role a cluster has: the hub doesn't yet fully remove what the
+old role installed.
 
 _Avoid_: MaaS cluster, MaaS (ingress), gateway cluster, serving cluster
 
