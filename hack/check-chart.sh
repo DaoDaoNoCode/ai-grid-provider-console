@@ -3,6 +3,8 @@
 #   - helm lint --strict, with the default values and with every option turned on;
 #   - values.schema.json refuses a misspelled value instead of letting Helm drop it;
 #   - the Deployment's strategy is Recreate (one backend at a time);
+#   - in git mode, the backend may get and list the catalog's Argo CD Applications in
+#     openshift-gitops, and without a Git URL the chart grants no such Role;
 #   - with its default values, it renders the same objects as manifests/base, apart from the
 #     Namespace (Helm installs into one: --create-namespace) and Helm's own labels. The chart is the
 #     install path; manifests/base is kept for hack/undeploy.sh's fallback and the takeover test
@@ -58,6 +60,23 @@ got="$(models_ns --set-string backend.git.modelsNamespace=ai-grid-internal-model
 }
 got="$(models_ns)"
 [[ -z "${got}" ]] || { echo "check-chart: without backend.git.modelsNamespace, AI_GRID_MODELS_NAMESPACE is '${got}'" >&2; exit 1; }
+# In git mode the backend reads the catalog's Argo CD Applications in openshift-gitops, the
+# backend's default AI_GRID_CATALOG_APP_NAMESPACE: get and list on them there, and nothing more.
+# Without a Git URL there is no catalog to read, and no Role.
+catalog_rules() {
+  local role
+  role="$(helm template console "${CHART}" -n ai-grid "$@" |
+    yq 'select(.kind == "Role" and .metadata.name == "ai-grid-provider-console-catalog-status")')"
+  [[ -z "${role}" ]] || yq -o=json -I=0 '[.metadata.namespace, .rules]' <<<"${role}"
+}
+got="$(catalog_rules --set-string backend.git.url=https://github.com/example/catalog.git)"
+want='["openshift-gitops",[{"apiGroups":["argoproj.io"],"resources":["applications"],"verbs":["get","list"]}]]'
+[[ "${got}" == "${want}" ]] || {
+  echo "check-chart: in git mode the catalog status Role is '${got}', want '${want}'" >&2
+  exit 1
+}
+got="$(catalog_rules)"
+[[ -z "${got}" ]] || { echo "check-chart: without backend.git.url the chart renders a catalog status Role: ${got}" >&2; exit 1; }
 for url in https://github.com/example/catalog.git https://git.example.com:8443/team/repo@archive.git; do
   helm template console "${CHART}" -n ai-grid --set-string "backend.git.url=${url}" >/dev/null || {
     echo "check-chart: backend.git.url=${url} doesn't render; values.schema.json must accept it" >&2
