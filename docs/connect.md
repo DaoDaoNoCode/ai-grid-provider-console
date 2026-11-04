@@ -285,10 +285,15 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   "No models available" warning.
 - **Words.** `subscriptionText.ts` reads the subscription: the display name and description
   annotations (as `modelView.ts` reads a model's), `spec.organization.id`, and `status.phase`,
-  Active or Pending in git mode and none until a cluster reports, which reads Unknown, with the
-  Ready condition's message in the tooltip. A model is the Models pages' `ModelView`, its phase
-  worded there. A referenced model's status on a subscription's page is its `model_registrations`
-  entry: its phase; Saved to Git for one with no phase and a Ready condition of reason
+  Active, Pending or Degraded in git mode and none until a cluster reports, which reads Unknown,
+  with the Ready condition's message in the tooltip. Degraded (a cluster reports the
+  subscription or its policy failed) is a warning label, as odh-dashboard shows MaaS's Degraded:
+  MaaS also calls a subscription Degraded or Failed while a model it names has no MaaSModelRef or
+  route on the cluster yet, and the catalog's health check reads both as Degraded, so a
+  subscription created with its model reads Degraded until the model is published. A model is
+  the Models pages' `ModelView`, its phase worded there. A referenced model's status on a
+  subscription's page is its `model_registrations` entry: its phase (Ready, Failed or Pending);
+  Saved to Git for one with no phase and a Ready condition of reason
   `SavedToGit`, the reading `phaseWordOf` gives a model; Not found without an entry, as the
   backend's `gitModelRegistrations` says a client takes it.
 - **The model join.** A ref names its model by `SubscriptionModelRef.model_id`, which the backend
@@ -376,17 +381,23 @@ subscription) are sent from the app root, never from the form (`frontend/src/not
   the users access to the models, the subscription their quota. A subscription `Get` lists no
   policy for isn't active: the backend creates the policy with it, so none listed is a policy not
   there yet, and the watch goes on to its deadline and warns about the policy. The backend reads
-  both phases from the ingress clusters' reports (`withSubscriptionPhase` and
+  both phases from the health the catalog's Argo CD Applications
+  (`acm-models-catalog-subscriptions-<cluster>`) record for each cluster (`maasPhase` and
   `withAuthPolicyStatus` in its `internal/servers/subscriptions_git.go`): Active when every
-  ingress cluster has the object active, Pending while any doesn't have it yet, has it otherwise
-  or hasn't reported, and empty when no ingress cluster reports at all. There is no Failed phase
-  and no per-cluster list for a subscription, so the watch has no error to report. After 30 minutes it warns "Subscription
+  cluster reports the object ready, Degraded when any reports it failed, Pending while any
+  reports it pending or doesn't list it yet, and empty when no cluster has an Application in that
+  ApplicationSet (or the backend can't list them). Degraded doesn't end the watch, and it reports
+  no error: MaaS calls a subscription Degraded or Failed while a model it names has no
+  MaaSModelRef or route on the cluster yet, which the health check reads as Degraded, so a
+  subscription created with its model reads Degraded until the model is published, then Active.
+  There is no per-cluster list for a subscription. After 30 minutes it warns "Subscription
   <name> isn't active yet", saying whether the subscription or its policy isn't active (from the
   last read that found a status) and where to look; when its last read failed, or no read found a
   status, it says "Unable to confirm subscription <name> is active" instead, as a model's watch
   says "Unable to confirm model <name> is ready". An empty phase claims nothing. Before any status
-  has been found it describes the environment (the status Policy isn't deployed, or no cluster has
-  evaluated it), not the subscription, so three empty reads in a row (about 40 s) stop the watch
+  has been found it describes the environment (no cluster has a catalog Application for
+  subscriptions, or the backend may not list the Applications: the chart's Role), not the
+  subscription, so three empty reads in a row (about 40 s) stop the watch
   without a word, rather than polling Git for 30 minutes to say nothing. After a status has been
   found it means the backend couldn't read the clusters' reports this time (its `readReports`
   logs that and reports nothing), and the watch goes on. A failed read isn't an empty one: it says
@@ -395,8 +406,8 @@ subscription) are sent from the app root, never from the form (`frontend/src/not
   record, so a reload goes on counting. A subscription that is gone stops it.
 - An edited subscription is watched every 20 s for 30 minutes too, and never said to be active:
   the clusters' reports name objects, not versions, and the previous version stays Active while
-  the new one is applied. It has nothing to fail on, so it only has the pages refetch when the
-  phase changes, and ends without a word (or after three empty phases in a row with no status
+  the new one is applied. Degraded isn't a failure to report either (above), so it only has the
+  pages refetch when the phase changes, and ends without a word (or after three empty phases in a row with no status
   found, as above).
 - One watch follows a model, and one a subscription, at a time, so nothing is said twice:
   deploying or creating an id again replaces its earlier watch; an edit replaces the previous

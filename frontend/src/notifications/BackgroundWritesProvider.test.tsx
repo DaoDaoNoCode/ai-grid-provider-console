@@ -582,9 +582,9 @@ it('resumes the watches an earlier console kept, and drops a record of a shape i
 });
 
 /**
- * Subscription team-a as Subscriptions/Get answers it: its phase, from the ingress clusters'
- * reports, and its authorization policy's (withSubscriptionPhase and withAuthPolicyStatus in the
- * backend's internal/servers/subscriptions_git.go).
+ * Subscription team-a as Subscriptions/Get answers it: its phase, from the clusters' reports in the
+ * catalog's Argo CD Applications, and its authorization policy's (maasPhase and
+ * withAuthPolicyStatus in the backend's internal/servers/subscriptions_git.go).
  */
 const teamA = (phase: string, policyPhase = phase) => ({
   object: create(SubscriptionSchema, {

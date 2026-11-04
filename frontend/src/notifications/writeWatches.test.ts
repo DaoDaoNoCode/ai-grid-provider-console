@@ -495,6 +495,37 @@ describe('watchActive', () => {
     });
   });
 
+  it('keeps watching a degraded subscription, which turns active once its model is published', async () => {
+    // MaaS calls a subscription Failed or Degraded while a model it names has no MaaSModelRef or
+    // route on the cluster yet, and the catalog Applications' health check reads both as Degraded
+    // (maasPhase in the backend): not an end, as a subscription created with its model reads so.
+    const degraded = status('Degraded', 'Pending');
+    expect(await watchActive(created(), SINCE, reads(degraded), during)).toEqual({
+      status: NotificationResponseStatus.REPOLL,
+    });
+    const history = nextHistory(NO_HISTORY, degraded);
+    expect(await watchActive(created(), SINCE, reads(status('Active')), during, history)).toMatchObject({
+      status: NotificationResponseStatus.SUCCESS,
+      title: 'Subscription Team A is active',
+    });
+    expect(await watchActive(created(), SINCE, reads(degraded), past, history)).toMatchObject({
+      status: NotificationResponseStatus.WARNING,
+      title: "Subscription Team A isn't active yet",
+      message: expect.stringMatching(/^It isn't active on every ingress cluster/),
+    });
+  });
+
+  it('warns about the policy when only its policy is degraded', async () => {
+    const policyDegraded = status('Active', 'Degraded');
+    expect(await watchActive(created(), SINCE, reads(policyDegraded), during)).toEqual({
+      status: NotificationResponseStatus.REPOLL,
+    });
+    expect(await watchActive(created(), SINCE, reads(policyDegraded), past)).toMatchObject({
+      status: NotificationResponseStatus.WARNING,
+      message: expect.stringMatching(/^Its authorization policy isn't active on every ingress cluster/),
+    });
+  });
+
   describe('an empty phase', () => {
     const none = reads(status('', ''));
 

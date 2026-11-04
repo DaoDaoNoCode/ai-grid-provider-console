@@ -4,11 +4,12 @@
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
 // Only the subscription branches are ported: the PoC's model, external model, external
 // provider and policy labels have no pages here, and its telemetry helpers are dropped.
-// The phases are the backend's git mode's: Active when every ingress cluster reports the
-// subscription, Pending while any doesn't, none before a cluster reports
-// (withSubscriptionPhase, internal/servers/subscriptions_git.go). The MaaS controller's Degraded,
-// Failed and Invalid, and the PoC's Saved, aren't reported, so they aren't worded here. A status
-// label opens nothing (frontend/AGENTS.md, "Status").
+// The phases are the backend's git mode's, from the catalog's Argo CD Applications: Active when
+// every cluster reports the subscription ready, Degraded when any reports it failed, Pending while
+// any reports it pending or doesn't list it yet, none before a cluster reports (maasPhase,
+// internal/servers/subscriptions_git.go). Degraded shows as reported (its tone in status.tsx). The
+// MaaS controller's Failed and Invalid, and the PoC's Saved, aren't reported, so they aren't worded
+// here. A status label opens nothing (frontend/AGENTS.md, "Status").
 import type { ContentProps } from '@patternfly/react-core';
 import { statusTone } from './status';
 
