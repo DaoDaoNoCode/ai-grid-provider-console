@@ -28,10 +28,10 @@ decisions before designing anything new:
   seam OSAC's proxy layer later replaces.
 
 Two things are worth knowing before you touch anything in `bff/internal/api` or
-`frontend/src/api`: legacy shapes in this repository are declared four times (contract,
-BFF structs, `frontend/src/api/types.ts`, UI types), with `toGridCluster` existing in both Go
-and TypeScript; and the backend performs **no authentication or authorization at all** today,
-so the token the BFF forwards is read by nothing (ADR-0004).
+`frontend/src/api`: the legacy JSON shapes declared there and in the BFF are down to
+`/api/v1/user` and `/api/v1/config`, while the pages read the types generated from the backend's
+proto; and the backend performs **no authentication or authorization at all** today, so the
+token the BFF forwards is read by nothing (ADR-0004).
 
 Use the vocabulary in [GLOSSARY.md](GLOSSARY.md). Three concepts have two or three names in
 the code right now; the glossary says which one wins.
@@ -54,9 +54,8 @@ under optimistic locking.
 
 What the BFF does:
 
-- serves a JSON API that only reads (`/api/v1/user`, `/api/v1/config` and the Monitoring
-  fallback's `/api/v1/grid/overview`): every write goes to the backend over Connect, through the
-  relay below;
+- serves a JSON API that only reads (`/api/v1/user` and `/api/v1/config`): every call to the
+  backend goes over Connect, through the relay below;
 - maps gRPC codes to HTTP statuses, keeping the backend's message;
 - forwards the caller's identity (the token as `authorization`, plus user, email and groups);
 - serves the SPA, `/healthcheck`, `/readyz`, `/api/v1/config`, and asks the hub for
@@ -116,8 +115,8 @@ behaviour and points at its source (a file, a function or an upstream commit), n
 The console is moving to the backend's RPCs, called from the browser over Connect (ADRs 0002
 and 0004), through one provider at the app root. The Clusters, Models, Subscriptions and
 Organizations pages and the AI Grid map read and write through it (`docs/connect.md`, "The
-Clusters area", "The Models area", "The Subscriptions area" and "The Organizations area"); only
-the Monitoring fallback's grid overview still reads `/api/v1`:
+Clusters area", "The Models area", "The Subscriptions area" and "The Organizations area"), and
+Monitoring reads the hub's Perses through the BFF's Perses relay:
 
 - `.backend-api-version` holds the backend commit (one full SHA) whose `proto/` (package
   `ai_grid.v1`, not `ai_grid/draft`) the frontend is generated from. `make generate-api` writes
@@ -184,22 +183,6 @@ when the RPCs allow it.
   2026-10-23). A new procedure needs a review and a line in the list, which also says whether it
   reads or writes (a write gets `BACKEND_WRITE_TIMEOUT`). Remove the list once the
   backend authorizes every RPC itself.
-- `toGridCluster` (`bff/internal/api/clusters.go`), for the clusters of the Monitoring
-  fallback's `GET /api/v1/grid/overview` only: the Clusters pages, the map and the site names on
-  the Models pages read `Clusters/List`, whose membership, state and location the backend
-  derives (`docs/connect.md`, "The Clusters area"). It derives `aiGridEnabled` and `provisioned` (the
-  `ai-grid/enabled` and `ai-grid/provisioned` labels equal to `"true"`; when the backend reports
-  `status.provisioning`, `provisioned` is that equal to `"Compliant"` instead, until the backend
-  serves a provisioned state), `location`, `site`,
-  `region` and `openshiftVersion` from labels; `siteName`, `latitude` and `longitude` from the
-  `ai-grid/site-name`, `ai-grid/latitude` and `ai-grid/longitude` annotations, with coordinates
-  that do not parse or are out of range left out; `consoleUrl`, `platform` and `product` from
-  cluster claims; `gpuCapacity` from `status.capacity["nvidia.com/gpu"]`; `addons` from the
-  `feature.open-cluster-management.io/addon-*` labels; the list sorted by name.
-- `toGridOverview` (`bff/internal/api/grid.go`): drops metric points whose value is NaN or
-  ±Inf (JSON cannot carry them), always sends `demo: false`, and writes `updatedAt` as
-  `2006-01-02T15:04:05.000Z` (the PoC's millisecond format) whatever precision the backend
-  sends.
 - `requireProviderAdmin` (`bff/internal/api/middleware.go`), the BFF's one authorization
   decision: every `/api/v1` call except `GET` (or `HEAD`) `/user` and `/config` needs the caller's
   `isProviderAdmin` review to pass (403 otherwise), until the backend authorizes the caller.

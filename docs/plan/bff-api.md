@@ -54,8 +54,7 @@ backend service for cluster access and this BFF for the browser.
 
 ### Against a real backend
 
-The BFF's gRPC client calls the real backend's `AiGrid/Ping` only. `Grid/GetOverview`, which the
-Monitoring fallback reads, isn't the backend's, so `/api/v1/grid/overview` answers 501 there.
+The BFF's gRPC client calls the real backend's `AiGrid/Ping` only, for `/readyz`.
 
 The Clusters, Models, Subscriptions and Organizations pages call the backend's own RPCs over
 Connect, through the relay (`docs/connect.md`); the BFF has no `/api/v1/clusters`,
@@ -111,81 +110,6 @@ under `/perses/api`, and the Connect relay to the backend's own RPCs under `/ai_
 | GET | `/api/v1/user` | `{username, email?, groups, isProviderAdmin}` (`email` omitted when the proxy sends none) | none; the identity from the proxy headers, `isProviderAdmin` from a hub `SelfSubjectAccessReview` |
 | GET | `/api/v1/config` | `{gridEndpoint, mapTileUrl, mapTileAttribution, billingUrl, version, fakeBackend, monitoring: {enabled, persesProject}, models: {hardware}}`: `fakeBackend` makes the UI show its fake-backend banner, `monitoring.enabled` says the BFF relays `/perses/api` (it has a `PERSES_URL`) and `monitoring.persesProject` names the one Perses project the relay reads, whose `dashboard-*` objects are the Monitoring tabs (always set when `monitoring.enabled`); `models.hardware` is the Deploy model wizard's Hardware list, never empty, each `{id, label, description?, accelerator?, image?, env?, defaults?: {accelerators?, cpu?, memory?}}` (see "Model hardware" below) | none; env `GRID_CONSUMER_URL`, `MAP_TILE_URL`, `MAP_TILE_ATTRIBUTION` (the attribution shown with `MAP_TILE_URL`'s tiles; with no `MAP_TILE_URL` the map draws a bundled land outline), `BILLING_URL`, `FAKE_BACKEND`, `PERSES_URL`, `PERSES_PROJECT`, `MODEL_HARDWARE` |
 | GET, POST | `/perses/api/<Perses API path>` | Perses's own answer, status and body unchanged, with only its `Content-Type`, `Content-Encoding`, `Content-Length`, `Vary`, `Cache-Control`, `Date`, `Age` and `Expires` headers; a redirect from Perses is 502 | none; the Monitoring page's relay to the hub's Perses (`PERSES_URL`), see "The Perses relay" |
-| GET | `/api/v1/grid/overview?range=1h\|6h\|24h&site=&metrics=false` | (Only the Monitoring fallback, without a Perses relay; the map reads `Clusters/List`.) `GridOverview`: `{updatedAt, inventorySource?, demo, metricsSource?, clusters, metrics}`; `inventorySource` (`acm\|git`) and `metricsSource` (`thanos\|demo`) are omitted when the backend does not say, and each metric's `status` (`ok\|no-data\|unavailable\|not-configured`) likewise | `Grid/GetOverview`; `range` is forwarded as sent (the backend defaults it to `1h` and refuses anything but `1h`, `6h` and `24h` with 422), an empty `site` selects every site and only `metrics=false` leaves the metrics out |
-
-`GridCluster`, each of the clusters of `GET /api/v1/grid/overview` (the Monitoring fallback;
-the Clusters pages read `Clusters/List`). Fields the backend does not fill are omitted or empty,
-so a client also works against a backend that only returns `name`, `labels`, `hubAcceptsClient`:
-
-```json
-{
-  "name": "site-paris-1",
-  "aiGridEnabled": true,
-  "provisioned": true,
-  "hubAcceptsClient": true,
-  "location": "paris",
-  "site": "paris-dc1",
-  "region": "europe-west",
-  "openshiftVersion": "4.22.15",
-  "status": "ready",
-  "statusMessage": "Managed cluster is available",
-  "consoleUrl": "https://console-openshift-console.apps.site-paris-1.example.com",
-  "kubernetesVersion": "v1.35.6",
-  "platform": "BareMetal",
-  "product": "OpenShift",
-  "gpuCapacity": 32,
-  "capacity": {"cpu": "192", "memory": "1572864Mi", "nvidia.com/gpu": "32", "...": "..."},
-  "allocatable": {"cpu": "186", "memory": "1540000Mi", "nvidia.com/gpu": "32", "...": "..."},
-  "gpus": {
-    "total": 32, "nodeCount": 4,
-    "configurations": [{"vendor": "NVIDIA", "product": "NVIDIA-H200", "memoryMib": 143771, "gpusPerNode": 8, "nodeCount": 4, "sharing": {"strategy": "none", "replicas": 1, "migCapable": true}}],
-    "nodes": [{"name": "gpu-h200-0.paris.example", "vendor": "NVIDIA", "product": "NVIDIA-H200", "count": 8, "memoryMib": 143771, "family": "hopper", "computeCapability": "9.0", "driverVersion": "580.105.08", "cudaRuntimeVersion": "13.0", "sharing": {"strategy": "none", "replicas": 1, "migCapable": true}, "instanceType": "p5en.48xlarge", "ready": true}, "..."]
-  },
-  "creationTimestamp": "2026-10-01T09:00:00Z",
-  "siteName": "Paris DC1",
-  "latitude": 48.8566,
-  "longitude": 2.3522,
-  "addons": {"work-manager": "available", "cluster-proxy": "available", "...": "..."},
-  "conditions": [{"type": "ManagedClusterConditionAvailable", "status": "True", "reason": "ManagedClusterAvailable", "message": "Managed cluster is available", "lastTransitionTime": "2026-10-01T09:00:08Z"}],
-  "resourceVersion": "48811204",
-  "labels": {"ai-grid/enabled": "true", "...": "..."},
-  "annotations": {"ai-grid/site-name": "Paris DC1", "...": "..."}
-}
-```
-
-- `status` is the backend's `status.state`, derived server-side from the conditions in the
-  ACM console's order (`mock/research/acm.md` section 1), in the ACM console's words:
-  `ready | offline | unknown | pendingimport | importing | importfailed | detaching | notaccepted`.
-  `statusMessage` is the message of the condition that decided it. When the backend reports
-  no state (`MANAGED_CLUSTER_STATE_UNSPECIFIED`: a cluster with no conditions, or today's
-  backend that sends no status at all) `status` is omitted. The ACM console shows `failed`
-  for a cluster with no conditions; the BFF deliberately does not, because the same value also means "the backend did not derive one".
-- `consoleUrl`, `platform`, `product` come from the claims
-  `consoleurl.cluster.open-cluster-management.io`, `platform.open-cluster-management.io`,
-  `product.open-cluster-management.io`; `gpuCapacity` from `status.capacity["nvidia.com/gpu"]`
-  (0 when absent); `addons` from the `feature.open-cluster-management.io/addon-*` labels.
-- `capacity` and `allocatable` are `status.capacity` and `status.allocatable` as the backend
-  sends them (Kubernetes quantity strings by resource name), and `creationTimestamp` is the
-  hub object's; each is omitted when the backend sends none. A real backend without its
-  cluster status details (conditions, Kubernetes version, capacity, allocatable, claims)
-  sends the creation time only, so the page shows those as not reported.
-- `gpus` is the backend's `status.gpus`, the cluster's GPU inventory, passed through: `total`
-  GPU devices as GPU Feature Discovery counts them (physical GPUs, but MIG devices on a node with
-  MIG strategy `single`, where GFD reports no physical count) and `nodeCount` GPU nodes; `configurations`, the distinct node configurations
-  (vendor, product, memory in MiB per GPU, GPUs per node, sharing) with how many nodes have
-  each, most nodes first; and every GPU `node` (product, count, memory, architecture `family`,
-  `computeCapability`, `driverVersion`, `cudaRuntimeVersion`, `sharing`, `instanceType`,
-  `ready`). `sharing.strategy` is `none`, `time-slicing`, `mps` or `mig` (with `migStrategy`
-  `single` or `mixed`), and `replicas` the schedulable units per GPU. The backend reads it from
-  ACM Search's index of the spoke's nodes and their NVIDIA GPU Feature Discovery labels
-  (`ManagedClusterInfo` carries none); the BFF derives nothing. Omitted when the backend has no
-  inventory for the cluster (no GPU nodes, or Search unavailable or not yet indexed);
-  `gpuCapacity` still counts the schedulable GPUs then.
-- `siteName`, `latitude`, `longitude` come from the `ai-grid/site-name`, `ai-grid/latitude`,
-  `ai-grid/longitude` annotations; coordinates are omitted when absent or not a finite number
-  in range (`NaN` and `Inf` parse but cannot be encoded, so they count as absent).
-- `conditions[].lastTransitionTime` is omitted when the hub recorded none; it is never the
-  Unix epoch.
 
 ### Field errors
 
@@ -360,7 +284,9 @@ Loki datasources and queries; time series, stat, table, gauge, pie and markdown 
 with the page only. Not the bar chart: its tooltip is HTML built from unescaped series names, which
 are label values. Not the logs table either: its package imports a stylesheet it doesn't ship
 (`ansiColors.css`, missing from 0.4.0 and from 0.5.0-beta.0, the release for Perses 0.56). Without
-`monitoring.enabled`, `/monitoring` keeps the AI Grid overview's metrics (`Grid/GetOverview`).
+`monitoring.enabled`, `/monitoring` says Monitoring is not set up for this console and names the
+chart's `console.perses.url` and `console.perses.project`, which a hub administrator sets; it
+calls nothing.
 
 ### The Connect relay
 
@@ -373,7 +299,7 @@ gRPC-Web on its gRPC port over HTTP/1.1 and h2c. It is transport and nothing els
 against no contract and never reads a body. A new RPC needs no transport implementation;
 until backend authorization lands it requires review for the procedure allowlist. The Clusters
 pages, the AI Grid map and the Models, Subscriptions and Organizations pages use it; the
-`/api/v1` routes that remain only read (`/user`, `/config`, `/grid/overview`).
+`/api/v1` routes that remain only read (`/user`, `/config`).
 
 What the relay owns is the boundary:
 
@@ -470,7 +396,6 @@ exists; the frontend uses the mock service meanwhile.
 |---|---|---|---|
 | GET | `/api/v1/user` (`isProviderAdmin`) | Optional: `AiGrid/GetCurrentUser` returning roles, once the backend acts as the caller; today the BFF asks the hub directly | Step 1 |
 | GET/POST/PUT/DELETE | `/api/v1/catalog[/{name}]` | `Catalog/*` on ConfigMaps | Step 9 |
-| GET | `/api/v1/grid/overview` (implemented against the draft) | The backend has to ship the draft's `Grid/GetOverview` (`grid_service.proto`) with the POC's metric contract (requests, errors, latency, gpu from Thanos with a `cluster` label) | Steps 8, 10 |
 | GET | `/api/v1/grid` | `Grid/GetNetwork` from `grid.praxis.fast/v1alpha1` once the RHOAI AI Gateway component installs the CRDs | Step 10a |
 
 ## Errors
@@ -478,7 +403,7 @@ exists; the frontend uses the mock service meanwhile.
 | Situation | Status |
 |---|---|
 | A path under `/api/v1` that no route has | 404, `the requested resource could not be found` |
-| A known `/api/v1` path with a method it has no route for (`POST /grid/overview`) | 405 with `Allow` (`GET, HEAD`; a GET route also answers HEAD) and the JSON error shape, `POST is not allowed on /api/v1/grid/overview; use GET, HEAD`. It is checked after the identity and provider-admin checks, so a non-admin gets 403 |
+| A known `/api/v1` path with a method it has no route for (`PUT /tenants/{id}`) | 405 with `Allow` (`GET, HEAD, PATCH, DELETE`; a GET route also answers HEAD) and the JSON error shape, `PUT is not allowed on /api/v1/tenants/t-1; use GET, HEAD, PATCH, DELETE`. It is checked after the identity and provider-admin checks, so a non-admin gets 403 |
 | Missing or malformed token header | 401 |
 | Hub rejects the token in the access review | 401 |
 | Hub unreachable, failing or slower than 5 s during the access review | 502, `the hub could not confirm the caller's permissions; try again`, detail in the BFF log (a slow hub is not the backend's 504) |
@@ -497,7 +422,7 @@ exists; the frontend uses the mock service meanwhile.
 | `/ai_grid.v1.*` POST that is not the Connect protocol (gRPC, gRPC-Web, any other `Content-Type`) | 415, Connect error `unimplemented` |
 | `/ai_grid.v1.*` backend unreachable or untrusted; a unary call slower than `BACKEND_TIMEOUT` (`BACKEND_WRITE_TIMEOUT` for a write procedure), or any call whose headers take longer | 502 `unavailable`; 504 `deadline_exceeded` |
 | Any answer from the backend on `/ai_grid.v1.*` (its Connect errors included) | the backend's status and body unchanged, with only the headers a Connect client needs |
-| Backend `InvalidArgument`, `OutOfRange` (on `/grid/overview`, a `range` other than `1h`, `6h` and `24h`) | 422, backend message kept; with `fieldErrors` for `InvalidArgument` only |
+| Backend `InvalidArgument`, `OutOfRange` | 422, backend message kept; with `fieldErrors` for `InvalidArgument` only |
 | Backend `AlreadyExists`, `Aborted` | 409, backend message kept |
 | Backend `FailedPrecondition` | 412, backend message kept |
 | Backend `ResourceExhausted` | 429 |

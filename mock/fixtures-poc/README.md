@@ -16,8 +16,7 @@ the browser tests find the PoC's names. The browser tests load this directory
 There's no `scenarios.json`, so nothing changes over time.
 
 `bff/internal/fakebackend/preset_test.go` checks this directory against the PoC and runs
-the default fixtures' checks on it, and `TestDemoMetricsMatchThePoC` checks that its members are
-the input of `mock/golden/demo-metrics.json`. This directory mirrors the PoC at `62319b8` and the port's fixtures from before the fake's own fixtures replaced them; when
+the default fixtures' checks on it. This directory mirrors the PoC at `62319b8` and the port's fixtures from before the fake's own fixtures replaced them; when
 it changes, keep it in step with those two sources. The PoC's organizations are the backend's
 fixtures now (its `fixtures/poc/organizations.json`), which the browser tests of the Organizations
 pages run on. All names, ids, and hosts are fictional.

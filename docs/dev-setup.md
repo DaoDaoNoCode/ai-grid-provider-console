@@ -154,9 +154,9 @@ against it without `--fake-backend`, and the frontend as `dev-user` with `dev-to
 browser's `/ai_grid.v1.*` calls, `docs/plan/bff-api.md`, "The Connect relay"): the console's own
 fake serves only the draft over gRPC, so the Clusters pages and the AI Grid map, which read the
 backend's API over Connect, work only here (on `make dev-fake` they say the backend is
-unavailable). Models and Subscriptions run against the backend with its local Git catalog. The
-legacy Grid overview (the Monitoring fallback) still lacks a real backend RPC and shows it as
-not available. The browser tests of the Clusters pages and the map run the same backend on its
+unavailable). Models and Subscriptions run against the backend with its local Git catalog.
+Monitoring needs a Perses (`make dev-cluster`) and says it is not set up on both fake stacks. The
+browser tests of the Clusters pages and the map run the same backend on its
 PoC fixtures, on offset ports (`frontend/playwright.config.ts` starts it through
 `hack/backend-fakes.sh`).
 The Vite dev server forwards `/ai_grid.v1.*` to the BFF as it does `/api`, in every mode.

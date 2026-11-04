@@ -11,9 +11,9 @@ The Clusters area (the list, a cluster's page, Add, Edit and Remove), the Models
 model's page, the Deploy model wizard, its edit and delete), the Subscriptions area, the
 Organizations area and the AI Grid map are on it; each move deleted that area's draft RPCs, fake
 data, BFF handlers and hand-written frontend types. What still reads the BFF's JSON API is the
-shell (`/api/v1/user`, `/api/v1/config`) and the Monitoring fallback's grid overview; when it
-moves, `mock/proto`, `bff/gen`, the console's fake backend and `frontend/src/api`'s hand-written
-layer go.
+shell (`/api/v1/user`, `/api/v1/config`), which calls no backend, and Monitoring reads the hub's
+Perses; no page reads the console's fake backend, so `mock/proto`, `bff/gen`, that fake and
+`frontend/src/api`'s hand-written layer are what is left to remove.
 
 ## How a call travels
 
@@ -168,8 +168,7 @@ regression passing when updating these dependencies.
   version on these writes: FailedPrecondition, which `ServiceError.isConflict` also counts, is a
   refusal, for Add and Remove too. The site name and map position aren't edited in the console.
 - **The map** (`pages/grid/AiGridPage.tsx`) shows the members among the same list, placed where
-  `status.location` says; `Grid/GetOverview`, which the backend doesn't have, serves only the
-  Monitoring fallback now. It links a member to the models whose placement chose it by cluster
+  `status.location` says. It links a member to the models whose placement chose it by cluster
   name (`status.placement.selected_clusters` of `Models/List`), not by `locations`, the `location`
   labels that several clusters share.
 
@@ -301,11 +300,8 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   `Subscriptions/List` and the filter `this.spec.model_refs.exists(r, r.model_id == "<id>")`: the
   backend joins a model ref to its model (`SubscriptionModelRef.model_id`) and evaluates the
   filter after the join.
-- **The map and Monitoring** read the same `Models/List`: a member's models are those whose
-  `status.placement.selected_clusters` name it, and Monitoring offers a model, and lists its
-  clusters, by the AI Grid clusters `status.placement.selected_clusters` names
-  (`ObservabilityPanel.tsx`). No page reads `status.placement.locations`, the clusters' `location`
-  labels.
+- **The map** reads the same `Models/List`: a member's models are those whose
+  `status.placement.selected_clusters` name it.
 
 ### The Subscriptions area
 
@@ -363,8 +359,8 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   (`frontend/src/pages/organizations/useOrganizations.ts`) call `Tenants/List` and `Tenants/Get`.
   The list polls every 30 s, as the other lists do; an organization's page and its edit page load
   `Get` once, and the edit page keeps the first answer it read after it opened, so a save is checked
-  against the version the form started from (a refetch on window focus never replaces it). The
-  Monitoring fallback's usage by organization reads the same list. `toOrganizationView`
+  against the version the form started from (a refetch on window focus never replaces it).
+  `toOrganizationView`
   (`organizationView.ts`) reads the generated `Tenant`: the name (`metadata.name`, else the id),
   `spec.domains`, `spec.identity_provider` with its OIDC config (`validate_signature` unset reads
   as on, as the field documents), `metadata.version` and `metadata.creation_timestamp`. The list

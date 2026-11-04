@@ -68,7 +68,7 @@ console:
   billingUrl: ""
   logLevel: info
   # The Monitoring page's Perses (docs/plan/bff-api.md, "The Perses relay"): its dashboard-*
-  # dashboards are the page's tabs. Empty url: Monitoring keeps its page without Perses.
+  # dashboards are the page's tabs. Empty url: Monitoring says it is not set up and names these.
   perses:
     # The hub's Perses server, such as the Cluster Observability Operator's:
     # https://perses.openshift-cluster-observability-operator.svc:8080

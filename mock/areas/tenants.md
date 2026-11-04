@@ -1,7 +1,6 @@
 # Tenants (Keycloak Organizations)
 
-The Organizations pages, and the Monitoring fallback's usage by organization, call the backend's
-own `ai_grid.v1.Tenants` over Connect, through the BFF's relay (`docs/connect.md`, "The
+The Organizations pages call the backend's own `ai_grid.v1.Tenants` over Connect, through the BFF's relay (`docs/connect.md`, "The
 Organizations area"). Neither the console's fake backend nor the BFF has tenants any more: no
 `/api/v1/tenants` routes, no draft `Tenants` service, no `tenants.json` fixture, no Keycloak rules
 in `bff/internal/fakebackend`. The backend's own fakes do the faking: `make dev-fake-infra` runs
@@ -11,7 +10,7 @@ identity providers) under the browser tests, and `fixtures/default` otherwise.
 
 On `make dev-fake` (the console's own fake, gRPC only) the relay has nothing to reach, so the
 Organizations list says "Unable to load organizations" with the console's text for an
-unreachable backend, and the Monitoring fallback's usage section says it couldn't load them.
+unreachable backend.
 Use `make dev-fake-infra` for these pages.
 
 ## What the backend does, as the pages rely on it

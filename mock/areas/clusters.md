@@ -39,10 +39,8 @@ Every RPC but `Ping` needs `authorization` metadata (`Unauthenticated` otherwise
 
 BFF: no cluster routes any more. The fake's ManagedClusters service stands in for the backend's
 `Clusters` List, Get and Update (`fakebackend_test.go`, standIns), and its clusters feed the
-Monitoring fallback's `GET /api/v1/grid/overview`, whose `GridCluster` exposes `status`,
-`statusMessage`, `consoleUrl`, `kubernetesVersion`, `platform`, `product`, `gpuCapacity`,
-`capacity`, `allocatable`, `gpus`, `creationTimestamp`, `siteName`, `latitude`, `longitude`,
-`addons`, `conditions`, `resourceVersion`.
+draft Models' placement (`ListLocations`). No BFF route reads them: the Clusters pages and the
+AI Grid map read the backend's `Clusters/List` over Connect (`make dev-fake-infra`).
 
 GPUs: the draft's `ManagedClusterStatus.gpus` (`ClusterGPUs`, the backend's field 10) is each
 cluster's GPU inventory. The real backend reads it from ACM Search (search-v2's `search` query for

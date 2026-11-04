@@ -311,6 +311,10 @@ section 8.1, and a decision on the subscription and auth policy pairing.
 
 ### 5. Grid overview and monitoring (Thanos)
 
+Retired: the Monitoring page shows the hub's Perses dashboards through the BFF's Perses relay
+(`docs/plan/bff-api.md`, "The Perses relay"), and the fake's `Grid/GetOverview`, its demo
+metrics and the BFF's `/api/v1/grid/overview` are gone. The plan as it was:
+
 Fake: the POC's `GetOverview` contract with the four metric series, per-metric status
 (`ok`, `no-data`, `unavailable`, `not-configured`), the deterministic demo generator ported
 verbatim so browser mock and fake agree, 300 second sample cadence when emulating the fleet,
