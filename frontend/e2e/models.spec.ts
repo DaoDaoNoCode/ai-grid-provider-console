@@ -166,7 +166,15 @@ test("deploys a model on NVIDIA GPUs with the cluster's default image", async ({
 // it a failure: it reads the model back and confirms it.
 test('confirms a deploy whose answer was lost instead of calling it failed', async ({ page, request }) => {
   const unique = `e2e-${Math.random().toString(36).slice(2, 8)}`;
+  // The create is held until the form has handed it over, then reaches the backend and lands, and the
+  // browser gets the BFF's 504 instead of the answer: as when the relay's write timeout cuts a slow
+  // commit, which is always after the form's short wait. An answer within the wait stays with the form.
+  let handOver = () => undefined as void;
+  const handedOver = new Promise<void>((resolve) => {
+    handOver = resolve;
+  });
   await page.route('**/ai_grid.v1.Models/Create', async (route) => {
+    await handedOver;
     await route.fetch();
     await route.fulfill({
       status: 504,
@@ -189,9 +197,11 @@ test('confirms a deploy whose answer was lost instead of calling it failed', asy
     await page.getByRole('button', { name: 'Next' }).click();
     await page.getByRole('button', { name: 'Deploy', exact: true }).click();
 
-    // The form leaves as on success, and the read-back confirms the deploy: the confirmation replaces
-    // the in-progress entry, so it may be the only toast left.
+    // The form leaves after its wait, saying the model is being saved; then the answer is lost.
+    await expect(page.getByRole('heading', { name: `Info alert: Saving model ${unique}` })).toBeVisible();
     await expect(page.getByRole('heading', { level: 1, name: 'Models' })).toBeVisible();
+    handOver();
+    // The read-back confirms the deploy, replacing the in-progress entry.
     await expect(writeConfirmed(page, `Model ${unique} saved to Git`)).toBeVisible();
     await expect(page.getByText(/Unable to deploy/)).toHaveCount(0);
     await expect(page.getByRole('row').filter({ hasText: unique })).toBeVisible();

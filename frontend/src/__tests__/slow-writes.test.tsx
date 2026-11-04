@@ -40,6 +40,12 @@ const formWaits = () => {
   };
 };
 
+/**
+ * A form wait that's already over: every answer, a lost one included, arrives after the hand-off,
+ * as one that takes longer than FORM_WAIT_MS does.
+ */
+const waitOver = () => Promise.resolve();
+
 const renderConsole = (
   path: string,
   service: MockConsoleService,
@@ -157,6 +163,17 @@ describe('deploying a model', () => {
     expect(alert).toHaveTextContent('Model "widget" already exists');
     await user.click(within(alert).getByRole('button', { name: 'Deploy model' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Deploy model' })).toBeVisible();
+    // The wizard opens on Review with what was submitted, and the backend's refusal as its error.
+    const review = await screen.findByTestId('model-review');
+    expect(review).toHaveTextContent('hf://org/widget');
+    expect(review).toHaveTextContent('registry.example/runtime:test');
+    expect(review).toHaveTextContent('site1');
+    expect(screen.getByText('Model "widget" already exists')).toBeVisible();
+    // The name can be changed: the taken one is the problem.
+    await user.click(screen.getByRole('button', { name: /^Deployment$/ }));
+    expect(screen.getByTestId('model-name-desc-name')).toHaveValue('Widget');
+    await user.click(screen.getByRole('button', { name: 'Edit resource name' }));
+    expect(screen.getByRole('textbox', { name: /^Resource name/ })).toHaveValue('widget');
   });
 
   it('keeps a refusal that comes back within the wait on the form, as before', async () => {
@@ -174,18 +191,31 @@ describe('deploying a model', () => {
     expect(screen.queryByText(/Deploying model/)).not.toBeInTheDocument();
   });
 
+  it('keeps an answer that comes back within the wait with the form, Unavailable included: nothing is handed over', async () => {
+    const service = new MockConsoleService();
+    vi.spyOn(modelsOf(service), 'create').mockRejectedValue(new ConnectError('connection refused', Code.Unavailable));
+    const storage = memoryStorage();
+    const user = userEvent.setup();
+    renderConsole('/models/deploy', service, formWaits().formWait, storage);
+    await fillWizard(user);
+    await user.click(screen.getByRole('button', { name: 'Deploy' }));
+    expect(await screen.findByText('The AI Grid backend is unavailable. Try again.')).toBeVisible();
+    expect(screen.getByRole('heading', { level: 1, name: 'Deploy model' })).toBeVisible();
+    expect(screen.queryByText(/Saving model/)).not.toBeInTheDocument();
+    expect(storage.values.get(WATCHES)).toBeUndefined();
+  });
+
   it('reads the model back when the answer is lost, and confirms the deploy that landed', async () => {
     const service = new MockConsoleService();
     const models = modelsOf(service);
     const create = models.create;
-    // The commit lands; the answer never reaches the browser.
+    // The commit lands; the answer, after the form's wait, never reaches the browser.
     vi.spyOn(models, 'create').mockImplementation(async (request, context) => {
       await create(request, context);
       throw lostAnswer();
     });
-    const { formWait } = formWaits();
     const user = userEvent.setup();
-    renderConsole('/models/deploy', service, formWait);
+    renderConsole('/models/deploy', service, waitOver);
     await fillWizard(user);
     await user.click(screen.getByRole('button', { name: 'Deploy' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Models' })).toBeVisible();
@@ -231,9 +261,8 @@ describe('editing and deleting a model', () => {
       await update(request, context);
       throw lostAnswer();
     });
-    const { formWait } = formWaits();
     const user = userEvent.setup();
-    renderConsole('/models/widget/edit', service, formWait);
+    renderConsole('/models/widget/edit', service, waitOver);
     await user.click(await screen.findByRole('button', { name: /^Deployment$/ }));
     const replicas = screen.getByRole('spinbutton', { name: 'Replicas' });
     await user.clear(replicas);
@@ -243,6 +272,35 @@ describe('editing and deleting a model', () => {
     expect(await toast('Changes to model Widget saved to Git')).toBeVisible();
     expect(await screen.findByRole('heading', { level: 1, name: 'Widget' })).toBeVisible();
     expect(screen.queryByText('Model updated')).not.toBeInTheDocument();
+  });
+
+  it("says an edit refused after the wait wasn't saved, and that the changes weren't kept", async () => {
+    const service = new MockConsoleService();
+    const models = widget(service);
+    const answer = deferred<void>();
+    vi.spyOn(models, 'update').mockImplementation(async () => {
+      await answer.promise;
+      throw new ConnectError(
+        'update Model "widget": the model changed since it was read; reload and retry',
+        Code.Aborted,
+      );
+    });
+    const { formWait, endWait } = formWaits();
+    const user = userEvent.setup();
+    renderConsole('/models/widget/edit', service, formWait);
+    await user.click(await screen.findByRole('button', { name: /^Deployment$/ }));
+    const replicas = screen.getByRole('spinbutton', { name: 'Replicas' });
+    await user.clear(replicas);
+    await user.type(replicas, '2');
+    await user.click(screen.getByRole('button', { name: /^Review$/ }));
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    await endWait();
+    await act(async () => answer.resolve());
+    const alert = (await toast('Unable to save changes to model Widget')).closest('.pf-v6-c-alert') as HTMLElement;
+    expect(alert).toHaveTextContent(
+      'update Model "widget": the model changed since it was read; reload and retry Your changes weren\'t saved. Edit the model again to make them.',
+    );
+    expect(within(alert).getByRole('button', { name: 'Edit model' })).toBeVisible();
   });
 
   it('closes the delete dialog after the wait and reports the delete when it lands', async () => {
@@ -306,10 +364,47 @@ describe('subscriptions', () => {
     expect(await screen.findByRole('link', { name: 'Test team' })).toBeVisible();
   });
 
+  it('reopens the create form with what was submitted when the backend refuses it after the wait', async () => {
+    const service = new MockConsoleService();
+    const subscriptions = seedSubscriptionsOf(service);
+    const answer = deferred<void>();
+    subscriptions.before.create = async () => {
+      await answer.promise;
+      throw new ConnectError('Subscription "test-team" already exists', Code.AlreadyExists);
+    };
+    const { formWait, endWait } = formWaits();
+    const user = userEvent.setup();
+    renderConsole('/subscriptions/create', service, formWait);
+    await user.click(await screen.findByRole('combobox', { name: 'Organization' }));
+    await user.click(screen.getByRole('option', { name: 'acme-robotics' }));
+    await user.click(screen.getByTestId('subscription-name-desc-name'));
+    await user.paste('Test team');
+    await user.click(screen.getByRole('combobox', { name: 'Groups' }));
+    await user.paste('engineering');
+    const option = await screen.findByRole('option', { name: 'Add group "engineering"' });
+    await user.click(option.querySelector('button') ?? option);
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByTestId('add-models-button'));
+    await user.click(screen.getByTestId('toggle-model-granite-3-8b'));
+    await user.click(screen.getByTestId('confirm-add-models'));
+    await user.click(screen.getByTestId('add-token-limit-0'));
+    await user.click(screen.getByTestId('save-rate-limits'));
+    await user.click(screen.getByTestId('create-subscription-button'));
+    await endWait();
+    await act(async () => answer.resolve());
+    const alert = (await toast('Unable to save subscription Test team')).closest('.pf-v6-c-alert') as HTMLElement;
+    await user.click(within(alert).getByRole('button', { name: 'Create subscription' }));
+    // The form holds what was submitted, and the refusal as its error.
+    expect(await screen.findByTestId('subscription-name-desc-name')).toHaveValue('Test team');
+    expect(screen.getByText('Subscription "test-team" already exists')).toBeVisible();
+    expect(screen.getByText('engineering')).toBeVisible();
+    expect(screen.getByTestId('subscription-models-table')).toHaveTextContent('granite-3-8b');
+  });
+
   /** Renames engineering to Platform on its edit page and saves. */
   const renameEngineering = async (service: MockConsoleService) => {
     const user = userEvent.setup();
-    renderConsole('/subscriptions/edit/engineering', service, formWaits().formWait);
+    renderConsole('/subscriptions/edit/engineering', service, waitOver);
     const name = await screen.findByTestId('subscription-name-desc-name');
     await user.clear(name);
     await user.paste('Platform');
@@ -429,7 +524,7 @@ describe('session storage', () => {
       throw lostAnswer();
     });
     const user = userEvent.setup();
-    renderConsole('/models/deploy', service, formWaits().formWait, { get: blockedStorage, values: new Map() });
+    renderConsole('/models/deploy', service, waitOver, { get: blockedStorage, values: new Map() });
     await fillWizard(user);
     await user.click(screen.getByRole('button', { name: 'Deploy' }));
     expect(await toast('Model Widget saved to Git')).toBeVisible();
@@ -509,7 +604,7 @@ describe('review findings', () => {
       throw lostAnswer();
     });
     const user = userEvent.setup();
-    renderConsole('/models/deploy', service, formWaits().formWait);
+    renderConsole('/models/deploy', service, waitOver);
     await user.click(await screen.findByRole('textbox', { name: /Model URI/ }));
     await user.paste('hf://other-org/widget');
     await user.click(screen.getByRole('button', { name: 'Next' }));
@@ -568,7 +663,7 @@ describe('review findings', () => {
       throw lostAnswer();
     });
     const user = userEvent.setup();
-    const formWait = formWaits().formWait;
+    const formWait = waitOver;
     const { rerender } = render(
       <MemoryRouter initialEntries={['/models/deploy']}>
         <TestApp service={service} formWait={formWait} storage={blockedStorage} />

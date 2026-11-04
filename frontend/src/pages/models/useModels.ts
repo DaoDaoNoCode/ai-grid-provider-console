@@ -24,6 +24,7 @@ import { list as listSubscriptions } from '../../gen/ai_grid/v1/subscriptions_se
 import type { Subscription } from '../../gen/ai_grid/v1/subscription_type_pb';
 import type { SubscriptionsListResponse } from '../../gen/ai_grid/v1/subscriptions_service_pb';
 import { useLoadOptions, useLoaded, type Loaded } from '../clusters/useClusters';
+import type { ModelDraft } from './modelDraft';
 import { createRequestOf, updateRequestOf, type ModelInput } from './modelRequests';
 import { titleOf, toModelView, type ModelView } from './modelView';
 
@@ -56,7 +57,8 @@ export const usePlacementClusters = (): Loaded<string[]> =>
 /** What the wizard and the delete dialog write, and how the dialog loads a model again. */
 export type ModelWrites = {
   /** `pending` when the write outlasted the form's wait and the notification center follows it. */
-  createModel: (input: ModelInput) => Promise<WriteOutcome>;
+  /** `draft` is the wizard's state, kept should the backend refuse the deploy after the wizard left. */
+  createModel: (input: ModelInput, draft?: ModelDraft) => Promise<WriteOutcome>;
   /** Sends the changed fields with `lock`; resolves to false when nothing changed. */
   updateModel: (model: ModelView, input: ModelInput) => Promise<WriteOutcome | false>;
   deleteModel: (model: ModelView) => Promise<WriteOutcome>;
@@ -82,7 +84,7 @@ export const useModelWrites = (): ModelWrites => {
       }
     };
     return {
-      createModel: (input) => {
+      createModel: (input, draft) => {
         const request = createRequestOf(input);
         return call(() =>
           submitWrite(
@@ -94,6 +96,7 @@ export const useModelWrites = (): ModelWrites => {
               // What a lost answer's read-back must find to confirm this deploy.
               expected: sentModelFields(request.object),
               clusters: input.clusters,
+              draft,
             },
             () => callUnaryMethod(transport, create, request),
           ),

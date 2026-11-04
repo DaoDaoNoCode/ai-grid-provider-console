@@ -95,7 +95,12 @@ export const useSubscriptionWrites = () => {
   const { submitWrite } = useBackgroundWrites();
   return useMemo(
     () => ({
-      createSubscription: (request: MessageInitShape<typeof SubscriptionsCreateRequestSchema>, name: string) =>
+      /** `draft` is the subscription as sent (JSON), kept should the backend refuse it after the form left. */
+      createSubscription: (
+        request: MessageInitShape<typeof SubscriptionsCreateRequestSchema>,
+        name: string,
+        draft?: unknown,
+      ) =>
         submitWrite(
           {
             subject: 'subscription',
@@ -104,6 +109,7 @@ export const useSubscriptionWrites = () => {
             name,
             // What a lost answer's read-back must find to confirm this write.
             expected: sentSubscriptionFields(request.object),
+            draft,
           },
           () => callUnaryMethod(transport, create, request),
         ),

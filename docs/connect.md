@@ -254,15 +254,20 @@ subscription) are sent from the app root, never from the form (`frontend/src/not
 - `useModelWrites` and `useSubscriptionWrites` call `submitWrite` (`useBackgroundWrites`), which
   sends the RPC with `callUnaryMethod` from `BackgroundWritesProvider`. The form waits for it
   `FORM_WAIT_MS` (3 s), with its button busy. An answer within that wait is the form's as it
-  always was: a refusal stays on the form, and a success leaves it, the center saying so. Every
-  refusal the backend gives without touching Git (a field, a conflict, a taken name) comes back
-  well inside the wait.
+  always was, whatever its code: a refusal, or the backend unreachable (Unavailable), stays on the
+  form as its error, and a success leaves it, the center saying so. Refusals usually come back
+  within the wait, but not always: in git mode a create's name check and an update's version check
+  run after the backend reads the Git head, which can take seconds once its cache has expired.
 - Past the wait the form leaves as on success, and an info toast says the change is being saved
   ("Saving model <name>"). The request keeps running; its answer becomes the outcome of that same
   entry (one drawer entry per write, unread when it arrives): the success, or the backend's
-  refusal with a link back to the form.
-- A write whose outcome is unknown (`isUnknownOutcome`: DeadlineExceeded, Unavailable, Canceled,
-  a failed fetch; never a 4xx or an error the backend answered itself) is not an error: the
+  refusal with a link back to the form. A create refused after the form left keeps what was
+  submitted (the provider's drafts, per user in the tab's storage): the link (`?draft=`) reopens the
+  wizard or the create form with it, on Review for a model, the refusal as the form's error and the
+  resource name editable. An edit refused after the form left says the changes weren't saved, and
+  its link opens the edit page on the object as it is now.
+- An answer lost after the form left (`isUnknownOutcome`: DeadlineExceeded, Unavailable,
+  Canceled, a failed fetch; never a 4xx or an error the backend answered itself) is not an error: the
   center reads the object back every 10 s and says it was not done after 2 minutes. A create is
   done when `Get` finds the object holding what it sent, an update when the version moved past
   the one sent and the object holds what it sent (`writeFields.ts`: a model's display name,

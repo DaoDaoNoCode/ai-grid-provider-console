@@ -139,15 +139,22 @@ export const succeededText = (t: WriteTarget): Text => {
 const unable = (t: WriteTarget) => `Unable to ${t.op === 'delete' ? 'delete' : 'save'} ${thing(t)}`;
 
 /** The backend refused the write after the form had left: its message, and the way back to the form. */
-export const failedText = (t: WriteTarget, message: string): Text => {
+export const failedText = (t: WriteTarget, message: string, draftId?: string): Text => {
   const s = subjects[t.subject];
-  const action =
-    t.op === 'create'
-      ? { title: s.createAction, to: s.createPath }
-      : t.op === 'update'
-        ? { title: `Edit ${s.object}`, to: s.edit(t.id) }
-        : viewAction(t);
-  return { title: unable(t), message, actions: [action] };
+  if (t.op === 'create') {
+    // The link reopens the form with what was submitted, when the tab kept it (draftId).
+    const to = draftId ? `${s.createPath}?draft=${encodeURIComponent(draftId)}` : s.createPath;
+    return { title: unable(t), message, actions: [{ title: s.createAction, to }] };
+  }
+  if (t.op === 'update') {
+    // The edit page opens on the object as it is now: the refused changes are gone, so say so.
+    return {
+      title: unable(t),
+      message: `${message} Your changes weren't saved. Edit the ${s.object} again to make them.`,
+      actions: [{ title: `Edit ${s.object}`, to: s.edit(t.id) }],
+    };
+  }
+  return { title: unable(t), message, actions: [viewAction(t)] };
 };
 
 /** The backend answered every check, but the write never showed in Git. */

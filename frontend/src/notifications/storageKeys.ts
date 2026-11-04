@@ -8,3 +8,6 @@ export const notificationsKey = (owner: string) => `${PREFIX}.notifications.${en
 
 /** The write watches of this user. */
 export const watchesKey = (owner: string) => `${PREFIX}.write-watches.${encodeURIComponent(owner)}`;
+
+/** What refused creates submitted, for their forms to reopen with. */
+export const draftsKey = (owner: string) => `${PREFIX}.write-drafts.${encodeURIComponent(owner)}`;

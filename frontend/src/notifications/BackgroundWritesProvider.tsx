@@ -17,9 +17,9 @@ import { get as getSubscription } from '../gen/ai_grid/v1/subscriptions_service-
 import { toModelView } from '../pages/models/modelView';
 import type { GetStorage } from '../utilities/signInAgain';
 import { isObject, readRecords, removeRecords, writeRecords } from './sessionRecords';
-import { watchesKey } from './storageKeys';
+import { draftsKey, watchesKey } from './storageKeys';
 import { isUnknownOutcome } from './unknownOutcome';
-import { BackgroundWritesContext, type BackgroundWritesValue } from './useBackgroundWrites';
+import { BackgroundWritesContext, type BackgroundWritesValue, type WriteDraft } from './useBackgroundWrites';
 import { useNotifications } from './useNotifications';
 import { NotificationResponseStatus, useNotificationWatcher } from './useNotificationWatcher';
 import { modelFields, subscriptionFields } from './writeFields';
@@ -71,6 +71,16 @@ const isRecord = (value: unknown): value is WatchRecord =>
   (value.subject === 'model' || value.subject === 'subscription') &&
   (value.op === 'create' || value.op === 'update' || value.op === 'delete') &&
   (value.stage === 'sent' || value.stage === 'readback' || value.stage === 'ready');
+
+/** The refused creates whose input the tab keeps, newest last. */
+const MAX_DRAFTS = 10;
+
+const isDraft = (value: unknown): value is WriteDraft =>
+  isObject(value) &&
+  typeof value.key === 'string' &&
+  (value.subject === 'model' || value.subject === 'subscription') &&
+  typeof value.error === 'string' &&
+  value.values !== undefined;
 
 let counter = 0;
 const newKey = () => `${Date.now().toString(36)}-${(counter++).toString(36)}`;
@@ -128,6 +138,17 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
       save();
     },
     [save],
+  );
+
+  // What refused creates submitted, newest last, so the form reopens with them (draftOf); in memory
+  // and mirrored to the tab's storage under the user, like the watches.
+  const drafts = useRef<WriteDraft[]>([]);
+  const keepDraft = useCallback(
+    (draft: WriteDraft) => {
+      drafts.current = [...drafts.current.filter((d) => d.key !== draft.key), draft].slice(-MAX_DRAFTS);
+      if (ownerRef.current !== undefined) writeRecords(storage, draftsKey(ownerRef.current), drafts.current);
+    },
+    [storage],
   );
 
   // Reads go through the query cache, so a watch and a page showing the same object share them.
@@ -226,13 +247,20 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
         generation.current += 1;
         inFlight.current.clear();
         records.current = [];
+        drafts.current = [];
         removeRecords(storage, watchesKey(previous));
+        removeRecords(storage, draftsKey(previous));
       }
       if (owner !== undefined) {
         const stored = readRecords(storage, watchesKey(owner), isRecord);
         const held = records.current;
         records.current = [...held, ...stored.filter((s) => !held.some((r) => r.key === s.key))];
         save();
+        const storedDrafts = readRecords(storage, draftsKey(owner), isDraft);
+        drafts.current = [
+          ...drafts.current,
+          ...storedDrafts.filter((s) => !drafts.current.some((d) => d.key === s.key)),
+        ];
       }
     }
     const watching = registered.current;
@@ -248,7 +276,7 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
   }, [owner, storage, save, startWatch, unregisterNotification]);
 
   const submitWrite = useCallback<BackgroundWritesValue['submitWrite']>(
-    async (target, send) => {
+    async ({ draft, ...target }, send) => {
       const sentAt = now();
       const key = newKey();
       const started = generation.current;
@@ -277,12 +305,11 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
           landed(target);
           return 'done';
         }
-        if (!isUnknownOutcome(first.error)) {
-          drop(key);
-          throw first.error;
-        }
-        startWatch({ ...target, key, stage: 'readback', since: sentAt, notificationId: handOver() });
-        return 'pending';
+        // Any answer within the wait is the form's, as before the notification center, whatever its
+        // code: an Unavailable backend is the form's error too. Only a write still unanswered when
+        // the wait ends is handed over.
+        drop(key);
+        throw first.error;
       }
 
       // Still running: the form leaves, and the answer becomes the outcome of the in-progress entry,
@@ -301,15 +328,27 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
         } else if (isUnknownOutcome(result.error)) {
           startWatch({ ...target, key, stage: 'readback', since: sentAt, notificationId });
         } else {
+          // Refused after the form left: a create keeps what was submitted, so the toast's link
+          // reopens the form with it and the refusal (draftOf).
           drop(key);
-          notify({ id: notificationId, variant: 'danger', ...failedText(target, describeError(result.error).message) });
+          const message = describeError(result.error).message;
+          if (draft !== undefined && target.op === 'create') {
+            keepDraft({ key, subject: target.subject, values: draft, error: message });
+          }
+          notify({
+            id: notificationId,
+            variant: 'danger',
+            ...failedText(target, message, draft !== undefined && target.op === 'create' ? key : undefined),
+          });
         }
       });
       return 'pending';
     },
-    [now, formWait, notify, startWatch, landed, keep, drop],
+    [now, formWait, notify, startWatch, landed, keep, drop, keepDraft],
   );
 
-  const value = useMemo(() => ({ submitWrite }), [submitWrite]);
+  const draftOf = useCallback((id: string) => drafts.current.find((d) => d.key === id), []);
+
+  const value = useMemo(() => ({ submitWrite, draftOf }), [submitWrite, draftOf]);
   return <BackgroundWritesContext.Provider value={value}>{children}</BackgroundWritesContext.Provider>;
 };

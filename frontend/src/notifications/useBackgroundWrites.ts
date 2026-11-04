@@ -1,22 +1,36 @@
 // The background writes' context and hook, in their own module so BackgroundWritesProvider.tsx
 // exports only the provider.
 import { createContext, useContext } from 'react';
-import type { WriteTarget } from './writeText';
+import type { WriteSubject, WriteTarget } from './writeText';
 
 /**
  * How a write ended for the form: `done` when the backend answered within the form's short wait
- * (the form shows its success notice), `pending` when the notification center took it over (the
- * form leaves as on success, without a notice: the center has shown its own).
+ * (the notification center says so), `pending` when the notification center took it over (the
+ * form leaves as on success; the center follows the write).
  */
 export type WriteOutcome = 'done' | 'pending';
+
+/**
+ * What a create that the backend refused after the form had left submitted, kept for the form to
+ * reopen with: the form's own values (JSON), and the refusal's message as the form's error.
+ */
+export type WriteDraft = {
+  key: string;
+  subject: WriteSubject;
+  values: unknown;
+  error: string;
+};
 
 export type BackgroundWritesValue = {
   /**
    * Sends a write from the app root, so it keeps running after the form unmounts. Resolves within
-   * the form's short wait; rejects only with a definite failure that came back within it, which
-   * the form shows as today.
+   * the form's short wait; rejects with any answer that came back within it, which the form shows
+   * as before (a definite refusal, or the backend unreachable). `draft` is what a create's form
+   * holds, kept should the backend refuse the create after the form has left.
    */
-  submitWrite: (target: WriteTarget, send: () => Promise<unknown>) => Promise<WriteOutcome>;
+  submitWrite: (target: WriteTarget & { draft?: unknown }, send: () => Promise<unknown>) => Promise<WriteOutcome>;
+  /** A refused create's draft, by the id in the toast's link (`?draft=`). */
+  draftOf: (id: string) => WriteDraft | undefined;
 };
 
 export const BackgroundWritesContext = createContext<BackgroundWritesValue>({
@@ -25,6 +39,7 @@ export const BackgroundWritesContext = createContext<BackgroundWritesValue>({
     await send();
     return 'done';
   },
+  draftOf: () => undefined,
 });
 
 export const useBackgroundWrites = () => useContext(BackgroundWritesContext);
