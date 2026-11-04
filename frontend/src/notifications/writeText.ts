@@ -2,7 +2,8 @@
 // review. The backend commits these writes to a Git repository, and Argo CD applies them to the
 // clusters later, so the words name each stage as it is: a write is "saved to Git" (or "deleted
 // from Git"), a model is "ready" only once it runs on every cluster it is placed on (each cluster's
-// status; users reach it through MaaS once a subscription covers it too).
+// status; users reach it through MaaS once a subscription covers it too), and a subscription is
+// "active" only once it and its authorization policy are active on every ingress cluster.
 // They follow frontend/AGENTS.md, "Wording": "Unable to <verb> <object>" for errors, no end
 // punctuation in titles.
 import { modelPath } from '../pages/models/modelUtils';
@@ -31,6 +32,8 @@ export type WriteTarget = {
   expected?: WriteFields;
   /** For a model: the clusters the write deploys it to, or removes it from. */
   clusters?: string[];
+  /** For a created subscription: its organization's name, when the form had it. */
+  organization?: string;
 };
 
 const subjects: Record<
@@ -94,7 +97,10 @@ const thing = (t: WriteTarget) =>
 /** How long a write that outlasts the form is checked for, in the words below. */
 export const READBACK_MINUTES = 2;
 
-/** How long a deployed model is watched until it is ready (and an edited one at all), in the words below. */
+/**
+ * How long a deployed model is watched until it is ready, a created subscription until it is
+ * active (and an edited one of either at all), in the words below.
+ */
 export const READY_MINUTES = 30;
 
 /** The info entry while the write is out: the form left before the backend answered. */
@@ -239,3 +245,42 @@ export const modelChangesFailedText = (id: string, name: string, why: string | u
   message: why ?? 'The model failed after the changes were saved to Git. Open it for details.',
   actions: [{ title: 'View model', to: modelPath({ id }) }],
 });
+
+/**
+ * Who a subscription serves: the users in its groups (the glossary's words), in its organization
+ * when the form knew the organization's name. The name is never first, so it keeps its own case.
+ */
+const usersOf = (t: WriteTarget) =>
+  t.organization ? `users in its groups in the ${t.organization} organization` : 'users in its groups';
+
+/**
+ * A created subscription is active, and so is its authorization policy, on every ingress cluster:
+ * its users can call its models. MaaS needs both, the policy for access and the subscription for
+ * the quota.
+ */
+export const subscriptionActiveText = (t: WriteTarget): Text => {
+  const users = usersOf(t);
+  return {
+    title: `Subscription ${t.name} is active`,
+    message: `${users.charAt(0).toUpperCase()}${users.slice(1)} can use its models.`,
+    actions: [viewAction(t)],
+  };
+};
+
+/**
+ * A created subscription, or its authorization policy, isn't active on every ingress cluster after
+ * READY_MINUTES: what that means for its users, and where to look. A warning: it may still turn
+ * active. A subscription turns active once every model it names is registered on the cluster, so
+ * its models' status on its page is the first place to look.
+ */
+export const subscriptionNotActiveText = (t: WriteTarget, inactive: 'subscription' | 'policy'): Text => {
+  const after = `${READY_MINUTES} minutes after it was saved to Git, so ${usersOf(t)} might not be able to use its models`;
+  return {
+    title: `Subscription ${t.name} isn't active yet`,
+    message:
+      inactive === 'policy'
+        ? `Its authorization policy isn't active on every ingress cluster ${after}. Open the subscription to check the policy's status.`
+        : `It isn't active on every ingress cluster ${after}. Open the subscription to check its status and its models' status.`,
+    actions: [viewAction(t)],
+  };
+};

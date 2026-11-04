@@ -282,7 +282,11 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
 - **Testing.** Page tests answer from `frontend/src/__tests__/connectSubscriptions.ts`, an
   in-memory Subscriptions service over the generated messages that answers as git mode does,
   joined to `connectModels.ts`'s models; the browser test (`e2e/subscriptions.spec.ts`) runs on the
-  backend's fakes and commits a model of its own first (`e2e/backend.ts`).
+  backend's fakes and commits a model of its own first (`e2e/backend.ts`). The fake hub's status
+  Policies are static: they report subscription `team-a` and its policy active on site3 and no
+  other subscription there yet (the backend's `fixtures/poc/policies.json`), so any other
+  subscription reads Pending for good, and the test creates `team-a` to see the notification
+  center say it is active.
 - The BFF has no `/api/v1/subscriptions` or `/api/v1/models` routes and no `--models-namespace`.
 
 ### Writes that take long
@@ -337,14 +341,36 @@ subscription) are sent from the app root, never from the form (`frontend/src/not
   failed then is the previous revision's failure, reported only if its status changes. After 30
   minutes it ends without a word; a model that is gone stops it. Edits get a "ready" once the
   backend reports the revision its status describes.
-- One watch follows a model at a time, so nothing is said twice: deploying an id again replaces
-  its earlier watch; an edit replaces the previous edit's watch, and adds none while a deploy's
-  readiness watch of the model still runs, as that one follows the same status and reports the
-  same failures; a delete stops the model's watch at once.
+- A created subscription is watched the same way, every 20 s for up to 30 minutes, through
+  `Subscriptions/Get`, until it and its authorization policy (the managed `<id>-policy`, which
+  `Get` returns as `auth_policies`) both read Active: "Subscription <name> is active", "Users in
+  its groups in the <organization> organization can use its models." (the organization's name as
+  the form's select showed it, left out when it didn't load). MaaS needs both: the policy gives
+  the users access to the models, the subscription their quota. The backend reads both phases
+  from the ingress clusters' reports (`withSubscriptionPhase` and `withAuthPolicyStatus` in its
+  `internal/servers/subscriptions_git.go`): Active when every ingress cluster has the object
+  active, Pending while any doesn't have it yet, has it otherwise or hasn't reported, and empty
+  when no ingress cluster reports at all. There is no Failed phase and no per-cluster list for a
+  subscription, so the watch has no error to report. After 30 minutes it warns "Subscription
+  <name> isn't active yet", saying whether the subscription or its policy isn't active and where
+  to look. An empty phase claims nothing: it describes the environment (the status Policy isn't
+  deployed, or no cluster has evaluated it), not the subscription, so the watch stops without a
+  word on its third read that finds it empty, rather than polling Git for 30 minutes to say
+  nothing. A subscription that is gone stops it.
+- An edited subscription is watched every 20 s for 30 minutes too, and never said to be active:
+  the clusters' reports name objects, not versions, and the previous version stays Active while
+  the new one is applied. It has nothing to fail on, so it only has the pages refetch when the
+  phase changes, and ends without a word (on its third empty phase, as above).
+- One watch follows a model, and one a subscription, at a time, so nothing is said twice:
+  deploying or creating an id again replaces its earlier watch; an edit replaces the previous
+  edit's watch, and adds none while a create's readiness watch of the object still runs, as that
+  one follows the same status (and, for a model, reports the same failures); a delete stops the
+  object's watch at once. A model and a subscription with the same id are watched apart.
 - The pages refetch what a watch learns at once, rather than on their own next poll: every
-  Models query (lists and `Get`s alike) when a model's watch sees its status change (its phase or
-  reason, or any `status.clusters` entry), and every query of the object's kind, Models or
-  Subscriptions, when any watch ends. A poll that sees no change refetches nothing.
+  query of the object's kind, Models or Subscriptions (lists and `Get`s alike, so the
+  Subscriptions list and a subscription's page, which doesn't poll), when its watch sees its
+  status change (a model's phase or reason, or any `status.clusters` entry; a subscription's
+  phase or its policy's), and when any watch ends. A poll that sees no change refetches nothing.
 - The watches and the notifications are kept in the browser tab's session storage under the
   signed-in user (`storageKeys.ts`), so a reload resumes them: a write's record is kept before its
   request goes out, and one whose answer the page no longer awaits is read back. When another user
@@ -355,7 +381,8 @@ The words name each stage as it is, since the backend only commits to Git and Ar
 change later: "Model <name> saved to Git" with "It's being deployed to <clusters>", "Changes to
 model <name> saved to Git", "Model <name> deleted from Git", and for a subscription that it takes
 effect once the ingress clusters apply it. A model is "ready" once it runs on every cluster it
-is placed on (each cluster's status), and only then. The pages raise no success notice of their own for these writes:
+is placed on (each cluster's status), and only then; a subscription is "active" once it and its
+authorization policy are active on every ingress cluster, and only then. The pages raise no success notice of their own for these writes:
 the center says it on both paths (`writeText.ts`).
 
 Every toast goes through the notification center (`NotificationToasts`), a page's own success

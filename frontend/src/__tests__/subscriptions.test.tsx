@@ -20,6 +20,7 @@ import { MockConsoleService } from '../api/MockConsoleService';
 import { ConditionStatus } from '../gen/ai_grid/v1/condition_type_pb';
 import { SubscriptionSchema, type Subscription } from '../gen/ai_grid/v1/subscription_type_pb';
 import { DISPLAY_NAME } from '../pages/models/modelView';
+import { watchesKey } from '../notifications/storageKeys';
 import {
   ACME_ID,
   fleetOf,
@@ -376,6 +377,15 @@ describe('administrator subscription flows', () => {
     await screen.findByTestId('subscriptions-table');
     expect(await screen.findByRole('link', { name: 'Test team' })).toBeVisible();
     expect(await screen.findByText('Subscription Test team saved to Git')).toBeVisible();
+    // The notification center follows it until it is active, to name its organization then.
+    expect(JSON.parse(window.sessionStorage.getItem(watchesKey('dev-user')) ?? '[]')).toContainEqual(
+      expect.objectContaining({
+        subject: 'subscription',
+        id: 'test-team',
+        stage: 'ready',
+        organization: 'acme-robotics',
+      }),
+    );
     // Subscriptions/Create: the id, the display name annotation, the organization, bare groups,
     // and the model by its id with no namespace (SubscriptionModelRef.model_id).
     const [{ object }] = subscriptionsOf(service).sent('create');
