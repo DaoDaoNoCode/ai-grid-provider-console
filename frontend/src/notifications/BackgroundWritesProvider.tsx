@@ -67,8 +67,8 @@ const defaultFormWait = (signal: AbortSignal) =>
  * watch's last seen status (statusOf), so a reload still tells a change from none. `empties` and
  * `lastVerdict`: a subscription watch's history (SubscriptionHistory), so a reload goes on counting.
  * `edit`: on a `ready` watch, the latest edit of the object made while it ran (its name and when it
- * landed), which the watch goes on following as a `changes` watch once it ends, until that edit's
- * own READY_MS has run out.
+ * landed), whose name the watch's outcome uses (a rename), and which the watch goes on following as
+ * a `changes` watch once it ends, until that edit's own READY_MS has run out.
  */
 type WatchRecord = WriteTarget & {
   key: string;
@@ -275,9 +275,8 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
     function startWatchFn(record: WatchRecord) {
       keep(record);
       const { key, stage, since, notificationId, status: kept } = record;
-      const target = targetOf(record);
       const followsStatus = statusStages.has(stage);
-      const isModel = target.subject === 'model';
+      const isModel = record.subject === 'model';
       registered.current.add(key);
       if (kept !== undefined) lastStatus.current.set(key, kept);
       // The subscription watch's history, as its record has it (a reload goes on from it).
@@ -287,6 +286,10 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
         notificationId,
         callbackDelay: followsStatus ? READY_POLL_MS : READBACK_POLL_MS,
         callback: async (signal) => {
+          // The write this watch follows, under the name of the latest edit made while it runs
+          // (`edit`, which a rename changes): its outcome names the object as the pages show it.
+          const latestEdit = records.current.find((r) => r.key === key)?.edit;
+          const target = { ...targetOf(record), ...(latestEdit ? { name: latestEdit.name } : {}) };
           // What this poll read, to tell whether the object changed since the last one, or that the
           // read failed.
           const seen: { answered: boolean; failed: boolean; answer?: ReadAnswer } = { answered: false, failed: false };

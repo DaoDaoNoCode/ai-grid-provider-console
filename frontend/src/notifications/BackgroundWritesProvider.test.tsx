@@ -275,10 +275,14 @@ it('refreshes the lists when a readiness watch sees the status change, and not o
 
 /** The console with a Models list that polls nothing itself, around a model the test changes. */
 const editing = (stored: object[] = []) => {
-  const state = { model: pendingOnSiteB(), listCalls: 0 };
+  // `failing`: Get fails (Unavailable) while set.
+  const state = { model: pendingOnSiteB(), listCalls: 0, failing: false };
   const { transport } = fakeClients({
     models: {
-      get: () => ({ object: state.model }),
+      get: () => {
+        if (state.failing) throw new ConnectError('the Git catalog is unreachable', Code.Unavailable);
+        return { object: state.model };
+      },
       list: () => {
         state.listCalls += 1;
         return { items: [state.model], size: 1, total: 1 };
@@ -422,6 +426,54 @@ it("follows a model edited at 29 minutes of its deploy's watch until 59 minutes,
     vi.useRealTimers();
   }
 });
+
+it('names a model renamed while its deploy is watched by the new name when it is ready', async () => {
+  vi.useFakeTimers();
+  try {
+    const { state, storage } = editing([readyRecord(Date.now())]);
+    await pass(0);
+    await act(async () => {
+      await submitWrite({ ...edit, name: 'Widget Pro' }, async () => undefined);
+    });
+    expect(screen.getByText('Changes to model Widget Pro saved to Git')).toBeInTheDocument();
+    expect(modelWatches(storage)).toMatchObject([{ key: 'r1', stage: 'ready' }]);
+
+    state.model = pendingOnSiteB();
+    state.model.status!.clusters = [
+      create(ModelClusterStatusSchema, { cluster: 'site-b', phase: ModelPhase.READY, reason: 'Ready' }),
+    ];
+    await pass(READY_POLL_MS);
+    expect(screen.getByText('Model Widget Pro is ready on site-b')).toBeInTheDocument();
+    expect(screen.queryByText(/^Model Widget is/)).not.toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it.each([
+  ['not ready', false, "Model Widget Pro isn't ready yet"],
+  ['unknown, its last read failed', true, 'Unable to confirm model Widget Pro is ready'],
+])(
+  'names a model renamed while its deploy is watched by the new name when its 30 minutes run out (%s), after a reload',
+  async (_, failing, title) => {
+    vi.useFakeTimers();
+    try {
+      // Resumed after a reload with one check left, the rename recorded on the watch.
+      const renamed = {
+        ...readyRecord(Date.now() - READY_MS + READY_POLL_MS / 2),
+        edit: { name: 'Widget Pro', since: Date.now() - 60_000 },
+      };
+      const { state } = editing([renamed]);
+      state.failing = failing;
+      await pass(0);
+      await pass(READY_POLL_MS);
+      expect(screen.getByText(title)).toBeInTheDocument();
+      expect(screen.queryByText(/model Widget is|Model Widget isn't/)).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
 
 it("replaces an edited model's watch on the next edit, and stops it when the model is deleted", async () => {
   const { storage } = editing();
@@ -899,6 +951,43 @@ describe('a subscription watch', () => {
     expect(screen.getAllByText('Subscription Team A is active')).toHaveLength(1);
     expect(screen.queryByText(/isn't active/)).not.toBeInTheDocument();
   });
+
+  it('names a subscription renamed while its create is watched by the new name when it is active', async () => {
+    const { state, storage } = subscribing([activeRecord(Date.now())]);
+    await pass(0);
+    await act(async () => {
+      await submitWrite({ ...editTeamA, name: 'Team Alpha' }, async () => undefined);
+    });
+    expect(screen.getByText('Changes to subscription Team Alpha saved to Git')).toBeInTheDocument();
+    expect(subscriptionWatches(storage)).toMatchObject([{ key: 's1', stage: 'ready' }]);
+
+    state.answer = teamA('Active');
+    await pass(READY_POLL_MS);
+    expect(screen.getByText('Subscription Team Alpha is active')).toBeInTheDocument();
+    expect(screen.queryByText(/^Subscription Team A /)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['not active', false, "Subscription Team Alpha isn't active yet"],
+    ['unknown, its last read failed', true, 'Unable to confirm subscription Team Alpha is active'],
+  ])(
+    'names a subscription renamed while its create is watched by the new name when its 30 minutes run out (%s), after a reload',
+    async (_, failing, title) => {
+      // Resumed after a reload with one check left, the rename recorded on the watch.
+      const renamed = {
+        ...activeRecord(Date.now() - READY_MS + READY_POLL_MS / 2),
+        edit: { name: 'Team Alpha', since: Date.now() - 60_000 },
+      };
+      const { state } = subscribing([renamed]);
+      state.failing = failing;
+      await pass(0);
+      // A failed read takes longer: the watch's Get shares the subscription page's, which the
+      // query cache retries (1 s, 2 s, 4 s) before it fails, so the last poll comes a poll later.
+      await pass(2 * READY_POLL_MS);
+      expect(screen.getByText(title)).toBeInTheDocument();
+      expect(screen.queryByText(/subscription Team A |Subscription Team A /)).not.toBeInTheDocument();
+    },
+  );
 
   it("adds no watch to an edited subscription whose create's readiness watch still runs", async () => {
     const { storage } = subscribing([activeRecord(Date.now())]);

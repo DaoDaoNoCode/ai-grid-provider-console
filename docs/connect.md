@@ -386,9 +386,11 @@ subscription) are sent from the app root, never from the form (`frontend/src/not
   deploying or creating an id again replaces its earlier watch; an edit replaces the previous
   edit's watch. An edit made while a create's readiness watch of the object still runs adds no
   watch of its own: that one follows the same status (and, for a model, reports the same
-  failures), and records the edit. When it ends on its own terms (ready or active, failed, or
-  its warning), it goes on as the edit's silent watch until 30 minutes after the edit, so an edit
-  at minute 29 is followed until minute 59. A delete stops the object's watch at once. A model and
+  failures), and records the edit, whose name its outcome then uses, so a model or subscription
+  renamed meanwhile is "ready" or "active" (or not, or unconfirmed) under its new name. When it
+  ends on its own terms (ready or active, failed, or its warning), it goes on as the edit's
+  silent watch until 30 minutes after the edit, so an edit at minute 29 is followed until minute
+  59. A delete stops the object's watch at once. A model and
   a subscription with the same id are watched apart.
 - The pages refetch what a watch learns at once, rather than on their own next poll: every
   query of the object's kind, Models or Subscriptions (lists and `Get`s alike, so the
