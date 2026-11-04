@@ -2226,7 +2226,7 @@ describe('the deployment and MaaS statuses', () => {
     expect(within(rows[1]).getByTestId('model-cluster-status')).toHaveTextContent('Unknown on site2');
   });
 
-  it("closes the model's status dialog when a poll moves it out of Partially ready", async () => {
+  it('keeps the model status dialog closed after polling out of and back into Partially ready', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     try {
       const service = running();
@@ -2238,28 +2238,54 @@ describe('the deployment and MaaS statuses', () => {
       smollm2.status!.clusters[1].deployment = ModelDeploymentState.RUNNING;
       await act(() => vi.advanceTimersByTimeAsync(30_000));
       await waitFor(() => expect(screen.queryByTestId('model-status-modal')).not.toBeInTheDocument());
+      smollm2.status!.clusters[1].deployment = ModelDeploymentState.STARTING;
+      await act(() => vi.advanceTimersByTimeAsync(30_000));
+      await waitFor(() =>
+        expect(
+          within(screen.getByTestId('model-cluster-names-smollm2').closest('tr')!).getByTestId('model-phase'),
+        ).toHaveTextContent('Partially ready'),
+      );
+      expect(screen.queryByTestId('model-status-modal')).not.toBeInTheDocument();
+      await user.click(within(await rowOf('smollm2')).getByRole('button', { name: 'Partially ready for smollm2' }));
+      expect(await screen.findByTestId('model-status-modal')).toBeVisible();
+      await user.keyboard('{Escape}');
+      expect(screen.queryByTestId('model-status-modal')).not.toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it('closes the Availability dialog when a poll makes the model Available', async () => {
-    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
-    try {
-      const service = running();
-      const smollm2 = modelsOf(service).find('smollm2');
-      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-      renderAt('/models', service);
-      const cell = within(await rowOf('smollm2')).getByTestId('model-availability-smollm2');
-      await user.click(within(cell).getByRole('button', { name: /^Awaiting subscription/ }));
-      expect(await screen.findByTestId('model-availability-modal')).toBeVisible();
-      smollm2.status!.maas = ModelMaasState.AVAILABLE;
-      await act(() => vi.advanceTimersByTimeAsync(30_000));
-      await waitFor(() => expect(screen.queryByTestId('model-availability-modal')).not.toBeInTheDocument());
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+  it.each(['/models', '/models/smollm2'])(
+    'keeps Availability closed after polling through Available on %s',
+    async (path) => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      try {
+        const service = running();
+        const smollm2 = modelsOf(service).find('smollm2');
+        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+        renderAt(path, service);
+        await user.click(await screen.findByRole('button', { name: 'Pending availability of smollm2' }));
+        expect(await screen.findByTestId('model-availability-modal')).toBeVisible();
+        smollm2.status!.maas = ModelMaasState.AVAILABLE;
+        await act(() => vi.advanceTimersByTimeAsync(30_000));
+        await waitFor(() => expect(screen.queryByTestId('model-availability-modal')).not.toBeInTheDocument());
+        smollm2.status!.maas = ModelMaasState.AWAITING_SUBSCRIPTION;
+        await act(() => vi.advanceTimersByTimeAsync(30_000));
+        await waitFor(() =>
+          expect(
+            screen.getAllByTestId('model-availability-label').find((label) => label.textContent?.includes('smollm2')),
+          ).toHaveTextContent('Pending'),
+        );
+        expect(screen.queryByTestId('model-availability-modal')).not.toBeInTheDocument();
+        await user.click(await screen.findByRole('button', { name: 'Pending availability of smollm2' }));
+        expect(await screen.findByTestId('model-availability-modal')).toBeVisible();
+        await user.keyboard('{Escape}');
+        expect(screen.queryByTestId('model-availability-modal')).not.toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it("titles the model page's alert with its Status word, not the phase", async () => {
     const service = running();

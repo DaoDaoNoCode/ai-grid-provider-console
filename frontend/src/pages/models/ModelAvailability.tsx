@@ -61,6 +61,9 @@ const subtextStyle = (label: string): CSSProperties => {
 export const ModelAvailability: React.FC<Props> = ({ model, availability }) => {
   const [open, setOpen] = useState(false);
   const opens = !!availability.heading && !!availability.body;
+  if (open && !opens) {
+    setOpen(false);
+  }
   return (
     <>
       <div>

@@ -96,6 +96,9 @@ export const ModelsPage: React.FC = () => {
   }, [models, filter, sortBy]);
 
   const statusModel = models.find((m) => m.id === statusModelId);
+  if (statusModelId && (!statusModel || !statusOpens(statusModel.state))) {
+    setStatusModelId(undefined);
+  }
 
   const deployButton = canWrite ? (
     <Button component={(props) => <Link {...props} to="/models/deploy" />}>Deploy model</Button>
