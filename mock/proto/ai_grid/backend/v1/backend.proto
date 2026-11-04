@@ -1,7 +1,7 @@
 // Stopgap: the messages of the backend's real ai_grid.v1 Tenants service, copied from
 // ai-grid-provider-backend proto/ai_grid/v1 at 8c1a1bc (metadata_type, tenant_type,
 // tenants_service), with TenantSpec.identity_provider, IdentityProvider and OidcConfig from
-// bf15ceb (backend PR 64, not yet on its main), so
+// 57b2fba, so
 // the BFF can call those RPCs. Fields the BFF doesn't use are
 // left out. Field numbers, names and types are unchanged; the validation and HTTP
 // options are dropped. The package is renamed because the draft in ../../v1 declares the same
