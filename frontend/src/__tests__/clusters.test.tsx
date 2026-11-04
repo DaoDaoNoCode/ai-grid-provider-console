@@ -13,6 +13,9 @@ import {
   ManagedClusterSchema,
   ManagedClusterState,
 } from '../gen/ai_grid/v1/managed_cluster_type_pb';
+import { createClient } from '@connectrpc/connect';
+import { Clusters } from '../api/connect/clients';
+import { transportFor } from './connectClusters';
 import { renderAt } from './render';
 
 const cluster = (name: string, status: GridCluster['status'], labels: Record<string, string> = {}): GridCluster => {
@@ -99,7 +102,7 @@ it('removes a member from AI Grid after a confirmation', async () => {
   // A remote cluster also leaves the cross-cluster network.
   expect(modal).toHaveTextContent('The cluster is also disconnected from the other AI Grid clusters.');
   expect(modal).toHaveTextContent(
-    'Models deployed to it from the Models page are removed from it. OpenShift AI is not uninstalled.',
+    'OpenShift AI and the models running on it are not uninstalled, but AI Grid no longer manages them. Move its models to other clusters first.',
   );
   // Destructive, so it asks for the cluster's name typed in, as every delete does.
   expect(within(modal).getByRole('button', { name: 'Remove' })).toBeDisabled();
@@ -124,8 +127,68 @@ it('does not say the hub is disconnected when removing local-cluster', async () 
   expect(modal).not.toHaveTextContent('disconnected');
   expect(modal).toHaveTextContent('AI Grid stops managing this cluster, and models are no longer deployed to it.');
   expect(modal).toHaveTextContent(
-    'Models deployed to it from the Models page are removed from it. OpenShift AI is not uninstalled.',
+    'OpenShift AI and the models running on it are not uninstalled, but AI Grid no longer manages them. Move its models to other clusters first.',
   );
+});
+
+const SUBSCRIPTIONS_WARNING =
+  "This cluster receives requests from organizations' users. Removing it deletes its copies of the subscriptions, and their API keys are then revoked on every cluster, not only this one.";
+
+it.each<[string, string | undefined, boolean]>([
+  ['an Ingress', 'ingress', true],
+  ['a Combined', 'combined', true],
+  ['an Inference', 'inference', false],
+  ['a no-role', undefined, false],
+])('warns about the API keys when removing %s cluster only where it receives requests', async (_, role, warns) => {
+  const user = userEvent.setup();
+  renderAt(
+    '/clusters',
+    serviceWith([
+      cluster('site-a', 'Ready', {
+        'ai-grid/enabled': 'true',
+        location: 'eu',
+        ...(role ? { 'ai-grid/role': role } : {}),
+      }),
+    ]),
+  );
+  await pick(user, 'site-a', 'Remove from AI Grid');
+  const modal = await screen.findByTestId('cluster-membership-modal');
+  if (warns) {
+    const warning = within(modal).getByRole('heading', { name: 'Warning alert: Subscriptions lose their API keys' });
+    expect(warning).toBeVisible();
+    expect(modal).toHaveTextContent(SUBSCRIPTIONS_WARNING);
+  } else {
+    expect(within(modal).queryByText('Subscriptions lose their API keys')).not.toBeInTheDocument();
+    expect(modal).not.toHaveTextContent('API keys');
+  }
+});
+
+it('shows the backend refusing to remove an ingress cluster while subscriptions exist, with the form kept', async () => {
+  const user = userEvent.setup();
+  const service = serviceWith([
+    cluster('site-a', 'Ready', { 'ai-grid/enabled': 'true', 'ai-grid/role': 'ingress', location: 'eu' }),
+  ]);
+  const message =
+    'Cluster "site-a" serves ingress, and 3 subscriptions exist. Removing it would revoke their API keys on every cluster; delete the subscriptions first.';
+  // 412 is FailedPrecondition over Connect (connectClusters.ts).
+  vi.spyOn(service, 'removeClusterFromGrid').mockRejectedValueOnce(new ServiceError(412, message));
+  renderAt('/clusters', service);
+  await pick(user, 'site-a', 'Remove from AI Grid');
+  const modal = await screen.findByTestId('cluster-membership-modal');
+  const reload = vi.spyOn(service, 'getCluster');
+  const typed = within(modal).getByRole('textbox', { name: 'Type site-a to confirm:' });
+  await user.click(typed);
+  await user.paste('site-a');
+  await user.click(within(modal).getByRole('button', { name: 'Remove' }));
+  expect(await within(modal).findByText(message)).toBeVisible();
+  // The warning and the typed name stay, so Remove can be sent again once the subscriptions are gone.
+  expect(modal).toHaveTextContent(SUBSCRIPTIONS_WARNING);
+  expect(typed).toHaveValue('site-a');
+  expect(within(modal).getByRole('button', { name: 'Remove' })).toBeEnabled();
+  expect(modal).not.toHaveTextContent('This cluster was changed after this dialog opened');
+  // A refusal isn't a stale version: nothing is loaded again into the dialog.
+  expect(reload).not.toHaveBeenCalled();
+  expect(service.clusters[0].aiGridEnabled).toBe(true);
 });
 
 it('asks for a location label and role before adding', async () => {
@@ -385,7 +448,12 @@ it('shows the role of each member, and warns about a member without one', async 
   const missing = screen.getByTestId('missing-role-no-role');
   expect(missing).toHaveTextContent('No role');
   await user.hover(missing);
-  expect(await screen.findByText(/cannot install OpenShift AI or MaaS on it/)).toBeInTheDocument();
+  // It points to the edit, not to removing the cluster and adding it again.
+  expect(
+    await screen.findByText(
+      "This cluster has no role, so the hub cannot install OpenShift AI or MaaS on it, and provisioning cannot finish. To set a role, select Edit in the cluster's actions.",
+    ),
+  ).toBeInTheDocument();
   expect(screen.getByTestId('missing-role-odd-role')).toHaveTextContent('No role');
   // The header explains the three roles, without sorting the table.
   const names = () =>
@@ -507,11 +575,16 @@ it('shows the ACM state for an importing cluster', async () => {
   expect(await screen.findByText('Importing: Import of the managed cluster is in progress')).toBeInTheDocument();
 });
 
-it('offers only Remove from AI Grid for a member', async () => {
+it('offers Edit, then Remove from AI Grid, for a member and neither for another cluster', async () => {
   const user = userEvent.setup();
   renderAt('/clusters', new MockConsoleService());
   await user.click(await screen.findByRole('button', { name: 'Actions for site1' }));
-  expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Remove from AI Grid']);
+  expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Edit', 'Remove from AI Grid']);
+  // Remove is destructive: last, after a divider.
+  expect(within(screen.getByRole('menu')).getByRole('separator')).toBeInTheDocument();
+  await user.keyboard('{Escape}');
+  await user.click(screen.getByRole('button', { name: 'Actions for site4' }));
+  expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Add to AI Grid']);
 });
 
 it('offers Add to AI Grid only for ready, offline or unknown clusters', async () => {
@@ -760,6 +833,133 @@ it('says so when the cluster changed and could not be loaded again', async () =>
       'This cluster was changed after this dialog opened, and the latest version could not be loaded. Cancel, refresh the page, and try again.',
     ),
   ).toBeVisible();
+});
+
+it('shows a FailedPrecondition from Remove as the backend refusing it, not as a stale cluster', async () => {
+  const user = userEvent.setup();
+  const service = new MockConsoleService();
+  const message =
+    'Cluster "site1" is the only AI Grid cluster that serves ingress, and users reach models through ingress clusters. Give another cluster the ingress or combined role first.';
+  // 412 is FailedPrecondition over Connect (connectClusters.ts).
+  vi.spyOn(service, 'removeClusterFromGrid').mockRejectedValueOnce(new ServiceError(412, message));
+  renderAt('/clusters', service);
+  await pick(user, 'site1', 'Remove from AI Grid');
+  const modal = await screen.findByTestId('cluster-membership-modal');
+  const reload = vi.spyOn(service, 'getCluster');
+  await user.click(within(modal).getByRole('textbox', { name: 'Type site1 to confirm:' }));
+  await user.paste('site1');
+  await user.click(within(modal).getByRole('button', { name: 'Remove' }));
+  expect(await within(modal).findByText(message)).toBeVisible();
+  expect(modal).not.toHaveTextContent('This cluster was changed after this dialog opened');
+  // A refusal isn't a stale version: nothing is loaded again into the dialog.
+  expect(reload).not.toHaveBeenCalled();
+  expect(service.clusters.find((c) => c.name === 'site1')!.aiGridEnabled).toBe(true);
+});
+
+/** Opens Edit for a row and returns the dialog. */
+const openEdit = async (user: User, name: string) => {
+  await pick(user, name, 'Edit');
+  return screen.findByRole('dialog', { name: `Edit ${name}` });
+};
+
+/** Replaces a text field's value in the dialog, then leaves it. */
+const enter = async (user: User, dialog: HTMLElement, name: string, value: string) => {
+  const input = within(dialog).getByRole('textbox', { name });
+  await user.clear(input);
+  if (value) await user.paste(value);
+  await user.tab();
+};
+
+// The page tests' shared Clusters fake (connectClusters.ts) writes what the backend's Update does:
+// the labels as the mask names them. Called directly, to check the cases no page reaches.
+describe('the shared Clusters fake', () => {
+  const clustersClient = (service: MockConsoleService) => createClient(Clusters, transportFor(service)([]));
+
+  it('refuses an annotations update rather than take it for a removal from AI Grid', async () => {
+    const service = new MockConsoleService();
+    const before = service.clusters.find((c) => c.name === 'site1')!;
+    await expect(
+      clustersClient(service).update({
+        object: {
+          id: 'site1',
+          metadata: {
+            annotations: { 'ai-grid/site-name': 'San Francisco DC2' },
+            version: Number(before.resourceVersion),
+          },
+        },
+        updateMask: { paths: ['metadata.annotations'] },
+        lock: true,
+      }),
+    ).rejects.toThrow(/doesn't write annotations/);
+    expect(service.clusters.find((c) => c.name === 'site1')).toEqual(before);
+  });
+
+  it('takes the console keys of a sent map as the whole set and keeps every other key', async () => {
+    const service = new MockConsoleService();
+    const before = service.clusters.find((c) => c.name === 'site2')!;
+    // Sent: the location changed, ai-grid/region left out, and none of the hub's own labels.
+    await clustersClient(service).update({
+      object: {
+        id: 'site2',
+        metadata: {
+          labels: {
+            'ai-grid/enabled': 'true',
+            'ai-grid/role': 'combined',
+            'ai-grid/site': 'new-york',
+            'ai-grid/provisioned': 'true',
+            location: 'us-east-2',
+          },
+          version: Number(before.resourceVersion),
+        },
+      },
+      updateMask: { paths: ['metadata.labels'] },
+      lock: true,
+    });
+    const after = service.clusters.find((c) => c.name === 'site2')!;
+    const expected: Record<string, string> = { ...before.labels, location: 'us-east-2' };
+    delete expected['ai-grid/region'];
+    expect(after.labels).toEqual(expected);
+    expect(after.aiGridEnabled).toBe(true);
+  });
+
+  it('refuses a changed key the console does not own, and removes a member only on labels without ai-grid/enabled', async () => {
+    const service = new MockConsoleService();
+    const before = service.clusters.find((c) => c.name === 'site3')!;
+    const client = clustersClient(service);
+    await expect(
+      client.update({
+        object: { id: 'site3', metadata: { labels: { ...before.labels, name: 'other' }, version: 1 } },
+        updateMask: { paths: ['metadata.labels'] },
+        lock: true,
+      }),
+    ).rejects.toThrow(/label "name" cannot be changed through the console/);
+    const labels = { ...before.labels };
+    delete labels['ai-grid/enabled'];
+    await client.update({
+      object: { id: 'site3', metadata: { labels, version: Number(before.resourceVersion) } },
+      updateMask: { paths: ['metadata.labels'] },
+      lock: true,
+    });
+    expect(service.clusters.find((c) => c.name === 'site3')!.aiGridEnabled).toBe(false);
+  });
+});
+
+it('saves a labels-only edit with the other labels kept and the membership unchanged', async () => {
+  const user = userEvent.setup();
+  const service = new MockConsoleService();
+  const before = service.clusters.find((c) => c.name === 'site2')!;
+  renderAt('/clusters', service);
+  const dialog = await openEdit(user, 'site2');
+  await enter(user, dialog, 'Location label', 'us-east-2');
+  await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+  expect(await screen.findByText('site2 updated')).toBeVisible();
+  const after = service.clusters.find((c) => c.name === 'site2')!;
+  expect(after.aiGridEnabled).toBe(true);
+  expect(after.labels).toEqual({ ...before.labels, location: 'us-east-2' });
+  expect(after.location).toBe('us-east-2');
+  // The annotations weren't sent, so the site name and position stay.
+  expect(after.siteName).toBe('New York');
+  expect(after.longitude).toBe(-74.006);
 });
 
 it('returns focus to the row’s menu button when the dialog it opened closes', async () => {

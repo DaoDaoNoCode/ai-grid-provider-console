@@ -19,11 +19,13 @@ const browser = { ...devices['Desktop Chrome'], viewport: { width: 1440, height:
 // The specs on the backend's own fakes. They share one backend, whose Git catalog of models and
 // subscriptions it fetches on every read and writes under one lock, so a write queues behind every
 // other call on the catalog; some change a fixture cluster and put it back (cluster-membership adds
-// site4 to AI Grid and removes it; models gives site1 a role for its run).
+// site4 to AI Grid and removes it; cluster-edit edits site2's location label and sets site3's role;
+// models gives site1 a role for its run).
 const onBackendFakes = [
   'clusters.spec.ts',
   'grid.spec.ts',
   'cluster-membership.spec.ts',
+  'cluster-edit.spec.ts',
   'models.spec.ts',
   'subscriptions.spec.ts',
 ];

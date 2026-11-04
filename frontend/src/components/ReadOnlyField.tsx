@@ -6,6 +6,8 @@ type Props = {
   value: string;
   /** Why it can't be changed here, shown under the field and read with it. */
   reason: string;
+  /** The help beside the label, as the editable field has it (a FormGroup's labelHelp). */
+  labelHelp?: React.ComponentProps<typeof FormGroup>['labelHelp'];
 };
 
 /**
@@ -13,8 +15,8 @@ type Props = {
  * PatternFly read-only input, so the value stays readable, selectable and in the tab order, with
  * the reason under it.
  */
-export const ReadOnlyField: React.FC<Props> = ({ label, fieldId, value, reason }) => (
-  <FormGroup label={label} fieldId={fieldId}>
+export const ReadOnlyField: React.FC<Props> = ({ label, fieldId, value, reason, labelHelp }) => (
+  <FormGroup label={label} fieldId={fieldId} labelHelp={labelHelp}>
     <TextInput id={fieldId} value={value} readOnlyVariant="default" aria-describedby={`${fieldId}-fixed`} />
     <FormHelperText>
       <HelperText id={`${fieldId}-fixed`}>

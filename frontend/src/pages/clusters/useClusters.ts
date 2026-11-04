@@ -114,16 +114,19 @@ const writeLabels = async (
   return toClusterView(object);
 };
 
-/** What Add to AI Grid and Remove from AI Grid write, and how a page loads one cluster again. */
+/** What Add to AI Grid, Remove from AI Grid and Edit write, and how a page loads one cluster again. */
 export type MembershipWrites = {
   enrollCluster: (cluster: ClusterView, membership: GridMembership) => Promise<ClusterView>;
   removeClusterFromGrid: (cluster: ClusterView) => Promise<ClusterView>;
+  /** Writes the labels Edit built (gridSettings.ts, labelsUpdate). */
+  updateLabels: (cluster: ClusterView, labels: Record<string, string>) => Promise<ClusterView>;
   loadCluster: (name: string) => Promise<ClusterView | undefined>;
 };
 
 /**
  * Add writes `ai-grid/enabled: "true"`, the role and the location; Remove drops `ai-grid/enabled`
- * and keeps the rest, so the role and location are there if the cluster is added again.
+ * and keeps the rest, so the role and location are there if the cluster is added again; Edit writes
+ * the location label, and the role of a cluster without one.
  */
 export const useMembershipWrites = (): MembershipWrites => {
   const transport = useTransport();
@@ -142,6 +145,7 @@ export const useMembershipWrites = (): MembershipWrites => {
         delete labels[LABEL_ENABLED];
         return writeLabels(client, cluster, labels);
       },
+      updateLabels: (cluster, labels) => writeLabels(client, cluster, labels),
       loadCluster: (name) => loadCluster(client, name),
     };
   }, [transport]);

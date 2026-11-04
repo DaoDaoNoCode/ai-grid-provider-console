@@ -7,7 +7,7 @@ how a call travels, where the types come from, how a page uses them, how to test
 when the API has to change. The backend's side of the same rules is its
 `docs/API_CONTRACT.md`.
 
-The Clusters area (the list, a cluster's page, Add and Remove), the Models area (the list, a
+The Clusters area (the list, a cluster's page, Add, Edit and Remove), the Models area (the list, a
 model's page, the Deploy model wizard, its edit and delete), the Subscriptions area and the AI
 Grid map are on it; Organizations moves next; each move deletes that area's draft RPCs, fake data,
 BFF handlers and hand-written frontend types. When the last one moves, `mock/proto`, `bff/gen`, the
@@ -133,7 +133,27 @@ regression passing when updating these dependencies.
   read with `ai-grid/enabled`, `ai-grid/role` and `location` set (or `ai-grid/enabled` dropped),
   `update_mask: metadata.labels`, `metadata.version` with `lock: true`. Aborted is the conflict
   the dialog already handles, and the answer's `ai_grid_member` confirms the change. The BFF has
-  no `/api/v1/clusters` routes any more.
+  no `/api/v1/clusters` routes any more. Remove's dialog for an Ingress or Combined cluster warns
+  that the subscriptions lose their API keys: Argo CD deletes the cluster's copies of the
+  subscriptions, and MaaS then revokes their keys in the shared database, on every cluster. The
+  backend refusing it (FailedPrecondition, while subscriptions exist) shows in its words, with the
+  form kept.
+- **Edit** (`EditClusterModal.tsx`, `gridSettings.ts`, its words in `editClusterText.ts`), for AI
+  Grid clusters, in the list's row menu and the cluster page's Actions: the location label
+  (checked as Add checks it), and the role only of a cluster without one (no `ai-grid/role`, or a
+  value that isn't one of the three). A role a cluster has is shown read-only: changing it isn't
+  supported, because the hub doesn't fully remove what the old role installed (leaving
+  inference uninstalls the GPU operators, leaving ingress leaves objects behind, its database
+  credentials among them, and adding ingress needs per-cluster config in Git). Selecting a role
+  shows, before Save, what Save sets, what the hub then installs, and that the cluster shows
+  Provisioning until it finishes, in an info alert that is a live region, so a screen reader
+  announces it; it only adds, so no name is typed. Save sends one `Clusters/Update` of the labels map as read with
+  those keys set, `update_mask: metadata.labels`, `metadata.version` with `lock: true`; it is off
+  until something changes. Aborted reloads the cluster into the dialog as Add does; any other
+  refusal (InvalidArgument for a value, FailedPrecondition for a change the backend won't make)
+  stays in the dialog in the backend's words, with the form kept. Only Aborted means a stale
+  version on these writes: FailedPrecondition, which `ServiceError.isConflict` also counts, is a
+  refusal, for Add and Remove too. The site name and map position aren't edited in the console.
 - **The map** (`pages/grid/AiGridPage.tsx`) shows the members among the same list, placed where
   `status.location` says; `Grid/GetOverview`, which the backend doesn't have, serves only the
   Monitoring fallback now. It links a member to the models whose placement chose it by cluster
@@ -143,8 +163,8 @@ regression passing when updating these dependencies.
 - **Where a cluster is**, read-only (`pages/clusters/ClusterSite.tsx`, `site.ts`): the list's Site
   column and the cluster page show the site name, else the cloud region marked approximate, and
   a warning with the backend's `problem` when the annotations are wrong; the cluster page adds
-  the region and the map position with how a hub admin sets it (the backend's README, "Cluster
-  locations"). On the map, clusters at one position share a pin labelled "site name · cluster
+  the region and the map position with how a hub admin sets it (`oc annotate`, the backend's
+  README, "Cluster locations"; geography is read-only in the console). On the map, clusters at one position share a pin labelled "site name · cluster
   name" for each, and the list counts the members that aren't on the map, by why. "Region" is
   the cloud region only: the `ai-grid/region` label isn't read.
 

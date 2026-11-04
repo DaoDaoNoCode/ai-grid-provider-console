@@ -24,11 +24,13 @@ import { OverflowList } from '../../components/OverflowList';
 import { useConsoleSession } from '../../context/useConsoleSession';
 import { EMPTY_VALUE } from '../../utilities/format';
 import type { MembershipChange } from './MembershipModal';
-import { changeMembership } from './changeMembership';
+import { changeMembership, editCluster } from './changeMembership';
 import { MembershipModal } from './MembershipModal';
+import { EditClusterModal } from './EditClusterModal';
+import { editText } from './editClusterText';
 import { MissingLabel } from './MissingLabel';
 import { ClusterSite } from './ClusterSite';
-import { gpuCount, membershipAction, statusReason } from './clusterInfo';
+import { gpuCount, membershipActions, statusReason } from './clusterInfo';
 import { capacityText, configurationText, gpuCountText, gpuSharing } from './gpuText';
 import { ClusterRolesList } from './ClusterRolesHelp';
 import { roleOf } from './roles';
@@ -45,8 +47,9 @@ import { useClusterList, useMembershipWrites } from './useClusters';
 // disabled (on the real backend the BFF derives that state from spec.hub_accepts_client,
 // the backend's state). Site is the name a hub admin set (annotation ai-grid/site-name), with a
 // warning when the coordinate annotations are wrong; Region is the cloud region ACM reports. Location
-// label is the `location` label Add can write, which nothing places or routes by. The status tooltip adds the ACM state behind Unknown (such as
-// Importing) and the backend's message, which the PoC's three states don't have.
+// label is the `location` label Add and Edit write, which nothing places or routes by; Edit also
+// sets the role of a member without one. The status tooltip adds the ACM state behind Unknown (such
+// as Importing) and the backend's message, which the PoC's three states don't have.
 
 type Column = {
   /** The header under its group: Name, Status, Site, ... */
@@ -169,7 +172,9 @@ export const ClustersPage: React.FC = () => {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<{ index: number; direction: 'asc' | 'desc' }>({ index: 0, direction: 'asc' });
   const [change, setChange] = useState<MembershipChange>();
-  // Clusters as the backend returned them from Add or Remove, with their new labels (role and
+  // The AI Grid cluster whose Edit dialog is open.
+  const [editing, setEditing] = useState<ClusterView>();
+  // Clusters as the backend returned them from Add, Remove or Edit, with their new labels (role and
   // location), shown in place of the listed ones until a reload started after the latest change
   // answers. A poll that answers in between can't bring back the row from before the change.
   const [confirmed, setConfirmed] = useState<Map<string, ClusterView>>(new Map());
@@ -211,6 +216,21 @@ export const ClustersPage: React.FC = () => {
       replace: true,
       state: { notice: `${updated.name} ${join ? 'added to' : 'removed from'} AI Grid` },
     });
+    reload();
+  };
+
+  /** Saves an AI Grid cluster's edited labels; throws for the modal to show. */
+  const applyEdit = async (cluster: ClusterView, labels: Record<string, string>) => {
+    const updated = await editCluster(writes, cluster, labels, {
+      reload: writes.loadCluster,
+      onConflict: (current) => {
+        if (current) setEditing((open) => (open?.name === current.name ? current : open));
+        reload();
+      },
+    });
+    setConfirmed((prev) => new Map(prev).set(updated.name, updated));
+    setEditing(undefined);
+    navigate('.', { replace: true, state: { notice: editText.updated(updated.name) } });
     reload();
   };
 
@@ -311,10 +331,7 @@ export const ClustersPage: React.FC = () => {
                           {!c.aiGridEnabled
                             ? EMPTY_VALUE
                             : (roleOf(c.labels)?.label ?? (
-                                <MissingLabel
-                                  testId={`missing-role-${c.name}`}
-                                  reason="This cluster has no role, so the hub cannot install OpenShift AI or MaaS on it, and provisioning cannot finish. To set a role, remove the cluster from AI Grid and add it again."
-                                >
+                                <MissingLabel testId={`missing-role-${c.name}`} reason={editText.noRole}>
                                   No role
                                 </MissingLabel>
                               ))}
@@ -330,7 +347,7 @@ export const ClustersPage: React.FC = () => {
                             <SimpleMenuActions
                               testId={`cluster-actions-${c.name}`}
                               ariaLabel={`Actions for ${c.name}`}
-                              dropdownItems={[membershipAction(c, setChange)]}
+                              dropdownItems={membershipActions(c, setChange, setEditing)}
                             />
                           </Td>
                         )}
@@ -364,6 +381,15 @@ export const ClustersPage: React.FC = () => {
           {...change}
           onConfirm={(membership) => applyChange(change, membership)}
           onClose={() => setChange(undefined)}
+        />
+      )}
+      {editing && (
+        <EditClusterModal
+          // A new dialog for another cluster; the same one keeps its state when a conflict reloads it.
+          key={editing.name}
+          cluster={editing}
+          onConfirm={(labels) => applyEdit(editing, labels)}
+          onClose={() => setEditing(undefined)}
         />
       )}
     </>

@@ -1,7 +1,8 @@
 {{- if .Values.backend.clusterWrites }}
 # With patch on ManagedClusters the backend could reach spec (hubAcceptsClient detaches a
 # cluster), finalizers and every label, such as the cluster set. This policy limits its writes to
-# what Add to AI Grid and Remove change: labels ai-grid/* and location, and annotations ai-grid/*.
+# what Add to AI Grid, Edit and Remove change: labels ai-grid/* and location, and annotations
+# ai-grid/*.
 # Other users and controllers are unaffected. From ai-grid-env-setup's apps/console.
 #
 # The policy should be in force before the ClusterRole grants patch. Argo CD applies it first (sync

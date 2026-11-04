@@ -33,6 +33,8 @@ type Props = {
   'aria-describedby'?: string;
   /** 'danger' marks the field invalid, for the eye and for assistive technology. */
   status?: 'danger';
+  /** The field can't be used now, such as while its form saves. */
+  isDisabled?: boolean;
   'data-testid'?: string;
 };
 
@@ -46,6 +48,7 @@ export const TypeaheadSelect = ({
   'aria-label': ariaLabel,
   'aria-describedby': ariaDescribedBy,
   status,
+  isDisabled = false,
   'data-testid': testId,
 }: Props) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -131,13 +134,14 @@ export const TypeaheadSelect = ({
       aria-label={`${ariaLabel} options`}
       isFullWidth
       isExpanded={isOpen}
+      isDisabled={isDisabled}
       status={status}
       onClick={() => {
         toggleMenu();
         inputRef.current?.focus();
       }}
     >
-      <TextInputGroup isPlain>
+      <TextInputGroup isPlain isDisabled={isDisabled}>
         <TextInputGroupMain
           inputId={id}
           inputProps={{
@@ -170,7 +174,7 @@ export const TypeaheadSelect = ({
   return (
     <Select
       id={`${id}-select`}
-      isOpen={isOpen}
+      isOpen={isOpen && !isDisabled}
       selected={value}
       onSelect={(_event, next) => {
         if (typeof next === 'string') choose(next);
