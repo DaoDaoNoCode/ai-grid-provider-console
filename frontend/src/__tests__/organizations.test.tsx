@@ -496,6 +496,7 @@ it('edit: an existing identity provider is shown read-only', async () => {
   await openStep(user, 'Identity provider');
   await waitFor(() => expect(screen.getByRole('textbox', { name: 'Client ID' })).toHaveValue('tenant1-client'));
   for (const box of screen.getAllByRole('textbox')) expect(box).toBeDisabled();
+  expect(screen.getByRole('checkbox', { name: 'Validate signature' })).toBeDisabled();
   // Nothing can change here, so Review stays open and has nothing to save.
   await openStep(user, 'Review');
   expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
