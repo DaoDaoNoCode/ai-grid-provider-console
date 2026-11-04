@@ -2,18 +2,7 @@ import type { DashboardResource } from '@perses-dev/client';
 import type { GridMembership } from './clusters';
 import type { ConsoleService } from './ConsoleService';
 import { ServiceError } from './ConsoleService';
-import type {
-  ConsoleConfig,
-  ClusterGPUs,
-  GPUNode,
-  GPUSharing,
-  GridCluster,
-  GridOverview,
-  GridRange,
-  ModelHardware,
-  User,
-} from './types';
-import { demoMetrics } from '../services/demoMetrics';
+import type { ConsoleConfig, ClusterGPUs, GPUNode, GPUSharing, GridCluster, ModelHardware, User } from './types';
 
 /** In-memory service for tests and UI work without a cluster. */
 export class MockConsoleService implements ConsoleService {
@@ -91,7 +80,7 @@ export class MockConsoleService implements ConsoleService {
     return updated;
   };
 
-  /** Writes a membership's labels, or drops `ai-grid/enabled` without one; provisioning follows toGridCluster. */
+  /** Writes a membership's labels, or drops `ai-grid/enabled` without one; provisioning reads the membership first, as clusterView.ts does. */
   private setMembership(cluster: GridCluster, membership?: GridMembership): GridCluster {
     const { name } = cluster;
     const index = this.clusters.findIndex((c) => c.name === name);
@@ -128,32 +117,6 @@ export class MockConsoleService implements ConsoleService {
     this.clusters[index] = updated;
     return updated;
   }
-
-  /**
-   * The fake backend's GetOverview (bff/internal/fakebackend/grid.go): the AI Grid members,
-   * filtered by site, and the PoC's simulated metrics for the range ending at the current second.
-   */
-  getGridOverview = async (
-    range: GridRange,
-    opts: { site?: string; includeMetrics?: boolean } = {},
-  ): Promise<GridOverview> => {
-    const seconds = { '1h': 3600, '6h': 21600, '24h': 86400 }[range];
-    if (!seconds) {
-      throw new ServiceError(422, 'Choose a time range of 1h, 6h, or 24h.');
-    }
-    const clusters = this.clusters
-      .filter((c) => c.aiGridEnabled && (!opts.site || c.site === opts.site))
-      .sort((a, b) => a.name.localeCompare(b.name));
-    const end = Math.floor(Date.now() / 1000);
-    return {
-      updatedAt: new Date(end * 1000).toISOString(),
-      inventorySource: 'acm',
-      demo: false,
-      metricsSource: 'demo',
-      clusters,
-      metrics: opts.includeMetrics === false ? [] : demoMetrics(clusters, end - seconds, end, Math.ceil(seconds / 60)),
-    };
-  };
 }
 
 /**

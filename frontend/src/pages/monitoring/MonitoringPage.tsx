@@ -7,15 +7,17 @@ import { ServiceError } from '../../api/ConsoleService';
 import { dashboardTitle, monitoringLinkFor, monitoringTabs } from '../../api/monitoring';
 import type { ConsoleConfig } from '../../api/types';
 import { EmptyListState } from '../../components/states/EmptyListState';
+import { NotAvailableState } from '../../components/states/NotAvailableState';
 import { PageStateSection } from '../../components/states/PageStateSection';
 import { useConsoleSession } from '../../context/useConsoleSession';
 import { PageLoading } from '../../components/PageLoading';
 import { useServiceData } from '../../hooks/useServiceData';
-import { GridPage } from '../grid/GridPage';
 
 const PersesDashboardView = lazy(() => import('./PersesDashboardView'));
 
 type Props = { service: ConsoleService };
+
+const description = 'View monitoring dashboards for the AI Grid clusters.';
 
 /**
  * The hub's Perses dashboards as tabs, when the BFF relays to a Perses (docs/plan/bff-api.md, "The
@@ -113,7 +115,7 @@ const PersesMonitoring: React.FC<{ service: ConsoleService; project: string }> =
   return (
     <PageStateSection
       title="Monitoring"
-      description="View monitoring dashboards for the AI Grid clusters."
+      description={description}
       loaded={loaded}
       error={error}
       onRetry={() => void refresh()}
@@ -125,7 +127,27 @@ const PersesMonitoring: React.FC<{ service: ConsoleService; project: string }> =
   );
 };
 
-/** /monitoring: the hub's Perses dashboards when the BFF relays to a Perses, else the AI Grid overview's metrics. */
+/**
+ * Monitoring without a Perses relay (the chart's `console.perses.url` unset): the page says so and
+ * names the Helm values that turn it on (charts/ai-grid-provider-console/values.yaml).
+ */
+const MonitoringNotConfigured: React.FC = () => (
+  <PageStateSection
+    title="Monitoring"
+    description={description}
+    loaded
+    onRetry={() => undefined}
+    subject="Monitoring"
+    loadingLabel="Loading monitoring"
+  >
+    <NotAvailableState title="Monitoring is not set up for this console">
+      To view the hub&apos;s Perses dashboards here, ask your hub administrator to set <code>console.perses.url</code>{' '}
+      and <code>console.perses.project</code> in the console&apos;s Helm values.
+    </NotAvailableState>
+  </PageStateSection>
+);
+
+/** /monitoring: the hub's Perses dashboards when the BFF relays to a Perses, else what turns them on. */
 export const MonitoringPage: React.FC<Props> = ({ service }) => {
   const [config, loaded, error, refresh] = useServiceData<ConsoleConfig | undefined>(
     () => service.getConfig(),
@@ -133,7 +155,7 @@ export const MonitoringPage: React.FC<Props> = ({ service }) => {
     0,
   );
   // Without the configuration the page can't tell whether the console has a Perses: say so rather
-  // than fall back to the overview's metrics. The header stays while it loads.
+  // than claim it has none. The header stays while it loads.
   if (!config) {
     return (
       <PageStateSection
@@ -150,5 +172,5 @@ export const MonitoringPage: React.FC<Props> = ({ service }) => {
   if (config.monitoring.enabled) {
     return <PersesMonitoring service={service} project={config.monitoring.persesProject} />;
   }
-  return <GridPage key="monitoring" service={service} monitoring />;
+  return <MonitoringNotConfigured />;
 };
