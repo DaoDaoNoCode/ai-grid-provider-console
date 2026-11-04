@@ -1,29 +1,13 @@
 import { useState } from 'react';
-import {
-  Alert,
-  Button,
-  Form,
-  FormGroup,
-  FormGroupLabelHelp,
-  FormHelperText,
-  HelperText,
-  HelperTextItem,
-  Modal,
-  ModalBody,
-  ModalFooter,
-  ModalHeader,
-  Popover,
-  Stack,
-  TextInput,
-} from '@patternfly/react-core';
+import { Alert, Button, Form, Modal, ModalBody, ModalFooter, ModalHeader, Stack } from '@patternfly/react-core';
 import type { ClusterRole, GridMembership } from '../../api/clusters';
 import { ServiceError } from '../../api/ConsoleService';
 import { DeleteModal } from '../../components/DeleteModal';
-import { TypeaheadSelect } from '../../components/TypeaheadSelect';
-import { ClusterChangedError } from './ClusterChangedError';
-import { ClusterRolesList } from './ClusterRolesHelp';
+import { changedMessage, ClusterChangedError } from './ClusterChangedError';
 import type { ClusterView } from './clusterView';
-import { clusterRoles, roleOf } from './roles';
+import { locationError } from './gridSettings';
+import { LocationLabelField, RoleField } from './MembershipFields';
+import { roleOf } from './roles';
 
 export type MembershipChange = { cluster: ClusterView; join: boolean };
 
@@ -31,17 +15,6 @@ type Props = MembershipChange & {
   /** Makes the change; the modal closes once it resolves and shows the error if it throws. */
   onConfirm: (membership?: GridMembership) => Promise<void>;
   onClose: () => void;
-};
-
-// A Kubernetes label value: what the hub accepts for `location`.
-const labelValue = /^[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$/;
-
-const locationError = (location: string) => {
-  if (!location) return 'Required.';
-  if (!labelValue.test(location)) {
-    return 'Must start and end with a letter or number. Valid characters include letters, numbers, hyphens (-), underscores (_), and periods (.). Up to 63 characters.';
-  }
-  return undefined;
 };
 
 /** The cluster's role label when it's one of ours; otherwise combined for the hub itself. */
@@ -53,12 +26,7 @@ const errorMessage = (err: unknown, join: boolean) => {
   if (err instanceof ServiceError && err.isNotImplemented) {
     return `${join ? 'Adding clusters to' : 'Removing clusters from'} AI Grid is not available on this AI Grid backend.`;
   }
-  if (err instanceof ClusterChangedError) {
-    // With `current`, the page has given the dialog that version, so a second try sends it.
-    return err.current
-      ? 'This cluster was changed after this dialog opened. The latest version is now shown. Review it and try again.'
-      : 'This cluster was changed after this dialog opened, and the latest version could not be loaded. Cancel, refresh the page, and try again.';
-  }
+  if (err instanceof ClusterChangedError) return changedMessage(err);
   return err instanceof Error ? err.message : 'Unable to update the cluster.';
 };
 
@@ -67,7 +35,7 @@ export const MembershipModal: React.FC<Props> = ({ cluster, join, onConfirm, onC
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [location, setLocation] = useState(cluster.location ?? '');
-  const [role, setRole] = useState(defaultRole(cluster));
+  const [role, setRole] = useState<ClusterRole | ''>(defaultRole(cluster));
   const [touched, setTouched] = useState({ location: false, role: false });
   const title = join ? `Add ${cluster.name} to AI Grid?` : `Remove ${cluster.name} from AI Grid?`;
   const locationInvalid = locationError(location.trim());
@@ -147,69 +115,23 @@ export const MembershipModal: React.FC<Props> = ({ cluster, join, onConfirm, onC
             provisioned, you can select it when you deploy a model.
           </p>
           <Form id="cluster-membership-form" onSubmit={(e) => e.preventDefault()}>
-            <FormGroup
-              label="Location label"
-              fieldId="cluster-location"
-              isRequired
-              labelHelp={
-                <Popover
-                  headerContent="Location label"
-                  bodyContent="Models are placed on clusters by name, not by this label."
-                >
-                  <FormGroupLabelHelp aria-label="More info for the location label field" />
-                </Popover>
-              }
-            >
-              <TextInput
-                id="cluster-location"
-                value={location}
-                isRequired
-                isDisabled={busy}
-                validated={shownLocationError ? 'error' : 'default'}
-                aria-describedby="cluster-location-help"
-                onChange={(_e, value) => setLocation(value)}
-                onBlur={() => setTouched((t) => ({ ...t, location: true }))}
-              />
-              <FormHelperText>
-                <HelperText id="cluster-location-help">
-                  <HelperTextItem variant={shownLocationError ? 'error' : 'default'}>
-                    {shownLocationError ?? 'For example, us-east.'}
-                  </HelperTextItem>
-                </HelperText>
-              </FormHelperText>
-            </FormGroup>
-            <FormGroup
-              label="Role"
-              fieldId="cluster-role"
-              isRequired
-              labelHelp={
-                <Popover headerContent="Cluster roles" bodyContent={<ClusterRolesList />}>
-                  <FormGroupLabelHelp aria-label="More info for the role field" />
-                </Popover>
-              }
-            >
-              <TypeaheadSelect
-                id="cluster-role"
-                aria-label="Role"
-                value={role}
-                options={clusterRoles}
-                placeholder="Select a role"
-                status={shownRoleError ? 'danger' : undefined}
-                aria-describedby="cluster-role-help"
-                onChange={(value) => {
-                  setTouched((t) => ({ ...t, role: true }));
-                  setRole(value as ClusterRole);
-                }}
-                onBlur={() => setTouched((t) => ({ ...t, role: true }))}
-              />
-              <FormHelperText>
-                <HelperText id="cluster-role-help">
-                  <HelperTextItem variant={shownRoleError ? 'error' : 'default'}>
-                    {shownRoleError ?? 'Determines which AI Grid components the hub installs on the cluster.'}
-                  </HelperTextItem>
-                </HelperText>
-              </FormHelperText>
-            </FormGroup>
+            <LocationLabelField
+              value={location}
+              error={shownLocationError}
+              isDisabled={busy}
+              onChange={setLocation}
+              onBlur={() => setTouched((t) => ({ ...t, location: true }))}
+            />
+            <RoleField
+              value={role}
+              error={shownRoleError}
+              isDisabled={busy}
+              onChange={(value) => {
+                setTouched((t) => ({ ...t, role: true }));
+                setRole(value);
+              }}
+              onBlur={() => setTouched((t) => ({ ...t, role: true }))}
+            />
           </Form>
           {error && (
             <Alert isInline variant="danger" title="Unable to add cluster to AI Grid">

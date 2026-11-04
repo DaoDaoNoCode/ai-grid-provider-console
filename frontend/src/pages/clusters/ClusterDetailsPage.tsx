@@ -29,7 +29,7 @@ import { StatusLabel } from '../../components/StatusLabel';
 import { useConsoleSession } from '../../context/useConsoleSession';
 import { EMPTY_VALUE } from '../../utilities/format';
 import { formatCores, formatGiB } from '../../utilities/quantity';
-import { gpuCount, membershipAction } from './clusterInfo';
+import { gpuCount, membershipActions } from './clusterInfo';
 import {
   capacityText,
   configurationText,
@@ -41,7 +41,9 @@ import {
 } from './gpuText';
 import type { MembershipChange } from './MembershipModal';
 import { MembershipModal } from './MembershipModal';
-import { changeMembership } from './changeMembership';
+import { changeMembership, editCluster } from './changeMembership';
+import { EditClusterModal } from './EditClusterModal';
+import { editText } from './editClusterText';
 import { MissingLabel } from './MissingLabel';
 import { ClusterRoleName } from './ClusterRolesHelp';
 import { roleOf } from './roles';
@@ -71,10 +73,7 @@ const aiGridItems = (c: ClusterView) => {
       value: !c.aiGridEnabled ? undefined : role ? (
         <ClusterRoleName role={role} />
       ) : (
-        <MissingLabel
-          testId="missing-role"
-          reason="This cluster has no role, so the hub cannot install OpenShift AI or MaaS on it, and provisioning cannot finish. To set a role, remove the cluster from AI Grid and add it again."
-        >
+        <MissingLabel testId="missing-role" reason={editText.noRole}>
           No role
         </MissingLabel>
       ),
@@ -318,7 +317,9 @@ export const ClusterDetailsPage: React.FC = () => {
   const writes = useMembershipWrites();
   const { user } = useConsoleSession();
   const [change, setChange] = useState<MembershipChange>();
-  // The cluster as Add or Remove returned it, shown until a load started after that change
+  // The AI Grid cluster whose Edit dialog is open.
+  const [editing, setEditing] = useState<ClusterView>();
+  // The cluster as Add, Remove or Edit returned it, shown until a load started after that change
   // succeeds: a slow or failed reload can't bring back the membership (or the version) from before
   // it, and neither can a reload started earlier.
   const [confirmed, setConfirmed] = useState<ClusterView>();
@@ -356,6 +357,22 @@ export const ClusterDetailsPage: React.FC = () => {
     reload();
   };
 
+  /** Saves the cluster's edited labels, then reloads it; throws for the modal to show. */
+  const applyEdit = async (edited: ClusterView, labels: Record<string, string>) => {
+    // A 409 loads the cluster again into the open dialog, as on the Clusters list.
+    const updated = await editCluster(writes, edited, labels, {
+      reload: writes.loadCluster,
+      onConflict: (current) => {
+        if (current) setEditing((open) => (open?.name === current.name ? current : open));
+        reload();
+      },
+    });
+    setConfirmed(updated);
+    setEditing(undefined);
+    navigate('.', { replace: true, state: { notice: editText.updated(updated.name) } });
+    reload();
+  };
+
   const actions = cluster && (
     <Flex spaceItems={{ default: 'spaceItemsSm' }}>
       {cluster.consoleUrl && (
@@ -376,7 +393,7 @@ export const ClusterDetailsPage: React.FC = () => {
           toggleLabel="Actions"
           ariaLabel={`Actions for ${cluster.name}`}
           testId="cluster-actions"
-          dropdownItems={[membershipAction(cluster, setChange)]}
+          dropdownItems={membershipActions(cluster, setChange, setEditing)}
         />
       )}
     </Flex>
@@ -472,6 +489,13 @@ export const ClusterDetailsPage: React.FC = () => {
           {...change}
           onConfirm={(membership) => applyChange(change, membership)}
           onClose={() => setChange(undefined)}
+        />
+      )}
+      {editing && (
+        <EditClusterModal
+          cluster={editing}
+          onConfirm={(labels) => applyEdit(editing, labels)}
+          onClose={() => setEditing(undefined)}
         />
       )}
     </>

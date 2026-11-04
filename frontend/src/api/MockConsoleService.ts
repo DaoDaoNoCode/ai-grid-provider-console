@@ -66,6 +66,58 @@ export class MockConsoleService implements ConsoleService {
 
   removeClusterFromGrid = async (cluster: GridCluster): Promise<GridCluster> => this.setMembership(cluster);
 
+  /**
+   * Edit role and location's write, as the backend's Clusters/Update stores it: the labels and the
+   * annotations given (each already the whole map), at the version the caller read. The site name and
+   * position are the annotations' (a position only when both coordinates are numbers in range).
+   */
+  updateCluster = async (
+    cluster: GridCluster,
+    { labels, annotations }: { labels?: Record<string, string>; annotations?: Record<string, string> },
+  ): Promise<GridCluster> => {
+    const index = this.clusters.findIndex((c) => c.name === cluster.name);
+    if (index < 0) {
+      throw new ServiceError(404, `object with identifier '${cluster.name}' not found`);
+    }
+    const current = this.clusters[index];
+    if ((cluster.resourceVersion ?? '') !== (current.resourceVersion ?? '')) {
+      throw new ServiceError(
+        409,
+        `object with identifier '${cluster.name}' has resource version ${current.resourceVersion}, the request carries "${cluster.resourceVersion ?? ''}"; fetch it again and retry`,
+      );
+    }
+    let updated: GridCluster = { ...current, resourceVersion: String(Number(current.resourceVersion ?? '0') + 1) };
+    if (labels) {
+      const member = labels['ai-grid/enabled'] === 'true';
+      updated = {
+        ...updated,
+        labels: { ...labels },
+        location: labels.location || undefined,
+        aiGridEnabled: member,
+        provisioningStatus: !member ? 'Not provisioned' : current.provisioned ? 'Provisioned' : 'Provisioning',
+      };
+    }
+    if (annotations) {
+      const coordinate = (key: string, limit: number) => {
+        const v = annotations[key]?.trim() ?? '';
+        return /^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)$/.test(v) && Math.abs(Number(v)) <= limit
+          ? Number(v)
+          : undefined;
+      };
+      const latitude = coordinate('ai-grid/latitude', 90);
+      const longitude = coordinate('ai-grid/longitude', 180);
+      const mapped = latitude !== undefined && longitude !== undefined;
+      updated = {
+        ...updated,
+        siteName: annotations['ai-grid/site-name']?.trim() || undefined,
+        latitude: mapped ? latitude : undefined,
+        longitude: mapped ? longitude : undefined,
+      };
+    }
+    this.clusters[index] = updated;
+    return updated;
+  };
+
   /** Writes a membership's labels, or drops `ai-grid/enabled` without one; provisioning follows toGridCluster. */
   private setMembership(cluster: GridCluster, membership?: GridMembership): GridCluster {
     const { name } = cluster;

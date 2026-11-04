@@ -16,33 +16,61 @@ type Options = {
 };
 
 /**
- * Adds the cluster to AI Grid (with a membership) or removes it, for the Clusters list and the
- * cluster's page alike. When the cluster changed since the dialog opened (Aborted, a 409), the
- * update carried old labels and an old version: it loads the cluster again, hands it to onConflict and throws
- * ClusterChangedError, and the dialog decides whether the user's location and role still stand.
- * Returns the cluster as the backend answered; throws for the dialog to show.
+ * Runs a write of the cluster. When the cluster changed since the dialog opened (Aborted, a 409),
+ * the update carried old labels and an old version: it loads the cluster again, hands it to
+ * onConflict and throws ClusterChangedError, and the dialog decides whether the user's values still
+ * stand. Any other failure is thrown as it is. Only Aborted means a stale version here:
+ * FailedPrecondition (412, which ServiceError.isConflict also counts for the JSON API's If-Match) is
+ * the backend refusing the change itself, such as a role change that would leave AI Grid without an
+ * ingress cluster, and reloading would not help; the dialog shows its message.
  */
-export const changeMembership = async (
-  service: Pick<MembershipWrites, 'enrollCluster' | 'removeClusterFromGrid'>,
-  { cluster, join }: MembershipChange,
-  membership: GridMembership | undefined,
+const withConflictReload = async (
+  cluster: ClusterView,
+  write: () => Promise<ClusterView>,
   { reload, onConflict }: Options,
 ): Promise<ClusterView> => {
-  let updated: ClusterView;
   try {
-    updated = membership
-      ? await service.enrollCluster(cluster, membership)
-      : await service.removeClusterFromGrid(cluster);
+    return await write();
   } catch (err) {
-    if (err instanceof ServiceError && err.isConflict) {
+    if (err instanceof ServiceError && err.status === 409) {
       const current = await reload(cluster.name).catch(() => undefined);
       onConflict(current);
       throw new ClusterChangedError(current);
     }
     throw err;
   }
+};
+
+/**
+ * Adds the cluster to AI Grid (with a membership) or removes it, for the Clusters list and the
+ * cluster's page alike, reloading it after a conflict (withConflictReload). Returns the cluster as
+ * the backend answered; throws for the dialog to show.
+ */
+export const changeMembership = async (
+  service: Pick<MembershipWrites, 'enrollCluster' | 'removeClusterFromGrid'>,
+  { cluster, join }: MembershipChange,
+  membership: GridMembership | undefined,
+  options: Options,
+): Promise<ClusterView> => {
+  const updated = await withConflictReload(
+    cluster,
+    () => (membership ? service.enrollCluster(cluster, membership) : service.removeClusterFromGrid(cluster)),
+    options,
+  );
   if (updated.aiGridEnabled !== join) {
     throw new Error('The hub did not confirm the change. Refresh the page and try again.');
   }
   return updated;
 };
+
+/**
+ * Writes an AI Grid cluster's edited labels, for the Clusters list and the cluster's page
+ * alike, reloading it after a conflict (withConflictReload). Returns the cluster as the backend
+ * answered; throws for the dialog to show, the backend's refusals included.
+ */
+export const editCluster = (
+  service: Pick<MembershipWrites, 'updateLabels'>,
+  cluster: ClusterView,
+  labels: Record<string, string>,
+  options: Options,
+): Promise<ClusterView> => withConflictReload(cluster, () => service.updateLabels(cluster, labels), options);
