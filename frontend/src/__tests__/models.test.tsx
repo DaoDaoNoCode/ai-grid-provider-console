@@ -2015,6 +2015,54 @@ describe('editing what a deployed model runs', () => {
     ]);
   });
 
+  it('keeps an image the user typed when the presets are kept again', async () => {
+    const service = new MockConsoleService();
+    const models = modelsOf(service);
+    const update = vi.spyOn(models, 'update');
+    const user = userEvent.setup();
+    renderAt('/models/granite-3-8b/edit', service);
+    await openStep(user, 'Deployment');
+    const remove = await screen.findByRole('checkbox', { name: 'Remove presets' });
+    await replace(user, /Runtime image/, 'registry.example/vllm:mine');
+    await user.click(remove);
+    expect(field(/Runtime image/)).toHaveValue('registry.example/vllm:mine');
+    await user.click(remove);
+    expect(remove).not.toBeChecked();
+    expect(field(/Runtime image/)).toHaveValue('registry.example/vllm:mine');
+    // Typed after selecting hardware, too.
+    await user.click(remove);
+    await selectHardware(user, 'NVIDIA GPU');
+    expect(field(/Runtime image/)).toHaveValue('');
+    await replace(user, /Runtime image/, 'registry.example/vllm:other');
+    await user.click(remove);
+    expect(screen.getByRole('radio', { name: 'NVIDIA GPU' })).not.toBeChecked();
+    expect(field(/Runtime image/)).toHaveValue('registry.example/vllm:other');
+    const request = await save(user, update);
+    expect(request.updateMask?.paths).toEqual(['spec.main.image']);
+    expect(request.object?.spec?.main?.image).toBe('registry.example/vllm:other');
+  });
+
+  it('puts the model’s own image back when the presets are kept again and the user typed none', async () => {
+    const service = new MockConsoleService();
+    const user = userEvent.setup();
+    renderAt('/models/granite-3-8b/edit', service);
+    await openStep(user, 'Deployment');
+    const remove = await screen.findByRole('checkbox', { name: 'Remove presets' });
+    await user.click(remove);
+    await selectHardware(user, 'CPU only');
+    expect(field(/Runtime image/)).toHaveValue(cpuOnly.image);
+    await user.click(remove);
+    expect(field(/Runtime image/)).toHaveValue('quay.io/example/vllm:v1');
+    // A typed image gives way to the hardware selected after it, so it is not typed any more.
+    await user.click(remove);
+    await replace(user, /Runtime image/, 'registry.example/vllm:mine');
+    await selectHardware(user, 'NVIDIA GPU');
+    await user.click(remove);
+    expect(field(/Runtime image/)).toHaveValue('quay.io/example/vllm:v1');
+    await openStep(user, 'Review');
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
+  });
+
   it('goes back to the model’s own values when its hardware is selected again after the presets are removed', async () => {
     const service = new MockConsoleService();
     const models = modelsOf(service);

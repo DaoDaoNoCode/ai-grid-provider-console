@@ -256,12 +256,11 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
   const storedAccelerators = own && accelerator ? own.acceleratorRequests[0]?.count : undefined;
   const ownAccelerators = storedAccelerators && (wholeCount(storedAccelerators) ?? storedAccelerators);
   // The fields the hardware fills in hold undefined until the user edits them, so they show the
-  // selected hardware's value. An edited CPU, memory or accelerator count is kept when the hardware
-  // changes; the image is the hardware's, so selecting hardware replaces an edited one with its own
-  // (or none, for the cluster's default).
-  const [imageInput, setRuntimeImage] = useState<string | undefined>(
-    model ? (model.runtimeImage ?? '') : draft?.values.image,
-  );
+  // selected hardware's value, or for an edit the model's own. An edited CPU, memory or accelerator
+  // count is kept when the hardware changes; the image is the hardware's, so selecting hardware
+  // replaces an edited one with its own (or none, for the cluster's default). Keeping the presets
+  // again selects no hardware, so it changes none of them: a typed image stays.
+  const [imageInput, setRuntimeImage] = useState<string | undefined>(draft?.values.image);
   const selectHardware = (id: string) => {
     setHardwareId(id);
     setRuntimeImage(undefined);
@@ -783,11 +782,9 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
                     isChecked={removePresets}
                     onChange={(_event, checked) => {
                       setRemovePresets(checked);
-                      // Keeping the presets puts the model's own hardware back.
-                      if (!checked) {
-                        setHardwareId(undefined);
-                        setRuntimeImage(model?.runtimeImage ?? '');
-                      }
+                      // Keeping the presets puts the model's own hardware back, and with it the model's
+                      // image unless the user typed one.
+                      if (!checked) setHardwareId(undefined);
                     }}
                     isDisabled={saving}
                   />
