@@ -157,7 +157,7 @@ it('opens an organization from the list and edits its domains, its identity prov
   await openStep(user, 'Identity provider');
   expect(screen.getByRole('textbox', { name: 'Title' })).toBeDisabled();
   expect(screen.getByRole('textbox', { name: 'Client ID' })).toBeDisabled();
-  expect(screen.getByText('The identity provider cannot be changed after the organization is created.')).toBeVisible();
+  expect(screen.getByText('Identity provider cannot be edited')).toBeVisible();
   await openStep(user, 'Organization details');
   const domain = screen.getByRole('textbox', { name: 'Domain 1' });
   await user.clear(domain);
@@ -635,26 +635,47 @@ it('locks the edit wizard while it saves', async () => {
 });
 
 it('moves an edit refused for a field to that field, once, and lets the user return to Review', async () => {
-  const service = emptyService();
-  // Without an identity provider, so the edit can add one.
-  const organization = await service.createOrganization({ name: input.name, domains: input.domains });
+  const service = new MockConsoleService();
+  const [organization] = service.organizations;
   service.updateOrganization = async () => {
     throw new ServiceError(422, 'The organization is invalid.', {
-      'identityProvider.config.issuer': 'Enter a valid HTTP or HTTPS URL.',
+      'domains.0': 'The domain is already taken.',
     });
   };
   const user = userEvent.setup();
   renderAt(`/organizations/${encodeURIComponent(organization.id)}/edit`, service);
+  await user.click(await screen.findByRole('textbox', { name: 'Domain 1' }));
+  await user.paste('x');
   await openStep(user, 'Identity provider');
-  await fillRequiredIdp(user, requiredIdp);
   await saveEdit(user);
-  // On the Identity provider step, with the server's message next to Issuer.
-  expect(await screen.findByRole('textbox', { name: 'Issuer' })).toHaveAttribute('aria-invalid', 'true');
-  expect(screen.getByText('Enter a valid HTTP or HTTPS URL.')).toBeVisible();
+  // Back on the Organization details step, with the server's message next to the domain.
+  expect(await screen.findByRole('textbox', { name: 'Domain 1' })).toHaveAttribute('aria-invalid', 'true');
+  expect(screen.getByText('The domain is already taken.')).toBeVisible();
   // Going back to Review stays there: the move happens once per refused save.
   await openStep(user, 'Review');
   expect(screen.getByRole('button', { name: 'Save changes' })).toBeVisible();
-  expect(screen.queryByRole('textbox', { name: 'Issuer' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('textbox', { name: 'Domain 1' })).not.toBeInTheDocument();
+});
+
+it('edit: an organization without an identity provider says one can be added only on create', async () => {
+  const service = emptyService();
+  const organization = await service.createOrganization({ name: input.name, domains: input.domains });
+  const update = vi.spyOn(service, 'updateOrganization');
+  const user = userEvent.setup();
+  renderAt(`/organizations/${encodeURIComponent(organization.id)}/edit`, service);
+  await openStep(user, 'Identity provider');
+  expect(
+    screen.getByText(
+      'This organization has no identity provider. One can be added only when an organization is created.',
+    ),
+  ).toBeVisible();
+  expect(screen.queryByRole('textbox', { name: 'Client ID' })).not.toBeInTheDocument();
+  await openStep(user, 'Organization details');
+  await user.click(screen.getByRole('textbox', { name: 'Domain 1' }));
+  await user.paste('x');
+  await saveEdit(user);
+  expect(await screen.findByText('Organization updated')).toBeVisible();
+  expect(update.mock.calls[0][1].identityProvider).toBeUndefined();
 });
 
 it('reloads an organization after a stale delete from its page, keeping the typed name, so a retry succeeds', async () => {
