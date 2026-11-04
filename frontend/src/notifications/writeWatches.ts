@@ -44,18 +44,19 @@ export const READY_POLL_MS = 20_000;
  * How many reads in a row must find a subscription's phase empty, with no status found before,
  * for its watch to stop silently: three, about 40 s at READY_POLL_MS. A failed read between them
  * ends the run, as it says nothing about the reports (nextHistory). An empty phase means the
- * backend has no report from any ingress cluster: the status Policy isn't deployed or nothing has
- * evaluated it, which no write changes, or the backend's read of the reports failed this once
- * (readReports logs it and reports nothing; withSubscriptionPhase in the backend's
- * internal/servers/subscriptions_git.go). Once a status has been found, an empty phase is the
- * latter, a status unavailable for now, and the watch goes on to its deadline.
+ * backend has no report from any cluster: no cluster has an Argo CD Application in the catalog's
+ * subscriptions ApplicationSet, or the backend may not list the Applications (both logged once),
+ * which no write changes; or the backend's read of them failed this once (readReports logs it and
+ * reports nothing; maasPhase in the backend's internal/servers/subscriptions_git.go). Once a status
+ * has been found, an empty phase is the latter, a status unavailable for now, and the watch goes
+ * on to its deadline.
  */
 export const NO_STATUS_READS = 3;
 
 /**
  * A subscription's status as its watches read it from Subscriptions/Get: its phase, and its
  * authorization policies' (the managed `<id>-policy`, the one Get returns in git mode). Each phase
- * is Active, Pending, or empty when no ingress cluster reports.
+ * is Active, Pending, Degraded, or empty when no cluster reports.
  */
 export type SubscriptionStatusView = { phase: string; policies: { id: string; phase: string }[] };
 
@@ -63,7 +64,9 @@ export type SubscriptionStatusView = { phase: string; policies: { id: string; ph
  * What a status says for the users: `active` when the subscription and its policies are Active,
  * `policy` when the subscription is but a policy isn't, or Get lists none, `subscription` when the
  * subscription isn't. A subscription without a policy gives its users no access to its models, and
- * the backend creates the policy with it, so none listed is a policy not active yet.
+ * the backend creates the policy with it, so none listed is a policy not active yet. Degraded is
+ * not active either, and not an end: it is also how a subscription reads while a model it names
+ * isn't published on a cluster yet (watchActive).
  */
 export type Verdict = 'active' | 'policy' | 'subscription';
 
@@ -304,10 +307,14 @@ const noStatusAvailable = (history: SubscriptionHistory) =>
 
 /**
  * A created subscription until it is active on every ingress cluster. The backend reads both
- * phases from the clusters' reports (withSubscriptionPhase and withAuthPolicyStatus, its
- * internal/servers/subscriptions_git.go): Active when every ingress cluster has the object active,
- * Pending while any doesn't have it yet, has it otherwise, or hasn't reported. There is no Failed:
- * a subscription the cluster can't make active reads Pending.
+ * phases from the health the catalog's Argo CD Applications record for each cluster (maasPhase and
+ * withAuthPolicyStatus, its internal/servers/subscriptions_git.go): Active when every cluster
+ * reports the object ready, Degraded when any reports it failed, Pending while any reports it
+ * pending or doesn't list it yet. Degraded doesn't end the watch: MaaS calls a subscription Failed or
+ * Degraded while a model it names has no MaaSModelRef or route on the cluster yet
+ * (deriveFinalPhase, models-as-a-service's maassubscription_controller.go), and the Applications'
+ * health check reads both as Degraded, so a subscription created with its model reads Degraded
+ * until the model is published there, then Active.
  *
  * Active needs the authorization policy Active too: in MaaS the policy gives the users access to
  * the models and the subscription their quota, and a user needs both. Both active is a success; a
@@ -352,9 +359,9 @@ export const watchActive = async (
  * An edited subscription while the ingress clusters apply its changes, until `since` plus READY_MS;
  * then it ends silently. It says nothing: Active doesn't say which version it describes (the
  * clusters' reports name objects, not versions, and the previous version stays active while the
- * new one is applied), and a subscription has no Failed phase to report. It is there so the pages
- * refetch when the phase changes. Empty phases stop it as they stop watchActive; a subscription
- * that is gone stops it.
+ * new one is applied), and Degraded isn't a failure to report (watchActive). It is there so the
+ * pages refetch when the phase changes. Empty phases stop it as they stop watchActive; a
+ * subscription that is gone stops it.
  */
 export const watchSubscriptionChanges = async (
   target: WriteTarget,

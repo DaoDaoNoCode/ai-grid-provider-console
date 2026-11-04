@@ -915,6 +915,7 @@ describe('subscription phases', () => {
       withPhase('unreported-sub', ''),
       withPhase('pending-sub', 'Pending'),
       withPhase('active-sub', 'Active'),
+      withPhase('degraded-sub', 'Degraded'),
     );
     renderAt('/subscriptions', service);
     const table = await screen.findByTestId('subscriptions-table');
@@ -925,7 +926,11 @@ describe('subscription phases', () => {
     expect(label('pending-sub')).toHaveTextContent('Pending');
     // Active, as its policy's phase reads beside it.
     expect(label('active-sub')).toHaveTextContent('Active');
-    for (const name of ['unreported-sub', 'pending-sub', 'active-sub']) {
+    // A cluster reports it failed (maasPhase), or a model it names isn't published there yet: a
+    // warning, as odh-dashboard shows MaaS's Degraded, not a neutral unknown word.
+    expect(label('degraded-sub')).toHaveTextContent('Degraded');
+    expect(label('degraded-sub')).toHaveClass('pf-m-warning');
+    for (const name of ['unreported-sub', 'pending-sub', 'active-sub', 'degraded-sub']) {
       expect(label(name)).toHaveClass('pf-m-outline');
       expect(within(label(name)).queryByRole('button')).not.toBeInTheDocument();
     }
