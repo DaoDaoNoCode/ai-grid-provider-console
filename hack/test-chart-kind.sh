@@ -138,8 +138,28 @@ VALUES=(--set tls.serviceCA=false --set backend.git.url="${GIT_URL}" "${IMAGES[@
 step "namespace ${NS} and the secrets the chart expects to exist"
 k create namespace "${NS}" --dry-run=client -o yaml | k apply -f - >/dev/null
 # In git mode the chart grants the backend a Role in Argo CD's namespace, where the catalog's
-# Applications are (templates/rbac.yaml). kind has no Argo CD: the namespace stands in for it.
+# Applications are (templates/rbac.yaml). kind has no Argo CD: the namespace and a bare
+# Application CRD stand in for it. Without the CRD, `kubectl auth can-i ... applications.argoproj.io`
+# can't map the resource and checks a core-group resource of that name instead, so every answer
+# below would be "no", whatever the Role grants.
 k create namespace openshift-gitops --dry-run=client -o yaml | k apply -f - >/dev/null
+k apply -f - >/dev/null <<'YAML'
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: applications.argoproj.io
+spec:
+  group: argoproj.io
+  scope: Namespaced
+  names: {plural: applications, singular: application, kind: Application}
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema: {type: object, x-kubernetes-preserve-unknown-fields: true}
+YAML
+k wait --for=condition=Established crd/applications.argoproj.io --timeout=60s >/dev/null
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=${NAME}.${NS}.svc" \
   -addext "subjectAltName=DNS:${NAME}.${NS}.svc,DNS:localhost" \
   -keyout "${TMP}/tls.key" -out "${TMP}/tls.crt" 2>/dev/null
