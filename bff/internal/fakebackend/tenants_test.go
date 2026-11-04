@@ -974,21 +974,31 @@ func TestTenantIdentityProviderRoundTrips(t *testing.T) {
 	if err != nil || !proto.Equal(got.GetObject().GetIdentityProvider(), validIdP()) {
 		t.Fatalf("stored identity provider = %v, %v", got.GetObject().GetIdentityProvider(), err)
 	}
-	next := validIdP()
-	next.Title = "Wayne SSO"
-	updated, err := s.UpdateTenant(ctx, &aigridv1.UpdateTenantRequest{Object: &aigridv1.Tenant{Id: id, IdentityProvider: next}, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{PathIdentityProvider}}})
+	// As the backend (#64): an update may repeat the stored identity provider, but not change it.
+	updated, err := s.UpdateTenant(ctx, &aigridv1.UpdateTenantRequest{Object: &aigridv1.Tenant{Id: id, IdentityProvider: validIdP()}, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{PathIdentityProvider}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.GetObject().GetIdentityProvider().GetTitle() != "Wayne SSO" || len(updated.GetObject().GetDomains()) != 1 || updated.GetObject().GetDomains()[0] != "wayne-aero.example.com" || updated.GetObject().GetResourceVersion() != "2" {
+	if !proto.Equal(updated.GetObject().GetIdentityProvider(), validIdP()) || len(updated.GetObject().GetDomains()) != 1 || updated.GetObject().GetDomains()[0] != "wayne-aero.example.com" {
 		t.Errorf("updated = %v", updated.GetObject())
+	}
+	next := validIdP()
+	next.Title = "Wayne SSO"
+	_, err = s.UpdateTenant(ctx, &aigridv1.UpdateTenantRequest{Object: &aigridv1.Tenant{Id: id, IdentityProvider: next}, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{PathIdentityProvider}}})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("a changed identity provider: %v, want InvalidArgument", err)
 	}
 	_, err = s.UpdateTenant(ctx, &aigridv1.UpdateTenantRequest{Object: &aigridv1.Tenant{Id: id}, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{PathIdentityProvider}}})
 	if fieldViolations(err)["identityProvider"] != "Required." {
 		t.Errorf("identity_provider in the mask without a value: %v", err)
 	}
-	if created, err := s.CreateTenant(ctx, &aigridv1.CreateTenantRequest{Object: &aigridv1.Tenant{Name: "no-idp"}}); err != nil || created.GetObject().GetIdentityProvider() != nil {
-		t.Errorf("an organization without an identity provider, as Keycloak and other clients create them: %v, %v", created, err)
+	plain, err := s.CreateTenant(ctx, &aigridv1.CreateTenantRequest{Object: &aigridv1.Tenant{Name: "no-idp"}})
+	if err != nil || plain.GetObject().GetIdentityProvider() != nil {
+		t.Fatalf("an organization without an identity provider, as Keycloak and other clients create them: %v, %v", plain, err)
+	}
+	_, err = s.UpdateTenant(ctx, &aigridv1.UpdateTenantRequest{Object: &aigridv1.Tenant{Id: plain.GetObject().GetId(), IdentityProvider: validIdP()}, UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{PathIdentityProvider}}})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("adding an identity provider on update: %v, want InvalidArgument", err)
 	}
 }
 

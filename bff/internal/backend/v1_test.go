@@ -190,8 +190,8 @@ func TestV1TenantIdentityProvider(t *testing.T) {
 		t.Fatalf("CreateTenant() identity provider = %v, want %v", created.GetObject().GetIdentityProvider(), draft)
 	}
 
-	// The edit form sends the domains with the identity provider it read; the backend
-	// accepts that unchanged value and refuses any other, so the BFF passes it on as is.
+	// When the mask names the identity provider, the adapter passes it on as is: the backend
+	// accepts the stored value unchanged and refuses any other.
 	conn = &recordingConn{reply: &backendv1.TenantsUpdateResponse{Object: stored}}
 	if _, err := (v1Tenants{conn}).UpdateTenant(ctx, &aigridv1.UpdateTenantRequest{
 		Object:     &aigridv1.Tenant{Id: "t1", ResourceVersion: "2", Domains: []string{"org1.example.com"}, IdentityProvider: draft},

@@ -406,6 +406,14 @@ func (s *Server) UpdateTenant(ctx context.Context, req *aigridv1.UpdateTenantReq
 		if err := identityProviderError(fields); err != nil {
 			return nil, err
 		}
+		// As the backend (ai-grid-provider-backend#64): an identity provider is set only on
+		// create, so an update may repeat the stored one but not add or change it.
+		switch {
+		case cur.GetIdentityProvider() == nil:
+			return nil, status.Error(codes.InvalidArgument, "spec.identity_provider cannot be added after create")
+		case !proto.Equal(idp, cur.GetIdentityProvider()):
+			return nil, status.Error(codes.InvalidArgument, "spec.identity_provider is immutable after create")
+		}
 	}
 	next := cloneTenant(cur)
 	if has(PathName) {
