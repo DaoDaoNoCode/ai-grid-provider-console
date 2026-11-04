@@ -111,7 +111,10 @@ export const MembershipModal: React.FC<Props> = ({ cluster, join, onConfirm, onC
               ? 'AI Grid stops managing this cluster, and models are no longer deployed to it.'
               : 'AI Grid stops managing this cluster, and models are no longer deployed to it. The cluster is also disconnected from the other AI Grid clusters.'}
           </p>
-          <p>Models deployed to it from the Models page are removed from it. OpenShift AI is not uninstalled.</p>
+          <p>
+            OpenShift AI and the models running on it are not uninstalled, but AI Grid no longer manages them. Move its
+            models to other clusters first.
+          </p>
         </Stack>
       </DeleteModal>
     );

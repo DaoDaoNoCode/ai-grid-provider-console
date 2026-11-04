@@ -102,7 +102,7 @@ it('removes a member from AI Grid after a confirmation', async () => {
   // A remote cluster also leaves the cross-cluster network.
   expect(modal).toHaveTextContent('The cluster is also disconnected from the other AI Grid clusters.');
   expect(modal).toHaveTextContent(
-    'Models deployed to it from the Models page are removed from it. OpenShift AI is not uninstalled.',
+    'OpenShift AI and the models running on it are not uninstalled, but AI Grid no longer manages them. Move its models to other clusters first.',
   );
   // Destructive, so it asks for the cluster's name typed in, as every delete does.
   expect(within(modal).getByRole('button', { name: 'Remove' })).toBeDisabled();
@@ -127,7 +127,7 @@ it('does not say the hub is disconnected when removing local-cluster', async () 
   expect(modal).not.toHaveTextContent('disconnected');
   expect(modal).toHaveTextContent('AI Grid stops managing this cluster, and models are no longer deployed to it.');
   expect(modal).toHaveTextContent(
-    'Models deployed to it from the Models page are removed from it. OpenShift AI is not uninstalled.',
+    'OpenShift AI and the models running on it are not uninstalled, but AI Grid no longer manages them. Move its models to other clusters first.',
   );
 });
 
