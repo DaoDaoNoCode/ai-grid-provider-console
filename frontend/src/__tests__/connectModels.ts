@@ -19,6 +19,7 @@ import {
   ModelPhase,
   ModelPlacementStatusSchema,
   ModelSchema,
+  ModelSourceSchema,
   ModelStatusSchema,
   ModelSpecSchema,
   ModelState,
@@ -274,9 +275,32 @@ export class FakeModels {
           spec.replicas = object?.spec?.replicas;
           spec.scaling = undefined;
           break;
+        case 'spec.model':
+          // The served name is checked below: empty, or the name the model had, becomes the id.
+          spec.model = object?.spec?.model && clone(ModelSourceSchema, object.spec.model);
+          if (
+            spec.model &&
+            spec.model.name &&
+            spec.model.name !== current.spec?.model?.name &&
+            spec.model.name !== id
+          ) {
+            throw new ConnectError(
+              `spec.model.name "${spec.model.name}" must be empty or the model id "${id}"`,
+              Code.InvalidArgument,
+            );
+          }
+          break;
+        case 'spec.base_refs':
+          spec.baseRefs = [...(object?.spec?.baseRefs ?? [])];
+          break;
         case 'spec.main.image':
           spec.main ??= create(ModelContainerSchema);
           spec.main.image = object?.spec?.main?.image ?? '';
+          break;
+        case 'spec.main.requests':
+          // The backend also moves each accelerator's limit to its new request (dropDerivedLimits).
+          spec.main ??= create(ModelContainerSchema);
+          spec.main.requests = { ...object?.spec?.main?.requests };
           break;
         case 'spec.main.env':
           spec.main ??= create(ModelContainerSchema);

@@ -5,7 +5,7 @@
 import { create, type MessageInitShape } from '@bufbuild/protobuf';
 import { ModelSchema, type Model } from '../gen/ai_grid/v1/model_type_pb';
 import { SubscriptionSchema, type Subscription } from '../gen/ai_grid/v1/subscription_type_pb';
-import { runtimeArgsOf } from '../pages/models/fields/runtimeArgs';
+import { RUNTIME_ARGS_ENV, runtimeArgsOf } from '../pages/models/fields/runtimeArgs';
 import { DESCRIPTION, DISPLAY_NAME, placementClustersOf } from '../pages/models/modelView';
 
 export type WriteFields = Record<string, string>;
@@ -17,8 +17,8 @@ const pick = (all: WriteFields, keys: string[]): WriteFields =>
   Object.fromEntries(keys.filter((k) => k in all).map((k) => [k, all[k]]));
 
 /**
- * A model's fields the console writes: its display name and description, source, image, runtime
- * arguments, resources, clusters and replicas.
+ * A model's fields the console writes: its display name and description, source, presets, image,
+ * runtime arguments and the rest of its environment, resources, clusters and replicas.
  */
 export const modelFields = (model: Model): WriteFields => {
   const annotations = model.metadata?.annotations ?? {};
@@ -27,8 +27,14 @@ export const modelFields = (model: Model): WriteFields => {
     displayName: annotations[DISPLAY_NAME] ?? '',
     description: annotations[DESCRIPTION] ?? '',
     uri: spec?.model?.uri ?? '',
+    // The backend keeps the presets and the environment in the order sent (modelSpecToMap,
+    // model_mapper.go).
+    baseRefs: JSON.stringify(spec?.baseRefs ?? []),
     image: spec?.main?.image ?? '',
     runtimeArgs: JSON.stringify(runtimeArgsOf(spec?.main?.env)),
+    env: JSON.stringify(
+      (spec?.main?.env ?? []).filter((v) => v.name !== RUNTIME_ARGS_ENV).map((v) => [v.name, v.value]),
+    ),
     requests: entries(spec?.main?.requests),
     // The backend sorts the clusters and drops repeats (gitPlacementClusters, models_git.go).
     clusters: asSet(placementClustersOf(spec) ?? []),
@@ -39,9 +45,12 @@ export const modelFields = (model: Model): WriteFields => {
 /** The fields each path of Models/Update's mask writes (modelRequests.ts, updateRequestOf). */
 const modelPathFields: Record<string, string[]> = {
   'metadata.annotations': ['displayName', 'description'],
+  'spec.model': ['uri'],
   'spec.replicas': ['replicas'],
+  'spec.base_refs': ['baseRefs'],
   'spec.main.image': ['image'],
-  'spec.main.env': ['runtimeArgs'],
+  'spec.main.requests': ['requests'],
+  'spec.main.env': ['runtimeArgs', 'env'],
   'spec.placement': ['clusters'],
 };
 

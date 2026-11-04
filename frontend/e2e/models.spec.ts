@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext } from '@playwright/test';
-import { callBackend as call, tryBackend, writeConfirmed } from './backend';
+import { callBackend as call, createModel, tryBackend, writeConfirmed } from './backend';
 
 // The backend's own Models API on its fakes (the backend's fixtures/poc), through the BFF's
 // Connect relay. site1 is an Available member, Compliant with the ready Policy; the fixtures give
@@ -96,12 +96,13 @@ test('deploys a model to a cluster, edits it in the same wizard, and deletes it'
   await expect(page.getByTestId('model-clusters')).toContainText(CLUSTER);
   await expect(page.getByLabel('Deployment', { exact: true })).toContainText(/Accelerators\s*None \(CPU only\)/);
 
-  // Edit in the deploy wizard: the source is read-only, every step opens directly, and Save sends
-  // Models/Update with the changed path and the version the page loaded.
+  // Edit in the deploy wizard: the name users send is read-only, every step opens directly, and Save
+  // sends Models/Update with the changed path and the version the page loaded.
   await page.getByRole('button', { name: `Actions for ${unique}` }).click();
   await page.getByRole('menuitem', { name: 'Edit' }).click();
   await expect(page.getByRole('heading', { name: `Edit ${unique}` })).toBeVisible();
-  await expect(page.getByRole('textbox', { name: 'Model URI' })).toHaveAttribute('readonly', '');
+  await expect(page.getByRole('textbox', { name: /^Model URI/ })).toHaveValue(`hf://e2e/${unique}`);
+  await expect(page.getByRole('textbox', { name: 'Model name in requests' })).toHaveAttribute('readonly', '');
   await page.getByRole('button', { name: 'Deployment', exact: true }).click();
   await page.getByRole('spinbutton', { name: 'Replicas' }).fill('2');
   await page.getByRole('button', { name: 'Review', exact: true }).click();
@@ -217,6 +218,48 @@ test('confirms a deploy whose answer was lost instead of calling it failed', asy
     await expect(drawer.getByRole('listitem')).toHaveCount(1);
   } finally {
     await tryBackend(request, 'Models/Delete', { id: unique });
+  }
+});
+
+test("edits a deployed model's URI, CPU and memory, and shows them on its page", async ({ page }) => {
+  const unique = `e2e-${Math.random().toString(36).slice(2, 8)}`;
+  // On hf://facebook/opt-125m with CPU 100m and memory 1Gi (createModel).
+  await createModel(page.request, unique, unique);
+  try {
+    await page.goto(`/models/${unique}/edit`);
+    await expect(page.getByRole('heading', { name: `Edit ${unique}` })).toBeVisible();
+
+    // Source: the URI is editable; the name users send is the model's id, fixed.
+    const uri = page.getByRole('textbox', { name: /^Model URI/ });
+    await expect(uri).toHaveValue('hf://facebook/opt-125m');
+    await expect(page.getByRole('textbox', { name: 'Model name in requests' })).toHaveAttribute('readonly', '');
+    await uri.fill('hf://facebook/opt-350m');
+
+    // Deployment: CPU and memory, as the Deploy wizard takes them.
+    await page.getByRole('button', { name: 'Deployment', exact: true }).click();
+    await expect(page.getByRole('textbox', { name: /^CPU/ })).toHaveValue('100m');
+    await page.getByRole('textbox', { name: /^CPU/ }).fill('500m');
+    await page.getByRole('textbox', { name: /^Memory/ }).fill('2Gi');
+
+    // Review: a new URI changes the model users get under the same name.
+    await page.getByRole('button', { name: 'Review', exact: true }).click();
+    const review = page.getByTestId('model-review');
+    await expect(review).toContainText(/Model URI\s*hf:\/\/facebook\/opt-350m/);
+    await expect(review).toContainText(/CPU\s*500m/);
+    await expect(review).toContainText(/Memory\s*2Gi/);
+    await expect(page.getByTestId('model-uri-changed')).toContainText('This changes the model users are served');
+    await page.getByRole('button', { name: 'Save changes' }).click();
+    await expect(writeConfirmed(page, `Changes to model ${unique} saved to Git`)).toBeVisible();
+
+    // The model's page reads it back from the backend.
+    await expect(page).toHaveURL(`/models/${unique}`);
+    const deployment = page.getByLabel('Deployment', { exact: true });
+    await expect(deployment).toContainText(/Model URI\s*hf:\/\/facebook\/opt-350m/);
+    await expect(deployment).toContainText(/CPU\s*500m/);
+    await expect(deployment).toContainText(/Memory\s*2Gi/);
+  } finally {
+    // Whatever step failed, the catalog is left as it was (zero skips the version check).
+    await tryBackend(page.request, 'Models/Delete', { id: unique });
   }
 });
 

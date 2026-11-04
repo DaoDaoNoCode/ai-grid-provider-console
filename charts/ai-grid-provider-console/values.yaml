@@ -131,7 +131,7 @@ backend:
   # Created by hack/deploy.sh or bootstrap/60-console.sh. The container does not start without it,
   # which keeps the backend off its built-in default credentials.
   keycloakSecretName: ai-grid-backend-keycloak
-  # Let the backend patch ManagedClusters (Add to AI Grid and Remove in the console). This also
+  # Let the backend patch ManagedClusters (Add to AI Grid, Edit and Remove in the console). This
   # installs a ValidatingAdmissionPolicy that limits the backend's writes to the ai-grid/* and
   # location labels and the ai-grid/* annotations. Off: the backend only reads clusters.
   clusterWrites: false

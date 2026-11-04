@@ -7,7 +7,7 @@ how a call travels, where the types come from, how a page uses them, how to test
 when the API has to change. The backend's side of the same rules is its
 `docs/API_CONTRACT.md`.
 
-The Clusters area (the list, a cluster's page, Add and Remove), the Models area (the list, a
+The Clusters area (the list, a cluster's page, Add, Edit and Remove), the Models area (the list, a
 model's page, the Deploy model wizard, its edit and delete), the Subscriptions area and the AI
 Grid map are on it; Organizations moves next; each move deletes that area's draft RPCs, fake data,
 BFF handlers and hand-written frontend types. When the last one moves, `mock/proto`, `bff/gen`, the
@@ -148,7 +148,27 @@ regression passing when updating these dependencies.
   read with `ai-grid/enabled`, `ai-grid/role` and `location` set (or `ai-grid/enabled` dropped),
   `update_mask: metadata.labels`, `metadata.version` with `lock: true`. Aborted is the conflict
   the dialog already handles, and the answer's `ai_grid_member` confirms the change. The BFF has
-  no `/api/v1/clusters` routes any more.
+  no `/api/v1/clusters` routes any more. Remove's dialog for an Ingress or Combined cluster warns
+  that the subscriptions lose their API keys: Argo CD deletes the cluster's copies of the
+  subscriptions, and MaaS then revokes their keys in the shared database, on every cluster. The
+  backend refusing it (FailedPrecondition, while subscriptions exist) shows in its words, with the
+  form kept.
+- **Edit** (`EditClusterModal.tsx`, `gridSettings.ts`, its words in `editClusterText.ts`), for AI
+  Grid clusters, in the list's row menu and the cluster page's Actions: the location label
+  (checked as Add checks it), and the role only of a cluster without one (no `ai-grid/role`, or a
+  value that isn't one of the three). A role a cluster has is shown read-only: changing it isn't
+  supported, because the hub doesn't fully remove what the old role installed (leaving
+  inference uninstalls the GPU operators, leaving ingress leaves objects behind, its database
+  credentials among them, and adding ingress needs per-cluster config in Git). Selecting a role
+  shows, before Save, what Save sets, what the hub then installs, and that the cluster shows
+  Provisioning until it finishes, in an info alert that is a live region, so a screen reader
+  announces it; it only adds, so no name is typed. Save sends one `Clusters/Update` of the labels map as read with
+  those keys set, `update_mask: metadata.labels`, `metadata.version` with `lock: true`; it is off
+  until something changes. Aborted reloads the cluster into the dialog as Add does; any other
+  refusal (InvalidArgument for a value, FailedPrecondition for a change the backend won't make)
+  stays in the dialog in the backend's words, with the form kept. Only Aborted means a stale
+  version on these writes: FailedPrecondition, which `ServiceError.isConflict` also counts, is a
+  refusal, for Add and Remove too. The site name and map position aren't edited in the console.
 - **The map** (`pages/grid/AiGridPage.tsx`) shows the members among the same list, placed where
   `status.location` says; `Grid/GetOverview`, which the backend doesn't have, serves only the
   Monitoring fallback now. It links a member to the models whose placement chose it by cluster
@@ -158,8 +178,8 @@ regression passing when updating these dependencies.
 - **Where a cluster is**, read-only (`pages/clusters/ClusterSite.tsx`, `site.ts`): the list's Site
   column and the cluster page show the site name, else the cloud region marked approximate, and
   a warning with the backend's `problem` when the annotations are wrong; the cluster page adds
-  the region and the map position with how a hub admin sets it (the backend's README, "Cluster
-  locations"). On the map, clusters at one position share a pin labelled "site name · cluster
+  the region and the map position with how a hub admin sets it (`oc annotate`, the backend's
+  README, "Cluster locations"; geography is read-only in the console). On the map, clusters at one position share a pin labelled "site name · cluster
   name" for each, and the list counts the members that aren't on the map, by why. "Region" is
   the cloud region only: the `ai-grid/region` label isn't read.
 
@@ -182,12 +202,20 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   Clusters column (no Replicas column: the model page shows it); the main container's `requests` as CPU, memory and accelerators (any request
   with a domain, such as `nvidia.com/gpu`), worded as Accelerators ("1 GPU (nvidia.com/gpu)", or
   "None (CPU only)"; `acceleratorsText` in `modelHardware.ts`), and `base_refs` as Presets. A
-  deployed model is never matched against the config's `models.hardware`, which can change or fail
-  to load: only the Deploy wizard names hardware. An empty image is the cluster's default vLLM
-  image for NVIDIA GPUs, so the wizard requires an image unless the hardware's accelerator, or a
-  deployed model's request, is `nvidia.com/gpu` (or the model has presets); an edit requires it
-  only where it would clear an image the model has. Pages are at
-  `/models/:id` and `/models/:id/edit`.
+  model's pages never match it against the config's `models.hardware`, which can change or fail
+  to load. Only its edit does (`matchingHardware`): it starts on the first entry the model runs on
+  (the same accelerator and no other; for an entry without one, no accelerator and the entry's
+  environment variables; never the image, and no presets, which it checks again once the user
+  removes them), or on none, and then shows the model's accelerators read-only until the user
+  selects one. A matched entry is only preselected: the model keeps its own image, environment
+  and resources, in the quantity forms they are stored in, until the user selects another entry
+  or edits them. While presets remain, the hardware can't be selected, since a preset's image and
+  environment would conflict with another entry's; keeping them again after removing them puts
+  the model's own hardware back, and its image unless the user typed one. An empty image is the
+  cluster's default vLLM image for NVIDIA GPUs, so the wizard requires an image unless the
+  hardware's accelerator (for an edit without hardware, the model's request) is `nvidia.com/gpu`,
+  or the model keeps presets; an edit that keeps the model's hardware and presets requires it only
+  where it would clear an image the model has. Pages are at `/models/:id` and `/models/:id/edit`.
 - **Status and Availability** follow the UX design of console #114 (Chris, 2026-11-02). The Models
   list's **Status** is `status.state`, Git sync and deployment in one word: Saved to Git, Syncing,
   Synced, Starting, Ready, Partially ready, Failed, Stopped (`stateWordOf`), sorted in that rollout
@@ -229,10 +257,23 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   `{ scheduler: true, managedRoute: true }` (`modelRequests.ts`): the backend defaults the
   scheduler to off, and a model needs it to be routed. It sets no rollout and no limits: the
   backend's defaults apply (gateway `openshift-ingress/openshift-ai-inference`), and it saves an
-  accelerator request as the limit too (`ModelContainer.requests`). An edit calls `Models/Update` with only
-  the paths it changed (`spec.replicas`, `spec.main.image` (an emptied image too), `spec.main.env`,
-  `metadata.annotations`, `spec.placement`; the env and the annotations whole, as loaded) and
-  `metadata.version` with `lock: true`. Delete calls `Models/Delete` with `resource_version`, the
+  accelerator request as the limit too (`ModelContainer.requests`). An edit can change everything
+  the deploy wizard sets except the id, as OpenShift AI's deployment wizard edits a deployment:
+  it calls `Models/Update` with only the paths it changed, in this order: `spec.model` (the URI
+  only; Review warns that users of the model get the new one under the same name),
+  `spec.replicas`, `spec.base_refs` (empty once the user removes the presets; none can be added),
+  `spec.main.image` (an emptied image too), `spec.main.requests` (CPU, memory and the accelerator,
+  every other resource as loaded: hardware replaces only the accelerators the console knows,
+  NVIDIA and AMD GPUs and those the hardware list names, so a hand-written model's `rdma/hca`
+  stays; the backend moves an accelerator's limit with its request),
+  `spec.main.env`, `metadata.annotations` and `spec.placement`; the requests, the env and the
+  annotations whole, as loaded with the change applied, and `metadata.version` with `lock: true`.
+  Selecting other hardware applies it as Deploy does: its image, its environment in place of the
+  variables any entry sets, and its CPU, memory and accelerator count where the user typed none;
+  selecting the model's own hardware again goes back to the model's values. The name users send
+  stays read-only: the backend serves every model as its id and refuses any other
+  `spec.model.name` (`normalizeServedName`), so there is no other name to set. Delete calls
+  `Models/Delete` with `resource_version`, the
   version the dialog read; Aborted is the conflict the dialog already handles, and
   FailedPrecondition the backend's refusal while a subscription uses the model.
 - **References.** The delete dialog lists the subscriptions that use the model with
@@ -311,7 +352,8 @@ subscription) are sent from the app root, never from the form (`frontend/src/not
   center reads the object back every 10 s and says it was not done after 2 minutes. A create is
   done when `Get` finds the object holding what it sent, an update when the version moved past
   the one sent and the object holds what it sent (`writeFields.ts`: a model's display name,
-  source, image, runtime arguments, resources, clusters and replicas; a subscription's names,
+  source, presets, image, runtime arguments and the rest of its environment, resources, clusters
+  and replicas, of an edit the ones its mask names; a subscription's names,
   groups, organization, priority and models), a delete when `Get` answers NotFound. An object
   that exists, or moved on, with other content is someone else's write as far as anyone can
   tell: a warning that the write couldn't be confirmed, with a link to the object, never a

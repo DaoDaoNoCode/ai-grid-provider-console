@@ -66,6 +66,35 @@ export class MockConsoleService implements ConsoleService {
 
   removeClusterFromGrid = async (cluster: GridCluster): Promise<GridCluster> => this.setMembership(cluster);
 
+  /**
+   * Edit's write, as the backend's Clusters/Update stores it: the labels given (already the whole
+   * map), at the version the caller read.
+   */
+  updateCluster = async (cluster: GridCluster, labels: Record<string, string>): Promise<GridCluster> => {
+    const index = this.clusters.findIndex((c) => c.name === cluster.name);
+    if (index < 0) {
+      throw new ServiceError(404, `object with identifier '${cluster.name}' not found`);
+    }
+    const current = this.clusters[index];
+    if ((cluster.resourceVersion ?? '') !== (current.resourceVersion ?? '')) {
+      throw new ServiceError(
+        409,
+        `object with identifier '${cluster.name}' has resource version ${current.resourceVersion}, the request carries "${cluster.resourceVersion ?? ''}"; fetch it again and retry`,
+      );
+    }
+    const member = labels['ai-grid/enabled'] === 'true';
+    const updated: GridCluster = {
+      ...current,
+      resourceVersion: String(Number(current.resourceVersion ?? '0') + 1),
+      labels: { ...labels },
+      location: labels.location || undefined,
+      aiGridEnabled: member,
+      provisioningStatus: !member ? 'Not provisioned' : current.provisioned ? 'Provisioned' : 'Provisioning',
+    };
+    this.clusters[index] = updated;
+    return updated;
+  };
+
   /** Writes a membership's labels, or drops `ai-grid/enabled` without one; provisioning follows toGridCluster. */
   private setMembership(cluster: GridCluster, membership?: GridMembership): GridCluster {
     const { name } = cluster;

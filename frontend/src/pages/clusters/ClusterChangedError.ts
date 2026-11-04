@@ -10,3 +10,12 @@ export class ClusterChangedError extends Error {
     this.name = 'ClusterChangedError';
   }
 }
+
+/**
+ * What a dialog says after a conflict. With `current`, the page has given the dialog that version,
+ * so a second try sends it.
+ */
+export const changedMessage = (err: ClusterChangedError) =>
+  err.current
+    ? 'This cluster was changed after this dialog opened. The latest version is now shown. Review it and try again.'
+    : 'This cluster was changed after this dialog opened, and the latest version could not be loaded. Cancel, refresh the page, and try again.';

@@ -71,7 +71,10 @@ plain integer, as the BFF's `gpuCapacity` reads it, when the backend has no inve
 ", MPS ×2" or ", MIG 3g.20gb" when shared, and "+N more" for more configurations), as provider-admin
 feedback asks (the OpenShift version is on the details page, to leave the list room). The actions
 column sticks to the table's right edge, so a narrow window scrolls the table under it instead of
-hiding it. The page adds a cluster to AI Grid or removes it, and links each name to the cluster's
+hiding it. The page adds a cluster to AI Grid or removes it, edits an AI Grid cluster's location
+label, and its role only while it has none (Edit: one `Clusters/Update` of the labels,
+`docs/connect.md`, "The Clusters area"; a role a cluster has, the site name and the map position
+aren't edited in the console; this fake has no part in it), and links each name to the cluster's
 details page (`ClusterDetailsPage.tsx`, `/clusters/:name`). That page shows the membership (status,
 location, role, in the list's order), the cluster as the hub knows it (its connection status, the
 OpenShift version when it is OpenShift, the Kubernetes version, platform, product, creation time,
@@ -81,7 +84,7 @@ a configuration's MIG strategy is `mixed`, whose slices the device plugin advert
 `nvidia.com/mig-<profile>` instead), its GPUs (capacity, each configuration with memory and sharing, and its
 node count only when the cluster mixes configurations; manufacturer, architecture, driver and CUDA)
 and a table of its GPU nodes (model, GPUs, memory, architecture and compute capability, driver,
-sharing, instance type, status), with the same Add and Remove actions. Add-ons and the hub's
+sharing, instance type, status), with the same Add, Edit and Remove actions. Add-ons and the hub's
 conditions are left out: UX found them not needed there. The wording of products, memory, architecture and sharing is
 presentation only (`pages/clusters/gpuText.ts`). The real backend's cluster status details (Kubernetes version, capacity, allocatable and
 claims) fill the same sections; against a backend without them those parts say
