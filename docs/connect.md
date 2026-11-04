@@ -293,9 +293,9 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
 - **Testing.** Page tests answer from `frontend/src/__tests__/connectSubscriptions.ts`, an
   in-memory Subscriptions service over the generated messages that answers as git mode does,
   joined to `connectModels.ts`'s models; the browser test (`e2e/subscriptions.spec.ts`) runs on the
-  backend's fakes and commits a model of its own first (`e2e/backend.ts`). The fake hub's status
-  Policies are static: they report subscription `team-a` and its policy active on site3 and no
-  other subscription there yet (the backend's `fixtures/poc/policies.json`), so any other
+  backend's fakes and commits a model of its own first (`e2e/backend.ts`). The fake hub's catalog
+  Applications are static: they report subscription `team-a` and its policy active on site3 and
+  no other subscription there yet (the backend's `fixtures/poc/applications.json`), so any other
   subscription reads Pending for good, and the test creates `team-a` to see the notification
   center say it is active.
 - The BFF has no `/api/v1/subscriptions` or `/api/v1/models` routes and no `--models-namespace`.
@@ -527,3 +527,9 @@ still sent a served name would fail every model create on that backend (the back
 - A nightly job that proposes moving the pin to the backend's newest `main` and runs typecheck and
   tests (the pattern OSAC uses for its UI).
 - Connect GET: no backend method is marked free of side effects yet, so every call is a POST.
+- An organization's identity provider. The pinned backend's `Tenants/Create` takes
+  `spec.identity_provider` (OIDC, immutable afterwards), and reads its client secret by name from
+  the namespace in `AI_GRID_IDP_SECRET_NAMESPACE` (default `ai-grid-idp-secrets`), which the
+  chart doesn't create or grant yet. The console still creates organizations through `/api/v1`,
+  whose stopgap refuses `identityProvider` with 501 (`bff/internal/backend/v1.go`), so it sends
+  none.
