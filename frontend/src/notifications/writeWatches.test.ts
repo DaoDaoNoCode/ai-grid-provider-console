@@ -257,6 +257,16 @@ describe('watchReady', () => {
     });
   });
 
+  it("doesn't call a model not ready when its last read failed: it says it can't confirm", async () => {
+    expect(await watchReady(model('create'), SINCE, reads(new Error('unavailable')), past)).toEqual({
+      status: NotificationResponseStatus.WARNING,
+      title: 'Unable to confirm model Widget is ready',
+      message:
+        "The console couldn't read its status 30 minutes after it was saved to Git. Open the model to check its status.",
+      actions: [{ title: 'View model', to: '/models/widget' }],
+    });
+  });
+
   it('stops for a model that is gone, and keeps watching through a failed read', async () => {
     expect(await watchReady(model('create'), SINCE, reads(undefined), during)).toEqual({
       status: NotificationResponseStatus.STOP,
@@ -428,6 +438,16 @@ describe('watchActive', () => {
     // Nor does it warn at the end of the 30 minutes when the status has gone meanwhile.
     expect(await watchActive(created(), SINCE, reads(none), past)).toEqual({
       status: NotificationResponseStatus.STOP,
+    });
+  });
+
+  it("doesn't call a subscription inactive when its last read failed: it says it can't confirm", async () => {
+    expect(await watchActive(created(), SINCE, reads(new Error('unavailable')), past)).toEqual({
+      status: NotificationResponseStatus.WARNING,
+      title: 'Unable to confirm subscription Team A is active',
+      message:
+        "The console couldn't read its status 30 minutes after it was saved to Git. Open the subscription to check its status.",
+      actions: [{ title: 'View subscription', to: '/subscriptions/view/team-a' }],
     });
   });
 

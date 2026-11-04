@@ -16,9 +16,11 @@ import {
   modelFailedText,
   modelNotReadyText,
   modelReadyText,
+  modelUnconfirmedText,
   notConfirmedText,
   subscriptionActiveText,
   subscriptionNotActiveText,
+  subscriptionUnconfirmedText,
   succeededText,
   unconfirmedText,
   type WriteSubject,
@@ -173,8 +175,8 @@ const failureOf = (model: ModelView): { why: string | undefined } | undefined =>
  *
  * Every placed cluster ready is a success naming them; a model the backend calls Failed, or a
  * cluster it reports failed (git mode reports none today), an error. Anything else is checked again
- * until `since` plus READY_MS, then a warning names the clusters it isn't ready on. A model that is
- * gone stops the watch. A model on the hub alone, with no placed cluster, is ready when its phase is.
+ * until `since` plus READY_MS, then a warning names the clusters it isn't ready on, or, when that
+ * last read failed, says the console couldn't confirm it. A model that is gone stops the watch. A model on the hub alone, with no placed cluster, is ready when its phase is.
  */
 export const watchReady = async (
   target: WriteTarget,
@@ -183,6 +185,7 @@ export const watchReady = async (
   now: () => number,
 ): Promise<NotificationWatcherResponse> => {
   let waiting: string[] = [];
+  let readFailed = false;
   try {
     const answer = await read('model', target.id);
     const model = answer?.model;
@@ -206,8 +209,13 @@ export const watchReady = async (
     }
   } catch {
     // A failed read is checked again, as a page's poll is.
+    readFailed = true;
   }
-  return now() < since + READY_MS ? repoll : warning(modelNotReadyText(target.id, target.name, waiting));
+  if (now() < since + READY_MS) return repoll;
+  // A last read that failed says nothing about the clusters: the outcome is unknown.
+  return warning(
+    readFailed ? modelUnconfirmedText(target.id, target.name) : modelNotReadyText(target.id, target.name, waiting),
+  );
 };
 
 /**
@@ -253,7 +261,8 @@ const noStatus = (status: SubscriptionStatusView) => status.phase === '';
  * Active needs the authorization policy Active too: in MaaS the policy gives the users access to
  * the models and the subscription their quota, and a user needs both. Both active is a success;
  * anything else is checked again until `since` plus READY_MS, then a warning says which of the two
- * isn't active. An empty phase claims nothing either way: the watch stops silently once it has read
+ * isn't active, or, when the last read found no status to judge by, that the console couldn't
+ * confirm it. An empty phase claims nothing either way: the watch stops silently once it has read
  * one for NO_STATUS_MS. A subscription that is gone stops the watch.
  */
 export const watchActive = async (
@@ -262,7 +271,8 @@ export const watchActive = async (
   read: ReadObject,
   now: () => number,
 ): Promise<NotificationWatcherResponse> => {
-  let inactive: 'subscription' | 'policy' = 'subscription';
+  // What this read found, when it found a status; nothing when it failed.
+  let inactive: 'subscription' | 'policy' | undefined;
   try {
     const status = (await read('subscription', target.id))?.subscription;
     if (!status) return stop;
@@ -270,11 +280,15 @@ export const watchActive = async (
     if (status.phase === 'Active') {
       if (status.policies.every((p) => p.phase === 'Active')) return success(subscriptionActiveText(target));
       inactive = 'policy';
+    } else {
+      inactive = 'subscription';
     }
   } catch {
     // A failed read is checked again, as a page's poll is.
   }
-  return now() < since + READY_MS ? repoll : warning(subscriptionNotActiveText(target, inactive));
+  if (now() < since + READY_MS) return repoll;
+  // Without a status from the last read, the outcome is unknown: never "isn't active".
+  return warning(inactive ? subscriptionNotActiveText(target, inactive) : subscriptionUnconfirmedText(target));
 };
 
 /**

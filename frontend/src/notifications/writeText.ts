@@ -232,6 +232,20 @@ export const modelNotReadyText = (id: string, name: string, clusters: string[]):
   actions: [{ title: 'View model', to: modelPath({ id }) }],
 });
 
+/** What a status watch says when its last read failed: nothing about the status it couldn't read. */
+const unreadStatus = (object: string) =>
+  `The console couldn't read its status ${READY_MINUTES} minutes after it was saved to Git. Open the ${object} to check its status.`;
+
+/**
+ * A deployed model's readiness watch reached READY_MINUTES with its last read failed: whether it
+ * is ready is unknown, so a warning that says so, not that it isn't ready.
+ */
+export const modelUnconfirmedText = (id: string, name: string): Text => ({
+  title: `Unable to confirm model ${name} is ready`,
+  message: unreadStatus('model'),
+  actions: [{ title: 'View model', to: modelPath({ id }) }],
+});
+
 /** A deployed model failed: why, in the words the model's page uses. */
 export const modelFailedText = (id: string, name: string, why: string | undefined): Text => ({
   title: `Unable to deploy model ${name}`,
@@ -284,3 +298,14 @@ export const subscriptionNotActiveText = (t: WriteTarget, inactive: 'subscriptio
     actions: [viewAction(t)],
   };
 };
+
+/**
+ * A created subscription's watch reached READY_MINUTES without a status to judge by: its last read
+ * failed, or found no status (the backend's read of the clusters' reports failed). Whether it is
+ * active is unknown, so a warning that says so, not that it isn't active.
+ */
+export const subscriptionUnconfirmedText = (t: WriteTarget): Text => ({
+  title: `Unable to confirm subscription ${t.name} is active`,
+  message: unreadStatus('subscription'),
+  actions: [viewAction(t)],
+});
