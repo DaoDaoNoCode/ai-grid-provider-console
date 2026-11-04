@@ -150,7 +150,7 @@ test("deploys a model on NVIDIA GPUs with the cluster's default image", async ({
   await expect(writeConfirmed(page, `Model ${unique} saved to Git`)).toBeVisible();
 
   const row = page.getByRole('row').filter({ hasText: unique });
-  await expect(row.getByTestId('model-phase')).toHaveText('Saved to Git');
+  await expect(row.getByRole('button', { name: `Saved to Git for ${unique}`, exact: true })).toBeVisible();
 
   // The model's page shows what the backend stored: one NVIDIA GPU, and no image of its own.
   await row.getByRole('link', { name: unique, exact: true }).click();
