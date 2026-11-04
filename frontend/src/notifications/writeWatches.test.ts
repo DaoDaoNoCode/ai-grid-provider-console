@@ -1,7 +1,8 @@
 import type { ModelView } from '../pages/models/modelView';
 import { NotificationResponseStatus } from './useNotificationWatcher';
 import {
-  NO_STATUS_MS,
+  NO_HISTORY,
+  NO_STATUS_READS,
   READBACK_MS,
   READY_MS,
   readBack,
@@ -424,20 +425,58 @@ describe('watchActive', () => {
     });
   });
 
-  it('claims nothing when no ingress cluster reports a status: it stops silently on the third read', async () => {
-    const none = status('', '');
-    expect(await watchActive(created(), SINCE, reads(none), () => SINCE)).toEqual({
-      status: NotificationResponseStatus.REPOLL,
+  describe('an empty phase', () => {
+    const none = reads(status('', ''));
+
+    it('claims nothing when no ingress cluster ever reports a status: it stops silently on the third empty read in a row', async () => {
+      expect(await watchActive(created(), SINCE, none, () => SINCE, NO_HISTORY)).toEqual({
+        status: NotificationResponseStatus.REPOLL,
+      });
+      expect(await watchActive(created(), SINCE, none, () => SINCE, { empties: 1 })).toEqual({
+        status: NotificationResponseStatus.REPOLL,
+      });
+      expect(await watchActive(created(), SINCE, none, () => SINCE, { empties: NO_STATUS_READS - 1 })).toEqual({
+        status: NotificationResponseStatus.STOP,
+      });
     });
-    expect(await watchActive(created(), SINCE, reads(none), () => SINCE + NO_STATUS_MS - 1)).toEqual({
-      status: NotificationResponseStatus.REPOLL,
+
+    it("doesn't stop on one empty read that comes late, as after a delayed first read", async () => {
+      expect(await watchActive(created(), SINCE, none, () => SINCE + 5 * 60_000, NO_HISTORY)).toEqual({
+        status: NotificationResponseStatus.REPOLL,
+      });
     });
-    expect(await watchActive(created(), SINCE, reads(none), () => SINCE + NO_STATUS_MS)).toEqual({
-      status: NotificationResponseStatus.STOP,
+
+    it('takes empty reads after a status for a status unavailable for now, and goes on', async () => {
+      expect(
+        await watchActive(created(), SINCE, none, during, { empties: NO_STATUS_READS + 10, last: 'subscription' }),
+      ).toEqual({ status: NotificationResponseStatus.REPOLL });
     });
-    // Nor does it warn at the end of the 30 minutes when the status has gone meanwhile.
-    expect(await watchActive(created(), SINCE, reads(none), past)).toEqual({
-      status: NotificationResponseStatus.STOP,
+
+    it('warns at the deadline from the last read that found a status, when the last one finds none', async () => {
+      expect(await watchActive(created(), SINCE, none, past, { empties: 40, last: 'subscription' })).toMatchObject({
+        status: NotificationResponseStatus.WARNING,
+        title: "Subscription Team A isn't active yet",
+        message: expect.stringMatching(/^It isn't active on every ingress cluster/),
+      });
+      // The policy-only variant: the last status had the subscription Active and its policy Pending.
+      expect(await watchActive(created(), SINCE, none, past, { empties: 2, last: 'policy' })).toMatchObject({
+        status: NotificationResponseStatus.WARNING,
+        title: "Subscription Team A isn't active yet",
+        message: expect.stringMatching(/^Its authorization policy isn't active/),
+      });
+    });
+
+    it("says it can't confirm at the deadline when no read found a status", async () => {
+      expect(await watchActive(created(), SINCE, none, past, { empties: 1 })).toMatchObject({
+        status: NotificationResponseStatus.WARNING,
+        title: 'Unable to confirm subscription Team A is active',
+      });
+    });
+
+    it('is active on the read that finds it so, whatever came before', async () => {
+      expect(
+        await watchActive(created(), SINCE, reads(status('Active')), during, { empties: 2, last: 'subscription' }),
+      ).toMatchObject({ status: NotificationResponseStatus.SUCCESS, title: 'Subscription Team A is active' });
     });
   });
 
@@ -482,14 +521,18 @@ describe('watchSubscriptionChanges', () => {
     },
   );
 
-  it('stops on the third read when no ingress cluster reports a status', async () => {
+  it('stops on the third empty read in a row when no read found a status, and not after one', async () => {
     const none = reads(status(''));
-    expect(await watchSubscriptionChanges(subscription('update'), SINCE, none, () => SINCE + NO_STATUS_MS - 1)).toEqual(
-      { status: NotificationResponseStatus.REPOLL },
-    );
-    expect(await watchSubscriptionChanges(subscription('update'), SINCE, none, () => SINCE + NO_STATUS_MS)).toEqual({
+    const edited = subscription('update');
+    expect(await watchSubscriptionChanges(edited, SINCE, none, () => SINCE + 5 * 60_000, NO_HISTORY)).toEqual({
+      status: NotificationResponseStatus.REPOLL,
+    });
+    expect(await watchSubscriptionChanges(edited, SINCE, none, during, { empties: NO_STATUS_READS - 1 })).toEqual({
       status: NotificationResponseStatus.STOP,
     });
+    expect(
+      await watchSubscriptionChanges(edited, SINCE, none, during, { empties: NO_STATUS_READS - 1, last: 'active' }),
+    ).toEqual({ status: NotificationResponseStatus.REPOLL });
   });
 
   it('stops for a subscription that is gone, and keeps watching through a failed read', async () => {

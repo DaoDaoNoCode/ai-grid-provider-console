@@ -28,6 +28,7 @@ import { failedText, pendingText, succeededText, type WriteTarget } from './writ
 import {
   READBACK_POLL_MS,
   READY_POLL_MS,
+  nextHistory,
   readBack,
   statusOf,
   watchActive,
@@ -36,6 +37,8 @@ import {
   watchSubscriptionChanges,
   type ReadAnswer,
   type ReadObject,
+  type SubscriptionHistory,
+  type Verdict,
 } from './writeWatches';
 
 /**
@@ -60,7 +63,8 @@ const defaultFormWait = (signal: AbortSignal) =>
  * subscription until it is active (watchActive). `changes`: an edited model while its changes roll
  * out (watchChanges), an edited subscription while they are applied (watchSubscriptionChanges).
  * `notificationId` is the write's in-progress entry, which its outcome replaces. `status`: a status
- * watch's last seen status (statusOf), so a reload still tells a change from none.
+ * watch's last seen status (statusOf), so a reload still tells a change from none. `empties` and
+ * `lastVerdict`: a subscription watch's history (SubscriptionHistory), so a reload goes on counting.
  */
 type WatchRecord = WriteTarget & {
   key: string;
@@ -68,7 +72,26 @@ type WatchRecord = WriteTarget & {
   since: number;
   notificationId?: string;
   status?: string;
+  empties?: number;
+  lastVerdict?: Verdict;
 };
+
+/** The write a record follows, without the record's own bookkeeping. */
+const targetOf = ({ subject, op, id, name, version, expected, clusters, organization }: WatchRecord): WriteTarget => ({
+  subject,
+  op,
+  id,
+  name,
+  ...(version === undefined ? {} : { version }),
+  ...(expected ? { expected } : {}),
+  ...(clusters ? { clusters } : {}),
+  ...(organization ? { organization } : {}),
+});
+
+const historyOf = (record: WatchRecord): SubscriptionHistory => ({
+  empties: record.empties ?? 0,
+  ...(record.lastVerdict ? { last: record.lastVerdict } : {}),
+});
 
 /** The watches that follow an object's status after its write landed. */
 const statusStages: ReadonlySet<WatchRecord['stage']> = new Set(['ready', 'changes']);
@@ -87,6 +110,12 @@ const isRecord = (value: unknown): value is WatchRecord =>
   (value.notificationId === undefined || typeof value.notificationId === 'string') &&
   (value.status === undefined || typeof value.status === 'string') &&
   (value.organization === undefined || typeof value.organization === 'string') &&
+  (value.empties === undefined ||
+    (typeof value.empties === 'number' && Number.isInteger(value.empties) && value.empties >= 0)) &&
+  (value.lastVerdict === undefined ||
+    value.lastVerdict === 'active' ||
+    value.lastVerdict === 'policy' ||
+    value.lastVerdict === 'subscription') &&
   (value.clusters === undefined ||
     (Array.isArray(value.clusters) && value.clusters.every((c) => typeof c === 'string'))) &&
   (value.subject === 'model' || value.subject === 'subscription') &&
@@ -222,11 +251,14 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
      */
     function startWatchFn(record: WatchRecord) {
       keep(record);
-      const { key, stage, since, notificationId, status: kept, ...target } = record;
+      const { key, stage, since, notificationId, status: kept } = record;
+      const target = targetOf(record);
       const followsStatus = statusStages.has(stage);
       const isModel = target.subject === 'model';
       registered.current.add(key);
       if (kept !== undefined) lastStatus.current.set(key, kept);
+      // The subscription watch's history, as its record has it (a reload goes on from it).
+      let history = historyOf(record);
       registerNotification({
         id: key,
         notificationId,
@@ -245,11 +277,11 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
             stage === 'ready'
               ? isModel
                 ? await watchReady(target, since, observe, now)
-                : await watchActive(target, since, observe, now)
+                : await watchActive(target, since, observe, now, history)
               : stage === 'changes'
                 ? isModel
                   ? await watchChanges(target, since, observe, now, before)
-                  : await watchSubscriptionChanges(target, since, observe, now)
+                  : await watchSubscriptionChanges(target, since, observe, now, history)
                 : await readBack(target, since, observe, now);
           if (signal.aborted) return response;
           const final = response.status !== NotificationResponseStatus.REPOLL;
@@ -260,9 +292,20 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
           let changed = false;
           if (followsStatus && seen.answered) {
             const status = statusOf(seen.answer);
+            const nextStatusHistory = nextHistory(history, seen.answer);
             changed = before !== undefined && before !== status;
             lastStatus.current.set(key, status);
-            if (!final && status !== before) keep({ ...record, status });
+            const historyMoved =
+              nextStatusHistory.empties !== history.empties || nextStatusHistory.last !== history.last;
+            history = nextStatusHistory;
+            if (!final && (status !== before || historyMoved)) {
+              keep({
+                ...(records.current.find((r) => r.key === key) ?? record),
+                status,
+                empties: history.empties,
+                ...(history.last ? { lastVerdict: history.last } : {}),
+              });
+            }
           }
           if (final || changed) refreshFn(target.subject);
           if (final) {

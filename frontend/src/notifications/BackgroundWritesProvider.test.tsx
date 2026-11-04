@@ -438,9 +438,17 @@ const SubscriptionPages: React.FC = () => {
   );
 };
 
-/** The console around subscription team-a, whose status the test changes, or deletes. */
-const subscribing = (stored: object[] = []) => {
-  const state = { answer: teamA('Pending'), gone: false, gets: 0, lists: 0 };
+type SubscriptionState = { answer: ReturnType<typeof teamA>; gone: boolean; gets: number; lists: number };
+
+/**
+ * The console around subscription team-a, whose status the test changes, or deletes. Given the
+ * storage and state of an earlier one (unmounted), it is that console after a reload.
+ */
+const subscribing = (
+  stored: object[] = [],
+  reload?: { storage: ReturnType<typeof memoryStorage>; state: SubscriptionState },
+) => {
+  const state: SubscriptionState = reload?.state ?? { answer: teamA('Pending'), gone: false, gets: 0, lists: 0 };
   const { transport } = fakeClients({
     subscriptions: {
       get: () => {
@@ -454,8 +462,8 @@ const subscribing = (stored: object[] = []) => {
       },
     },
   });
-  const storage = memoryStorage({ [watchesKey('dev-user')]: JSON.stringify(stored) });
-  render(
+  const storage = reload?.storage ?? memoryStorage({ [watchesKey('dev-user')]: JSON.stringify(stored) });
+  const { unmount } = render(
     <BackendProvider transport={transport} checkSession={() => undefined}>
       <NotificationsProvider storage={storage.get} owner="dev-user">
         <NotificationWatcherProvider>
@@ -468,7 +476,7 @@ const subscribing = (stored: object[] = []) => {
       </NotificationsProvider>
     </BackendProvider>,
   );
-  return { state, storage };
+  return { state, storage, unmount };
 };
 
 const createTeamA = {
@@ -598,6 +606,38 @@ describe('a subscription watch', () => {
     expect(state.gets).toBe(gets);
     expect(screen.getByRole('list', { name: 'Titles' }).children).toHaveLength(1);
     expect(screen.getByText('Subscription Team A saved to Git')).toBeInTheDocument();
+  });
+
+  it('counts empty reads across a reload, and stops on the third in a row', async () => {
+    const first = subscribing([activeRecord(Date.now())]);
+    first.state.answer = teamA('');
+    // Two empty reads: as the console starts, and one poll later.
+    await pass(0);
+    await pass(READY_POLL_MS);
+    expect(subscriptionWatches(first.storage)).toMatchObject([{ key: 's1', empties: 2 }]);
+    first.unmount();
+
+    // The reload's first read is the third empty one in a row.
+    const second = subscribing([], first);
+    await pass(0);
+    expect(subscriptionWatches(second.storage)).toEqual([]);
+    const gets = second.state.gets;
+    await pass(READY_MS);
+    expect(second.state.gets).toBe(gets);
+    expect(screen.getByRole('list', { name: 'Titles' }).children).toHaveLength(0);
+  });
+
+  it('goes on through empty reads once it has found a status: Pending, then empty, then Active', async () => {
+    const { state, storage } = subscribing([activeRecord(Date.now())]);
+    await pass(0);
+    // The backend can't read the clusters' reports for a while (more than three polls).
+    state.answer = teamA('');
+    await pass(4 * READY_POLL_MS);
+    expect(subscriptionWatches(storage)).toMatchObject([{ key: 's1', lastVerdict: 'subscription' }]);
+    state.answer = teamA('Active');
+    await pass(READY_POLL_MS);
+    expect(screen.getAllByText('Subscription Team A is active')).toHaveLength(1);
+    expect(subscriptionWatches(storage)).toEqual([]);
   });
 
   it('watches a subscription once, whatever earlier watch of the id still runs, apart from a model of the same id', async () => {

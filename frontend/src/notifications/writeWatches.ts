@@ -41,12 +41,15 @@ export const READY_MS = READY_MINUTES * 60_000;
  */
 export const READY_POLL_MS = 20_000;
 /**
- * How long a subscription watch goes on while the phase reads empty, from when the write landed:
- * three reads. An empty phase means no ingress cluster reports any status at all (the status
- * Policy isn't deployed, or no cluster has evaluated it; withSubscriptionPhase in the backend's
- * internal/servers/subscriptions_git.go), which no write changes, so waiting longer tells nothing.
+ * How many reads in a row must find a subscription's phase empty, with no status found before,
+ * for its watch to stop silently: three, about 40 s at READY_POLL_MS. An empty phase means the
+ * backend has no report from any ingress cluster: the status Policy isn't deployed or nothing has
+ * evaluated it, which no write changes, or the backend's read of the reports failed this once
+ * (readReports logs it and reports nothing; withSubscriptionPhase in the backend's
+ * internal/servers/subscriptions_git.go). Once a status has been found, an empty phase is the
+ * latter, a status unavailable for now, and the watch goes on to its deadline.
  */
-export const NO_STATUS_MS = 2 * READY_POLL_MS;
+export const NO_STATUS_READS = 3;
 
 /**
  * A subscription's status as its watches read it from Subscriptions/Get: its phase, and its
@@ -54,6 +57,31 @@ export const NO_STATUS_MS = 2 * READY_POLL_MS;
  * is Active, Pending, or empty when no ingress cluster reports.
  */
 export type SubscriptionStatusView = { phase: string; policies: { id: string; phase: string }[] };
+
+/**
+ * What a status says for the users: `active` when the subscription and every policy are Active,
+ * `policy` when only a policy isn't, `subscription` when the subscription isn't.
+ */
+export type Verdict = 'active' | 'policy' | 'subscription';
+
+const verdictOf = (status: SubscriptionStatusView): Verdict =>
+  status.phase !== 'Active' ? 'subscription' : status.policies.every((p) => p.phase === 'Active') ? 'active' : 'policy';
+
+/**
+ * What a subscription watch learned from its reads so far, kept in its record so a reload goes on
+ * from it: how many reads in a row found no status (`empties`), and the verdict of the last read
+ * that found one (`last`, none while no read has).
+ */
+export type SubscriptionHistory = { empties: number; last?: Verdict };
+
+export const NO_HISTORY: SubscriptionHistory = { empties: 0 };
+
+/** The history after one more read; a read that found no subscription, or failed, leaves it as it was. */
+export const nextHistory = (history: SubscriptionHistory, answer: ReadAnswer | undefined): SubscriptionHistory => {
+  const status = answer?.subscription;
+  if (!status) return history;
+  return status.phase === '' ? { ...history, empties: history.empties + 1 } : { empties: 0, last: verdictOf(status) };
+};
 
 /**
  * The object as the backend has it now: its version, the fields a write compares (writeFields.ts),
@@ -248,8 +276,12 @@ export const watchChanges = async (
   return now() < since + READY_MS ? repoll : stop;
 };
 
-/** Whether a subscription's phase reads empty: no ingress cluster reports any status (NO_STATUS_MS). */
-const noStatus = (status: SubscriptionStatusView) => status.phase === '';
+/**
+ * Whether a subscription watch has found nothing to go on: NO_STATUS_READS reads in a row without
+ * a status, and none with one before.
+ */
+const noStatusAvailable = (history: SubscriptionHistory) =>
+  history.last === undefined && history.empties >= NO_STATUS_READS;
 
 /**
  * A created subscription until it is active on every ingress cluster. The backend reads both
@@ -261,34 +293,39 @@ const noStatus = (status: SubscriptionStatusView) => status.phase === '';
  * Active needs the authorization policy Active too: in MaaS the policy gives the users access to
  * the models and the subscription their quota, and a user needs both. Both active is a success;
  * anything else is checked again until `since` plus READY_MS, then a warning says which of the two
- * isn't active, or, when the last read found no status to judge by, that the console couldn't
- * confirm it. An empty phase claims nothing either way: the watch stops silently once it has read
- * one for NO_STATUS_MS. A subscription that is gone stops the watch.
+ * isn't active, from the last read that found a status (the last one may find none, while the
+ * backend can't read the reports), or, when the last read failed or no read found a status, that
+ * the console couldn't confirm it. An empty phase claims nothing either way: with no status found
+ * before, NO_STATUS_READS of them in a row stop the watch silently. `history` is what the earlier
+ * reads found (nextHistory). A subscription that is gone stops the watch.
  */
 export const watchActive = async (
   target: WriteTarget,
   since: number,
   read: ReadObject,
   now: () => number,
+  history: SubscriptionHistory = NO_HISTORY,
 ): Promise<NotificationWatcherResponse> => {
-  // What this read found, when it found a status; nothing when it failed.
-  let inactive: 'subscription' | 'policy' | undefined;
+  // The verdict to judge by: this read's, or, when it found no status, the last read's that did;
+  // none when this read failed.
+  let verdict: Verdict | undefined;
   try {
-    const status = (await read('subscription', target.id))?.subscription;
-    if (!status) return stop;
-    if (noStatus(status)) return now() < since + NO_STATUS_MS ? repoll : stop;
-    if (status.phase === 'Active') {
-      if (status.policies.every((p) => p.phase === 'Active')) return success(subscriptionActiveText(target));
-      inactive = 'policy';
-    } else {
-      inactive = 'subscription';
-    }
+    const answer = await read('subscription', target.id);
+    if (!answer?.subscription) return stop;
+    const next = nextHistory(history, answer);
+    if (noStatusAvailable(next)) return stop;
+    verdict = next.last;
+    if (answer.subscription.phase !== '' && verdict === 'active') return success(subscriptionActiveText(target));
   } catch {
     // A failed read is checked again, as a page's poll is.
   }
   if (now() < since + READY_MS) return repoll;
-  // Without a status from the last read, the outcome is unknown: never "isn't active".
-  return warning(inactive ? subscriptionNotActiveText(target, inactive) : subscriptionUnconfirmedText(target));
+  // Without a status to judge by, the outcome is unknown: never "isn't active".
+  return warning(
+    verdict === 'subscription' || verdict === 'policy'
+      ? subscriptionNotActiveText(target, verdict)
+      : subscriptionUnconfirmedText(target),
+  );
 };
 
 /**
@@ -296,19 +333,20 @@ export const watchActive = async (
  * then it ends silently. It says nothing: Active doesn't say which version it describes (the
  * clusters' reports name objects, not versions, and the previous version stays active while the
  * new one is applied), and a subscription has no Failed phase to report. It is there so the pages
- * refetch when the phase changes. An empty phase stops it after NO_STATUS_MS, as in watchActive;
- * a subscription that is gone stops it.
+ * refetch when the phase changes. Empty phases stop it as they stop watchActive; a subscription
+ * that is gone stops it.
  */
 export const watchSubscriptionChanges = async (
   target: WriteTarget,
   since: number,
   read: ReadObject,
   now: () => number,
+  history: SubscriptionHistory = NO_HISTORY,
 ): Promise<NotificationWatcherResponse> => {
   try {
-    const status = (await read('subscription', target.id))?.subscription;
-    if (!status) return stop;
-    if (noStatus(status) && now() >= since + NO_STATUS_MS) return stop;
+    const answer = await read('subscription', target.id);
+    if (!answer?.subscription) return stop;
+    if (noStatusAvailable(nextHistory(history, answer))) return stop;
   } catch {
     // A failed read is checked again, as a page's poll is.
   }

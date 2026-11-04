@@ -352,15 +352,20 @@ subscription) are sent from the app root, never from the form (`frontend/src/not
   active, Pending while any doesn't have it yet, has it otherwise or hasn't reported, and empty
   when no ingress cluster reports at all. There is no Failed phase and no per-cluster list for a
   subscription, so the watch has no error to report. After 30 minutes it warns "Subscription
-  <name> isn't active yet", saying whether the subscription or its policy isn't active and where
-  to look. An empty phase claims nothing: it describes the environment (the status Policy isn't
-  deployed, or no cluster has evaluated it), not the subscription, so the watch stops without a
-  word on its third read that finds it empty, rather than polling Git for 30 minutes to say
-  nothing. A subscription that is gone stops it.
+  <name> isn't active yet", saying whether the subscription or its policy isn't active (from the
+  last read that found a status) and where to look; when its last read failed, or no read found a
+  status, it says "Unable to confirm subscription <name> is active" instead, as a model's watch
+  says "Unable to confirm model <name> is ready". An empty phase claims nothing. Before any status
+  has been found it describes the environment (the status Policy isn't deployed, or no cluster has
+  evaluated it), not the subscription, so three empty reads in a row (about 40 s) stop the watch
+  without a word, rather than polling Git for 30 minutes to say nothing. After a status has been
+  found it means the backend couldn't read the clusters' reports this time (its `readReports`
+  logs that and reports nothing), and the watch goes on. The count is kept in the watch's record,
+  so a reload goes on counting. A subscription that is gone stops it.
 - An edited subscription is watched every 20 s for 30 minutes too, and never said to be active:
   the clusters' reports name objects, not versions, and the previous version stays Active while
   the new one is applied. It has nothing to fail on, so it only has the pages refetch when the
-  phase changes, and ends without a word (on its third empty phase, as above).
+  phase changes, and ends without a word (or after three empty phases in a row with no status found, as above).
 - One watch follows a model, and one a subscription, at a time, so nothing is said twice:
   deploying or creating an id again replaces its earlier watch; an edit replaces the previous
   edit's watch, and adds none while a create's readiness watch of the object still runs, as that
