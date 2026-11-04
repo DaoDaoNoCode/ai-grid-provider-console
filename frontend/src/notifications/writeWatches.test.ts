@@ -1,4 +1,4 @@
-import type { ModelView } from '../pages/models/modelView';
+import type { ModelClusterView, ModelView } from '../pages/models/modelView';
 import { NotificationResponseStatus } from './useNotificationWatcher';
 import {
   NO_HISTORY,
@@ -14,6 +14,7 @@ import {
   watchSubscriptionChanges,
   type ReadAnswer,
   type ReadObject,
+  type SubscriptionHistory,
 } from './writeWatches';
 import type { WriteTarget } from './writeText';
 
@@ -161,17 +162,34 @@ describe('readBack', () => {
 
 describe('watchReady', () => {
   const SINCE = 5_000_000;
+  const running: ModelClusterView = { cluster: 'site-b', phase: 'Ready', reason: 'Ready', deployment: 'Running' };
   const view = (phase: ModelView['phase'], extra: Partial<ModelView> = {}): ReadAnswer => ({
     version: 2,
     model: {
       phase,
       clusters: [
-        { cluster: 'site-b', phase: 'Ready', reason: 'Ready' },
-        { cluster: 'site-c', phase: phase === 'Ready' ? 'Ready' : 'Pending', reason: 'Ready' },
+        running,
+        {
+          cluster: 'site-c',
+          phase: phase === 'Ready' ? 'Ready' : 'Pending',
+          reason: phase === 'Ready' ? 'Ready' : 'NotReady',
+          deployment: phase === 'Ready' ? 'Running' : 'Starting',
+        },
       ],
       selectedClusters: ['site-b', 'site-c'],
+      maasFailed: false,
+      ingress: [],
       ...extra,
     } as ModelView,
+  });
+  /** Runs on site-b; MaaS failed to publish it on site-a, an ingress cluster (status.ingress). */
+  const maasFailed = view('Failed', {
+    reason: 'Failed',
+    statusMessage: 'Ready on site-b; failed to publish on site-a. MaaSModelRef on site-a: HTTPRoute rejected',
+    selectedClusters: ['site-b'],
+    clusters: [running],
+    maasFailed: true,
+    ingress: [{ cluster: 'site-a', failed: true, message: 'HTTPRoute rejected by the gateway.' }],
   });
   const during = () => SINCE + READY_MS - 1;
   const past = () => SINCE + READY_MS;
@@ -191,17 +209,124 @@ describe('watchReady', () => {
     });
   });
 
-  it("says a failed model failed, in its page's words for a known reason, else the backend's message", async () => {
-    expect(
-      await watchReady(model('update'), SINCE, reads(view('Failed', { reason: 'ConfigNotFound' })), during),
-    ).toMatchObject({
+  it("says the model couldn't be deployed when a placed cluster's deployment failed, in KServe's words", async () => {
+    const failing = view('Failed', {
+      reason: 'Failed',
+      clusters: [
+        running,
+        {
+          cluster: 'site-c',
+          phase: 'Failed',
+          reason: 'Failed',
+          message: 'LLMInferenceService failed',
+          deployment: 'Failed',
+          deploymentMessage: 'ns/widget: Accepted=False (reason NoMatchingParent)',
+        },
+      ],
+    });
+    expect(await watchReady(model('create'), SINCE, reads(failing), during)).toEqual({
       status: NotificationResponseStatus.ERROR,
       title: 'Unable to deploy model Widget',
-      message: 'A runtime template this model needs isn’t installed on the hub.',
+      message: 'site-c: ns/widget: Accepted=False (reason NoMatchingParent)',
+      actions: [{ title: 'View model', to: '/models/widget' }],
     });
-    expect(
-      await watchReady(model('create'), SINCE, reads(view('Failed', { statusMessage: 'image pull failed' })), during),
-    ).toMatchObject({ message: 'image pull failed' });
+  });
+
+  it("says the model couldn't be deployed when Argo CD gave up its sync on a placed cluster, in Argo CD's words", async () => {
+    // The LLMInferenceService never lands on site-c, so its deployment stays Unknown.
+    const refused = view('Failed', {
+      reason: 'Failed',
+      clusters: [
+        running,
+        {
+          cluster: 'site-c',
+          phase: 'Failed',
+          reason: 'Failed',
+          message: 'Sync failed',
+          deployment: 'Unknown',
+          syncFailed: true,
+          syncMessage: 'admission webhook "validating.kserve.io" denied the request: invalid model URI',
+        },
+      ],
+    });
+    expect(await watchReady(model('create'), SINCE, reads(refused), during)).toEqual({
+      status: NotificationResponseStatus.ERROR,
+      title: 'Unable to deploy model Widget',
+      message: 'site-c: admission webhook "validating.kserve.io" denied the request: invalid model URI',
+      actions: [{ title: 'View model', to: '/models/widget' }],
+    });
+  });
+
+  it("says the model couldn't be deployed when it has no placed cluster and its phase is Failed, in the model's words", async () => {
+    const failed = view('Failed', {
+      reason: 'Failed',
+      statusMessage: 'MaaSModelRef on site-a: HTTPRoute rejected',
+      clusters: [],
+      selectedClusters: [],
+    });
+    expect(await watchReady(model('create'), SINCE, reads(failed), during)).toEqual({
+      status: NotificationResponseStatus.ERROR,
+      title: 'Unable to deploy model Widget',
+      message: 'MaaSModelRef on site-a: HTTPRoute rejected',
+      actions: [{ title: 'View model', to: '/models/widget' }],
+    });
+  });
+
+  it('says it runs but users cannot reach it when MaaS failed to publish it, not that it failed to deploy', async () => {
+    // The backend calls the whole model Failed, but its deployment runs on every placed cluster.
+    expect(await watchReady(model('create'), SINCE, reads(maasFailed), during)).toEqual({
+      status: NotificationResponseStatus.WARNING,
+      title: "Model Widget is running but isn't available to users",
+      message:
+        "It runs on site-b. MaaS couldn't publish it on site-a: HTTPRoute rejected by the gateway. Open the model to check its status.",
+      actions: [{ title: 'View model', to: '/models/widget' }],
+    });
+  });
+
+  it('names every ingress cluster MaaS failed on, with its message when it has one', async () => {
+    const twice = view('Failed', {
+      selectedClusters: ['site-b'],
+      clusters: [running],
+      maasFailed: true,
+      ingress: [
+        { cluster: 'site-a', failed: true, message: 'HTTPRoute rejected.' },
+        { cluster: 'site-d', failed: false, message: 'Awaiting governance pairing' },
+        { cluster: 'site-e', failed: true },
+      ],
+    });
+    expect(await watchReady(model('create'), SINCE, reads(twice), during)).toMatchObject({
+      status: NotificationResponseStatus.WARNING,
+      message:
+        "It runs on site-b. MaaS couldn't publish it on site-a: HTTPRoute rejected; on site-e. Open the model to check its status.",
+    });
+  });
+
+  it('waits for the deployments while MaaS has failed, and only then warns that users cannot reach it', async () => {
+    const starting = view('Failed', {
+      maasFailed: true,
+      ingress: [{ cluster: 'site-a', failed: true, message: 'HTTPRoute rejected.' }],
+    });
+    expect(await watchReady(model('create'), SINCE, reads(starting), during)).toEqual({
+      status: NotificationResponseStatus.REPOLL,
+    });
+  });
+
+  it('is ready while MaaS still sets up its route or waits for a subscription', async () => {
+    // A model waiting only for a subscription reads Ready in the backend (status.maas
+    // AWAITING_SUBSCRIPTION); one still routing reads Pending. Neither is a failure.
+    const waiting = view('Pending', {
+      selectedClusters: ['site-b'],
+      clusters: [running],
+      ingress: [
+        { cluster: 'site-a', failed: false, message: 'Awaiting governance pairing' },
+        { cluster: 'site-d', failed: false, message: 'Waiting for HTTPRoute to be created' },
+      ],
+    });
+    expect(await watchReady(model('create'), SINCE, reads(waiting), during)).toEqual({
+      status: NotificationResponseStatus.SUCCESS,
+      title: 'Model Widget is ready on site-b',
+      actions: [{ title: 'View model', to: '/models/widget' }],
+    });
   });
 
   it.each<ModelView['phase']>(['Pending', 'Partially available', 'Saved to Git', 'Unknown'])(
@@ -220,42 +345,57 @@ describe('watchReady', () => {
     },
   );
 
-  it('is ready when its placed clusters are, whatever an ingress cluster keeps the overall phase at', async () => {
-    // demo1: the model runs on site-b, but site-a, an ingress cluster, reports its MaaSModelRef
-    // not Ready until a subscription covers it, so the whole model reads Pending.
-    const ingressPending = view('Pending', {
-      statusMessage: 'Not ready on site-a; ready on site-b',
-      selectedClusters: ['site-b'],
-      clusters: [{ cluster: 'site-b', phase: 'Ready', reason: 'Ready' }],
-    });
-    expect(await watchReady(model('create'), SINCE, reads(ingressPending), during)).toEqual({
-      status: NotificationResponseStatus.SUCCESS,
-      title: 'Model Widget is ready on site-b',
-      actions: [{ title: 'View model', to: '/models/widget' }],
-    });
-  });
-
   it('waits for a placed cluster that has no report yet', async () => {
-    const unreported = view('Pending', {
-      selectedClusters: ['site-b', 'site-c'],
-      clusters: [{ cluster: 'site-b', phase: 'Ready', reason: 'Ready' }],
-    });
+    const unreported = view('Pending', { selectedClusters: ['site-b', 'site-c'], clusters: [running] });
     expect(await watchReady(model('create'), SINCE, reads(unreported), during)).toEqual({
       status: NotificationResponseStatus.REPOLL,
     });
   });
 
-  it('says a cluster that failed failed', async () => {
-    const failing = view('Pending', {
+  it('is ready on a combined cluster that runs it while MaaS there still sets up its route', async () => {
+    // A combined cluster's phase also counts its MaaSModelRef and ExternalModel, which stay
+    // pending while MaaS configures the route; its deployment runs (ModelClusterStatus.deployment).
+    const routing = view('Pending', {
+      selectedClusters: ['site-a'],
       clusters: [
-        { cluster: 'site-b', phase: 'Ready', reason: 'Ready' },
-        { cluster: 'site-c', phase: 'Failed', reason: 'NotReady', message: 'LLMInferenceService failed' },
+        {
+          cluster: 'site-a',
+          phase: 'Pending',
+          reason: 'NotReady',
+          message: 'LLMInferenceService ready; MaaSModelRef not ready; ExternalModel ready',
+          deployment: 'Running',
+        },
       ],
     });
-    expect(await watchReady(model('create'), SINCE, reads(failing), during)).toMatchObject({
-      status: NotificationResponseStatus.ERROR,
-      title: 'Unable to deploy model Widget',
-      message: 'site-c: LLMInferenceService failed',
+    expect(await watchReady(model('create'), SINCE, reads(routing), during)).toEqual({
+      status: NotificationResponseStatus.SUCCESS,
+      title: 'Model Widget is ready on site-a',
+      actions: [{ title: 'View model', to: '/models/widget' }],
+    });
+  });
+
+  it("isn't ready on a cluster where it is stopped, and names it after 30 minutes", async () => {
+    const stopped = view('Pending', {
+      reason: 'NotReady',
+      clusters: [
+        running,
+        {
+          cluster: 'site-c',
+          phase: 'Pending',
+          reason: 'Stopped',
+          message: 'LLMInferenceService stopped',
+          deployment: 'Stopped',
+        },
+      ],
+    });
+    expect(await watchReady(model('create'), SINCE, reads(stopped), during)).toEqual({
+      status: NotificationResponseStatus.REPOLL,
+    });
+    expect(await watchReady(model('create'), SINCE, reads(stopped), past)).toMatchObject({
+      status: NotificationResponseStatus.WARNING,
+      title: "Model Widget isn't ready yet",
+      message:
+        "It isn't ready on site-c 30 minutes after it was saved to Git. Open the model to check each cluster's status.",
     });
   });
 
@@ -283,14 +423,24 @@ describe('watchChanges', () => {
   const SINCE = 5_000_000;
   const view = (
     phase: ModelView['phase'],
-    siteB: ModelView['phase'] = 'Ready',
+    deployment: ModelClusterView['deployment'] = 'Running',
     extra: Partial<ModelView> = {},
   ): ReadAnswer => ({
     version: 3,
     model: {
       phase,
-      clusters: [{ cluster: 'site-b', phase: siteB, reason: siteB === 'Ready' ? 'Ready' : 'NotReady' }],
+      clusters: [
+        {
+          cluster: 'site-b',
+          phase: deployment === 'Running' ? 'Ready' : deployment === 'Failed' ? 'Failed' : 'Pending',
+          reason: deployment === 'Running' ? 'Ready' : deployment === 'Failed' ? 'Failed' : 'NotReady',
+          deployment,
+          ...(deployment === 'Failed' ? { deploymentMessage: 'Back-off pulling image "quay.io/example/vllm:v2"' } : {}),
+        },
+      ],
       selectedClusters: ['site-b'],
+      maasFailed: false,
+      ingress: [],
       ...extra,
     } as ModelView,
   });
@@ -310,29 +460,50 @@ describe('watchChanges', () => {
     });
   });
 
-  it('says the changes failed when it sees the model turn failed, in the words of its page', async () => {
-    const failed = view('Failed', 'Ready', { reason: 'ConfigNotFound' });
-    expect(await watchChanges(model('update'), SINCE, reads(failed), during, statusOf(ready))).toEqual({
+  it("says the changes failed when a placed cluster's deployment turns failed, in KServe's words", async () => {
+    const failing = view('Failed', 'Failed');
+    expect(await watchChanges(model('update'), SINCE, reads(failing), during, statusOf(ready))).toEqual({
       status: NotificationResponseStatus.ERROR,
       title: 'Unable to roll out changes to model Widget',
-      message: 'A runtime template this model needs isn’t installed on the hub.',
+      message: 'site-b: Back-off pulling image "quay.io/example/vllm:v2"',
       actions: [{ title: 'View model', to: '/models/widget' }],
     });
   });
 
-  it('says the changes failed when a placed cluster turns failed', async () => {
-    const failing = view('Pending', 'Failed', {
-      clusters: [{ cluster: 'site-b', phase: 'Failed', reason: 'NotReady', message: 'LLMInferenceService failed' }],
+  it('says the changes failed when Argo CD gives up their sync on a placed cluster, while the previous revision runs', async () => {
+    const refused = view('Failed', 'Running', {
+      clusters: [
+        {
+          cluster: 'site-b',
+          phase: 'Failed',
+          reason: 'Failed',
+          deployment: 'Running',
+          syncFailed: true,
+          syncMessage: 'one or more objects failed to apply',
+        },
+      ],
     });
-    expect(await watchChanges(model('update'), SINCE, reads(failing), during, statusOf(ready))).toMatchObject({
+    expect(await watchChanges(model('update'), SINCE, reads(refused), during, statusOf(ready))).toEqual({
       status: NotificationResponseStatus.ERROR,
       title: 'Unable to roll out changes to model Widget',
-      message: 'site-b: LLMInferenceService failed',
+      message: 'site-b: one or more objects failed to apply',
+      actions: [{ title: 'View model', to: '/models/widget' }],
     });
   });
 
-  it("doesn't blame the edit for a failure it found when it started, until that failure changes", async () => {
-    const failedBefore = view('Failed', 'Failed', { statusMessage: 'image pull failed' });
+  it('says nothing when only MaaS fails after the edit: the deployment runs', async () => {
+    const maasFailed = view('Failed', 'Running', {
+      reason: 'Failed',
+      maasFailed: true,
+      ingress: [{ cluster: 'site-a', failed: true, message: 'HTTPRoute rejected.' }],
+    });
+    expect(await watchChanges(model('update'), SINCE, reads(maasFailed), during, statusOf(ready))).toEqual({
+      status: NotificationResponseStatus.REPOLL,
+    });
+  });
+
+  it("doesn't blame the edit for a deployment failure it found when it started, until that failure changes", async () => {
+    const failedBefore = view('Failed', 'Failed');
     // The first read, as the edit lands: the previous revision's failure.
     expect(await watchChanges(model('update'), SINCE, reads(failedBefore), during, undefined)).toEqual({
       status: NotificationResponseStatus.REPOLL,
@@ -340,14 +511,27 @@ describe('watchChanges', () => {
     expect(await watchChanges(model('update'), SINCE, reads(failedBefore), during, statusOf(failedBefore))).toEqual({
       status: NotificationResponseStatus.REPOLL,
     });
-    // A new failure, with another reason, is the edit's.
-    const failedAgain = view('Failed', 'Ready', { reason: 'ConfigNotFound' });
-    expect(
-      await watchChanges(model('update'), SINCE, reads(failedAgain), during, statusOf(failedBefore)),
-    ).toMatchObject({
+    // It started again and failed again: a status the watch hadn't seen, so the edit's failure.
+    const starting = view('Pending', 'Starting');
+    expect(await watchChanges(model('update'), SINCE, reads(failedBefore), during, statusOf(starting))).toMatchObject({
       status: NotificationResponseStatus.ERROR,
       title: 'Unable to roll out changes to model Widget',
-      message: 'A runtime template this model needs isn’t installed on the hub.',
+    });
+  });
+
+  it('sees a deployment fail on a combined cluster whose phase MaaS had already failed', async () => {
+    // The cluster's phase was Failed for MaaS's objects; the deployment failing changes no phase.
+    const maasOnly = view('Failed', 'Running', {
+      clusters: [{ cluster: 'site-b', phase: 'Failed', reason: 'Failed', deployment: 'Running' }],
+    });
+    const both = view('Failed', 'Running', {
+      clusters: [
+        { cluster: 'site-b', phase: 'Failed', reason: 'Failed', deployment: 'Failed', deploymentMessage: 'OOMKilled' },
+      ],
+    });
+    expect(await watchChanges(model('update'), SINCE, reads(both), during, statusOf(maasOnly))).toMatchObject({
+      status: NotificationResponseStatus.ERROR,
+      message: 'site-b: OOMKilled',
     });
   });
 
@@ -434,6 +618,81 @@ describe('watchActive', () => {
     });
   });
 
+  it('keeps watching a degraded subscription, which turns active once its model is published', async () => {
+    // Degraded isn't an end: a subscription created with its model reads so until the model is
+    // published (watchActive).
+    const degraded = status('Degraded', 'Pending');
+    expect(await watchActive(created(), SINCE, reads(degraded), during)).toEqual({
+      status: NotificationResponseStatus.REPOLL,
+    });
+    const history = nextHistory(NO_HISTORY, degraded);
+    expect(await watchActive(created(), SINCE, reads(status('Active')), during, history)).toMatchObject({
+      status: NotificationResponseStatus.SUCCESS,
+      title: 'Subscription Team A is active',
+    });
+    expect(await watchActive(created(), SINCE, reads(degraded), past, history)).toEqual({
+      status: NotificationResponseStatus.WARNING,
+      title: "Subscription Team A isn't active",
+      message:
+        "An ingress cluster reports it failed. Open the subscription to check its status and its models' status.",
+      actions: [{ title: 'View subscription', to: '/subscriptions/view/team-a' }],
+    });
+  });
+
+  it("says at the deadline that an ingress cluster reports the subscription failed, in the backend's words", async () => {
+    const degraded: ReadAnswer = {
+      version: 1,
+      subscription: {
+        phase: 'Degraded',
+        message: 'MaaSModelRef granite not found.',
+        policies: [{ id: 'team-a-policy', phase: 'Pending' }],
+      },
+    };
+    expect(await watchActive(created(), SINCE, reads(degraded), during)).toEqual({
+      status: NotificationResponseStatus.REPOLL,
+    });
+    expect(await watchActive(created(), SINCE, reads(degraded), past)).toEqual({
+      status: NotificationResponseStatus.WARNING,
+      title: "Subscription Team A isn't active",
+      message:
+        "An ingress cluster reports it failed: MaaSModelRef granite not found. Open the subscription to check its status and its models' status.",
+      actions: [{ title: 'View subscription', to: '/subscriptions/view/team-a' }],
+    });
+  });
+
+  it("says at the deadline that an ingress cluster reports its policy failed, with the policy's message", async () => {
+    const policyDegraded: ReadAnswer = {
+      version: 1,
+      subscription: {
+        phase: 'Active',
+        policies: [{ id: 'team-a-policy', phase: 'Degraded', message: 'Failed on site-a; ready on site-b' }],
+      },
+    };
+    expect(await watchActive(created(), SINCE, reads(policyDegraded), during)).toEqual({
+      status: NotificationResponseStatus.REPOLL,
+    });
+    expect(await watchActive(created(), SINCE, reads(policyDegraded), past)).toEqual({
+      status: NotificationResponseStatus.WARNING,
+      title: "Subscription Team A isn't active",
+      message:
+        "An ingress cluster reports its authorization policy failed: Failed on site-a; ready on site-b. Open the subscription to check the policy's status.",
+      actions: [{ title: 'View subscription', to: '/subscriptions/view/team-a' }],
+    });
+    // A pending subscription with a failed policy: the reported failure is what the warning says.
+    expect(await watchActive(created(), SINCE, reads(status('Pending', 'Degraded')), past)).toMatchObject({
+      title: "Subscription Team A isn't active",
+      message: expect.stringMatching(/^An ingress cluster reports its authorization policy failed\. /),
+    });
+  });
+
+  it('says only what the last status says: a Degraded subscription that turned Pending is not active yet', async () => {
+    const history = nextHistory(NO_HISTORY, status('Degraded'));
+    expect(await watchActive(created(), SINCE, reads(status('Pending')), past, history)).toMatchObject({
+      title: "Subscription Team A isn't active yet",
+      message: expect.stringMatching(/^It isn't active on every ingress cluster/),
+    });
+  });
+
   describe('an empty phase', () => {
     const none = reads(status('', ''));
 
@@ -472,6 +731,16 @@ describe('watchActive', () => {
         status: NotificationResponseStatus.WARNING,
         title: "Subscription Team A isn't active yet",
         message: expect.stringMatching(/^Its authorization policy isn't active/),
+      });
+    });
+
+    it('says the failure the last status reported, with its message, when the last read finds none', async () => {
+      const history = { empties: 5, last: 'subscriptionDegraded', message: 'MaaSModelRef granite not found' } as const;
+      expect(await watchActive(created(), SINCE, none, past, history)).toMatchObject({
+        status: NotificationResponseStatus.WARNING,
+        title: "Subscription Team A isn't active",
+        message:
+          "An ingress cluster reports it failed: MaaSModelRef granite not found. Open the subscription to check its status and its models' status.",
       });
     });
 
@@ -568,6 +837,22 @@ describe('nextHistory', () => {
     expect(nextHistory({ empties: 2 }, undefined)).toEqual({ empties: 2 });
   });
 
+  it("keeps a Degraded verdict's message through empty and failed reads, and drops it with the next status", () => {
+    const degraded: ReadAnswer = {
+      version: 1,
+      subscription: { phase: 'Degraded', message: 'MaaSModelRef granite not found', policies: [] },
+    };
+    const failed: SubscriptionHistory = {
+      empties: 0,
+      last: 'subscriptionDegraded',
+      message: 'MaaSModelRef granite not found',
+    };
+    expect(nextHistory(NO_HISTORY, degraded)).toEqual(failed);
+    expect(nextHistory(failed, status(''))).toEqual({ ...failed, empties: 1 });
+    expect(nextHistory(failed, 'failed')).toEqual(failed);
+    expect(nextHistory(failed, status('Pending'))).toEqual({ empties: 0, last: 'subscription' });
+  });
+
   it('never stops a watch on empty reads with failed reads between them', async () => {
     // empty, failed, empty, failed, empty: no three empty reads in a row.
     let history = NO_HISTORY;
@@ -585,5 +870,19 @@ describe('statusOf', () => {
     expect(of('Active', 'Pending')).not.toBe(of('Active', 'Active'));
     expect(of('Active', 'Active')).toBe(of('Active', 'Active'));
     expect(statusOf(undefined)).toBe('gone');
+  });
+
+  it('tells a cluster whose sync Argo CD gave up on from one still syncing, and reads the same as before otherwise', () => {
+    const of = (syncFailed?: boolean) =>
+      statusOf({
+        version: 1,
+        model: {
+          phase: 'Failed',
+          clusters: [{ cluster: 'site-b', phase: 'Failed', reason: 'Failed', deployment: 'Running', syncFailed }],
+        } as ModelView,
+      });
+    expect(of(true)).not.toBe(of(false));
+    expect(of(false)).toBe(of(undefined));
+    expect(of(false)).toBe(JSON.stringify(['Failed', null, [['site-b', 'Failed', 'Failed', 'Running']]]));
   });
 });

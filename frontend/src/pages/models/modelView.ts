@@ -4,7 +4,15 @@
 // backend decides the phase, the clusters the placement chose, and each placed cluster's status
 // (ModelStatus in the backend's proto/ai_grid/v1/model_type.proto).
 import { timestampDate } from '@bufbuild/protobuf/wkt';
-import { ModelPhase, type Model, type ModelEnvVar, type ModelSpec } from '../../gen/ai_grid/v1/model_type_pb';
+import {
+  ModelDeploymentState,
+  ModelMaasState,
+  ModelPhase,
+  ModelSyncState,
+  type Model,
+  type ModelEnvVar,
+  type ModelSpec,
+} from '../../gen/ai_grid/v1/model_type_pb';
 
 /** The annotations the backend documents for a model's display name and description. */
 export const DISPLAY_NAME = 'openshift.io/display-name';
@@ -34,13 +42,48 @@ export type ModelPhaseWord = 'Ready' | 'Pending' | 'Failed' | 'Partially availab
 /** The model on one cluster its placement names, as the backend reports it (`status.clusters`). */
 export type ModelClusterView = {
   cluster: string;
-  /** Ready or Pending: the backend gives a placed cluster no other phase in git mode. */
+  /**
+   * Ready, Failed or Pending: every report from the cluster ready, one failed, or one not ready or
+   * missing. On a combined cluster its MaaSModelRef and ExternalModel reports count too.
+   */
   phase: ModelPhaseWord;
-  /** Ready, NotReady or NoReport. */
+  /** Ready, Failed, NotReady, Stopped or NoReport. */
   reason: string;
   /** What the cluster reported, for example "LLMInferenceService not ready". */
   message?: string;
+  /**
+   * What the cluster's LLMInferenceService reports (`deployment`), whatever MaaS reports on a
+   * combined cluster and Argo CD's sync: Running (Ready), Starting, Stopped, Failed, or Unknown
+   * while it isn't on the cluster.
+   */
+  deployment: ModelDeploymentWord;
+  /** KServe's message about the deployment, for example "Deployment does not have minimum availability.". */
+  deploymentMessage?: string;
+  /**
+   * Whether Argo CD's sync of the model to the cluster failed and it stopped retrying (`sync`
+   * FAILED): the revision Git holds never lands there, an admission refusal or a bad manifest.
+   */
+  syncFailed?: boolean;
+  /** Argo CD's sync operation message while the sync failed or is being retried (`sync_message`). */
+  syncMessage?: string;
 };
+
+/** What a placed cluster's LLMInferenceService reports, in words (ModelDeploymentState). */
+export type ModelDeploymentWord = 'Running' | 'Starting' | 'Stopped' | 'Failed' | 'Unknown';
+
+const deploymentWords: Record<ModelDeploymentState, ModelDeploymentWord> = {
+  [ModelDeploymentState.UNSPECIFIED]: 'Unknown',
+  [ModelDeploymentState.STARTING]: 'Starting',
+  [ModelDeploymentState.RUNNING]: 'Running',
+  [ModelDeploymentState.FAILED]: 'Failed',
+  [ModelDeploymentState.STOPPED]: 'Stopped',
+};
+
+/**
+ * The model in MaaS on one ingress cluster (`status.ingress`): whether MaaS or Argo CD reports it
+ * failed there, and their message.
+ */
+export type ModelIngressView = { cluster: string; failed: boolean; message?: string };
 
 /** A Model as the pages show it. */
 export type ModelView = {
@@ -83,6 +126,13 @@ export type ModelView = {
   selectedClusters: string[];
   /** Each placed cluster's status; empty while no cluster has reported the model. */
   clusters: ModelClusterView[];
+  /**
+   * Whether the model failed in MaaS (`status.maas` FAILED): MaaS or the AI gateway reports it
+   * failed on an ingress cluster, or Argo CD couldn't sync it there.
+   */
+  maasFailed: boolean;
+  /** The model in MaaS on each ingress cluster (`status.ingress`); empty while none has reported. */
+  ingress: ModelIngressView[];
   /**
    * The clusters a `name In [...]` placement names, the only shape the console edits; undefined
    * for a model without a placement or with any other one.
@@ -173,6 +223,16 @@ export const toModelView = (model: Model): ModelView => {
       phase: phaseWordOf(c.phase, c.reason),
       reason: c.reason,
       message: nonEmpty(c.message),
+      deployment: deploymentWords[c.deployment] ?? 'Unknown',
+      deploymentMessage: nonEmpty(c.deploymentMessage),
+      syncFailed: c.sync === ModelSyncState.FAILED,
+      syncMessage: nonEmpty(c.syncMessage),
+    })),
+    maasFailed: status?.maas === ModelMaasState.FAILED,
+    ingress: (status?.ingress ?? []).map((i) => ({
+      cluster: i.cluster,
+      failed: i.state === ModelMaasState.FAILED,
+      message: nonEmpty(i.message),
     })),
     placementClusters: placementClustersOf(spec),
     placed: spec?.placement !== undefined,

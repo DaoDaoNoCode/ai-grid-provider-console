@@ -117,6 +117,7 @@ it('shows billions as B on chart ticks', () => {
 it('gives a phase the same colour in its label and its subtext', () => {
   expect(statusLabelProps('Failed').status).toBe('danger');
   expect(getSubtextProps('Failed')).toEqual({ className: 'pf-v6-u-text-color-status-danger' });
+  expect(statusLabelProps('Degraded').status).toBe('warning');
   expect(getSubtextProps('Partially available')).toEqual({ className: 'pf-v6-u-text-color-status-warning' });
   expect(getSubtextProps('Ready')).toBeUndefined();
 });

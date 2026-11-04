@@ -35,10 +35,9 @@ test('creates, views, edits and deletes a subscription', async ({ page }) => {
     await page.getByRole('button', { name: 'Create subscription' }).click();
     await expect(writeConfirmed(page, `Subscription ${unique} saved to Git`)).toBeVisible();
 
-    // The phase is the backend's: Pending while an ingress cluster hasn't reported the subscription,
-    // which no fake cluster does for a new one (withSubscriptionPhase,
-    // internal/servers/subscriptions_git.go). The console's own fake played the MaaS controller's
-    // Unknown, Degraded and Active instead; git mode reports none of those for it.
+    // The phase is the backend's: Pending while a cluster's catalog Application doesn't list the
+    // subscription, as site3's static one doesn't list a new one (maasPhase,
+    // internal/servers/subscriptions_git.go, and the backend's fixtures/poc/applications.json).
     const row = page.getByRole('row').filter({ has: page.getByRole('link', { name: unique, exact: true }) });
     await expect(row.getByTestId('phase-label')).toHaveText('Pending');
 
@@ -74,10 +73,10 @@ test('creates, views, edits and deletes a subscription', async ({ page }) => {
   }
 });
 
-// The fake hub's status Policies report subscription team-a and its policy team-a-policy active
-// on site3, the PoC's one ingress cluster, and every other subscription not there yet
-// (fixtures/poc/policies.json in the backend), so a subscription created as team-a reads Active
-// as soon as it is in Git: the notification center's watch says so on its first read.
+// The fake hub's catalog Argo CD Applications report subscription team-a and its policy
+// team-a-policy active on site3, the PoC's one ingress cluster, and every other subscription not
+// there yet (fixtures/poc/applications.json in the backend), so a subscription created as team-a
+// reads Active as soon as it is in Git: the notification center's watch says so on its first read.
 const ACTIVE_ID = 'team-a';
 
 test('says a created subscription is active once the ingress clusters report it', async ({ page }) => {

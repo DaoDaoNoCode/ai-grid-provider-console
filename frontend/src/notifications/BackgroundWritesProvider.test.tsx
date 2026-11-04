@@ -7,8 +7,18 @@ import { Code, ConnectError } from '@connectrpc/connect';
 import { useQuery } from '@connectrpc/connect-query';
 import { BackendProvider } from '../api/connect/BackendProvider';
 import { fakeClients } from '../api/connect/testing';
-import { ModelClusterStatusSchema, ModelPhase, ModelSchema } from '../gen/ai_grid/v1/model_type_pb';
+import {
+  ModelClusterStatusSchema,
+  ModelDeploymentState,
+  ModelIngressStatusSchema,
+  ModelMaasState,
+  ModelPhase,
+  ModelSchema,
+  ModelState,
+  ModelSyncState,
+} from '../gen/ai_grid/v1/model_type_pb';
 import { list as listModels } from '../gen/ai_grid/v1/models_service-Models_connectquery';
+import { ConditionStatus } from '../gen/ai_grid/v1/condition_type_pb';
 import { AuthPolicySchema, SubscriptionSchema } from '../gen/ai_grid/v1/subscription_type_pb';
 import {
   get as getSubscription,
@@ -129,6 +139,16 @@ it("publishes nothing of a write into the next user's notifications or storage w
   expect(storage.values.get(watchesKey('bob'))).toBeUndefined();
   expect(storage.values.get(notificationsKey('bob'))).toBeUndefined();
 });
+
+/** site-b's report once the model's deployment runs there. */
+const runningOnSiteB = () =>
+  create(ModelClusterStatusSchema, {
+    cluster: 'site-b',
+    phase: ModelPhase.READY,
+    reason: 'Ready',
+    deployment: ModelDeploymentState.RUNNING,
+    state: ModelState.READY,
+  });
 
 /** A model placed on site-b, which hasn't reported it ready. */
 const pendingOnSiteB = () =>
@@ -255,9 +275,7 @@ it('refreshes the lists when a readiness watch sees the status change, and not o
     // site-b becomes ready (the whole model stays Pending, as an ingress cluster keeps it): the
     // watch says so, and the list shows it at once.
     model = pendingOnSiteB();
-    model.status!.clusters = [
-      create(ModelClusterStatusSchema, { cluster: 'site-b', phase: ModelPhase.READY, reason: 'Ready' }),
-    ];
+    model.status!.clusters = [runningOnSiteB()];
     await act(async () => {
       await vi.advanceTimersByTimeAsync(READY_POLL_MS);
     });
@@ -339,9 +357,7 @@ it("refreshes the lists when an edited model's status changes, not on a poll tha
 
     // site-b runs the new revision: the list shows it at once, and nothing says "ready".
     state.model = pendingOnSiteB();
-    state.model.status!.clusters = [
-      create(ModelClusterStatusSchema, { cluster: 'site-b', phase: ModelPhase.READY, reason: 'Ready' }),
-    ];
+    state.model.status!.clusters = [runningOnSiteB()];
     await pass(READY_POLL_MS);
     expect(state.listCalls).toBe(afterLanding + 1);
     // The refetch's answer reaches the page: the query cache tells it with a setTimeout(0), which
@@ -371,7 +387,17 @@ it('says once that an edited model failed to roll out its changes', async () => 
 
     state.model = pendingOnSiteB();
     state.model.status!.phase = ModelPhase.FAILED;
-    state.model.status!.reason = 'ConfigNotFound';
+    state.model.status!.reason = 'Failed';
+    state.model.status!.clusters = [
+      create(ModelClusterStatusSchema, {
+        cluster: 'site-b',
+        phase: ModelPhase.FAILED,
+        reason: 'Failed',
+        deployment: ModelDeploymentState.FAILED,
+        deploymentMessage: 'OOMKilled',
+        state: ModelState.FAILED,
+      }),
+    ];
     await pass(READY_POLL_MS);
     expect(screen.getAllByText('Unable to roll out changes to model Widget')).toHaveLength(1);
     expect(modelWatches(storage)).toEqual([]);
@@ -379,6 +405,42 @@ it('says once that an edited model failed to roll out its changes', async () => 
     await pass(READY_MS);
     expect(screen.getAllByText('Unable to roll out changes to model Widget')).toHaveLength(1);
     expect(screen.queryByText('Unable to deploy model Widget')).not.toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+/** The notifications the tab keeps for the user, with their messages. */
+const storedNotifications = (storage: ReturnType<typeof memoryStorage>) =>
+  JSON.parse(storage.values.get(notificationsKey('dev-user')) ?? '[]') as { title: string; message?: string }[];
+
+it("says a deployed model couldn't be deployed as soon as Argo CD gives up its sync on a placed cluster", async () => {
+  vi.useFakeTimers();
+  try {
+    const { state, storage } = editing([readyRecord(Date.now())]);
+    // The LLMInferenceService never lands on site-b: its deployment has no report.
+    state.model.status!.phase = ModelPhase.FAILED;
+    state.model.status!.reason = 'Failed';
+    state.model.status!.clusters = [
+      create(ModelClusterStatusSchema, {
+        cluster: 'site-b',
+        phase: ModelPhase.FAILED,
+        reason: 'Failed',
+        message: 'Sync failed',
+        sync: ModelSyncState.FAILED,
+        syncMessage: 'admission webhook "validating.kserve.io" denied the request',
+        state: ModelState.FAILED,
+      }),
+    ];
+    await pass(0);
+    expect(screen.getAllByText('Unable to deploy model Widget')).toHaveLength(1);
+    expect(storedNotifications(storage)).toContainEqual(
+      expect.objectContaining({
+        title: 'Unable to deploy model Widget',
+        message: 'site-b: admission webhook "validating.kserve.io" denied the request',
+      }),
+    );
+    expect(modelWatches(storage)).toEqual([]);
   } finally {
     vi.useRealTimers();
   }
@@ -411,9 +473,7 @@ it("follows a model edited at 29 minutes of its deploy's watch until 59 minutes,
     await pass(14 * 60_000);
     const lists = state.listCalls;
     state.model = pendingOnSiteB();
-    state.model.status!.clusters = [
-      create(ModelClusterStatusSchema, { cluster: 'site-b', phase: ModelPhase.READY, reason: 'Ready' }),
-    ];
+    state.model.status!.clusters = [runningOnSiteB()];
     await pass(READY_POLL_MS);
     expect(state.listCalls).toBe(lists + 1);
 
@@ -439,12 +499,40 @@ it('names a model renamed while its deploy is watched by the new name when it is
     expect(modelWatches(storage)).toMatchObject([{ key: 'r1', stage: 'ready' }]);
 
     state.model = pendingOnSiteB();
-    state.model.status!.clusters = [
-      create(ModelClusterStatusSchema, { cluster: 'site-b', phase: ModelPhase.READY, reason: 'Ready' }),
-    ];
+    state.model.status!.clusters = [runningOnSiteB()];
     await pass(READY_POLL_MS);
     expect(screen.getByText('Model Widget Pro is ready on site-b')).toBeInTheDocument();
     expect(screen.queryByText(/^Model Widget is/)).not.toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('warns, by its new name, that a model renamed during its deploy runs but MaaS failed to publish it', async () => {
+  vi.useFakeTimers();
+  try {
+    const { state } = editing([readyRecord(Date.now())]);
+    await pass(0);
+    await act(async () => {
+      await submitWrite({ ...edit, name: 'Widget Pro' }, async () => undefined);
+    });
+
+    // The backend calls the whole model Failed: it runs on site-b, but MaaS failed on site-a.
+    state.model = pendingOnSiteB();
+    state.model.status!.phase = ModelPhase.FAILED;
+    state.model.status!.reason = 'Failed';
+    state.model.status!.maas = ModelMaasState.FAILED;
+    state.model.status!.ingress = [
+      create(ModelIngressStatusSchema, {
+        cluster: 'site-a',
+        state: ModelMaasState.FAILED,
+        message: 'HTTPRoute rejected by the gateway',
+      }),
+    ];
+    state.model.status!.clusters = [runningOnSiteB()];
+    await pass(READY_POLL_MS);
+    expect(screen.getByText("Model Widget Pro is running but isn't available to users")).toBeInTheDocument();
+    expect(screen.queryByText(/Unable to deploy|is ready|^Model Widget is/)).not.toBeInTheDocument();
   } finally {
     vi.useRealTimers();
   }
@@ -552,9 +640,9 @@ it('resumes the watches an earlier console kept, and drops a record of a shape i
 });
 
 /**
- * Subscription team-a as Subscriptions/Get answers it: its phase, from the ingress clusters'
- * reports, and its authorization policy's (withSubscriptionPhase and withAuthPolicyStatus in the
- * backend's internal/servers/subscriptions_git.go).
+ * Subscription team-a as Subscriptions/Get answers it: its phase, from the clusters' reports in the
+ * catalog's Argo CD Applications, and its authorization policy's (maasPhase and
+ * withAuthPolicyStatus in the backend's internal/servers/subscriptions_git.go).
  */
 const teamA = (phase: string, policyPhase = phase) => ({
   object: create(SubscriptionSchema, {
@@ -737,6 +825,47 @@ describe('a subscription watch', () => {
     await pass(READY_POLL_MS);
     expect(screen.getByText("Subscription Team A isn't active yet")).toBeInTheDocument();
     expect(subscriptionWatches(storage)).toEqual([]);
+  });
+
+  it("says at the deadline, after a reload, that an ingress cluster reports its policy failed, in the policy's words", async () => {
+    const first = subscribing([activeRecord(Date.now())]);
+    // Subscriptions/Get: the policy's Ready condition says where it failed (withAuthPolicyStatus).
+    first.state.answer = {
+      ...teamA('Active'),
+      authPolicies: [
+        create(AuthPolicySchema, {
+          id: 'team-a-policy',
+          phase: 'Degraded',
+          conditions: [
+            {
+              type: 'Ready',
+              status: ConditionStatus.FALSE,
+              reason: 'Failed',
+              message: 'Failed on site-a; ready on site-b',
+            },
+          ],
+        }),
+      ],
+    };
+    await pass(0);
+    expect(subscriptionWatches(first.storage)).toMatchObject([
+      { key: 's1', lastVerdict: 'policyDegraded', lastMessage: 'Failed on site-a; ready on site-b' },
+    ]);
+    first.unmount();
+
+    // After the reload the backend can't read the clusters' reports: the kept status is what it says.
+    first.state.answer = teamA('');
+    const second = subscribing([], first);
+    await pass(READY_MS);
+    expect(screen.getAllByText("Subscription Team A isn't active")).toHaveLength(1);
+    expect(storedNotifications(second.storage)).toContainEqual(
+      expect.objectContaining({
+        title: "Subscription Team A isn't active",
+        message:
+          "An ingress cluster reports its authorization policy failed: Failed on site-a; ready on site-b. Open the subscription to check the policy's status.",
+      }),
+    );
+    expect(subscriptionWatches(second.storage)).toEqual([]);
   });
 
   it("resumes a created subscription's watch after a reload", async () => {

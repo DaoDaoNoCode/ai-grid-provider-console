@@ -34,6 +34,10 @@ const tones: Record<string, StatusTone> = {
   Active: 'success',
   Pending: 'info',
   Failed: 'danger',
+  // A subscription or authorization policy a cluster reports failed, or a subscription whose model
+  // isn't published there yet (watchActive in notifications/writeWatches.ts): a warning, as
+  // odh-dashboard's MaaS pages show it.
+  Degraded: 'warning',
   // A placed model serving on some of its clusters but not all (proposal P13).
   'Partially available': 'warning',
   // A model the backend saved to Git in git mode, without reading its status from the clusters.

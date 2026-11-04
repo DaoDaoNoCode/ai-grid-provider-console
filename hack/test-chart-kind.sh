@@ -8,11 +8,12 @@
 #      hack/deploy.sh does it (hack/chart-takeover.sh);
 #   2. helm install: the pod is ready, the proxy refuses a caller without a token, accepts a
 #      ServiceAccount token (TokenReview) and drops the identity headers a caller forges, the BFF answers isProviderAdmin from the cluster's access
-#      review, and Clusters/List over the relay lists ManagedClusters through the backend; only
-#      the proxy listens off loopback;
+#      review, and Clusters/List over the relay lists ManagedClusters through the backend; the
+#      backend may get and list the catalog's Argo CD Applications in openshift-gitops and no
+#      more; only the proxy listens off loopback;
 #   3. helm upgrade with backend.clusterWrites: the backend may label ManagedClusters ai-grid/*, and
 #      the admission policy refuses its other changes;
-#   4. helm uninstall removes the cluster-scoped objects.
+#   4. helm uninstall removes the cluster-scoped objects and the Role in openshift-gitops.
 # Not covered: OpenShift's OAuth login in a browser, the service CA and the Route's router.
 #
 #   hack/test-chart-kind.sh             # creates kind cluster ai-grid-chart and deletes it after
@@ -38,7 +39,7 @@ PORT="${LOCAL_PORT:-18443}"
 # 2026-10-28 from opendatahub-io/kube-auth-proxy 099df59, on ubi9/ubi-minimal release 1793050346,
 # whose ca-certificates distrusts eMudhra, CVE-2026-114406). busybox runs netstat for step 2.
 BACKEND_PIN="$(cat "${ROOT}/.backend-api-version")"
-BACKEND_IMAGE="${BACKEND_IMAGE:-ghcr.io/ai-grid-cloud/ai-grid-provider-backend:sha-17d6b7d74f83e37b773ae90437a9b0e0c2d2ae28@sha256:9e57eafd5d059bfcaadd443be0521a25ee62f6d66a48bf1537016ea14f8d765e}"
+BACKEND_IMAGE="${BACKEND_IMAGE:-ghcr.io/ai-grid-cloud/ai-grid-provider-backend:sha-57b2fbac336777bb06ba562c826e4e0a0a516f0e@sha256:a1f6086f00ccaa157026a9559df4f63bd1a9f11e1014581eda690619fe43a371}"
 PROXY_IMAGE="${PROXY_IMAGE:-quay.io/opendatahub/odh-kube-auth-proxy@sha256:5dc37f1a1e30927abe2dffbbfcb5a31ed8692cf498fb2684cca1b747b98b00a0}"
 BUSYBOX_IMAGE=docker.io/library/busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
 ROUTE_CRD=https://raw.githubusercontent.com/openshift/api/a9b3f04dd8db4c20aacca607afeff8ddbc25d863/route/v1/zz_generated.crd-manifests/routes.crd.yaml
@@ -136,6 +137,29 @@ VALUES=(--set tls.serviceCA=false --set backend.git.url="${GIT_URL}" "${IMAGES[@
 
 step "namespace ${NS} and the secrets the chart expects to exist"
 k create namespace "${NS}" --dry-run=client -o yaml | k apply -f - >/dev/null
+# In git mode the chart grants the backend a Role in Argo CD's namespace, where the catalog's
+# Applications are (templates/rbac.yaml). kind has no Argo CD: the namespace and a bare
+# Application CRD stand in for it. Without the CRD, `kubectl auth can-i ... applications.argoproj.io`
+# can't map the resource and checks a core-group resource of that name instead, so every answer
+# below would be "no", whatever the Role grants.
+k create namespace openshift-gitops --dry-run=client -o yaml | k apply -f - >/dev/null
+k apply -f - >/dev/null <<'YAML'
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: applications.argoproj.io
+spec:
+  group: argoproj.io
+  scope: Namespaced
+  names: {plural: applications, singular: application, kind: Application}
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema: {type: object, x-kubernetes-preserve-unknown-fields: true}
+YAML
+k wait --for=condition=Established crd/applications.argoproj.io --timeout=60s >/dev/null
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=${NAME}.${NS}.svc" \
   -addext "subjectAltName=DNS:${NAME}.${NS}.svc,DNS:localhost" \
   -keyout "${TMP}/tls.key" -out "${TMP}/tls.crt" 2>/dev/null
@@ -299,6 +323,17 @@ for service in Models Subscriptions; do
 done
 expect 200 "a provider admin's Connect call reaches the backend through the relay" "${auth[@]}" "${connect[@]}" "${u}/ai_grid.v1.AiGrid/Ping"
 expect 200 "the frontend is served" "${auth[@]}" "${u}/"
+# Models and Subscriptions read their status from the catalog's Argo CD Applications in
+# openshift-gitops: the backend may get and list them there, and nothing else of Argo CD's.
+can() { k auth can-i "$@" --as="${SA}" 2>/dev/null || true; }
+for verb in get list; do
+  [[ "$(can "${verb}" applications.argoproj.io -n openshift-gitops)" == yes ]] ||
+    fail "the backend may not ${verb} Applications in openshift-gitops"
+done
+[[ "$(can watch applications.argoproj.io -n openshift-gitops)" == no ]] || fail "the backend may watch Applications"
+[[ "$(can list applications.argoproj.io -n "${NS}")" == no ]] || fail "the backend may list Applications in ${NS}"
+[[ "$(can list applications.argoproj.io --all-namespaces)" == no ]] || fail "the backend may list Applications everywhere"
+pass "the backend may get and list the catalog's Applications in openshift-gitops, and no more"
 
 # Only the proxy may listen off loopback: the BFF trusts identity headers, and the backend's gRPC
 # port and REST gateway have no authentication of their own.
@@ -363,5 +398,8 @@ left="$(k get clusterrole,clusterrolebinding,validatingadmissionpolicy,validatin
   -l app.kubernetes.io/name="${NAME}" -o name)"
 [[ -z "${left}" ]] || fail "uninstall left: ${left}"
 pass "no cluster-scoped objects remain"
+left="$(k -n openshift-gitops get role,rolebinding -l app.kubernetes.io/name="${NAME}" -o name)"
+[[ -z "${left}" ]] || fail "uninstall left in openshift-gitops: ${left}"
+pass "nothing of the chart remains in openshift-gitops"
 
 echo "test-chart-kind: all checks passed"
