@@ -7,7 +7,12 @@ import { MemoryRouter } from 'react-router-dom';
 import { Code, ConnectError } from '@connectrpc/connect';
 import { MockConsoleService } from '../api/MockConsoleService';
 import { create as create_ } from '@bufbuild/protobuf';
-import { ModelClusterStatusSchema, ModelPhase } from '../gen/ai_grid/v1/model_type_pb';
+import {
+  ModelClusterStatusSchema,
+  ModelDeploymentState,
+  ModelPhase,
+  ModelState,
+} from '../gen/ai_grid/v1/model_type_pb';
 import type { Subscription } from '../gen/ai_grid/v1/subscription_type_pb';
 import { watchesKey } from '../notifications/storageKeys';
 
@@ -232,13 +237,19 @@ describe('deploying a model', () => {
     const create = models.create;
     vi.spyOn(models, 'create').mockImplementation(async (request, context) => {
       const answer = await create(request, context);
-      // As on the demo hub: site1 reports the model ready, while an ingress cluster's report keeps
-      // the whole model Pending until a subscription covers it.
+      // site1 runs the model, while an ingress cluster, where MaaS still sets up its route, keeps
+      // the whole model Pending.
       const stored = models.find('widget');
       stored.status!.phase = ModelPhase.PENDING;
       stored.status!.message = 'Not ready on site-a; ready on site1';
       stored.status!.clusters = [
-        create_(ModelClusterStatusSchema, { cluster: 'site1', phase: ModelPhase.READY, reason: 'Ready' }),
+        create_(ModelClusterStatusSchema, {
+          cluster: 'site1',
+          phase: ModelPhase.READY,
+          reason: 'Ready',
+          deployment: ModelDeploymentState.RUNNING,
+          state: ModelState.READY,
+        }),
       ];
       return answer;
     });
@@ -635,7 +646,13 @@ describe('review findings', () => {
       const stored = models.find('widget');
       stored.status!.phase = ModelPhase.READY;
       stored.status!.clusters = [
-        create_(ModelClusterStatusSchema, { cluster: 'site1', phase: ModelPhase.READY, reason: 'Ready' }),
+        create_(ModelClusterStatusSchema, {
+          cluster: 'site1',
+          phase: ModelPhase.READY,
+          reason: 'Ready',
+          deployment: ModelDeploymentState.RUNNING,
+          state: ModelState.READY,
+        }),
       ];
       return answer;
     });

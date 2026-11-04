@@ -7,7 +7,13 @@ import { Code, ConnectError } from '@connectrpc/connect';
 import { useQuery } from '@connectrpc/connect-query';
 import { BackendProvider } from '../api/connect/BackendProvider';
 import { fakeClients } from '../api/connect/testing';
-import { ModelClusterStatusSchema, ModelPhase, ModelSchema } from '../gen/ai_grid/v1/model_type_pb';
+import {
+  ModelClusterStatusSchema,
+  ModelDeploymentState,
+  ModelPhase,
+  ModelSchema,
+  ModelState,
+} from '../gen/ai_grid/v1/model_type_pb';
 import { list as listModels } from '../gen/ai_grid/v1/models_service-Models_connectquery';
 import { AuthPolicySchema, SubscriptionSchema } from '../gen/ai_grid/v1/subscription_type_pb';
 import {
@@ -256,7 +262,13 @@ it('refreshes the lists when a readiness watch sees the status change, and not o
     // watch says so, and the list shows it at once.
     model = pendingOnSiteB();
     model.status!.clusters = [
-      create(ModelClusterStatusSchema, { cluster: 'site-b', phase: ModelPhase.READY, reason: 'Ready' }),
+      create(ModelClusterStatusSchema, {
+        cluster: 'site-b',
+        phase: ModelPhase.READY,
+        reason: 'Ready',
+        deployment: ModelDeploymentState.RUNNING,
+        state: ModelState.READY,
+      }),
     ];
     await act(async () => {
       await vi.advanceTimersByTimeAsync(READY_POLL_MS);
@@ -340,7 +352,13 @@ it("refreshes the lists when an edited model's status changes, not on a poll tha
     // site-b runs the new revision: the list shows it at once, and nothing says "ready".
     state.model = pendingOnSiteB();
     state.model.status!.clusters = [
-      create(ModelClusterStatusSchema, { cluster: 'site-b', phase: ModelPhase.READY, reason: 'Ready' }),
+      create(ModelClusterStatusSchema, {
+        cluster: 'site-b',
+        phase: ModelPhase.READY,
+        reason: 'Ready',
+        deployment: ModelDeploymentState.RUNNING,
+        state: ModelState.READY,
+      }),
     ];
     await pass(READY_POLL_MS);
     expect(state.listCalls).toBe(afterLanding + 1);
@@ -412,7 +430,13 @@ it("follows a model edited at 29 minutes of its deploy's watch until 59 minutes,
     const lists = state.listCalls;
     state.model = pendingOnSiteB();
     state.model.status!.clusters = [
-      create(ModelClusterStatusSchema, { cluster: 'site-b', phase: ModelPhase.READY, reason: 'Ready' }),
+      create(ModelClusterStatusSchema, {
+        cluster: 'site-b',
+        phase: ModelPhase.READY,
+        reason: 'Ready',
+        deployment: ModelDeploymentState.RUNNING,
+        state: ModelState.READY,
+      }),
     ];
     await pass(READY_POLL_MS);
     expect(state.listCalls).toBe(lists + 1);
@@ -440,7 +464,13 @@ it('names a model renamed while its deploy is watched by the new name when it is
 
     state.model = pendingOnSiteB();
     state.model.status!.clusters = [
-      create(ModelClusterStatusSchema, { cluster: 'site-b', phase: ModelPhase.READY, reason: 'Ready' }),
+      create(ModelClusterStatusSchema, {
+        cluster: 'site-b',
+        phase: ModelPhase.READY,
+        reason: 'Ready',
+        deployment: ModelDeploymentState.RUNNING,
+        state: ModelState.READY,
+      }),
     ];
     await pass(READY_POLL_MS);
     expect(screen.getByText('Model Widget Pro is ready on site-b')).toBeInTheDocument();

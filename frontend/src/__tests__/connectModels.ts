@@ -15,12 +15,15 @@ import { MetadataSchema } from '../gen/ai_grid/v1/metadata_type_pb';
 import {
   ModelClusterStatusSchema,
   ModelContainerSchema,
+  ModelDeploymentState,
   ModelPhase,
   ModelPlacementStatusSchema,
   ModelSchema,
   ModelSourceSchema,
   ModelStatusSchema,
   ModelSpecSchema,
+  ModelState,
+  ModelSyncState,
   type Model,
 } from '../gen/ai_grid/v1/model_type_pb';
 import { SubscriptionSchema, type Subscription } from '../gen/ai_grid/v1/subscription_type_pb';
@@ -93,6 +96,9 @@ export const seedModelObjects = (): Model[] =>
           phase,
           reason: 'Ready',
           message: 'LLMInferenceService ready',
+          deployment: ModelDeploymentState.RUNNING,
+          sync: ModelSyncState.SYNCED,
+          state: ModelState.READY,
         })),
       },
     }),

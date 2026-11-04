@@ -184,8 +184,9 @@ export const readBack = async (
 
 /**
  * Each cluster the model is placed on (placement.selected_clusters), with its report from
- * `status.clusters`: one entry per placed cluster, READY once that cluster's LLMInferenceService is
- * Ready. A cluster that hasn't reported has no entry yet, and isn't ready.
+ * `status.clusters`: one entry per placed cluster, running once that cluster's LLMInferenceService
+ * is Ready (ModelClusterView.running). A cluster that hasn't reported has no entry yet, and isn't
+ * running.
  */
 const placedClustersOf = (model: ModelView) => {
   const reports = new Map(model.clusters.map((c) => [c.cluster, c]));
@@ -195,8 +196,9 @@ const placedClustersOf = (model: ModelView) => {
 
 /**
  * Why a model failed, when the backend calls it Failed or reports a cluster it is placed on failed
- * (git mode reports none today): the cluster and its message, else the model's page's words for a
- * known reason, else the backend's message. Undefined while it hasn't failed.
+ * (a report of one of its objects there Degraded for a reason that isn't a step under way, or Argo
+ * CD's sync of it failed for good): the cluster and its message, else the model's page's words for
+ * a known reason, else the backend's message. Undefined while it hasn't failed.
  */
 const failureOf = (model: ModelView): { why: string | undefined } | undefined => {
   const failedCluster = placedClustersOf(model).find((p) => p.report?.phase === 'Failed');
@@ -211,15 +213,17 @@ const failureOf = (model: ModelView): { why: string | undefined } | undefined =>
 
 /**
  * A deployed model until it runs on every cluster it is placed on. Ready is read per cluster, from
- * `status.clusters`, not from the model's overall phase: the overall phase also counts the ingress
- * clusters that publish the model through MaaS, whose report turns ready only once a subscription
- * covers the model, so a model running on its clusters can read Pending for good. "Ready" here means
- * running on its clusters; users reach it through MaaS once a subscription covers it too.
+ * the deployment each entry of `status.clusters` reports (`deployment` RUNNING), not from the
+ * model's overall phase nor the cluster's: those also count MaaS, the ingress clusters that publish
+ * the model and, on a combined cluster, its MaaSModelRef and ExternalModel, which can stay pending
+ * while the route is set up, and an Argo CD sync that reads OutOfSync while the model runs. "Ready"
+ * here means running on its clusters; users reach it through MaaS once a subscription covers it too.
  *
- * Every placed cluster ready is a success naming them; a model the backend calls Failed, or a
- * cluster it reports failed (git mode reports none today), an error. Anything else is checked again
- * until `since` plus READY_MS, then a warning names the clusters it isn't ready on, or, when that
- * last read failed, says the console couldn't confirm it. A model that is gone stops the watch. A model on the hub alone, with no placed cluster, is ready when its phase is.
+ * Every placed cluster running is a success naming them; a model the backend calls Failed, or a
+ * cluster it reports failed, an error. Anything else is checked again until `since` plus READY_MS,
+ * then a warning names the clusters it isn't ready on, or, when that last read failed, says the
+ * console couldn't confirm it. A model that is gone stops the watch. A model on the hub alone, with
+ * no placed cluster, is ready when its phase is.
  */
 export const watchReady = async (
   target: WriteTarget,
@@ -239,7 +243,7 @@ export const watchReady = async (
     if (placed.length === 0) {
       if (model.phase === 'Ready') return success(modelReadyText(target.id, target.name, []));
     } else {
-      waiting = placed.filter((p) => p.report?.phase !== 'Ready').map((p) => p.name);
+      waiting = placed.filter((p) => !p.report?.running).map((p) => p.name);
       if (waiting.length === 0) {
         return success(
           modelReadyText(
