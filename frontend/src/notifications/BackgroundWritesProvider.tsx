@@ -3,14 +3,18 @@
 // for the answer; past that it leaves as on success and the write goes on here, at the app root:
 // its answer, or when the answer is lost, a read-back of the object, becomes a notification. Each
 // model deployed is then watched until it is ready, and each subscription created until it is
-// active; each model or subscription edited while its changes are applied. The watches are kept
-// in the tab's session storage under the signed-in user, so a reload resumes them; they are never
-// shared with another tab, user or admin.
+// active; each model or subscription edited while its changes are applied. A cluster's write, which
+// the backend answers at once, goes through the page itself (followWrite); each cluster added to AI
+// Grid, or given a role, is then watched until it is provisioned, and each one removed until it has
+// left. The watches are kept in the tab's session storage under the signed-in user, so a reload
+// resumes them; they are never shared with another tab, user or admin.
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Code, ConnectError } from '@connectrpc/connect';
 import { createConnectQueryKey, createQueryOptions, useTransport } from '@connectrpc/connect-query';
-import { useQueryClient } from '@tanstack/react-query';
+import { isCancelledError, useQueryClient } from '@tanstack/react-query';
 import { describeError } from '../api/connect/errors';
+import { Clusters } from '../gen/ai_grid/v1/clusters_service_pb';
+import { get as getCluster } from '../gen/ai_grid/v1/clusters_service-Clusters_connectquery';
 import { Models } from '../gen/ai_grid/v1/models_service_pb';
 import { get as getModel } from '../gen/ai_grid/v1/models_service-Models_connectquery';
 import { Subscriptions } from '../gen/ai_grid/v1/subscriptions_service_pb';
@@ -27,6 +31,7 @@ import { NotificationResponseStatus, useNotificationWatcher } from './useNotific
 import { modelFields, subscriptionFields } from './writeFields';
 import { failedText, pendingText, succeededText, type WriteTarget } from './writeText';
 import {
+  CLUSTER_POLL_MS,
   READBACK_POLL_MS,
   READY_MS,
   READY_POLL_MS,
@@ -35,11 +40,12 @@ import {
   statusOf,
   watchActive,
   watchChanges,
+  watchCluster,
   watchReady,
   watchSubscriptionChanges,
   type ReadAnswer,
   type ReadObject,
-  type SubscriptionHistory,
+  type StatusHistory,
   type Verdict,
 } from './writeWatches';
 
@@ -62,12 +68,13 @@ const defaultFormWait = (signal: AbortSignal) =>
  * A watch as kept in storage. `sent`: the write's request is out, kept before it was sent; a write
  * whose answer this page no longer awaits (a reload) is read back. `readback`: confirming a write
  * whose answer was lost. `ready`: a deployed model until it is ready (watchReady), a created
- * subscription until it is active (watchActive). `changes`: an edited model while its changes roll
- * out (watchChanges), an edited subscription while they are applied (watchSubscriptionChanges).
+ * subscription until it is active (watchActive), a cluster until it is provisioned or has left AI
+ * Grid (watchCluster). `changes`: an edited model while its changes roll out (watchChanges), an
+ * edited subscription while they are applied (watchSubscriptionChanges).
  * `notificationId` is the write's in-progress entry, which its outcome replaces. `status`: a status
  * watch's last seen status (statusOf), so a reload still tells a change from none. `empties`,
- * `lastVerdict` and `lastMessage`: a subscription watch's history (SubscriptionHistory), so a reload
- * goes on counting.
+ * `lastVerdict` and `lastMessage`: a subscription or cluster watch's history (StatusHistory), so a
+ * reload goes on counting.
  * `edit`: on a `ready` watch, the latest edit of the object made while it ran (its name and when it
  * landed), whose name the watch's outcome uses (a rename), and which the watch goes on following as
  * a `changes` watch once it ends, until that edit's own READY_MS has run out.
@@ -98,7 +105,17 @@ const outcomeVariants = {
 } as const;
 
 /** The write a record follows, without the record's own bookkeeping. */
-const targetOf = ({ subject, op, id, name, version, expected, clusters, organization }: WatchRecord): WriteTarget => ({
+const targetOf = ({
+  subject,
+  op,
+  id,
+  name,
+  version,
+  expected,
+  clusters,
+  organization,
+  role,
+}: WatchRecord): WriteTarget => ({
   subject,
   op,
   id,
@@ -107,9 +124,10 @@ const targetOf = ({ subject, op, id, name, version, expected, clusters, organiza
   ...(expected ? { expected } : {}),
   ...(clusters ? { clusters } : {}),
   ...(organization ? { organization } : {}),
+  ...(role ? { role } : {}),
 });
 
-const historyOf = (record: WatchRecord): SubscriptionHistory => ({
+const historyOf = (record: WatchRecord): StatusHistory => ({
   empties: record.empties ?? 0,
   ...(record.lastVerdict ? { last: record.lastVerdict } : {}),
   ...(record.lastMessage ? { message: record.lastMessage } : {}),
@@ -139,7 +157,9 @@ const isRecord = (value: unknown): value is WatchRecord =>
     value.lastVerdict === 'policy' ||
     value.lastVerdict === 'subscription' ||
     value.lastVerdict === 'policyDegraded' ||
-    value.lastVerdict === 'subscriptionDegraded') &&
+    value.lastVerdict === 'subscriptionDegraded' ||
+    value.lastVerdict === 'provisioned' ||
+    value.lastVerdict === 'provisioning') &&
   (value.lastMessage === undefined || typeof value.lastMessage === 'string') &&
   (value.edit === undefined ||
     (isObject(value.edit) &&
@@ -148,9 +168,33 @@ const isRecord = (value: unknown): value is WatchRecord =>
       Number.isFinite(value.edit.since))) &&
   (value.clusters === undefined ||
     (Array.isArray(value.clusters) && value.clusters.every((c) => typeof c === 'string'))) &&
-  (value.subject === 'model' || value.subject === 'subscription') &&
-  (value.op === 'create' || value.op === 'update' || value.op === 'delete') &&
-  (value.stage === 'sent' || value.stage === 'readback' || value.stage === 'ready' || value.stage === 'changes');
+  (value.role === undefined || value.role === 'ingress' || value.role === 'inference' || value.role === 'combined') &&
+  (value.stage === 'sent' || value.stage === 'readback' || value.stage === 'ready' || value.stage === 'changes') &&
+  // A Git write's, or a cluster's: the page sends a cluster's write itself, so its only stage is
+  // the status watch that follows it (followWrite).
+  ((value.subject === 'model' || value.subject === 'subscription') &&
+  (value.op === 'create' || value.op === 'update' || value.op === 'delete')
+    ? true
+    : value.subject === 'cluster' &&
+      (value.op === 'add' || value.op === 'update' || value.op === 'remove') &&
+      value.stage === 'ready');
+
+/**
+ * A watch's read through the query cache, where it joins a fetch of the same query already in
+ * flight. A page that refetches that query meanwhile (its own reload after the write, which runs
+ * right after the watch's first read starts) cancels the fetch in flight, and the read would fail
+ * with a CancelledError that says nothing about the object: the watch would wait a whole poll to
+ * read it again. So a cancelled read joins the newer fetch instead, a few times at most.
+ */
+const fetchLatest = async <T,>(fetch: () => Promise<T>): Promise<T> => {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await fetch();
+    } catch (err) {
+      if (!isCancelledError(err) || attempt >= 3) throw err;
+    }
+  }
+};
 
 /** The refused creates whose input the tab keeps, newest last. */
 const MAX_DRAFTS = 10;
@@ -237,12 +281,32 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
   const read = useCallback<ReadObject>(
     async (subject, id) => {
       try {
+        if (subject === 'cluster') {
+          const { object } = await fetchLatest(() =>
+            queryClient.fetchQuery({
+              ...createQueryOptions(getCluster, { id }, { transport }),
+              staleTime: 0,
+              retry: false,
+            }),
+          );
+          return (
+            object && {
+              version: object.metadata?.version ?? 0,
+              cluster: {
+                member: object.status?.aiGridMember ?? false,
+                provisioning: object.status?.provisioning.trim() ?? '',
+              },
+            }
+          );
+        }
         if (subject === 'model') {
-          const { object } = await queryClient.fetchQuery({
-            ...createQueryOptions(getModel, { id }, { transport }),
-            staleTime: 0,
-            retry: false,
-          });
+          const { object } = await fetchLatest(() =>
+            queryClient.fetchQuery({
+              ...createQueryOptions(getModel, { id }, { transport }),
+              staleTime: 0,
+              retry: false,
+            }),
+          );
           return (
             object && {
               version: object.metadata?.version ?? 0,
@@ -251,11 +315,13 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
             }
           );
         }
-        const { object, authPolicies } = await queryClient.fetchQuery({
-          ...createQueryOptions(getSubscription, { id }, { transport }),
-          staleTime: 0,
-          retry: false,
-        });
+        const { object, authPolicies } = await fetchLatest(() =>
+          queryClient.fetchQuery({
+            ...createQueryOptions(getSubscription, { id }, { transport }),
+            staleTime: 0,
+            retry: false,
+          }),
+        );
         return (
           object && {
             version: object.metadata?.version ?? 0,
@@ -289,14 +355,15 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
       const { key, stage, since, notificationId, status: kept } = record;
       const followsStatus = statusStages.has(stage);
       const isModel = record.subject === 'model';
+      const isCluster = record.subject === 'cluster';
       registered.current.add(key);
       if (kept !== undefined) lastStatus.current.set(key, kept);
-      // The subscription watch's history, as its record has it (a reload goes on from it).
+      // The subscription or cluster watch's history, as its record has it (a reload goes on from it).
       let history = historyOf(record);
       registerNotification({
         id: key,
         notificationId,
-        callbackDelay: followsStatus ? READY_POLL_MS : READBACK_POLL_MS,
+        callbackDelay: isCluster ? CLUSTER_POLL_MS : followsStatus ? READY_POLL_MS : READBACK_POLL_MS,
         callback: async (signal) => {
           // The write this watch follows, under the name of the latest edit made while it runs
           // (`edit`, which a rename changes): its outcome names the object as the pages show it.
@@ -318,8 +385,9 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
             return answer;
           };
           const before = lastStatus.current.get(key);
-          const response =
-            stage === 'ready'
+          const response = isCluster
+            ? await watchCluster(target, since, observe, now, history)
+            : stage === 'ready'
               ? isModel
                 ? await watchReady(target, since, observe, now)
                 : await watchActive(target, since, observe, now, history)
@@ -422,14 +490,22 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
      *   reports the same failures), and records the edit: when it ends, it goes on as the edit's
      *   watch until the edit's own 30 minutes run out;
      * - a delete stops the object's watches at once.
+     *
+     * One watch per cluster too: an add, or an edit that sets the role a cluster lacked, is watched
+     * until the cluster is provisioned, and a remove until it has left AI Grid, each replacing any
+     * earlier watch of the cluster. An edit of the location label alone starts none and leaves a
+     * running one alone: it changes neither what the hub installs nor the name (clusters can't be
+     * renamed).
      */
     function landedFn(target: WriteTarget) {
       refreshFn(target.subject);
+      const isCluster = target.subject === 'cluster';
+      if (isCluster && target.op === 'update' && !target.role) return;
       const watches = records.current.filter(
         (r) => statusStages.has(r.stage) && r.subject === target.subject && r.id === target.id,
       );
       const ready = watches.find((r) => r.stage === 'ready');
-      if (target.op === 'update' && ready) {
+      if (target.op === 'update' && ready && !isCluster) {
         keep({ ...ready, edit: { name: target.name, since: now() } });
         return;
       }
@@ -440,11 +516,15 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
         drop(earlier.key);
       }
       if (target.op === 'delete') return;
-      startWatchFn({ ...target, key: newKey(), stage: target.op === 'create' ? 'ready' : 'changes', since: now() });
+      const stage = target.op === 'create' || isCluster ? 'ready' : 'changes';
+      startWatchFn({ ...target, key: newKey(), stage, since: now() });
     }
-    /** Every page showing objects of this kind refetches them: the lists and each one's Get. */
+    /**
+     * Every page showing objects of this kind refetches them: the lists and each one's Get (for
+     * clusters, the Clusters list, a cluster's page and the AI Grid map).
+     */
     function refreshFn(subject: WriteTarget['subject']) {
-      const schema = subject === 'model' ? Models : Subscriptions;
+      const schema = { model: Models, subscription: Subscriptions, cluster: Clusters }[subject];
       void queryClient.invalidateQueries({ queryKey: createConnectQueryKey({ schema, cardinality: undefined }) });
     }
     return { startWatch: startWatchFn, landed: landedFn };
@@ -563,8 +643,17 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
     [now, formWait, notify, startWatch, landed, keep, drop, keepDraft],
   );
 
+  const followWrite = useCallback<BackgroundWritesValue['followWrite']>(
+    (target) => {
+      // In answer to the user's own click: kept in the drawer as read, as a fast submitWrite's.
+      notify({ variant: 'success', ...succeededText(target), read: true });
+      landed(target);
+    },
+    [notify, landed],
+  );
+
   const draftOf = useCallback((id: string) => drafts.current.find((d) => d.key === id), []);
 
-  const value = useMemo(() => ({ submitWrite, draftOf }), [submitWrite, draftOf]);
+  const value = useMemo(() => ({ submitWrite, followWrite, draftOf }), [submitWrite, followWrite, draftOf]);
   return <BackgroundWritesContext.Provider value={value}>{children}</BackgroundWritesContext.Provider>;
 };

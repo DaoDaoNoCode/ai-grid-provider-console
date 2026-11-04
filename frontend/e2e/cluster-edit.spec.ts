@@ -61,7 +61,9 @@ test("edits a cluster's location label, and sets the role of a cluster without o
   await expect(dialog.getByRole('button', { name: 'Save' })).toBeDisabled();
   await dialog.getByRole('textbox', { name: 'Location label' }).fill('us-east-edge');
   await dialog.getByRole('button', { name: 'Save' }).click();
-  await expect(page.getByText(`${WITH_ROLE} updated`)).toBeVisible();
+  // A location label installs nothing, so nothing is promised or followed.
+  await expect(page.getByText(`Changes to cluster ${WITH_ROLE} saved`)).toBeVisible();
+  await expect(page.getByText("You'll be notified when it's provisioned.")).toHaveCount(0);
 
   // A cluster without a role: the dialog says what the hub installs, and asks for no name.
   dialog = await openEdit(page, WITHOUT_ROLE);
@@ -74,7 +76,17 @@ test("edits a cluster's location label, and sets the role of a cluster without o
   );
   await expect(dialog.getByRole('textbox', { name: new RegExp(`^Type ${WITHOUT_ROLE} to confirm`) })).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Save' }).click();
-  await expect(page.getByText(`${WITHOUT_ROLE} updated`)).toBeVisible();
+  await expect(page.getByText(`Changes to cluster ${WITHOUT_ROLE} saved`)).toBeVisible();
+  await expect(
+    page.getByText("The hub is installing what its Inference role needs. You'll be notified when it's provisioned."),
+  ).toBeVisible();
+  // The notification center follows the hub's ready check (Clusters/Get). The fake hub reports
+  // site3 Compliant from the start (its fixture's ai-grid/provisioned label), so the first read
+  // already finds it provisioned; a cluster really installing would take minutes.
+  await expect(page.getByText(`Cluster ${WITHOUT_ROLE} is provisioned`)).toBeVisible();
+  await expect(
+    page.getByText('The hub reports OpenShift AI ready on it. You can select it when you deploy a model.'),
+  ).toBeVisible();
 
   // The backend kept both: the list after a reload, then the clusters' pages.
   await page.reload();

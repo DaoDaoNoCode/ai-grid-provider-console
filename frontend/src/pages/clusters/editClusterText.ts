@@ -48,8 +48,6 @@ export const editText = {
   notAvailable: 'Editing a cluster is not available on this AI Grid backend.',
   changedByOther:
     "Another user changed this cluster's location label or role after this dialog opened. Their values are now shown. Review them and try again.",
-  /** The success toast. */
-  updated: (cluster: string) => `${cluster} updated`,
   /** The No role warning's tooltip, which points to the action. */
   noRole:
     "This cluster has no role, so the hub cannot install OpenShift AI or MaaS on it, and provisioning cannot finish. To set a role, select Edit in the cluster's actions.",

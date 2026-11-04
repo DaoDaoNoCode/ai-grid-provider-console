@@ -17,6 +17,8 @@ import {
   ModelState,
   ModelSyncState,
 } from '../gen/ai_grid/v1/model_type_pb';
+import { get as getCluster, list as listClusters } from '../gen/ai_grid/v1/clusters_service-Clusters_connectquery';
+import { ManagedClusterSchema } from '../gen/ai_grid/v1/managed_cluster_type_pb';
 import { list as listModels } from '../gen/ai_grid/v1/models_service-Models_connectquery';
 import { ConditionStatus } from '../gen/ai_grid/v1/condition_type_pb';
 import { AuthPolicySchema, SubscriptionSchema } from '../gen/ai_grid/v1/subscription_type_pb';
@@ -32,7 +34,7 @@ import { notificationsKey, watchesKey } from './storageKeys';
 import { NotificationWatcherProvider } from './NotificationWatcherProvider';
 import { useBackgroundWrites, type BackgroundWritesValue } from './useBackgroundWrites';
 import { useNotifications } from './useNotifications';
-import { READY_MS, READY_POLL_MS } from './writeWatches';
+import { CLUSTER_MS, CLUSTER_POLL_MS, READY_MS, READY_POLL_MS } from './writeWatches';
 
 const Titles: React.FC = () => {
   const { notifications } = useNotifications();
@@ -96,8 +98,10 @@ it("drops the previous user's notifications and watches, and restores the new us
 });
 
 let submitWrite: BackgroundWritesValue['submitWrite'] = async () => 'done';
+let followWrite: BackgroundWritesValue['followWrite'] = () => undefined;
 const capture = (value: BackgroundWritesValue) => {
   submitWrite = value.submitWrite;
+  followWrite = value.followWrite;
 };
 
 const Writes: React.FC = () => {
@@ -1149,6 +1153,360 @@ describe('a subscription watch', () => {
     await pass(READY_POLL_MS);
     expect(subscriptionWatches(storage)).toEqual([]);
     await pass(READY_MS);
+    expect(screen.getByRole('list', { name: 'Titles' }).children).toHaveLength(0);
+  });
+});
+
+/** Cluster site-b as Clusters/Get answers it: its membership and the ready Policy's compliance. */
+const siteB = (member: boolean, provisioning: string) =>
+  create(ManagedClusterSchema, {
+    id: 'site-b',
+    metadata: { name: 'site-b', version: 7, labels: member ? { 'ai-grid/enabled': 'true' } : {} },
+    status: { aiGridMember: member, provisioning },
+  });
+
+/** The Clusters list as its page shows it, without a poll of its own: it refetches only when told to. */
+const ClusterList: React.FC = () => {
+  const { data } = useQuery(listClusters, {});
+  const cluster = data?.items.find((c) => c.id === 'site-b');
+  return <p>{`list ${cluster?.status?.provisioning || 'none'}`}</p>;
+};
+
+/** The cluster's page, without a poll of its own: its reload is the test's to start (reloadCluster). */
+let reloadCluster: () => void = () => undefined;
+const ClusterPage: React.FC = () => {
+  const { refetch } = useQuery(getCluster, { id: 'site-b' }, { refetchInterval: false });
+  useEffect(() => {
+    reloadCluster = () => void refetch();
+  }, [refetch]);
+  return null;
+};
+
+/** Each notification's message, to read the bodies by. */
+const Messages: React.FC = () => {
+  const { notifications } = useNotifications();
+  return (
+    <ul aria-label="Messages">
+      {notifications.map((n) => (
+        <li key={n.id}>{n.message ?? ''}</li>
+      ))}
+    </ul>
+  );
+};
+
+type ClusterState = {
+  cluster: ReturnType<typeof siteB>;
+  gone: boolean;
+  /** Get fails (Unavailable) while set. */
+  failing: boolean;
+  gets: number;
+  lists: number;
+};
+
+/**
+ * The console around cluster site-b, whose status the test changes. Given the storage and state of
+ * an earlier one (unmounted), it is that console after a reload.
+ */
+const clustering = (
+  stored: object[] = [],
+  reload?: { storage: ReturnType<typeof memoryStorage>; state: ClusterState },
+) => {
+  const state: ClusterState = reload?.state ?? {
+    cluster: siteB(true, 'Pending'),
+    gone: false,
+    failing: false,
+    gets: 0,
+    lists: 0,
+  };
+  const { transport } = fakeClients({
+    clusters: {
+      get: () => {
+        state.gets += 1;
+        if (state.gone) throw new ConnectError('cluster "site-b" not found', Code.NotFound);
+        if (state.failing) throw new ConnectError('the hub is unreachable', Code.Unavailable);
+        return { object: state.cluster };
+      },
+      list: () => {
+        state.lists += 1;
+        return { items: state.gone ? [] : [state.cluster], size: 1, total: 1 };
+      },
+    },
+  });
+  const storage = reload?.storage ?? memoryStorage({ [watchesKey('dev-user')]: JSON.stringify(stored) });
+  const { unmount } = render(
+    <BackendProvider transport={transport} checkSession={() => undefined}>
+      <NotificationsProvider storage={storage.get} owner="dev-user">
+        <NotificationWatcherProvider>
+          <BackgroundWritesProvider storage={storage.get} owner="dev-user">
+            <ClusterList />
+            <ClusterPage />
+            <Titles />
+            <Messages />
+            <Writes />
+          </BackgroundWritesProvider>
+        </NotificationWatcherProvider>
+      </NotificationsProvider>
+    </BackendProvider>,
+  );
+  return { state, storage, unmount };
+};
+
+const addSiteB = { subject: 'cluster', op: 'add', id: 'site-b', name: 'site-b', role: 'inference' } as const;
+const removeSiteB = { subject: 'cluster', op: 'remove', id: 'site-b', name: 'site-b' } as const;
+
+/** The cluster watches the tab keeps. */
+const clusterWatches = (storage: ReturnType<typeof memoryStorage>) =>
+  (
+    JSON.parse(storage.values.get(watchesKey('dev-user')) ?? '[]') as {
+      key: string;
+      subject: string;
+      op: string;
+      stage: string;
+    }[]
+  ).filter((r) => r.subject === 'cluster');
+
+/** A cluster's provisioning watch as the tab keeps it across a reload. */
+const provisioningRecord = (since: number) => ({ ...addSiteB, key: 'c1', stage: 'ready', since });
+
+describe('a cluster watch', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('follows a cluster added to AI Grid until it is provisioned: says so once, refreshes the list, and stops polling', async () => {
+    const { state, storage } = clustering();
+    await pass(0);
+    act(() => followWrite(addSiteB));
+    await pass(0);
+    expect(screen.getByText('Cluster site-b added to AI Grid')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "The hub is installing what its Inference role needs. You'll be notified when it's provisioned.",
+      ),
+    ).toBeInTheDocument();
+    expect(clusterWatches(storage)).toMatchObject([{ op: 'add', stage: 'ready' }]);
+    await pass(1);
+    expect(screen.getByText('list Pending')).toBeInTheDocument();
+    const lists = state.lists;
+
+    // A poll that sees the same status leaves the list alone.
+    await pass(CLUSTER_POLL_MS);
+    expect(state.lists).toBe(lists);
+
+    // The hub's ready check runs and finds OpenShift AI still installing: the list shows it at once.
+    state.cluster = siteB(true, 'NonCompliant');
+    await pass(CLUSTER_POLL_MS);
+    await pass(1);
+    expect(state.lists).toBe(lists + 1);
+    expect(screen.getByText('list NonCompliant')).toBeInTheDocument();
+    expect(screen.queryByText('Cluster site-b is provisioned')).not.toBeInTheDocument();
+
+    state.cluster = siteB(true, 'Compliant');
+    await pass(CLUSTER_POLL_MS);
+    expect(screen.getAllByText('Cluster site-b is provisioned')).toHaveLength(1);
+    await pass(1);
+    expect(state.lists).toBe(lists + 2);
+    expect(screen.getByText('list Compliant')).toBeInTheDocument();
+    expect(clusterWatches(storage)).toEqual([]);
+
+    // Nothing polls any more.
+    const gets = state.gets;
+    await pass(CLUSTER_MS);
+    expect(state.gets).toBe(gets);
+    expect(screen.getAllByText('Cluster site-b is provisioned')).toHaveLength(1);
+  });
+
+  it.each([
+    ['inference', 'The hub reports OpenShift AI ready on it. You can select it when you deploy a model.'],
+    [
+      'ingress',
+      "The hub reports OpenShift AI ready on it. Whether users can reach models through it depends on MaaS, which the hub's check doesn't cover.",
+    ],
+    [
+      'combined',
+      "The hub reports OpenShift AI ready on it, and you can select it when you deploy a model. Whether users can reach models through it depends on MaaS, which the hub's check doesn't cover.",
+    ],
+  ] as const)('says what a provisioned %s cluster can do, and no more', async (role, body) => {
+    const { state } = clustering();
+    await pass(0);
+    act(() => followWrite({ ...addSiteB, role }));
+    await pass(0);
+    state.cluster = siteB(true, 'Compliant');
+    await pass(CLUSTER_POLL_MS);
+    expect(screen.getByText('Cluster site-b is provisioned')).toBeInTheDocument();
+    expect(screen.getByText(body)).toBeInTheDocument();
+  });
+
+  it('follows an edit that sets the role a cluster lacked until it is provisioned', async () => {
+    const { state, storage } = clustering();
+    await pass(0);
+    act(() => followWrite({ subject: 'cluster', op: 'update', id: 'site-b', name: 'site-b', role: 'combined' }));
+    await pass(0);
+    expect(screen.getByText('Changes to cluster site-b saved')).toBeInTheDocument();
+    expect(
+      screen.getByText("The hub is installing what its Combined role needs. You'll be notified when it's provisioned."),
+    ).toBeInTheDocument();
+    expect(clusterWatches(storage)).toMatchObject([{ op: 'update', stage: 'ready' }]);
+    state.cluster = siteB(true, 'Compliant');
+    await pass(CLUSTER_POLL_MS);
+    expect(screen.getByText('Cluster site-b is provisioned')).toBeInTheDocument();
+  });
+
+  it('adds no watch for an edit of the location label alone, and leaves a running one alone', async () => {
+    const { state, storage } = clustering([provisioningRecord(Date.now())]);
+    await pass(0);
+    act(() => followWrite({ subject: 'cluster', op: 'update', id: 'site-b', name: 'site-b' }));
+    await pass(0);
+    expect(screen.getByText('Changes to cluster site-b saved')).toBeInTheDocument();
+    // Nothing installs, so nothing is promised.
+    expect(screen.getByRole('list', { name: 'Messages' }).textContent).toBe('');
+    expect(clusterWatches(storage)).toMatchObject([{ key: 'c1', op: 'add' }]);
+    state.cluster = siteB(true, 'Compliant');
+    await pass(CLUSTER_POLL_MS);
+    expect(screen.getByText('Cluster site-b is provisioned')).toBeInTheDocument();
+  });
+
+  it('starts no watch for a location-only edit of a cluster nobody watches', async () => {
+    const { state, storage } = clustering();
+    await pass(0);
+    act(() => followWrite({ subject: 'cluster', op: 'update', id: 'site-b', name: 'site-b' }));
+    await pass(0);
+    expect(clusterWatches(storage)).toEqual([]);
+    const gets = state.gets;
+    state.cluster = siteB(true, 'Compliant');
+    await pass(CLUSTER_MS);
+    expect(state.gets).toBe(gets);
+    expect(screen.queryByText('Cluster site-b is provisioned')).not.toBeInTheDocument();
+  });
+
+  it("warns that a cluster isn't provisioned yet when its 60 minutes run out, pointing to its page", async () => {
+    // Resumed after a reload with one check left inside its 60 minutes.
+    const { state, storage } = clustering([provisioningRecord(Date.now() - CLUSTER_MS + CLUSTER_POLL_MS / 2)]);
+    state.cluster = siteB(true, 'NonCompliant');
+    await pass(0);
+    expect(screen.queryByText("Cluster site-b isn't provisioned yet")).not.toBeInTheDocument();
+    await pass(CLUSTER_POLL_MS);
+    expect(screen.getByText("Cluster site-b isn't provisioned yet")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "It isn't provisioned 60 minutes after it was added to AI Grid. Open the cluster to check its status.",
+      ),
+    ).toBeInTheDocument();
+    expect(clusterWatches(storage)).toEqual([]);
+  });
+
+  it("says it can't confirm a cluster is provisioned when its last read at the deadline fails", async () => {
+    const { state } = clustering([provisioningRecord(Date.now() - CLUSTER_MS + CLUSTER_POLL_MS / 2)]);
+    state.cluster = siteB(true, 'NonCompliant');
+    await pass(0);
+    state.failing = true;
+    await pass(CLUSTER_POLL_MS);
+    expect(screen.getByText('Unable to confirm cluster site-b is provisioned')).toBeInTheDocument();
+    expect(screen.queryByText("Cluster site-b isn't provisioned yet")).not.toBeInTheDocument();
+  });
+
+  it("stops silently when the hub's ready check never lists the cluster, without claiming anything", async () => {
+    const { state, storage } = clustering();
+    state.cluster = siteB(true, '');
+    await pass(0);
+    act(() => followWrite(addSiteB));
+    // The read as the write lands, then two more.
+    await pass(0);
+    await pass(CLUSTER_POLL_MS);
+    expect(clusterWatches(storage)).toHaveLength(1);
+    await pass(CLUSTER_POLL_MS);
+    expect(clusterWatches(storage)).toEqual([]);
+    const gets = state.gets;
+    await pass(CLUSTER_MS);
+    expect(state.gets).toBe(gets);
+    expect(screen.getByRole('list', { name: 'Titles' }).children).toHaveLength(1);
+  });
+
+  it("resumes a cluster's watch after a reload, and says it is provisioned once", async () => {
+    const first = clustering();
+    await pass(0);
+    act(() => followWrite(addSiteB));
+    await pass(0);
+    first.unmount();
+
+    // The page reloads; the hub finishes meanwhile.
+    first.state.cluster = siteB(true, 'Compliant');
+    const second = clustering([], first);
+    await pass(0);
+    expect(screen.getAllByText('Cluster site-b is provisioned')).toHaveLength(1);
+    expect(clusterWatches(second.storage)).toEqual([]);
+    await pass(CLUSTER_MS);
+    expect(screen.getAllByText('Cluster site-b is provisioned')).toHaveLength(1);
+  });
+
+  it('follows a removed cluster until the hub no longer includes it, then says it left', async () => {
+    const { state, storage } = clustering();
+    // Membership is the label the remove dropped; the ready check still lists the cluster.
+    state.cluster = siteB(false, 'Compliant');
+    await pass(0);
+    act(() => followWrite(removeSiteB));
+    await pass(0);
+    expect(screen.getByText('Cluster site-b removed from AI Grid')).toBeInTheDocument();
+    expect(screen.getByText("You'll be notified when the hub no longer includes it in AI Grid.")).toBeInTheDocument();
+    expect(screen.queryByText('Cluster site-b left AI Grid')).not.toBeInTheDocument();
+    expect(clusterWatches(storage)).toMatchObject([{ op: 'remove', stage: 'ready' }]);
+    await pass(1);
+    const lists = state.lists;
+
+    state.cluster = siteB(false, '');
+    await pass(CLUSTER_POLL_MS);
+    expect(screen.getAllByText('Cluster site-b left AI Grid')).toHaveLength(1);
+    await pass(1);
+    expect(state.lists).toBe(lists + 1);
+    expect(screen.getByText('list none')).toBeInTheDocument();
+    expect(clusterWatches(storage)).toEqual([]);
+  });
+
+  it("reads the cluster at once though the page's own reload cancels the fetch the watch joined", async () => {
+    const { state } = clustering();
+    state.cluster = siteB(false, '');
+    await pass(0);
+    // The page hands the write over, then reloads the cluster, as ClusterDetailsPage does.
+    act(() => {
+      followWrite(removeSiteB);
+      reloadCluster();
+    });
+    await pass(1);
+    expect(screen.getByText('Cluster site-b left AI Grid')).toBeInTheDocument();
+  });
+
+  it("warns that a removed cluster hasn't left when its 60 minutes run out", async () => {
+    const { state } = clustering([{ ...removeSiteB, key: 'c2', stage: 'ready', since: Date.now() - CLUSTER_MS + 1 }]);
+    state.cluster = siteB(false, 'Compliant');
+    await pass(0);
+    await pass(CLUSTER_POLL_MS);
+    expect(screen.getByText("Cluster site-b hasn't left AI Grid yet")).toBeInTheDocument();
+  });
+
+  it('keeps one watch per cluster: a remove replaces the provisioning watch, and nothing more is said of it', async () => {
+    const { state, storage } = clustering([provisioningRecord(Date.now())]);
+    await pass(0);
+    state.cluster = siteB(false, 'Compliant');
+    act(() => followWrite(removeSiteB));
+    await pass(0);
+    expect(clusterWatches(storage)).toMatchObject([{ op: 'remove' }]);
+    state.cluster = siteB(false, '');
+    await pass(CLUSTER_POLL_MS);
+    expect(screen.getByText('Cluster site-b left AI Grid')).toBeInTheDocument();
+    expect(screen.queryByText(/provisioned/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/isn't provisioned/)).not.toBeInTheDocument();
+  });
+
+  it('ends quietly when someone else removes the cluster it follows, or the hub detaches it', async () => {
+    const { state, storage } = clustering([provisioningRecord(Date.now())]);
+    await pass(0);
+    state.cluster = siteB(false, '');
+    await pass(CLUSTER_POLL_MS);
+    expect(clusterWatches(storage)).toEqual([]);
+    await pass(CLUSTER_MS);
     expect(screen.getByRole('list', { name: 'Titles' }).children).toHaveLength(0);
   });
 });

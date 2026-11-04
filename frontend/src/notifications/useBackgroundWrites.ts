@@ -29,6 +29,13 @@ export type BackgroundWritesValue = {
    * holds, kept should the backend refuse the create after the form has left.
    */
   submitWrite: (target: WriteTarget & { draft?: unknown }, send: () => Promise<unknown>) => Promise<WriteOutcome>;
+  /**
+   * A write the page sent itself and the backend confirmed, a cluster's labels, which the backend
+   * writes at once while the dialog waits, keeping its refusals: the notification center says it
+   * was saved (as read, the answer to the user's click) and follows what the hub does next
+   * (watchCluster).
+   */
+  followWrite: (target: WriteTarget) => void;
   /** A refused create's draft, by the id in the toast's link (`?draft=`). */
   draftOf: (id: string) => WriteDraft | undefined;
 };
@@ -39,6 +46,7 @@ export const BackgroundWritesContext = createContext<BackgroundWritesValue>({
     await send();
     return 'done';
   },
+  followWrite: () => undefined,
   draftOf: () => undefined,
 });
 

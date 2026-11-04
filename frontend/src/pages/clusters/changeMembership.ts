@@ -1,9 +1,31 @@
 import type { GridMembership } from '../../api/clusters';
 import { ServiceError } from '../../api/ConsoleService';
+import type { WriteTarget } from '../../notifications/writeText';
 import { ClusterChangedError } from './ClusterChangedError';
 import type { ClusterView } from './clusterView';
+import { canSetRole } from './gridSettings';
 import type { MembershipChange } from './MembershipModal';
+import { roleOf } from './roles';
 import type { MembershipWrites } from './useClusters';
+
+/**
+ * Add to AI Grid (with the membership the dialog set) or Remove, as the notification center
+ * follows it (followWrite): an add until the cluster is provisioned, a remove until it has left.
+ */
+export const membershipTarget = (name: string, membership: GridMembership | undefined): WriteTarget =>
+  membership
+    ? { subject: 'cluster', op: 'add', id: name, name, role: membership.role }
+    : { subject: 'cluster', op: 'remove', id: name, name };
+
+/**
+ * An Edit as the notification center follows it: with the role it set on a cluster that had none
+ * (labelsUpdate), followed until the cluster is provisioned; without one, it changed only the
+ * location label, and nothing is followed.
+ */
+export const editTarget = (cluster: ClusterView, labels: Record<string, string>): WriteTarget => {
+  const role = canSetRole(cluster) ? roleOf(labels)?.value : undefined;
+  return { subject: 'cluster', op: 'update', id: cluster.name, name: cluster.name, ...(role ? { role } : {}) };
+};
 
 type Options = {
   /** Loads the cluster as the backend has it now; undefined when it can't. */

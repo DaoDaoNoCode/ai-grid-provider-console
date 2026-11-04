@@ -15,6 +15,7 @@ import {
 } from '../gen/ai_grid/v1/managed_cluster_type_pb';
 import { createClient } from '@connectrpc/connect';
 import { Clusters } from '../api/connect/clients';
+import { notificationsKey, watchesKey } from '../notifications/storageKeys';
 import { transportFor } from './connectClusters';
 import { renderAt } from './render';
 
@@ -80,7 +81,7 @@ it('lists live Hub states, includes AI Grid navigation and enrolls with a label-
   expect(offline).toHaveTextContent('Offline');
   expect(within(offline).getAllByText('—').length).toBeGreaterThan(0);
   await add(user, 'cluster-b');
-  expect(await screen.findByText('cluster-b added to AI Grid')).toBeVisible();
+  expect(await screen.findByText('Cluster cluster-b added to AI Grid')).toBeVisible();
   expect(screen.queryByTestId('cluster-membership-modal')).not.toBeInTheDocument();
   const enrolled = service.clusters.find((c) => c.name === 'cluster-b')!;
   expect(enrolled.labels).toEqual({ location: 'site2', 'ai-grid/enabled': 'true', 'ai-grid/role': 'inference' });
@@ -108,7 +109,7 @@ it('removes a member from AI Grid after a confirmation', async () => {
   expect(within(modal).getByRole('button', { name: 'Remove' })).toBeDisabled();
   await user.type(within(modal).getByRole('textbox', { name: 'Type cluster-a to confirm:' }), 'cluster-a');
   await user.click(within(modal).getByRole('button', { name: 'Remove' }));
-  expect(await screen.findByText('cluster-a removed from AI Grid')).toBeVisible();
+  expect(await screen.findByText('Cluster cluster-a removed from AI Grid')).toBeVisible();
   const removed = service.clusters.find((c) => c.name === 'cluster-a')!;
   expect(removed.labels).toEqual({ 'ai-grid/provisioned': 'true', location: 'site1' });
   const row = within(screen.getByTestId('clusters-table')).getByRole('link', { name: 'cluster-a' }).closest('tr')!;
@@ -191,6 +192,78 @@ it('shows the backend refusing to remove an ingress cluster while subscriptions 
   expect(service.clusters[0].aiGridEnabled).toBe(true);
 });
 
+it.each([
+  ['Add to AI Grid', 'cluster-b', 'enrollCluster', 403, 'the hub refused the change'],
+  ['Add to AI Grid', 'cluster-b', 'enrollCluster', 409, 'This cluster was changed after this dialog opened'],
+  ['Remove from AI Grid', 'cluster-a', 'removeClusterFromGrid', 412, 'models are placed on cluster-a'],
+  ['Edit', 'cluster-a', 'updateCluster', 422, 'label "location" is not a valid label value'],
+] as const)(
+  'keeps a refused %s of %s in the dialog (%s, %i), with no notification and nothing followed',
+  async (action, name, write, status, shown) => {
+    const user = userEvent.setup();
+    const service = serviceWith(hubClusters());
+    vi.spyOn(service, write).mockRejectedValueOnce(new ServiceError(status, shown));
+    renderAt('/clusters', service);
+    if (action !== 'Add to AI Grid') await pick(user, name, action);
+    if (action === 'Edit') {
+      // cluster-a has no role: Edit sets one, which the hub would install, and a new location label.
+      const modal = await screen.findByTestId('cluster-edit-modal');
+      await user.click(within(modal).getByRole('combobox', { name: 'Role' }));
+      await user.click(await screen.findByRole('option', { name: /Inference/ }));
+      const location = within(modal).getByRole('textbox', { name: 'Location label' });
+      await user.clear(location);
+      await user.paste('site9');
+      await user.click(within(modal).getByRole('button', { name: 'Save' }));
+      expect(service.updateCluster).toHaveBeenCalled();
+      expect(await within(modal).findByText(new RegExp(shown))).toBeVisible();
+    } else if (action === 'Remove from AI Grid') {
+      const modal = await screen.findByTestId('cluster-membership-modal');
+      await user.click(within(modal).getByRole('textbox', { name: `Type ${name} to confirm:` }));
+      await user.paste(name);
+      await user.click(within(modal).getByRole('button', { name: 'Remove' }));
+      expect(await within(modal).findByText(new RegExp(shown))).toBeVisible();
+    } else {
+      const modal = await add(user, name);
+      expect(await within(modal).findByText(new RegExp(shown))).toBeVisible();
+    }
+    // Nothing reached the notification center, and nothing is followed.
+    expect(screen.queryByText(new RegExp(`^(Cluster ${name}|Changes to cluster ${name})`))).not.toBeInTheDocument();
+    expect(window.sessionStorage.getItem(notificationsKey('dev-user'))).toBeNull();
+    expect(window.sessionStorage.getItem(watchesKey('dev-user'))).toBeNull();
+  },
+);
+
+/** The cluster watches the notification center keeps in the tab. */
+const clusterWatches = () =>
+  (JSON.parse(window.sessionStorage.getItem(watchesKey('dev-user')) ?? '[]') as { subject: string }[]).filter(
+    (r) => r.subject === 'cluster',
+  );
+
+it('follows an added cluster until it is provisioned, and not an edit of the location label alone', async () => {
+  const user = userEvent.setup();
+  const service = serviceWith([
+    ...hubClusters(),
+    cluster('cluster-d', 'Ready', { 'ai-grid/enabled': 'true', 'ai-grid/role': 'inference', location: 'eu' }),
+  ]);
+  renderAt('/clusters', service);
+
+  await pick(user, 'cluster-d', 'Edit');
+  const edit = await screen.findByTestId('cluster-edit-modal');
+  const location = within(edit).getByRole('textbox', { name: 'Location label' });
+  await user.clear(location);
+  await user.paste('eu-west');
+  await user.click(within(edit).getByRole('button', { name: 'Save' }));
+  expect(await screen.findByText('Changes to cluster cluster-d saved')).toBeVisible();
+  expect(clusterWatches()).toEqual([]);
+
+  await add(user, 'cluster-b');
+  expect(await screen.findByText('Cluster cluster-b added to AI Grid')).toBeVisible();
+  expect(
+    screen.getByText("The hub is installing what its Inference role needs. You'll be notified when it's provisioned."),
+  ).toBeVisible();
+  expect(clusterWatches()).toMatchObject([{ op: 'add', id: 'cluster-b', role: 'inference', stage: 'ready' }]);
+});
+
 it('asks for a location label and role before adding', async () => {
   const user = userEvent.setup();
   const service = serviceWith([
@@ -259,7 +332,7 @@ it('keeps an unenrolled cluster on patch failure and allows a retry', async () =
   expect(service.clusters[1].labels['ai-grid/enabled']).toBeUndefined();
   service.enrollCluster = enroll;
   await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
-  expect(await screen.findByText('cluster-b added to AI Grid')).toBeVisible();
+  expect(await screen.findByText('Cluster cluster-b added to AI Grid')).toBeVisible();
 });
 
 it('reports Hub unavailability and retries instead of showing a false empty list', async () => {
@@ -283,7 +356,7 @@ it('refresh reflects external membership changes on the Hub', async () => {
   const user = userEvent.setup();
   renderAt('/clusters', service);
   await add(user, 'cluster-b');
-  expect(await screen.findByText('cluster-b added to AI Grid')).toBeVisible();
+  expect(await screen.findByText('Cluster cluster-b added to AI Grid')).toBeVisible();
   const row = () => within(screen.getByTestId('clusters-table')).getByRole('row', { name: /^cluster-b / });
   await waitFor(() => expect(row()).toHaveTextContent('Provisioning'));
   service.clusters[1] = cluster('cluster-b', 'Ready', { location: 'site2' });
@@ -308,7 +381,7 @@ it('shows the role and location Add wrote while the list reloads', async () => {
   await user.click(within(modal).getByRole('combobox', { name: 'Role' }));
   await user.click(await screen.findByRole('option', { name: /Inference/ }));
   await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
-  expect(await screen.findByText('cluster-b added to AI Grid')).toBeVisible();
+  expect(await screen.findByText('Cluster cluster-b added to AI Grid')).toBeVisible();
   const row = within(screen.getByTestId('clusters-table')).getByRole('row', { name: /^cluster-b / });
   expect(row).toHaveTextContent('Inference');
   expect(row).toHaveTextContent('paris');
@@ -348,7 +421,7 @@ it('keeps the cluster Add returned when a poll replaced the list during the PATC
     expect(polls).toBe(2);
     service.listClusters = () => new Promise(() => {});
     await act(() => finish());
-    expect(await screen.findByText('cluster-b added to AI Grid')).toBeVisible();
+    expect(await screen.findByText('Cluster cluster-b added to AI Grid')).toBeVisible();
     const row = () => within(screen.getByTestId('clusters-table')).getByRole('row', { name: /^cluster-b / });
     expect(row()).toHaveTextContent('Inference');
     // Refresh while that reload hangs keeps it, and an older reload that answers first (with the
@@ -763,7 +836,7 @@ it('reloads the cluster in the open dialog after a conflict, keeping the choices
   expect(within(modal).getByRole('combobox', { name: 'Role' })).toHaveValue('Inference');
 
   await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
-  expect(await screen.findByText('site4 added to AI Grid')).toBeVisible();
+  expect(await screen.findByText('Cluster site4 added to AI Grid')).toBeVisible();
   expect(enroll).toHaveBeenCalledTimes(2);
   // The second try carried the version and the labels the backend had then, so team stays.
   expect(enroll.mock.calls[1][0].resourceVersion).toBe(String(Number(before.resourceVersion) + 5));
@@ -806,7 +879,7 @@ it('shows the location and role someone else set meanwhile instead of sending th
   expect(within(modal).getByRole('combobox', { name: 'Role' })).toHaveValue('Ingress');
 
   await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
-  expect(await screen.findByText('site4 added to AI Grid')).toBeVisible();
+  expect(await screen.findByText('Cluster site4 added to AI Grid')).toBeVisible();
   expect(enroll).toHaveBeenCalledTimes(2);
   expect(enroll.mock.calls[1][1]).toEqual({ location: 'eu-west', role: 'ingress' });
 });
@@ -952,7 +1025,7 @@ it('saves a labels-only edit with the other labels kept and the membership uncha
   const dialog = await openEdit(user, 'site2');
   await enter(user, dialog, 'Location label', 'us-east-2');
   await user.click(within(dialog).getByRole('button', { name: 'Save' }));
-  expect(await screen.findByText('site2 updated')).toBeVisible();
+  expect(await screen.findByText('Changes to cluster site2 saved')).toBeVisible();
   const after = service.clusters.find((c) => c.name === 'site2')!;
   expect(after.aiGridEnabled).toBe(true);
   expect(after.labels).toEqual({ ...before.labels, location: 'us-east-2' });

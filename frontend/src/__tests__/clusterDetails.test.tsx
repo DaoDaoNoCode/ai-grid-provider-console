@@ -324,7 +324,7 @@ it('adds the cluster to AI Grid from its Actions', async () => {
   await user.click(within(modal).getByRole('combobox', { name: 'Role' }));
   await user.click(await screen.findByRole('option', { name: /Inference/ }));
   await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
-  expect(await screen.findByText('site4 added to AI Grid')).toBeVisible();
+  expect(await screen.findByText('Cluster site4 added to AI Grid')).toBeVisible();
   await waitFor(() => expect(screen.getByTestId('cluster-membership')).toHaveTextContent('Provisioning'));
   expect(service.clusters.find((c) => c.name === 'site4')!.labels['ai-grid/role']).toBe('inference');
 });
@@ -348,7 +348,7 @@ it('shows the added membership while the reload is still running', async () => {
   // Every load from now on never answers.
   service.getCluster = () => new Promise(() => {});
   await addSite4(user);
-  expect(await screen.findByText('site4 added to AI Grid')).toBeVisible();
+  expect(await screen.findByText('Cluster site4 added to AI Grid')).toBeVisible();
   expect(screen.getByTestId('cluster-membership')).toHaveTextContent('Provisioning');
   expect(screen.getByLabelText('AI Grid membership')).toHaveTextContent('Inference');
   await user.click(screen.getByRole('button', { name: 'Actions for site4' }));
@@ -370,7 +370,7 @@ it('keeps one history entry for the page after a change, so Back leaves it', asy
     </MemoryRouter>,
   );
   await addSite4(user);
-  expect(await screen.findByText('site4 added to AI Grid')).toBeVisible();
+  expect(await screen.findByText('Cluster site4 added to AI Grid')).toBeVisible();
   await act(async () => navigate(-1));
   expect(await screen.findByRole('heading', { level: 1, name: 'Clusters' })).toBeVisible();
 });
@@ -395,7 +395,7 @@ it('removes the cluster from AI Grid', async () => {
   const modal = await screen.findByTestId('cluster-membership-modal');
   await user.type(within(modal).getByRole('textbox', { name: 'Type site1 to confirm:' }), 'site1');
   await user.click(within(modal).getByRole('button', { name: 'Remove' }));
-  expect(await screen.findByText('site1 removed from AI Grid')).toBeVisible();
+  expect(await screen.findByText('Cluster site1 removed from AI Grid')).toBeVisible();
   expect(screen.getByTestId('cluster-membership')).toHaveTextContent('Not added');
   expect(service.clusters.find((c) => c.name === 'site1')!.labels['ai-grid/enabled']).toBeUndefined();
 });
@@ -452,7 +452,7 @@ it('loads the cluster again into the open dialog after a conflict, so the next A
   expect(within(modal).getByRole('textbox', { name: 'Location label' })).toHaveValue('us-east');
 
   await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
-  expect(await screen.findByText('site4 added to AI Grid')).toBeVisible();
+  expect(await screen.findByText('Cluster site4 added to AI Grid')).toBeVisible();
   expect(enroll).toHaveBeenCalledTimes(2);
   expect(enroll.mock.calls[1][0].resourceVersion).toBe(String(Number(before.resourceVersion) + 5));
   expect(service.clusters[index].labels).toMatchObject({

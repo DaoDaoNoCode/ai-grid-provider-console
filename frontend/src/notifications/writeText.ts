@@ -1,12 +1,16 @@
-// Every word the notification center says about a Models or Subscriptions write, in one place for
-// review. The backend commits these writes to a Git repository, and Argo CD applies them to the
-// clusters later, so the words name each stage as it is: a write is "saved to Git" (or "deleted
-// from Git"), a model is "ready" only once it runs on every cluster it is placed on (each cluster's
-// deployment; users reach it through MaaS once a subscription covers it too), "running but isn't
-// available to users" when it runs but MaaS failed to publish it, and a subscription is "active"
-// only once it and its authorization policy are active on every ingress cluster.
+// Every word the notification center says about a write, in one place for review. The backend
+// commits Models and Subscriptions to a Git repository, and Argo CD applies them to the clusters
+// later, so the words name each stage as it is: a write is "saved to Git" (or "deleted from Git"), a
+// model is "ready" only once it runs on every cluster it is placed on (each cluster's deployment;
+// users reach it through MaaS once a subscription covers it too), "running but isn't available to
+// users" when it runs but MaaS failed to publish it, and a subscription is "active" only once it and
+// its authorization policy are active on every ingress cluster. A cluster's labels are written at
+// once, and the hub then installs what its role needs, or lets it go: a cluster is "provisioned"
+// once the hub's ready check passes, which never covers MaaS. An organization's save is complete
+// when the backend answers.
 // They follow frontend/AGENTS.md, "Wording": "Unable to <verb> <object>" for errors, no end
 // punctuation in titles.
+import { clusterRoles } from '../pages/clusters/roles';
 import { modelPath } from '../pages/models/modelUtils';
 import {
   getSectionUrl,
@@ -14,11 +18,13 @@ import {
   getSubscriptionEditUrl,
   getSubscriptionViewUrl,
 } from '../utilities/maasGovernanceNavigation';
+import type { ClusterRole } from '../api/clusters';
 import type { NotificationLink } from './useNotifications';
 import type { WriteFields } from './writeFields';
 
-export type WriteSubject = 'model' | 'subscription';
-export type WriteOp = 'create' | 'update' | 'delete';
+export type WriteSubject = 'model' | 'subscription' | 'cluster';
+/** `add` and `remove` put a cluster into AI Grid and take it out; the others are Git writes. */
+export type WriteOp = 'create' | 'update' | 'delete' | 'add' | 'remove';
 
 /** A write the notification center follows: what it changes and the name the pages show. */
 export type WriteTarget = {
@@ -35,7 +41,15 @@ export type WriteTarget = {
   clusters?: string[];
   /** For a created subscription: its organization's name, when the form had it. */
   organization?: string;
+  /**
+   * For a cluster added to AI Grid, or edited to set the role it lacked: that role, whose
+   * installation the notification center then follows. A cluster edit without one changed only
+   * the location label.
+   */
+  role?: ClusterRole;
 };
+
+const clusterPath = (name: string) => `/clusters/${encodeURIComponent(name)}`;
 
 const subjects: Record<
   WriteSubject,
@@ -69,6 +83,17 @@ const subjects: Record<
     edit: getSubscriptionEditUrl,
     createPath: getSubscriptionCreateUrl(),
     createAction: 'Create subscription',
+  },
+  // A cluster is edited in a dialog on its page, and added to AI Grid from the Clusters list.
+  cluster: {
+    object: 'cluster',
+    Object: 'Cluster',
+    list: 'Clusters',
+    listPath: '/clusters',
+    view: clusterPath,
+    edit: clusterPath,
+    createPath: '/clusters',
+    createAction: 'Go to Clusters',
   },
 };
 
@@ -132,6 +157,7 @@ const nextStep = (t: WriteTarget): string => {
 
 /** The write is confirmed: saved to Git (or deleted from it), on the fast path and the read-back alike. */
 export const succeededText = (t: WriteTarget): Text => {
+  if (t.subject === 'cluster') return clusterSavedText(t);
   const s = subjects[t.subject];
   const title =
     t.op === 'delete'
@@ -357,4 +383,103 @@ export const subscriptionUnconfirmedText = (t: WriteTarget): Text => ({
   title: `Unable to confirm subscription ${t.name} is active`,
   message: unreadStatus('subscription'),
   actions: [viewAction(t)],
+});
+
+/**
+ * How long a cluster is watched after it is added to AI Grid or given a role, until it is
+ * provisioned, and after it is removed, until it has left: an OpenShift AI installation takes a
+ * while.
+ */
+export const CLUSTER_MINUTES = 60;
+
+const viewCluster = (t: WriteTarget): NotificationLink => ({ title: 'View cluster', to: clusterPath(t.id) });
+
+const roleLabel = (role: ClusterRole) => clusterRoles.find((r) => r.value === role)?.label ?? role;
+
+/**
+ * A cluster's write, answered by the backend: added to AI Grid, removed from it, or edited (the
+ * role it lacked set, or only its location label changed). What the hub then does is followed
+ * after an add, a role set and a remove (clusterProvisionedText, clusterLeftText); a location label
+ * changes nothing on the cluster.
+ */
+export const clusterSavedText = (t: WriteTarget): Text => {
+  if (t.op === 'remove') {
+    return {
+      title: `Cluster ${t.name} removed from AI Grid`,
+      message: "You'll be notified when the hub no longer includes it in AI Grid.",
+      actions: [viewCluster(t)],
+    };
+  }
+  const message = t.role
+    ? `The hub is installing what its ${roleLabel(t.role)} role needs. You'll be notified when it's provisioned.`
+    : undefined;
+  return {
+    title: t.op === 'add' ? `Cluster ${t.name} added to AI Grid` : `Changes to cluster ${t.name} saved`,
+    ...(message ? { message } : {}),
+    actions: [viewCluster(t)],
+  };
+};
+
+/** When the watch of a cluster began, in words: "it was added to AI Grid". */
+const clusterSince = (t: WriteTarget) =>
+  t.op === 'remove' ? 'it was removed from AI Grid' : t.op === 'add' ? 'it was added to AI Grid' : 'its role was set';
+
+const OUTSIDE_THE_CHECK =
+  "Whether users can reach models through it depends on MaaS, which the hub's check doesn't cover.";
+
+/**
+ * A cluster the hub reports provisioned: its ready check passed, which confirms OpenShift AI on the
+ * cluster and never MaaS. So an Inference or Combined cluster can serve models (the deploy wizard
+ * offers a provisioned one), and for an Ingress or Combined one the words don't claim that users
+ * can reach models through it.
+ */
+export const clusterProvisionedText = (t: WriteTarget): Text => {
+  const ready = 'The hub reports OpenShift AI ready on it';
+  const message =
+    t.role === 'inference'
+      ? `${ready}. You can select it when you deploy a model.`
+      : t.role === 'combined'
+        ? `${ready}, and you can select it when you deploy a model. ${OUTSIDE_THE_CHECK}`
+        : t.role === 'ingress'
+          ? `${ready}. ${OUTSIDE_THE_CHECK}`
+          : `${ready}.`;
+  return { title: `Cluster ${t.name} is provisioned`, message, actions: [viewCluster(t)] };
+};
+
+/** A cluster still not provisioned after CLUSTER_MINUTES: a warning, as it may still finish. */
+export const clusterNotProvisionedText = (t: WriteTarget): Text => ({
+  title: `Cluster ${t.name} isn't provisioned yet`,
+  message: `It isn't provisioned ${CLUSTER_MINUTES} minutes after ${clusterSince(t)}. Open the cluster to check its status.`,
+  actions: [viewCluster(t)],
+});
+
+/** What a cluster's watch says when its last read failed: nothing about the status it couldn't read. */
+const clusterUnreadStatus = (t: WriteTarget) =>
+  `The console couldn't read its status ${CLUSTER_MINUTES} minutes after ${clusterSince(t)}. Open the cluster to check its status.`;
+
+/** A cluster's provisioning watch reached CLUSTER_MINUTES with its last read failed. */
+export const clusterProvisionedUnconfirmedText = (t: WriteTarget): Text => ({
+  title: `Unable to confirm cluster ${t.name} is provisioned`,
+  message: clusterUnreadStatus(t),
+  actions: [viewCluster(t)],
+});
+
+/** A removed cluster that the hub no longer includes in AI Grid. */
+export const clusterLeftText = (t: WriteTarget): Text => ({
+  title: `Cluster ${t.name} left AI Grid`,
+  actions: [viewCluster(t)],
+});
+
+/** A removed cluster that the hub still includes after CLUSTER_MINUTES: a warning. */
+export const clusterNotLeftText = (t: WriteTarget): Text => ({
+  title: `Cluster ${t.name} hasn't left AI Grid yet`,
+  message: `The hub still includes it in AI Grid ${CLUSTER_MINUTES} minutes after it was removed. Open the cluster to check its status.`,
+  actions: [viewCluster(t)],
+});
+
+/** A removed cluster's watch reached CLUSTER_MINUTES with its last read failed. */
+export const clusterLeftUnconfirmedText = (t: WriteTarget): Text => ({
+  title: `Unable to confirm cluster ${t.name} left AI Grid`,
+  message: clusterUnreadStatus(t),
+  actions: [viewCluster(t)],
 });

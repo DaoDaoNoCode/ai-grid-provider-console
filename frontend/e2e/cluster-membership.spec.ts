@@ -23,11 +23,21 @@ test('adds an enrollable cluster to the AI Grid, keeps it after a reload, and re
   await add.getByRole('combobox', { name: 'Role' }).click();
   await page.getByRole('option', { name: /^Inference/ }).click();
   await add.getByRole('button', { name: 'Add to AI Grid' }).click();
-  await expect(page.getByText(`${ENROLLABLE} added to AI Grid`)).toBeVisible();
+  await expect(page.getByText(`Cluster ${ENROLLABLE} added to AI Grid`)).toBeVisible();
+  await expect(
+    page.getByText("The hub is installing what its Inference role needs. You'll be notified when it's provisioned."),
+  ).toBeVisible();
 
-  // A member the hub hasn't provisioned yet (the fixture's ai-grid/provisioned is "false").
+  // A member the hub hasn't provisioned yet (the fixture's ai-grid/provisioned is "false", which
+  // the fake hub's ready check reports NonCompliant for good, so the watch never says provisioned).
   await page.reload();
   await expect(row).toContainText('Provisioning');
+  // The notification survives the reload, kept in the tab.
+  await page.getByRole('button', { name: 'Notifications', exact: true }).click();
+  await expect(page.getByRole('list', { name: 'Notifications' })).toContainText(
+    `Cluster ${ENROLLABLE} added to AI Grid`,
+  );
+  await page.getByRole('button', { name: 'Notifications', exact: true }).click();
 
   // The name opens the cluster's details page, with what the hub reports about it.
   await row.getByRole('link', { name: ENROLLABLE, exact: true }).click();
@@ -45,6 +55,10 @@ test('adds an enrollable cluster to the AI Grid, keeps it after a reload, and re
   const remove = page.getByRole('dialog', { name: `Remove ${ENROLLABLE} from AI Grid?` });
   await remove.getByRole('textbox', { name: `Type ${ENROLLABLE} to confirm:` }).fill(ENROLLABLE);
   await remove.getByRole('button', { name: 'Remove', exact: true }).click();
-  await expect(page.getByText(`${ENROLLABLE} removed from AI Grid`)).toBeVisible();
+  await expect(page.getByText(`Cluster ${ENROLLABLE} removed from AI Grid`)).toBeVisible();
   await expect(page.getByTestId('cluster-membership')).toContainText('Not added');
+  // The fake hub's ready check stops listing a cluster as soon as it leaves, so the watch's first
+  // read finds it gone; it arrives after the click, so unread.
+  await expect(page.getByText(`Cluster ${ENROLLABLE} left AI Grid`)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Notifications, 1 unread' })).toBeVisible();
 });

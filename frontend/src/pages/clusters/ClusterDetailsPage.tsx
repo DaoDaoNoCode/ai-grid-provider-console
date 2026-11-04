@@ -16,7 +16,7 @@ import {
 import { SubtleText } from '../../components/SubtleText';
 import { ExternalLinkAltIcon } from '@patternfly/react-icons';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import type { GridMembership } from '../../api/clusters';
 import type { ClusterGPUs, GPUNode } from '../../gen/ai_grid/v1/managed_cluster_type_pb';
 import { DetailsList } from '../../components/DetailsList';
@@ -27,6 +27,7 @@ import { RelativeTime } from '../../components/RelativeTime';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
 import { StatusLabel } from '../../components/StatusLabel';
 import { useConsoleSession } from '../../context/useConsoleSession';
+import { useBackgroundWrites } from '../../notifications/useBackgroundWrites';
 import { EMPTY_VALUE } from '../../utilities/format';
 import { formatCores, formatGiB } from '../../utilities/quantity';
 import { gpuCount, membershipActions } from './clusterInfo';
@@ -41,7 +42,7 @@ import {
 } from './gpuText';
 import type { MembershipChange } from './MembershipModal';
 import { MembershipModal } from './MembershipModal';
-import { changeMembership, editCluster } from './changeMembership';
+import { changeMembership, editCluster, editTarget, membershipTarget } from './changeMembership';
 import { EditClusterModal } from './EditClusterModal';
 import { editText } from './editClusterText';
 import { MissingLabel } from './MissingLabel';
@@ -312,7 +313,7 @@ const Section: React.FC<{ title: string; help?: React.ReactNode; children: React
 /** A cluster at /clusters/:name: its AI Grid membership, what the hub knows about it, and its health. */
 export const ClusterDetailsPage: React.FC = () => {
   const { name = '' } = useParams();
-  const navigate = useNavigate();
+  const { followWrite } = useBackgroundWrites();
   const { data: loadedCluster, loaded, error, refresh } = useCluster(name);
   const writes = useMembershipWrites();
   const { user } = useConsoleSession();
@@ -334,9 +335,11 @@ export const ClusterDetailsPage: React.FC = () => {
     });
   };
 
-  /** Adds the cluster to AI Grid or removes it, then reloads it; throws for the modal to show. */
+  /**
+   * Adds the cluster to AI Grid or removes it, then reloads it; throws for the modal to show. The
+   * notification center says it was done and follows what the hub does next.
+   */
   const applyChange = async (change: MembershipChange, membership?: GridMembership) => {
-    const { join } = change;
     // A 409 loads the cluster again into the open dialog, as on the Clusters list.
     const updated = await changeMembership(writes, change, membership, {
       reload: writes.loadCluster,
@@ -349,15 +352,14 @@ export const ClusterDetailsPage: React.FC = () => {
     });
     setConfirmed(updated);
     setChange(undefined);
-    // Replace, so the notice doesn't add a second entry for this page to the browser's history.
-    navigate('.', {
-      replace: true,
-      state: { notice: `${updated.name} ${join ? 'added to' : 'removed from'} AI Grid` },
-    });
+    followWrite(membershipTarget(updated.name, membership));
     reload();
   };
 
-  /** Saves the cluster's edited labels, then reloads it; throws for the modal to show. */
+  /**
+   * Saves the cluster's edited labels, then reloads it; throws for the modal to show. The
+   * notification center says they were saved, and follows the provisioning a role set starts.
+   */
   const applyEdit = async (edited: ClusterView, labels: Record<string, string>) => {
     // A 409 loads the cluster again into the open dialog, as on the Clusters list.
     const updated = await editCluster(writes, edited, labels, {
@@ -369,7 +371,7 @@ export const ClusterDetailsPage: React.FC = () => {
     });
     setConfirmed(updated);
     setEditing(undefined);
-    navigate('.', { replace: true, state: { notice: editText.updated(updated.name) } });
+    followWrite(editTarget(edited, labels));
     reload();
   };
 
