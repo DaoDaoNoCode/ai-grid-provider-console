@@ -104,8 +104,9 @@ export const MembershipModal: React.FC<Props> = ({ cluster, join, onConfirm, onC
           )}
           {/* Every cluster but the hub's own also leaves the cross-cluster network (Submariner):
               ai-grid-env-setup's network Placement selects local-cluster plus the members.
-              A model deployed from the Models page (a ManifestWorkReplicaSet) is removed with the
-              cluster's ManifestWork; models delivered by env-setup's GitOps apps stay. */}
+              Models stay running: the hub deletes the cluster's model application with
+              preserveResourcesOnDeletion, as it does the OpenShift AI one, so AI Grid only stops
+              managing them (ai-grid-cluster-gitops' catalog ApplicationSets). */}
           <p>
             {cluster.name === 'local-cluster'
               ? 'AI Grid stops managing this cluster, and models are no longer deployed to it.'
