@@ -4,9 +4,11 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import { useEffect } from 'react';
 import { create } from '@bufbuild/protobuf';
 import { Code, ConnectError } from '@connectrpc/connect';
+import { useQuery } from '@connectrpc/connect-query';
 import { BackendProvider } from '../api/connect/BackendProvider';
 import { fakeClients } from '../api/connect/testing';
-import { ModelPhase, ModelSchema } from '../gen/ai_grid/v1/model_type_pb';
+import { ModelClusterStatusSchema, ModelPhase, ModelSchema } from '../gen/ai_grid/v1/model_type_pb';
+import { list as listModels } from '../gen/ai_grid/v1/models_service-Models_connectquery';
 import { memoryStorage } from '../__tests__/memoryStorage';
 import { deferred } from '../__tests__/render';
 import { BackgroundWritesProvider } from './BackgroundWritesProvider';
@@ -196,4 +198,72 @@ it('watches a deployed model once, whatever earlier watch of the same id still r
     JSON.parse(storage.values.get(watchesKey('dev-user')) ?? '[]') as { id: string; stage: string }[]
   ).filter((r) => r.stage === 'ready' && r.id === 'widget');
   expect(ready).toHaveLength(1);
+});
+
+/** The Models list as a page shows it, without a poll of its own: it refetches only when told to. */
+const SiteBStatus: React.FC = () => {
+  const { data } = useQuery(listModels, {});
+  const widget = data?.items.find((m) => m.id === 'widget');
+  const siteB = widget?.status?.clusters.find((c) => c.cluster === 'site-b');
+  return <p>{`site-b ${siteB?.phase === ModelPhase.READY ? 'ready' : 'pending'}`}</p>;
+};
+
+it('refreshes the lists when a readiness watch sees the status change, and not on a poll that sees none', async () => {
+  vi.useFakeTimers();
+  try {
+    let model = pendingOnSiteB();
+    let listCalls = 0;
+    const { transport } = fakeClients({
+      models: {
+        get: () => ({ object: model }),
+        list: () => {
+          listCalls += 1;
+          return { items: [model], size: 1, total: 1 };
+        },
+      },
+    });
+    const storage = memoryStorage({ [watchesKey('dev-user')]: JSON.stringify([readyRecord(Date.now())]) });
+    render(
+      <BackendProvider transport={transport} checkSession={() => undefined}>
+        <NotificationsProvider storage={storage.get} owner="dev-user">
+          <NotificationWatcherProvider>
+            <BackgroundWritesProvider storage={storage.get} owner="dev-user">
+              <SiteBStatus />
+              <Titles />
+            </BackgroundWritesProvider>
+          </NotificationWatcherProvider>
+        </NotificationsProvider>
+      </BackendProvider>,
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByText('site-b pending')).toBeInTheDocument();
+    expect(listCalls).toBe(1);
+
+    // A poll that sees the same status leaves the list alone.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(READY_POLL_MS);
+    });
+    expect(listCalls).toBe(1);
+
+    // site-b becomes ready (the whole model stays Pending, as an ingress cluster keeps it): the
+    // watch says so, and the list shows it at once.
+    model = pendingOnSiteB();
+    model.status!.clusters = [
+      create(ModelClusterStatusSchema, { cluster: 'site-b', phase: ModelPhase.READY, reason: 'Ready' }),
+    ];
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(READY_POLL_MS);
+    });
+    expect(screen.getByText('Model Widget is ready on site-b')).toBeInTheDocument();
+    // The refetch the watch asked for settles (the watch has ended: no poll of its own is left).
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+    expect(screen.getByText('site-b ready')).toBeInTheDocument();
+    expect(listCalls).toBe(2);
+  } finally {
+    vi.useRealTimers();
+  }
 });

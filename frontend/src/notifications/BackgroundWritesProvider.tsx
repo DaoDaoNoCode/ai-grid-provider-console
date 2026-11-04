@@ -24,7 +24,14 @@ import { useNotifications } from './useNotifications';
 import { NotificationResponseStatus, useNotificationWatcher } from './useNotificationWatcher';
 import { modelFields, subscriptionFields } from './writeFields';
 import { failedText, pendingText, succeededText, type WriteTarget } from './writeText';
-import { READBACK_POLL_MS, READY_POLL_MS, readBack, watchReady, type ReadObject } from './writeWatches';
+import {
+  READBACK_POLL_MS,
+  READY_POLL_MS,
+  readBack,
+  watchReady,
+  type ReadAnswer,
+  type ReadObject,
+} from './writeWatches';
 
 /**
  * How long a form waits for a write's answer before the notification center takes it over. Long
@@ -82,6 +89,12 @@ const isDraft = (value: unknown): value is WriteDraft =>
   typeof value.error === 'string' &&
   value.values !== undefined;
 
+/** A model's status as a readiness watch compares it: its phase and each cluster's; gone when it is. */
+const statusOf = (answer: ReadAnswer | undefined) =>
+  answer?.model
+    ? JSON.stringify([answer.model.phase, answer.model.clusters.map((c) => [c.cluster, c.phase, c.reason])])
+    : 'gone';
+
 let counter = 0;
 const newKey = () => `${Date.now().toString(36)}-${(counter++).toString(36)}`;
 
@@ -120,6 +133,8 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
   // The watches registered with the watcher, and the writes whose answer this page still awaits.
   // Sets that live as long as the provider, so an effect's cleanup reads the same ones.
   const registered = useRef(new Set<string>());
+  // Each readiness watch's last seen status (statusOf), to refresh the pages only on a change.
+  const lastStatus = useRef(new Map<string, string>());
   const inFlight = useRef(new Set<string>());
 
   const save = useCallback(() => {
@@ -197,9 +212,33 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
         notificationId,
         callbackDelay: stage === 'ready' ? READY_POLL_MS : READBACK_POLL_MS,
         callback: async (signal) => {
+          // What this poll read, to tell whether the object changed since the last one.
+          const seen: { answered: boolean; answer?: ReadAnswer } = { answered: false };
+          const observe: ReadObject = async (subject, id) => {
+            const answer = await read(subject, id);
+            seen.answered = true;
+            seen.answer = answer;
+            return answer;
+          };
           const response =
-            stage === 'ready' ? await watchReady(target, since, read, now) : await readBack(target, since, read, now);
-          if (!signal.aborted && response.status !== NotificationResponseStatus.REPOLL) {
+            stage === 'ready'
+              ? await watchReady(target, since, observe, now)
+              : await readBack(target, since, observe, now);
+          if (signal.aborted) return response;
+          const final = response.status !== NotificationResponseStatus.REPOLL;
+          // A readiness watch that sees the model's status change (its phase, or any cluster's) has
+          // every page showing it refetch at once, rather than on its next poll; so does any watch
+          // that ends. A poll that sees no change refetches nothing.
+          let changed = false;
+          if (stage === 'ready' && seen.answered) {
+            const status = statusOf(seen.answer);
+            const before = lastStatus.current.get(key);
+            changed = before !== undefined && before !== status;
+            lastStatus.current.set(key, status);
+          }
+          if (final || changed) refreshFn(target.subject);
+          if (final) {
+            lastStatus.current.delete(key);
             registered.current.delete(key);
             drop(key);
             if (response.status === NotificationResponseStatus.SUCCESS && stage !== 'ready') {
@@ -216,8 +255,7 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
      * deployment's Ready would read as the edit's.
      */
     function landedFn(target: WriteTarget) {
-      const schema = target.subject === 'model' ? Models : Subscriptions;
-      void queryClient.invalidateQueries({ queryKey: createConnectQueryKey({ schema, cardinality: undefined }) });
+      refreshFn(target.subject);
       if (target.subject === 'model' && target.op === 'create') {
         // One readiness watch per model: a deploy of an id deleted and deployed again within the
         // first's 30 minutes replaces the first, so "ready" is said once.
@@ -230,6 +268,11 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
         }
         startWatchFn({ ...target, key: newKey(), stage: 'ready', since: now() });
       }
+    }
+    /** Every page showing objects of this kind refetches them: the lists and each one's Get. */
+    function refreshFn(subject: WriteTarget['subject']) {
+      const schema = subject === 'model' ? Models : Subscriptions;
+      void queryClient.invalidateQueries({ queryKey: createConnectQueryKey({ schema, cardinality: undefined }) });
     }
     return { startWatch: startWatchFn, landed: landedFn };
   }, [keep, drop, read, now, registerNotification, unregisterNotification, queryClient]);
