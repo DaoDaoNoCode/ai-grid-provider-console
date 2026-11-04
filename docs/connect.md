@@ -382,7 +382,10 @@ subscription) are sent from the app root, never from the form (`frontend/src/not
   phase or its policy's), and when any watch ends. A poll that sees no change refetches nothing.
 - The watches and the notifications are kept in the browser tab's session storage under the
   signed-in user (`storageKeys.ts`), so a reload resumes them: a write's record is kept before its
-  request goes out, and one whose answer the page no longer awaits is read back. When another user
+  request goes out, and one whose answer the page no longer awaits is read back. A watch's outcome
+  is in storage before its record leaves it (`notify` writes storage at once), under an id that is
+  the same for every run of the watch, so a reload between the two resumes the watch, which comes
+  to the same outcome and replaces the entry: never lost, never said twice. When another user
   signs in to the tab, the previous user's records stop and leave it. They belong to that tab
   only: another tab, browser or admin sees none of them.
 

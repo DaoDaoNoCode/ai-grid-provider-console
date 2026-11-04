@@ -674,6 +674,54 @@ describe('a subscription watch', () => {
     expect(subscriptionWatches(storage)).toEqual([]);
   });
 
+  it('keeps its outcome through a reload at any point of its last step, and says it once', async () => {
+    // A storage that copies itself after every write while armed: each copy is what a reload
+    // right after that write would find.
+    const base = memoryStorage({ [watchesKey('dev-user')]: JSON.stringify([activeRecord(Date.now())]) });
+    const snapshots: Record<string, string>[] = [];
+    let armed = false;
+    const inner = base.get();
+    const recorded = (write: () => void) => {
+      write();
+      if (armed) snapshots.push(Object.fromEntries(base.values));
+    };
+    const storage: Storage = {
+      get length() {
+        return inner.length;
+      },
+      clear: () => inner.clear(),
+      getItem: (key) => inner.getItem(key),
+      key: (index) => inner.key(index),
+      removeItem: (key) => recorded(() => inner.removeItem(key)),
+      setItem: (key, value) => recorded(() => inner.setItem(key, value)),
+    };
+    const first = subscribing([], {
+      storage: { get: () => storage, values: base.values },
+      state: { answer: teamA('Pending'), gone: false, gets: 0, lists: 0 },
+    });
+    await pass(0);
+    armed = true;
+    first.state.answer = teamA('Active');
+    await pass(READY_POLL_MS);
+    await pass(1);
+    armed = false;
+    expect(screen.getAllByText('Subscription Team A is active')).toHaveLength(1);
+    first.unmount();
+    expect(snapshots.length).toBeGreaterThan(1);
+
+    for (const snapshot of snapshots) {
+      const reloaded = subscribing([], {
+        storage: memoryStorage(snapshot),
+        state: { answer: teamA('Active'), gone: false, gets: 0, lists: 0 },
+      });
+      await pass(0);
+      await pass(READY_POLL_MS);
+      expect(screen.getAllByText('Subscription Team A is active')).toHaveLength(1);
+      expect(subscriptionWatches(reloaded.storage)).toEqual([]);
+      reloaded.unmount();
+    }
+  });
+
   it('watches a subscription once, whatever earlier watch of the id still runs, apart from a model of the same id', async () => {
     const modelOfTheSameId = { ...readyRecord(Date.now()), key: 'm1', id: 'team-a' };
     const { storage } = subscribing([activeRecord(Date.now()), modelOfTheSameId]);

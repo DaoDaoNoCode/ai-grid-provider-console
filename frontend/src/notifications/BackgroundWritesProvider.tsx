@@ -81,6 +81,19 @@ type WatchRecord = WriteTarget & {
   edit?: { name: string; since: number };
 };
 
+/**
+ * The id of a watch's outcome in the notification center when it has no in-progress entry to
+ * replace: the same for every run of the watch (its kind, stage, object and start), so an outcome
+ * reached again after a reload replaces the first rather than adding a second.
+ */
+const outcomeId = (record: WatchRecord) => `watch:${record.subject}:${record.stage}:${record.id}:${record.since}`;
+
+const outcomeVariants = {
+  [NotificationResponseStatus.SUCCESS]: 'success',
+  [NotificationResponseStatus.ERROR]: 'danger',
+  [NotificationResponseStatus.WARNING]: 'warning',
+} as const;
+
 /** The write a record follows, without the record's own bookkeeping. */
 const targetOf = ({ subject, op, id, name, version, expected, clusters, organization }: WatchRecord): WriteTarget => ({
   subject,
@@ -319,6 +332,19 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
           }
           if (final || changed) refreshFn(target.subject);
           if (final) {
+            // The outcome goes to the notification center, which keeps it in storage at once,
+            // before the watch's record goes: a reload in between resumes the watch, which comes to
+            // the same outcome and replaces this entry (the same id), rather than losing both. The
+            // watcher is then told to stop, so it raises nothing of its own.
+            if (response.status !== NotificationResponseStatus.STOP) {
+              notify({
+                id: notificationId ?? outcomeId(record),
+                variant: outcomeVariants[response.status],
+                title: response.title,
+                message: response.message,
+                actions: response.actions,
+              });
+            }
             const current = records.current.find((r) => r.key === key) ?? record;
             const seenStatus = lastStatus.current.get(key);
             lastStatus.current.delete(key);
@@ -350,6 +376,7 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
             if (response.status === NotificationResponseStatus.SUCCESS && !followsStatus) {
               landedFn(target);
             }
+            return { status: NotificationResponseStatus.STOP };
           }
           return response;
         },
@@ -394,7 +421,7 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
       void queryClient.invalidateQueries({ queryKey: createConnectQueryKey({ schema, cardinality: undefined }) });
     }
     return { startWatch: startWatchFn, landed: landedFn };
-  }, [keep, drop, read, now, registerNotification, unregisterNotification, queryClient]);
+  }, [keep, drop, read, now, notify, registerNotification, unregisterNotification, queryClient]);
 
   // Storage is read once per user: when the user is first known (a reload resumes that user's
   // watches) and when it changes (the previous user's watches stop and leave the tab). Every run,
