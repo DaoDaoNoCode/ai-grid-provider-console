@@ -226,6 +226,13 @@ got="$(idp_ns_env <<<"${off}")$(yq 'select(.metadata.namespace == "ai-grid-idp-s
 [[ -z "${got}" ]] || { echo "check-chart: backend.idpSecrets.enabled=false still renders: ${got}" >&2; exit 1; }
 refused "backend.idpSecrets.namespace=Not_A_Namespace" --set-string backend.idpSecrets.namespace=Not_A_Namespace
 refused "backend.idpSecrets.namespace empty" --set-string backend.idpSecrets.namespace=
+# The backend can get every Secret in that namespace, so it must not be the console's own.
+if out="$(helm template console "${CHART}" -n ai-grid --set backend.idpSecrets.namespace=ai-grid \
+  --set backend.idpSecrets.createNamespace=false 2>&1 >/dev/null)" ||
+  ! grep -q 'backend.idpSecrets.namespace must not be the release namespace "ai-grid"' <<<"${out}"; then
+  echo "check-chart: backend.idpSecrets.namespace equal to the release namespace must fail the render: ${out}" >&2
+  exit 1
+fi
 refused "authProxy.upstreamTimeout=65" --set-string authProxy.upstreamTimeout=65
 
 echo "check-chart: lint passes; the chart's defaults render manifests/base"
