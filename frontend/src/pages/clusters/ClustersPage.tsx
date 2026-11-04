@@ -5,6 +5,10 @@ import {
   DescriptionListDescription,
   DescriptionListGroup,
   DescriptionListTerm,
+  Modal,
+  ModalBody,
+  ModalHeader,
+  Stack,
   ToolbarItem,
 } from '@patternfly/react-core';
 import { CubesIcon } from '@patternfly/react-icons';
@@ -172,6 +176,7 @@ export const ClustersPage: React.FC = () => {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<{ index: number; direction: 'asc' | 'desc' }>({ index: 0, direction: 'asc' });
   const [change, setChange] = useState<MembershipChange>();
+  const [statusClusterName, setStatusClusterName] = useState<string>();
   // The AI Grid cluster whose Edit dialog is open.
   const [editing, setEditing] = useState<ClusterView>();
   // Clusters as the backend returned them from Add, Remove or Edit, with their new labels (role and
@@ -179,6 +184,10 @@ export const ClustersPage: React.FC = () => {
   // answers. A poll that answers in between can't bring back the row from before the change.
   const [confirmed, setConfirmed] = useState<Map<string, ClusterView>>(new Map());
   const lastReload = useRef(0);
+  const statusCluster = statusClusterName
+    ? (confirmed.get(statusClusterName) ?? clusters.find((cluster) => cluster.name === statusClusterName))
+    : undefined;
+  if (statusClusterName && !statusCluster?.statusMessage?.trim()) setStatusClusterName(undefined);
 
   const rows = useMemo(() => {
     const term = search.toLowerCase();
@@ -315,7 +324,13 @@ export const ClustersPage: React.FC = () => {
                           <Link to={`/clusters/${encodeURIComponent(c.name)}`}>{c.name}</Link>
                         </Td>
                         <Td dataLabel="Cluster status">
-                          <StatusLabel isCompact status={c.status} reason={statusReason(c)} />
+                          <StatusLabel
+                            isCompact
+                            status={c.status}
+                            reason={statusReason(c)}
+                            onClick={c.statusMessage?.trim() ? () => setStatusClusterName(c.name) : undefined}
+                            screenReaderSuffix={c.statusMessage?.trim() ? ` for ${c.name}` : undefined}
+                          />
                         </Td>
                         <Td dataLabel="Site">
                           <ClusterSite cluster={c} testId={`cluster-site-${c.name}`} />
@@ -376,6 +391,23 @@ export const ClustersPage: React.FC = () => {
       >
         {body()}
       </PageStateSection>
+      {statusCluster?.statusMessage?.trim() && (
+        <Modal
+          variant="medium"
+          isOpen
+          appendTo={() => document.body}
+          aria-label={`${statusCluster.name} status`}
+          onClose={() => setStatusClusterName(undefined)}
+        >
+          <ModalHeader title={`${statusCluster.name} status`} />
+          <ModalBody>
+            <Stack hasGutter>
+              <StatusLabel isCompact status={statusCluster.status} />
+              <p>{statusReason(statusCluster)}</p>
+            </Stack>
+          </ModalBody>
+        </Modal>
+      )}
       {change && (
         <MembershipModal
           {...change}
