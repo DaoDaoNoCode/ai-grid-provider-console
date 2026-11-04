@@ -15,6 +15,7 @@ import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 import { Code, ConnectError } from '@connectrpc/connect';
 import { focusManager } from '@tanstack/react-query';
 import { ServiceError } from '../api/ConsoleService';
+import type { Organization } from '../api/types';
 import { MockConsoleService } from '../api/MockConsoleService';
 import { ConditionStatus } from '../gen/ai_grid/v1/condition_type_pb';
 import { SubscriptionSchema, type Subscription } from '../gen/ai_grid/v1/subscription_type_pb';
@@ -137,7 +138,7 @@ describe('administrator subscription flows', () => {
     expect(screen.getByTestId('subscription-models-table')).toHaveTextContent('Ready');
   });
 
-  it("expands a row's models, with their locations and token limits, or its groups, one at a time", async () => {
+  it("expands a row's models, with their clusters and token limits, or its groups, one at a time", async () => {
     const user = userEvent.setup();
     renderAt('/subscriptions', seeded());
     const table = await screen.findByTestId('subscriptions-table');
@@ -152,11 +153,13 @@ describe('administrator subscription flows', () => {
     // The display name the backend joined to the ref (SubscriptionModelRef.display_name).
     expect(model).toHaveTextContent('Granite 3.3 8B Instruct');
     expect(model).toHaveTextContent('granite-3-8b');
-    // Where the model's placement put it (its locations), named by its site as on the Models page,
-    // and every limit on one line.
-    expect(within(model).getByTestId('expanded-subscription-model-locations')).toHaveTextContent(
-      'San Francisco (site1)',
-    );
+    // The clusters the model's placement chose, by name, and every limit on one line.
+    expect(
+      within(models)
+        .getAllByRole('columnheader')
+        .map((h) => h.textContent),
+    ).toEqual(['Model name', 'Clusters', 'Token limits']);
+    expect(within(model).getByTestId('expanded-subscription-model-clusters')).toHaveTextContent(/^site1$/);
     expect(within(model).getByTestId('expanded-subscription-model-token-limits')).toHaveTextContent(
       '100,000 / 1 hour, 10,000 / 1 minute',
     );
@@ -178,7 +181,25 @@ describe('administrator subscription flows', () => {
     expect(screen.queryByTestId('subscription-groups-expanded-panel')).not.toBeInTheDocument();
   });
 
-  it('shows a ref the backend joined to no model without locations, and an unlimited model as Unlimited', async () => {
+  it('lists the clusters a model is deployed to by name, not their location labels', async () => {
+    const user = userEvent.setup();
+    const service = seeded();
+    // The model's status names two clusters but one location label value: the cell must show the clusters.
+    const granite = fleetOf(service).find('granite-3-8b');
+    granite.status!.placement!.selectedClusters = ['site1', 'site2'];
+    granite.status!.placement!.locations = ['us-east'];
+    renderAt('/subscriptions', service);
+    const table = await screen.findByTestId('subscriptions-table');
+    const row = within(table).getByRole('link', { name: 'Engineering' }).closest('tr')!;
+    await user.click(within(within(row).getByTestId('subscription-models')).getByRole('button', { name: '1' }));
+    const cell = within(screen.getByTestId('subscription-models-expanded-panel')).getByTestId(
+      'expanded-subscription-model-clusters',
+    );
+    expect(cell).toHaveTextContent('site1site2');
+    expect(cell).not.toHaveTextContent('us-east');
+  });
+
+  it('shows a ref the backend joined to no model without clusters, and an unlimited model as Unlimited', async () => {
     const user = userEvent.setup();
     const service = seeded();
     const seed = stored(service, 'engineering');
@@ -195,7 +216,7 @@ describe('administrator subscription flows', () => {
     );
     expect(within(granite).getByTestId('expanded-subscription-model-token-limits')).toHaveTextContent('Unlimited');
     expect(retired).toHaveTextContent('retired-llm');
-    expect(within(retired).getByTestId('expanded-subscription-model-locations')).toHaveTextContent('—');
+    expect(within(retired).getByTestId('expanded-subscription-model-clusters')).toHaveTextContent('—');
     expect(within(retired).queryByRole('button', { name: /^About/ })).not.toBeInTheDocument();
   });
 
@@ -309,12 +330,12 @@ describe('administrator subscription flows', () => {
     const table = await screen.findByTestId('subscriptions-table');
     const row = within(table).getByRole('link', { name: 'Engineering' }).closest('tr')!;
     await user.click(within(within(row).getByTestId('subscription-models')).getByRole('button'));
-    expect(screen.getByTestId('expanded-subscription-model-locations')).toHaveTextContent('Loading locations');
+    expect(screen.getByTestId('expanded-subscription-model-clusters')).toHaveTextContent('Loading clusters');
 
     act(() => fail(new ConnectError('backend down', Code.Unavailable)));
     expect(await screen.findByTestId('subscriptions-models-unavailable')).toHaveTextContent('Unable to load models');
-    expect(screen.getByTestId('expanded-subscription-model-locations')).toHaveTextContent(/^—$/);
-    await user.hover(within(screen.getByTestId('expanded-subscription-model-locations')).getByText('—'));
+    expect(screen.getByTestId('expanded-subscription-model-clusters')).toHaveTextContent(/^—$/);
+    await user.hover(within(screen.getByTestId('expanded-subscription-model-clusters')).getByText('—'));
     expect(await screen.findByRole('tooltip')).toHaveTextContent('Unable to load models.');
     // The ref's own name still filters.
     await user.click(screen.getByTestId('subscriptions-filter-attribute'));
@@ -353,7 +374,7 @@ describe('administrator subscription flows', () => {
     await user.click(screen.getByTestId('create-subscription-button'));
     await screen.findByTestId('subscriptions-table');
     expect(await screen.findByRole('link', { name: 'Test team' })).toBeVisible();
-    expect(await screen.findByText('Subscription created')).toBeVisible();
+    expect(await screen.findByText('Subscription Test team saved to Git')).toBeVisible();
     // Subscriptions/Create: the id, the display name annotation, the organization, bare groups,
     // and the model by its id with no namespace (SubscriptionModelRef.model_id).
     const [{ object }] = subscriptionsOf(service).sent('create');
@@ -428,7 +449,7 @@ describe('administrator subscription flows', () => {
     await user.click(within(modal).getByRole('button', { name: 'Delete' }));
     await screen.findByTestId('subscriptions-table');
     await waitFor(() => expect(screen.queryByRole('link', { name: 'Engineering' })).not.toBeInTheDocument());
-    expect(await screen.findByText('Subscription deleted')).toBeVisible();
+    expect(await screen.findByText('Subscription Engineering deleted from Git')).toBeVisible();
     // The delete sends the version read (zero would skip the backend's check).
     expect(subscriptionsOf(service).sent('delete').at(-1)).toMatchObject({ id: 'engineering', resourceVersion: 1 });
   });
@@ -555,11 +576,11 @@ it('requires an organization and shows it in the table', async () => {
   expect(create).toBeDisabled();
   // Tabbing past the empty select says why Create is disabled.
   const organization = screen.getByRole('combobox', { name: 'Organization' });
-  expect(screen.queryByText('Select an organization')).not.toBeInTheDocument();
+  expect(screen.queryByText('Select an organization.')).not.toBeInTheDocument();
   organization.focus();
   await user.tab();
   expect(organization).toHaveAttribute('aria-invalid', 'true');
-  expect(screen.getByText('Select an organization')).toBeVisible();
+  expect(screen.getByText('Select an organization.')).toBeVisible();
   await pickOrganization(user, 'globex-research');
   expect(organization).toHaveAttribute('aria-invalid', 'false');
   expect(screen.getByRole('combobox', { name: 'Organization' })).toHaveValue('globex-research');
@@ -571,9 +592,156 @@ it('requires an organization and shows it in the table', async () => {
   expect(within(table).getByRole('columnheader', { name: /Organization/ })).toBeVisible();
   expect(await rowOf('Test team')).toHaveTextContent('globex-research');
   expect(await rowOf('Engineering')).toHaveTextContent('acme-robotics');
-  // An organization the backend doesn't list shows its raw id.
-  expect(await rowOf('Data science')).toHaveTextContent('retired-org');
+  // An organization the backend doesn't list is marked missing, with its id and what to do in the tooltip.
+  const retired = within(await rowOf('Data science')).getByTestId('subscription-organization-missing');
+  expect(retired).toHaveTextContent(/^Organization not found$/);
+  await user.hover(retired);
+  expect(await screen.findByRole('tooltip')).toHaveTextContent(
+    'No organization has the ID retired-org. It was deleted, or created again with a new ID. The organization of a subscription can’t be changed, so delete this subscription and create it again for the organization.',
+  );
   expect(stored(service, 'test-team').spec?.organization?.id).toBe('8d2e7b31-0c4f-4a9d-b5e6-7f8a9b0c1d2e');
+});
+
+/** Sets a stored subscription's organization id. */
+const setOrganization = (service: MockConsoleService, id: string, organizationId: string) => {
+  stored(service, id).spec!.organization = { $typeName: 'ai_grid.v1.SubscriptionOrganization', id: organizationId };
+};
+
+/** Answers the next Tenants/List calls with a promise the test settles. */
+const deferOrganizations = (service: MockConsoleService) => {
+  const answer = deferred<Organization[]>();
+  const listOrganizations = vi.fn(() => answer.promise);
+  service.listOrganizations = listOrganizations;
+  return { ...answer, listOrganizations };
+};
+
+it('shows a missing organization on the subscription page and the edit form only once the organizations load', async () => {
+  const service = seeded();
+  setOrganization(service, 'data-science', 'retired-org');
+  const organizations = service.organizations;
+  const view = deferOrganizations(service);
+  const { unmount } = renderAt('/subscriptions/view/data-science', service);
+  // While the organizations load, the id stands in for the name.
+  await waitFor(() => expect(screen.getByTestId('subscription-organization')).toHaveTextContent('retired-org'));
+  expect(view.listOrganizations).toHaveBeenCalled();
+  expect(screen.queryByTestId('subscription-organization-missing')).not.toBeInTheDocument();
+  await act(async () => view.resolve(organizations));
+  expect(await screen.findByTestId('subscription-organization-missing')).toHaveTextContent(/^Organization not found$/);
+  unmount();
+
+  const edit = deferOrganizations(service);
+  renderAt('/subscriptions/edit/data-science', service);
+  const organization = await screen.findByTestId('subscription-organization');
+  expect(organization).toHaveAttribute('readonly');
+  expect(organization).toHaveValue('retired-org');
+  expect(edit.listOrganizations).toHaveBeenCalled();
+  expect(screen.queryByTestId('subscription-organization-missing')).not.toBeInTheDocument();
+  await act(async () => edit.resolve(organizations));
+  expect(
+    await screen.findByText(
+      'Organization not found. No organization has the ID retired-org. It was deleted, or created again with a new ID. The organization of a subscription can’t be changed, so delete this subscription and create it again for the organization.',
+    ),
+  ).toBeVisible();
+  expect(organization).toHaveValue('retired-org');
+});
+
+describe('organizations the console loaded before the subscription', () => {
+  const NEW_ID = '0b6f2c4e-9d1a-4e7b-8f3c-5a2d1e0f9b8c';
+
+  /** What the page shows for data-science's organization. */
+  const shownOrganization = (path: string) => {
+    if (path.startsWith('/subscriptions/edit/')) {
+      return (screen.getByTestId('subscription-organization') as HTMLInputElement).value;
+    }
+    const scope =
+      path === '/subscriptions' ? screen.getByRole('link', { name: 'Data science' }).closest('tr')! : document.body;
+    return within(scope).getByTestId('subscription-organization').textContent;
+  };
+
+  it.each([
+    ['/subscriptions', 'created since', true],
+    ['/subscriptions', 'deleted', false],
+    ['/subscriptions/view/data-science', 'created since', true],
+    ['/subscriptions/view/data-science', 'deleted', false],
+    ['/subscriptions/edit/data-science', 'created since', true],
+    ['/subscriptions/edit/data-science', 'deleted', false],
+  ])('on %s, waits for a fresh list before calling an organization missing (%s)', async (path, _, listed) => {
+    let navigate: NavigateFunction = () => undefined;
+    const Navigator = () => {
+      navigate = useNavigate();
+      return null;
+    };
+    const service = seeded();
+    render(
+      <MemoryRouter initialEntries={['/subscriptions/view/engineering']}>
+        <Navigator />
+        <TestApp service={service} />
+      </MemoryRouter>,
+    );
+    // The organizations are loaded, and cached, before the new one exists.
+    await waitFor(() => expect(screen.getByTestId('subscription-organization')).toHaveTextContent('acme-robotics'));
+    service.organizations.push({ ...service.organizations[2], id: NEW_ID, name: 'new-team' });
+    setOrganization(service, 'data-science', NEW_ID);
+    const fresh = deferOrganizations(service);
+
+    await act(async () => navigate(path));
+    // The cached list doesn't have it, and the fresh one hasn't arrived: the id, not a warning.
+    await waitFor(() => expect(shownOrganization(path)).toBe(NEW_ID));
+    expect(fresh.listOrganizations).toHaveBeenCalled();
+    expect(screen.queryByTestId('subscription-organization-missing')).not.toBeInTheDocument();
+
+    const organizations = service.organizations.filter((o) => listed || o.id !== NEW_ID);
+    await act(async () => fresh.resolve(organizations));
+    if (listed) {
+      await waitFor(() => expect(shownOrganization(path)).toBe('new-team'));
+      expect(screen.queryByTestId('subscription-organization-missing')).not.toBeInTheDocument();
+    } else {
+      expect(await screen.findByTestId('subscription-organization-missing')).toHaveTextContent(
+        /Organization not found/,
+      );
+    }
+  });
+});
+
+/** The fixture organization globex-research (MockConsoleService's seedOrganizations). */
+const GLOBEX_ID = '8d2e7b31-0c4f-4a9d-b5e6-7f8a9b0c1d2e';
+
+it('sorts the organization column by what it shows, a missing organization as Organization not found', async () => {
+  const service = seeded();
+  const globex = engineering();
+  globex.id = 'globex';
+  globex.metadata!.name = 'globex';
+  globex.metadata!.annotations[DISPLAY_NAME] = 'Globex';
+  globex.spec!.organization = { $typeName: 'ai_grid.v1.SubscriptionOrganization', id: GLOBEX_ID };
+  subscriptionsOf(service).subscriptions.push(globex);
+  // Their ids sort before and after the names shown: the label decides, the id breaks the tie.
+  setOrganization(service, 'data-science', 'zzz-retired');
+  setOrganization(service, 'research', 'aaa-retired');
+  const user = userEvent.setup();
+  renderAt('/subscriptions', service);
+  const table = await screen.findByTestId('subscriptions-table');
+  await waitFor(() => expect(within(table).getAllByTestId('subscription-organization-missing')).toHaveLength(2));
+  const names = () =>
+    within(table)
+      .getAllByRole('link')
+      .map((link) => link.textContent);
+  const sortButton = within(within(table).getByRole('columnheader', { name: /^Organization/ })).getByRole('button', {
+    name: 'Organization',
+  });
+  await user.click(sortButton);
+  expect(names()).toEqual(['Engineering', 'Globex', 'Research', 'Data science']);
+  await user.click(sortButton);
+  expect(names()).toEqual(['Data science', 'Research', 'Globex', 'Engineering']);
+});
+
+it('shows an organization id, not a missing one, when the organizations fail to load', async () => {
+  const service = seeded();
+  service.listOrganizations = () => Promise.reject(new ServiceError(503, 'keycloak is unreachable'));
+  renderAt('/subscriptions', service);
+  const table = await screen.findByTestId('subscriptions-table');
+  const row = (await within(table).findByRole('link', { name: 'Engineering' })).closest('tr')!;
+  await waitFor(() => expect(within(row).getByTestId('subscription-organization')).toHaveTextContent(ACME_ID));
+  expect(screen.queryByTestId('subscription-organization-missing')).not.toBeInTheDocument();
 });
 
 it('hides write actions until it knows the user is a provider admin', async () => {
@@ -913,7 +1081,7 @@ it('leaves the create form out of history once the subscription is created, so B
   await pickOrganization(user, 'acme-robotics');
   await fillNewSubscription(user);
   await user.click(screen.getByTestId('create-subscription-button'));
-  expect(await screen.findByText('Subscription created')).toBeVisible();
+  expect(await screen.findByText('Subscription Test team saved to Git')).toBeVisible();
   await act(async () => navigate(-1));
   expect(await screen.findByRole('heading', { level: 1, name: 'Clusters' })).toBeVisible();
 });
@@ -966,7 +1134,7 @@ it('says straight away that a subscription saved without an organization needs o
   renderAt('/subscriptions/edit/data-science', service);
   const organization = await screen.findByRole('combobox', { name: 'Organization' });
   expect(organization).toHaveAttribute('aria-invalid', 'true');
-  expect(screen.getByText('Select an organization')).toBeVisible();
+  expect(screen.getByText('Select an organization.')).toBeVisible();
 });
 
 it('keeps a set organization read-only when editing', async () => {
@@ -1008,7 +1176,7 @@ it('reloads a subscription after a stale delete, keeping the typed name, so a re
   ).toBeVisible();
   expect(within(modal).getByTestId('delete-modal-input')).toHaveValue('Engineering');
   await user.click(within(modal).getByRole('button', { name: 'Delete' }));
-  expect(await screen.findByText('Subscription deleted')).toBeVisible();
+  expect(await screen.findByText('Subscription Engineering deleted from Git')).toBeVisible();
   expect(subscriptionsOf(service).subscriptions.some((s) => s.id === 'engineering')).toBe(false);
 });
 

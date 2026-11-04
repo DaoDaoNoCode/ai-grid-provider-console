@@ -62,7 +62,7 @@ const errorMessage = (err: unknown, join: boolean) => {
   return err instanceof Error ? err.message : 'Unable to update the cluster.';
 };
 
-/** Confirms adding a cluster to AI Grid, with its location and role, or removing it, and keeps a failure in view. */
+/** Confirms adding a cluster to AI Grid, with its location label and role, or removing it, and keeps a failure in view. */
 export const MembershipModal: React.FC<Props> = ({ cluster, join, onConfirm, onClose }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -96,7 +96,7 @@ export const MembershipModal: React.FC<Props> = ({ cluster, join, onConfirm, onC
         setRole(defaultRole(current));
         setTouched({ location: false, role: false });
         setError(
-          "Another user changed this cluster's location or role after this dialog opened. Their values are now shown. Review them and try again.",
+          "Another user changed this cluster's location label or role after this dialog opened. Their values are now shown. Review them and try again.",
         );
       } else {
         setError(errorMessage(err, join));
@@ -143,11 +143,23 @@ export const MembershipModal: React.FC<Props> = ({ cluster, join, onConfirm, onC
       <ModalBody>
         <Stack hasGutter>
           <p>
-            The hub installs the AI Grid components for the selected role. Models can then be deployed to this cluster's
-            location.
+            The hub installs the AI Grid components for the selected role. After a cluster that serves models is
+            provisioned, you can select it when you deploy a model.
           </p>
           <Form id="cluster-membership-form" onSubmit={(e) => e.preventDefault()}>
-            <FormGroup label="Location" fieldId="cluster-location" isRequired>
+            <FormGroup
+              label="Location label"
+              fieldId="cluster-location"
+              isRequired
+              labelHelp={
+                <Popover
+                  headerContent="Location label"
+                  bodyContent="Models are placed on clusters by name, not by this label."
+                >
+                  <FormGroupLabelHelp aria-label="More info for the location label field" />
+                </Popover>
+              }
+            >
               <TextInput
                 id="cluster-location"
                 value={location}
@@ -161,7 +173,7 @@ export const MembershipModal: React.FC<Props> = ({ cluster, join, onConfirm, onC
               <FormHelperText>
                 <HelperText id="cluster-location-help">
                   <HelperTextItem variant={shownLocationError ? 'error' : 'default'}>
-                    {shownLocationError ?? 'Models are deployed to clusters by location. For example, us-east.'}
+                    {shownLocationError ?? 'For example, us-east.'}
                   </HelperTextItem>
                 </HelperText>
               </FormHelperText>

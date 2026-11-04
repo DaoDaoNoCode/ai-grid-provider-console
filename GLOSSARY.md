@@ -1,7 +1,7 @@
 # AI Grid Provider Console
 
 The administrative interface a cloud provider uses to run an AI Grid: enrolling clusters,
-onboarding organizations, deploying models across locations, and watching the result. It is
+onboarding organizations, deploying models across clusters, and watching the result. It is
 one of three faces of the product, alongside the organization administrator's and the end user's.
 
 ## Language
@@ -25,23 +25,29 @@ access. Not the same as a provider admin: a provider admin runs AI Grid through 
 asks the hub administrator for that access. The console says "your hub administrator".
 _Avoid_: administrator (alone), cluster admin
 
-**Location**:
-Where a cluster physically is, as a single label shared by everything in that place. Models
-are deployed to locations in the console; underneath, a Placement selects grid clusters,
-including by cluster set, labels, claims or a cluster count.
-_Avoid_: datacenter, zone, geo
+**Region**:
+The geographic area a cluster runs in: today the cloud region ACM reports (the
+`region.open-cluster-management.io` claim). Used for grouping and for the map's fallback
+position; models are not placed by it.
+_Avoid_: location, geo, zone
 
 **Site**:
-The name of the place a cluster is in, as the map and the Clusters pages show it: the hub
-administrator's `ai-grid/site-name` annotation, or else the cluster's cloud region. A location
-groups clusters for deploying models; a site names where they are.
-_Avoid_: datacenter, zone
+The name a hub administrator gives a cluster's place (annotation `ai-grid/site-name`), shown as Site on
+the Clusters pages, the AI Grid overview and Monitoring; empty when the annotation isn't set,
+never the region. The cluster's `ai-grid/site` label is its Site ID.
+_Avoid_: data center, location
+
+**Location label**:
+The cluster's `location` label, which Add to AI Grid can write. Nothing in delivery or routing
+reads it; models are placed on clusters by name. Whether it becomes the grid's region is open.
+_Avoid_: location (alone)
 
 ### Resources
 
 **Cluster**:
-An OpenShift cluster managed by the hub. Not every cluster is part of the grid.
-_Avoid_: ManagedCluster, GridCluster, managed cluster, node
+An OpenShift cluster managed by the hub. Not every cluster is part of the grid. Models are
+deployed to clusters, chosen by name.
+_Avoid_: ManagedCluster, GridCluster, managed cluster, node, location
 
 **Grid member**:
 A cluster that has been enrolled in the grid and provisioned for it. The distinction matters:
@@ -80,6 +86,15 @@ _Avoid_: ManagedModel, deployment, inference service
 An organization's agreed access to a set of models, carrying its priority, rate limits and
 authorization policy.
 _Avoid_: plan, entitlement, tier
+
+**Hardware**:
+What a model runs on, selected when it is deployed: one entry of the list the provider admin sets
+in the console's Helm values (`console.models.hardware`), such as NVIDIA GPU or CPU only. An entry
+sets the model's runtime image, environment and starting resources, and the accelerator it
+requests per replica. It is not a cluster property: the console doesn't check that a chosen cluster
+has the hardware, beyond a hint from its NVIDIA GPU count. Only a new model names hardware: a
+deployed model's pages show what it requests (its accelerators and image), since the list can change.
+_Avoid_: model server, preset, accelerator profile, hardware profile
 
 **Placement**:
 The rule that selects which grid members a model should run on. It selects; it does not

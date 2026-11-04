@@ -37,7 +37,8 @@ const (
 	MaxPersesTimeout = WriteTimeout - 10*time.Second
 	// MaxBackendTimeout keeps a call to the backend, with the provider-admin
 	// check before it, inside WriteTimeout likewise, so the Connect relay can
-	// still answer 504 for a unary call or a backend that sends no headers.
+	// still answer 504 for a unary call or a backend that sends no headers. It
+	// bounds BackendWriteTimeout too.
 	MaxBackendTimeout = WriteTimeout - 10*time.Second
 )
 
@@ -70,6 +71,13 @@ type Config struct {
 	BackendServerName string
 	BackendInsecure   bool
 	BackendTimeout    time.Duration
+	// BackendWriteTimeout bounds a call that changes data instead of
+	// BackendTimeout: a POST, PATCH, PUT or DELETE on /api/v1, and a write
+	// procedure on the Connect relay. The backend commits Models and
+	// Subscriptions to a Git repository, which can take longer than a read; a
+	// write cut while the backend still completes it tells the caller nothing
+	// about its outcome.
+	BackendWriteTimeout time.Duration
 
 	// StaticAssetsDir holds the built frontend. Empty disables static serving.
 	StaticAssetsDir string
@@ -101,6 +109,10 @@ type Config struct {
 	// with PersesURL (bff/internal/perses says why).
 	PersesProject string
 
+	// ModelHardware is the Deploy model wizard's Hardware list, from the JSON in
+	// MODEL_HARDWARE; DefaultModelHardware when that is empty.
+	ModelHardware []ModelHardware
+
 	LogLevel slog.Level
 }
 
@@ -110,7 +122,7 @@ func Parse(args []string, lookupEnv func(string) (string, bool)) (Config, error)
 	env := envReader{lookup: lookupEnv}
 
 	var cfg Config
-	var logLevel string
+	var logLevel, modelHardware string
 
 	fs.StringVar(&cfg.BindAddress, "bind-address", env.str("BIND_ADDRESS", DefaultBindAddress), "Interface to listen on; 0.0.0.0 for all")
 	fs.IntVar(&cfg.Port, "port", env.int("port", "PORT", 8080), "Listen port")
@@ -128,6 +140,7 @@ func Parse(args []string, lookupEnv func(string) (string, bool)) (Config, error)
 	fs.StringVar(&cfg.BackendServerName, "backend-server-name", env.str("BACKEND_SERVER_NAME", ""), "Expected TLS server name of the backend")
 	fs.BoolVar(&cfg.BackendInsecure, "backend-insecure", env.boolean("backend-insecure", "BACKEND_INSECURE", false), "Allow plaintext to a non-loopback backend (development only)")
 	fs.DurationVar(&cfg.BackendTimeout, "backend-timeout", env.duration("backend-timeout", "BACKEND_TIMEOUT", 10*time.Second), "Per-RPC timeout towards the backend")
+	fs.DurationVar(&cfg.BackendWriteTimeout, "backend-write-timeout", env.duration("backend-write-timeout", "BACKEND_WRITE_TIMEOUT", 30*time.Second), "Per-RPC timeout towards the backend for a call that changes data (POST, PATCH, PUT and DELETE on /api/v1, a write procedure on the Connect relay); at most 50s")
 	fs.StringVar(&cfg.StaticAssetsDir, "static-assets-dir", env.str("STATIC_ASSETS_DIR", ""), "Directory with the built frontend; empty disables")
 	fs.StringVar(&cfg.GridEndpoint, "grid-endpoint", env.str("GRID_CONSUMER_URL", ""), "Consumer-facing AI Grid inference URL")
 	fs.StringVar(&cfg.MapTileURL, "map-tile-url", env.str("MAP_TILE_URL", ""), "Tile server URL template for the fleet map; empty draws a bundled land outline")
@@ -140,6 +153,7 @@ func Parse(args []string, lookupEnv func(string) (string, bool)) (Config, error)
 	fs.BoolVar(&cfg.PersesInsecure, "perses-insecure", env.boolean("perses-insecure", "PERSES_INSECURE", false), "Allow plaintext to a non-loopback Perses server (development only)")
 	fs.DurationVar(&cfg.PersesTimeout, "perses-timeout", env.duration("perses-timeout", "PERSES_TIMEOUT", 30*time.Second), "Bound on the exchange with the Perses server, from connecting to the last byte of its answer; at most 50s")
 	fs.StringVar(&cfg.PersesProject, "perses-project", env.str("PERSES_PROJECT", ""), "Perses project the Monitoring page reads, whose dashboard- objects are its tabs; required with perses-url")
+	fs.StringVar(&modelHardware, "model-hardware", env.str("MODEL_HARDWARE", ""), "The Deploy model wizard's hardware choices, a JSON list (the chart's console.models.hardware); empty for the built-in NVIDIA GPU and CPU only")
 	fs.StringVar(&logLevel, "log-level", env.str("LOG_LEVEL", "info"), "Log level: debug, info, warn, error")
 
 	if err := fs.Parse(args); err != nil {
@@ -181,6 +195,14 @@ func Parse(args []string, lookupEnv func(string) (string, bool)) (Config, error)
 	if cfg.BackendTimeout <= 0 || cfg.BackendTimeout > MaxBackendTimeout {
 		return Config{}, fmt.Errorf("backend-timeout must be positive and at most %s, to stay inside the server's %s write timeout", MaxBackendTimeout, WriteTimeout)
 	}
+	if cfg.BackendWriteTimeout <= 0 || cfg.BackendWriteTimeout > MaxBackendTimeout {
+		return Config{}, fmt.Errorf("backend-write-timeout must be positive and at most %s, to stay inside the server's %s write timeout", MaxBackendTimeout, WriteTimeout)
+	}
+	hardware, err := ParseModelHardware(modelHardware)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.ModelHardware = hardware
 	return cfg, nil
 }
 

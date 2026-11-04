@@ -11,7 +11,7 @@ import { transportFor, type ClusterSource } from './connectClusters';
  * select's list in a timer after the click (Popper.show sets its opacity in setTimeout), and React
  * 19 renders that update on its own schedule, so the item exists before it is visible.
  */
-export const findVisible = async (role: ByRoleMatcher, name: string) => {
+export const findVisible = async (role: ByRoleMatcher, name: string | RegExp) => {
   const element = await screen.findByRole(role, { name });
   await waitFor(() => expect(element).toBeVisible());
   return element;

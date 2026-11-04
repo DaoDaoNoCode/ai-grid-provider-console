@@ -19,16 +19,16 @@ import {
   groupsOf,
   isDeleting,
   modelRefsOf,
-  organizationIdOf,
+  organizationRefOf,
   readyConditionOf,
   refKey,
   refTitleOf,
   registrationStatusOf,
-  tenantNameOf,
   toTokenLimits,
 } from './subscriptionText';
 import { displayNameOf } from '../models/modelView';
-import { useSubscription, useTenantList } from './useSubscriptions';
+import { useOrganizations, useSubscription } from './useSubscriptions';
+import { OrganizationName } from './OrganizationName';
 import { SubscriptionDetailsSection } from './viewSubscription/SubscriptionDetailsSection';
 import { SubscriptionGroupsSection } from './viewSubscription/SubscriptionGroupsSection';
 
@@ -37,7 +37,7 @@ type ActionsProps = { subscription: Subscription; returnTo: string };
 const SubscriptionActions: React.FC<ActionsProps> = ({ subscription, returnTo }) => {
   const navigate = useNavigate();
   const [confirmDelete, deleteDialog] = useDeleteSubscription({
-    onDeleted: () => void navigate(returnTo, { state: { notice: 'Subscription deleted' } }),
+    onDeleted: () => void navigate(returnTo),
   });
   const deleting = isDeleting(subscription);
   return (
@@ -72,16 +72,14 @@ export const ViewSubscriptionPage: React.FC = () => {
   const { id = '' } = useParams<{ id: string }>();
   const location = useLocation();
   const { data: info, loaded, error, refresh } = useSubscription(id, { poll: true });
-  const { data: organizations } = useTenantList();
+  const { data: organizations, known: organizationsKnown } = useOrganizations();
   const { user } = useConsoleSession();
   const canWrite = !!user?.isProviderAdmin;
   const subscription = info?.object;
   const title = subscription ? displayNameOf(subscription) : id;
   const backUrl = getBackUrl(location.state, 'subscriptions');
-  const organizationId = subscription ? organizationIdOf(subscription) : '';
   const ready = readyConditionOf(subscription?.status?.conditions);
-  const tenant = organizations.find((o) => o.id === organizationId);
-  const organization = tenant ? tenantNameOf(tenant) : organizationId;
+  const organization = subscription ? organizationRefOf(subscription, organizations, organizationsKnown) : undefined;
 
   return (
     <PageStateSection
@@ -121,7 +119,7 @@ export const ViewSubscriptionPage: React.FC = () => {
           <SubscriptionDetailsSection
             subscription={subscription}
             authPolicies={info.authPolicies}
-            organization={organization}
+            organization={organization && <OrganizationName organization={organization} />}
           />
           <SubscriptionGroupsSection groups={groupsOf(subscription)} />
           <MaasModelsSection

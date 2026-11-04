@@ -1,17 +1,22 @@
 // The Subscriptions pages' calls to the backend over Connect (docs/connect.md): Subscriptions/List,
 // Get, Create, Update and Delete, Models/List for the models the subscriptions name, and
 // Tenants/List for the organization select. Reads poll as the Clusters and Models pages do
-// (useClusters.ts); writes go through useMutation and refetch every Subscriptions query.
-import { useCallback } from 'react';
-import { callUnaryMethod, createConnectQueryKey, useMutation, useQuery, useTransport } from '@connectrpc/connect-query';
-import { skipToken, useQueryClient } from '@tanstack/react-query';
+// (useClusters.ts); writes are sent from the app root (useBackgroundWrites), which refetches every
+// Subscriptions query once they land.
+import { useMemo } from 'react';
+import type { MessageInitShape } from '@bufbuild/protobuf';
+import { callUnaryMethod, useQuery, useTransport } from '@connectrpc/connect-query';
+import { skipToken } from '@tanstack/react-query';
+import { useBackgroundWrites } from '../../notifications/useBackgroundWrites';
+import { sentSubscriptionFields } from '../../notifications/writeFields';
 import type { ModelsListResponse } from '../../gen/ai_grid/v1/models_service_pb';
 import { list as listModels } from '../../gen/ai_grid/v1/models_service-Models_connectquery';
 import type { Subscription } from '../../gen/ai_grid/v1/subscription_type_pb';
 import {
-  Subscriptions,
+  type SubscriptionsCreateRequestSchema,
   type SubscriptionsGetResponse,
   type SubscriptionsListResponse,
+  type SubscriptionsUpdateRequestSchema,
 } from '../../gen/ai_grid/v1/subscriptions_service_pb';
 import {
   create,
@@ -24,7 +29,7 @@ import type { Tenant } from '../../gen/ai_grid/v1/tenant_type_pb';
 import type { TenantsListResponse } from '../../gen/ai_grid/v1/tenants_service_pb';
 import { list as listTenants } from '../../gen/ai_grid/v1/tenants_service-Tenants_connectquery';
 import { useLoadOptions, useLoaded, type Loaded } from '../clusters/useClusters';
-import { toModelView, type ModelView } from '../models/modelView';
+import { displayNameOf, toModelView, type ModelView } from '../models/modelView';
 import { isUnsettledSubscription, isUnsettledSubscriptionInfo } from './subscriptionText';
 
 const subscriptionItems = (answer: SubscriptionsListResponse | undefined) => answer?.items ?? [];
@@ -65,6 +70,16 @@ export const useTenantList = (): Loaded<Tenant[]> =>
   useLoaded(useQuery(listTenants, {}, useLoadOptions()), tenantItems);
 
 /**
+ * The organizations, and whether they are `known`: listed without an error since the page mounted
+ * (Loaded's `fresh`). A list the cache kept from an earlier page may predate an organization
+ * created since, so only a known list may call an organization missing (isOrganizationMissing).
+ */
+export const useOrganizations = (): Loaded<Tenant[]> & { known: boolean } => {
+  const organizations = useTenantList();
+  return { ...organizations, known: organizations.fresh && !organizations.error };
+};
+
+/**
  * One subscription with its auth policies and model registrations, from Subscriptions/Get. By
  * default it loads once: the edit page keeps the first answer (EditSubscriptionPage), so a save is
  * checked against the version it started from. `poll: true`, as its page passes, polls while the
@@ -79,21 +94,60 @@ export const useSubscription = (
   return useLoaded(useQuery(get, { id }, poll ? options : { retry: false, refetchInterval: false }), subscriptionInfo);
 };
 
-/** Subscriptions/Create, Update and Delete; each refetches the subscriptions once it lands. */
+/**
+ * Subscriptions/Create, Update and Delete, sent from the app root (useBackgroundWrites): a write
+ * that outlasts the form's short wait keeps running when the form leaves (`pending`), and the
+ * notification center reports how it ended. The center refetches the subscriptions once a write
+ * lands. A failure that comes back within the wait is the ConnectError, as before.
+ */
 export const useSubscriptionWrites = () => {
-  const queryClient = useQueryClient();
   const transport = useTransport();
-  // Refetch every Subscriptions query once a write lands, without waiting for it: useMutation
-  // waits for a promise onSuccess returns, and a save is done when the backend answered.
-  const onSuccess = useCallback(() => {
-    void queryClient.invalidateQueries({
-      queryKey: createConnectQueryKey({ schema: Subscriptions, cardinality: undefined }),
-    });
-  }, [queryClient]);
-  const createSubscription = useMutation(create, { onSuccess });
-  const updateSubscription = useMutation(update, { onSuccess });
-  const deleteSubscription = useMutation(remove, { onSuccess });
-  /** The subscription as the backend has it now, for a retry after a failed delete. */
-  const reload = useCallback(async (id: string) => (await callUnaryMethod(transport, get, { id })).object, [transport]);
-  return { createSubscription, updateSubscription, deleteSubscription, reload };
+  const { submitWrite } = useBackgroundWrites();
+  return useMemo(
+    () => ({
+      /** `draft` is the subscription as sent (JSON), kept should the backend refuse it after the form left. */
+      createSubscription: (
+        request: MessageInitShape<typeof SubscriptionsCreateRequestSchema>,
+        name: string,
+        draft?: unknown,
+      ) =>
+        submitWrite(
+          {
+            subject: 'subscription',
+            op: 'create',
+            id: request.object?.id ?? '',
+            name,
+            // What a lost answer's read-back must find to confirm this write.
+            expected: sentSubscriptionFields(request.object),
+            draft,
+          },
+          () => callUnaryMethod(transport, create, request),
+        ),
+      updateSubscription: (request: MessageInitShape<typeof SubscriptionsUpdateRequestSchema>, name: string) =>
+        submitWrite(
+          {
+            subject: 'subscription',
+            op: 'update',
+            id: request.object?.id ?? '',
+            name,
+            version: request.object?.metadata?.version ?? 0,
+            expected: sentSubscriptionFields(request.object, request.updateMask?.paths),
+          },
+          () => callUnaryMethod(transport, update, request),
+        ),
+      deleteSubscription: (subscription: Subscription) =>
+        submitWrite(
+          { subject: 'subscription', op: 'delete', id: subscription.id, name: displayNameOf(subscription) },
+          // The version read; the backend refuses a stale one (zero would skip the check).
+          () =>
+            callUnaryMethod(transport, remove, {
+              id: subscription.id,
+              resourceVersion: subscription.metadata?.version ?? 0,
+            }),
+        ),
+      /** The subscription as the backend has it now, for a retry after a failed delete. */
+      reload: async (id: string) => (await callUnaryMethod(transport, get, { id })).object,
+    }),
+    [transport, submitWrite],
+  );
 };

@@ -125,9 +125,10 @@ describe('PageErrorBoundary', () => {
 });
 
 describe('AppErrorBoundary', () => {
-  it('catches a crash outside the pages, in the masthead, instead of a blank screen', async () => {
+  it('catches a crash outside the pages, in the console shell, instead of a blank screen', async () => {
     const service = new MockConsoleService();
-    // A user the user menu can't show: reading its name throws while the masthead renders.
+    // A user nobody can read: its name throws when the shell reads it, first to key the
+    // notification center's storage (App), then in the user menu.
     service.getUser = async () =>
       ({
         get username(): string {
@@ -153,7 +154,7 @@ describe('AppErrorBoundary', () => {
     expect(consoleError).toHaveBeenCalledWith(
       expect.stringContaining('console'),
       expect.objectContaining({ message: 'the masthead broke' }),
-      expect.stringContaining('UserMenu'),
+      expect.stringContaining('at App'),
     );
   });
 

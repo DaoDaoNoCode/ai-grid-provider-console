@@ -41,6 +41,40 @@ export const organizationIdOf = (subscription: Subscription): string => subscrip
 /** The organization's name (metadata.name), else its id. */
 export const tenantNameOf = (tenant: Tenant): string => tenant.metadata?.name || tenant.id;
 
+/**
+ * Whether no organization has the id, decided only from a known list (useOrganizations' `known`):
+ * the organization was deleted, or created again under a new id, as Keycloak does to the
+ * organizations made in the console when it rebuilds its realm on start.
+ */
+export const isOrganizationMissing = (id: string, organizations: Tenant[], known: boolean): boolean =>
+  known && id !== '' && !organizations.some((o) => o.id === id);
+
+/**
+ * A subscription's organization as the pages show it: its name, or its id while the organizations
+ * aren't known, and whether it is missing (isOrganizationMissing).
+ */
+export type OrganizationRef = { id: string; name: string; missing: boolean };
+
+export const organizationRefOf = (
+  subscription: Subscription,
+  organizations: Tenant[],
+  known: boolean,
+): OrganizationRef => {
+  const id = organizationIdOf(subscription);
+  const tenant = organizations.find((o) => o.id === id);
+  return { id, name: tenant ? tenantNameOf(tenant) : id, missing: isOrganizationMissing(id, organizations, known) };
+};
+
+export const MISSING_ORGANIZATION = 'Organization not found';
+
+/** What the pages show for the organization (OrganizationName), as the list sorts it. */
+export const organizationLabelOf = (organization: OrganizationRef): string =>
+  organization.missing ? MISSING_ORGANIZATION : organization.name;
+
+/** What a missing organization means, and what to do: the backend refuses a changed organization. */
+export const missingOrganizationReason = (id: string): string =>
+  `No organization has the ID ${id}. It was deleted, or created again with a new ID. The organization of a subscription can’t be changed, so delete this subscription and create it again for the organization.`;
+
 /** The subscription's owner groups, as the backend answers them: bare group names. */
 export const groupsOf = (subscription: Subscription): string[] => subscription.spec?.owner?.groups ?? [];
 

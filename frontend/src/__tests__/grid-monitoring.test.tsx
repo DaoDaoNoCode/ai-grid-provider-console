@@ -190,13 +190,13 @@ it('loads organization usage when opened from the map', async () => {
   expect(within(usage).getByRole('link', { name: 'acme-robotics' })).toBeVisible();
 });
 
-it('lists the models with the sites their placement chose', async () => {
+it('lists the models with the clusters their placement chose, by name', async () => {
   const user = userEvent.setup();
   const service = serviceOnBffExamples();
-  // A model of the Models API placed at the example clusters' location (status.placement.locations).
+  // A model of the Models API placed on an example cluster (status.placement.selected_clusters).
   const granite = modelsOf(service).find('granite-3-8b');
   granite.metadata!.annotations['openshift.io/display-name'] = 'Granite 8B Instruct';
-  granite.status!.placement!.locations = ['paris'];
+  granite.status!.placement!.selectedClusters = ['site-paris-1'];
   renderAt('/monitoring', service);
   await user.click(await screen.findByRole('tab', { name: 'Models' }));
   const table = screen.getByRole('grid', { name: 'Models' });
@@ -205,18 +205,33 @@ it('lists the models with the sites their placement chose', async () => {
     within(table)
       .getAllByRole('columnheader')
       .map((h) => h.textContent),
-  ).toEqual(['Name', 'Model', 'Target sites', 'Replicas', 'Status']);
+  ).toEqual(['Name', 'Model', 'Clusters', 'Replicas', 'Status']);
   const row = within(table).getByText('Granite 8B Instruct').closest('tr')!;
-  expect(row).toHaveTextContent('Paris DC1');
+  expect(row).toHaveTextContent('site-paris-1');
 });
 
-it('explains the target sites in a help popover', async () => {
+it('offers only models placed on an AI Grid cluster by name, not by a shared location label', async () => {
+  const user = userEvent.setup();
+  const service = serviceOnBffExamples();
+  // Placed on a cluster that isn't in AI Grid, whose location label matches site-paris-1's (`paris`,
+  // mock/examples/get-grid-overview.json).
+  const granite = modelsOf(service).find('granite-3-8b');
+  granite.metadata!.annotations['openshift.io/display-name'] = 'Granite 8B Instruct';
+  granite.status!.placement!.selectedClusters = ['not-in-ai-grid'];
+  granite.status!.placement!.locations = ['paris'];
+  renderAt('/monitoring', service);
+  await user.click(await screen.findByRole('tab', { name: 'Models' }));
+  await user.click(screen.getByRole('combobox', { name: 'Select model' }));
+  expect(screen.queryByRole('option', { name: 'Granite 8B Instruct' })).not.toBeInTheDocument();
+});
+
+it('explains the clusters column in a help popover', async () => {
   const user = userEvent.setup();
   renderAt('/monitoring', withOrganizations());
   await user.click(await screen.findByRole('tab', { name: 'Models' }));
   await user.click(screen.getByRole('button', { name: 'More about models' }));
   expect(
-    await screen.findByText(/^Target sites are the sites of the clusters selected for each model\./),
+    await screen.findByText(/^The Clusters column lists the AI Grid clusters selected for each model\./),
   ).toBeVisible();
 });
 

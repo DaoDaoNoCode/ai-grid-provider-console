@@ -22,6 +22,7 @@ import {
 } from '@patternfly/react-core';
 import { FilterIcon } from '@patternfly/react-icons';
 import { RefreshButton } from '../../../components/RefreshButton';
+import { TOOLBAR_FIELD_WIDTHS } from '../../../components/toolbarField';
 import { getSubscriptionCreateUrl } from '../../../utilities/maasGovernanceNavigation';
 import type { SubscriptionsFilterDataType } from './const';
 import { SubscriptionsFilterOptions, subscriptionsFilterOptions } from './const';
@@ -90,7 +91,7 @@ export const SubscriptionsToolbar: React.FC<Props> = ({ filterData, onFilterUpda
                 labels={value ? [value] : []}
                 deleteLabel={() => onFilterUpdate(key, '')}
                 showToolbarItem={attribute === key}
-                className="console-toolbar-field"
+                widths={TOOLBAR_FIELD_WIDTHS}
               >
                 <SearchInput
                   aria-label={placeholder}

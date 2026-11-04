@@ -484,6 +484,112 @@ func TestResponseHeaderTimeout(t *testing.T) {
 	}
 }
 
+// The procedures that change data, by the allowlist; every other allowed one reads.
+var writeProcedures = []string{
+	"/ai_grid.v1.Clusters/Update",
+	"/ai_grid.v1.Tenants/Create", "/ai_grid.v1.Tenants/Update", "/ai_grid.v1.Tenants/Delete",
+	"/ai_grid.v1.Models/Create", "/ai_grid.v1.Models/Update", "/ai_grid.v1.Models/Delete",
+	"/ai_grid.v1.Subscriptions/Create", "/ai_grid.v1.Subscriptions/Update", "/ai_grid.v1.Subscriptions/Delete",
+}
+
+var readProcedures = []string{
+	"/ai_grid.v1.AiGrid/Ping",
+	"/ai_grid.v1.Clusters/List", "/ai_grid.v1.Clusters/Get",
+	"/ai_grid.v1.Tenants/List", "/ai_grid.v1.Tenants/Get",
+	"/ai_grid.v1.Models/List", "/ai_grid.v1.Models/Get", "/ai_grid.v1.Models/ListPlacementClusters",
+	"/ai_grid.v1.Subscriptions/List", "/ai_grid.v1.Subscriptions/Get",
+}
+
+func TestIsWrite(t *testing.T) {
+	t.Parallel()
+	for _, path := range writeProcedures {
+		if !relay.IsWrite(path) {
+			t.Errorf("IsWrite(%q) = false, want true", path)
+		}
+	}
+	for _, path := range append(readProcedures, "/ai_grid.v1.Clusters/Delete", "/ai_grid.v1.NewService/Create") {
+		if relay.IsWrite(path) {
+			t.Errorf("IsWrite(%q) = true, want false (a read, or not allowed at all)", path)
+		}
+	}
+}
+
+// A write is cut at the write timeout, not the read timeout: with a long read timeout and a short
+// write timeout, every write procedure is 504 while the stalling backend still holds it.
+func TestWriteTimeoutBoundsWrites(t *testing.T) {
+	t.Parallel()
+	srv, _, _ := stallingBackend(t)
+	r := newRelay(t, backend.Config{Address: strings.TrimPrefix(srv.URL, "http://"), Timeout: time.Minute, WriteTimeout: 100 * time.Millisecond})
+	for _, path := range writeProcedures {
+		t.Run(path, func(t *testing.T) {
+			t.Parallel()
+			rec := serve(r, asCaller(t, http.MethodPost, path, strings.NewReader(`{}`), nil))
+			if code, _ := connectError(t, rec); rec.Code != http.StatusGatewayTimeout || code != "deadline_exceeded" {
+				t.Errorf("got %d %s, want 504 deadline_exceeded at the write timeout", rec.Code, code)
+			}
+		})
+	}
+}
+
+// A read is cut at the read timeout, whatever the write timeout.
+func TestReadTimeoutBoundsReads(t *testing.T) {
+	t.Parallel()
+	srv, _, _ := stallingBackend(t)
+	r := newRelay(t, backend.Config{Address: strings.TrimPrefix(srv.URL, "http://"), Timeout: 100 * time.Millisecond, WriteTimeout: time.Minute})
+	for _, path := range readProcedures {
+		t.Run(path, func(t *testing.T) {
+			t.Parallel()
+			rec := serve(r, asCaller(t, http.MethodPost, path, strings.NewReader(`{}`), nil))
+			if code, _ := connectError(t, rec); rec.Code != http.StatusGatewayTimeout || code != "deadline_exceeded" {
+				t.Errorf("got %d %s, want 504 deadline_exceeded at the read timeout", rec.Code, code)
+			}
+		})
+	}
+}
+
+// A write outlives the read timeout: it is open at the backend before a read starts, so once the
+// read has timed out the write has outlived the read timeout, and it still gets the backend's
+// answer, headers included (the write transport's ResponseHeaderTimeout is the write timeout).
+func TestWriteOutlivesTheReadTimeout(t *testing.T) {
+	t.Parallel()
+	arrived := make(chan struct{}, 1)
+	released := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/ai_grid.v1.Models/Create" {
+			arrived <- struct{}{}
+		}
+		select {
+		case <-released:
+		case <-r.Context().Done():
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"object":{}}`))
+	}))
+	release := sync.OnceFunc(func() { close(released) })
+	t.Cleanup(srv.Close)
+	t.Cleanup(release)
+	r := newRelay(t, backend.Config{Address: strings.TrimPrefix(srv.URL, "http://"), Timeout: 100 * time.Millisecond, WriteTimeout: time.Minute})
+
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		done <- serve(r, asCaller(t, http.MethodPost, "/ai_grid.v1.Models/Create", strings.NewReader(`{}`), nil))
+	}()
+	select {
+	case <-arrived:
+	case rec := <-done:
+		t.Fatalf("the write ended before it reached the backend: %d %q", rec.Code, rec.Body)
+	}
+	rec := serve(r, asCaller(t, http.MethodPost, "/ai_grid.v1.Models/Get", strings.NewReader(`{}`), nil))
+	if code, _ := connectError(t, rec); rec.Code != http.StatusGatewayTimeout || code != "deadline_exceeded" {
+		t.Fatalf("read next to the write: got %d %s, want 504 deadline_exceeded", rec.Code, code)
+	}
+	release()
+	if rec := <-done; rec.Code != http.StatusOK || rec.Body.String() != `{"object":{}}` {
+		t.Errorf("write: got %d %q, want the backend's answer after the read timeout", rec.Code, rec.Body)
+	}
+}
+
 // Only the Connect protocol passes: gRPC, gRPC-Web (which the backend serves on the same port)
 // and any other body are 415 before the backend is called.
 func TestOnlyConnectContentTypes(t *testing.T) {

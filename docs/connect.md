@@ -179,7 +179,14 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   Partially ready; `UNSPECIFIED` with reason `SavedToGit` is Saved to Git, any other
   unspecified phase Unknown); `status.message` as the status's tooltip and the page's alert;
   `status.url` as the endpoint; `status.placement.selected_clusters` (cluster names) in the
-  Clusters column (no Replicas column: the model page shows it); and the main container's `requests` as CPU, memory and GPUs. Pages are at
+  Clusters column (no Replicas column: the model page shows it); the main container's `requests` as CPU, memory and accelerators (any request
+  with a domain, such as `nvidia.com/gpu`), worded as Accelerators ("1 GPU (nvidia.com/gpu)", or
+  "None (CPU only)"; `acceleratorsText` in `modelHardware.ts`), and `base_refs` as Presets. A
+  deployed model is never matched against the config's `models.hardware`, which can change or fail
+  to load: only the Deploy wizard names hardware. An empty image is the cluster's default vLLM
+  image for NVIDIA GPUs, so the wizard requires an image unless the hardware's accelerator, or a
+  deployed model's request, is `nvidia.com/gpu` (or the model has presets); an edit requires it
+  only where it would clear an image the model has. Pages are at
   `/models/:id` and `/models/:id/edit`.
 - **Status and Availability** follow the UX design of console #114 (Chris, 2026-11-02). The Models
   list's **Status** is `status.state`, Git sync and deployment in one word: Saved to Git, Syncing,
@@ -212,14 +219,18 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
 - **Writes.** The wizard calls `Models/Create` with the id and `metadata.name`, the annotations,
   `spec.model` (the URI only: no served name, because the backend serves a model as its id, the
   name users send; the wizard starts the id from the URI's last path segment and shows it on
-  Review as "Model name in requests"), `replicas`, `base_refs` (the model server's presets), `spec.main` (the image, the
-  requests it asks for and `VLLM_ADDITIONAL_ARGS` for runtime arguments) and a `name In [...]`
+  Review as "Model name in requests"), `replicas`, `base_refs` always empty (preset names carry the
+  OpenShift AI version, so they exist only on clusters with it), `spec.main` from the selected
+  Hardware (`models.hardware` in `/api/v1/config`, the chart's `console.models.hardware`): its
+  image, or none for the cluster's default vLLM image for NVIDIA GPUs (KServe's default preset),
+  the requests, its accelerator as `{<accelerator>: N}`, and its environment with
+  `VLLM_ADDITIONAL_ARGS` for runtime arguments) and a `name In [...]`
   placement over the clusters `Models/ListPlacementClusters` offers, and the router
   `{ scheduler: true, managedRoute: true }` (`modelRequests.ts`): the backend defaults the
   scheduler to off, and a model needs it to be routed. It sets no rollout and no limits: the
-  backend's defaults apply (gateway `openshift-ingress/openshift-ai-inference`), and it saves a GPU
-  request as the limit too (`ModelContainer.requests`). An edit calls `Models/Update` with only
-  the paths it changed (`spec.replicas`, `spec.main.image`, `spec.main.env`,
+  backend's defaults apply (gateway `openshift-ingress/openshift-ai-inference`), and it saves an
+  accelerator request as the limit too (`ModelContainer.requests`). An edit calls `Models/Update` with only
+  the paths it changed (`spec.replicas`, `spec.main.image` (an emptied image too), `spec.main.env`,
   `metadata.annotations`, `spec.placement`; the env and the annotations whole, as loaded) and
   `metadata.version` with `lock: true`. Delete calls `Models/Delete` with `resource_version`, the
   version the dialog read; Aborted is the conflict the dialog already handles, and
@@ -272,6 +283,82 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   joined to `connectModels.ts`'s models; the browser test (`e2e/subscriptions.spec.ts`) runs on the
   backend's fakes and commits a model of its own first (`e2e/backend.ts`).
 - The BFF has no `/api/v1/subscriptions` or `/api/v1/models` routes and no `--models-namespace`.
+
+### Writes that take long
+
+The backend commits Models and Subscriptions to a Git repository: a write takes seconds, and on
+a slow day longer than the BFF waits (`BACKEND_WRITE_TIMEOUT`, 30 s, `docs/plan/bff-api.md`, "The
+Connect relay"). So these writes (deploy, edit and delete a model; create, edit and delete a
+subscription) are sent from the app root, never from the form (`frontend/src/notifications`):
+
+- `useModelWrites` and `useSubscriptionWrites` call `submitWrite` (`useBackgroundWrites`), which
+  sends the RPC with `callUnaryMethod` from `BackgroundWritesProvider`. The form waits for it
+  `FORM_WAIT_MS` (3 s), with its button busy. An answer within that wait is the form's as it
+  always was, whatever its code: a refusal, or the backend unreachable (Unavailable), stays on the
+  form as its error, and a success leaves it, the center saying so. Refusals usually come back
+  within the wait, but not always: in git mode a create's name check and an update's version check
+  run after the backend reads the Git head, which can take seconds once its cache has expired.
+- Past the wait the form leaves as on success, and an info toast says the change is being saved
+  ("Saving model <name>"). The request keeps running; its answer becomes the outcome of that same
+  entry (one drawer entry per write, unread when it arrives): the success, or the backend's
+  refusal with a link back to the form. A create refused after the form left keeps what was
+  submitted (the provider's drafts, per user in the tab's storage): the link (`?draft=`) reopens the
+  wizard or the create form with it, on Review for a model, the refusal as the form's error and the
+  resource name editable. An edit refused after the form left says the changes weren't saved, and
+  its link opens the edit page on the object as it is now.
+- An answer lost after the form left (`isUnknownOutcome`: DeadlineExceeded, Unavailable,
+  Canceled, a failed fetch; never a 4xx or an error the backend answered itself) is not an error: the
+  center reads the object back every 10 s and says it was not done after 2 minutes. A create is
+  done when `Get` finds the object holding what it sent, an update when the version moved past
+  the one sent and the object holds what it sent (`writeFields.ts`: a model's display name,
+  source, image, runtime arguments, resources, clusters and replicas; a subscription's names,
+  groups, organization, priority and models), a delete when `Get` answers NotFound. An object
+  that exists, or moved on, with other content is someone else's write as far as anyone can
+  tell: a warning that the write couldn't be confirmed, with a link to the object, never a
+  success. Reads that keep failing are a warning too.
+- A deployed model is then watched every 20 s until it runs on every cluster it is placed on:
+  each entry of `status.clusters` (one per cluster in `placement.selected_clusters`) READY, which
+  that cluster's LLMInferenceService reports. Then "Model <name> is ready on <clusters>". The
+  model's overall phase isn't used for this: it also counts the ingress clusters that publish the
+  model through MaaS, whose report turns ready only once a subscription covers the model, so a
+  model running on its clusters can read Pending for good. "Ready" means running on its clusters;
+  users reach it through MaaS once a subscription covers it too. An overall Failed (or a cluster
+  reported failed, which git mode doesn't report) is an error. After 30 minutes the watch warns
+  "Model <name> isn't ready yet", naming the clusters it isn't ready on; a model that is gone
+  stops it.
+- An edited model is watched the same way, every 20 s for 30 minutes, but never said to be ready:
+  its status doesn't say which revision it describes, and during a rolling update the previous pod
+  keeps its cluster Ready, so the previous revision's Ready would read as the edit's. It reports
+  one thing, a failure it sees happen: "Unable to roll out changes to model <name>", with the
+  reason and a link to the model, when the model, or a cluster it is placed on, turns Failed. Its
+  first read comes as the edit lands, before Argo CD can have applied it, so a model already
+  failed then is the previous revision's failure, reported only if its status changes. After 30
+  minutes it ends without a word; a model that is gone stops it. Edits get a "ready" once the
+  backend reports the revision its status describes.
+- One watch follows a model at a time, so nothing is said twice: deploying an id again replaces
+  its earlier watch; an edit replaces the previous edit's watch, and adds none while a deploy's
+  readiness watch of the model still runs, as that one follows the same status and reports the
+  same failures; a delete stops the model's watch at once.
+- The pages refetch what a watch learns at once, rather than on their own next poll: every
+  Models query (lists and `Get`s alike) when a model's watch sees its status change (its phase or
+  reason, or any `status.clusters` entry), and every query of the object's kind, Models or
+  Subscriptions, when any watch ends. A poll that sees no change refetches nothing.
+- The watches and the notifications are kept in the browser tab's session storage under the
+  signed-in user (`storageKeys.ts`), so a reload resumes them: a write's record is kept before its
+  request goes out, and one whose answer the page no longer awaits is read back. When another user
+  signs in to the tab, the previous user's records stop and leave it. They belong to that tab
+  only: another tab, browser or admin sees none of them.
+
+The words name each stage as it is, since the backend only commits to Git and Argo CD applies the
+change later: "Model <name> saved to Git" with "It's being deployed to <clusters>", "Changes to
+model <name> saved to Git", "Model <name> deleted from Git", and for a subscription that it takes
+effect once the ingress clusters apply it. A model is "ready" once it runs on every cluster it
+is placed on (each cluster's status), and only then. The pages raise no success notice of their own for these writes:
+the center says it on both paths (`writeText.ts`).
+
+Every toast goes through the notification center (`NotificationToasts`), a page's own success
+notice (`NoticeToast`) included, and every toast is also in the drawer the masthead's bell opens (on a
+phone, the user menu's Notifications item, as it offers the theme there).
 
 ### Perses on Query v5
 

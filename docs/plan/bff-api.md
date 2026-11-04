@@ -135,7 +135,7 @@ under `/perses/api`, and the Connect relay to the backend's own RPCs under `/ai_
 | GET | `/healthcheck` | `{status, version}` | none; no identity and no backend call: a check, by a person or a script on the pod, that the BFF process serves HTTP and which build it is (`version`). No probe uses it: the kubelet probes only `/readyz` (below), and there is deliberately no liveness probe, which would restart the BFF whenever the proxy in front of it is down. Through the route it is behind the login like any page (the proxy skips auth for `/readyz` only) |
 | GET | `/readyz` | `{status, version, backend}` | `AiGrid/Ping`; readiness, 503 when the backend does not answer. The pod is then unready, and with the one replica the chart runs, the Service has no endpoint left: the OpenShift router answers every request with its own 503 page (HTML, not this API's JSON error), until the backend answers again |
 | GET | `/api/v1/user` | `{username, email?, groups, isProviderAdmin}` (`email` omitted when the proxy sends none) | none; the identity from the proxy headers, `isProviderAdmin` from a hub `SelfSubjectAccessReview` |
-| GET | `/api/v1/config` | `{gridEndpoint, mapTileUrl, mapTileAttribution, billingUrl, version, fakeBackend, monitoring: {enabled, persesProject}}`: `fakeBackend` makes the UI show its fake-backend banner, `monitoring.enabled` says the BFF relays `/perses/api` (it has a `PERSES_URL`) and `monitoring.persesProject` names the one Perses project the relay reads, whose `dashboard-*` objects are the Monitoring tabs (always set when `monitoring.enabled`) | none; env `GRID_CONSUMER_URL`, `MAP_TILE_URL`, `MAP_TILE_ATTRIBUTION` (the attribution shown with `MAP_TILE_URL`'s tiles; with no `MAP_TILE_URL` the map draws a bundled land outline), `BILLING_URL`, `FAKE_BACKEND`, `PERSES_URL`, `PERSES_PROJECT` |
+| GET | `/api/v1/config` | `{gridEndpoint, mapTileUrl, mapTileAttribution, billingUrl, version, fakeBackend, monitoring: {enabled, persesProject}, models: {hardware}}`: `fakeBackend` makes the UI show its fake-backend banner, `monitoring.enabled` says the BFF relays `/perses/api` (it has a `PERSES_URL`) and `monitoring.persesProject` names the one Perses project the relay reads, whose `dashboard-*` objects are the Monitoring tabs (always set when `monitoring.enabled`); `models.hardware` is the Deploy model wizard's Hardware list, never empty, each `{id, label, description?, accelerator?, image?, env?, defaults?: {accelerators?, cpu?, memory?}}` (see "Model hardware" below) | none; env `GRID_CONSUMER_URL`, `MAP_TILE_URL`, `MAP_TILE_ATTRIBUTION` (the attribution shown with `MAP_TILE_URL`'s tiles; with no `MAP_TILE_URL` the map draws a bundled land outline), `BILLING_URL`, `FAKE_BACKEND`, `PERSES_URL`, `PERSES_PROJECT`, `MODEL_HARDWARE` |
 | GET | `/api/v1/tenants?offset=&limit=&filter=` | `Tenant[]` in Keycloak's order (by name, the realm database's collation) plus `meta`; `filter` is a CEL expression the client writes, over `this` (a Tenant), see "Writes, versions and lists"; `limit` omitted returns everything; the removed `search` is 422 | `Tenants/ListTenants` with `offset`, `limit` and `filter` exactly as sent |
 | GET | `/api/v1/tenants/{id}` | `Tenant`, `ETag: "<resourceVersion>"` | `Tenants/GetTenant`; 404 with the backend's message when absent |
 | POST | `/api/v1/tenants` | 201, `Tenant` as created, `Location: /api/v1/tenants/{id}`, `ETag` | `Tenants/CreateTenant`; 422 with Keycloak's message on a bad name, alias or domain, 409 on a taken name or alias |
@@ -435,6 +435,26 @@ whatever a client sends, and the page's inline messages, which only repeat the P
 before submit, are no protection. The fake's `BadRequest` field violations are the reference
 for what to check and which message to send.
 
+### Model hardware
+
+`models.hardware` in `/api/v1/config` is console configuration, like the map's tiles: the
+choices the Deploy model wizard offers, which the provider admin sets in the chart's
+`console.models.hardware` (`charts/ai-grid-provider-console/README.md`, "Model hardware"). The
+chart renders it as `MODEL_HARDWARE`, a JSON list. The defaults live in the chart's `values.yaml`:
+**NVIDIA GPU** (`nvidia.com/gpu`, one GPU, CPU 2, memory 16Gi,
+no image: the cluster's default vLLM image for NVIDIA GPUs) and **CPU only** (OpenShift AI 3.6's
+vLLM CPU image with `VLLM_CPU_KVCACHE_SPACE=4` and `OMP_NUM_THREADS=4`, CPU 4, memory 8Gi).
+`MODEL_HARDWARE` empty or unset (a local run, `make dev`, or the chart with an empty list) falls
+back to the BFF's copy of the same two, `config.DefaultModelHardware`; `hack/check-chart.sh` fails
+when the chart's defaults differ from it, as `mock/examples/get-config.json` records it. The BFF
+reads the list strictly at start and doesn't start when an entry breaks a rule `values.schema.json`
+also checks: an unknown field, an id that isn't a DNS label or is used twice, an empty label (Unicode spaces count), an
+accelerator that isn't a Kubernetes extended resource name (a domain, a slash and a name, without kubernetes.io/), an image with whitespace, an environment
+variable that isn't a valid name or is `VLLM_ADDITIONAL_ARGS` (the wizard's runtime arguments),
+`defaults.accelerators` outside 1 to 64 or without an accelerator, and a `defaults.cpu` or
+`defaults.memory` the wizard doesn't take. It decides nothing about a model: the wizard sends an
+entry's image, environment and resources in `Models/Create`, and the backend validates them.
+
 ### The Perses relay
 
 The Monitoring page embeds the hub's Perses dashboards the way the OpenShift AI dashboard's
@@ -588,7 +608,17 @@ What the relay owns is the boundary:
 - **How long.** A unary call (every GET, and a unary POST) is bounded by `BACKEND_TIMEOUT` (10s,
   at most 50s so that the 504 fits in the server's 60s write timeout), as an RPC from the BFF
   is: past it the relay answers 504 (`deadline_exceeded`). Every call, a stream included, waits
-  at most `BACKEND_TIMEOUT` for the backend's headers (504 likewise). A stream whose headers came
+  at most `BACKEND_TIMEOUT` for the backend's headers (504 likewise). The procedures that change
+  data take `BACKEND_WRITE_TIMEOUT` (30s, at most 50s) for both instead: the allowlist marks each
+  procedure as a read or a write (`allowedProcedures`; today every `Create`, `Update` and
+  `Delete`), and the relay decides by the path, never by the body. The backend commits Models and
+  Subscriptions to a Git repository, which can take longer than a read, and a write the relay cut
+  at the read timeout could still land, so its 504 would say nothing about the outcome (the
+  console treats such a write as unknown and checks it, `docs/connect.md`, "Writes that take
+  long"). The router and kube-auth-proxy in front of the BFF wait longer than its 60s server write
+  timeout (the chart's `route.timeout`, 70s, and `authProxy.upstreamTimeout`, 65s; their defaults,
+  30s, would cut a write first; `charts/ai-grid-provider-console/README.md`, "Timeouts").
+  A stream whose headers came
   runs until it ends or the server's 60s write timeout cuts it, and reaches the browser as the
   backend flushes it; when the browser goes away, the backend's call is canceled. A backend that
   can't be reached, or whose certificate isn't trusted, is 502 (`unavailable`), with the detail
@@ -661,7 +691,7 @@ exists; the frontend uses the mock service meanwhile.
 | `/ai_grid.v1.*` path that is not `/ai_grid.v1.<Service>/<Method>`; a method other than `POST` and `GET` | 404, 405 with `Allow: GET, POST`; Connect error `unimplemented` |
 | `/ai_grid.v1.*` body over 1 MiB | 413, Connect error `resource_exhausted` |
 | `/ai_grid.v1.*` POST that is not the Connect protocol (gRPC, gRPC-Web, any other `Content-Type`) | 415, Connect error `unimplemented` |
-| `/ai_grid.v1.*` backend unreachable or untrusted; a unary call slower than `BACKEND_TIMEOUT`, or any call whose headers take longer | 502 `unavailable`; 504 `deadline_exceeded` |
+| `/ai_grid.v1.*` backend unreachable or untrusted; a unary call slower than `BACKEND_TIMEOUT` (`BACKEND_WRITE_TIMEOUT` for a write procedure), or any call whose headers take longer | 502 `unavailable`; 504 `deadline_exceeded` |
 | Any answer from the backend on `/ai_grid.v1.*` (its Connect errors included) | the backend's status and body unchanged, with only the headers a Connect client needs |
 | Backend `InvalidArgument`, `OutOfRange`: Keycloak's validation messages ("Name can not be null", "Invalid domain format: x", "Cannot change the alias", "Domain x is already linked to organization y in realm ai-grid"), the API server's and the CRD's for a model (the DNS-1123 name message, the schema's "spec.replicas: Invalid value: -1: spec.replicas in body should be greater than or equal to 0" and "spec.scaling.maxReplicas: Required value", "replicas and scaling are mutually exclusive; ...", "at least one trigger is required when using direct KEDA scaling", "minReplicas cannot exceed maxReplicas"), and the backend's own checks with the console's proposed wording (URI scheme, Placement operators, rollout fields, `spec.rollout requires spec.placement`, the reserved tenant version attribute, an `ai-grid/latitude` or `ai-grid/longitude` annotation that is not a number in range, a list `filter` that does not compile, is not a bool or fails on an object) | 422, backend message kept; with `fieldErrors` for `InvalidArgument` only |
 | Backend `AlreadyExists` (Keycloak: "A organization with the same name already exists.", also for a blank name on update), `Aborted` (the object is not at the `If-Match` version) | 409, backend message kept |
@@ -669,7 +699,7 @@ exists; the frontend uses the mock service meanwhile.
 | Backend `ResourceExhausted` | 429 |
 | Backend `Unimplemented` | 501 |
 | Backend `Unavailable` (hub or Keycloak unreachable), `Canceled` | 503 |
-| Backend `DeadlineExceeded` or BFF timeout (`BACKEND_TIMEOUT`, 10s) | 504 |
+| Backend `DeadlineExceeded` or BFF timeout (`BACKEND_TIMEOUT`, 10s; `BACKEND_WRITE_TIMEOUT`, 30s, for a POST, PATCH, PUT or DELETE) | 504 |
 | Any other backend code | 502, generic message, detail in the BFF log |
 
 ## Out of scope for the BFF

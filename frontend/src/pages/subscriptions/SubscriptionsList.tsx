@@ -7,38 +7,28 @@
 // over Connect (useSubscriptions).
 import { useCallback, useMemo, useState } from 'react';
 import { Alert, AlertActionLink, Button, Stack, StackItem } from '@patternfly/react-core';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { EmptyListState } from '../../components/states/EmptyListState';
 import { PageStateSection } from '../../components/states/PageStateSection';
 import { useConsoleSession } from '../../context/useConsoleSession';
 import type { Subscription } from '../../gen/ai_grid/v1/subscription_type_pb';
 import { getSubscriptionCreateUrl } from '../../utilities/maasGovernanceNavigation';
-import { useClusterList } from '../clusters/useClusters';
-import { siteNamesOf } from '../models/modelUtils';
 import type { SubscriptionsFilterDataType } from './allSubscriptions/const';
 import { initialSubscriptionsFilterData, SubscriptionsFilterOptions } from './allSubscriptions/const';
 import type { ModelsState } from './allSubscriptions/ExpandedModelsPanel';
 import { SubscriptionsTable } from './allSubscriptions/SubscriptionsTable';
 import { SubscriptionsToolbar } from './allSubscriptions/SubscriptionsToolbar';
 import { useDeleteSubscription } from './hooks/useDeleteSubscription';
-import {
-  descriptionOf,
-  groupsOf,
-  modelForRef,
-  modelIdsOf,
-  modelRefsOf,
-  organizationIdOf,
-  tenantNameOf,
-} from './subscriptionText';
+import { descriptionOf, groupsOf, modelForRef, modelIdsOf, modelRefsOf, organizationRefOf } from './subscriptionText';
 import { displayNameOf } from '../models/modelView';
-import { useModelsByIds, useSubscriptionList, useTenantList } from './useSubscriptions';
+import { useModelsByIds, useOrganizations, useSubscriptionList } from './useSubscriptions';
 
 export const SubscriptionsList: React.FC = () => {
   const { data: subscriptions, loaded, error, refresh: refreshSubscriptions } = useSubscriptionList();
   // Only the models the listed subscriptions name (Models/List filtered by their ids), not the fleet.
   const modelIds = useMemo(() => modelIdsOf(subscriptions), [subscriptions]);
   const { data: models, loaded: modelsLoaded, error: modelsError, refresh: refreshModels } = useModelsByIds(modelIds);
-  const { data: organizations } = useTenantList();
+  const { data: organizations, known: organizationsKnown } = useOrganizations();
   const { user } = useConsoleSession();
   /** UI hint only; the backend enforces authorization. */
   const canWrite = !!user?.isProviderAdmin;
@@ -46,16 +36,10 @@ export const SubscriptionsList: React.FC = () => {
     void refreshSubscriptions();
     void refreshModels();
   }, [refreshSubscriptions, refreshModels]);
-  // The clusters name the models' locations' sites, as on the Models page. Without a site name (or
-  // without the clusters) a location shows as itself.
-  const { data: clusters } = useClusterList();
-  const siteNames = useMemo(() => siteNamesOf(clusters), [clusters]);
   const [filterData, setFilterData] = useState<SubscriptionsFilterDataType>(initialSubscriptionsFilterData);
-  const navigate = useNavigate();
   const [confirmDelete, deleteDialog] = useDeleteSubscription({
-    // The delete refetches the list. Replace, so the notice doesn't add a second Subscriptions
-    // entry to the browser's history.
-    onDeleted: () => void navigate('.', { replace: true, state: { notice: 'Subscription deleted' } }),
+    // The list refetches once the delete lands; the notification center says how it went.
+    onDeleted: () => undefined,
   });
 
   const onFilterUpdate = useCallback(
@@ -64,16 +48,12 @@ export const SubscriptionsList: React.FC = () => {
   );
   const onClearFilters = useCallback(() => setFilterData(initialSubscriptionsFilterData), []);
 
-  const organizationName = useCallback(
-    (s: Subscription) => {
-      const id = organizationIdOf(s);
-      const organization = organizations.find((o) => o.id === id);
-      return organization ? tenantNameOf(organization) : id;
-    },
-    [organizations],
+  const organizationOf = useCallback(
+    (s: Subscription) => organizationRefOf(s, organizations, organizationsKnown),
+    [organizations, organizationsKnown],
   );
 
-  // The models fill in the models' locations and let the model filter match their display name and
+  // The models fill in the models' clusters and let the model filter match their display name and
   // description. When their last load failed, only what the subscriptions say is known.
   let modelsState: ModelsState = 'loading';
   if (modelsLoaded) {
@@ -134,18 +114,17 @@ export const SubscriptionsList: React.FC = () => {
               actionLinks={<AlertActionLink onClick={refresh}>Retry</AlertActionLink>}
               data-testid="subscriptions-models-unavailable"
             >
-              Model locations are not shown, and the model filter matches only the model names and descriptions saved in
-              each subscription.
+              The clusters each model is deployed to are not shown, and the model filter matches only the model names
+              and descriptions saved in each subscription.
             </Alert>
           </StackItem>
         )}
         <StackItem>
           <SubscriptionsTable
             subscriptions={filteredSubscriptions}
-            organizationName={organizationName}
+            organizationOf={organizationOf}
             models={models}
             modelsState={modelsState}
-            siteNames={siteNames}
             onClearFilters={onClearFilters}
             toolbarContent={
               <SubscriptionsToolbar

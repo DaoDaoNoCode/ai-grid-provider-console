@@ -49,6 +49,9 @@ spec:
             - --tls-cert-file=/etc/tls/private/tls.crt
             - --tls-key-file=/etc/tls/private/tls.key
             - --upstream=http://127.0.0.1:8080/
+            # Longer than the BFF's longest answer (its 60s server write timeout), so a slow write
+            # ends in the BFF's own answer; the default, 30s, would cut BACKEND_WRITE_TIMEOUT's.
+            - --upstream-timeout={{ .Values.authProxy.upstreamTimeout }}
             - --redirect-url=$(OAUTH2_PROXY_REDIRECT_URL)
             - --email-domain=*
             - --scope=user:full
@@ -160,6 +163,19 @@ spec:
               value: {{ . | quote }}
             {{- end }}
             {{- end }}
+            {{- end }}
+            {{- with (.Values.console.models | default dict).hardware }}
+            {{- /* values.schema.json checks each entry; it can't say that ids are unique. */}}
+            {{- $ids := dict }}
+            {{- range . }}
+            {{- if hasKey $ids .id }}
+            {{- fail (printf "console.models.hardware: id %q is used by more than one entry" .id) }}
+            {{- end }}
+            {{- $_ := set $ids .id true }}
+            {{- end }}
+            # The Deploy model wizard's hardware choices; an empty list leaves the BFF's own copy of the defaults.
+            - name: MODEL_HARDWARE
+              value: {{ toJson . | quote }}
             {{- end }}
           # Probed through the proxy (same pod, port 8443): the kubelet cannot
           # reach a loopback port. /readyz also pings the backend, so this one

@@ -7,19 +7,21 @@
  * z.config is global to the zod copy, which Perses shares; Perses's own schemas set their messages.
  */
 import { z } from 'zod';
+import { formatLocaleNumber } from '../utilities/format';
 
-const plural = (n: number | bigint, one: string, many: string) => `${n} ${Number(n) === 1 ? one : many}`;
+const plural = (n: number | bigint, one: string, many: string) =>
+  `${formatLocaleNumber(n)} ${Number(n) === 1 ? one : many}`;
 
 /** A bound zod puts on every integer schema, which says nothing about the field. */
 const isSafeIntegerBound = (n: number | null | undefined) =>
   n == null || !Number.isFinite(n) || Math.abs(n) >= Number.MAX_SAFE_INTEGER;
 
-/** "Enter a number from 1 to 64." when the schema has both bounds, else the one bound the input broke. */
+/** "Enter a number from 1 to 1,000,000,000." when the schema has both bounds, else the one bound the input broke. */
 const numberRange = (schema: unknown, fallback: string): string => {
   if (schema instanceof z.ZodNumber) {
     const { minValue, maxValue } = schema;
-    if (!isSafeIntegerBound(minValue) && !isSafeIntegerBound(maxValue)) {
-      return `Enter a number from ${minValue} to ${maxValue}.`;
+    if (minValue != null && maxValue != null && !isSafeIntegerBound(minValue) && !isSafeIntegerBound(maxValue)) {
+      return `Enter a number from ${formatLocaleNumber(minValue)} to ${formatLocaleNumber(maxValue)}.`;
     }
   }
   return fallback;
@@ -74,8 +76,8 @@ export const consoleErrorMap: z.core.$ZodErrorMap = (issue) => {
           return numberRange(
             issue.schema,
             issue.inclusive
-              ? `Enter a number of at least ${issue.minimum}.`
-              : `Enter a number greater than ${issue.minimum}.`,
+              ? `Enter a number of at least ${formatLocaleNumber(issue.minimum)}.`
+              : `Enter a number greater than ${formatLocaleNumber(issue.minimum)}.`,
           );
         default:
           return 'Enter a larger value.';
@@ -96,8 +98,8 @@ export const consoleErrorMap: z.core.$ZodErrorMap = (issue) => {
           return numberRange(
             issue.schema,
             issue.inclusive
-              ? `Enter a number of at most ${issue.maximum}.`
-              : `Enter a number less than ${issue.maximum}.`,
+              ? `Enter a number of at most ${formatLocaleNumber(issue.maximum)}.`
+              : `Enter a number less than ${formatLocaleNumber(issue.maximum)}.`,
           );
         default:
           return 'Enter a smaller value.';
@@ -108,7 +110,7 @@ export const consoleErrorMap: z.core.$ZodErrorMap = (issue) => {
       if (issue.format === 'includes') return `Include "${issue.includes}".`;
       return formatMessages[issue.format] ?? 'Enter a valid value.';
     case 'not_multiple_of':
-      return `Enter a multiple of ${issue.divisor}.`;
+      return `Enter a multiple of ${formatLocaleNumber(issue.divisor)}.`;
     case 'unrecognized_keys':
       return issue.keys.length === 1
         ? `Remove the unknown field "${issue.keys[0]}".`

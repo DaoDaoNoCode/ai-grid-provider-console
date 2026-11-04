@@ -30,6 +30,12 @@ import { ServiceError } from './api/ConsoleService';
 import { AppRoutes } from './AppRoutes';
 import { FakeBackendBanner } from './components/FakeBackendBanner';
 import { NoticeToast } from './components/NoticeToast';
+import { BackgroundWritesProvider } from './notifications/BackgroundWritesProvider';
+import { NotificationBell } from './notifications/NotificationBell';
+import { NotificationDrawerPanel } from './notifications/NotificationDrawerPanel';
+import { NotificationToasts } from './notifications/NotificationToasts';
+import { NotificationWatcherProvider } from './notifications/NotificationWatcherProvider';
+import { NotificationsProvider } from './notifications/NotificationsProvider';
 import { AboutConsoleModal } from './components/AboutConsoleModal';
 import { ProviderAdminsOnly } from './components/ProviderAdminsOnly';
 import { SessionEnded, type SessionEnd } from './components/SessionEnded';
@@ -60,6 +66,11 @@ type Props = {
   /** The browser's location and session storage; a test gives its own. */
   navigation?: Navigation;
   storage?: GetStorage;
+  /**
+   * How long a form waits for a write before the notification center takes it over
+   * (BackgroundWritesProvider, FORM_WAIT_MS); a test ends the wait itself.
+   */
+  formWait?: (signal: AbortSignal) => Promise<void>;
 };
 
 /**
@@ -118,6 +129,7 @@ export const App: React.FC<Props> = ({
   transport,
   navigation = browserNavigation,
   storage = browserStorage,
+  formWait,
 }) => {
   // Any call answered 401 means the session has ended. As the OpenShift console does (handle401 in
   // openshift/console frontend/public/module/auth.ts), the console then goes through the login
@@ -138,7 +150,7 @@ export const App: React.FC<Props> = ({
   const sessionEnded = ended !== undefined;
   // Loaded once here and given to every page through the session context.
   const [user, userLoaded, userError, reloadUser] = useServiceData(() => service.getUser(), undefined, 0);
-  const [config, , configError] = useServiceData(() => service.getConfig(), undefined, 0);
+  const [config, , configError, reloadConfig] = useServiceData(() => service.getConfig(), undefined, 0);
   // Only the config says whether a login proxy runs: the fake backend has none. Without it (it
   // failed to load, for whatever reason) the console can't tell, so it doesn't redirect on its own
   // and offers both Try again and Reload.
@@ -167,8 +179,8 @@ export const App: React.FC<Props> = ({
       });
   }, [service, sessionEnded]);
   const session = useMemo(
-    () => ({ user, userLoaded, userError, config, configError, sessionEnded, checkSession }),
-    [user, userLoaded, userError, config, configError, sessionEnded, checkSession],
+    () => ({ user, userLoaded, userError, config, configError, reloadConfig, sessionEnded, checkSession }),
+    [user, userLoaded, userError, config, configError, reloadConfig, sessionEnded, checkSession],
   );
   const { pathname, search, hash } = useLocation();
   const signInAgain = signInAgainUrl(pathname + search + hash);
@@ -186,6 +198,9 @@ export const App: React.FC<Props> = ({
   const fullPage = sessionEnd !== undefined || notAdmin;
   const canSignOut = config?.fakeBackend !== true;
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  // The drawer belongs to the pages: none on a full-page state.
+  const notificationsShown = drawerOpen && !fullPage;
 
   const header = (
     <Masthead display={{ default: 'inline' }}>
@@ -209,8 +224,16 @@ export const App: React.FC<Props> = ({
       <MastheadContent>
         <Toolbar isFullHeight isStatic>
           <ToolbarContent>
-            {/* A phone has no room for it beside the user menu, which offers the theme there instead. */}
-            <ToolbarItem align={{ default: 'alignEnd' }} visibility={{ default: 'hidden', md: 'visible' }}>
+            {/* A phone has no room for these beside the user menu, which offers both there instead. */}
+            {!fullPage && (
+              <ToolbarItem align={{ default: 'alignEnd' }} visibility={{ default: 'hidden', md: 'visible' }}>
+                <NotificationBell isExpanded={notificationsShown} onToggle={() => setDrawerOpen((open) => !open)} />
+              </ToolbarItem>
+            )}
+            <ToolbarItem
+              align={fullPage ? { default: 'alignEnd' } : undefined}
+              visibility={{ default: 'hidden', md: 'visible' }}
+            >
               <ThemeToggle />
             </ToolbarItem>
             <ToolbarItem align={{ default: 'alignEnd', md: 'alignStart' }}>
@@ -220,6 +243,7 @@ export const App: React.FC<Props> = ({
                 error={userError}
                 canSignOut={canSignOut}
                 onAbout={() => setAboutOpen(true)}
+                onNotifications={fullPage ? undefined : () => setDrawerOpen(true)}
               />
             </ToolbarItem>
           </ToolbarContent>
@@ -274,28 +298,39 @@ export const App: React.FC<Props> = ({
     <ThemeProvider>
       <ConsoleSessionContext.Provider value={session}>
         <BackendProvider transport={transport} checkSession={checkSession}>
-          <Page
-            // PatternFly runs the sidebar: open on a desktop, closed on a phone or a narrow window (below
-            // xl), where the toggle opens it over the page.
-            isManagedSidebar
-            isContentFilled
-            masthead={header}
-            sidebar={fullPage ? undefined : sidebar}
-            banner={<FakeBackendBanner />}
-            mainContainerId={MAIN_ID}
-            skipToContent={<SkipToContent href={`#${MAIN_ID}`}>Skip to content</SkipToContent>}
-          >
-            <NoticeToast />
-            {content}
-            <AboutConsoleModal
-              isOpen={aboutOpen}
-              onClose={() => setAboutOpen(false)}
-              config={config}
-              configError={configError}
-              user={user}
-              userError={userError}
-            />
-          </Page>
+          {/* The notification center lives here, above every page: a write it takes over keeps
+              running, and its watches keep polling, whichever page the user moves to. */}
+          <NotificationsProvider storage={storage} owner={user?.username}>
+            <NotificationWatcherProvider>
+              <BackgroundWritesProvider storage={storage} owner={user?.username} formWait={formWait}>
+                <Page
+                  // PatternFly runs the sidebar: open on a desktop, closed on a phone or a narrow window
+                  // (below xl), where the toggle opens it over the page.
+                  isManagedSidebar
+                  isContentFilled
+                  masthead={header}
+                  sidebar={fullPage ? undefined : sidebar}
+                  notificationDrawer={<NotificationDrawerPanel onClose={() => setDrawerOpen(false)} />}
+                  isNotificationDrawerExpanded={notificationsShown}
+                  banner={<FakeBackendBanner />}
+                  mainContainerId={MAIN_ID}
+                  skipToContent={<SkipToContent href={`#${MAIN_ID}`}>Skip to content</SkipToContent>}
+                >
+                  <NoticeToast />
+                  <NotificationToasts onViewAll={() => setDrawerOpen(true)} />
+                  {content}
+                  <AboutConsoleModal
+                    isOpen={aboutOpen}
+                    onClose={() => setAboutOpen(false)}
+                    config={config}
+                    configError={configError}
+                    user={user}
+                    userError={userError}
+                  />
+                </Page>
+              </BackgroundWritesProvider>
+            </NotificationWatcherProvider>
+          </NotificationsProvider>
         </BackendProvider>
       </ConsoleSessionContext.Provider>
     </ThemeProvider>

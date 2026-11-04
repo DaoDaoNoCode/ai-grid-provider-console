@@ -60,12 +60,14 @@ a failed load.
 - `PaginatedTable`, its toolbar holding the filter, the create button, then refresh.
 - The search box is `ToolbarSearch`, its placeholder "Filter by &lt;fields&gt;", its name "Filter
   &lt;objects&gt;". A list that filters by more than one attribute uses PatternFly's attribute
-  search (the Subscriptions toolbar).
+  search (the Subscriptions toolbar). Every toolbar field (a search box, a filter's select) is as
+  wide as `ToolbarSearch`'s: `widths={TOOLBAR_FIELD_WIDTHS}` (`src/components/toolbarField.ts`) on
+  its `ToolbarItem` or `ToolbarFilter`.
 - Every column sortable.
 - The row menu is `SimpleMenuActions`, last, for users who may write only: View details, Edit, a
   divider, Delete.
-- "—" (`EMPTY_VALUE`) for a missing value; numbers right-aligned (`className="console-number"` on
-  the `Th` and the `Td`).
+- "—" (`EMPTY_VALUE`) for a missing value; numbers left-aligned like every other column,
+  PatternFly's default, with no class of their own.
 
 ## Status
 
@@ -93,6 +95,16 @@ a failed load.
 - A big create is a `Wizard` with `ConsoleWizardFooter`; a small one a `Form` with an `ActionGroup`.
 - Every delete, and Remove from AI Grid, asks for the object's name typed in (`DeleteModal`).
 - After an action succeeds, a success toast: navigate with `state: { notice }` (`NoticeToast`).
+- A write to the backend's Git catalog (Models, Subscriptions) goes through `submitWrite`
+  (`src/notifications`, `docs/connect.md`, "Writes that take long"): the form waits briefly, then
+  leaves as on success, without a notice of its own: the notification center says how the write
+  ended, in the words of its stage ("Model <name> saved to Git", never "deployed" before its
+  clusters serve it). A refusal within the wait stays on the form, as above.
+- Toasts: one look for every toast, PatternFly's toast alert group (`NotificationToasts`). Never
+  render an `AlertGroup isToast` of a page's own: raise a notice (`NoticeToast`) or a notification
+  (`useNotifications().notify`). Every toast is also an entry of the drawer behind the masthead's
+  bell (on a phone, the user menu's Notifications item); what answers the user's own click is kept there as read, what arrives later as unread.
+  The drawer lists this browser tab's notifications only.
 - Write actions show only for a user who may write (`isProviderAdmin`); when `/user` fails, the
   console says so above every page rather than quietly hiding them.
 
@@ -120,7 +132,10 @@ odh-dashboard as the reference product. The terms come from [GLOSSARY.md](../GLO
    - _cluster_, not managed cluster or ManagedCluster; _AI Grid cluster_ for a Grid member;
    - _organization_, never tenant; the people who use a subscription are _users_ in its _groups_;
    - _model_, not model deployment;
-   - _location_ (the label models are deployed by) and _site_ (the place's name);
+   - _cluster_ for where a model is deployed, never _location_ or _site_;
+   - each label names the data it shows: _Site_ is the `ai-grid/site-name` annotation, _Site ID_
+     the `ai-grid/site` label, _Region_ the cloud region claim, _Location label_ the `location`
+     label;
    - the roles _Ingress_, _Inference_ and _Combined_;
    - _hub_ (lowercase), _provider admin_, and _your hub administrator_ for whoever grants access;
    - _AI Grid_, never "the grid", "grid" or "fleet".
@@ -146,7 +161,9 @@ odh-dashboard as the reference product. The terms come from [GLOSSARY.md](../GLO
     hub administrator ...".
 11. **Not found** is "&lt;Object&gt; not found", one sentence, then "Go to &lt;list&gt;".
 12. **Success toasts are "&lt;Object&gt; &lt;past participle&gt;"**: "Organization created", "Model
-    deployed", "local-cluster added to AI Grid". No "successfully" and no period.
+    Granite 8B saved to Git", "local-cluster added to AI Grid". No "successfully" and no period.
+    A Models or Subscriptions write names its object and the stage it reached: it is in Git, and
+    a model is deployed only once its clusters serve it (`writeText.ts`).
 13. **Confirmation modals** follow one pattern
     ([modal](https://www.patternfly.org/components/modal/design-guidelines)):
     - the title is "&lt;Verb&gt; &lt;object&gt;?";
@@ -156,7 +173,7 @@ odh-dashboard as the reference product. The terms come from [GLOSSARY.md](../GLO
 14. **Helper text says what to enter or what constraint applies.** It doesn't repeat the label or
     explain what the field is. Write examples as "For example, us-east."
 15. **Field errors are one imperative sentence that ends with a period and says how to fix the
-    input**: "Required.", "Enter a number from 1 to 99.", "Select at least one location.". The same
+    input**: "Required.", "Enter a number from 1 to 99.", "Select at least one cluster.". The same
     constraint gets the same words everywhere, and a limit names its value.
 16. **No internal jargon.** Don't write label keys (`ai-grid/enabled`), Kubernetes kinds (Policy,
     ManifestWork, MaaSModelRef), "controller", "pods", "KEDA", "ACM Search", "git mode", "CEL",

@@ -37,12 +37,12 @@ import { StatCard } from '../../components/StatCard';
 import { StatusLabel } from '../../components/StatusLabel';
 import { SubtleText } from '../../components/SubtleText';
 import { NoResultsState } from '../../components/states/NoResultsState';
-import { SiteText } from '../clusters/ClusterSite';
 import { modelPath } from '../models/modelUtils';
 import { LOCATION_DOCS_URL } from '../clusters/site';
 import { GridFleetMap } from './GridFleetMap';
 import type { TileLayerConfig } from './tiles';
 import './grid-fleet.css';
+import { runtimeImageText } from '../models/modelHardware';
 
 /** What the map and its drawer show of a cluster (clusterView.ts). */
 export type FleetCluster = Pick<
@@ -65,7 +65,8 @@ type Props = {
 // `locations` are `location` labels, which several clusters can share.
 const matches = (model: ModelView, cluster: FleetCluster) => model.selectedClusters.includes(cluster.name);
 
-const siteOf = (cluster: FleetCluster) => cluster.siteName ?? cluster.region ?? cluster.site ?? cluster.name;
+/** Where a cluster is, for its card and drawer: "site · region", either alone, or nothing. */
+const whereOf = (cluster: FleetCluster) => [cluster.siteName, cluster.region].filter(Boolean).join(' · ');
 
 const hasCoordinates = (c: FleetCluster) => c.latitude !== undefined && c.longitude !== undefined;
 
@@ -150,12 +151,14 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
   const visibleClusters = clusters.filter(
     (c) =>
       (availability === 'all' || c.status === availability) &&
-      `${c.name} ${c.site ?? ''} ${c.siteName ?? ''} ${modelsAt(c).map(titleOf).join(' ')}`
-        .toLowerCase()
-        .includes(query),
+      `${c.name} ${c.site ?? ''} ${whereOf(c)} ${modelsAt(c).map(titleOf).join(' ')}`.toLowerCase().includes(query),
   );
   const visibleModels = relevantModels.filter((m) =>
-    `${m.id} ${titleOf(m)} ${m.modelName ?? ''} ${clustersOf(m).map(siteOf).join(' ')}`.toLowerCase().includes(query),
+    `${m.id} ${titleOf(m)} ${m.modelName ?? ''} ${clustersOf(m)
+      .map((c) => c.name)
+      .join(' ')}`
+      .toLowerCase()
+      .includes(query),
   );
   const isFiltered = search !== '' || (mode === 'cluster' && availability !== 'all');
   const clearFilters = () => {
@@ -194,7 +197,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
       >
         {targets.map((c) => (
           <Button key={c.name} variant="link" isInline onClick={() => open({ kind: 'cluster', name: c.name })}>
-            {siteOf(c)} · {c.name}
+            {c.name}
           </Button>
         ))}
       </Flex>
@@ -242,9 +245,11 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
           </Title>
           <StatusLabel isCompact status={selectedCluster?.status ?? selectedModel?.phase ?? 'Unknown'} />
         </Flex>
-        <SubtleText>
-          {selectedCluster ? siteOf(selectedCluster) : (selectedModel?.modelName ?? selectedModel?.id)}
-        </SubtleText>
+        {(selectedModel || (selectedCluster && whereOf(selectedCluster))) && (
+          <SubtleText>
+            {selectedCluster ? whereOf(selectedCluster) : (selectedModel?.modelName ?? selectedModel?.id)}
+          </SubtleText>
+        )}
       </Stack>
     ) : (
       <Flex alignItems={{ default: 'alignItemsCenter' }} spaceItems={{ default: 'spaceItemsSm' }}>
@@ -277,14 +282,14 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
 
   const clusterDetails = (cluster: FleetCluster) => (
     <Stack hasGutter>
-      <DetailsSection title="Site and cluster" headingLevel="h3">
+      <DetailsSection title="Cluster" headingLevel="h3">
         <DetailsList
-          aria-label="Site and cluster"
+          aria-label="Cluster"
           items={[
-            { term: 'Site', value: cluster.siteName ?? cluster.site },
+            { term: 'Site', value: cluster.siteName },
             { term: 'Site ID', value: cluster.site },
             { term: 'Region', value: cluster.region },
-            { term: 'Location', value: cluster.location },
+            { term: 'Location label', value: cluster.location },
             {
               term: 'Coordinates',
               value: hasCoordinates(cluster) ? (
@@ -326,12 +331,12 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
             { term: 'Model', value: model.modelName },
             { term: 'Replicas', value: model.replicas },
             { term: 'Model URI', value: model.modelUri },
-            { term: 'Runtime image', value: model.runtimeImage },
+            { term: 'Runtime image', value: runtimeImageText(model) },
           ]}
         />
       </DetailsSection>
       <DetailsSection
-        title="Sites and clusters"
+        title="Clusters"
         headingLevel="h3"
         count={clustersOf(model).length}
         help="The AI Grid clusters selected for this model. Being listed here does not confirm that the model is serving on the cluster."
@@ -384,16 +389,13 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
                   actionLabel={`View ${c.name} details`}
                   onOpen={() => open({ kind: 'cluster', name: c.name })}
                 >
-                  <span>
-                    <SiteText text={siteOf(c)} fromCloudRegion={!c.siteName && c.locationSource === 'cloud region'} />
-                    {c.location && ` · ${c.location}`}
-                  </span>
+                  {(whereOf(c) || c.location) && <span>{[whereOf(c), c.location].filter(Boolean).join(' · ')}</span>}
                   <SubtleText>{at.length ? `Models: ${at.map(titleOf).join(', ')}` : 'No models'}</SubtleText>
                 </FleetCard>
               );
             })
           : visibleModels.map((m) => {
-              const sites = clustersOf(m).map(siteOf);
+              const names = clustersOf(m).map((c) => c.name);
               return (
                 <FleetCard
                   key={m.id}
@@ -404,7 +406,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
                   onOpen={() => open({ kind: 'model', name: m.id })}
                 >
                   <span>{m.modelName ?? m.id}</span>
-                  <SubtleText>{sites.length ? `Sites: ${sites.join(', ')}` : 'No sites'}</SubtleText>
+                  <SubtleText>{names.length ? `Clusters: ${names.join(', ')}` : 'No clusters'}</SubtleText>
                 </FleetCard>
               );
             })}

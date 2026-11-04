@@ -63,17 +63,8 @@ const aiGridItems = (c: ClusterView) => {
       'data-testid': 'cluster-membership',
     },
     {
-      term: 'Location',
-      value:
-        c.location ??
-        (c.aiGridEnabled ? (
-          <MissingLabel
-            testId="missing-location"
-            reason="This cluster has no location, so models cannot be deployed to it."
-          >
-            No location
-          </MissingLabel>
-        ) : undefined),
+      term: 'Location label',
+      value: c.location,
     },
     {
       term: 'Role',
@@ -261,9 +252,7 @@ const GPUNodesTable: React.FC<{ nodes: GPUNode[] }> = ({ nodes }) => (
           Node
         </Th>
         <Th modifier="wrap">Model</Th>
-        <Th modifier="wrap" className="console-number">
-          GPUs
-        </Th>
+        <Th modifier="wrap">GPUs</Th>
         <Th modifier="wrap">Memory</Th>
         <Th modifier="wrap">Architecture</Th>
         <Th modifier="wrap">Driver</Th>
@@ -287,9 +276,7 @@ const GPUNodesTable: React.FC<{ nodes: GPUNode[] }> = ({ nodes }) => (
             />
           </Td>
           <Td dataLabel="Model">{gpuModel(n.product)}</Td>
-          <Td dataLabel="GPUs" className="console-number">
-            {n.count}
-          </Td>
+          <Td dataLabel="GPUs">{n.count}</Td>
           <Td dataLabel="Memory">{gpuMemory(n.memoryMib) ?? EMPTY_VALUE}</Td>
           <Td dataLabel="Architecture">{architectureText(n.family, n.computeCapability) ?? EMPTY_VALUE}</Td>
           <Td dataLabel="Driver">{driverText(n.driverVersion, n.cudaRuntimeVersion) ?? EMPTY_VALUE}</Td>

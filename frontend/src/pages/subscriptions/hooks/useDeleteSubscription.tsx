@@ -34,6 +34,7 @@ const deleteErrorOf = (err: unknown) => {
 export const useDeleteSubscription = ({
   onDeleted,
 }: {
+  /** Runs once the delete is sent; the notification center says how it went. */
   onDeleted: () => void;
 }): [(subscription: Subscription) => void, React.ReactNode] => {
   const { deleteSubscription, reload } = useSubscriptionWrites();
@@ -57,8 +58,7 @@ export const useDeleteSubscription = ({
     // the backend has now (as a model's delete does) while the typed name stays. The dialog stays
     // busy until that reload is in, so a retry never sends the old version.
     try {
-      // The version read; the backend refuses a stale one (zero would skip the check).
-      await deleteSubscription.mutateAsync({ id: selected.id, resourceVersion: selected.metadata?.version ?? 0 });
+      await deleteSubscription(selected);
       setSelected(undefined);
       onDeleted();
     } catch (err) {

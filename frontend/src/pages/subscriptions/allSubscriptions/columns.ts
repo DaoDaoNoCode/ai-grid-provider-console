@@ -7,19 +7,20 @@
 import type { ThProps } from '@patternfly/react-table';
 import type { Subscription } from '../../../gen/ai_grid/v1/subscription_type_pb';
 import { normalizePhase } from '../../../utilities/phaseLabelUtils';
-import { groupsOf, modelRefsOf } from '../subscriptionText';
+import { groupsOf, modelRefsOf, organizationLabelOf, type OrganizationRef } from '../subscriptionText';
 import { displayNameOf } from '../../models/modelView';
 
 export type SubscriptionColumn = {
   label: string;
   width?: ThProps['width'];
-  /** A number: right-aligned. */
-  isNumber?: boolean;
   sortable: (a: Subscription, b: Subscription) => number;
 };
 
-/** The list's columns; organizationName shows a subscription's organization. */
-export const subscriptionsColumns = (organizationName: (s: Subscription) => string): SubscriptionColumn[] => [
+/**
+ * The list's columns; organizationOf gives a subscription's organization, sorted by what the cell
+ * shows (a missing one as Organization not found), then by id.
+ */
+export const subscriptionsColumns = (organizationOf: (s: Subscription) => OrganizationRef): SubscriptionColumn[] => [
   {
     label: 'Subscription',
     sortable: (a, b) => displayNameOf(a).localeCompare(displayNameOf(b)),
@@ -27,7 +28,10 @@ export const subscriptionsColumns = (organizationName: (s: Subscription) => stri
   {
     label: 'Organization',
     width: 15,
-    sortable: (a, b) => organizationName(a).localeCompare(organizationName(b)),
+    sortable: (a, b) => {
+      const [first, second] = [organizationOf(a), organizationOf(b)];
+      return organizationLabelOf(first).localeCompare(organizationLabelOf(second)) || first.id.localeCompare(second.id);
+    },
   },
   {
     label: 'Status',
@@ -47,7 +51,6 @@ export const subscriptionsColumns = (organizationName: (s: Subscription) => stri
   {
     label: 'Priority',
     width: 10,
-    isNumber: true,
     sortable: (a, b) => (a.spec?.priority ?? 0) - (b.spec?.priority ?? 0),
   },
 ];

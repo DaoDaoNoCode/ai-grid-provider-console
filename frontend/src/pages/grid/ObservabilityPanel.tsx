@@ -1,8 +1,8 @@
 // Layout and visual styling adapted from the cloned ProviderAdminObservabilityPage.
 // Ported from krisv/ai-grid-cloud-provider-poc src/app/pages/grid/ObservabilityPanel.tsx at 62319b8.
 // The PoC's tenants are the console's organizations; visible text says "organization". The console
-// uses plain section headings, PatternFly tables with right-aligned numbers, round axis ticks, and
-// horizontal usage bars with a legend.
+// uses plain section headings, PatternFly tables (numbers left-aligned like every column), round
+// axis ticks, and horizontal usage bars with a legend.
 import { useId, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
@@ -35,6 +35,7 @@ import { SubtleText } from '../../components/SubtleText';
 import { TableEmptyRow } from '../../components/TableEmptyRow';
 import { SectionEmptyState } from '../../components/states/SectionEmptyState';
 import { TypeaheadSelect } from '../../components/TypeaheadSelect';
+import { TOOLBAR_FIELD_WIDTHS } from '../../components/toolbarField';
 import { EMPTY_VALUE } from '../../utilities/format';
 import { modelMetrics, tenantUsage, total } from '../../services/demoObservability';
 import { modelPath } from '../models/modelUtils';
@@ -336,7 +337,7 @@ export function ObservabilityPanel({
     </Grid>
   );
   const relevantModels = models.filter(
-    (m) => m.locations.length === 0 || clusters.some((c) => c.location && m.locations.includes(c.location)),
+    (m) => m.selectedClusters.length === 0 || clusters.some((c) => m.selectedClusters.includes(c.name)),
   );
   if (model !== 'all' && !relevantModels.some((m) => m.id === model)) {
     setModel('all');
@@ -391,9 +392,9 @@ export function ObservabilityPanel({
             <Thead>
               <Tr>
                 <Th>Organization</Th>
-                <Th className="console-number">Uncached input tokens</Th>
-                <Th className="console-number">Output tokens</Th>
-                <Th className="console-number">Cached input tokens</Th>
+                <Th>Uncached input tokens</Th>
+                <Th>Output tokens</Th>
+                <Th>Cached input tokens</Th>
               </Tr>
             </Thead>
             <Tbody>
@@ -402,15 +403,9 @@ export function ObservabilityPanel({
                   <Td dataLabel="Organization">
                     <Link to={`/organizations/${encodeURIComponent(t.id)}`}>{t.name}</Link>
                   </Td>
-                  <Td dataLabel="Uncached input tokens" className="console-number">
-                    {t.input.toLocaleString()}
-                  </Td>
-                  <Td dataLabel="Output tokens" className="console-number">
-                    {t.output.toLocaleString()}
-                  </Td>
-                  <Td dataLabel="Cached input tokens" className="console-number">
-                    {t.cached.toLocaleString()}
-                  </Td>
+                  <Td dataLabel="Uncached input tokens">{t.input.toLocaleString()}</Td>
+                  <Td dataLabel="Output tokens">{t.output.toLocaleString()}</Td>
+                  <Td dataLabel="Cached input tokens">{t.cached.toLocaleString()}</Td>
                 </Tr>
               ))}
             </Tbody>
@@ -472,7 +467,7 @@ export function ObservabilityPanel({
                   <Tr>
                     <Th>Cluster</Th>
                     <Th>Site</Th>
-                    <Th>Location</Th>
+                    <Th>Region</Th>
                     <Th>Status</Th>
                     <Th>Provisioning</Th>
                   </Tr>
@@ -492,8 +487,8 @@ export function ObservabilityPanel({
                       <Td dataLabel="Cluster">
                         <Link to={`/ai-grid?cluster=${encodeURIComponent(c.name)}`}>{c.name}</Link>
                       </Td>
-                      <Td dataLabel="Site">{c.siteName ?? c.site ?? EMPTY_VALUE}</Td>
-                      <Td dataLabel="Location">{c.location ?? EMPTY_VALUE}</Td>
+                      <Td dataLabel="Site">{c.siteName ?? EMPTY_VALUE}</Td>
+                      <Td dataLabel="Region">{c.region ?? EMPTY_VALUE}</Td>
                       <Td dataLabel="Status">
                         <StatusLabel isCompact status={c.status} />
                       </Td>
@@ -519,7 +514,7 @@ export function ObservabilityPanel({
                 <ToolbarItem variant="label">
                   <label htmlFor="observability-model">Model</label>
                 </ToolbarItem>
-                <ToolbarItem className="console-toolbar-field">
+                <ToolbarItem widths={TOOLBAR_FIELD_WIDTHS}>
                   <TypeaheadSelect
                     id="observability-model"
                     aria-label="Select model"
@@ -532,15 +527,15 @@ export function ObservabilityPanel({
             </Toolbar>
             <Section
               title="Models"
-              help="Target sites are the sites of the clusters selected for each model. They do not confirm that the model is serving there."
+              help="The Clusters column lists the AI Grid clusters selected for each model. Being listed here does not confirm that the model is serving on the cluster."
             >
               <Table aria-label="Models" variant="compact">
                 <Thead>
                   <Tr>
                     <Th>Name</Th>
                     <Th>Model</Th>
-                    <Th>Target sites</Th>
-                    <Th className="console-number">Replicas</Th>
+                    <Th>Clusters</Th>
+                    <Th>Replicas</Th>
                     <Th>Status</Th>
                   </Tr>
                 </Thead>
@@ -569,18 +564,13 @@ export function ObservabilityPanel({
                       <Td dataLabel="Model" modifier="breakWord">
                         {m.modelName ?? m.id}
                       </Td>
-                      <Td dataLabel="Target sites">
-                        {[
-                          ...new Set(
-                            clusters
-                              .filter((c) => c.location && m.locations.includes(c.location))
-                              .map((c) => c.siteName ?? c.site ?? c.name),
-                          ),
-                        ].join(', ') || EMPTY_VALUE}
+                      <Td dataLabel="Clusters">
+                        {clusters
+                          .filter((c) => m.selectedClusters.includes(c.name))
+                          .map((c) => c.name)
+                          .join(', ') || EMPTY_VALUE}
                       </Td>
-                      <Td dataLabel="Replicas" className="console-number">
-                        {m.replicas ?? EMPTY_VALUE}
-                      </Td>
+                      <Td dataLabel="Replicas">{m.replicas ?? EMPTY_VALUE}</Td>
                       <Td dataLabel="Status">
                         <StatusLabel isCompact status={m.phase} />
                       </Td>

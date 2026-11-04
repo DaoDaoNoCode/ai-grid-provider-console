@@ -18,7 +18,7 @@ import {
   NumberInput,
   TextInput,
 } from '@patternfly/react-core';
-import { create, type MessageInitShape } from '@bufbuild/protobuf';
+import { create, toJson, type MessageInitShape } from '@bufbuild/protobuf';
 import { z } from '../../../validation/zod';
 import { describeError } from '../../../api/connect/errors';
 import { SYSTEM_AUTHENTICATED_GROUP } from '../../../api/types';
@@ -34,10 +34,13 @@ import { TypeaheadSelect } from '../../../components/TypeaheadSelect';
 import {
   SubscriptionModelRefSchema,
   type SubscriptionModelRef,
+  SubscriptionSchema,
   SubscriptionSpecSchema,
+  type Subscription,
 } from '../../../gen/ai_grid/v1/subscription_type_pb';
 import type { SubscriptionsGetResponse } from '../../../gen/ai_grid/v1/subscriptions_service_pb';
 import { useConfirmDiscard } from '../../../hooks/useConfirmDiscard';
+import { formatLocaleNumber } from '../../../utilities/format';
 import { getSectionUrl } from '../../../utilities/maasGovernanceNavigation';
 import { fieldErrorsOf } from '../../../validation';
 import type { SubscriptionModelEntry } from '../hooks/useSubscriptionModels';
@@ -46,15 +49,18 @@ import {
   descriptionOf,
   groupsOf,
   modelForRef,
+  isOrganizationMissing,
   modelRefsOf,
   organizationIdOf,
   refTitleOf,
   registrationStatusOf,
   tenantNameOf,
   toTokenLimits,
+  MISSING_ORGANIZATION,
+  missingOrganizationReason,
 } from '../subscriptionText';
 import { DESCRIPTION, DISPLAY_NAME, displayNameOf, type ModelView } from '../../models/modelView';
-import { useSubscriptionWrites, useTenantList } from '../useSubscriptions';
+import { useOrganizations, useSubscriptionWrites } from '../useSubscriptions';
 import { EditRateLimitsModal } from './EditRateLimitsModal';
 
 type Props = {
@@ -65,12 +71,20 @@ type Props = {
   models: ModelView[];
   /** The subscription being edited, as Subscriptions/Get answered it; none on create. */
   subscriptionInfo?: SubscriptionsGetResponse;
+  /**
+   * On create: a subscription the backend refused after the form had left, as it was sent, and the
+   * refusal; the form starts from it, with the refusal as its error.
+   */
+  draft?: { subscription: Subscription; error: string };
   returnTo?: string;
 };
 
 const MAX_PRIORITY = 1000000;
 const MIN_PRIORITY = -1000000;
+const PRIORITY_RANGE = `Enter a number from ${formatLocaleNumber(MIN_PRIORITY)} to ${formatLocaleNumber(MAX_PRIORITY)}.`;
 const SELECT_ORGANIZATION = 'Select an organization';
+/** The field error, a sentence; the placeholder above is a prompt and has no period. */
+const ORGANIZATION_REQUIRED = 'Select an organization.';
 /**
  * The longest subscription id the backend takes: 63 less the managed policy's "-policy" suffix
  * (maxSubscriptionIDLen, internal/servers/subscription_mapper.go).
@@ -81,17 +95,17 @@ const subscriptionFormSchema = z.object({
   priority: z
     .number({ error: 'Required.' })
     .int('Enter a whole number.')
-    .min(MIN_PRIORITY, `Enter a number from ${MIN_PRIORITY} to ${MAX_PRIORITY}.`)
-    .max(MAX_PRIORITY, `Enter a number from ${MIN_PRIORITY} to ${MAX_PRIORITY}.`),
+    .min(MIN_PRIORITY, PRIORITY_RANGE)
+    .max(MAX_PRIORITY, PRIORITY_RANGE),
   groups: z.array(z.string()).min(1, 'Add at least one group.'),
   models: z.array(z.unknown()).min(1, 'Add at least one model.'),
 });
 
-const buildInitialModels = (info: SubscriptionsGetResponse, models: ModelView[]): SubscriptionModelEntry[] =>
-  (info.object ? modelRefsOf(info.object) : []).map((ref) => ({
+const buildInitialModels = (from: Subscription, models: ModelView[], saved: boolean): SubscriptionModelEntry[] =>
+  modelRefsOf(from).map((ref) => ({
     ref,
     model: modelForRef(models, ref),
-    saved: true,
+    saved,
     unlimited: ref.unlimited,
     tokenRateLimits: toTokenLimits(ref.tokenRateLimits),
   }));
@@ -119,41 +133,50 @@ const errorText = (message: string) => (
   </FormHelperText>
 );
 
-export const CreateSubscriptionForm: React.FC<Props> = ({ models: availableModels, subscriptionInfo, returnTo }) => {
+export const CreateSubscriptionForm: React.FC<Props> = ({
+  models: availableModels,
+  subscriptionInfo,
+  returnTo,
+  draft,
+}) => {
   const navigate = useNavigate();
-  const { data: organizations, error: organizationsError } = useTenantList();
+  const { data: organizations, known: organizationsKnown, error: organizationsError } = useOrganizations();
   const { createSubscription, updateSubscription } = useSubscriptionWrites();
   const isEditing = !!subscriptionInfo?.object;
   const subscription = subscriptionInfo?.object;
+  // What the fields start from: the subscription being edited, or a refused create's draft.
+  const initial = subscription ?? draft?.subscription;
 
   const { data: nameDescData, onDataChange: onNameDescChange } = useK8sNameDescriptionFieldData(
-    subscription
+    initial
       ? {
           initialData: {
-            name: displayNameOf(subscription),
-            k8sName: subscription.id,
-            description: descriptionOf(subscription),
+            name: displayNameOf(initial),
+            k8sName: initial.id,
+            description: descriptionOf(initial),
           },
+          // A draft's name stays editable: a taken one is a reason the backend refuses a create.
+          ...(subscription ? {} : { maxLength: MAX_ID_LENGTH, editableK8sName: true }),
         }
       : { maxLength: MAX_ID_LENGTH },
   );
 
   const [selectedGroups, setSelectedGroups] = useState<SelectionOptions[]>(() =>
-    (subscription ? groupsOf(subscription) : []).map((name) => ({ id: name, name, selected: true })),
+    (initial ? groupsOf(initial) : []).map((name) => ({ id: name, name, selected: true })),
   );
   const [groupsTouched, setGroupsTouched] = useState(false);
   const [modelsTouched, setModelsTouched] = useState(false);
   const savedOrganizationId = subscription ? organizationIdOf(subscription) : '';
-  const [organizationId, setOrganizationId] = useState(savedOrganizationId);
+  const [organizationId, setOrganizationId] = useState(initial ? organizationIdOf(initial) : '');
   // A subscription saved without an organization opens with Save disabled, so it says why straight
   // away instead of waiting for the field to be touched.
   const [organizationTouched, setOrganizationTouched] = useState(!!subscription && !organizationId);
-  const [priority, setPriority] = useState<number | undefined>(subscription?.spec?.priority ?? 0);
+  const [priority, setPriority] = useState<number | undefined>(initial?.spec?.priority ?? 0);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(draft?.error ?? null);
 
   const [initialModels] = useState<SubscriptionModelEntry[]>(() =>
-    subscriptionInfo ? buildInitialModels(subscriptionInfo, availableModels) : [],
+    initial ? buildInitialModels(initial, availableModels, !!subscription) : [],
   );
 
   const {
@@ -268,30 +291,33 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ models: availableModel
       inferencePriority: loaded?.inferencePriority,
       guardrails: loaded?.guardrails ?? [],
     };
+    // The name the notification center uses if the write outlasts the form.
+    const shownName = nameDescData.name.trim() || nameDescData.k8sName.value;
     try {
       if (subscription) {
-        await updateSubscription.mutateAsync({
-          object: {
-            id: subscription.id,
-            metadata: { annotations: annotationsPayload(), version: subscription.metadata?.version ?? 0 },
-            spec,
+        await updateSubscription(
+          {
+            object: {
+              id: subscription.id,
+              metadata: { annotations: annotationsPayload(), version: subscription.metadata?.version ?? 0 },
+              spec,
+            },
+            updateMask: { paths: ['spec', 'metadata.annotations'] },
+            // The backend answers Aborted when the subscription changed since it was read.
+            lock: true,
           },
-          updateMask: { paths: ['spec', 'metadata.annotations'] },
-          // The backend answers Aborted when the subscription changed since it was read.
-          lock: true,
-        });
+          shownName,
+        );
       } else {
         const id = nameDescData.k8sName.value;
         // The backend creates the managed authorization policy, <id>-policy, with it.
-        await createSubscription.mutateAsync({
-          object: { id, metadata: { name: id, annotations: annotationsPayload() }, spec },
-        });
+        const object = { id, metadata: { name: id, annotations: annotationsPayload() }, spec };
+        // The subscription as sent, kept should the backend refuse it after the form has left.
+        await createSubscription({ object }, shownName, toJson(SubscriptionSchema, create(SubscriptionSchema, object)));
       }
       // A created subscription replaces its create form in history, so Back doesn't land on it, empty.
-      navigate(returnTo ?? getSectionUrl('subscriptions'), {
-        replace: !isEditing,
-        state: { notice: isEditing ? 'Subscription updated' : 'Subscription created' },
-      });
+      // The notification center says how the write went (useBackgroundWrites).
+      navigate(returnTo ?? getSectionUrl('subscriptions'), { replace: !isEditing });
     } catch (e) {
       const error = describeError(e);
       setSubmitError(
@@ -332,10 +358,25 @@ export const CreateSubscriptionForm: React.FC<Props> = ({ models: availableModel
       </HelperText>
     </FormHelperText>
   );
+  // A set organization that no longer exists can't be changed here (the backend refuses a changed
+  // one), so the form says so and what to do instead, once the organizations are known
+  // (isOrganizationMissing says when).
+  const savedOrganizationGone =
+    organizationLocked && isOrganizationMissing(organizationId, organizations, organizationsKnown);
   if (organizationsError) {
     organizationHelper = errorText(`Unable to load organizations: ${organizationsError.message}`);
+  } else if (savedOrganizationGone) {
+    organizationHelper = (
+      <FormHelperText>
+        <HelperText>
+          <HelperTextItem variant="warning" data-testid="subscription-organization-missing">
+            {`${MISSING_ORGANIZATION}. ${missingOrganizationReason(organizationId)}`}
+          </HelperTextItem>
+        </HelperText>
+      </FormHelperText>
+    );
   } else if (organizationTouched && organizationMissing) {
-    organizationHelper = errorText(SELECT_ORGANIZATION);
+    organizationHelper = errorText(ORGANIZATION_REQUIRED);
   }
 
   return (

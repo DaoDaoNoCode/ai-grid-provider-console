@@ -213,6 +213,8 @@ Environment variables the BFF reads: `HUB_API_URL` (required outside a pod; in a
 defaults to the in-cluster API server), `HUB_CA_FILE`, `BIND_ADDRESS` (default `127.0.0.1`;
 `0.0.0.0` exposes the BFF without a proxy in front), `PORT`, `BACKEND_ADDRESS`,
 `BACKEND_CA_FILE`, `BACKEND_SERVER_NAME`, `BACKEND_INSECURE`, `BACKEND_TIMEOUT` (10s, at most 50s),
+`BACKEND_WRITE_TIMEOUT` (30s, at most 50s: a POST, PATCH, PUT or DELETE on `/api/v1` and a write
+procedure on the Connect relay, `docs/plan/bff-api.md`),
 `PERSES_URL`, `PERSES_CA_FILE`, `PERSES_SERVER_NAME`, `PERSES_INSECURE`, `PERSES_TIMEOUT`,
 `PERSES_PROJECT` (the Perses relay, `docs/plan/bff-api.md`),
 `AUTH_TOKEN_HEADER`, `AUTH_USER_HEADER`, `AUTH_EMAIL_HEADER`, `AUTH_GROUPS_HEADER`,

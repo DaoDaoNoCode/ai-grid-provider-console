@@ -5,7 +5,7 @@
 // The console adds the Organization and Priority cells, and the row menu is the console's
 // SimpleMenuActions, for writers only, as on every list. As in
 // the org admin's view, the description sits under the name, and the Groups and Models counts
-// open the row's groups or its models with their locations and token limits (compound expansion).
+// open the row's groups or its models with their clusters and token limits (compound expansion).
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Tooltip } from '@patternfly/react-core';
@@ -17,7 +17,15 @@ import { SimpleMenuActions } from '../../../components/SimpleMenuActions';
 import { TableRowTitleDescription } from '../../../components/TableRowTitleDescription';
 import { getSubscriptionEditUrl, getSubscriptionViewUrl } from '../../../utilities/maasGovernanceNavigation';
 import { EMPTY_VALUE } from '../../../utilities/format';
-import { descriptionOf, groupsOf, isDeleting, modelRefsOf, readyConditionOf } from '../subscriptionText';
+import {
+  descriptionOf,
+  groupsOf,
+  isDeleting,
+  modelRefsOf,
+  readyConditionOf,
+  type OrganizationRef,
+} from '../subscriptionText';
+import { OrganizationName } from '../OrganizationName';
 import { displayNameOf } from '../../models/modelView';
 import type { SubscriptionColumn } from './columns';
 import { ExpandedGroupsPanel } from './ExpandedGroupsPanel';
@@ -27,11 +35,10 @@ import { ExpandedModelsPanel } from './ExpandedModelsPanel';
 type Props = {
   subscription: Subscription;
   columns: SubscriptionColumn[];
-  organization: string;
+  organization: OrganizationRef;
   /** The models, for the models expansion, and whether they have loaded. */
   models: ModelView[];
   modelsState: ModelsState;
-  siteNames: Map<string, string>;
   canWrite: boolean;
   onDelete: (subscription: Subscription) => void;
 };
@@ -44,7 +51,6 @@ export const SubscriptionTableRow: React.FC<Props> = ({
   organization,
   models,
   modelsState,
-  siteNames,
   canWrite,
   onDelete,
 }) => {
@@ -113,16 +119,14 @@ export const SubscriptionTableRow: React.FC<Props> = ({
           />
         </Td>
         <Td dataLabel={columns[1].label} data-testid="subscription-organization">
-          {organization || EMPTY_VALUE}
+          <OrganizationName organization={organization} />
         </Td>
         <Td dataLabel={columns[2].label}>
           <PhaseLabel phase={subscription.status?.phase} statusMessage={ready.statusMessage} reason={ready.reason} />
         </Td>
         {expandCell('groups', 3, groups.length)}
         {expandCell('models', 4, modelRefs.length)}
-        <Td dataLabel={columns[5].label} className="console-number">
-          {subscription.spec?.priority ?? EMPTY_VALUE}
-        </Td>
+        <Td dataLabel={columns[5].label}>{subscription.spec?.priority ?? EMPTY_VALUE}</Td>
         {canWrite && (
           <Td isActionCell>
             <SimpleMenuActions
@@ -164,12 +168,7 @@ export const SubscriptionTableRow: React.FC<Props> = ({
         <Td colSpan={columns.length + (canWrite ? 1 : 0)}>
           <ExpandableRowContent>
             {expanded === 'models' && (
-              <ExpandedModelsPanel
-                modelRefs={modelRefs}
-                models={models}
-                modelsState={modelsState}
-                siteNames={siteNames}
-              />
+              <ExpandedModelsPanel modelRefs={modelRefs} models={models} modelsState={modelsState} />
             )}
           </ExpandableRowContent>
         </Td>

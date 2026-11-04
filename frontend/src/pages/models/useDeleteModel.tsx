@@ -15,7 +15,8 @@ const deleteErrorOf = (err: unknown) =>
 
 /**
  * Deleting a model deployment, the same from its list row and its page: returns `confirmDelete`
- * and the modal to render. `refresh` reloads the page after a failed delete.
+ * and the modal to render. `refresh` reloads the page after a failed delete. `onDeleted` runs
+ * once the delete is sent; the notification center says how it went.
  */
 export const useDeleteModel = ({
   refresh,

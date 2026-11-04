@@ -18,8 +18,8 @@ type Props = {
   subscription: Subscription;
   /** The authorization policies that cover any of this subscription's models, as Subscriptions/Get lists them. */
   authPolicies: AuthPolicy[];
-  /** The organization's name, or its id when the organization is unknown. */
-  organization: string;
+  /** The organization's name, its id while unknown, or a missing-organization warning (OrganizationName). */
+  organization: React.ReactNode;
 };
 
 export const SubscriptionDetailsSection: React.FC<Props> = ({ subscription, authPolicies, organization }) => {

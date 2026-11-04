@@ -24,8 +24,8 @@ images:
   # `.backend-api-version`; don't edit by hand.
   backend:
     repository: ghcr.io/ai-grid-cloud/ai-grid-provider-backend
-    tag: sha-1141af02f5e0eee062b1c18da7f3e579a82d062c
-    digest: sha256:04e53a5a5f8ae8d75e9cb7b16117227d23aa77b1814524e682fb7817c3578559
+    tag: sha-064ebd3699e6fff1613670ba4000ff2a343d5bdc
+    digest: sha256:6cd3b20e26c41c87bf4eb2393e1004668138a357d822b398d7941a69ac2705e1
 imagePullPolicy: ""  # empty: the cluster default
 imagePullSecrets: []
 
@@ -52,6 +52,11 @@ route:
   # PEM CA the router trusts for the proxy's certificate. Not needed with tls.serviceCA: the
   # router trusts the service CA. Set it when tls.secretName holds a certificate from another CA.
   destinationCACertificate: ""
+  # How long the router waits for the console's answer (haproxy.router.openshift.io/timeout;
+  # OpenShift's default is 30s). Longer than kube-auth-proxy's upstreamTimeout below, which is longer
+  # than the BFF's longest answer (its 60s server write timeout, BACKEND_WRITE_TIMEOUT at most 50s):
+  # a slow model or subscription write then ends in the BFF's own answer, not the router's 504.
+  timeout: 70s
 
 # The console container (BFF and frontend).
 console:
@@ -80,6 +85,43 @@ console:
     # every pod gets next to its ServiceAccount token and which issues the Cluster Observability
     # Operator's Perses certificate. Empty: the system roots.
     caFile: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+  # The Deploy model wizard (README.md, "Model hardware").
+  models:
+    # The wizard's Hardware choices, the first one selected. Selecting one fills in the model's
+    # resources and runtime image, and adds its environment variables. These two are the console's
+    # defaults: a hub's GitOps repository overrides the list in its values, and a list replaces this
+    # one whole, so repeat the entries you keep. The BFF holds the same two for a run without
+    # MODEL_HARDWARE (make dev), and hack/check-chart.sh keeps them equal. Each entry:
+    #   id           a DNS label, unique in the list
+    #   label        what the wizard shows, in sentence case
+    #   description  optional, one sentence
+    #   accelerator  optional: the Kubernetes extended resource requested per accelerator, such as
+    #                nvidia.com/gpu or amd.com/gpu; none means CPU only
+    #   image        optional: the runtime image, with no spaces. None leaves the wizard's field empty:
+    #                for nvidia.com/gpu that runs the cluster's default vLLM image, which is for
+    #                NVIDIA GPUs; for any other hardware the user must enter one
+    #   env          optional: environment variables for the model's container, as name: value;
+    #                not VLLM_ADDITIONAL_ARGS, which the wizard's runtime arguments set
+    #   defaults     optional: the resources the wizard starts from: accelerators (1 to 64, only
+    #                with an accelerator), cpu (cores or millicores, such as 2 or 500m) and memory
+    #                (whole Mi, Gi or Ti, such as 16Gi)
+    hardware:
+      # No image: the cluster's default vLLM image, which is for NVIDIA GPUs.
+      - id: nvidia-gpu
+        label: NVIDIA GPU
+        description: For clusters with NVIDIA GPUs.
+        accelerator: nvidia.com/gpu
+        defaults: { accelerators: 1, cpu: "2", memory: 16Gi }
+      # OpenShift AI 3.6's CPU preset (red-hat-data-services/kserve rhoai-3.6 at 71b7da3:
+      # config/overlays/odh/accelerators/cpu-config-llm-template.yaml, and the kserve-llm-d-cpu
+      # image of config/overlays/odh/params.env), without its node selector
+      # kubernetes.io/arch: amd64, which a model can't set.
+      - id: cpu
+        label: CPU only
+        description: For x86_64 clusters without GPUs.
+        image: registry.redhat.io/rhaii/vllm-cpu-rhel9@sha256:0ec0f5ff9a5ff263f58db0cfb19e3d7eef24b94c2d8629fe5145f5a8747e28c9
+        env: { OMP_NUM_THREADS: "4", VLLM_CPU_KVCACHE_SPACE: "4" }
+        defaults: { cpu: "4", memory: 8Gi }
   resources:
     requests: { cpu: 50m, memory: 64Mi }
     limits: { memory: 256Mi }
@@ -123,6 +165,10 @@ backend:
     limits: { memory: 256Mi }
 
 authProxy:
+  # How long kube-auth-proxy waits for the BFF's answer (--upstream-timeout; its default is 30s, as
+  # long as BACKEND_WRITE_TIMEOUT's default). Longer than the BFF's 60s server write timeout, shorter
+  # than route.timeout.
+  upstreamTimeout: 65s
   resources:
     requests: { cpu: 50m, memory: 64Mi }
     limits: { memory: 128Mi }

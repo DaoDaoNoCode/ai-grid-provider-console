@@ -3,13 +3,14 @@
 // new model gets the inference scheduler and a managed route, as the console's models always have:
 // the backend defaults the scheduler to off, and without it KServe makes no InferencePool or
 // endpoint picker, so the model's route has no backend. The gateway is the backend's default (an
-// empty gateway_refs), and a GPU request is also saved as its limit by the backend
-// (ModelContainer.requests).
+// empty gateway_refs), and an accelerator request is also saved as its limit by the backend
+// (ModelContainer.requests). A new model names no presets (spec.base_refs): its hardware's image
+// and environment go in its own spec (modelHardware.ts).
 import type { MessageInitShape } from '@bufbuild/protobuf';
 import type { ModelsCreateRequestSchema, ModelsUpdateRequestSchema } from '../../gen/ai_grid/v1/models_service_pb';
 import type { ModelEnvVarSchema, ModelPlacementSchema } from '../../gen/ai_grid/v1/model_type_pb';
-import { runtimeArgsOf, withRuntimeArgs } from './fields/runtimeArgs';
-import { DESCRIPTION, DISPLAY_NAME, REQUEST_GPU, type ModelView } from './modelView';
+import { runtimeArgsOf, withRuntimeArgs, type EnvVar } from './fields/runtimeArgs';
+import { DESCRIPTION, DISPLAY_NAME, type ModelView } from './modelView';
 
 type PlacementInit = MessageInitShape<typeof ModelPlacementSchema>;
 type EnvInit = MessageInitShape<typeof ModelEnvVarSchema>;
@@ -21,14 +22,18 @@ export type ModelInput = {
   displayName: string;
   description?: string;
   modelUri: string;
+  /** Empty for the cluster's default vLLM image, which is for NVIDIA GPUs. */
   runtimeImage: string;
   replicas: number;
   cpu: string;
   memory: string;
-  gpuCount: number;
+  /** The hardware's extended resource to request, such as nvidia.com/gpu; undefined for CPU only. */
+  accelerator?: string;
+  /** How many of the accelerator to request; 0 asks for none. */
+  acceleratorCount: number;
+  /** The hardware's environment variables, sent with the runtime arguments. */
+  env: EnvVar[];
   runtimeArgs: string[];
-  /** The model server's presets (spec.base_refs); empty for KServe's default. */
-  baseRefs: string[];
   /**
    * The clusters to place the model on, by name, from Models/ListPlacementClusters; not
    * `location` labels, which status.placement.locations reports.
@@ -41,11 +46,11 @@ export const namedPlacement = (clusters: string[]): PlacementInit => ({
   labelSelector: { matchExpressions: [{ key: 'name', operator: 'In', values: [...clusters] }] },
 });
 
-/** The main container's requests the wizard sets; a GPU count of 0 asks for none. */
+/** The main container's requests the wizard sets; an accelerator count of 0 asks for none. */
 const requestsOf = (input: ModelInput): Record<string, string> => ({
   ...(input.cpu ? { cpu: input.cpu } : {}),
   ...(input.memory ? { memory: input.memory } : {}),
-  ...(input.gpuCount > 0 ? { [REQUEST_GPU]: String(input.gpuCount) } : {}),
+  ...(input.accelerator && input.acceleratorCount > 0 ? { [input.accelerator]: String(input.acceleratorCount) } : {}),
 });
 
 export const createRequestOf = (input: ModelInput): MessageInitShape<typeof ModelsCreateRequestSchema> => {
@@ -66,11 +71,13 @@ export const createRequestOf = (input: ModelInput): MessageInitShape<typeof Mode
         // (ModelSource.name defaults to the id).
         model: { uri: input.modelUri },
         replicas: input.replicas,
-        baseRefs: [...input.baseRefs],
+        // Preset names carry the OpenShift AI version, so they exist only on clusters with it.
+        baseRefs: [],
         main: {
+          // Empty: KServe's default preset's image, the cluster's vLLM image for NVIDIA GPUs.
           image: input.runtimeImage.trim(),
           requests: requestsOf(input),
-          env: withRuntimeArgs([], input.runtimeArgs),
+          env: withRuntimeArgs(input.env, input.runtimeArgs),
         },
         // Both set: with the scheduler on, the backend takes managed_route as sent (modelRouterToMap).
         router: { scheduler: true, managedRoute: true },

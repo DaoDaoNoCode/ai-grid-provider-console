@@ -1,6 +1,13 @@
 /** What every page shows for a value that isn't set. */
 export const EMPTY_VALUE = '—';
 
+/**
+ * A number with thousands separators and every decimal it has: 1,000,000 or 0.0001. Always en-US, as
+ * the wording guide asks (frontend/AGENTS.md, rule 18), not the reader's locale.
+ */
+export const formatLocaleNumber = (value: number | bigint): string =>
+  value.toLocaleString('en-US', { maximumFractionDigits: 20 });
+
 /** True when a value has something to show (not undefined, null, an empty string or an empty list). */
 export const hasValue = (value: unknown): boolean =>
   value !== undefined && value !== null && value !== '' && !(Array.isArray(value) && value.length === 0);

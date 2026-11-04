@@ -17,7 +17,7 @@ import { PARTIALLY_AVAILABLE, availabilityOf, hasModelStatusDetails } from './mo
 import { titleOf } from './modelView';
 import { useDeleteModel } from './useDeleteModel';
 import { useModel } from './useModels';
-import { modelServerLabel } from './modelServers';
+import { acceleratorsText, runtimeImageText } from './modelHardware';
 import { useClusterList } from '../clusters/useClusters';
 
 /**
@@ -35,7 +35,7 @@ export const ModelDetailsPage: React.FC = () => {
   const model = error instanceof ServiceError && error.status === 404 ? undefined : loadedModel;
   const [confirmDelete, deleteModal] = useDeleteModel({
     refresh: () => void refresh(),
-    onDeleted: () => navigate('/models', { state: { notice: 'Model deleted' } }),
+    onDeleted: () => navigate('/models'),
   });
   const title = model ? titleOf(model) : id;
 
@@ -70,8 +70,10 @@ export const ModelDetailsPage: React.FC = () => {
               { term: 'Description', value: model.description },
               { term: 'Model', value: model.modelName },
               { term: 'Model URI', value: model.modelUri },
-              { term: 'Model server', value: modelServerLabel(model.baseRefs) || undefined },
-              { term: 'Runtime image', value: model.runtimeImage },
+              // What the model has, not a match against today's hardware list, which may have changed.
+              ...(model.baseRefs.length > 0 ? [{ term: 'Presets', value: model.baseRefs.join(', ') }] : []),
+              { term: 'Accelerators', value: acceleratorsText(model) },
+              { term: 'Runtime image', value: runtimeImageText(model) },
               { term: 'Replicas', value: model.autoscaled ? 'Autoscaled' : model.replicas },
               { term: 'Endpoint', value: model.url },
               { term: 'Created', value: model.creationTimestamp && <RelativeTime time={model.creationTimestamp} /> },

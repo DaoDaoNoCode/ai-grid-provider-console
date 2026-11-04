@@ -491,9 +491,8 @@
         "replicas": 1,
         "cpu": "2",
         "memory": "4Gi",
-        "gpuCount": 1,
+        "acceleratorCount": 1,
         "runtimeArgs": ["--max-model-len=8192"],
-        "baseRefs": [],
         "locations": ["site1", "site2"]
       },
       "fieldErrors": {}
@@ -510,9 +509,8 @@
         "replicas": 1,
         "cpu": "2",
         "memory": "4Gi",
-        "gpuCount": 1,
+        "acceleratorCount": 1,
         "runtimeArgs": ["--max-model-len=8192"],
-        "baseRefs": [],
         "locations": ["site1", "site2"]
       },
       "fieldErrors": {
@@ -531,9 +529,8 @@
         "replicas": 1,
         "cpu": "2",
         "memory": "4Gi",
-        "gpuCount": 1,
+        "acceleratorCount": 1,
         "runtimeArgs": ["--max-model-len=8192"],
-        "baseRefs": [],
         "locations": ["site1", "site2"]
       },
       "fieldErrors": {
@@ -552,9 +549,8 @@
         "replicas": 1,
         "cpu": "0",
         "memory": "4Gi",
-        "gpuCount": 1,
+        "acceleratorCount": 1,
         "runtimeArgs": ["--max-model-len=8192"],
-        "baseRefs": [],
         "locations": ["site1", "site2"]
       },
       "fieldErrors": {
@@ -573,9 +569,8 @@
         "replicas": 1,
         "cpu": "500m",
         "memory": "4Gi",
-        "gpuCount": 1,
+        "acceleratorCount": 1,
         "runtimeArgs": ["--max-model-len=8192"],
-        "baseRefs": [],
         "locations": ["site1", "site2"]
       },
       "fieldErrors": {}
@@ -592,9 +587,8 @@
         "replicas": 1,
         "cpu": "1.5",
         "memory": "4Gi",
-        "gpuCount": 1,
+        "acceleratorCount": 1,
         "runtimeArgs": ["--max-model-len=8192"],
-        "baseRefs": [],
         "locations": ["site1", "site2"]
       },
       "fieldErrors": {}
@@ -611,9 +605,8 @@
         "replicas": 1,
         "cpu": "2",
         "memory": "4G",
-        "gpuCount": 1,
+        "acceleratorCount": 1,
         "runtimeArgs": ["--max-model-len=8192"],
-        "baseRefs": [],
         "locations": ["site1", "site2"]
       },
       "fieldErrors": {
@@ -632,9 +625,8 @@
         "replicas": 0,
         "cpu": "2",
         "memory": "4Gi",
-        "gpuCount": 1,
+        "acceleratorCount": 1,
         "runtimeArgs": ["--max-model-len=8192"],
-        "baseRefs": [],
         "locations": ["site1", "site2"]
       },
       "fieldErrors": {
@@ -653,9 +645,8 @@
         "replicas": 100,
         "cpu": "2",
         "memory": "4Gi",
-        "gpuCount": 1,
+        "acceleratorCount": 1,
         "runtimeArgs": ["--max-model-len=8192"],
-        "baseRefs": [],
         "locations": ["site1", "site2"]
       },
       "fieldErrors": {
@@ -664,7 +655,7 @@
     },
     {
       "schema": "model",
-      "name": "GPUs 65",
+      "name": "accelerators 65",
       "input": {
         "name": "granite-3-8b",
         "displayName": "Granite 3.3 8B Instruct",
@@ -674,13 +665,12 @@
         "replicas": 1,
         "cpu": "2",
         "memory": "4Gi",
-        "gpuCount": 65,
+        "acceleratorCount": 65,
         "runtimeArgs": ["--max-model-len=8192"],
-        "baseRefs": [],
         "locations": ["site1", "site2"]
       },
       "fieldErrors": {
-        "gpuCount": "Enter a number from 0 to 64."
+        "acceleratorCount": "Enter a number from 0 to 64."
       }
     },
     {
@@ -695,13 +685,12 @@
         "replicas": 1,
         "cpu": "2",
         "memory": "4Gi",
-        "gpuCount": 1,
+        "acceleratorCount": 1,
         "runtimeArgs": ["--max-model-len=8192"],
-        "baseRefs": [],
         "locations": []
       },
       "fieldErrors": {
-        "locations": "Select at least one location."
+        "locations": "Select at least one cluster."
       }
     },
     {
@@ -716,9 +705,8 @@
         "replicas": 1,
         "cpu": "2",
         "memory": "4Gi",
-        "gpuCount": 1,
+        "acceleratorCount": 1,
         "runtimeArgs": ["--max-model-len=8192"],
-        "baseRefs": [],
         "locations": ["bad location"]
       },
       "fieldErrors": {
@@ -737,9 +725,8 @@
         "replicas": 1,
         "cpu": "2",
         "memory": "4Gi",
-        "gpuCount": 1,
+        "acceleratorCount": 1,
         "runtimeArgs": ["--max-model-len=8192"],
-        "baseRefs": [],
         "locations": ["site1", "site1"]
       },
       "fieldErrors": {
@@ -758,9 +745,8 @@
         "replicas": 1,
         "cpu": "2",
         "memory": "4Gi",
-        "gpuCount": 1,
+        "acceleratorCount": 1,
         "runtimeArgs": ["--max-model-len=8192"],
-        "baseRefs": [],
         "locations": ["site1", "site2"]
       },
       "fieldErrors": {
@@ -779,9 +765,8 @@
         "replicas": "1",
         "cpu": "2",
         "memory": "4Gi",
-        "gpuCount": 1,
+        "acceleratorCount": 1,
         "runtimeArgs": ["--max-model-len=8192"],
-        "baseRefs": [],
         "locations": ["site1", "site2"]
       },
       "fieldErrors": {
@@ -800,9 +785,8 @@
         "replicas": 1,
         "cpu": "2",
         "memory": "4Gi",
-        "gpuCount": 1,
+        "acceleratorCount": 1,
         "runtimeArgs": ["--max-model-len=8192"],
-        "baseRefs": [],
         "locations": ["site1", "site2"],
         "namespace": "maas"
       },
@@ -822,9 +806,8 @@
         "replicas": 1,
         "cpu": "2",
         "memory": "4Gi",
-        "gpuCount": 1,
+        "acceleratorCount": 1,
         "runtimeArgs": ["--max-model-len=8192"],
-        "baseRefs": [],
         "locations": ["site1", "site2"]
       },
       "fieldErrors": {
@@ -844,15 +827,14 @@
         "replicas": "Required.",
         "cpu": "Required.",
         "memory": "Required.",
-        "gpuCount": "Required.",
+        "acceleratorCount": "Required.",
         "runtimeArgs": "Required.",
-        "baseRefs": "Required.",
         "locations": "Required."
       }
     },
     {
       "schema": "model",
-      "name": "empty runtime image",
+      "name": "empty runtime image on NVIDIA GPUs, for the cluster's default",
       "input": {
         "name": "granite-3-8b",
         "displayName": "Granite 3.3 8B Instruct",
@@ -862,18 +844,57 @@
         "replicas": 1,
         "cpu": "2",
         "memory": "4Gi",
-        "gpuCount": 1,
+        "accelerator": "nvidia.com/gpu",
+        "acceleratorCount": 1,
         "runtimeArgs": ["--max-model-len=8192"],
-        "baseRefs": [],
+        "locations": ["site1", "site2"]
+      },
+      "fieldErrors": {}
+    },
+    {
+      "schema": "model",
+      "name": "empty runtime image without NVIDIA GPUs",
+      "input": {
+        "name": "granite-3-8b",
+        "displayName": "Granite 3.3 8B Instruct",
+        "description": "Enterprise language model",
+        "modelUri": "hf://example-org/granite-8b-instruct",
+        "runtimeImage": "",
+        "replicas": 1,
+        "cpu": "2",
+        "memory": "4Gi",
+        "accelerator": "amd.com/gpu",
+        "acceleratorCount": 1,
+        "runtimeArgs": ["--max-model-len=8192"],
         "locations": ["site1", "site2"]
       },
       "fieldErrors": {
-        "runtimeImage": "Enter a container image without spaces."
+        "runtimeImage": "Required."
       }
     },
     {
       "schema": "model",
-      "name": "empty preset name",
+      "name": "empty runtime image on CPU",
+      "input": {
+        "name": "granite-3-8b",
+        "displayName": "Granite 3.3 8B Instruct",
+        "description": "Enterprise language model",
+        "modelUri": "hf://example-org/granite-8b-instruct",
+        "runtimeImage": "",
+        "replicas": 1,
+        "cpu": "2",
+        "memory": "4Gi",
+        "acceleratorCount": 0,
+        "runtimeArgs": ["--max-model-len=8192"],
+        "locations": ["site1", "site2"]
+      },
+      "fieldErrors": {
+        "runtimeImage": "Required."
+      }
+    },
+    {
+      "schema": "model",
+      "name": "presets are not accepted",
       "input": {
         "name": "granite-3-8b",
         "displayName": "Granite 3.3 8B Instruct",
@@ -883,13 +904,13 @@
         "replicas": 1,
         "cpu": "2",
         "memory": "4Gi",
-        "gpuCount": 1,
+        "acceleratorCount": 1,
         "runtimeArgs": ["--max-model-len=8192"],
-        "baseRefs": [""],
-        "locations": ["site1", "site2"]
+        "locations": ["site1", "site2"],
+        "baseRefs": ["v3-6-0-kserve-config-llm-template-cpu"]
       },
       "fieldErrors": {
-        "baseRefs.0": "Enter a preset name."
+        "": "Remove the unknown field \"baseRefs\"."
       }
     },
     {
@@ -904,9 +925,8 @@
         "replicas": 0.5,
         "cpu": "2",
         "memory": "4Gi",
-        "gpuCount": 1,
+        "acceleratorCount": 1,
         "runtimeArgs": ["--max-model-len=8192"],
-        "baseRefs": [],
         "locations": ["site1", "site2"]
       },
       "fieldErrors": {
@@ -925,9 +945,8 @@
         "replicas": 1,
         "cpu": "2",
         "memory": "4Gi",
-        "gpuCount": 1,
+        "acceleratorCount": 1,
         "runtimeArgs": ["--max-model-len=8192"],
-        "baseRefs": [],
         "locations": ["bad location", "bad location"]
       },
       "fieldErrors": {
@@ -948,9 +967,8 @@
         "replicas": 1,
         "cpu": "2",
         "memory": "4Gi",
-        "gpuCount": 1,
+        "acceleratorCount": 1,
         "runtimeArgs": ["--max-model-len=8192"],
-        "baseRefs": [],
         "locations": [1, 1]
       },
       "fieldErrors": {
@@ -970,9 +988,8 @@
         "replicas": 1,
         "cpu": "2",
         "memory": "4Gi",
-        "gpuCount": 1,
+        "acceleratorCount": 1,
         "runtimeArgs": ["--max-model-len=8192"],
-        "baseRefs": [],
         "locations": ["site1", "site2"]
       },
       "fieldErrors": {
@@ -991,7 +1008,7 @@
         "replicas": 1,
         "cpu": "2",
         "memory": "4Gi",
-        "gpuCount": 1,
+        "acceleratorCount": 1,
         "runtimeArgs": [
           "--arg0",
           "--arg1",
@@ -1059,7 +1076,6 @@
           "--arg63",
           "--arg64"
         ],
-        "baseRefs": [],
         "locations": ["site1", "site2"]
       },
       "fieldErrors": {

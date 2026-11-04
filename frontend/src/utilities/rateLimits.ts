@@ -3,6 +3,7 @@
 // packages/maas/frontend/src/app/utilities/rateLimits.ts
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
 import { z } from '../validation/zod';
+import { formatLocaleNumber } from './format';
 
 /**
  * A subscription's token limit as the form keeps it: the generated TokenRateLimit's fields, with its
@@ -41,8 +42,6 @@ const UNIT_TO_WINDOW_SUFFIX: Record<RateLimit['unit'], string> = {
  */
 const WINDOW_PATTERN = /^([1-9]\d{0,3})([smh])$/;
 
-export const formatLocaleNumber = (value: number): string => value.toLocaleString('en-US');
-
 export const UNIT_OPTIONS: { value: RateLimit['unit']; label: string }[] = [
   { value: 'hour', label: 'hour' },
   { value: 'minute', label: 'minute' },
@@ -79,7 +78,7 @@ export const toRateLimit = (trl: TokenLimit): RateLimit => {
 /** Names a limit's saved window that the form could not read, while its time is not valid yet. */
 export const getSavedWindowMessage = (limit: RateLimit): string | undefined =>
   limit.savedWindow !== undefined && getTimeError(limit) !== undefined
-    ? `The saved value "${limit.savedWindow}" is not valid. Enter a time from 1 to 9,999.`
+    ? `The saved value "${limit.savedWindow}" is not valid. Enter a time from 1 to ${formatLocaleNumber(MAX_WINDOW_VALUE)}.`
     : undefined;
 
 /** Converts the UI's RateLimit form back to a TokenLimit. */

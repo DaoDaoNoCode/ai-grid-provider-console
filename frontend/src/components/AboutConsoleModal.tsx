@@ -80,7 +80,7 @@ export const AboutConsoleModal: React.FC<Props> = ({ isOpen, onClose, config, co
           Manages AI Grid on this ACM hub: its clusters, the organizations and subscriptions that use it, and the models
           it serves.
         </Content>
-        <Content component={ContentVariants.dl} className="console-about-facts">
+        <Content component={ContentVariants.dl}>
           {rows.map(([label, value]) => [
             <Content key={`${label}-term`} component={ContentVariants.dt}>
               {label}

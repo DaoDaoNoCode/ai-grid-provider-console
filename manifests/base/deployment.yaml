@@ -36,6 +36,9 @@ spec:
             - --tls-cert-file=/etc/tls/private/tls.crt
             - --tls-key-file=/etc/tls/private/tls.key
             - --upstream=http://127.0.0.1:8080/
+            # Longer than the BFF's longest answer (its 60s server write timeout), so a slow write
+            # ends in the BFF's own answer; the default, 30s, would cut BACKEND_WRITE_TIMEOUT's.
+            - --upstream-timeout=65s
             - --redirect-url=$(OAUTH2_PROXY_REDIRECT_URL)
             - --email-domain=*
             - --scope=user:full
@@ -146,6 +149,10 @@ spec:
               value: ""
             - name: LOG_LEVEL
               value: info
+            # The Deploy model wizard's hardware choices: the chart's default
+            # console.models.hardware, as the chart renders it (hack/check-chart.sh).
+            - name: MODEL_HARDWARE
+              value: '[{"accelerator":"nvidia.com/gpu","defaults":{"accelerators":1,"cpu":"2","memory":"16Gi"},"description":"For clusters with NVIDIA GPUs.","id":"nvidia-gpu","label":"NVIDIA GPU"},{"defaults":{"cpu":"4","memory":"8Gi"},"description":"For x86_64 clusters without GPUs.","env":{"OMP_NUM_THREADS":"4","VLLM_CPU_KVCACHE_SPACE":"4"},"id":"cpu","image":"registry.redhat.io/rhaii/vllm-cpu-rhel9@sha256:0ec0f5ff9a5ff263f58db0cfb19e3d7eef24b94c2d8629fe5145f5a8747e28c9","label":"CPU only"}]'
           # Probed through the proxy (same pod, port 8443): the kubelet cannot
           # reach a loopback port. /readyz also pings the backend, so this one
           # probe gates traffic for all three containers. No liveness probe:

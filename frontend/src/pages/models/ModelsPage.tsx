@@ -35,7 +35,7 @@ import { useDeleteModel } from './useDeleteModel';
 import { useModelList } from './useModels';
 import { useClusterList } from '../clusters/useClusters';
 
-type Column = { label: string; isNumber?: boolean; sort: (a: ModelView, b: ModelView) => number };
+type Column = { label: string; sort: (a: ModelView, b: ModelView) => number };
 
 const columns: Column[] = [
   { label: 'Name', sort: (a, b) => titleOf(a).localeCompare(titleOf(b)) },
@@ -79,10 +79,8 @@ export const ModelsPage: React.FC = () => {
   const [statusModelId, setStatusModelId] = useState<string>();
   const [confirmDelete, deleteModal] = useDeleteModel({
     refresh: () => void refresh(),
-    onDeleted: () => {
-      // Replace, so the notice doesn't add a second Models entry to the browser's history.
-      void navigate('.', { replace: true, state: { notice: 'Model deleted' } });
-    },
+    // The list refetches once the delete lands; the notification center says how it went.
+    onDeleted: () => undefined,
   });
 
   const rows = useMemo(() => {
@@ -141,12 +139,7 @@ export const ModelsPage: React.FC = () => {
               <Tr>
                 <Th screenReaderText="Show clusters" />
                 {columns.map((c, i) => (
-                  <Th
-                    key={c.label}
-                    sort={sortParams(i)}
-                    modifier="wrap"
-                    className={c.isNumber ? 'console-number' : undefined}
-                  >
+                  <Th key={c.label} sort={sortParams(i)} modifier="wrap">
                     {c.label}
                   </Th>
                 ))}

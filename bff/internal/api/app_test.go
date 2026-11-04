@@ -367,6 +367,38 @@ func TestConfigEndpoint(t *testing.T) {
 	if out.GridEndpoint != cfg.GridEndpoint || out.Version != Version {
 		t.Fatalf("config = %+v", out)
 	}
+	// Without MODEL_HARDWARE, the wizard gets the built-in hardware list.
+	if !reflect.DeepEqual(out.Models.Hardware, config.DefaultModelHardware()) {
+		t.Fatalf("models.hardware = %+v, want the built-in list", out.Models.Hardware)
+	}
+}
+
+// The wizard's hardware comes from MODEL_HARDWARE as configured, with the fields a list leaves
+// out left out of the JSON too.
+func TestConfigServesModelHardware(t *testing.T) {
+	t.Parallel()
+	cfg, err := config.Parse([]string{"--hub-api-url=https://hub.invalid"}, func(key string) (string, bool) {
+		if key == "MODEL_HARDWARE" {
+			return `[{"id":"amd-gpu","label":"AMD GPU","accelerator":"amd.com/gpu","image":"quay.io/example/vllm-rocm:1","defaults":{"accelerators":1}},{"id":"cpu","label":"CPU only"}]`, true
+		}
+		return "", false
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := serve(newTestApp(t, cfg, nil), asUser(http.MethodGet, "/api/v1/config"))
+	var body struct {
+		Data struct {
+			Models json.RawMessage `json:"models"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	want := `{"hardware":[{"id":"amd-gpu","label":"AMD GPU","accelerator":"amd.com/gpu","image":"quay.io/example/vllm-rocm:1","defaults":{"accelerators":1}},{"id":"cpu","label":"CPU only"}]}`
+	if string(body.Data.Models) != want {
+		t.Fatalf("models = %s, want %s", body.Data.Models, want)
+	}
 }
 
 // overview reads the clusters of GET /api/v1/grid/overview: the Monitoring

@@ -1,5 +1,5 @@
 import cases from '../../../mock/validation/cases.json';
-import { createModelSchema, fieldErrorsOf, validators } from '.';
+import { fieldErrorsOf, modelFieldsSchema, validators } from '.';
 import { z } from './zod';
 import { getCountError, getTimeDigitError, getTimeError, type RateLimit } from '../utilities/rateLimits';
 
@@ -46,6 +46,21 @@ describe("the console's wording for zod issues", () => {
     ['a number not below its bound', z.number().lt(10), 10, 'Enter a number less than 10.'],
     ['an unsafe integer', z.number().int(), 2 ** 60, 'Enter a smaller number.'],
     ['an unsafe negative integer', z.number().int(), -(2 ** 60), 'Enter a larger number.'],
+    // Bounds of four digits or more read with thousands separators.
+    ['a long text', z.string().max(4096), 'a'.repeat(4097), 'Enter at most 4,096 characters.'],
+    [
+      'a large range',
+      z.number().int().min(-1_000_000).max(1_000_000),
+      2_000_000,
+      'Enter a number from -1,000,000 to 1,000,000.',
+    ],
+    ['a large minimum', z.number().min(1000), 999, 'Enter a number of at least 1,000.'],
+    ['a large bound', z.number().lt(10_000), 10_000, 'Enter a number less than 10,000.'],
+    ['a large multiple', z.number().multipleOf(1024), 1000, 'Enter a multiple of 1,024.'],
+    ['a large bigint bound', z.bigint().max(1_000_000n), 2_000_000n, 'Enter a number of at most 1,000,000.'],
+    // Decimals keep every digit: a rounded bound would state a different rule.
+    ['a decimal multiple', z.number().multipleOf(0.0001), 0.00015, 'Enter a multiple of 0.0001.'],
+    ['a decimal minimum', z.number().min(1.23456), 1, 'Enter a number of at least 1.23456.'],
     ['a pattern', z.string().regex(/^a+$/), 'b', 'Enter a valid value.'],
     ['a URL', z.url(), 'not a url', 'Enter a valid URL.'],
     ['an email address', z.email(), 'nobody', 'Enter a valid email address.'],
@@ -72,13 +87,13 @@ describe("the console's wording for zod issues", () => {
   it('says the range for a number too large for an integer, whichever issue comes last', () => {
     // 2 ** 54, a 17-digit number, fails zod's safe-integer bound first, then the schema's maximum; the field
     // shows the last message, and both say the range.
-    const result = createModelSchema.shape.replicas.safeParse(2 ** 54);
+    const result = modelFieldsSchema.shape.replicas.safeParse(2 ** 54);
     expect(result.success).toBe(false);
     expect(result.error?.issues.map((issue) => issue.message)).toEqual([
       'Enter a number from 1 to 99.',
       'Enter a number from 1 to 99.',
     ]);
-    expect(fieldErrorsOf(createModelSchema.pick({ replicas: true }), { replicas: 2 ** 54 })).toEqual({
+    expect(fieldErrorsOf(modelFieldsSchema.pick({ replicas: true }), { replicas: 2 ** 54 })).toEqual({
       replicas: 'Enter a number from 1 to 99.',
     });
     // Without a range, the maximum that was broken still comes last.
@@ -105,7 +120,7 @@ describe("the console's wording for zod issues", () => {
       'Enter a time of at most 9,999.',
       'Enter a whole number.',
       'Enter a number of at least 1.',
-      'Enter a number from 1 to 1000000000.',
+      'Enter a number from 1 to 1,000,000,000.',
     ]);
     expect(words.filter((message) => zodDefault.test(message ?? ''))).toEqual([]);
   });
