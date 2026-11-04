@@ -59,13 +59,18 @@ export const NO_STATUS_READS = 3;
 export type SubscriptionStatusView = { phase: string; policies: { id: string; phase: string }[] };
 
 /**
- * What a status says for the users: `active` when the subscription and every policy are Active,
- * `policy` when only a policy isn't, `subscription` when the subscription isn't.
+ * What a status says for the users: `active` when the subscription and its policies are Active,
+ * `policy` when the subscription is but a policy isn't, or Get lists none, `subscription` when the
+ * subscription isn't. A subscription without a policy gives its users no access to its models, and
+ * the backend creates the policy with it, so none listed is a policy not active yet.
  */
 export type Verdict = 'active' | 'policy' | 'subscription';
 
-const verdictOf = (status: SubscriptionStatusView): Verdict =>
-  status.phase !== 'Active' ? 'subscription' : status.policies.every((p) => p.phase === 'Active') ? 'active' : 'policy';
+const verdictOf = (status: SubscriptionStatusView): Verdict => {
+  if (status.phase !== 'Active') return 'subscription';
+  const { policies } = status;
+  return policies.length > 0 && policies.every((p) => p.phase === 'Active') ? 'active' : 'policy';
+};
 
 /**
  * What a subscription watch learned from its reads so far, kept in its record so a reload goes on
@@ -291,7 +296,8 @@ const noStatusAvailable = (history: SubscriptionHistory) =>
  * a subscription the cluster can't make active reads Pending.
  *
  * Active needs the authorization policy Active too: in MaaS the policy gives the users access to
- * the models and the subscription their quota, and a user needs both. Both active is a success;
+ * the models and the subscription their quota, and a user needs both. Both active is a success; a
+ * subscription Get lists no policy for isn't active, as its policy isn't there yet (verdictOf);
  * anything else is checked again until `since` plus READY_MS, then a warning says which of the two
  * isn't active, from the last read that found a status (the last one may find none, while the
  * backend can't read the reports), or, when the last read failed or no read found a status, that

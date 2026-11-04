@@ -389,11 +389,19 @@ describe('watchActive', () => {
     });
   });
 
-  it('is active on its own phase when Get lists no authorization policy', async () => {
+  it("isn't active while Get lists no authorization policy: it waits, then warns about the policy", async () => {
+    // Without the policy its users can't call its models; the backend creates it with the
+    // subscription, so none listed is a policy not there yet, not one the subscription can do without.
     const alone: ReadAnswer = { version: 1, subscription: { phase: 'Active', policies: [] } };
-    expect(await watchActive(created(), SINCE, reads(alone), during)).toMatchObject({
-      status: NotificationResponseStatus.SUCCESS,
-      title: 'Subscription Team A is active',
+    expect(await watchActive(created(), SINCE, reads(alone), during)).toEqual({
+      status: NotificationResponseStatus.REPOLL,
+    });
+    expect(await watchActive(created(), SINCE, reads(alone), past)).toEqual({
+      status: NotificationResponseStatus.WARNING,
+      title: "Subscription Team A isn't active yet",
+      message:
+        "Its authorization policy isn't active on every ingress cluster 30 minutes after it was saved to Git, so users in its groups might not be able to use its models. Open the subscription to check the policy's status.",
+      actions: [{ title: 'View subscription', to: '/subscriptions/view/team-a' }],
     });
   });
 

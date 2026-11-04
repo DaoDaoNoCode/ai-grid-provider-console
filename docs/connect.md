@@ -357,11 +357,13 @@ subscription) are sent from the app root, never from the form (`frontend/src/not
   `Get` returns as `auth_policies`) both read Active: "Subscription <name> is active", "Users in
   its groups in the <organization> organization can use its models." (the organization's name as
   the form's select showed it, left out when it didn't load). MaaS needs both: the policy gives
-  the users access to the models, the subscription their quota. The backend reads both phases
-  from the ingress clusters' reports (`withSubscriptionPhase` and `withAuthPolicyStatus` in its
-  `internal/servers/subscriptions_git.go`): Active when every ingress cluster has the object
-  active, Pending while any doesn't have it yet, has it otherwise or hasn't reported, and empty
-  when no ingress cluster reports at all. There is no Failed phase and no per-cluster list for a
+  the users access to the models, the subscription their quota. A subscription `Get` lists no
+  policy for isn't active: the backend creates the policy with it, so none listed is a policy not
+  there yet, and the watch goes on to its deadline and warns about the policy. The backend reads
+  both phases from the ingress clusters' reports (`withSubscriptionPhase` and
+  `withAuthPolicyStatus` in its `internal/servers/subscriptions_git.go`): Active when every
+  ingress cluster has the object active, Pending while any doesn't have it yet, has it otherwise
+  or hasn't reported, and empty when no ingress cluster reports at all. There is no Failed phase and no per-cluster list for a
   subscription, so the watch has no error to report. After 30 minutes it warns "Subscription
   <name> isn't active yet", saying whether the subscription or its policy isn't active (from the
   last read that found a status) and where to look; when its last read failed, or no read found a
