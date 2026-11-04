@@ -433,7 +433,8 @@ export const seedOrganizations = (): Organization[] =>
           tokenUrl: `${oidc}/token`,
           defaultScopes: 'openid profile email',
           userInfoUrl: full ? `${oidc}/userinfo` : '',
-          jwksUrl: full ? `${oidc}/certs` : '',
+          // Required while validateSignature is on.
+          jwksUrl: `${oidc}/certs`,
           logoutUrl: full ? `${oidc}/logout` : '',
           validateSignature: true,
         },

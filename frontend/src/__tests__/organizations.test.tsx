@@ -33,7 +33,7 @@ const input: Required<OrganizationInput> = {
       tokenUrl: 'https://sso.example.com/token',
       defaultScopes: 'openid profile email',
       userInfoUrl: '',
-      jwksUrl: '',
+      jwksUrl: 'https://sso.example.com/certs',
       logoutUrl: '',
       validateSignature: true,
     },
@@ -74,6 +74,8 @@ const requiredIdp: [string, string][] = [
   ['Issuer', 'https://idp.example.com'],
   ['Authorization URL', 'https://idp.example.com/auth'],
   ['Token URL', 'https://idp.example.com/token'],
+  // Required while Validate signature is on, as it is by default.
+  ['JWKS URL', 'https://idp.example.com/certs'],
 ];
 
 it('onboards organization details then IdP, saves only after review and orders navigation', async () => {
@@ -110,6 +112,7 @@ it('onboards organization details then IdP, saves only after review and orders n
     ['Issuer', 'https://sso.example.com/tenant1'],
     ['Authorization URL', 'https://sso.example.com/auth'],
     ['Token URL', 'https://sso.example.com/token'],
+    ['JWKS URL', 'https://sso.example.com/certs'],
   ]);
   await user.click(screen.getByRole('button', { name: 'Next' }));
   const review = screen.getByTestId('organization-configuration-details');
@@ -748,4 +751,18 @@ it('heads the wizard sections at h2, moves focus to an added domain, and names t
   await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
   const modal = await screen.findByTestId('delete-organization-modal');
   expect(within(modal).getByRole('textbox', { name: `Type ${organization.name} to confirm:` })).toBeVisible();
+});
+
+it('edit: an identity provider saved without a JWKS URL says why at once', async () => {
+  const service = new MockConsoleService();
+  const [organization] = service.organizations;
+  // Saved before the JWKS rule, with Validate signature on.
+  organization.identityProvider = {
+    ...input.identityProvider,
+    config: { ...input.identityProvider.config, jwksUrl: '', validateSignature: true },
+  };
+  const user = userEvent.setup();
+  renderAt(`/organizations/${encodeURIComponent(organization.id)}/edit`, service);
+  await openStep(user, 'Identity provider');
+  expect(await screen.findByText('Enter the JWKS URL, or turn off Validate signature.')).toBeVisible();
 });

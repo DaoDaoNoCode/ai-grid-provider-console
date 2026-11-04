@@ -50,6 +50,7 @@
           "authorizationUrl": "https://sso.example.com/realms/globex-research/protocol/openid-connect/auth",
           "tokenUrl": "https://sso.example.com/realms/globex-research/protocol/openid-connect/token",
           "defaultScopes": "openid profile email",
+          "jwksUrl": "https://sso.example.com/realms/globex-research/protocol/openid-connect/certs",
           "validateSignature": true
         }
       }
@@ -68,6 +69,7 @@
           "authorizationUrl": "https://sso.example.com/realms/initech-labs/protocol/openid-connect/auth",
           "tokenUrl": "https://sso.example.com/realms/initech-labs/protocol/openid-connect/token",
           "defaultScopes": "openid profile email",
+          "jwksUrl": "https://sso.example.com/realms/initech-labs/protocol/openid-connect/certs",
           "validateSignature": true
         }
       }

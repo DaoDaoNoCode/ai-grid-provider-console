@@ -953,7 +953,7 @@ func validIdP() *aigridv1.IdentityProvider {
 			ClientId: "ai-grid", ClientSecretSecretName: "acme-oidc-client",
 			Issuer: "https://sso.example.com/realms/acme", AuthorizationUrl: "https://sso.example.com/realms/acme/auth",
 			TokenUrl: "https://sso.example.com/realms/acme/token", DefaultScopes: "openid profile email",
-			ValidateSignature: proto.Bool(true),
+			JwksUrl: "https://sso.example.com/realms/acme/certs", ValidateSignature: proto.Bool(true),
 		},
 	}
 }
@@ -1089,6 +1089,18 @@ func TestIdentityProviderIsValidatedAndTrimmed(t *testing.T) {
 			map[string]string{"identityProvider.config.defaultScopes": "Enter at most 2048 characters."}},
 		"no config": {with(func(p *aigridv1.IdentityProvider) { p.Config = nil }),
 			map[string]string{"identityProvider.config": "Required."}},
+		"no JWKS URL with Validate signature on": {with(func(p *aigridv1.IdentityProvider) { p.Config.JwksUrl = "" }),
+			map[string]string{"identityProvider.config.jwksUrl": "Enter the JWKS URL, or turn off Validate signature."}},
+		// A JWKS URL of spaces gets the same message as in the form (mock/validation/cases.json):
+		// missing while Validate signature is on, and an invalid URL while it's off.
+		"a JWKS URL of spaces with Validate signature on": {with(func(p *aigridv1.IdentityProvider) { p.Config.JwksUrl = "   " }),
+			map[string]string{"identityProvider.config.jwksUrl": "Enter the JWKS URL, or turn off Validate signature."}},
+		"a JWKS URL of spaces with Validate signature off": {with(func(p *aigridv1.IdentityProvider) {
+			p.Config.JwksUrl, p.Config.ValidateSignature = "   ", proto.Bool(false)
+		}), map[string]string{"identityProvider.config.jwksUrl": "Use HTTP or HTTPS."}},
+		"no JWKS URL and Validate signature by default": {with(func(p *aigridv1.IdentityProvider) {
+			p.Config.JwksUrl, p.Config.ValidateSignature = "", nil
+		}), map[string]string{"identityProvider.config.jwksUrl": "Enter the JWKS URL, or turn off Validate signature."}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := create(tc.idp)
@@ -1099,13 +1111,21 @@ func TestIdentityProviderIsValidatedAndTrimmed(t *testing.T) {
 		})
 	}
 
+	t.Run("no JWKS URL with Validate signature off", func(t *testing.T) {
+		if _, err := create(with(func(p *aigridv1.IdentityProvider) {
+			p.Config.JwksUrl, p.Config.ValidateSignature = "", proto.Bool(false)
+		})); err != nil {
+			t.Fatal(err)
+		}
+	})
+
 	t.Run("trimmed and defaulted", func(t *testing.T) {
 		got, err := create(&aigridv1.IdentityProvider{
 			Title: "  Acme SSO  ", Description: "  kept as typed  ",
 			Config: &aigridv1.OidcConfig{
 				ClientId: " ai-grid ", ClientSecretSecretName: " acme-oidc-client ",
 				Issuer: " https://sso.example.com ", AuthorizationUrl: "https://sso.example.com/auth\n", TokenUrl: "\thttps://sso.example.com/token",
-				DefaultScopes: " openid ", UserInfoUrl: " https://sso.example.com/userinfo ",
+				DefaultScopes: " openid ", UserInfoUrl: " https://sso.example.com/userinfo ", JwksUrl: " https://sso.example.com/certs ",
 			},
 		})
 		if err != nil {
@@ -1116,7 +1136,8 @@ func TestIdentityProviderIsValidatedAndTrimmed(t *testing.T) {
 			Config: &aigridv1.OidcConfig{
 				ClientId: "ai-grid", ClientSecretSecretName: "acme-oidc-client",
 				Issuer: "https://sso.example.com", AuthorizationUrl: "https://sso.example.com/auth", TokenUrl: "https://sso.example.com/token",
-				DefaultScopes: "openid", UserInfoUrl: "https://sso.example.com/userinfo", ValidateSignature: proto.Bool(true),
+				DefaultScopes: "openid", UserInfoUrl: "https://sso.example.com/userinfo", JwksUrl: "https://sso.example.com/certs",
+				ValidateSignature: proto.Bool(true),
 			},
 		}
 		if !proto.Equal(got.GetIdentityProvider(), want) {
