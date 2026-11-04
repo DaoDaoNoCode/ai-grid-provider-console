@@ -130,7 +130,6 @@ export const OrganizationFormWizard: React.FC<Props> = ({ service, organization 
                   serverErrors={form.idpServerErrors}
                   onChange={(identityProvider) => setValues({ ...values, identityProvider })}
                   isDisabled={saving || form.idpLocked}
-                  isEditing={!!organization?.identityProvider}
                 />
               </>
             )}

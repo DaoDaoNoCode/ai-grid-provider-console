@@ -778,16 +778,21 @@ it('heads the wizard sections at h2, moves focus to an added domain, and names t
   expect(within(modal).getByRole('textbox', { name: `Type ${organization.name} to confirm:` })).toBeVisible();
 });
 
-it('edit: an identity provider saved without a JWKS URL says why at once', async () => {
+it('edit: an identity provider saved without a JWKS URL is kept, and the domains still save', async () => {
   const service = new MockConsoleService();
   const [organization] = service.organizations;
-  // Saved before the JWKS rule, with Validate signature on.
+  // Saved before the JWKS rule, with Validate signature on. The edit can't change the provider and
+  // leaves it out of the save, so the rule doesn't block it.
   organization.identityProvider = {
     ...input.identityProvider,
     config: { ...input.identityProvider.config, jwksUrl: '', validateSignature: true },
   };
+  const update = vi.spyOn(service, 'updateOrganization');
   const user = userEvent.setup();
   renderAt(`/organizations/${encodeURIComponent(organization.id)}/edit`, service);
-  await openStep(user, 'Identity provider');
-  expect(await screen.findByText('Enter the JWKS URL, or turn off Validate signature.')).toBeVisible();
+  await user.click(await screen.findByRole('textbox', { name: 'Domain 1' }));
+  await user.paste('x');
+  await saveEdit(user);
+  expect(await screen.findByText('Organization updated')).toBeVisible();
+  expect(update.mock.calls[0][1].identityProvider).toBeUndefined();
 });
