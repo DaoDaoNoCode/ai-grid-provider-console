@@ -4,7 +4,13 @@
 // backend decides the phase, the clusters the placement chose, and each placed cluster's status
 // (ModelStatus in the backend's proto/ai_grid/v1/model_type.proto).
 import { timestampDate } from '@bufbuild/protobuf/wkt';
-import { ModelPhase, type Model, type ModelEnvVar, type ModelSpec } from '../../gen/ai_grid/v1/model_type_pb';
+import {
+  ModelDeploymentState,
+  ModelPhase,
+  type Model,
+  type ModelEnvVar,
+  type ModelSpec,
+} from '../../gen/ai_grid/v1/model_type_pb';
 
 /** The annotations the backend documents for a model's display name and description. */
 export const DISPLAY_NAME = 'openshift.io/display-name';
@@ -34,12 +40,20 @@ export type ModelPhaseWord = 'Ready' | 'Pending' | 'Failed' | 'Partially availab
 /** The model on one cluster its placement names, as the backend reports it (`status.clusters`). */
 export type ModelClusterView = {
   cluster: string;
-  /** Ready or Pending: the backend gives a placed cluster no other phase in git mode. */
+  /**
+   * Ready, Failed or Pending: every report from the cluster ready, one failed, or one not ready or
+   * missing. On a combined cluster its MaaSModelRef and ExternalModel reports count too.
+   */
   phase: ModelPhaseWord;
-  /** Ready, NotReady or NoReport. */
+  /** Ready, Failed, NotReady, Stopped or NoReport. */
   reason: string;
   /** What the cluster reported, for example "LLMInferenceService not ready". */
   message?: string;
+  /**
+   * Whether the cluster runs the model: its LLMInferenceService reports Ready (`deployment`
+   * RUNNING), whatever MaaS reports on a combined cluster.
+   */
+  running: boolean;
 };
 
 /** A Model as the pages show it. */
@@ -173,6 +187,7 @@ export const toModelView = (model: Model): ModelView => {
       phase: phaseWordOf(c.phase, c.reason),
       reason: c.reason,
       message: nonEmpty(c.message),
+      running: c.deployment === ModelDeploymentState.RUNNING,
     })),
     placementClusters: placementClustersOf(spec),
     placed: spec?.placement !== undefined,

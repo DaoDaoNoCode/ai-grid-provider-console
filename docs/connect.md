@@ -218,7 +218,20 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   outline, its message in a tooltip. While no cluster has reported (`status.clusters` empty,
   reason `SavedToGit`), the rows are `status.placement.selected_clusters` with no Status column.
   At the pin the backend lists only placed clusters there; an ingress cluster's reports count in
-  the phase and `status.message` only.
+  the phase, `status.message` and `status.ingress` only.
+- **Where status comes from.** The pinned backend reads it from the health the hub's catalog
+  Argo CD Applications record for each cluster (`acm-models-catalog-{models,ingress}-<cluster>`
+  in `openshift-gitops`; the chart grants the read, `templates/rbac.yaml`). A model's phase and
+  each cluster's can be Failed (an object Degraded for a reason that isn't a step still under
+  way, or Argo CD's sync of it failed for good), and a cluster's reason can be Stopped (the
+  model carries `serving.kserve.io/stop`); the pages show both as they show any phase. A model
+  waiting only for a subscription is Ready (or Partially available), no longer Pending. The
+  backend also reports, apart from MaaS, each placed cluster's `deployment`, `sync`, `state`
+  and a View link (`view_url`, `view_target`), the model's `deployment`, `maas` and `state`
+  summaries, and each ingress cluster's MaaS state (`status.ingress`), for the Status and
+  Availability columns the Models pages don't show yet. `toModelView` reads only
+  `clusters[].deployment` today, as `running`, for the readiness watch ("Writes that take
+  long").
 - **Writes.** The wizard calls `Models/Create` with the id and `metadata.name`, the annotations,
   `spec.model` (the URI only: no served name, because the backend serves a model as its id, the
   name users send; the wizard starts the id from the URI's last path segment and shows it on
@@ -334,15 +347,18 @@ subscription) are sent from the app root, never from the form (`frontend/src/not
   tell: a warning that the write couldn't be confirmed, with a link to the object, never a
   success. Reads that keep failing are a warning too.
 - A deployed model is then watched every 20 s until it runs on every cluster it is placed on:
-  each entry of `status.clusters` (one per cluster in `placement.selected_clusters`) READY, which
-  that cluster's LLMInferenceService reports. Then "Model <name> is ready on <clusters>". The
-  model's overall phase isn't used for this: it also counts the ingress clusters that publish the
-  model through MaaS, whose report turns ready only once a subscription covers the model, so a
-  model running on its clusters can read Pending for good. "Ready" means running on its clusters;
-  users reach it through MaaS once a subscription covers it too. An overall Failed (or a cluster
-  reported failed, which git mode doesn't report) is an error. After 30 minutes the watch warns
-  "Model <name> isn't ready yet", naming the clusters it isn't ready on; a model that is gone
-  stops it.
+  each entry of `status.clusters` (one per cluster in `placement.selected_clusters`) reporting its
+  deployment `RUNNING`, which that cluster's LLMInferenceService reports Ready. Then "Model <name>
+  is ready on <clusters>". Neither the model's overall phase nor a cluster's is used for this:
+  the overall phase also counts the ingress clusters that publish the model through MaaS, and a
+  combined cluster's phase its MaaSModelRef and ExternalModel, which stay pending while MaaS sets
+  up the route, and a model whose Argo CD sync reads OutOfSync while it runs. "Ready" means
+  running on its clusters; users reach it through MaaS once a subscription covers it too. An
+  overall Failed, or a placed cluster reported Failed, is an error ("Unable to deploy model
+  <name>"); the backend reports Failed for an object Degraded for a reason that isn't a step still
+  under way, MaaS's objects on an ingress cluster included, and for a sync Argo CD gave up on. A
+  model stopped on a cluster isn't running there. After 30 minutes the watch warns "Model <name>
+  isn't ready yet", naming the clusters it isn't ready on; a model that is gone stops it.
 - An edited model is watched the same way, every 20 s for 30 minutes, but never said to be ready:
   its status doesn't say which revision it describes, and during a rolling update the previous pod
   keeps its cluster Ready, so the previous revision's Ready would read as the edit's. It reports

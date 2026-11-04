@@ -166,8 +166,13 @@ describe('watchReady', () => {
     model: {
       phase,
       clusters: [
-        { cluster: 'site-b', phase: 'Ready', reason: 'Ready' },
-        { cluster: 'site-c', phase: phase === 'Ready' ? 'Ready' : 'Pending', reason: 'Ready' },
+        { cluster: 'site-b', phase: 'Ready', reason: 'Ready', running: true },
+        {
+          cluster: 'site-c',
+          phase: phase === 'Ready' ? 'Ready' : 'Pending',
+          reason: phase === 'Ready' ? 'Ready' : 'NotReady',
+          running: phase === 'Ready',
+        },
       ],
       selectedClusters: ['site-b', 'site-c'],
       ...extra,
@@ -226,7 +231,7 @@ describe('watchReady', () => {
     const ingressPending = view('Pending', {
       statusMessage: 'Not ready on site-a; ready on site-b',
       selectedClusters: ['site-b'],
-      clusters: [{ cluster: 'site-b', phase: 'Ready', reason: 'Ready' }],
+      clusters: [{ cluster: 'site-b', phase: 'Ready', reason: 'Ready', running: true }],
     });
     expect(await watchReady(model('create'), SINCE, reads(ingressPending), during)).toEqual({
       status: NotificationResponseStatus.SUCCESS,
@@ -238,18 +243,65 @@ describe('watchReady', () => {
   it('waits for a placed cluster that has no report yet', async () => {
     const unreported = view('Pending', {
       selectedClusters: ['site-b', 'site-c'],
-      clusters: [{ cluster: 'site-b', phase: 'Ready', reason: 'Ready' }],
+      clusters: [{ cluster: 'site-b', phase: 'Ready', reason: 'Ready', running: true }],
     });
     expect(await watchReady(model('create'), SINCE, reads(unreported), during)).toEqual({
       status: NotificationResponseStatus.REPOLL,
     });
   });
 
+  it('is ready on a combined cluster that runs it while MaaS there still sets up its route', async () => {
+    // A combined cluster's phase also counts its MaaSModelRef and ExternalModel, which stay
+    // pending while MaaS configures the route; its deployment runs (ModelClusterStatus.deployment).
+    const routing = view('Pending', {
+      selectedClusters: ['site-a'],
+      clusters: [
+        {
+          cluster: 'site-a',
+          phase: 'Pending',
+          reason: 'NotReady',
+          message: 'LLMInferenceService ready; MaaSModelRef not ready; ExternalModel ready',
+          running: true,
+        },
+      ],
+    });
+    expect(await watchReady(model('create'), SINCE, reads(routing), during)).toEqual({
+      status: NotificationResponseStatus.SUCCESS,
+      title: 'Model Widget is ready on site-a',
+      actions: [{ title: 'View model', to: '/models/widget' }],
+    });
+  });
+
+  it("isn't ready on a cluster where it is stopped, and names it after 30 minutes", async () => {
+    const stopped = view('Pending', {
+      reason: 'NotReady',
+      clusters: [
+        { cluster: 'site-b', phase: 'Ready', reason: 'Ready', running: true },
+        {
+          cluster: 'site-c',
+          phase: 'Pending',
+          reason: 'Stopped',
+          message: 'LLMInferenceService stopped',
+          running: false,
+        },
+      ],
+    });
+    expect(await watchReady(model('create'), SINCE, reads(stopped), during)).toEqual({
+      status: NotificationResponseStatus.REPOLL,
+    });
+    expect(await watchReady(model('create'), SINCE, reads(stopped), past)).toMatchObject({
+      status: NotificationResponseStatus.WARNING,
+      title: "Model Widget isn't ready yet",
+      message:
+        "It isn't ready on site-c 30 minutes after it was saved to Git. Open the model to check each cluster's status.",
+    });
+  });
+
   it('says a cluster that failed failed', async () => {
     const failing = view('Pending', {
       clusters: [
-        { cluster: 'site-b', phase: 'Ready', reason: 'Ready' },
-        { cluster: 'site-c', phase: 'Failed', reason: 'NotReady', message: 'LLMInferenceService failed' },
+        { cluster: 'site-b', phase: 'Ready', reason: 'Ready', running: true },
+        { cluster: 'site-c', phase: 'Failed', reason: 'Failed', message: 'LLMInferenceService failed', running: false },
       ],
     });
     expect(await watchReady(model('create'), SINCE, reads(failing), during)).toMatchObject({
@@ -289,7 +341,14 @@ describe('watchChanges', () => {
     version: 3,
     model: {
       phase,
-      clusters: [{ cluster: 'site-b', phase: siteB, reason: siteB === 'Ready' ? 'Ready' : 'NotReady' }],
+      clusters: [
+        {
+          cluster: 'site-b',
+          phase: siteB,
+          reason: siteB === 'Ready' ? 'Ready' : 'NotReady',
+          running: siteB === 'Ready',
+        },
+      ],
       selectedClusters: ['site-b'],
       ...extra,
     } as ModelView,
@@ -322,7 +381,9 @@ describe('watchChanges', () => {
 
   it('says the changes failed when a placed cluster turns failed', async () => {
     const failing = view('Pending', 'Failed', {
-      clusters: [{ cluster: 'site-b', phase: 'Failed', reason: 'NotReady', message: 'LLMInferenceService failed' }],
+      clusters: [
+        { cluster: 'site-b', phase: 'Failed', reason: 'Failed', message: 'LLMInferenceService failed', running: false },
+      ],
     });
     expect(await watchChanges(model('update'), SINCE, reads(failing), during, statusOf(ready))).toMatchObject({
       status: NotificationResponseStatus.ERROR,
