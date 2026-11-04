@@ -2,7 +2,7 @@
 // Combined adaptation of OSAC TenantCreatePage and IdentityProviderCreateWizard.
 // Source commit: 8cb0a227e45cc9b17421b6e79ce493ed370ebd5d. Break-glass flow is omitted.
 import { useEffect, useRef } from 'react';
-import { Form, Wizard, WizardStep, useWizardContext } from '@patternfly/react-core';
+import { Alert, Form, Wizard, WizardStep, useWizardContext } from '@patternfly/react-core';
 import type { OrganizationsService } from '../../api/organizations';
 import type { Organization, OrganizationInput } from '../../api/types';
 import { ConsoleWizardFooter } from '../../components/ConsoleWizardFooter';
@@ -57,7 +57,8 @@ const GoToRefusedField: React.FC<{ refused?: object; errorStep?: string }> = ({ 
 /**
  * Creates an organization in three steps: its details, its identity provider, then a review. With
  * `organization` it edits that one through the same steps: every step can be opened from the start,
- * the name is read-only, and Save changes on the Review step stays disabled until something changed.
+ * the name and an existing identity provider are read-only, and Save changes on the Review step
+ * stays disabled until something changed.
  */
 export const OrganizationFormWizard: React.FC<Props> = ({ service, organization }) => {
   const editing = !!organization;
@@ -113,11 +114,19 @@ export const OrganizationFormWizard: React.FC<Props> = ({ service, organization 
         </WizardStep>
         <WizardStep name="Identity provider" id="organization-idp" isDisabled={!form.detailsValid || saving}>
           <Form maxWidth="750px">
+            {form.idpLocked && (
+              <Alert
+                variant="info"
+                isInline
+                isPlain
+                title="The identity provider cannot be changed after the organization is created."
+              />
+            )}
             <IdentityProviderFields
               value={values.identityProvider}
               serverErrors={form.idpServerErrors}
               onChange={(identityProvider) => setValues({ ...values, identityProvider })}
-              isDisabled={saving}
+              isDisabled={saving || form.idpLocked}
               isEditing={!!organization?.identityProvider}
             />
           </Form>

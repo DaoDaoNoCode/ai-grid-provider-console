@@ -51,18 +51,19 @@ export const useOrganizationForm = (service: OrganizationsService, initial?: Org
 
   const detailErrors = fieldErrorsOf(tenantDetailsSchema, { name: values.name, domains: values.domains });
   const detailsValid = Object.keys(detailErrors).length === 0;
-  // Optional: the backend's Tenants API has no identity provider yet, so a blank form is valid, but
-  // only for an organization without one. A save leaves an absent field alone, so clearing an
-  // existing one would change nothing; its form must stay complete.
-  const idpBlank = !initial?.identityProvider && isBlankIdentityProvider(values.identityProvider);
-  const idpValid = idpBlank || identityProviderSchema.safeParse(values.identityProvider).success;
+  // The backend makes an identity provider immutable once the organization has one: the edit shows
+  // it read-only and leaves it out of the save, which keeps the stored one as it is.
+  const idpLocked = !!initial?.identityProvider;
+  // Optional: a blank form is valid for an organization without one, and is left out on save.
+  const idpBlank = !idpLocked && isBlankIdentityProvider(values.identityProvider);
+  const idpValid = idpLocked || idpBlank || identityProviderSchema.safeParse(values.identityProvider).success;
   const toSave: OrganizationInput = idpBlank ? { ...values, identityProvider: undefined } : values;
   const serverErrors = server ? currentServerErrors(server.errors, server.sent, values) : {};
 
   const leave = () => navigate(initial ? `/organizations/${encodeURIComponent(initial.id)}` : '/organizations');
 
   const save = async () => {
-    const input = organizationInputSchema.safeParse(toSave);
+    const input = organizationInputSchema.safeParse(idpLocked ? { ...toSave, identityProvider: undefined } : toSave);
     if (saving || !input.success) return;
     setSaving(true);
     setError(undefined);
@@ -97,6 +98,8 @@ export const useOrganizationForm = (service: OrganizationsService, initial?: Org
     detailErrors,
     detailsValid,
     idpValid,
+    /** The organization already has an identity provider, which can't change: shown, never sent. */
+    idpLocked,
     /** What a save sends, which the Review step shows: the values without a blank identity provider. */
     toSave,
     /** The server's errors for name and domains, keyed like detailErrors. */
