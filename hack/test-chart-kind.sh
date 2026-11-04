@@ -13,7 +13,8 @@
 #      more; only the proxy listens off loopback;
 #   3. helm upgrade with backend.clusterWrites: the backend may label ManagedClusters ai-grid/*, and
 #      the admission policy refuses its other changes;
-#   4. helm uninstall removes the cluster-scoped objects and the Role in openshift-gitops.
+#   4. helm uninstall removes the cluster-scoped objects and the Role in openshift-gitops, and
+#      keeps the IdP secret namespace and the Secrets in it.
 # Not covered: OpenShift's OAuth login in a browser, the service CA and the Route's router.
 #
 #   hack/test-chart-kind.sh             # creates kind cluster ai-grid-chart and deletes it after
@@ -106,7 +107,7 @@ k wait --for=condition=Established --timeout=60s \
 if [[ -z "${created}" ]]; then
   step "reusing kind cluster ${CLUSTER}: removing what an earlier run left"
   helm --kube-context "${CTX}" uninstall console -n "${NS}" --ignore-not-found --wait >/dev/null
-  k delete namespace "${NS}" --ignore-not-found --wait >/dev/null
+  k delete namespace "${NS}" ai-grid-idp-secrets --ignore-not-found --wait >/dev/null
   k delete managedcluster site-a --ignore-not-found >/dev/null
   k delete clusterrolebinding,clusterrole tester-managedclusters --ignore-not-found >/dev/null
   k -n default delete serviceaccount tester --ignore-not-found >/dev/null
@@ -275,13 +276,15 @@ step "2. helm install"
 helm --kube-context "${CTX}" install console "${CHART}" -n "${NS}" "${VALUES[@]}" >/dev/null
 rollout
 # backend.idpSecrets: the backend gets an organization's IdP client secret by name, and nothing more.
-sa="system:serviceaccount:${NS}:${NAME}"
-[[ "$(k auth can-i get secrets -n ai-grid-idp-secrets --as "${sa}")" == yes ]] ||
+[[ "$(k auth can-i get secrets -n ai-grid-idp-secrets --as "${SA}")" == yes ]] ||
   fail "the backend can't get Secrets in ai-grid-idp-secrets"
-for verb in list watch create; do
-  [[ "$(k auth can-i "${verb}" secrets -n ai-grid-idp-secrets --as "${sa}" || true)" == no ]] ||
+for verb in list watch create update patch delete; do
+  [[ "$(k auth can-i "${verb}" secrets -n ai-grid-idp-secrets --as "${SA}" || true)" == no ]] ||
     fail "the backend can ${verb} Secrets in ai-grid-idp-secrets"
 done
+# Its own namespace holds the OAuth, Keycloak and Git credentials.
+[[ "$(k auth can-i get secrets -n "${NS}" --as "${SA}" || true)" == no ]] ||
+  fail "the backend can get Secrets in ${NS}"
 pass "the backend can only get Secrets in ai-grid-idp-secrets"
 forward
 u="https://127.0.0.1:${PORT}"
@@ -402,6 +405,8 @@ k label managedcluster site-a team=a >/dev/null || fail "the policy must not app
 pass "other users are not limited"
 
 step "4. helm uninstall"
+# A provider admin's Secret, made by hand as the chart README says.
+k -n ai-grid-idp-secrets create secret generic test-idp --from-literal=client-secret=x >/dev/null
 helm --kube-context "${CTX}" uninstall console -n "${NS}" --wait >/dev/null
 left="$(k get clusterrole,clusterrolebinding,validatingadmissionpolicy,validatingadmissionpolicybinding \
   -l app.kubernetes.io/name="${NAME}" -o name)"
@@ -410,5 +415,9 @@ pass "no cluster-scoped objects remain"
 left="$(k -n openshift-gitops get role,rolebinding -l app.kubernetes.io/name="${NAME}" -o name)"
 [[ -z "${left}" ]] || fail "uninstall left in openshift-gitops: ${left}"
 pass "nothing of the chart remains in openshift-gitops"
+[[ "$(k get namespace ai-grid-idp-secrets -o jsonpath='{.status.phase}')" == Active ]] ||
+  fail "uninstall removed namespace ai-grid-idp-secrets"
+k -n ai-grid-idp-secrets get secret test-idp >/dev/null || fail "uninstall removed Secret test-idp"
+pass "namespace ai-grid-idp-secrets and its Secrets remain"
 
 echo "test-chart-kind: all checks passed"
