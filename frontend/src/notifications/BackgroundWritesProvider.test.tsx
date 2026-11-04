@@ -444,6 +444,61 @@ it("replaces an edited model's watch on the next edit, and stops it when the mod
   expect(modelWatches(storage)).toEqual([]);
 });
 
+it('resumes the watches an earlier console kept, and drops a record of a shape it never writes', async () => {
+  vi.useFakeTimers();
+  try {
+    // As the console before subscription watches kept them: a deploy's readiness watch with its
+    // last seen status, and a subscription create being read back (no history, no edit, matched by
+    // id alone back then); and a record without a kind, which no console writes.
+    const since = Date.now();
+    const deploy = { ...readyRecord(since), key: 'old-model', id: 'team-a', status: '["Pending"]' };
+    const readback = {
+      key: 'old-sub',
+      subject: 'subscription',
+      op: 'create',
+      id: 'team-a',
+      name: 'Team A',
+      stage: 'readback',
+      since,
+    };
+    const kindless = { key: 'odd', op: 'create', id: 'team-a', name: 'Team A', stage: 'ready', since };
+    const storage = memoryStorage({ [watchesKey('dev-user')]: JSON.stringify([deploy, readback, kindless]) });
+    const { transport } = fakeClients({
+      models: { get: () => ({ object: pendingOnSiteB() }) },
+      subscriptions: { get: () => teamA('Pending') },
+    });
+    render(
+      <BackendProvider transport={transport} checkSession={() => undefined}>
+        <NotificationsProvider storage={storage.get} owner="dev-user">
+          <NotificationWatcherProvider>
+            <BackgroundWritesProvider storage={storage.get} owner="dev-user">
+              <Titles />
+            </BackgroundWritesProvider>
+          </NotificationWatcherProvider>
+        </NotificationsProvider>
+      </BackendProvider>,
+    );
+    await pass(0);
+    await pass(1);
+    // The read-back confirms the create, which starts the subscription's readiness watch; the
+    // deploy's watch of the model with the same id goes on beside it.
+    expect(screen.getByText('Subscription Team A saved to Git')).toBeInTheDocument();
+    const kept = JSON.parse(storage.values.get(watchesKey('dev-user')) ?? '[]') as {
+      key: string;
+      subject: string;
+      stage: string;
+    }[];
+    expect(kept.map((r) => [r.subject, r.stage])).toEqual([
+      ['model', 'ready'],
+      ['subscription', 'ready'],
+    ]);
+    expect(kept[0].key).toBe('old-model');
+    expect(kept.some((r) => r.key === 'odd')).toBe(false);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 /**
  * Subscription team-a as Subscriptions/Get answers it: its phase, from the ingress clusters'
  * reports, and its authorization policy's (withSubscriptionPhase and withAuthPolicyStatus in the
@@ -599,6 +654,19 @@ describe('a subscription watch', () => {
     await pass(READY_POLL_MS);
     expect(state.lists).toBe(lists + 1);
     expect(screen.queryByText('Subscription Team A is active')).not.toBeInTheDocument();
+  });
+
+  it("judges by the policy's phase from Subscriptions/Get, which List doesn't carry", async () => {
+    const { state } = subscribing([activeRecord(Date.now())]);
+    // The list shows the subscription Active; only Get says its policy isn't yet.
+    state.answer = teamA('Active', 'Pending');
+    await pass(0);
+    await pass(READY_POLL_MS);
+    expect(screen.getByText('list Active')).toBeInTheDocument();
+    expect(screen.queryByText('Subscription Team A is active')).not.toBeInTheDocument();
+    state.answer = teamA('Active');
+    await pass(READY_POLL_MS);
+    expect(screen.getByText('Subscription Team A is active')).toBeInTheDocument();
   });
 
   it("warns that a created subscription isn't active yet when its 30 minutes run out", async () => {
