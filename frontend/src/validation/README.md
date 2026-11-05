@@ -29,7 +29,4 @@ so a schema written without a single message still reads well:
 ## The cases and the fake backend
 
 The cases in `mock/validation/cases.json` run in the frontend (`cases.test.ts`) and pin each
-schema's messages. The console's fake backend still checks identity providers for the Organizations
-pages (`bff/internal/fakebackend/validate.go`) with the same messages; change them together until
-Organizations moves to the backend's API. `zod.test.ts` fails if any of zod's
-own English reaches a user. The real backend words its errors itself; the console shows them as sent.
+schema's messages. `zod.test.ts` fails if any of zod's own English reaches a user. The real backend words its errors itself; the console shows them as sent.
