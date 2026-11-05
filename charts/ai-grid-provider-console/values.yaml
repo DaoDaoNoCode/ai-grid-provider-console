@@ -62,6 +62,9 @@ route:
 console:
   # GET /api/v1/config.
   gridConsumerUrl: ""
+  # The AI Grid map's tile server, a Leaflet URL template; empty draws a bundled land outline. A path
+  # on the console or an http(s) URL of a host name (its first label may be {s}): the console's
+  # Content-Security-Policy allows images from that host only, and the BFF refuses any other form.
   mapTileUrl: ""
   # The attribution the tile server requires, shown with mapTileUrl's tiles.
   mapTileAttribution: ""

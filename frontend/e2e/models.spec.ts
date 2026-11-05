@@ -1,4 +1,5 @@
-import { expect, test, type APIRequestContext } from '@playwright/test';
+import type { APIRequestContext } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { callBackend as call, createModel, tryBackend, writeConfirmed } from './backend';
 
 // The backend's own Models API on its fakes (the backend's fixtures/poc), through the BFF's

@@ -12,6 +12,13 @@ const messages = (schema: z.ZodType, input: unknown) => {
   return result.success ? [] : result.error.issues.map((issue) => issue.message);
 };
 
+// The console's pages refuse eval (their Content-Security-Policy), so zod must not compile schemas
+// with `new Function`, nor probe whether it may: the refused probe is a policy violation.
+it('keeps zod from compiling schemas with eval', () => {
+  expect(z.config().jitless).toBe(true);
+  expect(z.object({ a: z.string() }).safeParse({ a: 'x' }).success).toBe(true);
+});
+
 describe("the console's wording for zod issues", () => {
   it('words every shared validation case without zod defaults', () => {
     const all = cases.cases.flatMap((c) => Object.values(validators[c.schema as keyof typeof validators](c.input)));

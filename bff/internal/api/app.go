@@ -75,7 +75,10 @@ func (a *App) Handler() http.Handler {
 	// The Monitoring page's Perses calls: the same caller checks as the API, then the relay.
 	root.Handle(perses.Prefix+"/", a.requireIdentity(a.requireProviderAdmin(http.HandlerFunc(a.relayPerses))))
 	if a.cfg.StaticAssetsDir != "" {
-		root.Handle("/", newSPAHandler(a.cfg.StaticAssetsDir))
+		// config.Parse refuses a tile URL without a source; a Config built
+		// otherwise gets a map without its tiles, not a wider policy.
+		tiles, _ := config.MapTileSource(a.cfg.MapTileURL)
+		root.Handle("/", newSPAHandler(a.cfg.StaticAssetsDir, pagePolicy(tiles)))
 	}
 
 	// The backend's own RPCs over Connect: the same caller checks as the API, then the relay.

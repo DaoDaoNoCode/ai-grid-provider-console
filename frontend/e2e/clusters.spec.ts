@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 // A fixture AI Grid member (the backend's fixtures/poc/managedclusters.json). No spec changes its
 // membership; cluster-membership.spec.ts adds and removes site4.

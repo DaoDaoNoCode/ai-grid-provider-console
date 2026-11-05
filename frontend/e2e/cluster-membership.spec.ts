@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 // The fixture cluster that is not yet an AI Grid member (the backend's fixtures/poc/managedclusters.json).
 const ENROLLABLE = 'site4';

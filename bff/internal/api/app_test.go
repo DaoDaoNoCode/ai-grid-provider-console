@@ -557,6 +557,11 @@ func TestClassify(t *testing.T) {
 	}
 }
 
+// defaultPagePolicy is the console pages' Content-Security-Policy without a map tile server
+// (pagePolicy): written out, so that a change to it shows in review.
+const defaultPagePolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; " +
+	"font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+
 func TestSPAHandler(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -590,7 +595,7 @@ func TestSPAHandler(t *testing.T) {
 	secure := func(what string, rec *httptest.ResponseRecorder) {
 		t.Helper()
 		for header, want := range map[string]string{
-			"Content-Security-Policy": "frame-ancestors 'none'",
+			"Content-Security-Policy": defaultPagePolicy,
 			"X-Frame-Options":         "DENY",
 			"X-Content-Type-Options":  "nosniff",
 			"Referrer-Policy":         "same-origin",
@@ -631,7 +636,7 @@ func TestSPAHandler(t *testing.T) {
 	raw := httptest.NewRequest(http.MethodGet, "/", nil)
 	raw.URL.Path = "/../../etc/passwd"
 	rec = httptest.NewRecorder()
-	newSPAHandler(dir).ServeHTTP(rec, raw)
+	newSPAHandler(dir, defaultPagePolicy).ServeHTTP(rec, raw)
 	if rec.Code != 200 || rec.Body.String() != "<html>index</html>" {
 		t.Fatalf("traversal should be cleaned to a client route, got %d %q", rec.Code, rec.Body.String())
 	}

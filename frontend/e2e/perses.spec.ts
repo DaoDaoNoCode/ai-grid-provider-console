@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { expect, test } from './fixtures';
 import configExample from '../../mock/examples/get-config.json' with { type: 'json' };
 import userExample from '../../mock/examples/get-user.json' with { type: 'json' };
 

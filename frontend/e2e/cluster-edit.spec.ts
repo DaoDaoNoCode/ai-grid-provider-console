@@ -1,4 +1,5 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import type { APIRequestContext, Page } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { callBackend as call } from './backend';
 
 // Edit on the backend's own fakes (its fixtures/poc), through the BFF's Connect relay. The fixtures
