@@ -1403,8 +1403,19 @@ describe('subscription creation model status', () => {
     await user.click(within(picker).getByRole('button', { name: 'Partially ready for Granite 3.3 8B Instruct' }));
     const status = await screen.findByRole('dialog', { name: 'Granite 3.3 8B Instruct status' });
     expect(screen.getAllByRole('dialog')).toHaveLength(1);
-    expect(status).toHaveTextContent('One or more model deployments are not ready.');
-    expect(status).toHaveTextContent('site2');
+    expect(status).toHaveTextContent('The model isn’t ready on one or more of its clusters.');
+    const clusterTable = within(status).getByRole('grid', { name: 'Clusters of Granite 3.3 8B Instruct' });
+    expect(
+      within(clusterTable)
+        .getAllByRole('columnheader')
+        .map((header) => header.textContent),
+    ).toEqual(['Cluster', 'Site', 'Region', 'Status', 'View']);
+    const site2 = within(clusterTable).getByRole('cell', { name: 'site2' }).closest('tr')!;
+    expect(
+      within(site2)
+        .getAllByRole('cell')
+        .map((cell) => cell.textContent),
+    ).toEqual(['site2', 'New York', 'us-east', 'Starting on site2', 'View']);
     expect(within(status).getByRole('link', { name: 'View on site2 in the OpenShift console' })).toHaveAttribute(
       'href',
       'https://console.site2.example.com/model',

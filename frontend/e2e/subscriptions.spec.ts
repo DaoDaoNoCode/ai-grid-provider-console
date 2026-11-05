@@ -51,7 +51,13 @@ test('creates, views, edits and deletes a subscription', async ({ page }) => {
     const statusDialog = page.getByRole('dialog', { name: `${MODEL} status`, exact: true });
     await expect(statusDialog).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(1);
-    await expect(statusDialog).toContainText('site2');
+    await expect(statusDialog).toContainText('The model isn’t ready on one or more of its clusters.');
+    const clusters = statusDialog.getByRole('grid', { name: `Clusters of ${MODEL}`, exact: true });
+    await expect(clusters.getByRole('columnheader')).toHaveText(['Cluster', 'Site', 'Region', 'Status', 'View']);
+    // The backend fakes' hub gives site2 a site name and no region.
+    await expect(
+      clusters.getByRole('row', { name: 'site2 New York — Starting on site2 —', exact: true }),
+    ).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(addModels).toBeVisible();
     await expect(statusTrigger).toBeFocused();
