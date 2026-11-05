@@ -9,6 +9,7 @@ import { SectionEmptyState } from '../../components/states/SectionEmptyState';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
 import { useConsoleSession } from '../../context/useConsoleSession';
 import { modelNotFound, modelPath } from './modelUtils';
+import { ClusterLoadNote } from './ClusterLoadNote';
 import { ModelClustersTable } from './ModelClustersTable';
 import { ModelMaaSTable } from './ModelMaaSTable';
 import { ModelAvailability } from './ModelAvailability';
@@ -28,7 +29,8 @@ export const ModelDetailsPage: React.FC = () => {
   const { id = '' } = useParams();
   const navigate = useNavigate();
   const { data: loadedModel, loaded, error, refresh } = useModel(id);
-  const { data: clusters } = useClusterList();
+  const clusterList = useClusterList();
+  const clusters = clusterList.data;
   const { user } = useConsoleSession();
   // A 404 means the deployment is gone, even when an earlier answer is still held (PageStateSection
   // shows the not-found state then).
@@ -46,6 +48,7 @@ export const ModelDetailsPage: React.FC = () => {
     const availability = availabilityOf(model);
     return (
       <Flex direction={{ default: 'column' }} flexWrap={{ default: 'nowrap' }} spaceItems={{ default: 'spaceItemsXl' }}>
+        <ClusterLoadNote clusters={clusterList} />
         {/* The alert explains the header's Status word (status.state). Ready, Saved to Git and
             Unknown say all there is; MaaS has its own Availability section. */}
         {model.state !== 'Ready' &&

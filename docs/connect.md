@@ -227,7 +227,9 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   `status.clusters` with Cluster (a link to the cluster), Site and Region (the cluster's
   `status.location.site_name` and `status.location.region` from `Clusters/List`, as the deploy
   wizard and the Clusters pages show them; a dash for either when it is empty, never one in place
-  of the other; `clusterPlaces.ts`), Status (`clusters[].state`, opening what that cluster
+  of the other; `clusterPlaces.ts`; when `Clusters/List` fails, `ClusterLoadNote` says so above the
+  page's content, `LoadFailedAlert` before any answer and `StaleDataAlert` after one, so a dash
+  doesn't read as a cluster without a site or region), Status (`clusters[].state`, opening what that cluster
   reported: its Site and Region, Git sync, deployment, their messages, the backend's per-cluster
   message) and
   View (`view_url`: OpenShift AI's model deployments, or the OpenShift console on a cluster without

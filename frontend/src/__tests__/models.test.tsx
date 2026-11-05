@@ -2593,6 +2593,48 @@ describe('each cluster of a placed model (status.clusters, proposal P13)', () =>
     expect(modal).toHaveTextContent('Site—');
     expect(modal).toHaveTextContent('Regionus-west');
   });
+
+  it.each(['/models', '/models/mistral-7b-instruct'])(
+    "says on %s when the clusters fail to load, so a dash doesn't read as no site or region",
+    async (path) => {
+      const user = userEvent.setup();
+      const service = partial();
+      const clusters = vi.spyOn(service, 'listClusters').mockRejectedValue(new ServiceError(503, 'Hub unavailable.'));
+      renderAt(path, service);
+      const title = await screen.findByRole('heading', { name: 'Warning alert: Unable to load clusters' });
+      const alert = title.closest('.pf-v6-c-alert') as HTMLElement;
+      expect(alert).toHaveTextContent('Site and Region show a dash until the clusters load.');
+      expect(alert).toHaveTextContent('The AI Grid backend is unavailable. Try again.');
+      // The page's own content stays.
+      expect(screen.getAllByText('Mistral 7B Instruct')[0]).toBeVisible();
+      clusters.mockRestore();
+      await user.click(within(alert).getByRole('button', { name: 'Retry' }));
+      await waitFor(() => expect(alert).not.toBeInTheDocument());
+      if (path === '/models') {
+        await user.click(within(await rowOf('mistral-7b-instruct')).getByRole('button', { name: 'Details' }));
+      }
+      const [row] = await tableRows('Clusters of Mistral 7B Instruct');
+      expect(cellIn(row, 'Site')).toHaveTextContent('San Francisco');
+    },
+  );
+
+  it('keeps the last loaded sites under a warning when the clusters fail to reload', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      const service = partial();
+      renderAt('/models/mistral-7b-instruct', service);
+      const [row] = await tableRows('Clusters of Mistral 7B Instruct');
+      expect(cellIn(row, 'Site')).toHaveTextContent('San Francisco');
+      vi.spyOn(service, 'listClusters').mockRejectedValue(new ServiceError(503, 'Hub unavailable.'));
+      await act(() => vi.advanceTimersByTimeAsync(30_000));
+      expect(await screen.findByText('Showing the last loaded clusters')).toBeVisible();
+      expect(cellIn((await tableRows('Clusters of Mistral 7B Instruct'))[0], 'Site')).toHaveTextContent(
+        'San Francisco',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('the Models list expands every row', () => {
