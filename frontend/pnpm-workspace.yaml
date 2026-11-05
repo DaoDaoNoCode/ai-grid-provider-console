@@ -3,25 +3,37 @@ packages:
 allowBuilds:
   esbuild: true
 
-# Perses 0.56 still declares Query v4. The real-renderer browser test in e2e/perses.spec.ts
-# verifies its v5 integration; keep the console and all plugins on the same runtime.
-# Under v5, three things in Perses behave differently (docs/connect.md, "Perses on Query v5"):
-# the query summary table counts no active queries ('loading' is 'pending' in v5), a panel
-# plugin that fails to load shows "Missing PanelComponent ..." instead of its own error
-# (`useErrorBoundary` is `throwOnError` in v5), and a disabled query without data is not
-# `isLoading`. Drop this override once the @perses-dev packages declare Query v5.
+# pnpm refuses a version published less than a day ago (minimumReleaseAge, one day by default),
+# even in a frozen install from a lockfile that names it. These Perses plugin prereleases were
+# published on 2026-11-05 at 11:37 UTC; the list names exactly them, so every other package keeps
+# the delay. Drop it after 2026-11-06 11:37 UTC, when they're a day old.
+minimumReleaseAgeExclude:
+  - '@perses-dev/gauge-chart-plugin@0.15.0-beta.1'
+  - '@perses-dev/loki-plugin@0.8.0-beta.1'
+  - '@perses-dev/markdown-plugin@0.14.0-beta.1'
+  - '@perses-dev/pie-chart-plugin@0.16.0-beta.1'
+  - '@perses-dev/prometheus-plugin@0.60.0-beta.1'
+  - '@perses-dev/stat-chart-plugin@0.16.0-beta.1'
+  - '@perses-dev/table-plugin@0.15.0-beta.1'
+  - '@perses-dev/timeseries-chart-plugin@0.15.0-beta.1'
+
 overrides:
-  '@tanstack/react-query': 5.105.0
-  # GHSA-w74x-v6f9-j3xg (URI scheme spoofing): @perses-dev/plugin-system 0.56.0-beta.0 pins
+  # GHSA-w74x-v6f9-j3xg (URI scheme spoofing): @perses-dev/plugin-system 0.56.0-beta.1 pins
   # fast-uri 3.1.8. Drop this once the Perses release in use depends on fast-uri 3.1.9 or later.
   'fast-uri@<3.1.9': 3.1.9
-  # GHSA-6pq8-jhm2-2vcw (qs.stringify denial of service): @perses-dev/explore 0.56.0-beta.0 pins
+  # GHSA-6pq8-jhm2-2vcw (qs.stringify denial of service): @perses-dev/explore 0.56.0-beta.1 pins
   # qs 6.16.0. Drop this once the Perses release in use depends on qs 6.16.1 or later.
   'qs@>=6.7.0 <6.16.1': 6.16.1
 
-# Escape names in the bar chart tooltip: ECharts renders the tooltip formatter's string as HTML, so the
-# patch escapes the category and series names and the marker color (& < > " ') in lib/BarChartBase.js,
-# the build Vite bundles, as the pie chart already does (src/pages/monitoring/persesPlugins.ts).
-# Drop it once a Perses release escapes them the same way.
+# Patches to Perses's published builds, each to drop once a Perses release does the same itself.
 patchedDependencies:
+  # Escape names in the bar chart tooltip: ECharts renders the tooltip formatter's string as HTML,
+  # so the patch escapes the category and series names and the marker color (& < > " ') in
+  # lib/BarChartBase.js, the build Vite bundles, as the pie chart already does
+  # (src/pages/monitoring/persesPlugins.ts).
   '@perses-dev/bar-chart-plugin@0.15.0-beta.0': patches/@perses-dev__bar-chart-plugin@0.15.0-beta.0.patch
+  # The time series tooltip finds the series near the cursor from the y axis scale's private
+  # _interval (and a log scale's _extent), which ECharts 6.1 no longer has, so on the ECharts these
+  # Perses releases require it never shows. The patch reads the same values where ECharts 6.1 keeps
+  # them (TimeSeriesTooltip/nearby-series.js).
+  '@perses-dev/components@0.56.0-beta.1': patches/@perses-dev__components@0.56.0-beta.1.patch

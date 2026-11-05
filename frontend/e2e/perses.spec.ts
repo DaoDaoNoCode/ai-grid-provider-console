@@ -53,8 +53,8 @@ const dashboard = (name: string, title: string) => ({
         kind: 'Grid',
         spec: {
           items: [
-            { x: 0, y: 0, width: 8, height: 4, content: { $ref: '#/spec/panels/requests' } },
-            { x: 8, y: 0, width: 16, height: 4, content: { $ref: '#/spec/panels/latency' } },
+            { x: 0, y: 0, width: 8, height: 8, content: { $ref: '#/spec/panels/requests' } },
+            { x: 8, y: 0, width: 16, height: 8, content: { $ref: '#/spec/panels/latency' } },
           ],
         },
       },
@@ -63,8 +63,9 @@ const dashboard = (name: string, title: string) => ({
 });
 const injectedFailure = 'Compatibility test injected failure';
 const dashboards = [dashboard('dashboard-1-fleet', 'Fleet health'), dashboard('dashboard-2-usage', 'Token usage')];
-// Each cluster's series counts up from its base over ten points, so the stat panel's last value
-// is the base plus 9.
+// Each cluster's series counts up from its base to the base plus 9 over the queried range, so the
+// stat panel's last value is the base plus 9. One sample per step from the first step boundary, as
+// Prometheus answers: Perses places samples on the query's steps, and a step without one is a gap.
 const seriesBase = { 'site-a': 42, 'site-b': 72 };
 const points = 10;
 const lastValue = (cluster: keyof typeof seriesBase) => String(seriesBase[cluster] + points - 1);
@@ -115,12 +116,15 @@ test('real Perses panels remain compatible with the shared Query runtime', async
         });
       const start = Number(params.get('start')) || Date.now() / 1000 - 3600;
       const end = Number(params.get('end')) || Date.now() / 1000;
+      const step = Number(params.get('step')) || 60;
+      const first = Math.ceil(start / step) * step;
+      const samples = Math.max(1, Math.floor((end - first) / step) + 1);
       const selected = (params.get('query') || '').includes('site-b') ? 'site-b' : 'site-a';
       const result = {
         metric: { __name__: 'compat_metric', cluster: selected },
-        values: Array.from({ length: points }, (_, i) => [
-          start + ((end - start) * i) / (points - 1),
-          String(seriesBase[selected] + i),
+        values: Array.from({ length: samples }, (_, i) => [
+          first + i * step,
+          String(seriesBase[selected] + Math.round(((points - 1) * i) / Math.max(1, samples - 1))),
         ]),
       };
       return route.fulfill({ json: { status: 'success', data: { resultType: 'matrix', result: [result] } } });
@@ -138,6 +142,13 @@ test('real Perses panels remain compatible with the shared Query runtime', async
     await expect(page.getByText('Latency', { exact: true })).toBeVisible();
     await expect(page.locator('canvas').first()).toBeVisible();
     await expect(page.getByText(lastValue('site-a'), { exact: true })).toBeVisible();
+  });
+
+  await test.step('hovering the time series shows its tooltip', async () => {
+    // Perses finds the series near the cursor from ECharts' y axis scale (TimeSeriesTooltip's
+    // nearby-series), which reads that scale's internals: a new ECharts can leave the tooltip empty.
+    await page.getByRole('region', { name: 'Latency' }).locator('canvas').hover();
+    await expect(page.getByLabel(/series showing (as bold )?in tooltip/).first()).toContainText('compat_metric');
   });
 
   await test.step('a variable change queries again', async () => {

@@ -93,17 +93,13 @@ objects for proto3). The console generates TypeScript locally from `.proto` file
 the backend; publishing a Buf Schema Registry module is the better end state but needs a
 pipeline nobody owns yet.
 
-Perses 0.54 declares Query v4 support. The console pins a single Query v5 runtime with an
-explicit dependency override after comparing it with the two-runtime baseline in a real
-browser. `frontend/e2e/perses.spec.ts` covers stat and time-series rendering, variable changes,
-time ranges, manual and automatic refresh, dashboard tabs, theme changes, and recovery from
-panel errors and relay 401s. This is tested compatibility, not upstream-declared v5 support;
-rerun the regression test when changing Perses, its plugins or Query. Under v5, Perses's query
-summary table counts no active queries, a panel plugin that fails to load shows a generic
-"Missing PanelComponent" error instead of its own, and a disabled query without data no longer
-reads as loading; `docs/connect.md`, "Perses on Query v5", has the detail. The override goes when
-the `@perses-dev` packages declare Query v5. The two-runtime setup remains a fallback if that
-integration regresses.
+Perses 0.54 declared Query v4 support. The console ran it on a single Query v5 runtime with an
+explicit dependency override, after comparing that with the two-runtime baseline in a real
+browser. Since 0.56.0-beta.1 the `@perses-dev` packages declare Query v5 themselves, so the
+override is gone and the console and Perses share one Query runtime as declared.
+`frontend/e2e/perses.spec.ts` covers stat and time-series rendering, variable changes, time
+ranges, manual and automatic refresh, dashboard tabs, theme changes, and recovery from panel
+errors and relay 401s; rerun it when changing Perses, its plugins or Query.
 
 To delete as pages migrate: `useServiceData`, `HttpConsoleService`, `ConsoleService`,
 `MockConsoleService`, `frontend/src/api/types.ts` and `frontend/src/api/adapters.ts`.
