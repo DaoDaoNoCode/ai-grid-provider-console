@@ -411,3 +411,74 @@ test('draws a bar chart, and shows a bar name in its tooltip as written', async 
   await expect(page.locator('b').getByText('p99', { exact: true })).toHaveCount(0);
   expect(errors).toEqual([]);
 });
+
+// A panel whose plugin the console doesn't bundle (persesPlugins.ts), as cluster 1's Models dashboard
+// had with a BarChart. Perses's panel loads its plugin with throwOnError, so the panel shows the
+// load error. When that option doesn't reach TanStack Query (Perses 0.56.0-beta.0 passes v4's
+// useErrorBoundary, which v5 ignores), PanelContent mounts PanelPluginLoader, whose observer refetches
+// the failed plugin on mount, which shows PanelContent's skeleton and unmounts it, and so on: the
+// panel never leaves its skeleton, and the loop keeps the page's main thread busy.
+test('a panel whose plugin is not bundled shows the load error, and the tabs still switch', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push('Uncaught: ' + error.message));
+  const models = dashboard('dashboard-2-models', 'Models');
+  const [grid] = models.spec.layouts;
+  const unbundled = {
+    ...models,
+    spec: {
+      ...models.spec,
+      panels: {
+        ...models.spec.panels,
+        distribution: {
+          kind: 'Panel',
+          spec: { display: { name: 'Distribution' }, plugin: { kind: 'NotBundledChart', spec: {} }, queries: [query] },
+        },
+      },
+      layouts: [
+        {
+          ...grid,
+          spec: {
+            items: [
+              ...grid.spec.items,
+              { x: 0, y: 8, width: 24, height: 8, content: { $ref: '#/spec/panels/distribution' } },
+            ],
+          },
+        },
+      ],
+    },
+  };
+  const config = structuredClone(configExample.body);
+  config.data.monitoring = { enabled: true, persesProject: 'ai-grid' };
+  config.data.fakeBackend = true;
+  await page.route('**/api/v1/user', (route) => route.fulfill({ json: userExample.body }));
+  await page.route('**/api/v1/config', (route) => route.fulfill({ json: config }));
+  await page.route('**/perses/api/**', (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith('/dashboards'))
+      return route.fulfill({ json: [dashboard('dashboard-1-fleet', 'Fleet health'), unbundled] });
+    if (url.pathname.includes('/api/v1/projects/ai-grid/datasources')) return route.fulfill({ json: [datasource] });
+    if (url.pathname.includes('/api/v1/globaldatasources')) return route.fulfill({ json: [] });
+    if (url.pathname.includes('/label/cluster/values'))
+      return route.fulfill({ json: { status: 'success', data: ['site-a', 'site-b'] } });
+    if (url.pathname.endsWith('/api/v1/query_range') || url.pathname.endsWith('/api/v1/query')) {
+      const now = Math.floor(Date.now() / 1000);
+      const result = { metric: { __name__: 'compat_metric', cluster: 'site-a' }, values: [[now, '42']] };
+      return route.fulfill({ json: { status: 'success', data: { resultType: 'matrix', result: [result] } } });
+    }
+    errors.push(`Unhandled fixture: ${route.request().method()} ${url.pathname}`);
+    return route.fulfill({ status: 404, json: { message: 'No fixture' } });
+  });
+
+  await page.goto('/monitoring');
+  await page.getByRole('tab', { name: 'Models', exact: true }).click();
+  const distribution = page.getByRole('region', { name: 'Distribution' });
+  await expect(distribution.getByText("A NotBundledChart plugin for kind 'Panel' is not installed")).toBeVisible();
+  await expect(distribution.getByLabel('Loading...')).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Requests' }).getByText('42', { exact: true })).toBeVisible();
+
+  await page.getByRole('tab', { name: 'Fleet health', exact: true }).click();
+  await expect(page.getByRole('tab', { name: 'Fleet health', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('region', { name: 'Requests' }).getByText('42', { exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Distribution' })).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
