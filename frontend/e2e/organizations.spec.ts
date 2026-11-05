@@ -1,63 +1,94 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type APIRequestContext } from '@playwright/test';
+import { callBackend, tryBackend } from './backend';
+
+// The Organizations pages call the backend's Tenants API over Connect, so this spec runs on the
+// backend's own fakes (playwright.config.ts, "backend fakes"): its fake Keycloak holds the PoC's
+// organizations (fixtures/poc/organizations.json). Its fake hub has no Secrets, so the backend
+// finds no client secret for an identity provider and refuses to create one.
+
+type Tenant = { id: string; metadata?: { name?: string; version?: number } };
+
+/** Deletes the organization named `name` if a failed step left it behind. */
+const removeOrganization = async (request: APIRequestContext, name: string) => {
+  const { items = [] } = await callBackend<{ items?: Tenant[] }>(request, 'Tenants/List', {});
+  const left = items.find((t) => t.metadata?.name === name);
+  if (left) await tryBackend(request, 'Tenants/Delete', { id: left.id, version: left.metadata?.version ?? 1 });
+};
 
 test('creates, views, edits and deletes an organization', async ({ page }) => {
   const unique = `e2e-${Math.random().toString(36).slice(2, 8)}`;
   const domain = `${unique}.example.com`;
   const editedDomain = `edited-${unique}.example.com`;
   const issuer = `https://idp.${domain}/realms/main`;
-  await page.goto('/organizations');
-  await page.getByRole('link', { name: 'Create organization' }).click();
+  try {
+    await page.goto('/organizations');
+    await page.getByRole('link', { name: 'Create organization' }).click();
 
-  // Step 1: details
-  await page.getByRole('textbox', { name: /^Name/ }).fill(unique);
-  await page.getByRole('button', { name: 'Add domain' }).click();
-  await page.getByRole('textbox', { name: /^Domain 1/ }).fill(domain);
-  await page.getByRole('button', { name: 'Next' }).click();
+    // Step 1: details
+    await page.getByRole('textbox', { name: /^Name/ }).fill(unique);
+    await page.getByRole('button', { name: 'Add domain' }).click();
+    await page.getByRole('textbox', { name: /^Domain 1/ }).fill(domain);
+    await page.getByRole('button', { name: 'Next' }).click();
 
-  // Step 2: identity provider
-  await page.getByRole('textbox', { name: /^Client ID/ }).fill('console');
-  await page.getByRole('textbox', { name: /^Client secret reference/ }).fill('idp-secret');
-  await page.getByRole('textbox', { name: /^Issuer/ }).fill(issuer);
-  await page.getByRole('textbox', { name: /^Authorization URL/ }).fill(`${issuer}/auth`);
-  await page.getByRole('textbox', { name: /^Token URL/ }).fill(`${issuer}/token`);
-  // Required while Validate signature is on, as it is by default.
-  await page.getByRole('textbox', { name: /^JWKS URL/ }).fill(`${issuer}/certs`);
-  await page.getByRole('button', { name: 'Next' }).click();
+    // Step 2: identity provider
+    const idpFields: [RegExp, string][] = [
+      [/^Client ID/, 'console'],
+      [/^Client secret reference/, 'idp-secret'],
+      [/^Issuer/, issuer],
+      [/^Authorization URL/, `${issuer}/auth`],
+      [/^Token URL/, `${issuer}/token`],
+      // Required while Validate signature is on, as it is by default.
+      [/^JWKS URL/, `${issuer}/certs`],
+    ];
+    for (const [name, value] of idpFields) await page.getByRole('textbox', { name }).fill(value);
+    await page.getByRole('button', { name: 'Next' }).click();
 
-  // Step 3: review
-  await expect(page.getByText(issuer).first()).toBeVisible();
-  await page.getByRole('button', { name: 'Create organization' }).click();
-  await expect(page.getByText('Organization created')).toBeVisible();
+    // Step 3: review. The backend can't read the Secret, so it refuses, and the form stays.
+    await expect(page.getByText(issuer).first()).toBeVisible();
+    await page.getByRole('button', { name: 'Create organization' }).click();
+    await expect(page.getByText('Unable to save organization')).toBeVisible();
+    await expect(page.getByText('identity provider secret "idp-secret" not found')).toBeVisible();
 
-  const row = page.getByRole('row').filter({ has: page.getByRole('link', { name: unique, exact: true }) });
-  await expect(row).toContainText(domain);
+    // Without an identity provider it saves.
+    await page.getByRole('button', { name: 'Identity provider', exact: true }).click();
+    for (const [name] of idpFields) await page.getByRole('textbox', { name }).fill('');
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.getByText('No identity provider is configured.')).toBeVisible();
+    await page.getByRole('button', { name: 'Create organization' }).click();
+    await expect(page.getByText('Organization created')).toBeVisible();
 
-  // View
-  await row.getByRole('link', { name: unique, exact: true }).click();
-  await expect(page.getByRole('heading', { name: unique })).toBeVisible();
-  await expect(page.getByText(domain).first()).toBeVisible();
+    const row = page.getByRole('row').filter({ has: page.getByRole('link', { name: unique, exact: true }) });
+    await expect(row).toContainText(domain);
 
-  // Edit a domain in the create wizard, whose steps are all open when editing; the deep link and
-  // reload land on the same page.
-  await page.getByRole('button', { name: `Actions for ${unique}` }).click();
-  await page.getByRole('menuitem', { name: 'Edit' }).click();
-  await expect(page).toHaveURL(/\/organizations\/[^/]+\/edit$/);
-  await page.reload();
-  await page.getByRole('textbox', { name: /^Domain 1/ }).fill(editedDomain);
-  await page.getByRole('button', { name: 'Review', exact: true }).click();
-  await page.getByRole('button', { name: 'Save changes' }).click();
-  await expect(page.getByText('Organization updated')).toBeVisible();
-  await expect(page.getByTestId('organization-configuration-details')).toContainText(editedDomain);
+    // View
+    await row.getByRole('link', { name: unique, exact: true }).click();
+    await expect(page.getByRole('heading', { name: unique })).toBeVisible();
+    await expect(page.getByText(domain).first()).toBeVisible();
 
-  // Delete from the organization's page, with the typed confirmation
-  await page.getByRole('button', { name: `Actions for ${unique}` }).click();
-  await page.getByRole('menuitem', { name: 'Delete' }).click();
-  const confirm = page.getByRole('button', { name: 'Delete', exact: true });
-  await expect(confirm).toBeDisabled();
-  await page.getByLabel(/^Type .* to confirm/).fill(unique);
-  await confirm.click();
-  await expect(page.getByText('Organization deleted')).toBeVisible();
-  await expect(page.getByRole('link', { name: unique, exact: true })).toHaveCount(0);
+    // Edit a domain in the create wizard, whose steps are all open when editing; the deep link and
+    // reload land on the same page.
+    await page.getByRole('button', { name: `Actions for ${unique}` }).click();
+    await page.getByRole('menuitem', { name: 'Edit' }).click();
+    await expect(page).toHaveURL(/\/organizations\/[^/]+\/edit$/);
+    await page.reload();
+    await page.getByRole('textbox', { name: /^Domain 1/ }).fill(editedDomain);
+    await page.getByRole('button', { name: 'Review', exact: true }).click();
+    await page.getByRole('button', { name: 'Save changes' }).click();
+    await expect(page.getByText('Organization updated')).toBeVisible();
+    await expect(page.getByTestId('organization-configuration-details')).toContainText(editedDomain);
+
+    // Delete from the organization's page, with the typed confirmation
+    await page.getByRole('button', { name: `Actions for ${unique}` }).click();
+    await page.getByRole('menuitem', { name: 'Delete' }).click();
+    const confirm = page.getByRole('button', { name: 'Delete', exact: true });
+    await expect(confirm).toBeDisabled();
+    await page.getByLabel(/^Type .* to confirm/).fill(unique);
+    await confirm.click();
+    await expect(page.getByText('Organization deleted')).toBeVisible();
+    await expect(page.getByRole('link', { name: unique, exact: true })).toHaveCount(0);
+  } finally {
+    await removeOrganization(page.request, unique);
+  }
 });
 
 // PatternFly's utility classes (pf-v6-u-*) only work when main.tsx loads patternfly-addons.css.

@@ -8,7 +8,7 @@ const backendPort = process.env.E2E_BACKEND_PORT ?? '9090';
 const hubPort = process.env.E2E_HUB_PORT ?? '9091';
 const origin = `http://127.0.0.1:${port}`;
 // The second stack, for the pages that read the backend's own API over Connect (the Clusters
-// pages, the map and the Subscriptions pages), which the console's fake doesn't serve: the backend at .backend-api-version
+// pages, the map, the Models, Subscriptions and Organizations pages), which the console's fake doesn't serve: the backend at .backend-api-version
 // on its own fake hub and Keycloak, PoC preset (hack/backend-fakes.sh), its BFF and its bundle,
 // on ports offset from the first stack's so both run side by side.
 const fakesPort = process.env.E2E_FAKES_FRONTEND_PORT ?? '9200';
@@ -28,6 +28,7 @@ const onBackendFakes = [
   'cluster-edit.spec.ts',
   'models.spec.ts',
   'subscriptions.spec.ts',
+  'organizations.spec.ts',
 ];
 
 export default defineConfig({
@@ -83,7 +84,7 @@ export default defineConfig({
     {
       command: `pnpm exec vite build && pnpm exec vite preview --host 127.0.0.1 --port ${port} --strictPort`,
       // An API path, so the run starts once the proxy reaches the BFF and the BFF the fake.
-      url: `${origin}/api/v1/tenants`,
+      url: `${origin}/api/v1/grid/overview?range=1h&metrics=false`,
       reuseExistingServer: !process.env.CI,
       timeout: 180_000,
       env: {
