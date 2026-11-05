@@ -30,6 +30,15 @@ describe('patternFlyTheme', () => {
     expect(chartsTheme.echartsTheme.grid).toMatchObject({ top: 10, right: 20, left: 20, containLabel: true });
   });
 
+  it.each(['light', 'dark'] as const)("gives ECharts' HTML tooltip PatternFly's inverse colors (%s)", (mode) => {
+    const { chartsTheme } = patternFlyTheme(mode, 2026);
+    expect(chartsTheme.echartsTheme.tooltip).toMatchObject({
+      backgroundColor: 'var(--pf-t--global--background--color--inverse--default)',
+      borderColor: 'var(--pf-t--global--background--color--inverse--default)',
+      textStyle: { color: 'var(--pf-t--global--text--color--inverse)' },
+    });
+  });
+
   it("has a dark variant for PatternFly's dark theme, with light text on the canvas", () => {
     const { muiTheme, chartsTheme } = patternFlyTheme('dark', 2026);
     expect(muiTheme.palette.mode).toBe('dark');

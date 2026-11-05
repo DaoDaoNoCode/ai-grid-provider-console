@@ -576,8 +576,13 @@ export const patternFlyTheme = (
         fontFamily: t_global_font_family_body.value,
         fontSize: 12,
       },
+      // An ECharts tooltip (the bar and pie charts') is HTML, so it takes CSS variables: PatternFly's
+      // inverse background with its inverse text, light on dark and dark on light. Perses's own white
+      // text and dark border don't read on the light background the dark theme gives it.
       tooltip: {
         backgroundColor: 'var(--pf-t--global--background--color--inverse--default)',
+        borderColor: 'var(--pf-t--global--background--color--inverse--default)',
+        textStyle: { color: 'var(--pf-t--global--text--color--inverse)' },
       },
       // Not in odh-dashboard: Perses leaves 5px above the plot (theme-gen's grid.top, which the time
       // series panel doesn't override), and the y axis's top label, centred on that edge, then loses
