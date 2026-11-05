@@ -1,5 +1,8 @@
-// Command bff serves the AI Grid provider console API and, when configured, the
-// built frontend. Every API call is translated into an RPC on ai-grid-backend.
+// Command bff serves the AI Grid provider console: the caller's user and the
+// console's config, the relays of the browser's Connect calls to
+// ai-grid-provider-backend and of the Monitoring page's calls to the hub's
+// Perses, readiness from the backend's gRPC health service and, when
+// configured, the built frontend.
 package main
 
 import (

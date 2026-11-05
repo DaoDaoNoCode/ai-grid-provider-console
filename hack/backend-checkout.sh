@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prints the directory of an ai-grid-provider-backend checkout to run (make dev-fake-infra):
+# Prints the directory of an ai-grid-provider-backend checkout to run (make dev-fake):
 #   - BACKEND_DIR when it is set: your own checkout, used as it is (a warning when its HEAD is not
 #     the commit in .backend-api-version, whose API the frontend's src/gen was generated from);
 #   - otherwise .cache/backend/<sha>, a checkout of the commit in .backend-api-version from

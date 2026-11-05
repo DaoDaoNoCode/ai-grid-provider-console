@@ -27,7 +27,7 @@ subjects:
 # Subscriptions from the catalog's Argo CD Applications: the Role at the end of this file.
 #
 # TODO(backend-as-caller): delete this ClusterRole and its binding once the backend builds its hub
-# client from the forwarded user token (work-breakdown backend item 2).
+# client from the forwarded user token (ADR-0004, "Backend authorization").
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:

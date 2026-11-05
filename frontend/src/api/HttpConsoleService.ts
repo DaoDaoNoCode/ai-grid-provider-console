@@ -7,7 +7,7 @@ import type { ConsoleConfig, User } from './types';
 const API_PREFIX = '/api/v1';
 
 type Envelope<T> = { data: T };
-type ErrorBody = { error?: { code?: string; message?: string; fieldErrors?: Record<string, string> } };
+type ErrorBody = { error?: { code?: string; message?: string } };
 
 export class HttpConsoleService implements ConsoleService {
   constructor(private readonly fetchFn: typeof fetch = (...args) => fetch(...args)) {}
@@ -65,17 +65,15 @@ export class HttpConsoleService implements ConsoleService {
     }
     if (!response.ok) {
       let message = `Request failed with status ${response.status}.`;
-      let fieldErrors: Record<string, string> | undefined;
       try {
         const payload = (await response.json()) as ErrorBody;
         if (payload.error?.message) {
           message = payload.error.message;
         }
-        fieldErrors = payload.error?.fieldErrors;
       } catch {
         // keep the generic message
       }
-      throw new ServiceError(response.status, message, fieldErrors);
+      throw new ServiceError(response.status, message);
     }
     if (response.status === 204) {
       return undefined as T;

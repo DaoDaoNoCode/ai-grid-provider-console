@@ -20,7 +20,7 @@ type Props = { service: ConsoleService };
 const description = 'View monitoring dashboards for the AI Grid clusters.';
 
 /**
- * The hub's Perses dashboards as tabs, when the BFF relays to a Perses (docs/plan/bff-api.md, "The
+ * The hub's Perses dashboards as tabs, when the BFF relays to a Perses (docs/bff.md, "The
  * Perses relay"): one tab per `dashboard-*` PersesDashboard in the configured project, selected
  * with `?dashboard=`. The monitoring team writes the dashboards; the console only shows them.
  */

@@ -51,7 +51,7 @@ export class RelayDatasourceApi implements DatasourceApi {
   /**
    * The relay path of a project's or a global datasource's proxy. A datasource a dashboard defines
    * has none: Perses would send the caller's token on to whatever server its author chose, so the
-   * relay refuses it (docs/plan/bff-api.md, "The Perses relay"). Perses calls this inside its async
+   * relay refuses it (docs/bff.md, "The Perses relay"). Perses calls this inside its async
    * datasource lookup, so the throw becomes the panel's query error, shown in the panel. Without a
    * name, Perses asks for its unsaved-datasource proxy (to test a datasource before saving it),
    * which the relay doesn't serve either.

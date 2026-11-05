@@ -88,7 +88,7 @@ export class MockConsoleService implements ConsoleService {
       throw new ServiceError(404, `object with identifier '${name}' not found`);
     }
     const current = this.clusters[index];
-    // The fake backend's precondition (bff/internal/fakebackend/clusters.go), answered 409 by the BFF.
+    // A stale resource version is the backend's failed precondition, which the UI shows as a conflict.
     if ((cluster.resourceVersion ?? '') !== (current.resourceVersion ?? '')) {
       throw new ServiceError(
         409,
@@ -144,7 +144,7 @@ export const builtInModelHardware = (): ModelHardware[] => [
 ];
 
 // The PoC's Git-backend seed (shared/grid-clusters.mjs seedClusters at 62319b8),
-// the same clusters as mock/fixtures/managedclusters.json.
+// the same clusters as the backend's fixtures/poc/managedclusters.json.
 const seedSites: [name: string, site: string, siteName: string, region: string, latitude: number, longitude: number][] =
   [
     ['site1', 'san-francisco', 'San Francisco', 'us-west', 37.7749, -122.4194],

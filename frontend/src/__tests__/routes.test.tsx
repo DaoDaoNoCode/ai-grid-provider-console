@@ -237,7 +237,7 @@ describe('routes', () => {
     const fake = new MockConsoleService();
     fake.config = { ...fake.config, fakeBackend: true };
     const { unmount } = at('/clusters', fake);
-    // Neutral about the fixture directory: the browser tests load mock/fixtures-poc.
+    // Neutral about the fixture directory: the browser tests load the backend's fixtures/poc.
     expect(await screen.findByText(/fake backend/i)).not.toHaveTextContent('mock/fixtures');
     unmount();
 

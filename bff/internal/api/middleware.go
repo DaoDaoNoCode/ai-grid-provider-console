@@ -17,7 +17,7 @@ import (
 )
 
 // requireIdentity rejects API calls without a caller token and stores the
-// identity on the context so the backend client can forward it.
+// identity on the context, for the provider-admin check and the relays.
 func (a *App) requireIdentity(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id, err := a.headers.Extract(r.Header)

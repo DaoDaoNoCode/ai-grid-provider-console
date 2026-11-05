@@ -1,4 +1,4 @@
-// Response shapes of the BFF. Keep in sync with docs/plan/bff-api.md.
+// Response shapes of the BFF. Keep in sync with docs/bff.md.
 
 export type User = {
   username: string;
@@ -14,7 +14,7 @@ export type ConsoleConfig = {
   mapTileAttribution: string;
   billingUrl: string;
   version: string;
-  /** The BFF talks to the fake backend; the UI shows a banner. */
+  /** The backend runs on fake infrastructure (make dev-fake): the UI shows a banner, and no login proxy runs. */
   fakeBackend: boolean;
   /** The Monitoring page's Perses relay at /perses/api. */
   monitoring: MonitoringConfig;
@@ -141,7 +141,7 @@ export type GridCluster = {
   labels: Record<string, string>;
 };
 
-// The MaaS status (mock/research/models-maas.md 3.4-3.6), as the BFF returns it (P12).
+// The MaaS status (docs/research/models-maas.md 3.4-3.6), as the BFF returns it (P12).
 export type ConditionStatus = 'True' | 'False' | 'Unknown';
 export type Condition = {
   type: string;

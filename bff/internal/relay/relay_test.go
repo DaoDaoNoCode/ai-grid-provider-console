@@ -192,7 +192,7 @@ func TestRelaysTheBackendsErrors(t *testing.T) {
 }
 
 // Whatever the browser sends about who it is stays behind: the backend gets the caller as the BFF
-// read it from the proxy headers, encoded as on every gRPC call (backend.EncodeMetadataValue).
+// read it from the proxy headers, each value percent-encoded (backend.EncodeMetadataValue).
 func TestForwardsOnlyTheCallersIdentity(t *testing.T) {
 	t.Parallel()
 	srv, got := connectBackend(t)

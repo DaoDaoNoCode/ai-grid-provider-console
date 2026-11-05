@@ -1,24 +1,23 @@
 # Development setup
 
 Three processes: the backend ([ai-grid-provider-backend](https://github.com/ai-grid-cloud/ai-grid-provider-backend),
-gRPC, talks to the hub and Keycloak), the BFF (JSON, talks to the backend) and the Vite dev
-server (serves the frontend, proxies `/api` to the BFF). The BFF and the frontend run from this
-repository; the backend never does. It runs where it lives: deployed on the hub, or from its own
-repository in a second terminal. The console runs as the user who ran `oc login`: the dev proxy
+Connect and gRPC, talks to the hub, Keycloak and Git), the BFF (relays the browser's calls to the
+backend, `docs/bff.md`) and the Vite dev server (serves the frontend, proxies `/api`,
+`/ai_grid.v1.*` and `/perses/api` to the BFF). The BFF and the frontend run from this repository;
+the backend runs where it lives: deployed on the hub, from its own repository in a second
+terminal, or, without a cluster, fetched at `.backend-api-version` and run on its own fakes. The console runs as the user who ran `oc login`: the dev proxy
 sends your name and token the way kube-auth-proxy would, and the BFF forwards them to the backend.
 
 ## Which command
 
 | You want | Run |
 |---|---|
-| Fake data, the full console, no cluster | `make dev-fake-infra` |
+| Fake data, the full console, no cluster | `make dev-fake` |
 | The hub's deployed backend | `oc login`, then `make dev-cluster` |
 | Your own backend on the hub | `oc login`; the backend repository's `make run-hub`, on any branch you have checked out; then `make dev` here |
 
 With `make run-hub`, Organizations need `make run-hub KEYCLOAK=hub`. The last two act on a real
-hub: adding or removing clusters, and organization changes, are real changes to it. `make dev-fake`
-runs the console's own fake, where Clusters, Organizations, Models, Subscriptions and the AI Grid
-map say the backend is unavailable.
+hub: adding or removing clusters, and organization changes, are real changes to it.
 
 ## Prerequisites
 
@@ -127,45 +126,30 @@ checks the read-only endpoints and lists clusters and organizations through the 
 
 ```sh
 make install     # once: frontend dependencies
-make dev-fake    # fake backend :9090 and hub :9091, BFF :8080, frontend :9000
+make dev-fake    # the backend at .backend-api-version on its fake hub and Keycloak, BFF :8080, frontend :9000
 ```
 
 No `oc login` is needed. Open http://127.0.0.1:9000. You're signed in as `dev-user`, a provider
-admin; set `AUTH_TOKEN=viewer-token AUTH_USER=viewer` to see the console as a user who isn't one.
-The fake backend serves the backend's gRPC services from `mock/fixtures/` and answers the BFF's
-access review like a hub would. For the endpoints, the tokens, the seeded states, the timed
-scenarios and the errors you can provoke, see [mock/AGENTS.md](../mock/AGENTS.md); for every
-fixture file and field, [mock/fixtures/README.md](../mock/fixtures/README.md);
-[mock/README.md](../mock/README.md) explains why the console runs against a fake. Edit the
-fixtures and restart to change the fleet.
-
-### On the backend's own fakes
-
-```sh
-make install          # once: frontend dependencies
-make dev-fake-infra   # the backend at .backend-api-version on its fake hub and Keycloak, BFF :8080, frontend :9000
-```
+admin; set `AUTH_TOKEN=viewer-token AUTH_USER=viewer` to see the console as a user who isn't one,
+and `AUTH_TOKEN=expired-token` for a token the hub rejects.
 
 This runs the real `ai-grid-provider-backend`, at the commit in `.backend-api-version`, on the
 fake hub and Keycloak of its own repository (its `make dev-fake`: gRPC, Connect and gRPC-Web on
 :9090, the fake hub on :9091, REST on :9092, Keycloak on :9093, its draft fake on :9094), the BFF
-against it without `--fake-backend`, and the frontend as `dev-user` with `dev-token`, as in
-`make dev-fake`. It is the stack to try the Connect relay on (the
-browser's `/ai_grid.v1.*` calls, `docs/plan/bff-api.md`, "The Connect relay"): the console's own
-fake serves only the draft over gRPC, so the Clusters pages and the AI Grid map, which read the
-backend's API over Connect, work only here (on `make dev-fake` they say the backend is
-unavailable). Models and Subscriptions run against the backend with its local Git catalog.
-Monitoring needs a Perses (`make dev-cluster`) and says it is not set up on both fake stacks. The
-browser tests of the Clusters pages and the map run the same backend on its
-PoC fixtures, on offset ports (`frontend/playwright.config.ts` starts it through
-`hack/backend-fakes.sh`).
+against it with `FAKE_BACKEND=true` (the console shows a fake-backend banner, and since no login
+proxy runs, an ended session stays on the page instead of going to sign in), and the frontend as
+`dev-user` with `dev-token`. The backend's fixtures (its `fixtures/default`) seed the clusters and
+organizations; Models and Subscriptions are commits to a local Git catalog
+(`bin/dev-catalog.git` in the backend's checkout), empty until you deploy a model. Monitoring
+needs a Perses (`make dev-cluster`), so it isn't available here. The browser tests run the same
+backend on its PoC fixtures, on ports of their own (`frontend/playwright.config.ts` starts it
+through `hack/backend-fakes.sh`).
 The Vite dev server forwards `/ai_grid.v1.*` to the BFF as it does `/api`, in every mode.
 
 The backend is fetched once into `.cache/backend/<sha>` (gitignored; `hack/backend-checkout.sh`),
 the commit only, and built there with Go. To run your own checkout instead, set `BACKEND_DIR`
-(`make dev-fake-infra BACKEND_DIR=../ai-grid-provider-backend`); a checkout at another commit is
-run with a warning, as the frontend's generated types are those of the pinned one. It uses the
-same ports as `make dev-fake`, so run one or the other.
+(`make dev-fake BACKEND_DIR=../ai-grid-provider-backend`); a checkout at another commit is
+run with a warning, as the frontend's generated types are those of the pinned one.
 
 ## Ports
 
@@ -176,16 +160,16 @@ another process holds a default port:
 |---|---|---|
 | `FRONTEND_PORT` | `9000` | the Vite dev server |
 | `BFF_PORT` | `8080` | the BFF; the Vite dev server proxies to it |
-| `BACKEND_ADDRESS` | `127.0.0.1:9090` | the backend's gRPC: forwarded from the hub, yours, or a fake |
-| `FAKE_HUB_ADDRESS` | `127.0.0.1:9091` | the fake hub's access review (`make dev-fake`, `make dev-fake-infra`) |
+| `BACKEND_ADDRESS` | `127.0.0.1:9090` | the backend's gRPC and Connect: forwarded from the hub, yours, or on its fakes |
+| `FAKE_HUB_ADDRESS` | `127.0.0.1:9091` | the backend's fake hub, which answers the access review (`make dev-fake`) |
 | `PERSES_ADDRESS` | `127.0.0.1:9445` | the hub's Perses, forwarded (`make dev-cluster`) |
 
-`make dev-fake-infra` hands `BACKEND_ADDRESS` and `FAKE_HUB_ADDRESS` to the backend's own `make
-dev-fake` as `DEV_GRPC_PORT` and `DEV_HUB_PORT`; its other ports are its own variables,
-`DEV_HTTP_PORT` (9092), `DEV_KEYCLOAK_PORT` (9093) and `DEV_DRAFT_PORT` (9094). For example:
+`make dev-fake` hands `BACKEND_ADDRESS` and `FAKE_HUB_ADDRESS` to the backend's own `make
+dev-fake` as `DEV_GRPC_PORT` and `DEV_HUB_PORT`, and its other ports, `DEV_HTTP_PORT` (9092),
+`DEV_KEYCLOAK_PORT` (9093) and `DEV_DRAFT_PORT` (9094), when you set them. For example:
 
 ```sh
-make dev-fake-infra FRONTEND_PORT=19000 BFF_PORT=18080 BACKEND_ADDRESS=127.0.0.1:19090 \
+make dev-fake FRONTEND_PORT=19000 BFF_PORT=18080 BACKEND_ADDRESS=127.0.0.1:19090 \
   FAKE_HUB_ADDRESS=127.0.0.1:19091 DEV_HTTP_PORT=19092 DEV_KEYCLOAK_PORT=19093 DEV_DRAFT_PORT=19094
 ```
 
@@ -200,12 +184,10 @@ are not in `make help`:
 | `make dev-cluster` | `make dev-forward-backend`, `make dev-bff`, `make dev-frontend`; for Monitoring also `make dev-forward-perses`, and the BFF started with `PERSES_PROJECT`, `PERSES_URL=https://127.0.0.1:9445`, `PERSES_SERVER_NAME=perses.openshift-cluster-observability-operator.svc` and `PERSES_CA_FILE=$(hack/service-ca.sh)` |
 | `make dev` | your backend, `make dev-bff`, `make dev-frontend` |
 | `make dev-fake` | `make dev-fake-backend`, `make dev-bff-fake`, `make dev-frontend-fake` |
-| `make dev-fake-infra` | `make dev-fake-infra-backend`, `make dev-bff-fake-infra`, `make dev-frontend-fake` |
 
 `make dev-frontend` sends your `oc whoami -t`; `make dev-frontend-fake` sends `dev-token` as
-`dev-user` (`AUTH_TOKEN`, `AUTH_USER`). `make dev-bff` needs a backend that serves its real API
-(the hub's, yours, or `make dev-fake-infra-backend`); against the console's own fake it answers
-501, so pair `make dev-fake-backend` with `make dev-bff-fake`.
+`dev-user` (`AUTH_TOKEN`, `AUTH_USER`). `make dev-bff` asks the hub of your `oc login`;
+`make dev-bff-fake` asks the backend's fake hub and runs with `FAKE_BACKEND=true`.
 
 ## BFF settings
 
@@ -213,66 +195,39 @@ Environment variables the BFF reads: `HUB_API_URL` (required outside a pod; in a
 defaults to the in-cluster API server), `HUB_CA_FILE`, `BIND_ADDRESS` (default `127.0.0.1`;
 `0.0.0.0` exposes the BFF without a proxy in front), `PORT`, `BACKEND_ADDRESS`,
 `BACKEND_CA_FILE`, `BACKEND_SERVER_NAME`, `BACKEND_INSECURE`, `BACKEND_TIMEOUT` (10s, at most 50s),
-`BACKEND_WRITE_TIMEOUT` (30s, at most 50s: a POST, PATCH, PUT or DELETE on `/api/v1` and a write
-procedure on the Connect relay, `docs/plan/bff-api.md`),
+`BACKEND_WRITE_TIMEOUT` (30s, at most 50s: a write procedure on the Connect relay, `docs/bff.md`),
 `PERSES_URL`, `PERSES_CA_FILE`, `PERSES_SERVER_NAME`, `PERSES_INSECURE`, `PERSES_TIMEOUT`,
-`PERSES_PROJECT` (the Perses relay, `docs/plan/bff-api.md`),
+`PERSES_PROJECT` (the Perses relay, `docs/bff.md`),
 `AUTH_TOKEN_HEADER`, `AUTH_USER_HEADER`, `AUTH_EMAIL_HEADER`, `AUTH_GROUPS_HEADER`,
 `GRID_CONSUMER_URL`, `MAP_TILE_URL`, `MAP_TILE_ATTRIBUTION`, `BILLING_URL`, `LOG_LEVEL`, `AUTH_TOKEN_PREFIX`,
-`FAKE_BACKEND` (the backend is
-the fake; the UI shows a banner), `CERT_FILE`, `KEY_FILE`, `STATIC_ASSETS_DIR`. Run `go run ./cmd --help`
+`FAKE_BACKEND` (the backend runs on
+fake infrastructure: the UI shows a banner, and no login proxy runs), `CERT_FILE`, `KEY_FILE`, `STATIC_ASSETS_DIR`. Run `go run ./cmd --help`
 in `bff/` for the flags.
 
 ## Checks
 
 ```sh
-make lint    # go vet, golangci-lint, buf lint on mock/proto; ESLint, Prettier check, tsc (fix formatting with: cd frontend && pnpm format); make check-generated-api
-make test    # go test -race (in-memory gRPC backend, proto drift test), vitest
+make lint    # go vet, golangci-lint; ESLint, Prettier check, tsc (fix formatting with: cd frontend && pnpm format); make check-generated-api
+make test    # go test -race (in-memory gRPC backend and stub hub), vitest
 make build   # BFF binary and frontend bundle
-make e2e     # Playwright on the production bundle (vite build, then vite preview with the dev proxy) against a fake backend and BFF of its own on mock/fixtures-poc (frontend/playwright.config.ts)
+make e2e     # Playwright on the production bundle (vite build, then vite preview with the dev proxy) against the backend at .backend-api-version on its fakes, PoC fixtures, and a BFF of its own (frontend/playwright.config.ts)
 ```
 
-CI runs the same plus `make -C bff check-generated` (a fresh generation in a temporary
-directory must match `bff/gen`, file for file), `make check-generated-api` (likewise for
-`frontend/src/gen`, below), the browser tests, `kustomize build`,
-`make chart-check`, `make chart-test` and, after a merge, the container image build. Its last
-job, `CI passed`, fails unless every job a pull request runs succeeded; that is the check the
-`main` ruleset should require, since GitHub counts a skipped job as passing. A separate
-nightly workflow (`.github/workflows/drift.yaml`, also runnable by hand)
-refreshes the vendored backend proto from the backend's `main` in the runner's checkout and
-runs the drift test, so a backend change to the RPC the BFF calls over gRPC (`AiGrid/Ping`) is
-reported the day after it merges.
+CI runs the same plus `make check-generated-api` (a fresh generation in a temporary directory
+must match `frontend/src/gen`, below), the browser tests, `kustomize build`, `make chart-check`,
+`make chart-test` and, after a merge, the container image build. Its last job, `CI passed`,
+fails unless every job a pull request runs succeeded; that is the check the `main` ruleset
+should require, since GitHub counts a skipped job as passing.
 
-## The proto the BFF compiles against
-
-The BFF imports `bff/gen/ai_grid/v1`, generated from the console's draft proto in
-`mock/proto/ai_grid/v1` (the console's proposal, which the fake backend serves; see
-`mock/proto/README.md`). After editing a `.proto` file:
-
-```sh
-make -C bff generate      # buf generate; buf and the protoc plugins run through `go run`, nothing to install
-make -C bff lint-proto    # buf lint
-make -C bff check-generated
-```
-
-`generate` and `check-generated` run with `GOTOOLCHAIN` set to the version in `bff/go.mod`,
-which is what CI installs, because the generated comments depend on the Go release that builds
-`protoc-gen-go`; the first run downloads that toolchain if it is not cached. After a change to
-the BFF's JSON or the fixtures, `make -C bff golden` rewrites the golden responses in
-`mock/examples/` (see `mock/AGENTS.md`).
-
-`hack/sync-upstream-proto.sh <ref>` refreshes the vendored copy of the backend's real proto,
-`proto/ai_grid/v1` of ai-grid-cloud/ai-grid-provider-backend: the files as they are, and an
-image `buf build` compiles from them with their imports (it fetches and builds in a temporary
-directory and only then replaces `mock/proto/upstream`, so a failed fetch leaves the previous
-copy intact). `go test ./internal/protodrift/` then says whether the BFF's copy in
-`mock/proto/ai_grid/backend/v1` still matches it, and whether the RPCs the BFF calls still
-exist. The vendored commit is the backend's `main` (`mock/proto/upstream/COMMIT`), and the nightly
-`.github/workflows/drift.yaml` checks the copy against the newest one.
+After a change to the BFF's own JSON (`/api/v1/user`, `/api/v1/config` or its errors),
+`make -C bff golden` rewrites the golden responses in `mock/examples/`, which the frontend's
+tests and `hack/check-chart.sh` read; `go test` fails while they differ. The BFF compiles against
+no proto of its own: its one gRPC call, the readiness probe, uses the health client grpc-go
+ships.
 
 ## The backend's API in the frontend
 
-The frontend calls the backend's own RPCs over Connect (no page does yet) with TypeScript
+The frontend calls the backend's own RPCs over Connect with TypeScript
 generated from the backend's proto: `proto/` of ai-grid-cloud/ai-grid-provider-backend, package
 `ai_grid.v1` (not its draft, `ai_grid/draft`), at the full commit SHA in `.backend-api-version`,
 into `frontend/src/gen`, which is committed and never edited by hand. The chart, `manifests/base`
@@ -304,9 +259,9 @@ OpenShift OAuth, the proxy RHOAI uses), the console image (BFF plus frontend) an
 `ai-grid-backend`. The BFF and the backend (its gRPC port and its REST gateway) bind to
 loopback, so nothing on the pod network can reach either of them without going through the
 proxy. The kubelet probes the
-BFF's `/readyz` through the proxy, which passes that one path without login; it pings the
-backend, so it is the readiness signal for all three containers. The proxy passes the caller's
-token and name to the BFF as request headers and puts neither in its responses
+BFF's `/readyz` through the proxy, which passes that one path without login; it asks the
+backend's gRPC health service, so it is the readiness signal for all three containers. The proxy
+passes the caller's token and name to the BFF as request headers and puts neither in its responses
 (`--set-xauthrequest=false`), so no script in the page can read the token.
 
 CI publishes the console to `ghcr.io/ai-grid-cloud/ai-grid-provider-console`: every merge to

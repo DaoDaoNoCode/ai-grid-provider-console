@@ -111,7 +111,7 @@ validating a response whose type is already generated is a fourth declaration of
 - The `{"data": ...}` / `{"meta": ...}` envelope, the `ETag`/`If-Match`/428 protocol, and the
   HTTP status table all disappear. Optimistic concurrency moves to the version field in the
   request message with `lock: true`, which the proto already carries. Most of
-  `docs/plan/bff-api.md` and all of `mock/examples/` go with them.
+  `docs/plan/bff-api.md` (now `docs/bff.md`) and all of `mock/examples/` go with them.
 - Pages read proto shapes. A thin typed selector layer is allowed for presentation, but any
   derivation that encodes a policy or a meaning — "is this cluster a grid member", "what phase
   is this model in" — must become a proto field. Otherwise the BFF's "Known exceptions" simply

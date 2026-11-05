@@ -1,8 +1,8 @@
 # The backend's API in the console: types, calls and changes
 
-The console is moving from its own draft proto and hand-written JSON to the backend's own API,
-`ai_grid.v1` in ai-grid-cloud/ai-grid-provider-backend, called from the browser over Connect
-with clients generated from that proto (ADRs 0001, 0002 and 0004). This page is the working guide:
+The console uses the backend's own API, `ai_grid.v1` in ai-grid-cloud/ai-grid-provider-backend,
+called from the browser over Connect with clients generated from that proto (ADRs 0001, 0002 and
+0004). This page is the working guide:
 how a call travels, where the types come from, how a page uses them, how to test, and what to do
 when the API has to change. The backend's side of the same rules is its
 `docs/API_CONTRACT.md`.
@@ -10,10 +10,11 @@ when the API has to change. The backend's side of the same rules is its
 The Clusters area (the list, a cluster's page, Add, Edit and Remove), the Models area (the list, a
 model's page, the Deploy model wizard, its edit and delete), the Subscriptions area, the
 Organizations area and the AI Grid map are on it; each move deleted that area's draft RPCs, fake
-data, BFF handlers and hand-written frontend types. What still reads the BFF's JSON API is the
-shell (`/api/v1/user`, `/api/v1/config`), which calls no backend, and Monitoring reads the hub's
-Perses; no page reads the console's fake backend, so `mock/proto`, `bff/gen`, that fake and
-`frontend/src/api`'s hand-written layer are what is left to remove.
+data, BFF handlers and hand-written frontend types, and the console's draft proto and fake
+backend are gone. What still reads the BFF's JSON API is the shell (`/api/v1/user`,
+`/api/v1/config`, the BFF's own answers), which calls no backend, and Monitoring reads the hub's
+Perses; `frontend/src/api`'s hand-written layer for those two answers is what is left of the old
+API.
 
 ## How a call travels
 
@@ -36,7 +37,7 @@ page ── generated client ──► kube-auth-proxy ──► BFF relay ─�
   bounds the wait, and passes back only the response headers a Connect client needs. It never
   decodes a body and has no per-RPC transport code. Until the backend authorizes callers,
   its procedure allowlist requires an explicit review before a new RPC is exposed. Rules and errors:
-  `docs/plan/bff-api.md`, "The Connect relay".
+  `docs/bff.md`, "The Connect relay".
 - **The backend** decodes the request into the same generated message, runs its checks and
   answers. Its REST surface (vanguard, `/api/v1/...` on the backend's own port) is for other tools;
   the console never uses it.
@@ -134,7 +135,7 @@ prereleases, the first with React 19 support (perses/shared#390, perses/plugins#
 `e2e/perses.spec.ts` picks a time range and clicks the page right after, on the real renderer.
 
 The page's one Connect call is `Clusters/List`, for a dashboard's cluster details
-(`docs/plan/bff-api.md`, "The Perses relay"). `PersesDashboardView` makes it above Perses's own
+(`docs/bff.md`, "The Perses relay"). `PersesDashboardView` makes it above Perses's own
 `QueryClientProvider`, so it shares the console's cache with the Clusters pages and the map; a hook
 called inside that provider would get Perses's query client instead.
 
@@ -445,7 +446,7 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
 ### Writes that take long
 
 The backend commits Models and Subscriptions to a Git repository: a write takes seconds, and on
-a slow day longer than the BFF waits (`BACKEND_WRITE_TIMEOUT`, 30 s, `docs/plan/bff-api.md`, "The
+a slow day longer than the BFF waits (`BACKEND_WRITE_TIMEOUT`, 30 s, `docs/bff.md`, "The
 Connect relay"). So these writes (deploy, edit and delete a model; create, edit and delete a
 subscription) are sent from the app root, never from the form (`frontend/src/notifications`):
 
@@ -590,10 +591,10 @@ subscription) are sent from the app root, never from the form (`frontend/src/not
     joins it again during a remove watch, or is gone from the hub stops the watch without a word.
   - Every status change a cluster watch sees, and every end, invalidates the Clusters queries
     (the list, a cluster's page and the AI Grid map), as the model and subscription watches do.
-  - On the backend's fake hub (`make dev-fake-infra`), the ready Policy is computed from the
+  - On the backend's fake hub (`make dev-fake`), the ready Policy is computed from the
     clusters: one added without an `ai-grid/provisioned` fixture label reads Pending for 5 s,
-    NonCompliant until 20 s, then Compliant, and one with the label keeps what it says
-    (`mock/areas/clusters.md`).
+    NonCompliant until 20 s, then Compliant, and one with the label keeps what it says (in the
+    backend's `fixtures/poc`, `site4` reads NonCompliant for good, `site1` to `site3` Compliant).
 - An organization's save is complete, or rolled back, when the backend answers (a Keycloak
   write), so it isn't watched: the form or the delete dialog waits as it always did and keeps its
   errors there, and a success goes to the center as read: "Organization <name> created",
@@ -664,29 +665,30 @@ const { clients } = fakeClients({
 - The browser tests of the Clusters, Models, Subscriptions and Organizations pages and the map
   (`e2e/cluster-membership.spec.ts`, `e2e/cluster-edit.spec.ts`, `e2e/clusters.spec.ts`,
   `e2e/grid.spec.ts`, `e2e/models.spec.ts`, `e2e/subscriptions.spec.ts`,
-  `e2e/organizations.spec.ts`) run against the backend's own fakes on its PoC fixtures, which `frontend/playwright.config.ts` starts through `hack/backend-fakes.sh`, on ports
-  offset from the console's own fake, which the other specs use.
+  `e2e/organizations.spec.ts`), and every other browser test, run against the backend's own
+  fakes on its PoC fixtures, which `frontend/playwright.config.ts` starts through
+  `hack/backend-fakes.sh`, on ports of their own (9200, 8280, 9290-9294), so a running
+  `make dev-fake` is never taken for them.
 - The fake's answers are type-checked against the generated messages and go through the same
   serialization as the wire, so a fake can't drift from the API the way the hand-written
   `MockConsoleService` could.
-- For the whole stack, `make dev-fake-infra` runs the backend at the pinned commit on its own fake
-  hub and fake Keycloak (its `make dev-fake`, checked out into `.cache/backend/<sha>`, or
-  `BACKEND_DIR`), with the BFF and the frontend in front of it. `make dev-fake` (the console's own
-  fake, which serves the draft) stays until the last area moves.
+- For the whole stack, `make dev-fake` runs the backend at the pinned commit on its own fake
+  hub and fake Keycloak (its own `make dev-fake`, checked out into `.cache/backend/<sha>`, or
+  `BACKEND_DIR`), with the BFF and the frontend in front of it.
 
 ## When the page needs something the API doesn't have
 
 1. **Change the backend first.** Add the field or RPC to `proto/ai_grid/v1` in the backend, with
-   its implementation, in a backend PR that follows the backend's `docs/API_CONTRACT.md`. Don't add
-   it to `mock/proto`, and don't compute it in the page or the BFF.
+   its implementation, in a backend PR that follows the backend's `docs/API_CONTRACT.md`. Don't
+   compute it in the page or the BFF.
 2. **Move the pin** to a backend commit that has it: `make backend-pin SHA=<full sha>` writes
    `.backend-api-version`, regenerates `frontend/src/gen` and moves the backend image of the chart,
    `manifests/base` and the kind test to that commit's build. Commit them with the page change.
    The backend's CI publishes `sha-<commit>` only for a commit on its `main`, so while the backend
    PR is open, try its head locally (`echo <sha> > .backend-api-version && make generate-api`, or
-   `BACKEND_DIR` for `make dev-fake-infra`); CI fails until the pin is a merged commit.
+   `BACKEND_DIR` for `make dev-fake`); CI fails until the pin is a merged commit.
 3. **Build the page** against the generated type; test it with `fakeClients` and try it with
-   `make dev-fake-infra`.
+   `make dev-fake`.
 
 ## When the pin moves and something breaks
 

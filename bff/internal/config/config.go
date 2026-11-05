@@ -72,8 +72,7 @@ type Config struct {
 	BackendInsecure   bool
 	BackendTimeout    time.Duration
 	// BackendWriteTimeout bounds a call that changes data instead of
-	// BackendTimeout: a POST, PATCH, PUT or DELETE on /api/v1, and a write
-	// procedure on the Connect relay. The backend commits Models and
+	// BackendTimeout: a write procedure on the Connect relay. The backend commits Models and
 	// Subscriptions to a Git repository, which can take longer than a read; a
 	// write cut while the backend still completes it tells the caller nothing
 	// about its outcome.
@@ -94,8 +93,9 @@ type Config struct {
 	// BillingURL is an external billing UI link; empty hides the menu item.
 	BillingURL string
 
-	// FakeBackend says the backend is the fake from mock/fixtures, so the UI
-	// shows a banner.
+	// FakeBackend says the backend runs on fake infrastructure (make dev-fake,
+	// the browser tests): the UI says its data is fixtures, and that no login
+	// proxy runs, so an ended session is not sent to sign in again.
 	FakeBackend bool
 
 	// Perses is the hub's Perses server the Monitoring page reads through
@@ -141,13 +141,13 @@ func Parse(args []string, lookupEnv func(string) (string, bool)) (Config, error)
 	fs.StringVar(&cfg.BackendServerName, "backend-server-name", env.str("BACKEND_SERVER_NAME", ""), "Expected TLS server name of the backend")
 	fs.BoolVar(&cfg.BackendInsecure, "backend-insecure", env.boolean("backend-insecure", "BACKEND_INSECURE", false), "Allow plaintext to a non-loopback backend (development only)")
 	fs.DurationVar(&cfg.BackendTimeout, "backend-timeout", env.duration("backend-timeout", "BACKEND_TIMEOUT", 10*time.Second), "Per-RPC timeout towards the backend")
-	fs.DurationVar(&cfg.BackendWriteTimeout, "backend-write-timeout", env.duration("backend-write-timeout", "BACKEND_WRITE_TIMEOUT", 30*time.Second), "Per-RPC timeout towards the backend for a call that changes data (POST, PATCH, PUT and DELETE on /api/v1, a write procedure on the Connect relay); at most 50s")
+	fs.DurationVar(&cfg.BackendWriteTimeout, "backend-write-timeout", env.duration("backend-write-timeout", "BACKEND_WRITE_TIMEOUT", 30*time.Second), "Per-RPC timeout towards the backend for a write procedure on the Connect relay; at most 50s")
 	fs.StringVar(&cfg.StaticAssetsDir, "static-assets-dir", env.str("STATIC_ASSETS_DIR", ""), "Directory with the built frontend; empty disables")
 	fs.StringVar(&cfg.GridEndpoint, "grid-endpoint", env.str("GRID_CONSUMER_URL", ""), "Consumer-facing AI Grid inference URL")
 	fs.StringVar(&cfg.MapTileURL, "map-tile-url", env.str("MAP_TILE_URL", ""), "Tile server URL template for the fleet map; empty draws a bundled land outline")
 	fs.StringVar(&cfg.MapTileAttribution, "map-tile-attribution", env.str("MAP_TILE_ATTRIBUTION", ""), "Attribution shown with the map-tile-url tiles")
 	fs.StringVar(&cfg.BillingURL, "billing-url", env.str("BILLING_URL", ""), "External billing UI URL")
-	fs.BoolVar(&cfg.FakeBackend, "fake-backend", env.boolean("fake-backend", "FAKE_BACKEND", false), "The backend is the fake from mock/fixtures; the UI shows a banner")
+	fs.BoolVar(&cfg.FakeBackend, "fake-backend", env.boolean("fake-backend", "FAKE_BACKEND", false), "The backend runs on fake infrastructure (make dev-fake): the UI shows a banner, and no login proxy runs")
 	fs.StringVar(&cfg.PersesURL, "perses-url", env.str("PERSES_URL", ""), "The hub's Perses server for the Monitoring page; empty turns Monitoring off")
 	fs.StringVar(&cfg.PersesCAFile, "perses-ca-file", env.str("PERSES_CA_FILE", ""), "CA for the Perses server's certificate; empty for system roots")
 	fs.StringVar(&cfg.PersesServerName, "perses-server-name", env.str("PERSES_SERVER_NAME", ""), "Expected TLS server name of the Perses server (for a port-forward)")

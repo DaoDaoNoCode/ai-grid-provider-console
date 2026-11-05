@@ -2,44 +2,31 @@ package examples
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
-
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/test/bufconn"
 
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/api"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/backend"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/config"
-	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/fakebackend"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/hub"
 )
 
-var update = flag.Bool("update", false, "rewrite mock/examples from the current BFF and fake backend")
+var update = flag.Bool("update", false, "rewrite mock/examples from the current BFF")
 
-const (
-	fixturesDir = "../../../mock/fixtures"
-	examplesDir = "../../../mock/examples"
-)
-
-// scenarioStart is the fixed wall-clock time the fake's scenario clock starts
-// from and stays at, so condition times, creation stamps of the live model and
-// every derived status are the same on every run.
-var scenarioStart = time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
+const examplesDir = "../../../mock/examples"
 
 // caller is who sends a request, as kube-auth-proxy (or the Vite dev proxy
-// under make dev-fake) would set the identity headers.
+// under make dev-fake) would set the identity headers. The tokens are the
+// ones the backend's fake hub knows (its fixtures' access.json), which the
+// hub below answers the same way.
 type caller struct{ token, user string }
 
 var (
@@ -88,8 +75,8 @@ type golden struct {
 	Body            json.RawMessage   `json:"body,omitempty"`
 }
 
-// TestGoldenResponses renders every example on a BFF and fake of its own,
-// loaded from the fixtures, so no example depends on another.
+// TestGoldenResponses renders every example on a BFF and hub of its own, so
+// no example depends on another.
 func TestGoldenResponses(t *testing.T) {
 	want := map[string]bool{}
 	for _, ex := range examples {
@@ -131,40 +118,19 @@ func TestGoldenResponses(t *testing.T) {
 	}
 }
 
-// newApp builds the BFF against the fake backend over bufconn and the fake hub
-// over httptest, both from mock/fixtures, with a frozen clock, no latency and
-// deterministic id and work-name generators.
+// newApp builds the BFF against the hub below over httptest. No example
+// reaches the backend: the client points at an address nothing listens on,
+// which a call would fail on.
 func newApp(t *testing.T) *api.App {
 	t.Helper()
 	logger := slog.New(slog.DiscardHandler)
-	fx, err := fakebackend.Load(fixturesDir)
+	client, err := backend.Dial(backend.Config{Address: "127.0.0.1:1"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	fake, err := fakebackend.New(fx, logger)
-	if err != nil {
-		t.Fatal(err)
-	}
-	fake.Latency = 0
-	fake.SetClock(func() time.Time { return scenarioStart })
-	ids := 0
-	fake.SetIDGenerator(func() string { ids++; return fmt.Sprintf("00000000-0000-4000-8000-%012d", ids) })
-	works := 0
-	fake.SetWorkSuffixGenerator(func() string { works++; return fmt.Sprintf("g%04d", works) })
-
-	lis := bufconn.Listen(1 << 20)
-	srv := grpc.NewServer()
-	fake.Register(srv)
-	go func() { _ = srv.Serve(lis) }()
-	client, err := backend.Dial(backend.Config{Address: "passthrough:///bufconn", Insecure: true},
-		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return lis.DialContext(ctx) }))
-	if err != nil {
-		t.Fatal(err)
-	}
-	hubSrv := httptest.NewServer(fakebackend.NewHub(fx.Access, logger).Handler())
+	hubSrv := httptest.NewServer(http.HandlerFunc(accessReview))
 	t.Cleanup(func() {
 		_ = client.Close()
-		srv.Stop()
 		hubSrv.Close()
 	})
 	hubClient, err := hub.New(hub.Config{URL: hubSrv.URL})
@@ -178,6 +144,24 @@ func newApp(t *testing.T) *api.App {
 		t.Fatal(err)
 	}
 	return api.NewApp(cfg, logger, client, hubClient)
+}
+
+// accessReview answers the BFF's provider-admin SelfSubjectAccessReview as a
+// hub does for the three callers: the expired token is the API server's 401,
+// the viewer is not allowed, and the admin is.
+func accessReview(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	switch r.Header.Get("Authorization") {
+	case "Bearer " + expired.token:
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"kind":"Status","apiVersion":"v1","status":"Failure","message":"Unauthorized","reason":"Unauthorized","code":401}`))
+	case "Bearer " + admin.token:
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"status":{"allowed":true}}`))
+	default:
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"status":{"allowed":false}}`))
+	}
 }
 
 func render(t *testing.T, app *api.App, ex example) []byte {

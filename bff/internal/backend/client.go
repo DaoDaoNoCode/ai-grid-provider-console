@@ -1,14 +1,14 @@
 // Package backend holds the gRPC connection to ai-grid-backend.
 //
 // The backend owns every interaction with the hub, Keycloak and metrics. The
-// BFF calls it over gRPC for the readiness probe only (AiGrid/Ping), and a
-// call made for a caller carries the caller's identity in request metadata
-// (forwardIdentity); the pages call it over Connect through the relay
-// (internal/relay).
+// BFF calls it over gRPC for the readiness probe only (the standard gRPC
+// health service, grpc.health.v1.Health/Check, whose client ships with
+// grpc-go), a call made for no caller; the pages call it over Connect through
+// the relay (internal/relay), which sends the caller's identity in the
+// headers named here.
 package backend
 
 import (
-	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -20,13 +20,11 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/metadata"
-
-	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
-	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/identity"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
-// Metadata keys the BFF sets on every outgoing RPC.
+// The headers the Connect relay sets on every call it passes to the backend:
+// the caller's token and identity, as the BFF read them from the proxy.
 const (
 	MetaAuthorization = "authorization"
 	MetaUser          = "x-forwarded-user"
@@ -46,19 +44,18 @@ type Config struct {
 	Insecure bool
 	// ServerName overrides the expected TLS server name.
 	ServerName string
-	// Timeout bounds every RPC that reads. Zero means 10 seconds.
+	// Timeout bounds every relayed call that reads. Zero means 10 seconds.
 	Timeout time.Duration
-	// WriteTimeout bounds every RPC that changes data (Client.WriteContext,
-	// and the relay's write procedures). Zero means 30 seconds.
+	// WriteTimeout bounds the relay's write procedures. Zero means 30 seconds.
 	WriteTimeout time.Duration
 }
 
-// Client wraps the generated service clients.
+// Client is the gRPC connection and the one service the BFF calls on it.
 type Client struct {
-	conn         *grpc.ClientConn
-	timeout      time.Duration
-	writeTimeout time.Duration
-	Health       aigridv1.AiGridClient
+	conn *grpc.ClientConn
+	// Health is the standard gRPC health service, which the backend registers
+	// for every service it serves (grpchealth in its cmd/ai-grid-provider-backend).
+	Health healthpb.HealthClient
 }
 
 // Dial creates the connection. It does not connect until the first RPC, so a
@@ -72,25 +69,19 @@ func Dial(cfg Config, extra ...grpc.DialOption) (*Client, error) {
 	if tlsCfg != nil {
 		creds = credentials.NewTLS(tlsCfg)
 	}
-	opts := append([]grpc.DialOption{
-		grpc.WithTransportCredentials(creds),
-		grpc.WithUnaryInterceptor(forwardIdentity),
-	}, extra...)
+	opts := append([]grpc.DialOption{grpc.WithTransportCredentials(creds)}, extra...)
 	conn, err := grpc.NewClient(cfg.Address, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("connect to backend %s: %w", cfg.Address, err)
 	}
-	timeout, writeTimeout := cfg.Timeouts()
 	return &Client{
-		conn:         conn,
-		timeout:      timeout,
-		writeTimeout: writeTimeout,
-		Health:       aigridv1.NewAiGridClient(conn),
+		conn:   conn,
+		Health: healthpb.NewHealthClient(conn),
 	}, nil
 }
 
 // Timeouts are Timeout and WriteTimeout, each with its default when unset,
-// for the gRPC client and the Connect relay alike.
+// for the Connect relay.
 func (cfg Config) Timeouts() (read, write time.Duration) {
 	read, write = cfg.Timeout, cfg.WriteTimeout
 	if read <= 0 {
@@ -144,45 +135,6 @@ func IsLoopback(address string) bool {
 // Close releases the connection.
 func (c *Client) Close() error { return c.conn.Close() }
 
-// Context bounds an RPC that reads with the configured timeout.
-func (c *Client) Context(parent context.Context) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(parent, c.timeout)
-}
-
-// WriteContext bounds an RPC that changes data with the configured write
-// timeout: a write the BFF cuts may still complete in the backend, and the
-// caller is then told nothing about its outcome.
-func (c *Client) WriteContext(parent context.Context) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(parent, c.writeTimeout)
-}
-
-// forwardIdentity copies the caller's identity from the context into gRPC
-// metadata. Requests without an identity (the readiness probe) carry none.
-// The user, the email and each group are percent-encoded
-// (EncodeMetadataValue): grpc-go refuses a metadata value that is not
-// printable ASCII, so a group such as `équipe-ops` sent as is would fail
-// every call.
-func forwardIdentity(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-	if id, ok := identity.FromContext(ctx); ok {
-		pairs := []string{MetaAuthorization, "Bearer " + id.Token()}
-		if id.Username != "" {
-			pairs = append(pairs, MetaUser, EncodeMetadataValue(id.Username))
-		}
-		if id.Email != "" {
-			pairs = append(pairs, MetaEmail, EncodeMetadataValue(id.Email))
-		}
-		if len(id.Groups) > 0 {
-			groups := make([]string, len(id.Groups))
-			for i, g := range id.Groups {
-				groups[i] = EncodeMetadataValue(g)
-			}
-			pairs = append(pairs, MetaGroups, strings.Join(groups, ","))
-		}
-		ctx = metadata.AppendToOutgoingContext(ctx, pairs...)
-	}
-	return invoker(ctx, method, req, reply, cc, opts...)
-}
-
 // EncodeMetadataValue percent-encodes `%` and every byte outside printable
 // ASCII (0x20-0x7E) as `%XX`, upper-case hex, so that any proxy header value
 // is a valid gRPC metadata value. An ASCII value without `%` stays the same,
@@ -191,9 +143,9 @@ func forwardIdentity(ctx context.Context, method string, req, reply any, cc *grp
 // UTF-8 for a name such as `équipe-ops`. The groups are encoded one by one
 // and joined with `,`; a group never contains one (package identity splits
 // the header on it), so the receiver splits first and then decodes. This is
-// a proposal to the backend team, not yet agreed: the fake decodes it, the
-// shipped backend doesn't yet and sees a non-ASCII name still encoded
-// (harmless while these values are advisory, docs/plan/bff-api.md).
+// a proposal to the backend team, not yet agreed: the backend doesn't decode
+// it yet and sees a non-ASCII name still encoded (harmless while these values
+// are advisory, docs/bff.md).
 func EncodeMetadataValue(v string) string {
 	if !strings.ContainsFunc(v, func(r rune) bool { return r == '%' || r < 0x20 || r > 0x7e }) {
 		return v

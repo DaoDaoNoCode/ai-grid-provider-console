@@ -69,7 +69,8 @@ worth recording because each is a better answer than the original.
   29 RPCs to OSAC conventions before anything works would have blocked every page on one large
   change; this keeps the other pages running meanwhile.
 - **The fake is relocated, not deleted.** The backend now carries it in `internal/fakeinfra/draft/`
-  and the fixtures in `fixtures/draft/{default,poc}`; the console copies remain pending removal.
+  and the fixtures in `fixtures/draft/{default,poc}`; the console's copies were removed on
+  2026-11-04 (see the last item).
   An earlier move (backend PR #7) already converted the cluster and organization fixtures for
   `ai-grid-fake-infra`, which fakes the *hub and Keycloak* and runs the real backend against
   them. The two coexist deliberately: the fake infrastructure serves the areas the backend
@@ -90,3 +91,9 @@ worth recording because each is a better answer than the original.
   were deleted. Console [PR #63](https://github.com/ai-grid-cloud/ai-grid-provider-console/pull/63)
   now calls those real services through the legacy BFF adapters; browser Connect migration
   and removal of the console's draft copies remain pending.
+- **The console's draft copies are removed** (2026-11-04), every page being on Connect: the
+  draft proto, its generated Go (but for the Grid messages the Monitoring fallback still reads,
+  which go with it), `bff/internal/fakebackend` and its fixtures, the vendored upstream proto and
+  the drift guard. The BFF's one gRPC call of its own, the readiness probe, asks the standard
+  gRPC health service instead of `AiGrid/Ping`, so no proto is left to drift. `make dev-fake` now
+  runs the real backend on its fake infrastructure.

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The backend at .backend-api-version on its own fake hub and Keycloak, without make (the Browser
-# tests job's image has none): what `make dev-fake-infra-backend` runs through the backend's
+# tests job's image has none): what `make dev-fake-backend` runs through the backend's
 # `make dev-fake`, which builds both binaries and calls its hack/dev-fake.sh. The DEV_* variables
 # (ports, DEV_FIXTURES, DEV_DRAFT_FIXTURES) go to that script as it reads them. SIGTERM stops both.
 set -euo pipefail

@@ -2,10 +2,11 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
-	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 type healthStatus struct {
@@ -22,12 +23,17 @@ func (a *App) healthcheck(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, healthStatus{Status: "ok", Version: Version})
 }
 
-// readyz is the readiness probe: the backend answers Ping. A console without
-// its backend should not receive traffic.
+// readyz is the readiness probe: the backend's gRPC health service says the
+// server is serving (Check with no service name, as a Kubernetes gRPC probe
+// asks). A console without its backend should not receive traffic.
 func (a *App) readyz(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
-	if _, err := a.backend.Health.Ping(ctx, &aigridv1.PingRequest{Name: "bff"}); err != nil {
+	resp, err := a.backend.Health.Check(ctx, &healthpb.HealthCheckRequest{})
+	if err == nil && resp.GetStatus() != healthpb.HealthCheckResponse_SERVING {
+		err = fmt.Errorf("health status %s", resp.GetStatus())
+	}
+	if err != nil {
 		a.log(r).Warn("backend not ready", "error", err)
 		writeJSON(w, http.StatusServiceUnavailable, healthStatus{Status: "unavailable", Version: Version, Backend: "unavailable"})
 		return

@@ -3,7 +3,7 @@
 Read-only research, 2026-10-15. Sources: the AI Grid dev hub (queried with `oc get/explain` and the
 Prometheus HTTP API of both Thanos endpoints; everything below is anonymised), the POC repo
 `krisv/ai-grid-cloud-provider-poc` (clone in `scratchpad/poc-obs`), the Praxis AI filter docs in
-`scratchpad/praxis-ai-docs/`, this repo's `docs/plan/bff-api.md` and `docs/plan/work-breakdown.md`, and
+`scratchpad/praxis-ai-docs/`, this repo's `docs/bff.md` and `docs/plan/work-breakdown.md`, and
 the vendor documentation listed at the end. Sample values in this document are fictional.
 
 ## Summary
@@ -426,7 +426,7 @@ Per tenant: nothing confirmed. Options in order of likelihood:
 - Dev hub, observed read-only (anonymised): `oc get` on `configmap/cluster-monitoring-config`, `multiclusterobservability/observability`, `prometheusagent`, `scrapeconfig`, `opentelemetrycollector/data-science-collector`, ServiceMonitors/PodMonitors, `tokenratelimitpolicy`, `limitador`, `gateway`; Prometheus API on both query routes: `/api/v1/label/__name__/values`, `/api/v1/labels`, `/api/v1/series`, `/api/v1/query`, `/api/v1/query_range`, `/api/v1/status/buildinfo`.
 - POC: `scratchpad/poc-obs/docs/grid-monitoring.md`, `backend/grid-monitoring.mjs`, `shared/grid-monitoring.mjs`, `src/services/monitoring/demoObservability.ts`.
 - Praxis: `scratchpad/praxis-ai-docs/token_count.md`, `stream_usage_inject.md`, `token_usage_headers.md`, `external_metering.md`, `external-metering.yaml`, `metering_mod.rs`.
-- Repo: `docs/plan/bff-api.md` (Grid/GetOverview row), `docs/plan/work-breakdown.md` (backend item 4 and the "which Thanos / which metric names" open question).
+- Repo: `docs/bff.md` (Grid/GetOverview row), `docs/plan/work-breakdown.md` (backend item 4 and the "which Thanos / which metric names" open question).
 - Prometheus HTTP API: https://prometheus.io/docs/prometheus/latest/querying/api/
 - Thanos Query: https://thanos.io/tip/components/query.md/
 - ACM observability (2.13/2.14 docs; custom allowlist ConfigMap `observability-metrics-custom-allowlist`, `rbac-query-proxy` route, fine-grained RBAC): https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/2.14/html-single/observability/index

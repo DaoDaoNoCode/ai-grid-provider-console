@@ -19,14 +19,14 @@ export class ServiceError extends Error {
   constructor(
     readonly status: number,
     message: string,
-    /** Per-field messages keyed by the JSON path of the request body. */
+    /** Per-field messages from a Connect InvalidArgument's BadRequest details (toServiceError). */
     readonly fieldErrors?: Record<string, string>,
   ) {
     super(message);
     this.name = 'ServiceError';
   }
 
-  /** The BFF answers 501 when the backend has no RPC for this yet. */
+  /** The backend has no RPC for this yet (Connect Unimplemented). */
   get isNotImplemented(): boolean {
     return this.status === 501;
   }

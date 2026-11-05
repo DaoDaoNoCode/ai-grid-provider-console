@@ -11,7 +11,6 @@ export default defineConfig(
     // src/gen is generated from the backend's proto (make generate-api) and never edited by hand.
     ignores: [
       'dist',
-      'dist-backend-fakes',
       'node_modules',
       '.pnpm-store',
       'playwright-report',

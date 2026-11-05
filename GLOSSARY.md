@@ -122,29 +122,30 @@ among several. Authorization is still pending; see
 _Avoid_: API server, service, gRPC service, provider service
 
 **Contract**:
-The protobuf definition of the shapes the system exchanges. The backend is the target source
-of truth ([ADR-0001](docs/adr/0001-the-contract-lives-in-the-backend.md)); today the console
-still carries its draft and generated copies during the migration.
+The protobuf definition of the shapes the system exchanges. The backend is its source of truth
+([ADR-0001](docs/adr/0001-the-contract-lives-in-the-backend.md)); the console generates its
+TypeScript from it (`frontend/src/gen`) and carries no copy of its own.
 _Avoid_: schema, API spec, proto definition, draft proto
 
 **BFF**:
 The console's own small server: it relays calls to the backend with the caller's token,
-serves the single-page app, and answers for the console's configuration and health. That is the
-target ([ADR-0004](docs/adr/0004-the-bff-is-a-thin-relay.md)); today it also maps legacy API
-shapes and enforces the provider-admin gate through a hub access review.
+serves the single-page app, and answers for the console's configuration and health
+([ADR-0004](docs/adr/0004-the-bff-is-a-thin-relay.md), `docs/bff.md`); today it also enforces
+the provider-admin gate through a hub access review.
 _Avoid_: proxy, gateway, middle tier, API layer
 
 **Fake infrastructure**:
 Stand-ins for the systems the backend talks to — a fake hub API and a fake Keycloak — so that
-the **real** backend can run on a laptop without a cluster. Because the backend itself is not
-faked, it cannot drift from what ships.
+the **real** backend can run on a laptop without a cluster (`make dev-fake`, the browser
+tests). Because the backend itself is not faked, it cannot drift from what ships.
 _Avoid_: fake backend, mock, stub, test server
 
 **Fake backend**:
-The legacy reimplementation of the draft contract, serving fixtures. It originated in the
-console and now also exists in the backend during migration. Superseded by fake infrastructure
-and being retired: it can drift from the real backend because it is a second implementation.
-Use the term only for the thing being removed.
+The legacy reimplementation of the draft contract, serving fixtures. The console's copy is
+removed; the backend still carries one (its draft fake) during migration. Superseded by fake
+infrastructure: it can drift from the real backend because it is a second implementation. Use
+the term only for that legacy thing. The BFF's `--fake-backend` flag, and the console's
+fake-backend banner, predate the change and now mean the backend runs on fake infrastructure.
 _Avoid_: using this for **fake infrastructure**, which is a different idea
 
 **Hub**:

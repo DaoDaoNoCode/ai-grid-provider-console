@@ -13,7 +13,7 @@ CONTAINER_ENGINE ?= $(shell command -v podman 2>/dev/null || command -v docker)
 # BACKEND_ADDRESS is the backend's gRPC, which the BFF dials: make dev-cluster forwards the hub's
 # backend there, make dev expects yours there, and the fakes listen there.
 BACKEND_ADDRESS ?= 127.0.0.1:9090
-# The fake hub, which answers the BFF's access review in make dev-fake and make dev-fake-infra.
+# The backend's fake hub, which answers the BFF's access review in make dev-fake.
 FAKE_HUB_ADDRESS ?= 127.0.0.1:9091
 BFF_PORT ?= 8080
 FRONTEND_PORT ?= 9000
@@ -24,10 +24,10 @@ PERSES_SERVICE ?= perses
 port-of = $(lastword $(subst :, ,$(1)))
 
 # The ai-grid-provider-backend commit whose API the console is generated from (make generate-api)
-# and runs against in make dev-fake-infra: one full commit SHA in .backend-api-version.
+# and runs against in make dev-fake: one full commit SHA in .backend-api-version.
 BACKEND_API_VERSION := $(strip $(shell cat .backend-api-version))
 BACKEND_REPO ?= https://github.com/ai-grid-cloud/ai-grid-provider-backend.git
-# A checkout of the backend to run in make dev-fake-infra; empty clones BACKEND_API_VERSION into
+# A checkout of the backend to run in make dev-fake; empty clones BACKEND_API_VERSION into
 # .cache/backend/<sha> (hack/backend-checkout.sh).
 BACKEND_DIR ?=
 BUF := go run github.com/bufbuild/buf/cmd/buf@v1.57.2
@@ -41,9 +41,9 @@ generate-api-into = cd frontend && \
 	$(BUF) generate '$(API_INPUT)' --exclude-path ai_grid/draft --template buf.gen.yaml -o "$(1)" && \
 	$(BUF) generate '$(GOOGLEAPIS)' --path google/rpc/error_details.proto --template buf.gen.yaml -o "$(1)"
 
-.PHONY: help install dev-cluster dev dev-fake dev-fake-infra backend-pin generate-api \
+.PHONY: help install dev-cluster dev dev-fake backend-pin generate-api \
 	dev-forward-backend dev-forward-perses dev-bff dev-frontend \
-	dev-fake-backend dev-bff-fake dev-frontend-fake dev-fake-infra-backend dev-bff-fake-infra \
+	dev-fake-backend dev-bff-fake dev-frontend-fake \
 	lint test e2e check-generated-api chart-check chart-test \
 	build image push manifests deploy undeploy
 
@@ -78,19 +78,11 @@ dev: ## Against a backend you run yourself on BACKEND_ADDRESS (default 127.0.0.1
 	$(MAKE) -s dev-frontend & \
 	wait
 
-dev-fake: ## Without a cluster, on the console's own fake backend (:9090) and hub (:9091), from mock/fixtures
-	@echo "==> Clusters and the AI Grid map use the backend's API and need make dev-fake-infra"
+dev-fake: ## Without a cluster, on the backend at .backend-api-version and its own fake hub and Keycloak (:9090-:9094; BACKEND_DIR for your checkout)
+	@BACKEND_DIR='$(BACKEND_DIR)' BACKEND_REPO='$(BACKEND_REPO)' hack/backend-checkout.sh >/dev/null
 	@trap 'kill 0' INT TERM; \
 	$(MAKE) -s dev-fake-backend & \
 	$(MAKE) -s dev-bff-fake & \
-	$(MAKE) -s dev-frontend-fake & \
-	wait
-
-dev-fake-infra: ## Without a cluster, on the backend at .backend-api-version and its own fakes (:9090-:9094; BACKEND_DIR for your checkout)
-	@BACKEND_DIR='$(BACKEND_DIR)' BACKEND_REPO='$(BACKEND_REPO)' hack/backend-checkout.sh >/dev/null
-	@trap 'kill 0' INT TERM; \
-	$(MAKE) -s dev-fake-infra-backend & \
-	$(MAKE) -s dev-bff-fake-infra & \
 	$(MAKE) -s dev-frontend-fake & \
 	wait
 
@@ -124,35 +116,29 @@ dev-bff:
 dev-frontend:
 	cd frontend && BFF_URL=http://127.0.0.1:$(BFF_PORT) FRONTEND_PORT=$(FRONTEND_PORT) pnpm dev
 
-# dev-fake: the fake backend and hub, the BFF against them, and the Vite dev server as dev-user
-# with a fixture token (AUTH_TOKEN=viewer-token AUTH_USER=viewer for a user who isn't a provider
-# admin; dev-fake-infra uses it too).
+# dev-fake: the backend's own make dev-fake from a checkout at .backend-api-version
+# (.cache/backend/<sha>, or BACKEND_DIR), with its gRPC on BACKEND_ADDRESS and its fake hub on
+# FAKE_HUB_ADDRESS (its other ports, when set: DEV_HTTP_PORT, DEV_KEYCLOAK_PORT, DEV_DRAFT_PORT);
+# the BFF against it, relaying /ai_grid.v1.*, with --fake-backend (the banner, and no login proxy);
+# and the Vite dev server as dev-user with a fixture token (AUTH_TOKEN=viewer-token AUTH_USER=viewer
+# for a user who isn't a provider admin).
 dev-fake-backend:
-	$(MAKE) -C bff fake-backend BACKEND_ADDRESS=$(BACKEND_ADDRESS) FAKE_HUB_ADDRESS=$(FAKE_HUB_ADDRESS)
+	@dir="$$(BACKEND_DIR='$(BACKEND_DIR)' BACKEND_REPO='$(BACKEND_REPO)' hack/backend-checkout.sh)" && \
+	MAKEFLAGS= $(MAKE) -C "$$dir" dev-fake \
+		DEV_GRPC_PORT=$(call port-of,$(BACKEND_ADDRESS)) DEV_HUB_PORT=$(call port-of,$(FAKE_HUB_ADDRESS)) \
+		$(foreach v,DEV_HTTP_PORT DEV_KEYCLOAK_PORT DEV_DRAFT_PORT,$(if $($(v)),$(v)=$($(v))))
 
 dev-bff-fake:
-	$(MAKE) -C bff run-fake PORT=$(BFF_PORT) BACKEND_ADDRESS=$(BACKEND_ADDRESS) FAKE_HUB_ADDRESS=$(FAKE_HUB_ADDRESS)
+	FAKE_BACKEND=true $(MAKE) -C bff run PORT=$(BFF_PORT) BACKEND_ADDRESS=$(BACKEND_ADDRESS) HUB_API_URL=http://$(FAKE_HUB_ADDRESS) HUB_CA_FILE=
 
 dev-frontend-fake:
 	cd frontend && BFF_URL=http://127.0.0.1:$(BFF_PORT) FRONTEND_PORT=$(FRONTEND_PORT) \
 		AUTH_TOKEN=$${AUTH_TOKEN:-dev-token} AUTH_USER=$${AUTH_USER:-dev-user} pnpm dev
 
-# dev-fake-infra: the backend's own make dev-fake from a checkout at .backend-api-version
-# (.cache/backend/<sha>, or BACKEND_DIR), with its gRPC on BACKEND_ADDRESS and its fake hub on
-# FAKE_HUB_ADDRESS (its other ports: DEV_HTTP_PORT, DEV_KEYCLOAK_PORT, DEV_DRAFT_PORT), and the BFF
-# against it, relaying /ai_grid.v1.* (not --fake-backend).
-dev-fake-infra-backend:
-	@dir="$$(BACKEND_DIR='$(BACKEND_DIR)' BACKEND_REPO='$(BACKEND_REPO)' hack/backend-checkout.sh)" && \
-	MAKEFLAGS= $(MAKE) -C "$$dir" dev-fake \
-		DEV_GRPC_PORT=$(call port-of,$(BACKEND_ADDRESS)) DEV_HUB_PORT=$(call port-of,$(FAKE_HUB_ADDRESS))
-
-dev-bff-fake-infra:
-	$(MAKE) -C bff run PORT=$(BFF_PORT) BACKEND_ADDRESS=$(BACKEND_ADDRESS) HUB_API_URL=http://$(FAKE_HUB_ADDRESS) HUB_CA_FILE=
-
 ##@ Checks
 
-lint: ## Lint the BFF (vet, golangci-lint, buf lint on mock/proto) and the frontend (ESLint, Prettier, tsc, generated API current)
-	$(MAKE) -C bff vet lint lint-proto
+lint: ## Lint the BFF (vet, golangci-lint) and the frontend (ESLint, Prettier, tsc, generated API current)
+	$(MAKE) -C bff vet lint
 	cd frontend && pnpm lint && pnpm format:check && pnpm typecheck
 	$(MAKE) --no-print-directory check-generated-api
 
