@@ -129,22 +129,150 @@ func TestV1TenantFieldsNotInBackend(t *testing.T) {
 	ctx := t.Context()
 	conn := &recordingConn{}
 	_, err := v1Tenants{conn}.CreateTenant(ctx, &aigridv1.CreateTenantRequest{Object: &aigridv1.Tenant{
-		Name: "org1", IdentityProvider: &aigridv1.IdentityProvider{Title: "SSO"},
+		Name: "org1", Description: "about org1",
 	}})
 	if status.Code(err) != codes.Unimplemented || conn.method != "" {
-		t.Fatalf("create with an identity provider: %v, sent %q", err, conn.method)
+		t.Fatalf("create with a description: %v, sent %q", err, conn.method)
 	}
 	_, err = v1Tenants{conn}.UpdateTenant(ctx, &aigridv1.UpdateTenantRequest{
-		Object:     &aigridv1.Tenant{Id: "t1", ResourceVersion: "1"},
-		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"domains", "identity_provider"}},
+		Object:     &aigridv1.Tenant{Id: "t1", ResourceVersion: "1", Description: "about org1"},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"domains", "description"}},
 	})
 	if status.Code(err) != codes.Unimplemented || conn.method != "" {
-		t.Fatalf("update of identity_provider: %v, sent %q", err, conn.method)
+		t.Fatalf("update of description: %v, sent %q", err, conn.method)
 	}
 	// Keycloak's defaults are what the backend sets anyway.
 	conn.reply = &backendv1.TenantsCreateResponse{}
 	if _, err := (v1Tenants{conn}).CreateTenant(ctx, &aigridv1.CreateTenantRequest{Object: &aigridv1.Tenant{Name: "org1", Alias: "org1", Enabled: proto.Bool(true)}}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// The identity provider goes to the backend on create and update and comes back on a read,
+// every field in its place. Each field holds a different value, so a swapped pair shows.
+func TestV1TenantIdentityProvider(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	draft := &aigridv1.IdentityProvider{
+		Title: "SSO", Description: "corporate sign-in", Enabled: proto.Bool(true),
+		Config: &aigridv1.OidcConfig{
+			ClientId: "console", ClientSecretSecretName: "org1-idp", Issuer: "https://idp.example.com",
+			AuthorizationUrl: "https://idp.example.com/auth", TokenUrl: "https://idp.example.com/token",
+			DefaultScopes: "openid email", UserInfoUrl: "https://idp.example.com/userinfo",
+			JwksUrl: "https://idp.example.com/jwks", LogoutUrl: "https://idp.example.com/logout",
+			ValidateSignature: proto.Bool(false),
+		},
+	}
+	backend := &backendv1.IdentityProvider{
+		Title: "SSO", Description: "corporate sign-in", Enabled: proto.Bool(true),
+		Config: &backendv1.OidcConfig{
+			ClientId: "console", ClientSecretSecretName: "org1-idp", Issuer: "https://idp.example.com",
+			AuthorizationUrl: "https://idp.example.com/auth", TokenUrl: "https://idp.example.com/token",
+			DefaultScopes: "openid email", UserInfoUrl: "https://idp.example.com/userinfo",
+			JwksUrl: "https://idp.example.com/jwks", LogoutUrl: "https://idp.example.com/logout",
+			ValidateSignature: proto.Bool(false),
+		},
+	}
+	stored := &backendv1.Tenant{Id: "t1", Metadata: &backendv1.Metadata{Name: "org1", Version: 2},
+		Spec: &backendv1.TenantSpec{Domains: []string{"org1.example.com"}, IdentityProvider: backend}}
+
+	conn := &recordingConn{reply: &backendv1.TenantsCreateResponse{Object: stored}}
+	created, err := v1Tenants{conn}.CreateTenant(ctx, &aigridv1.CreateTenantRequest{Object: &aigridv1.Tenant{
+		Name: "org1", Domains: []string{"org1.example.com"}, IdentityProvider: draft,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := conn.req.(*backendv1.TenantsCreateRequest).GetObject().GetSpec().GetIdentityProvider(); !proto.Equal(got, backend) {
+		t.Fatalf("CreateTenant sent identity provider %v, want %v", got, backend)
+	}
+	if !proto.Equal(created.GetObject().GetIdentityProvider(), draft) {
+		t.Fatalf("CreateTenant() identity provider = %v, want %v", created.GetObject().GetIdentityProvider(), draft)
+	}
+
+	// When the mask names the identity provider, the adapter passes it on as is: the backend
+	// accepts the stored value unchanged and refuses any other.
+	conn = &recordingConn{reply: &backendv1.TenantsUpdateResponse{Object: stored}}
+	if _, err := (v1Tenants{conn}).UpdateTenant(ctx, &aigridv1.UpdateTenantRequest{
+		Object:     &aigridv1.Tenant{Id: "t1", ResourceVersion: "2", Domains: []string{"org1.example.com"}, IdentityProvider: draft},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"domains", "identity_provider"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	wantUpdate := &backendv1.TenantsUpdateRequest{
+		Object: &backendv1.Tenant{Id: "t1", Metadata: &backendv1.Metadata{Version: 2},
+			Spec: &backendv1.TenantSpec{Domains: []string{"org1.example.com"}, IdentityProvider: backend}},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"spec.domains", "spec.identity_provider"}},
+		Lock:       true,
+	}
+	if !proto.Equal(conn.req.(proto.Message), wantUpdate) {
+		t.Fatalf("UpdateTenant sent %v, want %v", conn.req, wantUpdate)
+	}
+
+	// A domains-only edit sends only the domains, even when the object carries an identity provider.
+	conn = &recordingConn{reply: &backendv1.TenantsUpdateResponse{Object: stored}}
+	if _, err := (v1Tenants{conn}).UpdateTenant(ctx, &aigridv1.UpdateTenantRequest{
+		Object:     &aigridv1.Tenant{Id: "t1", ResourceVersion: "2", Domains: []string{"org1.example.com"}, IdentityProvider: draft},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"domains"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if paths := conn.req.(*backendv1.TenantsUpdateRequest).GetUpdateMask().GetPaths(); !slices.Equal(paths, []string{"spec.domains"}) {
+		t.Fatalf("domains-only UpdateTenant sent mask %v, want [spec.domains]", paths)
+	}
+
+	// A tenant without one reads back without one.
+	if got := FromV1Tenant(&backendv1.Tenant{Id: "t2"}).GetIdentityProvider(); got != nil {
+		t.Fatalf("FromV1Tenant() identity provider = %v, want none", got)
+	}
+}
+
+// Absent optional booleans stay absent both ways, so the backend applies its defaults (true), and
+// a provider without config stays without one: the adapter neither fills nor drops anything.
+func TestV1TenantIdentityProviderAbsentFields(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	for name, tc := range map[string]struct {
+		draft   *aigridv1.IdentityProvider
+		backend *backendv1.IdentityProvider
+	}{
+		"no enabled or validate_signature": {
+			&aigridv1.IdentityProvider{Title: "SSO", Config: &aigridv1.OidcConfig{ClientId: "console", JwksUrl: "https://idp.example.com/jwks"}},
+			&backendv1.IdentityProvider{Title: "SSO", Config: &backendv1.OidcConfig{ClientId: "console", JwksUrl: "https://idp.example.com/jwks"}},
+		},
+		"no config": {
+			&aigridv1.IdentityProvider{Title: "SSO", Enabled: proto.Bool(true)},
+			&backendv1.IdentityProvider{Title: "SSO", Enabled: proto.Bool(true)},
+		},
+		"empty config": {
+			&aigridv1.IdentityProvider{Title: "SSO", Config: &aigridv1.OidcConfig{}},
+			&backendv1.IdentityProvider{Title: "SSO", Config: &backendv1.OidcConfig{}},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			stored := &backendv1.Tenant{Id: "t1", Metadata: &backendv1.Metadata{Name: "org1", Version: 1},
+				Spec: &backendv1.TenantSpec{IdentityProvider: tc.backend}}
+			conn := &recordingConn{reply: &backendv1.TenantsCreateResponse{Object: stored}}
+			created, err := v1Tenants{conn}.CreateTenant(ctx, &aigridv1.CreateTenantRequest{Object: &aigridv1.Tenant{Name: "org1", IdentityProvider: tc.draft}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			sent := conn.req.(*backendv1.TenantsCreateRequest).GetObject().GetSpec().GetIdentityProvider()
+			if !proto.Equal(sent, tc.backend) {
+				t.Fatalf("CreateTenant sent %v, want %v", sent, tc.backend)
+			}
+			// An absent boolean stays absent, so the backend applies its default.
+			if (sent.Enabled == nil) != (tc.backend.Enabled == nil) || sent.GetConfig().GetValidateSignature() {
+				t.Fatalf("CreateTenant set an absent boolean: %v", sent)
+			}
+			if (sent.Config == nil) != (tc.backend.Config == nil) {
+				t.Fatalf("CreateTenant config presence = %v, want %v", sent.Config != nil, tc.backend.Config != nil)
+			}
+			read := created.GetObject().GetIdentityProvider()
+			if !proto.Equal(read, tc.draft) || (read.Config == nil) != (tc.draft.Config == nil) {
+				t.Fatalf("read back %v, want %v", read, tc.draft)
+			}
+		})
 	}
 }
 

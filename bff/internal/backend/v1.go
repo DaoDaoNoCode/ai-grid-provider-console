@@ -60,9 +60,9 @@ func (c v1Tenants) GetTenant(ctx context.Context, in *aigridv1.GetTenantRequest,
 	return &aigridv1.GetTenantResponse{Object: FromV1Tenant(resp.GetObject())}, nil
 }
 
-// CreateTenant sends the name and domains, the only fields the backend's
-// Tenant has. A request that sets a field it lacks is Unimplemented, not
-// dropped. The backend sets the Keycloak alias to the name.
+// CreateTenant sends the name, domains and identity provider, the only fields
+// the backend's Tenant has. A request that sets a field it lacks is
+// Unimplemented, not dropped. The backend sets the Keycloak alias to the name.
 func (c v1Tenants) CreateTenant(ctx context.Context, in *aigridv1.CreateTenantRequest, opts ...grpc.CallOption) (*aigridv1.CreateTenantResponse, error) {
 	obj := in.GetObject()
 	var unsupported []string
@@ -78,15 +78,12 @@ func (c v1Tenants) CreateTenant(ctx context.Context, in *aigridv1.CreateTenantRe
 	if len(obj.GetAttributes()) > 0 {
 		unsupported = append(unsupported, "attributes")
 	}
-	if obj.GetIdentityProvider() != nil {
-		unsupported = append(unsupported, "identityProvider")
-	}
 	if err := notInBackend(unsupported); err != nil {
 		return nil, err
 	}
 	req := &backendv1.TenantsCreateRequest{Object: &backendv1.Tenant{
 		Metadata: &backendv1.Metadata{Name: obj.GetName()},
-		Spec:     &backendv1.TenantSpec{Domains: obj.GetDomains()},
+		Spec:     &backendv1.TenantSpec{Domains: obj.GetDomains(), IdentityProvider: toV1IdentityProvider(obj.GetIdentityProvider())},
 	}}
 	resp := &backendv1.TenantsCreateResponse{}
 	if err := c.conn.Invoke(ctx, methodTenantsCreate, req, resp, opts...); err != nil {
@@ -97,10 +94,14 @@ func (c v1Tenants) CreateTenant(ctx context.Context, in *aigridv1.CreateTenantRe
 
 // tenantPaths maps the draft's mask paths onto the backend's; the others
 // name fields the backend's Tenant doesn't have.
-var tenantPaths = map[string]string{"name": "metadata.name", "domains": "spec.domains"}
+var tenantPaths = map[string]string{
+	"name": "metadata.name", "domains": "spec.domains", "identity_provider": "spec.identity_provider",
+}
 
-// UpdateTenant sends the draft's name and domains paths as the backend's, and
-// the If-Match version as metadata.version with lock. The backend requires a
+// UpdateTenant sends the draft's name, domains and identity provider paths as
+// the backend's. The backend keeps an identity provider immutable after create:
+// it accepts the stored one sent back unchanged and refuses any other. The
+// If-Match version travels as metadata.version with lock. The backend requires a
 // version (errTenantVersionRequired, internal/servers/tenants_server.go): every tenant reads as 1 or more, and 0 is
 // InvalidArgument (422). Description, enabled and attributes pass when they
 // hold what a read gives back (empty, true, none), as on create; other values,
@@ -133,7 +134,7 @@ func (c v1Tenants) UpdateTenant(ctx context.Context, in *aigridv1.UpdateTenantRe
 		Object: &backendv1.Tenant{
 			Id:       obj.GetId(),
 			Metadata: &backendv1.Metadata{Name: obj.GetName(), Version: version},
-			Spec:     &backendv1.TenantSpec{Domains: obj.GetDomains()},
+			Spec:     &backendv1.TenantSpec{Domains: obj.GetDomains(), IdentityProvider: toV1IdentityProvider(obj.GetIdentityProvider())},
 		},
 		UpdateMask: &fieldmaskpb.FieldMask{Paths: paths},
 		Lock:       true,
@@ -193,14 +194,50 @@ func notInBackend(fields []string) error {
 	return status.Errorf(codes.Unimplemented, "the backend's Tenants API has no %s", strings.Join(fields, ", "))
 }
 
-// FromV1Tenant maps a real Tenant (id, name, domains, version, creation time)
-// onto the draft.
+// FromV1Tenant maps a real Tenant (id, name, domains, identity provider,
+// version, creation time) onto the draft.
 func FromV1Tenant(t *backendv1.Tenant) *aigridv1.Tenant {
 	return &aigridv1.Tenant{
-		Id:              t.GetId(),
-		Name:            t.GetMetadata().GetName(),
-		Domains:         t.GetSpec().GetDomains(),
-		ResourceVersion: strconv.Itoa(int(t.GetMetadata().GetVersion())),
-		CreateTime:      t.GetMetadata().GetCreationTimestamp(),
+		Id:               t.GetId(),
+		Name:             t.GetMetadata().GetName(),
+		Domains:          t.GetSpec().GetDomains(),
+		ResourceVersion:  strconv.Itoa(int(t.GetMetadata().GetVersion())),
+		CreateTime:       t.GetMetadata().GetCreationTimestamp(),
+		IdentityProvider: fromV1IdentityProvider(t.GetSpec().GetIdentityProvider()),
 	}
+}
+
+// toV1IdentityProvider copies the draft's identity provider into the backend's
+// message; the field numbers and names are the same.
+func toV1IdentityProvider(p *aigridv1.IdentityProvider) *backendv1.IdentityProvider {
+	if p == nil {
+		return nil
+	}
+	out := &backendv1.IdentityProvider{Title: p.GetTitle(), Description: p.GetDescription(), Enabled: p.Enabled}
+	if c := p.GetConfig(); c != nil {
+		out.Config = &backendv1.OidcConfig{
+			ClientId: c.GetClientId(), ClientSecretSecretName: c.GetClientSecretSecretName(),
+			Issuer: c.GetIssuer(), AuthorizationUrl: c.GetAuthorizationUrl(), TokenUrl: c.GetTokenUrl(),
+			DefaultScopes: c.GetDefaultScopes(), UserInfoUrl: c.GetUserInfoUrl(), JwksUrl: c.GetJwksUrl(),
+			LogoutUrl: c.GetLogoutUrl(), ValidateSignature: c.ValidateSignature,
+		}
+	}
+	return out
+}
+
+// fromV1IdentityProvider is toV1IdentityProvider's inverse.
+func fromV1IdentityProvider(p *backendv1.IdentityProvider) *aigridv1.IdentityProvider {
+	if p == nil {
+		return nil
+	}
+	out := &aigridv1.IdentityProvider{Title: p.GetTitle(), Description: p.GetDescription(), Enabled: p.Enabled}
+	if c := p.GetConfig(); c != nil {
+		out.Config = &aigridv1.OidcConfig{
+			ClientId: c.GetClientId(), ClientSecretSecretName: c.GetClientSecretSecretName(),
+			Issuer: c.GetIssuer(), AuthorizationUrl: c.GetAuthorizationUrl(), TokenUrl: c.GetTokenUrl(),
+			DefaultScopes: c.GetDefaultScopes(), UserInfoUrl: c.GetUserInfoUrl(), JwksUrl: c.GetJwksUrl(),
+			LogoutUrl: c.GetLogoutUrl(), ValidateSignature: c.ValidateSignature,
+		}
+	}
+	return out
 }

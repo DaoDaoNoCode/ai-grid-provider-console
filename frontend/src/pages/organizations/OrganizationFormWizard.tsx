@@ -2,7 +2,7 @@
 // Combined adaptation of OSAC TenantCreatePage and IdentityProviderCreateWizard.
 // Source commit: 8cb0a227e45cc9b17421b6e79ce493ed370ebd5d. Break-glass flow is omitted.
 import { useEffect, useRef } from 'react';
-import { Form, Wizard, WizardStep, useWizardContext } from '@patternfly/react-core';
+import { Alert, Content, Form, Wizard, WizardStep, useWizardContext } from '@patternfly/react-core';
 import type { OrganizationsService } from '../../api/organizations';
 import type { Organization, OrganizationInput } from '../../api/types';
 import { ConsoleWizardFooter } from '../../components/ConsoleWizardFooter';
@@ -57,7 +57,8 @@ const GoToRefusedField: React.FC<{ refused?: object; errorStep?: string }> = ({ 
 /**
  * Creates an organization in three steps: its details, its identity provider, then a review. With
  * `organization` it edits that one through the same steps: every step can be opened from the start,
- * the name is read-only, and Save changes on the Review step stays disabled until something changed.
+ * the name and the identity provider are read-only, and Save changes on the Review step
+ * stays disabled until something changed.
  */
 export const OrganizationFormWizard: React.FC<Props> = ({ service, organization }) => {
   const editing = !!organization;
@@ -113,13 +114,25 @@ export const OrganizationFormWizard: React.FC<Props> = ({ service, organization 
         </WizardStep>
         <WizardStep name="Identity provider" id="organization-idp" isDisabled={!form.detailsValid || saving}>
           <Form maxWidth="750px">
-            <IdentityProviderFields
-              value={values.identityProvider}
-              serverErrors={form.idpServerErrors}
-              onChange={(identityProvider) => setValues({ ...values, identityProvider })}
-              isDisabled={saving}
-              isEditing={!!organization?.identityProvider}
-            />
+            {form.idpLocked && !organization?.identityProvider ? (
+              <Content component="p">
+                This organization has no identity provider. One can be added only when an organization is created.
+              </Content>
+            ) : (
+              <>
+                {form.idpLocked && (
+                  <Alert variant="info" isInline isPlain title="Identity provider cannot be edited">
+                    It is set when the organization is created.
+                  </Alert>
+                )}
+                <IdentityProviderFields
+                  value={values.identityProvider}
+                  serverErrors={form.idpServerErrors}
+                  onChange={(identityProvider) => setValues({ ...values, identityProvider })}
+                  isDisabled={saving || form.idpLocked}
+                />
+              </>
+            )}
           </Form>
         </WizardStep>
         <WizardStep name="Review" id="organization-review" isDisabled={!form.detailsValid || !form.idpValid || saving}>

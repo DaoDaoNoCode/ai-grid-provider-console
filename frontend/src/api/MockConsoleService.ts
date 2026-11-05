@@ -194,7 +194,8 @@ export class MockConsoleService implements ConsoleService {
     const updated: Organization = {
       ...current,
       domains: [...input.domains],
-      identityProvider: structuredClone(input.identityProvider),
+      // As over HTTP: a PATCH leaves an absent identity provider as it is.
+      identityProvider: structuredClone(input.identityProvider ?? current.identityProvider),
       resourceVersion: String(Number(current.resourceVersion) + 1),
     };
     this.organizations[index] = updated;

@@ -133,7 +133,7 @@ it('onboards organization details then IdP, saves only after review and orders n
   expect(service.organizations[0].identityProvider?.config.clientSecretSecret.name).toBe('tenant1-secret');
 });
 
-it('opens an organization from the list and edits its identity provider', async () => {
+it('opens an organization from the list and edits its domains, its identity provider read-only', async () => {
   const service = emptyService();
   await service.createOrganization(input);
   const user = userEvent.setup();
@@ -153,13 +153,20 @@ it('opens an organization from the list and edits its identity provider', async 
   // Nothing changed yet, so Review can't save.
   await openStep(user, 'Review');
   expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
+  // The backend keeps an identity provider immutable, so the edit shows it but can't change it.
   await openStep(user, 'Identity provider');
-  const title = screen.getByRole('textbox', { name: 'Title' });
-  await user.clear(title);
-  await user.paste('Updated SSO');
+  expect(screen.getByRole('textbox', { name: 'Title' })).toBeDisabled();
+  expect(screen.getByRole('textbox', { name: 'Client ID' })).toBeDisabled();
+  expect(screen.getByText('Identity provider cannot be edited')).toBeVisible();
+  await openStep(user, 'Organization details');
+  const domain = screen.getByRole('textbox', { name: 'Domain 1' });
+  await user.clear(domain);
+  await user.paste('updated.example.com');
   await saveEdit(user);
   expect(await screen.findByText('Organization updated')).toBeVisible();
-  expect(await screen.findByTestId('organization-configuration-details')).toHaveTextContent('Updated SSO');
+  const details = await screen.findByTestId('organization-configuration-details');
+  expect(details).toHaveTextContent('updated.example.com');
+  expect(details).toHaveTextContent('https://sso.example.com/tenant1');
 });
 
 it('deletes an organization from its page after its name is typed', async () => {
@@ -284,10 +291,9 @@ it('edit: Cancel leaves at once without changes, and returns to the organization
 
   await user.click(screen.getByTestId('organization-actions'));
   await user.click(screen.getByRole('menuitem', { name: 'Edit' }));
-  await openStep(user, 'Identity provider');
-  const title = await screen.findByRole('textbox', { name: 'Title' });
-  await user.clear(title);
-  await user.paste('Unsaved IdP');
+  const domain = await screen.findByRole('textbox', { name: 'Domain 1' });
+  await user.clear(domain);
+  await user.paste('unsaved.example.com');
   await user.click(screen.getByRole('button', { name: 'Cancel' }));
   await user.click(within(await screen.findByTestId('discard-changes-modal')).getByRole('button', { name: 'Discard' }));
   expect(await screen.findByTestId('organization-configuration-details')).toHaveTextContent('Tenant 1 SSO');
@@ -299,10 +305,9 @@ it('keeps input on conflict', async () => {
   const existing = await service.createOrganization(input);
   const user = userEvent.setup();
   renderAt(`/organizations/${existing.id}/edit`, service);
-  await openStep(user, 'Identity provider');
-  const title = await screen.findByRole('textbox', { name: 'Title' });
-  await user.clear(title);
-  await user.paste('My unsaved title');
+  const domain = await screen.findByRole('textbox', { name: 'Domain 1' });
+  await user.clear(domain);
+  await user.paste('unsaved.example.com');
   // Another tab saves first, so the version this form read is stale.
   await service.updateOrganization(existing.id, input, existing.resourceVersion);
   await saveEdit(user);
@@ -312,9 +317,9 @@ it('keeps input on conflict', async () => {
   ).toBeVisible();
   expect(screen.getByText('Unable to save organization')).toBeVisible();
   expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled();
-  await openStep(user, 'Identity provider');
-  expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('My unsaved title');
-  expect(service.organizations[0].identityProvider?.title).toBe('Tenant 1 SSO');
+  await openStep(user, 'Organization details');
+  expect(screen.getByRole('textbox', { name: 'Domain 1' })).toHaveValue('unsaved.example.com');
+  expect(service.organizations[0].domains).toEqual(['tenant1.example.com']);
   expect(service.organizations[0].resourceVersion).toBe('2');
 });
 
@@ -461,7 +466,7 @@ const serviceOnTenantJson = (fetchFn: typeof fetch) => {
   return service;
 };
 
-it('edit sends PATCH with domains, identity provider, and If-Match', async () => {
+it('edit sends PATCH with the domains and If-Match, leaving the existing identity provider out', async () => {
   const fetchFn = vi.fn(async (url: string, _init?: RequestInit) =>
     jsonResponse(200, { data: url.endsWith('/tenants') ? [tenantJson] : tenantJson }),
   );
@@ -477,14 +482,12 @@ it('edit sends PATCH with domains, identity provider, and If-Match', async () =>
   const patch = fetchFn.mock.calls.find(([, init]) => init?.method === 'PATCH');
   expect(patch?.[0]).toBe(`/api/v1/tenants/${tenantJson.id}`);
   expect(patch?.[1]?.headers).toMatchObject({ 'If-Match': '"3"', 'Content-Type': 'application/json' });
-  // The PoC can't rename, and alias, description, and attributes have no inputs: only these two go.
-  expect(JSON.parse(String(patch?.[1]?.body))).toEqual({
-    domains: ['acme.example.net'],
-    identityProvider: { ...input.identityProvider, title: 'Acme SSO' },
-  });
+  // The name can't change, alias, description and attributes have no inputs, and the backend keeps
+  // an existing identity provider as it is: only the domains go.
+  expect(JSON.parse(String(patch?.[1]?.body))).toEqual({ domains: ['acme.example.net'] });
 });
 
-it('edit: clearing an existing identity provider is not a valid save', async () => {
+it('edit: an existing identity provider is shown read-only', async () => {
   const fetchFn = vi.fn(async (url: string, _init?: RequestInit) =>
     jsonResponse(200, { data: url.endsWith('/tenants') ? [tenantJson] : tenantJson }),
   );
@@ -492,8 +495,11 @@ it('edit: clearing an existing identity provider is not a valid save', async () 
   renderAt(`/organizations/${tenantJson.id}/edit`, serviceOnTenantJson(fetchFn as unknown as typeof fetch));
   await openStep(user, 'Identity provider');
   await waitFor(() => expect(screen.getByRole('textbox', { name: 'Client ID' })).toHaveValue('tenant1-client'));
-  for (const box of screen.getAllByRole('textbox')) await user.clear(box);
-  expect(screen.getByRole('button', { name: 'Review' })).toBeDisabled();
+  for (const box of screen.getAllByRole('textbox')) expect(box).toBeDisabled();
+  expect(screen.getByRole('checkbox', { name: 'Validate signature' })).toBeDisabled();
+  // Nothing can change here, so Review stays open and has nothing to save.
+  await openStep(user, 'Review');
+  expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
 });
 
 it('leaves the create form out of history once the organization is created, so Back skips it', async () => {
@@ -618,9 +624,8 @@ it('locks the edit wizard while it saves', async () => {
     });
   const user = userEvent.setup();
   renderAt(`/organizations/${encodeURIComponent(organization.id)}/edit`, service);
-  await openStep(user, 'Identity provider');
-  await user.click(await screen.findByRole('textbox', { name: 'Title' }));
-  await user.paste(' (new)');
+  await user.click(await screen.findByRole('textbox', { name: 'Domain 1' }));
+  await user.paste('x');
   await saveEdit(user);
   // The steps and the buttons stay put until the save answers.
   expect(screen.getByRole('button', { name: 'Identity provider' })).toBeDisabled();
@@ -635,22 +640,43 @@ it('moves an edit refused for a field to that field, once, and lets the user ret
   const [organization] = service.organizations;
   service.updateOrganization = async () => {
     throw new ServiceError(422, 'The organization is invalid.', {
-      'identityProvider.config.issuer': 'Enter a valid HTTP or HTTPS URL.',
+      'domains.0': 'The domain is already taken.',
     });
   };
   const user = userEvent.setup();
   renderAt(`/organizations/${encodeURIComponent(organization.id)}/edit`, service);
+  await user.click(await screen.findByRole('textbox', { name: 'Domain 1' }));
+  await user.paste('x');
   await openStep(user, 'Identity provider');
-  await user.click(await screen.findByRole('textbox', { name: 'Title' }));
-  await user.paste(' (new)');
   await saveEdit(user);
-  // On the Identity provider step, with the server's message next to Issuer.
-  expect(await screen.findByRole('textbox', { name: 'Issuer' })).toHaveAttribute('aria-invalid', 'true');
-  expect(screen.getByText('Enter a valid HTTP or HTTPS URL.')).toBeVisible();
+  // Back on the Organization details step, with the server's message next to the domain.
+  expect(await screen.findByRole('textbox', { name: 'Domain 1' })).toHaveAttribute('aria-invalid', 'true');
+  expect(screen.getByText('The domain is already taken.')).toBeVisible();
   // Going back to Review stays there: the move happens once per refused save.
   await openStep(user, 'Review');
   expect(screen.getByRole('button', { name: 'Save changes' })).toBeVisible();
-  expect(screen.queryByRole('textbox', { name: 'Issuer' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('textbox', { name: 'Domain 1' })).not.toBeInTheDocument();
+});
+
+it('edit: an organization without an identity provider says one can be added only on create', async () => {
+  const service = emptyService();
+  const organization = await service.createOrganization({ name: input.name, domains: input.domains });
+  const update = vi.spyOn(service, 'updateOrganization');
+  const user = userEvent.setup();
+  renderAt(`/organizations/${encodeURIComponent(organization.id)}/edit`, service);
+  await openStep(user, 'Identity provider');
+  expect(
+    screen.getByText(
+      'This organization has no identity provider. One can be added only when an organization is created.',
+    ),
+  ).toBeVisible();
+  expect(screen.queryByRole('textbox', { name: 'Client ID' })).not.toBeInTheDocument();
+  await openStep(user, 'Organization details');
+  await user.click(screen.getByRole('textbox', { name: 'Domain 1' }));
+  await user.paste('x');
+  await saveEdit(user);
+  expect(await screen.findByText('Organization updated')).toBeVisible();
+  expect(update.mock.calls[0][1].identityProvider).toBeUndefined();
 });
 
 it('reloads an organization after a stale delete from its page, keeping the typed name, so a retry succeeds', async () => {
@@ -753,16 +779,21 @@ it('heads the wizard sections at h2, moves focus to an added domain, and names t
   expect(within(modal).getByRole('textbox', { name: `Type ${organization.name} to confirm:` })).toBeVisible();
 });
 
-it('edit: an identity provider saved without a JWKS URL says why at once', async () => {
+it('edit: an identity provider saved without a JWKS URL is kept, and the domains still save', async () => {
   const service = new MockConsoleService();
   const [organization] = service.organizations;
-  // Saved before the JWKS rule, with Validate signature on.
+  // Saved before the JWKS rule, with Validate signature on. The edit can't change the provider and
+  // leaves it out of the save, so the rule doesn't block it.
   organization.identityProvider = {
     ...input.identityProvider,
     config: { ...input.identityProvider.config, jwksUrl: '', validateSignature: true },
   };
+  const update = vi.spyOn(service, 'updateOrganization');
   const user = userEvent.setup();
   renderAt(`/organizations/${encodeURIComponent(organization.id)}/edit`, service);
-  await openStep(user, 'Identity provider');
-  expect(await screen.findByText('Enter the JWKS URL, or turn off Validate signature.')).toBeVisible();
+  await user.click(await screen.findByRole('textbox', { name: 'Domain 1' }));
+  await user.paste('x');
+  await saveEdit(user);
+  expect(await screen.findByText('Organization updated')).toBeVisible();
+  expect(update.mock.calls[0][1].identityProvider).toBeUndefined();
 });

@@ -1,6 +1,7 @@
 // Stopgap: the messages of the backend's real ai_grid.v1 Tenants service, copied from
 // ai-grid-provider-backend proto/ai_grid/v1 at 8c1a1bc (metadata_type, tenant_type,
-// tenants_service), so
+// tenants_service), with TenantSpec.identity_provider, IdentityProvider and OidcConfig from
+// 57b2fba, so
 // the BFF can call those RPCs. Fields the BFF doesn't use are
 // left out. Field numbers, names and types are unchanged; the validation and HTTP
 // options are dropped. The package is renamed because the draft in ../../v1 declares the same
@@ -201,10 +202,11 @@ func (x *Tenant) GetStatus() *TenantStatus {
 }
 
 type TenantSpec struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Domains       []string               `protobuf:"bytes,1,rep,name=domains,proto3" json:"domains,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Domains          []string               `protobuf:"bytes,1,rep,name=domains,proto3" json:"domains,omitempty"`
+	IdentityProvider *IdentityProvider      `protobuf:"bytes,2,opt,name=identity_provider,json=identityProvider,proto3" json:"identity_provider,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *TenantSpec) Reset() {
@@ -244,6 +246,197 @@ func (x *TenantSpec) GetDomains() []string {
 	return nil
 }
 
+func (x *TenantSpec) GetIdentityProvider() *IdentityProvider {
+	if x != nil {
+		return x.IdentityProvider
+	}
+	return nil
+}
+
+type IdentityProvider struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Title         string                 `protobuf:"bytes,1,opt,name=title,proto3" json:"title,omitempty"`
+	Description   string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
+	Enabled       *bool                  `protobuf:"varint,3,opt,name=enabled,proto3,oneof" json:"enabled,omitempty"`
+	Config        *OidcConfig            `protobuf:"bytes,4,opt,name=config,proto3" json:"config,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IdentityProvider) Reset() {
+	*x = IdentityProvider{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IdentityProvider) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IdentityProvider) ProtoMessage() {}
+
+func (x *IdentityProvider) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IdentityProvider.ProtoReflect.Descriptor instead.
+func (*IdentityProvider) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *IdentityProvider) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *IdentityProvider) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *IdentityProvider) GetEnabled() bool {
+	if x != nil && x.Enabled != nil {
+		return *x.Enabled
+	}
+	return false
+}
+
+func (x *IdentityProvider) GetConfig() *OidcConfig {
+	if x != nil {
+		return x.Config
+	}
+	return nil
+}
+
+type OidcConfig struct {
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	ClientId               string                 `protobuf:"bytes,1,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
+	ClientSecretSecretName string                 `protobuf:"bytes,2,opt,name=client_secret_secret_name,json=clientSecretSecretName,proto3" json:"client_secret_secret_name,omitempty"`
+	Issuer                 string                 `protobuf:"bytes,3,opt,name=issuer,proto3" json:"issuer,omitempty"`
+	AuthorizationUrl       string                 `protobuf:"bytes,4,opt,name=authorization_url,json=authorizationUrl,proto3" json:"authorization_url,omitempty"`
+	TokenUrl               string                 `protobuf:"bytes,5,opt,name=token_url,json=tokenUrl,proto3" json:"token_url,omitempty"`
+	DefaultScopes          string                 `protobuf:"bytes,6,opt,name=default_scopes,json=defaultScopes,proto3" json:"default_scopes,omitempty"`
+	UserInfoUrl            string                 `protobuf:"bytes,7,opt,name=user_info_url,json=userInfoUrl,proto3" json:"user_info_url,omitempty"`
+	JwksUrl                string                 `protobuf:"bytes,8,opt,name=jwks_url,json=jwksUrl,proto3" json:"jwks_url,omitempty"`
+	LogoutUrl              string                 `protobuf:"bytes,9,opt,name=logout_url,json=logoutUrl,proto3" json:"logout_url,omitempty"`
+	ValidateSignature      *bool                  `protobuf:"varint,10,opt,name=validate_signature,json=validateSignature,proto3,oneof" json:"validate_signature,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *OidcConfig) Reset() {
+	*x = OidcConfig{}
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OidcConfig) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OidcConfig) ProtoMessage() {}
+
+func (x *OidcConfig) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OidcConfig.ProtoReflect.Descriptor instead.
+func (*OidcConfig) Descriptor() ([]byte, []int) {
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *OidcConfig) GetClientId() string {
+	if x != nil {
+		return x.ClientId
+	}
+	return ""
+}
+
+func (x *OidcConfig) GetClientSecretSecretName() string {
+	if x != nil {
+		return x.ClientSecretSecretName
+	}
+	return ""
+}
+
+func (x *OidcConfig) GetIssuer() string {
+	if x != nil {
+		return x.Issuer
+	}
+	return ""
+}
+
+func (x *OidcConfig) GetAuthorizationUrl() string {
+	if x != nil {
+		return x.AuthorizationUrl
+	}
+	return ""
+}
+
+func (x *OidcConfig) GetTokenUrl() string {
+	if x != nil {
+		return x.TokenUrl
+	}
+	return ""
+}
+
+func (x *OidcConfig) GetDefaultScopes() string {
+	if x != nil {
+		return x.DefaultScopes
+	}
+	return ""
+}
+
+func (x *OidcConfig) GetUserInfoUrl() string {
+	if x != nil {
+		return x.UserInfoUrl
+	}
+	return ""
+}
+
+func (x *OidcConfig) GetJwksUrl() string {
+	if x != nil {
+		return x.JwksUrl
+	}
+	return ""
+}
+
+func (x *OidcConfig) GetLogoutUrl() string {
+	if x != nil {
+		return x.LogoutUrl
+	}
+	return ""
+}
+
+func (x *OidcConfig) GetValidateSignature() bool {
+	if x != nil && x.ValidateSignature != nil {
+		return *x.ValidateSignature
+	}
+	return false
+}
+
 type TenantStatus struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -252,7 +445,7 @@ type TenantStatus struct {
 
 func (x *TenantStatus) Reset() {
 	*x = TenantStatus{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[3]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -264,7 +457,7 @@ func (x *TenantStatus) String() string {
 func (*TenantStatus) ProtoMessage() {}
 
 func (x *TenantStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[3]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -277,7 +470,7 @@ func (x *TenantStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TenantStatus.ProtoReflect.Descriptor instead.
 func (*TenantStatus) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{3}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{5}
 }
 
 type TenantsListRequest struct {
@@ -292,7 +485,7 @@ type TenantsListRequest struct {
 
 func (x *TenantsListRequest) Reset() {
 	*x = TenantsListRequest{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[4]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -304,7 +497,7 @@ func (x *TenantsListRequest) String() string {
 func (*TenantsListRequest) ProtoMessage() {}
 
 func (x *TenantsListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[4]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -317,7 +510,7 @@ func (x *TenantsListRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TenantsListRequest.ProtoReflect.Descriptor instead.
 func (*TenantsListRequest) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{4}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *TenantsListRequest) GetOffset() int32 {
@@ -359,7 +552,7 @@ type TenantsListResponse struct {
 
 func (x *TenantsListResponse) Reset() {
 	*x = TenantsListResponse{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[5]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -371,7 +564,7 @@ func (x *TenantsListResponse) String() string {
 func (*TenantsListResponse) ProtoMessage() {}
 
 func (x *TenantsListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[5]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -384,7 +577,7 @@ func (x *TenantsListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TenantsListResponse.ProtoReflect.Descriptor instead.
 func (*TenantsListResponse) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{5}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *TenantsListResponse) GetSize() int32 {
@@ -417,7 +610,7 @@ type TenantsGetRequest struct {
 
 func (x *TenantsGetRequest) Reset() {
 	*x = TenantsGetRequest{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[6]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -429,7 +622,7 @@ func (x *TenantsGetRequest) String() string {
 func (*TenantsGetRequest) ProtoMessage() {}
 
 func (x *TenantsGetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[6]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -442,7 +635,7 @@ func (x *TenantsGetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TenantsGetRequest.ProtoReflect.Descriptor instead.
 func (*TenantsGetRequest) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{6}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *TenantsGetRequest) GetId() string {
@@ -461,7 +654,7 @@ type TenantsGetResponse struct {
 
 func (x *TenantsGetResponse) Reset() {
 	*x = TenantsGetResponse{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[7]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -473,7 +666,7 @@ func (x *TenantsGetResponse) String() string {
 func (*TenantsGetResponse) ProtoMessage() {}
 
 func (x *TenantsGetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[7]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -486,7 +679,7 @@ func (x *TenantsGetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TenantsGetResponse.ProtoReflect.Descriptor instead.
 func (*TenantsGetResponse) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{7}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *TenantsGetResponse) GetObject() *Tenant {
@@ -505,7 +698,7 @@ type TenantsCreateRequest struct {
 
 func (x *TenantsCreateRequest) Reset() {
 	*x = TenantsCreateRequest{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[8]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -517,7 +710,7 @@ func (x *TenantsCreateRequest) String() string {
 func (*TenantsCreateRequest) ProtoMessage() {}
 
 func (x *TenantsCreateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[8]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -530,7 +723,7 @@ func (x *TenantsCreateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TenantsCreateRequest.ProtoReflect.Descriptor instead.
 func (*TenantsCreateRequest) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{8}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *TenantsCreateRequest) GetObject() *Tenant {
@@ -549,7 +742,7 @@ type TenantsCreateResponse struct {
 
 func (x *TenantsCreateResponse) Reset() {
 	*x = TenantsCreateResponse{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[9]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -561,7 +754,7 @@ func (x *TenantsCreateResponse) String() string {
 func (*TenantsCreateResponse) ProtoMessage() {}
 
 func (x *TenantsCreateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[9]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -574,7 +767,7 @@ func (x *TenantsCreateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TenantsCreateResponse.ProtoReflect.Descriptor instead.
 func (*TenantsCreateResponse) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{9}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *TenantsCreateResponse) GetObject() *Tenant {
@@ -595,7 +788,7 @@ type TenantsUpdateRequest struct {
 
 func (x *TenantsUpdateRequest) Reset() {
 	*x = TenantsUpdateRequest{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[10]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -607,7 +800,7 @@ func (x *TenantsUpdateRequest) String() string {
 func (*TenantsUpdateRequest) ProtoMessage() {}
 
 func (x *TenantsUpdateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[10]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -620,7 +813,7 @@ func (x *TenantsUpdateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TenantsUpdateRequest.ProtoReflect.Descriptor instead.
 func (*TenantsUpdateRequest) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{10}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *TenantsUpdateRequest) GetObject() *Tenant {
@@ -653,7 +846,7 @@ type TenantsUpdateResponse struct {
 
 func (x *TenantsUpdateResponse) Reset() {
 	*x = TenantsUpdateResponse{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[11]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -665,7 +858,7 @@ func (x *TenantsUpdateResponse) String() string {
 func (*TenantsUpdateResponse) ProtoMessage() {}
 
 func (x *TenantsUpdateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[11]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -678,7 +871,7 @@ func (x *TenantsUpdateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TenantsUpdateResponse.ProtoReflect.Descriptor instead.
 func (*TenantsUpdateResponse) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{11}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *TenantsUpdateResponse) GetObject() *Tenant {
@@ -698,7 +891,7 @@ type TenantsDeleteRequest struct {
 
 func (x *TenantsDeleteRequest) Reset() {
 	*x = TenantsDeleteRequest{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[12]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -710,7 +903,7 @@ func (x *TenantsDeleteRequest) String() string {
 func (*TenantsDeleteRequest) ProtoMessage() {}
 
 func (x *TenantsDeleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[12]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -723,7 +916,7 @@ func (x *TenantsDeleteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TenantsDeleteRequest.ProtoReflect.Descriptor instead.
 func (*TenantsDeleteRequest) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{12}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *TenantsDeleteRequest) GetId() string {
@@ -748,7 +941,7 @@ type TenantsDeleteResponse struct {
 
 func (x *TenantsDeleteResponse) Reset() {
 	*x = TenantsDeleteResponse{}
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[13]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -760,7 +953,7 @@ func (x *TenantsDeleteResponse) String() string {
 func (*TenantsDeleteResponse) ProtoMessage() {}
 
 func (x *TenantsDeleteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[13]
+	mi := &file_ai_grid_backend_v1_backend_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -773,7 +966,7 @@ func (x *TenantsDeleteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TenantsDeleteResponse.ProtoReflect.Descriptor instead.
 func (*TenantsDeleteResponse) Descriptor() ([]byte, []int) {
-	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{13}
+	return file_ai_grid_backend_v1_backend_proto_rawDescGZIP(), []int{15}
 }
 
 var File_ai_grid_backend_v1_backend_proto protoreflect.FileDescriptor
@@ -800,10 +993,33 @@ const file_ai_grid_backend_v1_backend_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x128\n" +
 	"\bmetadata\x18\x02 \x01(\v2\x1c.ai_grid.backend.v1.MetadataR\bmetadata\x122\n" +
 	"\x04spec\x18\x03 \x01(\v2\x1e.ai_grid.backend.v1.TenantSpecR\x04spec\x128\n" +
-	"\x06status\x18\x04 \x01(\v2 .ai_grid.backend.v1.TenantStatusR\x06status\"&\n" +
+	"\x06status\x18\x04 \x01(\v2 .ai_grid.backend.v1.TenantStatusR\x06status\"y\n" +
 	"\n" +
 	"TenantSpec\x12\x18\n" +
-	"\adomains\x18\x01 \x03(\tR\adomains\"\x0e\n" +
+	"\adomains\x18\x01 \x03(\tR\adomains\x12Q\n" +
+	"\x11identity_provider\x18\x02 \x01(\v2$.ai_grid.backend.v1.IdentityProviderR\x10identityProvider\"\xad\x01\n" +
+	"\x10IdentityProvider\x12\x14\n" +
+	"\x05title\x18\x01 \x01(\tR\x05title\x12 \n" +
+	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x1d\n" +
+	"\aenabled\x18\x03 \x01(\bH\x00R\aenabled\x88\x01\x01\x126\n" +
+	"\x06config\x18\x04 \x01(\v2\x1e.ai_grid.backend.v1.OidcConfigR\x06configB\n" +
+	"\n" +
+	"\b_enabled\"\x96\x03\n" +
+	"\n" +
+	"OidcConfig\x12\x1b\n" +
+	"\tclient_id\x18\x01 \x01(\tR\bclientId\x129\n" +
+	"\x19client_secret_secret_name\x18\x02 \x01(\tR\x16clientSecretSecretName\x12\x16\n" +
+	"\x06issuer\x18\x03 \x01(\tR\x06issuer\x12+\n" +
+	"\x11authorization_url\x18\x04 \x01(\tR\x10authorizationUrl\x12\x1b\n" +
+	"\ttoken_url\x18\x05 \x01(\tR\btokenUrl\x12%\n" +
+	"\x0edefault_scopes\x18\x06 \x01(\tR\rdefaultScopes\x12\"\n" +
+	"\ruser_info_url\x18\a \x01(\tR\vuserInfoUrl\x12\x19\n" +
+	"\bjwks_url\x18\b \x01(\tR\ajwksUrl\x12\x1d\n" +
+	"\n" +
+	"logout_url\x18\t \x01(\tR\tlogoutUrl\x122\n" +
+	"\x12validate_signature\x18\n" +
+	" \x01(\bH\x00R\x11validateSignature\x88\x01\x01B\x15\n" +
+	"\x13_validate_signature\"\x0e\n" +
 	"\fTenantStatus\"\xae\x01\n" +
 	"\x12TenantsListRequest\x12\x1b\n" +
 	"\x06offset\x18\x01 \x01(\x05H\x00R\x06offset\x88\x01\x01\x12\x19\n" +
@@ -850,47 +1066,51 @@ func file_ai_grid_backend_v1_backend_proto_rawDescGZIP() []byte {
 	return file_ai_grid_backend_v1_backend_proto_rawDescData
 }
 
-var file_ai_grid_backend_v1_backend_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_ai_grid_backend_v1_backend_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_ai_grid_backend_v1_backend_proto_goTypes = []any{
 	(*Metadata)(nil),              // 0: ai_grid.backend.v1.Metadata
 	(*Tenant)(nil),                // 1: ai_grid.backend.v1.Tenant
 	(*TenantSpec)(nil),            // 2: ai_grid.backend.v1.TenantSpec
-	(*TenantStatus)(nil),          // 3: ai_grid.backend.v1.TenantStatus
-	(*TenantsListRequest)(nil),    // 4: ai_grid.backend.v1.TenantsListRequest
-	(*TenantsListResponse)(nil),   // 5: ai_grid.backend.v1.TenantsListResponse
-	(*TenantsGetRequest)(nil),     // 6: ai_grid.backend.v1.TenantsGetRequest
-	(*TenantsGetResponse)(nil),    // 7: ai_grid.backend.v1.TenantsGetResponse
-	(*TenantsCreateRequest)(nil),  // 8: ai_grid.backend.v1.TenantsCreateRequest
-	(*TenantsCreateResponse)(nil), // 9: ai_grid.backend.v1.TenantsCreateResponse
-	(*TenantsUpdateRequest)(nil),  // 10: ai_grid.backend.v1.TenantsUpdateRequest
-	(*TenantsUpdateResponse)(nil), // 11: ai_grid.backend.v1.TenantsUpdateResponse
-	(*TenantsDeleteRequest)(nil),  // 12: ai_grid.backend.v1.TenantsDeleteRequest
-	(*TenantsDeleteResponse)(nil), // 13: ai_grid.backend.v1.TenantsDeleteResponse
-	nil,                           // 14: ai_grid.backend.v1.Metadata.LabelsEntry
-	nil,                           // 15: ai_grid.backend.v1.Metadata.AnnotationsEntry
-	(*timestamppb.Timestamp)(nil), // 16: google.protobuf.Timestamp
-	(*fieldmaskpb.FieldMask)(nil), // 17: google.protobuf.FieldMask
+	(*IdentityProvider)(nil),      // 3: ai_grid.backend.v1.IdentityProvider
+	(*OidcConfig)(nil),            // 4: ai_grid.backend.v1.OidcConfig
+	(*TenantStatus)(nil),          // 5: ai_grid.backend.v1.TenantStatus
+	(*TenantsListRequest)(nil),    // 6: ai_grid.backend.v1.TenantsListRequest
+	(*TenantsListResponse)(nil),   // 7: ai_grid.backend.v1.TenantsListResponse
+	(*TenantsGetRequest)(nil),     // 8: ai_grid.backend.v1.TenantsGetRequest
+	(*TenantsGetResponse)(nil),    // 9: ai_grid.backend.v1.TenantsGetResponse
+	(*TenantsCreateRequest)(nil),  // 10: ai_grid.backend.v1.TenantsCreateRequest
+	(*TenantsCreateResponse)(nil), // 11: ai_grid.backend.v1.TenantsCreateResponse
+	(*TenantsUpdateRequest)(nil),  // 12: ai_grid.backend.v1.TenantsUpdateRequest
+	(*TenantsUpdateResponse)(nil), // 13: ai_grid.backend.v1.TenantsUpdateResponse
+	(*TenantsDeleteRequest)(nil),  // 14: ai_grid.backend.v1.TenantsDeleteRequest
+	(*TenantsDeleteResponse)(nil), // 15: ai_grid.backend.v1.TenantsDeleteResponse
+	nil,                           // 16: ai_grid.backend.v1.Metadata.LabelsEntry
+	nil,                           // 17: ai_grid.backend.v1.Metadata.AnnotationsEntry
+	(*timestamppb.Timestamp)(nil), // 18: google.protobuf.Timestamp
+	(*fieldmaskpb.FieldMask)(nil), // 19: google.protobuf.FieldMask
 }
 var file_ai_grid_backend_v1_backend_proto_depIdxs = []int32{
-	16, // 0: ai_grid.backend.v1.Metadata.creation_timestamp:type_name -> google.protobuf.Timestamp
-	16, // 1: ai_grid.backend.v1.Metadata.deletion_timestamp:type_name -> google.protobuf.Timestamp
-	14, // 2: ai_grid.backend.v1.Metadata.labels:type_name -> ai_grid.backend.v1.Metadata.LabelsEntry
-	15, // 3: ai_grid.backend.v1.Metadata.annotations:type_name -> ai_grid.backend.v1.Metadata.AnnotationsEntry
+	18, // 0: ai_grid.backend.v1.Metadata.creation_timestamp:type_name -> google.protobuf.Timestamp
+	18, // 1: ai_grid.backend.v1.Metadata.deletion_timestamp:type_name -> google.protobuf.Timestamp
+	16, // 2: ai_grid.backend.v1.Metadata.labels:type_name -> ai_grid.backend.v1.Metadata.LabelsEntry
+	17, // 3: ai_grid.backend.v1.Metadata.annotations:type_name -> ai_grid.backend.v1.Metadata.AnnotationsEntry
 	0,  // 4: ai_grid.backend.v1.Tenant.metadata:type_name -> ai_grid.backend.v1.Metadata
 	2,  // 5: ai_grid.backend.v1.Tenant.spec:type_name -> ai_grid.backend.v1.TenantSpec
-	3,  // 6: ai_grid.backend.v1.Tenant.status:type_name -> ai_grid.backend.v1.TenantStatus
-	1,  // 7: ai_grid.backend.v1.TenantsListResponse.items:type_name -> ai_grid.backend.v1.Tenant
-	1,  // 8: ai_grid.backend.v1.TenantsGetResponse.object:type_name -> ai_grid.backend.v1.Tenant
-	1,  // 9: ai_grid.backend.v1.TenantsCreateRequest.object:type_name -> ai_grid.backend.v1.Tenant
-	1,  // 10: ai_grid.backend.v1.TenantsCreateResponse.object:type_name -> ai_grid.backend.v1.Tenant
-	1,  // 11: ai_grid.backend.v1.TenantsUpdateRequest.object:type_name -> ai_grid.backend.v1.Tenant
-	17, // 12: ai_grid.backend.v1.TenantsUpdateRequest.update_mask:type_name -> google.protobuf.FieldMask
-	1,  // 13: ai_grid.backend.v1.TenantsUpdateResponse.object:type_name -> ai_grid.backend.v1.Tenant
-	14, // [14:14] is the sub-list for method output_type
-	14, // [14:14] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	5,  // 6: ai_grid.backend.v1.Tenant.status:type_name -> ai_grid.backend.v1.TenantStatus
+	3,  // 7: ai_grid.backend.v1.TenantSpec.identity_provider:type_name -> ai_grid.backend.v1.IdentityProvider
+	4,  // 8: ai_grid.backend.v1.IdentityProvider.config:type_name -> ai_grid.backend.v1.OidcConfig
+	1,  // 9: ai_grid.backend.v1.TenantsListResponse.items:type_name -> ai_grid.backend.v1.Tenant
+	1,  // 10: ai_grid.backend.v1.TenantsGetResponse.object:type_name -> ai_grid.backend.v1.Tenant
+	1,  // 11: ai_grid.backend.v1.TenantsCreateRequest.object:type_name -> ai_grid.backend.v1.Tenant
+	1,  // 12: ai_grid.backend.v1.TenantsCreateResponse.object:type_name -> ai_grid.backend.v1.Tenant
+	1,  // 13: ai_grid.backend.v1.TenantsUpdateRequest.object:type_name -> ai_grid.backend.v1.Tenant
+	19, // 14: ai_grid.backend.v1.TenantsUpdateRequest.update_mask:type_name -> google.protobuf.FieldMask
+	1,  // 15: ai_grid.backend.v1.TenantsUpdateResponse.object:type_name -> ai_grid.backend.v1.Tenant
+	16, // [16:16] is the sub-list for method output_type
+	16, // [16:16] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_ai_grid_backend_v1_backend_proto_init() }
@@ -898,14 +1118,16 @@ func file_ai_grid_backend_v1_backend_proto_init() {
 	if File_ai_grid_backend_v1_backend_proto != nil {
 		return
 	}
+	file_ai_grid_backend_v1_backend_proto_msgTypes[3].OneofWrappers = []any{}
 	file_ai_grid_backend_v1_backend_proto_msgTypes[4].OneofWrappers = []any{}
+	file_ai_grid_backend_v1_backend_proto_msgTypes[6].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ai_grid_backend_v1_backend_proto_rawDesc), len(file_ai_grid_backend_v1_backend_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   16,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
