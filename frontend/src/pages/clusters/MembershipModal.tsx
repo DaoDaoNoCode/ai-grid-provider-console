@@ -1,5 +1,15 @@
 import { useState } from 'react';
-import { Alert, Button, Form, Modal, ModalBody, ModalFooter, ModalHeader, Stack } from '@patternfly/react-core';
+import {
+  Alert,
+  Button,
+  Content,
+  Form,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
+  Stack,
+} from '@patternfly/react-core';
 import type { ClusterRole, GridMembership } from '../../api/clusters';
 import { ServiceError } from '../../api/ConsoleService';
 import { DeleteModal } from '../../components/DeleteModal';
@@ -98,8 +108,11 @@ export const MembershipModal: React.FC<Props> = ({ cluster, join, onConfirm, onC
       >
         <Stack hasGutter>
           {receivesRequests(cluster) && (
-            <Alert isInline variant="warning" title={removeText.subscriptionsTitle}>
-              {removeText.subscriptionsBody}
+            <Alert isInline variant="warning" title={removeText.warningTitle}>
+              <Content>
+                <Content component="p">{removeText.warningBody}</Content>
+                <Content component="p">{removeText.warningDetail}</Content>
+              </Content>
             </Alert>
           )}
           {/* Every cluster but the hub's own also leaves the cross-cluster network (Submariner):
