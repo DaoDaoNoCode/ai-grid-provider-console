@@ -699,11 +699,13 @@ describe('a background poll', () => {
     await user.click(within(await rowOf('granite-3-8b')).getByRole('button', { name: 'Details' }));
     await user.click(screen.getByRole('button', { name: 'Synced on site1' }));
     const modal = await screen.findByRole('dialog', { name: 'Granite 3.3 8B Instruct on site1' });
-    const deployment = () => within(modal).getByText('Deployment').closest('.pf-v6-c-description-list__group');
-    expect(deployment()).toHaveTextContent(/^DeploymentNot on the cluster yet$/);
+    const reported = within(modal).getByLabelText('What site1 reported');
+    const deployment = () =>
+      within(reported).getByText('Model on the cluster').closest('.pf-v6-c-description-list__group');
+    expect(deployment()).toHaveTextContent(/^Model on the clusterNot deployed yet$/);
     granite.status!.clusters[0].deployment = ModelDeploymentState.RUNNING;
     await act(() => vi.advanceTimersByTimeAsync(30000));
-    await waitFor(() => expect(deployment()).toHaveTextContent(/^DeploymentRunning$/));
+    await waitFor(() => expect(deployment()).toHaveTextContent(/^Model on the clusterRunning$/));
     const reports = granite.status!.clusters;
     granite.status!.clusters = [];
     await act(() => vi.advanceTimersByTimeAsync(30000));
@@ -2806,6 +2808,9 @@ describe('the deployment and MaaS statuses', () => {
     renderAt('/models', service);
     await user.click(await screen.findByRole('button', { name: 'Pending availability of smollm2' }));
     const dialog = await screen.findByRole('dialog', { name: 'smollm2 availability' });
+    expect(dialog).toHaveTextContent(
+      'Consumers can’t access this model yet. To enable access, set up a subscription. The model must also be ready on its clusters; its status shows where it isn’t.',
+    );
     await user.click(within(dialog).getByRole('link', { name: 'Go to the model' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'smollm2' })).toBeVisible();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -2845,9 +2850,10 @@ describe('the deployment and MaaS statuses', () => {
     expect(rows.map((r) => cellIn(r, 'Status').textContent)).toEqual(['Ready on site1', 'Starting on site2']);
     await user.click(within(rows[1]).getByRole('button', { name: 'Starting on site2' }));
     const modal = await screen.findByRole('dialog', { name: 'smollm2 on site2' });
-    const deployment = within(modal).getByText('Deployment').closest('.pf-v6-c-description-list__group') as HTMLElement;
-    expect(deployment).toHaveTextContent(/^DeploymentStarting$/);
-    expect(modal).toHaveTextContent('Deployment does not have minimum availability.');
+    const reported = within(modal).getByLabelText('What site2 reported');
+    expect(reported).toHaveTextContent('Model on the clusterStarting');
+    expect(reported).toHaveTextContent('Model messageDeployment does not have minimum availability.');
+    expect(reported).not.toHaveTextContent(/Deployment(?! does)/);
   });
 
   it("lists MaaS on each ingress cluster on the model page, with MaaS's message", async () => {

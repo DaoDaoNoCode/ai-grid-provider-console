@@ -106,7 +106,7 @@ export type AvailabilityView = {
   body?: string;
   /** The model needs a subscription: the dialog links to Subscriptions. */
   subscriptionsLink?: boolean;
-  /** Availability also waits on the deployment: the dialog links to the model's page. */
+  /** Availability also waits on the model's clusters: the dialog links to the model's page. */
   modelsLink?: boolean;
 };
 
@@ -123,7 +123,7 @@ const availabilityViews: Record<MaaSWord, AvailabilityView> = {
     label: 'Pending',
     subtext: 'Awaiting subscription and backend',
     heading: 'Awaiting subscription and backend',
-    body: 'Consumers can’t access this model yet. To enable access, set up a subscription. Availability also depends on a healthy inference service. Check the deployment status on the Models page.',
+    body: 'Consumers can’t access this model yet. To enable access, set up a subscription. The model must also be ready on its clusters; its status shows where it isn’t.',
     subscriptionsLink: true,
     modelsLink: true,
   },
