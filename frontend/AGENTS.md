@@ -84,9 +84,10 @@ a failed load.
 - On the Clusters list, a status with a non-empty hub message is filled and opens that cluster's
   message as text in a dialog, including Ready. Without a message it stays outline and
   noninteractive. AI Grid status stays outline. Refresh keeps the selected cluster's identity.
-- In Create subscription and its Add models picker, only Partially ready models with cluster
-  reports open the shared model status dialog. Suspend the picker while status is open; retain its
-  filter, sort and unconfirmed selections, then restore focus to the trigger when returning.
+- In Create subscription and its Add models picker, every model shows its status as the Models list
+  does (`ModelStatusLabel`), and only Partially ready models with cluster reports open the shared
+  model status dialog. Suspend the picker while status is open; retain its filter, sort and
+  unconfirmed selections, then restore focus to the trigger when returning.
   Inspecting status preserves the subscription draft and token limits. Edit and view stay unchanged.
 - A label is clickable (filled) where a whole column opens each row's details, for every row: the
   Status column of a model's clusters table (`ModelClustersTable`), which opens what that cluster

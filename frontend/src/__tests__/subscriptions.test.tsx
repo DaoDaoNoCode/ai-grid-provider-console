@@ -1534,6 +1534,32 @@ describe('subscription creation model status', () => {
       vi.useRealTimers();
     }
   });
+  it('words each model in the picker by its state, as the Models list does, when its status opens nothing', async () => {
+    const user = userEvent.setup();
+    const service = seeded();
+    // Partially ready with no cluster reports: the phase still says Ready.
+    const partial = fleetOf(service).find('granite-3-8b');
+    partial.status!.state = ModelState.PARTIALLY_READY;
+    partial.status!.clusters = [];
+    // Ready, from a backend whose legacy phase still says partially available.
+    const legacy = fleetOf(service).find('llama-3-70b');
+    legacy.status!.phase = ModelPhase.PARTIALLY_AVAILABLE;
+    legacy.status!.state = ModelState.READY;
+    renderAt('/subscriptions/create', service);
+    await user.click(await screen.findByRole('button', { name: 'Add models' }));
+    const picker = await screen.findByRole('dialog', { name: 'Add models' });
+    const statusOf = (name: string) => {
+      const row = within(picker)
+        .getByRole('checkbox', { name: `Select ${name}` })
+        .closest('tr')!;
+      const headers = within(row.closest('table')!).getAllByRole('columnheader');
+      return within(row).getAllByRole('cell')[headers.findIndex((h) => h.textContent === 'Status')];
+    };
+    expect(statusOf('Granite 3.3 8B Instruct')).toHaveTextContent(/^Partially ready$/);
+    expect(statusOf('Llama 3.3 70B Instruct')).toHaveTextContent(/^Ready$/);
+    expect(within(picker).queryByRole('button', { name: /^(Partially ready|Ready)/ })).not.toBeInTheDocument();
+  });
+
   it('keeps model status noninteractive while editing an existing subscription', async () => {
     const user = userEvent.setup();
     const service = seeded();
