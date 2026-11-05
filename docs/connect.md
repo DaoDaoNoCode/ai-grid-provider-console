@@ -193,7 +193,10 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   description from the `openshift.io/display-name` and `openshift.io/description` annotations
   the backend documents; the phase from `status.phase` (`MODEL_PHASE_PARTIALLY_AVAILABLE` is
   Partially ready; `UNSPECIFIED` with reason `SavedToGit` is Saved to Git, any other
-  unspecified phase Unknown); `status.message` as the status's tooltip and the page's alert;
+  unspecified phase Unknown); `status.message` as the status's tooltip; the page's alert
+  explains `status.state` from the placed clusters' reports, each cluster that isn't Ready with its
+  word and its message, and for Failed the failure KServe names in `status.reason`
+  (`rolloutExplanation`), never MaaS's, which the Availability section shows;
   `status.url` as the endpoint; `status.placement.selected_clusters` (cluster names) in the
   Clusters column (no Replicas column: the model page shows it); the main container's `requests` as CPU, memory and accelerators (any request
   with a domain, such as `nvidia.com/gpu`), worded as Accelerators ("1 GPU (nvidia.com/gpu)", or

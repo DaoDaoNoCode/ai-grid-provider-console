@@ -14,7 +14,7 @@ import { ModelClustersTable } from './ModelClustersTable';
 import { ModelMaaSTable } from './ModelMaaSTable';
 import { ModelAvailability } from './ModelAvailability';
 import { ModelStatusDetails, ModelStatusLabel } from './ModelStatus';
-import { PARTIALLY_AVAILABLE, availabilityOf, hasModelStatusDetails } from './modelStatusInfo';
+import { availabilityOf, rolloutExplanation } from './modelStatusInfo';
 import { titleOf } from './modelView';
 import { useDeleteModel } from './useDeleteModel';
 import { useModel } from './useModels';
@@ -49,15 +49,16 @@ export const ModelDetailsPage: React.FC = () => {
     return (
       <Flex direction={{ default: 'column' }} flexWrap={{ default: 'nowrap' }} spaceItems={{ default: 'spaceItemsXl' }}>
         <ClusterLoadNote clusters={clusterList} />
-        {/* The alert explains the header's Status word (status.state). Ready, Saved to Git and
-            Unknown say all there is; MaaS has its own Availability section. */}
+        {/* The alert explains the header's Status word (status.state) from the placed clusters'
+            reports (rolloutExplanation). Ready, Saved to Git and Unknown say all there is; MaaS has
+            its own Availability section. */}
         {model.state !== 'Ready' &&
           model.state !== 'Saved to Git' &&
           model.state !== 'Unknown' &&
-          hasModelStatusDetails(model) && (
+          rolloutExplanation(model) && (
             <Alert
               isInline
-              variant={model.state === 'Failed' ? 'danger' : model.state === PARTIALLY_AVAILABLE ? 'warning' : 'info'}
+              variant={model.state === 'Failed' ? 'danger' : model.state === 'Partially ready' ? 'warning' : 'info'}
               title={model.state === 'Failed' ? 'Unable to deploy model' : model.state}
               data-testid="model-status-alert"
             >

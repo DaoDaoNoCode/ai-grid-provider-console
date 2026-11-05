@@ -1,4 +1,4 @@
-import type { MaaSWord, ModelView, StateWord } from './modelView';
+import type { MaaSWord, ModelClusterView, ModelView, StateWord } from './modelView';
 
 /**
  * What KServe's terminal Ready=False reasons (ConfigNotFound, RefsInvalid, GatewaysNotReady) mean to
@@ -20,13 +20,41 @@ export const failureExplanations: Record<string, { summary: string; next: string
   },
 };
 
-export const modelPhase = (model: Pick<ModelView, 'phase'>): string => model.phase;
+/** What one cluster that isn't ready reported: Argo CD's message for a failed sync, else KServe's, else the backend's. */
+const clusterReport = (c: ModelClusterView): string | undefined =>
+  (c.syncFailed ? c.syncMessage : undefined) ?? c.deploymentMessage ?? c.syncMessage ?? c.message;
 
-/** A placed model serving on some of its clusters but not all (the backend's phase, proposal P13). */
-export const PARTIALLY_AVAILABLE = 'Partially ready';
-
-/** Whether the model has anything to explain beyond its phase. */
-export const hasModelStatusDetails = (model: ModelView): boolean => !!(model.reason || model.statusMessage);
+/**
+ * The model's rollout as its page explains it (status.state and the placed clusters' reports): for
+ * Failed, a sentence and the next step for a failure KServe names (status.reason), else "Unable to
+ * deploy this model."; then each placed cluster that isn't Ready, with its word and its report.
+ * MaaS isn't here: the page's Availability section says what MaaS reports, so a model starting on
+ * its clusters reads Starting even while MaaS failed to publish it. Undefined when there is nothing
+ * to explain beyond the word.
+ */
+export const rolloutExplanation = (
+  model: Pick<ModelView, 'state' | 'reason' | 'statusMessage' | 'clusters'>,
+): { summary?: string; next?: string; raw?: string; clusters: string[] } | undefined => {
+  const failed = model.state === 'Failed';
+  const known = failed && model.reason ? failureExplanations[model.reason] : undefined;
+  const clusters = model.clusters
+    .filter((c) => c.state !== 'Ready')
+    .map((c) => {
+      const report = clusterReport(c);
+      return `${c.cluster}: ${c.state ?? 'Pending sync'}${report ? `. ${report}` : ''}`;
+    });
+  // A failure KServe names comes with its own words, folded away; a failure the clusters report is
+  // in their lines.
+  const raw =
+    failed && (known || clusters.length === 0) ? [model.reason, model.statusMessage].filter(Boolean).join(': ') : '';
+  if (!failed && clusters.length === 0) return undefined;
+  return {
+    summary: failed ? (known?.summary ?? 'Unable to deploy this model.') : undefined,
+    next: known?.next,
+    raw: raw || undefined,
+    clusters,
+  };
+};
 
 // The Status and Availability columns follow
 // jgiardino/ai-grid-provider-console@a4e6090 modelStatusInfo.ts: the words are the backend's (ModelStatus.state and maas); this file

@@ -13,6 +13,7 @@ import { MockConsoleService } from '../api/MockConsoleService';
 import configExample from '../../../mock/examples/get-config.json';
 import { create } from '@bufbuild/protobuf';
 import {
+  ModelClusterStatusSchema,
   ModelDeploymentState,
   ModelIngressStatusSchema,
   ModelMaasState,
@@ -527,9 +528,23 @@ describe('the status', () => {
     expect(screen.queryByTestId('model-status-alert')).not.toBeInTheDocument();
   });
 
-  it('warns about a partially ready model on its page', async () => {
-    renderAt('/models/partial', phases());
-    expect(await screen.findByTestId('model-status-alert')).toHaveTextContent('Not ready on site2; ready on site1');
+  it('warns about a partially ready model on its page, naming each cluster that isn’t ready', async () => {
+    const service = phases();
+    modelsOf(service).find('partial').status!.clusters = [
+      create(ModelClusterStatusSchema, { cluster: 'site1', state: ModelState.READY, message: 'ready' }),
+      create(ModelClusterStatusSchema, {
+        cluster: 'site2',
+        state: ModelState.STARTING,
+        deployment: ModelDeploymentState.STARTING,
+        deploymentMessage: 'Deployment does not have minimum availability.',
+      }),
+    ];
+    renderAt('/models/partial', service);
+    const alert = await screen.findByTestId('model-status-alert');
+    expect(alert).toHaveClass('pf-m-warning');
+    expect(within(alert).getByRole('list', { name: 'Clusters where partial isn’t ready' })).toHaveTextContent(
+      /^site2: Starting\. Deployment does not have minimum availability\.$/,
+    );
   });
 });
 
@@ -2957,9 +2972,44 @@ describe('the deployment and MaaS statuses', () => {
     smollm2.status!.phase = ModelPhase.PENDING;
     smollm2.status!.reason = 'Stopped';
     smollm2.status!.message = 'Not ready on site1, site2';
+    // As the backend reports a model stopped everywhere: each cluster stopped too.
+    for (const c of smollm2.status!.clusters) {
+      c.state = ModelState.STOPPED;
+      c.deployment = ModelDeploymentState.STOPPED;
+      c.deploymentMessage = 'Service is stopped';
+    }
     renderAt('/models/smollm2', service);
     expect(await screen.findByTestId('model-status-alert')).toHaveTextContent(/^.*Stopped/);
     expect(screen.getByTestId('model-status-alert')).not.toHaveTextContent('Pending');
+  });
+
+  it('explains a starting model by its clusters, and keeps a MaaS failure under Availability', async () => {
+    const service = running();
+    const smollm2 = modelsOf(service).find('smollm2');
+    // Starting on its clusters; MaaS failed to publish it on hub-ingress, so the phase is Failed.
+    smollm2.status!.state = ModelState.STARTING;
+    smollm2.status!.phase = ModelPhase.FAILED;
+    smollm2.status!.reason = 'Failed';
+    smollm2.status!.message = 'Failed to publish on hub-ingress: HTTPRoute rejected';
+    smollm2.status!.maas = ModelMaasState.FAILED;
+    smollm2.status!.ingress[0].state = ModelMaasState.FAILED;
+    smollm2.status!.ingress[0].message = 'HTTPRoute rejected by the gateway.';
+    smollm2.status!.clusters[0].state = ModelState.STARTING;
+    smollm2.status!.clusters[0].deployment = ModelDeploymentState.STARTING;
+    smollm2.status!.clusters[1].state = ModelState.STARTING;
+    renderAt('/models/smollm2', service);
+    const alert = await screen.findByTestId('model-status-alert');
+    expect(alert).toHaveClass('pf-m-info');
+    expect(within(alert).getByRole('heading', { name: 'Info alert: Starting' })).toBeVisible();
+    expect(alert).toHaveTextContent('site2: Starting. Deployment does not have minimum availability.');
+    expect(alert).not.toHaveTextContent('Unable to deploy');
+    expect(alert).not.toHaveTextContent('HTTPRoute');
+    // MaaS's failure is under Availability.
+    const [ingress] = await tableRows('Availability of smollm2', screen.getByTestId('model-maas-endpoint'));
+    expect(ingress).toHaveTextContent('HTTPRoute rejected by the gateway.');
+    expect(
+      within(screen.getByTestId('model-maas-endpoint')).getByRole('button', { name: 'Failed availability of smollm2' }),
+    ).toBeVisible();
   });
 
   it('says when no ingress cluster reports the model', async () => {
