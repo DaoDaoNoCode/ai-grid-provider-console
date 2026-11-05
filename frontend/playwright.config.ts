@@ -2,8 +2,8 @@ import { defineConfig, devices } from '@playwright/test';
 
 // The stack the specs run on: the backend at .backend-api-version on its own fake hub and Keycloak,
 // PoC preset (hack/backend-fakes.sh), its BFF and the production bundle. Its ports differ from the
-// ones `make dev-fake-infra` uses, so a running `make dev-fake-infra` (default preset, not the
-// PoC's) is never taken for it. Set them when another process already holds one; CI keeps the
+// ones `make dev-fake` uses, so a running `make dev-fake` (default preset, not the PoC's) is never
+// taken for it. Set them when another process already holds one; CI keeps the
 // defaults. The backend takes five ports from E2E_BACKEND_PORT up: gRPC and Connect, its fake
 // hub, HTTP, Keycloak and the draft.
 const port = process.env.E2E_FRONTEND_PORT ?? '9200';
@@ -47,7 +47,7 @@ export default defineConfig<object, { bffURL: string }>({
   // elsewhere must serve the bundle too (--static-assets-dir).
   webServer: [
     {
-      // make dev-fake-infra-backend on the PoC preset (the backend's fixtures/poc): the specs use the
+      // make dev-fake-backend on the PoC preset (the backend's fixtures/poc): the specs use the
       // PoC's site, model and organization names. The first run fetches the backend at the pin and
       // builds it, hence the long wait. A script rather than make: CI's Playwright image has none.
       command: '../hack/backend-fakes.sh',
@@ -65,9 +65,9 @@ export default defineConfig<object, { bffURL: string }>({
       },
     },
     {
-      // make dev-bff-fake-infra: the BFF relays /ai_grid.v1.* to that backend and asks its fake
-      // hub. It serves the bundle too, as the deployed console does: the specs load each page from
-      // it, with its headers (e2e/fixtures.ts).
+      // make dev-bff-fake: the BFF relays /ai_grid.v1.* to that backend and asks its fake hub. It
+      // serves the bundle too, as the deployed console does: the specs load each page from it,
+      // with its headers (e2e/fixtures.ts).
       command: `go run ./cmd --port=${bffPort} --backend-address=127.0.0.1:${backendPort} --hub-api-url=http://127.0.0.1:${backendPort + 1} --fake-backend --static-assets-dir=../frontend/dist`,
       cwd: '../bff',
       url: `http://127.0.0.1:${bffPort}/healthcheck`,
