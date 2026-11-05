@@ -7,7 +7,8 @@ import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import type { NavigateFunction } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { Code, ConnectError } from '@connectrpc/connect';
-import { ModelPhase } from '../gen/ai_grid/v1/model_type_pb';
+import { create } from '@bufbuild/protobuf';
+import { ModelClusterStatusSchema, ModelPhase, ModelState } from '../gen/ai_grid/v1/model_type_pb';
 import { ServiceError } from '../api/ConsoleService';
 import { fakeClients } from '../api/connect/testing';
 import { MockConsoleService } from '../api/MockConsoleService';
@@ -206,14 +207,46 @@ it('shows only the AI Grid members, and when the console read them', async () =>
   expect(screen.getByText(/^Updated/)).toBeVisible();
 });
 
-it('shows a model by its phase, not "Deployment saved"', async () => {
+it('shows a model by its state, not "Deployment saved"', async () => {
   const user = userEvent.setup();
   const service = new MockConsoleService();
-  const model = { phase: 'Ready' };
+  const model = { state: 'Ready' };
   renderAt('/ai-grid', service);
   await user.click(within(await screen.findByRole('group', { name: 'Show' })).getByRole('button', { name: 'Models' }));
-  expect((await screen.findAllByText(model.phase!)).length).toBeGreaterThan(0);
+  expect((await screen.findAllByText(model.state)).length).toBeGreaterThan(0);
   expect(screen.queryByText(/Deployment saved/)).not.toBeInTheDocument();
+});
+
+it("shows a model's state, as the Models list does, on its card and in its panel, never the phase", async () => {
+  const user = userEvent.setup();
+  const service = new MockConsoleService();
+  const model = { displayName: 'Granite 3.3 8B Instruct' };
+  // The phase says site1 failed; the state, from the same cluster, says it is starting.
+  const granite = modelsOf(service).find('granite-3-8b');
+  granite.status!.phase = ModelPhase.FAILED;
+  granite.status!.message = 'Failed on site1';
+  granite.status!.state = ModelState.STARTING;
+  granite.status!.clusters = [
+    create(ModelClusterStatusSchema, {
+      cluster: 'site1',
+      phase: ModelPhase.FAILED,
+      state: ModelState.STARTING,
+      deploymentMessage: 'Deployment does not have minimum availability.',
+    }),
+  ];
+  renderAt('/ai-grid', service);
+  await user.click(within(await screen.findByRole('group', { name: 'Show' })).getByRole('button', { name: 'Models' }));
+  const card = screen.getByRole('button', { name: `View ${model.displayName} details` }).closest('.pf-v6-c-card');
+  expect(within(card as HTMLElement).getByText('Starting')).toBeVisible();
+  expect(card).not.toHaveTextContent('Failed');
+  await user.click(screen.getByRole('button', { name: `View ${model.displayName} details` }));
+  expect(screen.getByRole('heading', { name: model.displayName })).toBeVisible();
+  const status = screen.getByTestId('model-phase');
+  expect(status).toHaveTextContent(/^Starting$/);
+  await user.hover(within(status).getByText('Starting'));
+  expect(await screen.findByRole('tooltip')).toHaveTextContent(
+    /^site1: Starting\. Deployment does not have minimum availability\.$/,
+  );
 });
 
 it('keeps the map, its selection and its models when a refresh fails', async () => {
