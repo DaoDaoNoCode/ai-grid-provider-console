@@ -296,8 +296,10 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   backend joins a model ref to its model (`SubscriptionModelRef.model_id`) and evaluates the
   filter after the join.
 - **The map and Monitoring** read the same `Models/List`: a member's models are those whose
-  `status.placement.selected_clusters` name it, and Monitoring's target sites the clusters at
-  `status.placement.locations`.
+  `status.placement.selected_clusters` name it, and Monitoring offers a model, and lists its
+  clusters, by the AI Grid clusters `status.placement.selected_clusters` names
+  (`ObservabilityPanel.tsx`). No page reads `status.placement.locations`, the clusters' `location`
+  labels.
 
 ### The Subscriptions area
 

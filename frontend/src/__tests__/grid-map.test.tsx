@@ -24,7 +24,6 @@ import { TestApp } from './TestApp';
 const placeOn = (service: MockConsoleService, id: string, clusters: string[], displayName?: string) => {
   const model = modelsOf(service).find(id);
   model.status!.placement!.selectedClusters = clusters;
-  model.status!.placement!.locations = clusters;
   model.status!.clusters = [];
   if (displayName) model.metadata!.annotations['openshift.io/display-name'] = displayName;
 };

@@ -159,8 +159,6 @@ export type ModelView = {
   creationTimestamp?: string;
   /** metadata.version, sent back with `lock` by an edit and with a delete. */
   version: number;
-  /** The `location` labels of the clusters the placement chose (status.placement.locations). */
-  locations: string[];
   /** The clusters the placement chose, by name (status.placement.selected_clusters). */
   selectedClusters: string[];
   /** Each placed cluster's status; empty while no cluster has reported the model. */
@@ -302,7 +300,6 @@ export const toModelView = (model: Model): ModelView => {
     url: nonEmpty(status?.url),
     creationTimestamp: created ? timestampDate(created).toISOString() : undefined,
     version: model.metadata?.version ?? 0,
-    locations: [...(status?.placement?.locations ?? [])],
     selectedClusters: [...(status?.placement?.selectedClusters ?? [])],
     clusters: (status?.clusters ?? []).map((c) => ({
       cluster: c.cluster,

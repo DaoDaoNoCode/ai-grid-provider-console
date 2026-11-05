@@ -98,7 +98,7 @@ const widget = (service: MockConsoleService) => {
         main: { image: 'registry.example/runtime:test', requests: { cpu: '2', memory: '4Gi' } },
         placement: { labelSelector: { matchExpressions: [{ key: 'name', operator: 'In', values: ['site1'] }] } },
       },
-      status: { reason: 'SavedToGit', placement: { selectedClusters: ['site1'], locations: ['site1'] } },
+      status: { reason: 'SavedToGit', placement: { selectedClusters: ['site1'] } },
     }),
   );
   return models;

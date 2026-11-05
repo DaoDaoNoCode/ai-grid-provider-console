@@ -104,7 +104,7 @@ const widget = (service: MockConsoleService) => {
         main: { image: 'registry.example/runtime:test', requests: { cpu: '2', memory: '4Gi' } },
         placement: { labelSelector: { matchExpressions: [{ key: 'name', operator: 'In', values: ['site1'] }] } },
       },
-      status: { reason: 'SavedToGit', placement: { selectedClusters: ['site1'], locations: ['site1'] } },
+      status: { reason: 'SavedToGit', placement: { selectedClusters: ['site1'] } },
     }),
   );
   return models;
@@ -2488,7 +2488,7 @@ describe('each cluster of a placed model (status.clusters, proposal P13)', () =>
           // The summary counts every reporting cluster, an ingress one (hub-ingress) included; only the
           // placed ones have an entry in `clusters`.
           message: 'Not ready on site2; ready on hub-ingress, site1; no report from site3',
-          placement: { selectedClusters: ['site1', 'site2', 'site3'], locations: ['site1', 'site2', 'site3'] },
+          placement: { selectedClusters: ['site1', 'site2', 'site3'] },
           clusters: [
             {
               cluster: 'site1',
@@ -2704,7 +2704,7 @@ describe('the deployment and MaaS statuses', () => {
           message: 'Not ready on site2; ready on hub-ingress, site1',
           deployment: ModelDeploymentState.STARTING,
           maas: ModelMaasState.AWAITING_SUBSCRIPTION,
-          placement: { selectedClusters: ['site1', 'site2'], locations: ['site1', 'site2'] },
+          placement: { selectedClusters: ['site1', 'site2'] },
           clusters: [
             {
               cluster: 'site1',
