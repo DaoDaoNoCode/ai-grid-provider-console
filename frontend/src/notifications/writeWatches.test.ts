@@ -1,6 +1,7 @@
 import type { ModelClusterView, ModelView } from '../pages/models/modelView';
 import { NotificationResponseStatus } from './useNotificationWatcher';
 import {
+  CLUSTER_MS,
   NO_HISTORY,
   NO_STATUS_READS,
   READBACK_MS,
@@ -10,11 +11,12 @@ import {
   statusOf,
   watchActive,
   watchChanges,
+  watchCluster,
   watchReady,
   watchSubscriptionChanges,
   type ReadAnswer,
   type ReadObject,
-  type SubscriptionHistory,
+  type StatusHistory,
 } from './writeWatches';
 import type { WriteTarget } from './writeText';
 
@@ -842,7 +844,7 @@ describe('nextHistory', () => {
       version: 1,
       subscription: { phase: 'Degraded', message: 'MaaSModelRef granite not found', policies: [] },
     };
-    const failed: SubscriptionHistory = {
+    const failed: StatusHistory = {
       empties: 0,
       last: 'subscriptionDegraded',
       message: 'MaaSModelRef granite not found',
@@ -862,7 +864,96 @@ describe('nextHistory', () => {
   });
 });
 
+describe('watchCluster', () => {
+  const SINCE = 5_000_000;
+  const added: WriteTarget = { subject: 'cluster', op: 'add', id: 'site-b', name: 'site-b', role: 'inference' };
+  const removed: WriteTarget = { subject: 'cluster', op: 'remove', id: 'site-b', name: 'site-b' };
+  const cluster = (member: boolean, provisioning: string): ReadAnswer => ({
+    version: 3,
+    cluster: { member, provisioning },
+  });
+  const during = () => SINCE + CLUSTER_MS - 1;
+  const late = () => SINCE + CLUSTER_MS;
+
+  it('waits while the hub provisions the cluster, and says so once the ready check passes', async () => {
+    for (const provisioning of ['Pending', 'NonCompliant']) {
+      expect(await watchCluster(added, SINCE, reads(cluster(true, provisioning)), during)).toEqual({
+        status: NotificationResponseStatus.REPOLL,
+      });
+    }
+    expect(await watchCluster(added, SINCE, reads(cluster(true, 'Compliant')), during)).toMatchObject({
+      status: NotificationResponseStatus.SUCCESS,
+      title: 'Cluster site-b is provisioned',
+      actions: [{ title: 'View cluster', to: '/clusters/site-b' }],
+    });
+  });
+
+  it('stops when the cluster leaves AI Grid or the hub, rather than say anything of it', async () => {
+    const stop = { status: NotificationResponseStatus.STOP };
+    expect(await watchCluster(added, SINCE, reads(cluster(false, 'Compliant')), during)).toEqual(stop);
+    expect(await watchCluster(added, SINCE, reads(undefined), during)).toEqual(stop);
+    expect(await watchCluster(removed, SINCE, reads(cluster(true, 'Compliant')), during)).toEqual(stop);
+    expect(await watchCluster(removed, SINCE, reads(undefined), during)).toEqual(stop);
+  });
+
+  it('judges the deadline by the last status found, and says nothing it could not read', async () => {
+    expect(await watchCluster(added, SINCE, reads(cluster(true, 'NonCompliant')), late)).toMatchObject({
+      status: NotificationResponseStatus.WARNING,
+      title: "Cluster site-b isn't provisioned yet",
+    });
+    // An empty read after a status was found: the ready Policy was unreadable this once.
+    const found = nextHistory(NO_HISTORY, cluster(true, 'NonCompliant'));
+    expect(await watchCluster(added, SINCE, reads(cluster(true, '')), late, found)).toMatchObject({
+      title: "Cluster site-b isn't provisioned yet",
+    });
+    expect(await watchCluster(added, SINCE, reads(new Error('unavailable')), late, found)).toMatchObject({
+      status: NotificationResponseStatus.WARNING,
+      title: 'Unable to confirm cluster site-b is provisioned',
+    });
+  });
+
+  it('stops on the third empty read in a row before any status, and goes on once one was found', async () => {
+    const twoEmpty = { empties: NO_STATUS_READS - 1 };
+    expect(await watchCluster(added, SINCE, reads(cluster(true, '')), during, twoEmpty)).toEqual({
+      status: NotificationResponseStatus.STOP,
+    });
+    expect(
+      await watchCluster(added, SINCE, reads(cluster(true, '')), during, { ...twoEmpty, last: 'provisioning' }),
+    ).toEqual({ status: NotificationResponseStatus.REPOLL });
+    // A failed read ends a run of empty ones.
+    const reset = nextHistory(twoEmpty, 'failed');
+    expect(await watchCluster(added, SINCE, reads(cluster(true, '')), during, reset)).toEqual({
+      status: NotificationResponseStatus.REPOLL,
+    });
+  });
+
+  it('says a removed cluster left once the hub no longer includes it, not on membership alone', async () => {
+    // Membership is the label the remove dropped: the write's own answer says it.
+    expect(await watchCluster(removed, SINCE, reads(cluster(false, 'Compliant')), during)).toEqual({
+      status: NotificationResponseStatus.REPOLL,
+    });
+    expect(await watchCluster(removed, SINCE, reads(cluster(false, '')), during)).toMatchObject({
+      status: NotificationResponseStatus.SUCCESS,
+      title: 'Cluster site-b left AI Grid',
+    });
+    expect(await watchCluster(removed, SINCE, reads(cluster(false, 'Compliant')), late)).toMatchObject({
+      status: NotificationResponseStatus.WARNING,
+      title: "Cluster site-b hasn't left AI Grid yet",
+    });
+    expect(await watchCluster(removed, SINCE, reads(new Error('unavailable')), late)).toMatchObject({
+      title: 'Unable to confirm cluster site-b left AI Grid',
+    });
+  });
+});
+
 describe('statusOf', () => {
+  it("tells a cluster's membership and provisioning apart", () => {
+    const of = (member: boolean, provisioning: string) => statusOf({ version: 1, cluster: { member, provisioning } });
+    expect(of(true, 'Pending')).not.toBe(of(true, 'NonCompliant'));
+    expect(of(true, 'Compliant')).not.toBe(of(false, 'Compliant'));
+    expect(of(true, 'Compliant')).toBe(of(true, 'Compliant'));
+  });
+
   it("tells a subscription's phase, and its authorization policy's, apart", () => {
     const of = (phase: string, policy: string) =>
       statusOf({ version: 1, subscription: { phase, policies: [{ id: 'team-a-policy', phase: policy }] } });

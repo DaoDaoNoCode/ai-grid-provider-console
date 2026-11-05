@@ -194,7 +194,7 @@ it('saves a location-only edit as the labels as read with the location changed, 
   const dialog = await openEdit(user, 'paris-1');
   await enter(user, dialog, 'Location label', 'eu-central');
   await user.click(save(dialog));
-  expect(await screen.findByText('paris-1 updated')).toBeVisible();
+  expect(await screen.findByText('Changes to cluster paris-1 saved')).toBeVisible();
   expect(screen.queryByRole('dialog', { name: 'Edit paris-1' })).not.toBeInTheDocument();
   expect(requests).toHaveLength(1);
   const [req] = requests;
@@ -222,7 +222,7 @@ it('never sends another role for a cluster that has one, even when the read-only
   fireEvent.input(field(dialog, 'Role'), { target: { value: 'inference' } });
   await enter(user, dialog, 'Location label', 'eu-central');
   await user.click(save(dialog));
-  expect(await screen.findByText('paris-1 updated')).toBeVisible();
+  expect(await screen.findByText('Changes to cluster paris-1 saved')).toBeVisible();
   expect(requests[0].object?.metadata?.labels['ai-grid/role']).toBe('ingress');
 });
 
@@ -288,7 +288,7 @@ it.each([
     // It only adds: no typed name.
     expect(within(dialog).queryByRole('textbox', { name: /^Type no-role to confirm/ })).not.toBeInTheDocument();
     await user.click(save(dialog));
-    expect(await screen.findByText('no-role updated')).toBeVisible();
+    expect(await screen.findByText('Changes to cluster no-role saved')).toBeVisible();
     expect(requests[0].updateMask?.paths).toEqual(['metadata.labels']);
     expect(requests[0].object?.metadata?.labels).toEqual({
       'ai-grid/enabled': 'true',
@@ -309,7 +309,7 @@ it('lets a role label that is not one of the three be replaced by one', async ()
   await selectRole(user, dialog, 'Inference');
   expect(within(dialog).getByTestId('cluster-role-change')).toHaveTextContent('Saving sets the role to Inference.');
   await user.click(save(dialog));
-  expect(await screen.findByText('odd-1 updated')).toBeVisible();
+  expect(await screen.findByText('Changes to cluster odd-1 saved')).toBeVisible();
   expect(requests[0].object?.metadata?.labels['ai-grid/role']).toBe('inference');
 });
 
@@ -354,7 +354,7 @@ it('keeps every control disabled while the save is out, and sends it once', asyn
   await user.click(save(dialog));
   expect(requests).toHaveLength(1);
   answer.resolve();
-  expect(await screen.findByText('no-role updated')).toBeVisible();
+  expect(await screen.findByText('Changes to cluster no-role saved')).toBeVisible();
   expect(requests).toHaveLength(1);
 });
 
@@ -407,7 +407,7 @@ it.each([
   expect(within(dialog).getByRole('combobox', { name: 'Role' })).toHaveValue('Inference');
   expect(field(dialog, 'Location label')).toHaveValue('eu-central');
   expect(save(dialog)).toBeEnabled();
-  expect(screen.queryByText('no-role updated')).not.toBeInTheDocument();
+  expect(screen.queryByText('Changes to cluster no-role saved')).not.toBeInTheDocument();
 });
 
 it('says so on a backend without the update', async () => {
@@ -437,7 +437,7 @@ it('loads the cluster again after a conflict, keeps the edit, and saves it at th
   ).toBeVisible();
   expect(field(dialog, 'Location label')).toHaveValue('eu-central');
   await user.click(save(dialog));
-  expect(await screen.findByText('paris-1 updated')).toBeVisible();
+  expect(await screen.findByText('Changes to cluster paris-1 saved')).toBeVisible();
   expect(requests).toHaveLength(2);
   expect(requests[1].object?.metadata?.version).toBe(10);
   // Their label is sent back as the backend has it now.
@@ -478,7 +478,7 @@ it('edits from the cluster page and shows the result there', async () => {
   await selectRole(user, dialog, 'Combined');
   await enter(user, dialog, 'Location label', 'eu-central');
   await user.click(save(dialog));
-  expect(await screen.findByText('no-role updated')).toBeVisible();
+  expect(await screen.findByText('Changes to cluster no-role saved')).toBeVisible();
   expect(requests[0].updateMask?.paths).toEqual(['metadata.labels']);
   const aiGrid = screen.getByLabelText('AI Grid membership');
   expect(aiGrid).toHaveTextContent('eu-central');

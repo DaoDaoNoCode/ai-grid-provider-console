@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { describeError } from '../../api/connect/errors';
+import { useNotifications } from '../../notifications/useNotifications';
+import { organizationSavedText } from '../../notifications/writeText';
 import {
   fieldErrorsOf,
   identityProviderSchema,
@@ -54,6 +56,7 @@ const initialValues = (initial?: OrganizationView): FormValues =>
 export const useOrganizationForm = (initial?: OrganizationView) => {
   const navigate = useNavigate();
   const writes = useOrganizationWrites();
+  const { notify } = useNotifications();
   const [start] = useState(() => initialValues(initial));
   const [values, setValues] = useState<FormValues>(start);
   const [saving, setSaving] = useState(false);
@@ -86,18 +89,17 @@ export const useOrganizationForm = (initial?: OrganizationView) => {
     setError(undefined);
     setServer(undefined);
     try {
-      if (initial) {
-        // An edit sends the domains only, at the version the form read.
-        await writes.updateOrganization(initial, input.data.domains);
-      } else {
-        await writes.createOrganization(input.data);
-      }
+      // An edit sends the domains only, at the version the form read.
+      const saved = initial
+        ? await writes.updateOrganization(initial, input.data.domains)
+        : await writes.createOrganization(input.data);
+      // The save is complete when the backend answers (a Keycloak write, or its rollback), so the
+      // notification center says it once, by the name the backend answered with, in answer to the
+      // user's click. A refusal stays on the form.
+      notify({ variant: 'success', ...organizationSavedText(initial ? 'update' : 'create', saved), read: true });
       // A created organization replaces its create form in history, so Back doesn't land on it, empty.
       navigate(initial ? `/organizations/${encodeURIComponent(initial.id)}` : '/organizations', {
         replace: !initial,
-        state: {
-          notice: initial ? 'Organization updated' : 'Organization created',
-        },
       });
     } catch (err) {
       setError(saveErrorMessage(err, !!initial));

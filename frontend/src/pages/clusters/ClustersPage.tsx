@@ -14,7 +14,7 @@ import {
 import { CubesIcon } from '@patternfly/react-icons';
 import { InnerScrollContainer, Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { ThProps } from '@patternfly/react-table';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import type { GridMembership } from '../../api/clusters';
 import { PaginatedTable } from '../../components/PaginatedTable';
 import { RefreshButton } from '../../components/RefreshButton';
@@ -26,9 +26,10 @@ import { ToolbarSearch } from '../../components/ToolbarSearch';
 import { TableEmptyRow } from '../../components/TableEmptyRow';
 import { OverflowList } from '../../components/OverflowList';
 import { useConsoleSession } from '../../context/useConsoleSession';
+import { useBackgroundWrites } from '../../notifications/useBackgroundWrites';
 import { EMPTY_VALUE } from '../../utilities/format';
 import type { MembershipChange } from './MembershipModal';
-import { changeMembership, editCluster } from './changeMembership';
+import { changeMembership, editCluster, editTarget, membershipTarget } from './changeMembership';
 import { MembershipModal } from './MembershipModal';
 import { EditClusterModal } from './EditClusterModal';
 import { editText } from './editClusterText';
@@ -168,7 +169,7 @@ const membership = (c: ClusterView) => (c.aiGridEnabled ? c.provisioningStatus :
 const memberRole = (c: ClusterView) => (c.aiGridEnabled ? (roleOf(c.labels)?.label ?? '-') : '');
 
 export const ClustersPage: React.FC = () => {
-  const navigate = useNavigate();
+  const { followWrite } = useBackgroundWrites();
   const { data: clusters, loaded, error, refresh } = useClusterList();
   const writes = useMembershipWrites();
   const { user } = useConsoleSession();
@@ -206,9 +207,11 @@ export const ClustersPage: React.FC = () => {
     });
   };
 
-  /** Adds the cluster to AI Grid or removes it; throws for the modal to show. */
+  /**
+   * Adds the cluster to AI Grid or removes it; throws for the modal to show. The notification center
+   * says it was done and follows what the hub does next.
+   */
   const applyChange = async (change: MembershipChange, membership?: GridMembership) => {
-    const { join } = change;
     const updated = await changeMembership(writes, change, membership, {
       reload: writes.loadCluster,
       onConflict: (current) => {
@@ -220,15 +223,14 @@ export const ClustersPage: React.FC = () => {
     });
     setConfirmed((prev) => new Map(prev).set(updated.name, updated));
     setChange(undefined);
-    // Replace, so the notice doesn't add a second Clusters entry to the browser's history.
-    navigate('.', {
-      replace: true,
-      state: { notice: `${updated.name} ${join ? 'added to' : 'removed from'} AI Grid` },
-    });
+    followWrite(membershipTarget(updated.name, membership));
     reload();
   };
 
-  /** Saves an AI Grid cluster's edited labels; throws for the modal to show. */
+  /**
+   * Saves an AI Grid cluster's edited labels; throws for the modal to show. The notification center
+   * says they were saved, and follows the provisioning a role set starts.
+   */
   const applyEdit = async (cluster: ClusterView, labels: Record<string, string>) => {
     const updated = await editCluster(writes, cluster, labels, {
       reload: writes.loadCluster,
@@ -239,7 +241,7 @@ export const ClustersPage: React.FC = () => {
     });
     setConfirmed((prev) => new Map(prev).set(updated.name, updated));
     setEditing(undefined);
-    navigate('.', { replace: true, state: { notice: editText.updated(updated.name) } });
+    followWrite(editTarget(cluster, labels));
     reload();
   };
 

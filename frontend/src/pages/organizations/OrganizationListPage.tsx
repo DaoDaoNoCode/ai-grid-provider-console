@@ -40,11 +40,7 @@ export const OrganizationListPage: React.FC = () => {
   const [sortBy, setSortBy] = useState<{ index: number; direction: 'asc' | 'desc' }>({ index: 0, direction: 'asc' });
   const [confirmDelete, deleteModal] = useDeleteOrganization({
     refresh: () => void refresh(),
-    onDeleted: () => {
-      // Replace, so the notice doesn't add a second Organizations entry to the browser's history.
-      void navigate('.', { replace: true, state: { notice: 'Organization deleted' } });
-      void refresh();
-    },
+    onDeleted: () => void refresh(),
   });
 
   const rows = useMemo(() => {

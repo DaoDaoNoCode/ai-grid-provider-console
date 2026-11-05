@@ -55,14 +55,14 @@ test('creates, views, edits and deletes an organization', async ({ page }) => {
     await page.getByRole('button', { name: 'Next' }).click();
     await expect(page.getByText('No identity provider is configured.')).toBeVisible();
     await page.getByRole('button', { name: 'Create organization' }).click();
-    await expect(page.getByText('Organization created')).toBeVisible();
+    await expect(page.getByText(`Organization ${unique} created`)).toBeVisible();
 
     const row = page.getByRole('row').filter({ has: page.getByRole('link', { name: unique, exact: true }) });
     await expect(row).toContainText(domain);
 
     // View
     await row.getByRole('link', { name: unique, exact: true }).click();
-    await expect(page.getByRole('heading', { name: unique })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: unique, exact: true })).toBeVisible();
     await expect(page.getByText(domain).first()).toBeVisible();
 
     // Edit a domain in the create wizard, whose steps are all open when editing; the deep link and
@@ -74,7 +74,7 @@ test('creates, views, edits and deletes an organization', async ({ page }) => {
     await page.getByRole('textbox', { name: /^Domain 1/ }).fill(editedDomain);
     await page.getByRole('button', { name: 'Review', exact: true }).click();
     await page.getByRole('button', { name: 'Save changes' }).click();
-    await expect(page.getByText('Organization updated')).toBeVisible();
+    await expect(page.getByText(`Changes to organization ${unique} saved`)).toBeVisible();
     await expect(page.getByTestId('organization-configuration-details')).toContainText(editedDomain);
 
     // Delete from the organization's page, with the typed confirmation
@@ -84,8 +84,17 @@ test('creates, views, edits and deletes an organization', async ({ page }) => {
     await expect(confirm).toBeDisabled();
     await page.getByLabel(/^Type .* to confirm/).fill(unique);
     await confirm.click();
-    await expect(page.getByText('Organization deleted')).toBeVisible();
+    await expect(page.getByText(`Organization ${unique} deleted`)).toBeVisible();
     await expect(page.getByRole('link', { name: unique, exact: true })).toHaveCount(0);
+
+    // Each write is in the drawer, newest first, as read: they answered the user's own clicks. The
+    // refused create stayed on the form and isn't there.
+    await page.getByRole('button', { name: 'Notifications', exact: true }).click();
+    const drawer = page.getByRole('list', { name: 'Notifications' });
+    await expect(drawer.getByRole('listitem')).toHaveCount(3);
+    await expect(drawer.getByRole('listitem').nth(0)).toContainText(`Organization ${unique} deleted`);
+    await expect(drawer.getByRole('listitem').nth(1)).toContainText(`Changes to organization ${unique} saved`);
+    await expect(drawer.getByRole('listitem').nth(2)).toContainText(`Organization ${unique} created`);
   } finally {
     await removeOrganization(page.request, unique);
   }

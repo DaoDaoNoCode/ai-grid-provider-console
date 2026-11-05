@@ -124,7 +124,9 @@ export const toManagedCluster = (c: GridCluster): ManagedCluster => {
     spec: { hubAcceptsClient: c.state !== 'Not accepted' },
     status: {
       availableCondition: availableCondition[c.status],
-      provisioning: c.provisioned ? 'Compliant' : '',
+      // The ready Policy lists the members only (its placement selects ai-grid/enabled), as the
+      // backend's readProvisioning reports it.
+      provisioning: !c.aiGridEnabled ? '' : c.provisioned ? 'Compliant' : 'NonCompliant',
       kubernetesVersion: c.kubernetesVersion ?? '',
       capacity: capacity ?? {},
       allocatable: c.allocatable ?? {},

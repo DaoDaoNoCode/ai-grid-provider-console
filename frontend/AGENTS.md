@@ -103,7 +103,11 @@ a failed load.
 - Buttons: primary (or danger), then Cancel as a link.
 - A big create is a `Wizard` with `ConsoleWizardFooter`; a small one a `Form` with an `ActionGroup`.
 - Every delete, and Remove from AI Grid, asks for the object's name typed in (`DeleteModal`).
-- After an action succeeds, a success toast: navigate with `state: { notice }` (`NoticeToast`).
+- After an action succeeds, a success toast: navigate with `state: { notice }` (`NoticeToast`). An
+  organization's save or delete, and a cluster's Add, Remove or Edit, notify the center instead
+  (`useNotifications().notify`, `useBackgroundWrites().followWrite`), naming the object, so it is
+  in the drawer with the others; a cluster's is then followed until the hub has provisioned it,
+  or let it go (`docs/connect.md`, "Writes that take long"). A refusal stays in the form or dialog.
 - A write to the backend's Git catalog (Models, Subscriptions) goes through `submitWrite`
   (`src/notifications`, `docs/connect.md`, "Writes that take long"): the form waits briefly, then
   leaves as on success, without a notice of its own: the notification center says how the write
@@ -169,8 +173,9 @@ odh-dashboard as the reference product. The terms come from [GLOSSARY.md](../GLO
 10. **No access** is "Access permissions needed", with a body that ends "To &lt;goal&gt;, ask your
     hub administrator ...".
 11. **Not found** is "&lt;Object&gt; not found", one sentence, then "Go to &lt;list&gt;".
-12. **Success toasts are "&lt;Object&gt; &lt;past participle&gt;"**: "Organization created", "Model
-    Granite 8B saved to Git", "local-cluster added to AI Grid". No "successfully" and no period.
+12. **Success toasts are "&lt;Object&gt; &lt;past participle&gt;"**: "Organization acme-robotics
+    created", "Model Granite 8B saved to Git", "Cluster local-cluster added to AI Grid". No
+    "successfully" and no period.
     A Models or Subscriptions write names its object and the stage it reached: it is in Git, and
     a model is deployed only once its clusters serve it (`writeText.ts`).
 13. **Confirmation modals** follow one pattern

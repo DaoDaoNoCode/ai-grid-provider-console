@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { describeError } from '../../api/connect/errors';
 import { DeleteModal } from '../../components/DeleteModal';
+import { useNotifications } from '../../notifications/useNotifications';
+import { organizationSavedText } from '../../notifications/writeText';
 import type { OrganizationView } from './organizationView';
 import { useOrganizationWrites } from './useOrganizations';
 
@@ -19,7 +21,8 @@ const deleteError = (err: unknown) => {
 /**
  * Deleting an organization, the same from its list row and its page: returns `confirmDelete`,
  * which opens the typed-name confirmation for an organization, and the modal to render.
- * `refresh` reloads the page after a failed delete.
+ * `refresh` reloads the page after a failed delete; a delete that succeeds goes to the
+ * notification center, then `onDeleted`.
  */
 export const useDeleteOrganization = ({
   refresh,
@@ -29,6 +32,7 @@ export const useDeleteOrganization = ({
   onDeleted: () => void;
 }): [(organization: OrganizationView) => void, React.ReactNode] => {
   const writes = useOrganizationWrites();
+  const { notify } = useNotifications();
   const [selected, setSelected] = useState<OrganizationView>();
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<Error>();
@@ -51,6 +55,8 @@ export const useDeleteOrganization = ({
     try {
       await writes.deleteOrganization(selected);
       setSelected(undefined);
+      // Complete when the backend answers: said once, by the name the dialog showed, as read.
+      notify({ variant: 'success', ...organizationSavedText('delete', selected), read: true });
       onDeleted();
     } catch (err) {
       setError(deleteError(err));

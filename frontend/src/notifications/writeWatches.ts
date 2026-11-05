@@ -1,14 +1,23 @@
 // The checks the notification center runs for a write that outlasted the form: a read-back that
 // confirms an unknown outcome; for a model, a watch until it is ready on its clusters (a deploy)
 // or while its changes roll out (an edit); for a subscription, a watch until it is active on the
-// ingress clusters (a create) or while its changes are applied (an edit). Each is one call of a
-// NotificationWatcherCallback; the provider (BackgroundWritesProvider) polls it.
+// ingress clusters (a create) or while its changes are applied (an edit); for a cluster, a watch
+// until the hub has provisioned it (added to AI Grid, or given a role) or let it go (removed).
+// Each is one call of a NotificationWatcherCallback; the provider (BackgroundWritesProvider) polls
+// it.
 import type { ModelView } from '../pages/models/modelView';
 import { NotificationResponseStatus, type NotificationWatcherResponse } from './useNotificationWatcher';
 import { holdsSent, type WriteFields } from './writeFields';
 import {
+  CLUSTER_MINUTES,
   READBACK_MINUTES,
   READY_MINUTES,
+  clusterLeftText,
+  clusterLeftUnconfirmedText,
+  clusterNotLeftText,
+  clusterNotProvisionedText,
+  clusterProvisionedText,
+  clusterProvisionedUnconfirmedText,
   goneText,
   mismatchText,
   modelChangesFailedText,
@@ -54,6 +63,23 @@ export const READY_POLL_MS = 20_000;
  */
 export const NO_STATUS_READS = 3;
 
+/** How long a cluster is watched, from when its write landed (watchCluster). */
+export const CLUSTER_MS = CLUSTER_MINUTES * 60_000;
+/**
+ * A cluster's watch polls as the Clusters pages do. Clusters/Get reads the hub, not Git, and the
+ * hub installs a role's components over many minutes, so nothing is gained by polling faster.
+ */
+export const CLUSTER_POLL_MS = 30_000;
+
+/**
+ * A cluster as its watches read it from Clusters/Get: whether it is an AI Grid member
+ * (`status.ai_grid_member`, the `ai-grid/enabled` label itself) and its `status.provisioning`, the
+ * hub's ready Policy's compliance for it: Compliant, NonCompliant, Pending, or empty when the
+ * Policy doesn't list the cluster (its placement no longer selects it, or the Policy can't be
+ * read).
+ */
+export type ClusterStatusView = { member: boolean; provisioning: string };
+
 /**
  * A subscription's status as its watches read it from Subscriptions/Get: its phase, and its
  * authorization policies' (the managed `<id>-policy`, the one Get returns in git mode), each with
@@ -74,9 +100,12 @@ export type SubscriptionStatusView = {
  * policy isn't, or Get lists none; `subscription` when the subscription isn't. A subscription
  * without a policy gives its users no access to its models, and the backend creates the policy with
  * it, so none listed is a policy not active yet. Degraded isn't an end: it is also how a
- * subscription reads while a model it names isn't published on a cluster yet (watchActive).
+ * subscription reads while a model it names isn't published on a cluster yet (watchActive). For a
+ * cluster, `provisioned` when the hub's ready Policy reports it Compliant, `provisioning` for any
+ * other compliance it reports.
  */
-export type Verdict = 'active' | 'policy' | 'subscription' | 'policyDegraded' | 'subscriptionDegraded';
+export type Verdict =
+  'active' | 'policy' | 'subscription' | 'policyDegraded' | 'subscriptionDegraded' | 'provisioned' | 'provisioning';
 
 const DEGRADED = 'Degraded';
 
@@ -91,42 +120,48 @@ const verdictOf = (status: SubscriptionStatusView): { verdict: Verdict; message?
 };
 
 /**
- * What a subscription watch learned from its reads so far, kept in its record so a reload goes on
- * from it: how many reads in a row found no status (`empties`), and the verdict of the last read
- * that found one (`last`, none while no read has), with the backend's message when that verdict is
- * a Degraded one (`message`).
+ * What a subscription or cluster watch learned from its reads so far, kept in its record so a
+ * reload goes on from it: how many reads in a row found no status (`empties`), and the verdict of
+ * the last read that found one (`last`, none while no read has), with the backend's message when
+ * that verdict is a Degraded one (`message`).
  */
-export type SubscriptionHistory = { empties: number; last?: Verdict; message?: string };
+export type StatusHistory = { empties: number; last?: Verdict; message?: string };
 
-export const NO_HISTORY: SubscriptionHistory = { empties: 0 };
+export const NO_HISTORY: StatusHistory = { empties: 0 };
 
 /**
- * The history after one more read: `answer` is what it found (undefined when no subscription), or
+ * The history after one more read: `answer` is what it found (undefined when no object), or
  * `'failed'` when the read itself failed. A failed read isn't an empty one: it ends a run of empty
  * reads, so only NO_STATUS_READS empty reads with nothing between them stop a watch. A read that
- * found no subscription leaves the history as it was (the watch stops on it).
+ * found no object leaves the history as it was (the watch stops on it). A status is a
+ * subscription's phase, or a cluster's provisioning.
  */
-export const nextHistory = (
-  history: SubscriptionHistory,
-  answer: ReadAnswer | undefined | 'failed',
-): SubscriptionHistory => {
+export const nextHistory = (history: StatusHistory, answer: ReadAnswer | undefined | 'failed'): StatusHistory => {
   if (answer === 'failed') return { ...history, empties: 0 };
   const status = answer?.subscription;
-  if (!status) return history;
-  if (status.phase === '') return { ...history, empties: history.empties + 1 };
-  const { verdict, message } = verdictOf(status);
-  return { empties: 0, last: verdict, ...(message ? { message } : {}) };
+  if (status) {
+    if (status.phase === '') return { ...history, empties: history.empties + 1 };
+    const { verdict, message } = verdictOf(status);
+    return { empties: 0, last: verdict, ...(message ? { message } : {}) };
+  }
+  const cluster = answer?.cluster;
+  if (cluster) {
+    if (cluster.provisioning === '') return { ...history, empties: history.empties + 1 };
+    return { empties: 0, last: cluster.provisioning === 'Compliant' ? 'provisioned' : 'provisioning' };
+  }
+  return history;
 };
 
 /**
  * The object as the backend has it now: its version, the fields a write compares (writeFields.ts),
- * and the model's view for a model, the status for a subscription.
+ * and the model's view for a model, the status for a subscription or a cluster.
  */
 export type ReadAnswer = {
   version: number;
   fields?: WriteFields;
   model?: ModelView;
   subscription?: SubscriptionStatusView;
+  cluster?: ClusterStatusView;
 };
 
 /** Reads one object: undefined when the backend says it doesn't exist; throws on any other failure. */
@@ -135,11 +170,15 @@ export type ReadObject = (subject: WriteSubject, id: string) => Promise<ReadAnsw
 /**
  * An object's status as the status watches compare it: a model's phase and reason, and each
  * cluster's with its deployment and whether its sync failed; a subscription's phase and its
- * policies'; "gone" when the object is. A change is what has the pages refetch, and what a model
- * edit's watch reports a failure on. A cluster's failed sync is added only when it failed, so a
- * status kept before it counted reads the same.
+ * policies'; a cluster's own membership and provisioning (watchCluster); "gone" when the object is.
+ * A change is what has the pages refetch, and what a model edit's watch reports a failure on. A
+ * cluster's failed sync is added only when it failed, so a status kept before it counted reads the
+ * same.
  */
 export const statusOf = (answer: ReadAnswer | undefined) => {
+  if (answer?.cluster) {
+    return JSON.stringify([answer.cluster.member, answer.cluster.provisioning]);
+  }
   if (answer?.model) {
     return JSON.stringify([
       answer.model.phase,
@@ -339,11 +378,10 @@ export const watchChanges = async (
 };
 
 /**
- * Whether a subscription watch has found nothing to go on: NO_STATUS_READS reads in a row without
+ * Whether a subscription or cluster watch has found nothing to go on: NO_STATUS_READS reads in a row without
  * a status, no failed read between them, and none with one before.
  */
-const noStatusAvailable = (history: SubscriptionHistory) =>
-  history.last === undefined && history.empties >= NO_STATUS_READS;
+const noStatusAvailable = (history: StatusHistory) => history.last === undefined && history.empties >= NO_STATUS_READS;
 
 /**
  * A created subscription until it is active on every ingress cluster. The backend reads both
@@ -375,11 +413,11 @@ export const watchActive = async (
   since: number,
   read: ReadObject,
   now: () => number,
-  history: SubscriptionHistory = NO_HISTORY,
+  history: StatusHistory = NO_HISTORY,
 ): Promise<NotificationWatcherResponse> => {
   // The verdict to judge by: this read's, or, when it found no status, the last read's that did;
   // none when this read failed.
-  let judged: SubscriptionHistory | undefined;
+  let judged: StatusHistory | undefined;
   try {
     const answer = await read('subscription', target.id);
     if (!answer?.subscription) return stop;
@@ -418,7 +456,7 @@ export const watchSubscriptionChanges = async (
   since: number,
   read: ReadObject,
   now: () => number,
-  history: SubscriptionHistory = NO_HISTORY,
+  history: StatusHistory = NO_HISTORY,
 ): Promise<NotificationWatcherResponse> => {
   try {
     const answer = await read('subscription', target.id);
@@ -428,4 +466,64 @@ export const watchSubscriptionChanges = async (
     // A failed read is checked again, as a page's poll is.
   }
   return now() < since + READY_MS ? repoll : stop;
+};
+
+/**
+ * A cluster after its write landed, until the hub has done what the write asked, read from
+ * Clusters/Get:
+ *
+ * - Added to AI Grid, or given the role it lacked (`op` add, or update with a role): until it is
+ *   provisioned, a member whose `status.provisioning` is Compliant (as toClusterView in
+ *   clusterView.ts reads Provisioned). The ready check behind it confirms OpenShift AI, never MaaS
+ *   (clusterProvisionedText). Anything else is checked again until `since` plus CLUSTER_MS; then a
+ *   warning that it isn't provisioned or, when the last read failed or no read found a status, that
+ *   the console couldn't confirm it. An empty provisioning (the ready Policy doesn't list the
+ *   cluster) claims nothing: with no status found before, NO_STATUS_READS of them in a row stop the
+ *   watch silently, as they stop a subscription's (watchActive): a hub without the ready Policy, or
+ *   one the backend can't read, which no write changes. A cluster that is no longer a member
+ *   (someone removed it) stops the watch.
+ * - Removed from AI Grid (`op` remove): until it has left, no longer a member and no longer listed
+ *   by the ready Policy (`status.provisioning` empty), which happens once the hub's placement lets
+ *   it go. Membership alone is the label the write removed, so the write's own answer already says
+ *   it. After CLUSTER_MS, a warning that it hasn't left, or that the console couldn't confirm it.
+ *   A member again (someone added it back) stops the watch.
+ *
+ * A cluster that is gone from the hub stops either.
+ */
+export const watchCluster = async (
+  target: WriteTarget,
+  since: number,
+  read: ReadObject,
+  now: () => number,
+  history: StatusHistory = NO_HISTORY,
+): Promise<NotificationWatcherResponse> => {
+  const removing = target.op === 'remove';
+  // The verdict to judge by at the deadline: this read's, or the last read's that found a status;
+  // none when this read failed.
+  let verdict: Verdict | undefined;
+  let readFailed = false;
+  try {
+    const answer = await read('cluster', target.id);
+    const cluster = answer?.cluster;
+    if (!cluster) return stop;
+    if (removing) {
+      if (cluster.member) return stop;
+      if (cluster.provisioning === '') return success(clusterLeftText(target));
+    } else {
+      if (!cluster.member) return stop;
+      const next = nextHistory(history, answer);
+      if (noStatusAvailable(next)) return stop;
+      verdict = next.last;
+      if (cluster.provisioning === 'Compliant') return success(clusterProvisionedText(target));
+    }
+  } catch {
+    // A failed read is checked again, as a page's poll is.
+    readFailed = true;
+  }
+  if (now() < since + CLUSTER_MS) return repoll;
+  if (removing) return warning(readFailed ? clusterLeftUnconfirmedText(target) : clusterNotLeftText(target));
+  // Without a status to judge by, the outcome is unknown: never "isn't provisioned".
+  return warning(
+    verdict === 'provisioning' ? clusterNotProvisionedText(target) : clusterProvisionedUnconfirmedText(target),
+  );
 };
