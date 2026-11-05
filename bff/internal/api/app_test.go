@@ -20,9 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/backend/backendtest"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/config"
@@ -147,17 +145,6 @@ func serve(app *App, req *http.Request) *httptest.ResponseRecorder {
 	return rec
 }
 
-// failWith answers req as a handler whose backend call failed with err, behind the App's request
-// log and identity check. No /api/v1 route calls the backend over gRPC (routes.go), so the tests
-// of how respondError maps and logs a backend error call it through this.
-func failWith(app *App, req *http.Request, err error) *httptest.ResponseRecorder {
-	rec := httptest.NewRecorder()
-	app.logRequests(app.requireIdentity(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		app.respondError(w, r, err)
-	}))).ServeHTTP(rec, req)
-	return rec
-}
-
 func TestHealthcheckNeedsNoToken(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t, testConfig(t), nil)
@@ -180,9 +167,6 @@ func TestReadyzReflectsBackend(t *testing.T) {
 	app := newTestApp(t, testConfig(t), fake)
 	if rec := serve(app, httptest.NewRequest(http.MethodGet, "/readyz", nil)); rec.Code != http.StatusOK {
 		t.Fatalf("ready status = %d %s", rec.Code, rec.Body.String())
-	}
-	if fake.Metadata.Get("authorization") != nil {
-		t.Fatal("readiness probe must not forward credentials")
 	}
 	fake.Err = backendtest.Status(codes.Unavailable, "down")
 	rec := serve(app, httptest.NewRequest(http.MethodGet, "/readyz", nil))
@@ -308,8 +292,8 @@ func TestOnlyProviderAdminsReachTheAPI(t *testing.T) {
 			t.Fatalf("%s %s by a non-admin: message %q", req.Method, req.URL.Path, got)
 		}
 	}
-	if fake.Metadata != nil {
-		t.Fatalf("a refused call must not reach the backend: %v", fake.Metadata)
+	if calls := fake.Calls(); len(calls) != 0 {
+		t.Fatalf("a refused call must not reach the backend: %v", calls)
 	}
 	// Who the caller is stays answerable, so the UI can say why.
 	for _, path := range []string{"/api/v1/user", "/api/v1/config"} {
@@ -369,9 +353,9 @@ func TestConfigServesModelHardware(t *testing.T) {
 	}
 }
 
-// A hub slower than the access review's timeout is the hub's failure (502
-// with the hub message), not the backend's 504; a slow backend stays 504.
-func TestSlowHubIs502AndSlowBackendIs504(t *testing.T) {
+// A hub slower than the access review's timeout is the hub's failure: 502
+// with the hub message.
+func TestSlowHubIs502(t *testing.T) {
 	t.Parallel()
 	release := make(chan struct{})
 	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -395,11 +379,6 @@ func TestSlowHubIs502AndSlowBackendIs504(t *testing.T) {
 		if got := decodeError(t, rec).Error.Message; got != "the hub could not confirm the caller's permissions; try again" {
 			t.Fatalf("GET %s with a slow hub: message %q", path, got)
 		}
-	}
-
-	rec := failWith(newTestApp(t, testConfig(t), nil), asUser(http.MethodGet, "/api/v1/nope"), backendtest.Status(codes.DeadlineExceeded, "slow"))
-	if rec.Code != http.StatusGatewayTimeout {
-		t.Fatalf("slow backend: %d %s, want 504", rec.Code, rec.Body.String())
 	}
 }
 
@@ -464,46 +443,6 @@ func TestSuccessfulProbesLogAtDebug(t *testing.T) {
 	}
 }
 
-// A 501 is an expected answer from a backend that lacks the RPC: the frontend
-// shows "not available on this backend yet", so the detail logs at Debug, as a
-// 4xx does, not at Error on every page load. A backend failure still logs at
-// Error. Either way the request line stays at Info.
-func TestNotImplementedLogsAtDebugAndFailuresAtError(t *testing.T) {
-	var logs bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	lines := func(level string) []string {
-		var out []string
-		for line := range strings.SplitSeq(logs.String(), "\n") {
-			if strings.Contains(line, "level="+level+" ") {
-				out = append(out, line)
-			}
-		}
-		return out
-	}
-
-	app := NewApp(testConfig(t), logger, backendtest.StartV1(t, &backendtest.V1{}), startHub(t, &fakeHub{allowed: true}))
-	if rec := failWith(app, asUser(http.MethodGet, "/api/v1/nope"), backendtest.Status(codes.Unimplemented, "unknown method")); rec.Code != http.StatusNotImplemented {
-		t.Fatalf("a backend without the RPC: %d %s, want 501", rec.Code, rec.Body.String())
-	}
-	if got := lines("ERROR"); len(got) != 0 {
-		t.Errorf("a 501 logged at Error:\n%s", strings.Join(got, "\n"))
-	}
-	if got := lines("DEBUG"); len(got) != 1 || !strings.Contains(got[0], "status=501") || !strings.Contains(got[0], "code = Unimplemented") {
-		t.Errorf("Debug lines = %q, want one with status=501 and the backend's error", got)
-	}
-	if got := lines("INFO"); len(got) != 1 || !strings.Contains(got[0], "msg=request ") || !strings.Contains(got[0], "status=501") {
-		t.Errorf("Info lines = %q, want the request line with status=501", got)
-	}
-
-	logs.Reset()
-	if rec := failWith(app, asUser(http.MethodGet, "/api/v1/nope"), backendtest.Status(codes.Internal, "boom")); rec.Code != http.StatusBadGateway {
-		t.Fatalf("a failing backend: %d %s, want 502", rec.Code, rec.Body.String())
-	}
-	if got := lines("ERROR"); len(got) != 1 || !strings.Contains(got[0], `msg="request failed"`) || !strings.Contains(got[0], "status=502") {
-		t.Errorf("Error lines = %q, want one request failed with status=502", got)
-	}
-}
-
 func TestPanicBecomes500(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t, testConfig(t), nil)
@@ -539,13 +478,7 @@ func TestClassify(t *testing.T) {
 		want int
 	}{
 		{Errorf(http.StatusTeapot, "x"), http.StatusTeapot},
-		{context.DeadlineExceeded, http.StatusGatewayTimeout},
 		{fmt.Errorf("%w: provider-admin check: %w", errHub, context.DeadlineExceeded), http.StatusBadGateway},
-		{backendtest.Status(codes.InvalidArgument, "x"), http.StatusUnprocessableEntity},
-		{backendtest.Status(codes.AlreadyExists, "x"), http.StatusConflict},
-		{backendtest.Status(codes.FailedPrecondition, "x"), http.StatusPreconditionFailed},
-		{backendtest.Status(codes.ResourceExhausted, "x"), http.StatusTooManyRequests},
-		{backendtest.Status(codes.DeadlineExceeded, "x"), http.StatusGatewayTimeout},
 		{errors.New("plain"), http.StatusInternalServerError},
 	}
 	for _, tc := range cases {
@@ -655,55 +588,6 @@ func TestWriteJSONFailureIs500(t *testing.T) {
 	writeData(rec, http.StatusOK, []int{1})
 	if rec.Code != http.StatusOK || rec.Body.String() != "{\"data\":[1]}\n" {
 		t.Errorf("status = %d body = %q", rec.Code, rec.Body.String())
-	}
-}
-
-func TestFieldErrorsReachTheBody(t *testing.T) {
-	t.Parallel()
-	st := status.New(codes.InvalidArgument, "Choose a time range of 1h, 6h, or 24h.")
-	st, _ = st.WithDetails(&errdetails.BadRequest{FieldViolations: []*errdetails.BadRequest_FieldViolation{
-		{Field: "range", Description: "Choose a time range of 1h, 6h, or 24h."},
-	}})
-	rec := failWith(newTestApp(t, testConfig(t), nil), asUser(http.MethodGet, "/api/v1/nope"), st.Err())
-	if rec.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("status %d", rec.Code)
-	}
-	body := decodeError(t, rec)
-	if body.Error.FieldErrors["range"] != "Choose a time range of 1h, 6h, or 24h." {
-		t.Fatalf("fieldErrors %+v", body.Error.FieldErrors)
-	}
-}
-
-// Field violations on any status other than InvalidArgument stay in the log;
-// the browser gets the mapped message only.
-func TestFieldErrorsOnlyForInvalidArgument(t *testing.T) {
-	t.Parallel()
-	for _, tc := range []struct {
-		code codes.Code
-		want int
-	}{
-		{codes.Internal, http.StatusBadGateway},
-		{codes.FailedPrecondition, http.StatusPreconditionFailed},
-		{codes.NotFound, http.StatusNotFound},
-	} {
-		t.Run(tc.code.String(), func(t *testing.T) {
-			st, err := status.New(tc.code, "backend detail").WithDetails(&errdetails.BadRequest{FieldViolations: []*errdetails.BadRequest_FieldViolation{
-				{Field: "internal.secret", Description: "must not leak"},
-			}})
-			if err != nil {
-				t.Fatal(err)
-			}
-			rec := failWith(newTestApp(t, testConfig(t), nil), asUser(http.MethodGet, "/api/v1/nope"), st.Err())
-			if rec.Code != tc.want {
-				t.Fatalf("status %d, want %d", rec.Code, tc.want)
-			}
-			if got := decodeError(t, rec).Error.FieldErrors; got != nil {
-				t.Fatalf("fieldErrors %+v, want none", got)
-			}
-			if strings.Contains(rec.Body.String(), "fieldErrors") || strings.Contains(rec.Body.String(), "must not leak") {
-				t.Fatalf("body leaks field violations: %s", rec.Body)
-			}
-		})
 	}
 }
 

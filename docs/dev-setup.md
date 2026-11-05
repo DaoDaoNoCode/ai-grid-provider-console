@@ -141,8 +141,9 @@ proxy runs, an ended session stays on the page instead of going to sign in), and
 `dev-user` with `dev-token`. The backend's fixtures (its `fixtures/default`) seed the clusters and
 organizations; Models and Subscriptions are commits to a local Git catalog
 (`bin/dev-catalog.git` in the backend's checkout), empty until you deploy a model. Monitoring
-needs a Perses (`make dev-cluster`), so it isn't available here. The browser tests run the same backend on its PoC fixtures, on
-ports of their own (`frontend/playwright.config.ts` starts it through `hack/backend-fakes.sh`).
+needs a Perses (`make dev-cluster`), so it isn't available here. The browser tests run the same
+backend on its PoC fixtures, on ports of their own (`frontend/playwright.config.ts` starts it
+through `hack/backend-fakes.sh`).
 The Vite dev server forwards `/ai_grid.v1.*` to the BFF as it does `/api`, in every mode.
 
 The backend is fetched once into `.cache/backend/<sha>` (gitignored; `hack/backend-checkout.sh`),
@@ -194,8 +195,7 @@ Environment variables the BFF reads: `HUB_API_URL` (required outside a pod; in a
 defaults to the in-cluster API server), `HUB_CA_FILE`, `BIND_ADDRESS` (default `127.0.0.1`;
 `0.0.0.0` exposes the BFF without a proxy in front), `PORT`, `BACKEND_ADDRESS`,
 `BACKEND_CA_FILE`, `BACKEND_SERVER_NAME`, `BACKEND_INSECURE`, `BACKEND_TIMEOUT` (10s, at most 50s),
-`BACKEND_WRITE_TIMEOUT` (30s, at most 50s: a POST, PATCH, PUT or DELETE on `/api/v1` and a write
-procedure on the Connect relay, `docs/bff.md`),
+`BACKEND_WRITE_TIMEOUT` (30s, at most 50s: a write procedure on the Connect relay, `docs/bff.md`),
 `PERSES_URL`, `PERSES_CA_FILE`, `PERSES_SERVER_NAME`, `PERSES_INSECURE`, `PERSES_TIMEOUT`,
 `PERSES_PROJECT` (the Perses relay, `docs/bff.md`),
 `AUTH_TOKEN_HEADER`, `AUTH_USER_HEADER`, `AUTH_EMAIL_HEADER`, `AUTH_GROUPS_HEADER`,

@@ -1,4 +1,4 @@
-// Package backendtest runs an in-memory ai-grid-backend for handler tests.
+// Package backendtest runs an in-memory ai-grid-provider-backend for handler tests.
 package backendtest
 
 import (
@@ -11,56 +11,50 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/backend"
 )
 
-// Fake answers what the BFF calls over gRPC: the gRPC health service, which
-// the readiness probe asks. Set Err to make every RPC fail with that status,
-// or Errs to fail one RPC by method name ("Check"). Calls lists the methods
-// reached, in order, and Metadata records the incoming metadata of the last
-// call so tests can assert on identity forwarding.
+// Fake answers what the BFF calls over gRPC on ai-grid-provider-backend: its
+// gRPC health service, grpc.health.v1.Health/Check, which /readyz sends, as the
+// backend's grpchealth checker answers it for the empty service name. Every
+// other method answers Unimplemented: the pages call the backend's own RPCs
+// over Connect, through the relay, not through this client.
 //
-// Each RPC runs under a lock, so concurrent calls are safe. A test reads the
-// recorded fields after its call returned: the answer orders them.
+// Each call is handled under a lock, so concurrent calls are safe; read Calls
+// after a call returned.
 type Fake struct {
 	healthpb.UnimplementedHealthServer
 
-	Err      error
-	Errs     map[string]error
-	Calls    []string
-	Metadata metadata.MD
+	// Err makes every call fail with this status.
+	Err error
+	// NotServing makes Check answer NOT_SERVING instead of SERVING.
+	NotServing bool
 
-	mu sync.Mutex
+	mu    sync.Mutex
+	calls []string
 }
 
-// begin records the call and returns the injected error for it, if any.
-func (f *Fake) begin(ctx context.Context, method string) error {
-	md, _ := metadata.FromIncomingContext(ctx)
-	f.Metadata = md
-	f.Calls = append(f.Calls, method)
-	if f.Err != nil {
-		return f.Err
-	}
-	return f.Errs[method]
-}
-
-// Reached reports whether the named RPC was called.
-func (f *Fake) Reached(method string) bool {
+// Calls returns the methods reached, as full method paths, in order.
+func (f *Fake) Calls() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return slices.Contains(f.Calls, method)
+	return slices.Clone(f.calls)
 }
 
-// Check implements the gRPC health service: the server is serving.
+// Check implements the gRPC health service: serving, unless NotServing is set.
 func (f *Fake) Check(ctx context.Context, _ *healthpb.HealthCheckRequest) (*healthpb.HealthCheckResponse, error) {
+	method, _ := grpc.Method(ctx)
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if err := f.begin(ctx, "Check"); err != nil {
-		return nil, err
+	f.calls = append(f.calls, method)
+	if f.Err != nil {
+		return nil, f.Err
+	}
+	if f.NotServing {
+		return &healthpb.HealthCheckResponse{Status: healthpb.HealthCheckResponse_NOT_SERVING}, nil
 	}
 	return &healthpb.HealthCheckResponse{Status: healthpb.HealthCheckResponse_SERVING}, nil
 }
@@ -69,23 +63,16 @@ func (f *Fake) Check(ctx context.Context, _ *healthpb.HealthCheckRequest) (*heal
 func Status(code codes.Code, msg string) error { return status.Error(code, msg) }
 
 // Start serves the fake over an in-memory connection and returns a client
-// dialed to it. Both are stopped when the test ends. StartV1 serves the
-// backend's own API, which production calls.
+// dialed the way production dials the backend. Both are stopped when the test
+// ends.
 func Start(t *testing.T, fake *Fake) *backend.Client {
 	t.Helper()
 	srv := grpc.NewServer()
 	healthpb.RegisterHealthServer(srv, fake)
-	return serve(t, srv, backend.Config{})
-}
-
-// serve runs srv over an in-memory connection and dials it with cfg (the
-// address and transport are set here). Both are stopped when the test ends.
-func serve(t *testing.T, srv *grpc.Server, cfg backend.Config) *backend.Client {
-	t.Helper()
 	lis := bufconn.Listen(1 << 20)
 	go func() { _ = srv.Serve(lis) }()
 
-	cfg.Address, cfg.Insecure = "passthrough:///bufconn", true
+	cfg := backend.Config{Address: "passthrough:///bufconn", Insecure: true}
 	client, err := backend.Dial(cfg, grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return lis.DialContext(ctx) }))
 	if err != nil {
 		t.Fatal(err)

@@ -4,12 +4,9 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-
-	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"time"
 
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/backend"
-	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/backend/backendtest"
-	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/identity"
 )
 
 func TestDialValidation(t *testing.T) {
@@ -37,85 +34,6 @@ func TestDialValidation(t *testing.T) {
 	_ = c.Close()
 }
 
-func TestForwardsIdentity(t *testing.T) {
-	t.Parallel()
-	fake := &backendtest.Fake{}
-	client := backendtest.Start(t, fake)
-
-	h := identity.Headers{User: "u", Email: "e", Groups: "g", Token: "t"}
-	id, err := h.Extract(map[string][]string{"U": {"alice"}, "E": {"a@x"}, "G": {"one,two"}, "T": {"tok"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := client.Context(identity.WithIdentity(t.Context(), id))
-	defer cancel()
-	if _, err := client.Health.Check(ctx, &healthpb.HealthCheckRequest{}); err != nil {
-		t.Fatal(err)
-	}
-	got := func(k string) string { return strings.Join(fake.Metadata.Get(k), "|") }
-	if got(backend.MetaAuthorization) != "Bearer tok" || got(backend.MetaUser) != "alice" || got(backend.MetaEmail) != "a@x" || got(backend.MetaGroups) != "one,two" {
-		t.Fatalf("metadata = %v", fake.Metadata)
-	}
-
-	// No identity: nothing forwarded.
-	ctx2, cancel2 := client.Context(t.Context())
-	defer cancel2()
-	if _, err := client.Health.Check(ctx2, &healthpb.HealthCheckRequest{}); err != nil {
-		t.Fatal(err)
-	}
-	if got(backend.MetaAuthorization) != "" {
-		t.Fatalf("authorization forwarded without identity: %v", fake.Metadata)
-	}
-}
-
-// grpc-go refuses a metadata value that is not printable ASCII, so a proxy
-// header with an accented name used to fail every RPC. The BFF percent-encodes
-// the identity values, and plain percent-decoding gives them back.
-func TestForwardsNonASCIIIdentity(t *testing.T) {
-	t.Parallel()
-	fake := &backendtest.Fake{}
-	client := backendtest.Start(t, fake)
-
-	h := identity.Headers{User: "u", Email: "e", Groups: "g", Token: "t"}
-	id, err := h.Extract(map[string][]string{"U": {"rené"}, "E": {"rené@exämple.com"}, "G": {"équipe-ops,100%-admins,plain"}, "T": {"tok"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := client.Context(identity.WithIdentity(t.Context(), id))
-	defer cancel()
-	if _, err := client.Health.Check(ctx, &healthpb.HealthCheckRequest{}); err != nil {
-		t.Fatalf("an accented identity must reach the backend: %v", err)
-	}
-	decoded := func(k string) string {
-		t.Helper()
-		values := fake.Metadata.Get(k)
-		if len(values) != 1 {
-			t.Fatalf("%s = %q, want one value", k, values)
-		}
-		var parts []string
-		for p := range strings.SplitSeq(values[0], ",") {
-			v, err := url.PathUnescape(p)
-			if err != nil {
-				t.Fatalf("%s value %q does not percent-decode: %v", k, values[0], err)
-			}
-			parts = append(parts, v)
-		}
-		return strings.Join(parts, ",")
-	}
-	if got := decoded(backend.MetaUser); got != "rené" {
-		t.Errorf("user = %q", got)
-	}
-	if got := decoded(backend.MetaEmail); got != "rené@exämple.com" {
-		t.Errorf("email = %q", got)
-	}
-	if got := decoded(backend.MetaGroups); got != "équipe-ops,100%-admins,plain" {
-		t.Errorf("groups = %q", got)
-	}
-	if raw := fake.Metadata.Get(backend.MetaGroups)[0]; raw != "%C3%A9quipe-ops,100%25-admins,plain" {
-		t.Errorf("raw groups = %q, want each group percent-encoded and ASCII left alone", raw)
-	}
-}
-
 func TestEncodeMetadataValue(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{
@@ -139,5 +57,14 @@ func TestEncodeMetadataValue(t *testing.T) {
 		if back, err := url.PathUnescape(got); err != nil || back != in {
 			t.Errorf("PathUnescape(%q) = %q, %v; want %q", got, back, err, in)
 		}
+	}
+}
+
+// Unset timeouts take the relay's defaults: 10 seconds to read, 30 to write.
+func TestTimeoutDefaults(t *testing.T) {
+	t.Parallel()
+	read, write := backend.Config{}.Timeouts()
+	if read != 10*time.Second || write != 30*time.Second {
+		t.Fatalf("Timeouts() = %s, %s; want 10s, 30s", read, write)
 	}
 }

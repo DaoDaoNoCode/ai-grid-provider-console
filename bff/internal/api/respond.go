@@ -19,9 +19,6 @@ type errorBody struct {
 type errorPayload struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
-	// FieldErrors holds the backend's per-field messages (a BadRequest's
-	// field violations), keyed by the field they name.
-	FieldErrors map[string]string `json:"fieldErrors,omitempty"`
 }
 
 // writeJSON encodes v before it commits the status, so an encoding failure
@@ -45,9 +42,5 @@ func writeData(w http.ResponseWriter, status int, v any) {
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {
-	writeErrorFields(w, status, message, nil)
-}
-
-func writeErrorFields(w http.ResponseWriter, status int, message string, fields map[string]string) {
-	writeJSON(w, status, errorBody{Error: errorPayload{Code: strconv.Itoa(status), Message: message, FieldErrors: fields}})
+	writeJSON(w, status, errorBody{Error: errorPayload{Code: strconv.Itoa(status), Message: message}})
 }

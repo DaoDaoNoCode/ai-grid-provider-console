@@ -57,10 +57,9 @@ update under optimistic locking.
 
 What the BFF does:
 
-- serves a JSON API that only reads (`/api/v1/user` and `/api/v1/config`): every call to the
-  backend goes over Connect, through the relay below;
-- maps gRPC codes to HTTP statuses, keeping the backend's message;
-- forwards the caller's identity (the token as `authorization`, plus user, email and groups);
+- serves a JSON API that only reads (`/api/v1/user` and `/api/v1/config`) and calls no backend:
+  every call to the backend goes over Connect, through the relay below, which passes the
+  backend's answers and errors through unchanged;
 - serves the SPA, `/healthcheck`, `/readyz` (the backend's standard gRPC health service),
   `/api/v1/config`, and asks the hub for `isProviderAdmin` (a `SelfSubjectAccessReview` with
   the caller's token);
@@ -70,7 +69,8 @@ What the BFF does:
 - relays the browser's Connect calls to the backend's own RPCs (`/ai_grid.v1.<Service>/<Method>`,
   `bff/internal/relay`) behind the same caller checks as `/api/v1`: a reverse proxy that drops
   whatever the browser sent about who it is (`Authorization`, cookies, `Forwarded`, every
-  `X-Forwarded-*`) and sets the caller exactly as `forwardIdentity` does for gRPC, passes only
+  `X-Forwarded-*`) and sets the caller the BFF read from the proxy's headers (the token as
+  `Authorization`, plus user, email and groups, percent-encoded), passes only
   the Connect protocol (POST with a Connect content type, GET), refuses compressed requests,
   limits bodies to 1 MiB, bounds a unary call and every call's wait for headers by
   `BACKEND_TIMEOUT` (`BACKEND_WRITE_TIMEOUT` for the procedures its allowlist marks as writes),

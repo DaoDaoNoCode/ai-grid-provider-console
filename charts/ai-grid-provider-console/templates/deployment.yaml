@@ -128,9 +128,9 @@ spec:
             - name: tmp
               mountPath: /tmp
 
-        # The console: a thin BFF plus the built frontend. It translates the
-        # frontend's JSON calls into gRPC on the backend container over
-        # loopback and forwards the caller's identity in request metadata.
+        # The console: a thin BFF plus the built frontend. It relays the
+        # frontend's Connect calls to the backend container over loopback,
+        # with the caller's identity in the request headers.
         # It binds to loopback so that nothing on the pod network can reach
         # it with forged identity headers: every request comes through the
         # proxy. The only hub call it makes is a SelfSubjectAccessReview with

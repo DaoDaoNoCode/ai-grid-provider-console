@@ -20,12 +20,12 @@ browser --/api/v1/user, /config-> kube-auth-proxy --> BFF        (SelfSubjectAcc
 | Topic | Decision | Why |
 |---|---|---|
 | Language | Go, standard library `net/http` router. The BFF compiles against no contract: the Connect relay forwards bytes, and its one gRPC call of its own, the readiness probe, is the standard gRPC health service whose client ships with `google.golang.org/grpc`. No `client-go`, no backend module dependency. | The BFF reads nothing from the hub; its one Kubernetes call is a `SelfSubjectAccessReview` over plain HTTPS (`internal/hub`). Nothing to keep in step with the backend's proto, which the frontend is generated from (`docs/connect.md`). |
-| Identity | kube-auth-proxy authenticates the browser and sets `x-forwarded-user`, `x-forwarded-email`, `x-forwarded-groups` and `x-forwarded-access-token`. The BFF reads them (`internal/identity`) and forwards the token as `Authorization: Bearer` plus the user, email and groups (`x-forwarded-user`, `x-forwarded-email` and `x-forwarded-groups`, the groups joined with `,`) on every call to the backend, Connect relay and gRPC alike (`internal/backend`, `forwardIdentity`). gRPC metadata values must be printable ASCII, and an OpenShift user or group name need not be, so the BFF percent-encodes each value (each group on its own, before the join): `%` and every byte outside 0x20–0x7E become `%XX` with upper-case hex, and nothing else changes, so an ASCII value without `%` is sent byte for byte (`équipe-ops` is sent as `%C3%A9quipe-ops`, `100%` as `100%25`). The proposed decoding, not yet agreed with the backend team: split the groups on `,`, then percent-decode each value (Go: `url.PathUnescape`, which leaves `+` alone) to get the UTF-8 name back. The backend doesn't decode yet, so it sees a non-ASCII name still encoded (an ASCII name without `%`, the usual case, is unchanged either way). These values are advisory: the backend reads nothing of them yet (it has no authentication, ADR-0004). | The backend decides what the caller may do, and the BFF has no credential of its own. Until the backend authorizes the caller, the BFF makes one decision itself: only a provider admin (see `isProviderAdmin`) reaches `/api/v1` beyond `GET /user` and `GET /config`, the Connect relay and the Perses relay; others get 403 (`AGENTS.md`, known exceptions). The proxy's provider can change (OpenShift OAuth today, a Keycloak realm later) without touching the BFF. |
+| Identity | kube-auth-proxy authenticates the browser and sets `x-forwarded-user`, `x-forwarded-email`, `x-forwarded-groups` and `x-forwarded-access-token`. The BFF reads them (`internal/identity`) and forwards the token as `Authorization: Bearer` plus the user, email and groups (`x-forwarded-user`, `x-forwarded-email` and `x-forwarded-groups`, the groups joined with `,`) on every call the Connect relay passes to the backend (`internal/relay`; the names are `internal/backend`'s). The BFF's own gRPC call, the readiness probe, is made for no caller and carries none. The backend reads these headers as gRPC metadata, whose values must be printable ASCII, and an OpenShift user or group name need not be, so the BFF percent-encodes each value (each group on its own, before the join): `%` and every byte outside 0x20–0x7E become `%XX` with upper-case hex, and nothing else changes, so an ASCII value without `%` is sent byte for byte (`équipe-ops` is sent as `%C3%A9quipe-ops`, `100%` as `100%25`). The proposed decoding, not yet agreed with the backend team: split the groups on `,`, then percent-decode each value (Go: `url.PathUnescape`, which leaves `+` alone) to get the UTF-8 name back. The backend doesn't decode yet, so it sees a non-ASCII name still encoded (an ASCII name without `%`, the usual case, is unchanged either way). These values are advisory: the backend reads nothing of them yet (it has no authentication, ADR-0004). | The backend decides what the caller may do, and the BFF has no credential of its own. Until the backend authorizes the caller, the BFF makes one decision itself: only a provider admin (see `isProviderAdmin`) reaches `/api/v1` beyond `GET /user` and `GET /config`, the Connect relay and the Perses relay; others get 403 (`AGENTS.md`, known exceptions). The proxy's provider can change (OpenShift OAuth today, a Keycloak realm later) without touching the BFF. |
 | `isProviderAdmin` | The hub's answer to a `SelfSubjectAccessReview` for `patch` on `managedclusters`, asked with the caller's own token (`HUB_API_URL`, in-cluster by default). | The user's RBAC decides, not a console setting (review of 2026-10-15). The UI uses it to show or hide actions, and until the backend authorizes the caller the BFF also refuses non-admins with it (see Identity). A `GetCurrentUser` RPC can take this over once the backend acts as the caller. |
 | Login in development | The Vite dev server and `hack/api.sh` set the same headers from `oc whoami` and `oc whoami -t`; `make dev-fake` sets a fixture token the backend's fake hub knows. `make dev-cluster` forwards the backend of the console deployed on the hub (`hack/forward-backend.sh`); `make dev` uses one run from the backend repository. | Any developer who has run `oc login` works against a real hub, and anyone else on the backend's fakes. |
 | Deployment | One pod: kube-auth-proxy (:8443), bff on `127.0.0.1:8080`, ai-grid-backend on `127.0.0.1:9090`. The BFF dials the backend in plaintext over loopback; plaintext to any other address is refused unless `BACKEND_INSECURE=true`. The kubelet probes `/readyz` through the proxy (`--skip-auth-route=^/readyz$`); neither the BFF nor the backend has a probe of its own. The rollout strategy is `Recreate`: the backend serializes each organization's writes with in-process locks (ai-grid-cloud/ai-grid-provider-backend#16), which hold only with one backend, so an upgrade stops the pod before the new one starts and the console is unavailable until it's ready. That covers rollouts only, not a pod deleted by hand or evicted. Client-side `kubectl apply` and `helm upgrade` switch an existing Deployment to `Recreate`; server-side apply refuses it while the defaulted `rollingUpdate` is there. | Nothing on the pod network can reach the BFF with forged identity headers or the backend at all. When the backend gets its own Deployment, set `BACKEND_ADDRESS` to its Service and `BACKEND_CA_FILE` to its serving CA. |
 | Response envelope | The BFF's own JSON (`/api/v1`): success `{"data": ...}`, error `{"error": {"code": "<http status>", "message": "..."}}`. On the Connect relay the BFF's own refusals are Connect errors instead. | Same as the odh-dashboard BFFs. |
-| Tests | `httptest` against an in-memory backend (`internal/backend/backendtest`, gRPC over `bufconn`) and a stub hub; the golden responses in `mock/examples` (`make -C bff golden`) record the BFF's own JSON, which the frontend's tests and `hack/check-chart.sh` read. | No cluster, no binaries; the test doubles record incoming metadata so identity forwarding is tested. `hack/smoke.sh` checks a live backend, and the browser tests run the real backend on its fakes. |
+| Tests | `httptest` against an in-memory backend (`internal/backend/backendtest`, gRPC over `bufconn`) and a stub hub; the golden responses in `mock/examples` (`make -C bff golden`) record the BFF's own JSON, which the frontend's tests and `hack/check-chart.sh` read. | No cluster, no binaries; the relay's tests record what reaches the backend, so identity forwarding is tested. `hack/smoke.sh` checks a live backend, and the browser tests run the real backend on its fakes. |
 
 ## Modules
 
@@ -35,7 +35,7 @@ bff/
   internal/config       flags and env vars
   internal/identity     Identity from proxy headers, context helpers
   internal/hub          the provider-admin SelfSubjectAccessReview
-  internal/backend      gRPC client (health, identity forwarding); backendtest/ test doubles
+  internal/backend      the backend's address and TLS rules, its gRPC health client, the identity header names; backendtest/ its test double
   internal/relay        reverse proxy for the browser's Connect calls to the backend (/ai_grid.v1.*)
   internal/perses       reverse proxy for the Monitoring page's calls to the hub's Perses
   internal/api          App, routes, middleware, error mapping, handlers, SPA
@@ -277,7 +277,7 @@ What the relay owns is the boundary:
   `Proxy-Authorization`, `Cookie`, `Forwarded`, every `X-Forwarded-*` and `X-Auth-Request-*`
   header and the configured `AUTH_*_HEADER`s are dropped (Go's reverse proxy also drops the
   hop-by-hop headers). Then the relay sets the caller as the BFF read them from the proxy's
-  headers, exactly as on every gRPC call (`internal/backend`, `forwardIdentity`):
+  headers (`rewrite`, `internal/relay`):
   `Authorization: Bearer <token>`, and `x-forwarded-user`, `x-forwarded-email` and
   `x-forwarded-groups`, each percent-encoded and the groups joined with `,` (see Identity under
   "Decisions" above); a field the caller doesn't have is not sent. The rest of the request (the
@@ -352,9 +352,9 @@ curl -s -H 'x-forwarded-access-token: dev-token' -H 'x-forwarded-user: dev-user'
 
 ## Errors
 
-The rows for the backend's gRPC codes apply to the BFF's own gRPC calls, which today are the
-readiness probe only (a failure there is 503 from `/readyz`); the Connect relay passes the
-backend's own errors through.
+The BFF maps no backend error to a status of its own: its one gRPC call, the readiness probe,
+answers 503 from `/readyz` when it fails, and the Connect relay passes the backend's own errors
+through.
 
 | Situation | Status |
 |---|---|
@@ -364,9 +364,6 @@ backend's own errors through.
 | Hub rejects the token in the access review | 401 |
 | Hub unreachable, failing or slower than 5 s during the access review | 502, `the hub could not confirm the caller's permissions; try again`, detail in the BFF log (a slow hub is not the backend's 504) |
 | The access review says the caller is not a provider admin (may not patch ManagedClusters): every `/api/v1` request but `GET` (or `HEAD`) `/user` and `/config` (the provider-admin check, until the backend authorizes the caller) | 403, `this console is only for provider admins, users who may patch ManagedClusters on the hub, and the hub says you are not one` |
-| Backend `Unauthenticated` | 401 |
-| Backend `PermissionDenied` (the hub's RBAC denies the caller) | 403, backend message kept |
-| Backend `NotFound` | 404, backend message kept |
 | `/perses/api` without `PERSES_URL`, or a Perses path the relay does not pass | 404, BFF message |
 | `/perses/api` with a method other than `GET` (or `POST` on a query path) | 405, `the console reads Perses only` |
 | `/perses/api` query `POST` not declared `application/x-www-form-urlencoded` | 415, BFF message |
@@ -378,14 +375,6 @@ backend's own errors through.
 | `/ai_grid.v1.*` POST that is not the Connect protocol (gRPC, gRPC-Web, any other `Content-Type`) | 415, Connect error `unimplemented` |
 | `/ai_grid.v1.*` backend unreachable or untrusted; a unary call slower than `BACKEND_TIMEOUT` (`BACKEND_WRITE_TIMEOUT` for a write procedure), or any call whose headers take longer | 502 `unavailable`; 504 `deadline_exceeded` |
 | Any answer from the backend on `/ai_grid.v1.*` (its Connect errors included) | the backend's status and body unchanged, with only the headers a Connect client needs |
-| Backend `InvalidArgument`, `OutOfRange` | 422, backend message kept; with `fieldErrors` (a map from the field a `BadRequest` violation names to its message, the first per field) for `InvalidArgument` only |
-| Backend `AlreadyExists`, `Aborted` | 409, backend message kept |
-| Backend `FailedPrecondition` | 412, backend message kept |
-| Backend `ResourceExhausted` | 429 |
-| Backend `Unimplemented` | 501 |
-| Backend `Unavailable` (the hub unreachable), `Canceled` | 503 |
-| Backend `DeadlineExceeded` or BFF timeout (`BACKEND_TIMEOUT`, 10s) | 504 |
-| Any other backend code | 502, generic message, detail in the BFF log |
 
 ## Out of scope for the BFF
 
