@@ -181,7 +181,9 @@ canonical() {
 strategy="$(helm template console "${CHART}" -n ai-grid | yq 'select(.kind == "Deployment") | .spec.strategy.type')"
 [[ "${strategy}" == Recreate ]] || { echo "check-chart: the Deployment's strategy is '${strategy}', not Recreate" >&2; exit 1; }
 chart="$(helm template console "${CHART}" -n ai-grid | canonical)"
-base="$(kubectl kustomize "${ROOT}/manifests/base" | canonical)"
+# manifests/idp-secrets is the chart's backend.idpSecrets objects: ../base can't hold them, because its
+# kustomization puts every object in ai-grid.
+base="$({ kubectl kustomize "${ROOT}/manifests/base"; echo ---; kubectl kustomize "${ROOT}/manifests/idp-secrets"; } | canonical)"
 if [[ "${chart}" != "${base}" ]]; then
   echo "check-chart: the chart's defaults and manifests/base differ (< chart, > base):" >&2
   diff <(yq -p=json -P '.' <<<"${chart}") <(yq -p=json -P '.' <<<"${base}") >&2 || true
@@ -196,6 +198,54 @@ got="$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[] | se
   | .args[] | select(test("^--upstream-timeout="))' <<<"${defaults}")"
 [[ "${got}" == --upstream-timeout=65s ]] || { echo "check-chart: kube-auth-proxy's upstream timeout is '${got}', want 65s" >&2; exit 1; }
 refused "route.timeout=soon" --set route.timeout=soon
+
+# backend.idpSecrets: on by default, the namespace sets AI_GRID_IDP_SECRET_NAMESPACE and holds the Role,
+# Helm keeps the namespace on uninstall, and off renders neither the objects nor the variable.
+idp_ns_env() {
+  yq 'select(.kind == "Deployment") | .spec.template.spec.containers[] | select(.name == "ai-grid-backend")
+    | .env[] | select(.name == "AI_GRID_IDP_SECRET_NAMESPACE") | .value'
+}
+got="$(idp_ns_env <<<"${defaults}")"
+[[ "${got}" == ai-grid-idp-secrets ]] || { echo "check-chart: by default AI_GRID_IDP_SECRET_NAMESPACE is '${got}'" >&2; exit 1; }
+got="$(yq 'select(.kind == "Namespace" and .metadata.name == "ai-grid-idp-secrets")
+  | .metadata.annotations["helm.sh/resource-policy"]' <<<"${defaults}")"
+[[ "${got}" == keep ]] || { echo "check-chart: the IdP secret namespace's resource-policy is '${got}', want keep" >&2; exit 1; }
+# Argo CD ignores Helm's keep when it prunes: the namespace carries its own sync options.
+got="$(yq 'select(.kind == "Namespace" and .metadata.name == "ai-grid-idp-secrets")
+  | .metadata.annotations["argocd.argoproj.io/sync-options"]' <<<"${defaults}")"
+[[ "${got}" == Delete=false,Prune=false ]] || {
+  echo "check-chart: the IdP secret namespace's Argo CD sync options are '${got}', want Delete=false,Prune=false" >&2
+  exit 1
+}
+custom="$(helm template console "${CHART}" -n ai-grid --set backend.idpSecrets.namespace=tenant-idp)"
+got="$(idp_ns_env <<<"${custom}")"
+[[ "${got}" == tenant-idp ]] || { echo "check-chart: backend.idpSecrets.namespace=tenant-idp sets AI_GRID_IDP_SECRET_NAMESPACE to '${got}'" >&2; exit 1; }
+got="$(yq 'select(.kind == "Role" or .kind == "RoleBinding" or .kind == "Namespace") | [.kind, .metadata.namespace // .metadata.name] | join(" ")' <<<"${custom}" | grep -v '^$' | sort | tr '\n' ',')"
+[[ "${got}" == "Namespace tenant-idp,Role tenant-idp,RoleBinding tenant-idp," ]] || {
+  echo "check-chart: backend.idpSecrets.namespace=tenant-idp renders ${got}" >&2
+  exit 1
+}
+got="$(helm template console "${CHART}" -n ai-grid --set backend.idpSecrets.createNamespace=false |
+  yq 'select(.kind == "Namespace") | .metadata.name')"
+[[ -z "${got}" ]] || { echo "check-chart: backend.idpSecrets.createNamespace=false still renders Namespace ${got}" >&2; exit 1; }
+off="$(helm template console "${CHART}" -n ai-grid --set backend.idpSecrets.enabled=false)"
+got="$(idp_ns_env <<<"${off}")$(yq 'select(.metadata.namespace == "ai-grid-idp-secrets" or .metadata.name == "ai-grid-idp-secrets") | .kind' <<<"${off}")"
+[[ -z "${got}" ]] || { echo "check-chart: backend.idpSecrets.enabled=false still renders: ${got}" >&2; exit 1; }
+# An all-digit name is a valid namespace; unquoted, YAML would read it as a number.
+got="$(helm template console "${CHART}" -n ai-grid --set-string backend.idpSecrets.namespace=123 |
+  yq 'select(.kind == "Namespace" or .kind == "Role" or .kind == "RoleBinding") | (.metadata.namespace // .metadata.name) | type' | grep -v '^---$' | sort -u)"
+[[ "${got}" == '!!str' ]] || { echo "check-chart: backend.idpSecrets.namespace=123 renders as ${got}, not a string" >&2; exit 1; }
+refused "backend.idpSecrets.namespace=Not_A_Namespace" --set-string backend.idpSecrets.namespace=Not_A_Namespace
+refused "backend.idpSecrets.namespace empty" --set-string backend.idpSecrets.namespace=
+# A null namespace would get past the release-namespace guard and put the Role in the release namespace.
+refused "backend.idpSecrets.namespace=null" --set backend.idpSecrets.namespace=null --set backend.idpSecrets.createNamespace=false
+# The backend can get every Secret in that namespace, so it must not be the console's own.
+if out="$(helm template console "${CHART}" -n ai-grid --set backend.idpSecrets.namespace=ai-grid \
+  --set backend.idpSecrets.createNamespace=false 2>&1 >/dev/null)" ||
+  ! grep -q 'backend.idpSecrets.namespace must not be the release namespace "ai-grid"' <<<"${out}"; then
+  echo "check-chart: backend.idpSecrets.namespace equal to the release namespace must fail the render: ${out}" >&2
+  exit 1
+fi
 refused "authProxy.upstreamTimeout=65" --set-string authProxy.upstreamTimeout=65
 
 echo "check-chart: lint passes; the chart's defaults render manifests/base"

@@ -229,6 +229,11 @@ spec:
                   name: {{ $kc }}
                   key: {{ index . 1 }}
             {{- end }}
+            {{- if .Values.backend.idpSecrets.enabled }}
+            # Where organization identity providers' client secrets are (templates/idp-secrets.yaml).
+            - name: AI_GRID_IDP_SECRET_NAMESPACE
+              value: {{ .Values.backend.idpSecrets.namespace | quote }}
+            {{- end }}
             {{- with .Values.backend.git }}
             {{- if .url }}
             # Git mode: Models and Subscriptions are commits to this repository, which Argo CD
