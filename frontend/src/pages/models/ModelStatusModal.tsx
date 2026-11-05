@@ -19,13 +19,7 @@ export const ModelStatusModal: React.FC<Props> = ({ model, clusters, onClose }) 
   const title = titleOf(model);
   const gitMessage = gitStatusMessage[model.state];
   return (
-    <Modal
-      {...statusModalLayout}
-      isOpen
-      onClose={onClose}
-      aria-label={`${title} status`}
-      data-testid="model-status-modal"
-    >
+    <Modal {...statusModalLayout} isOpen onClose={onClose} aria-label={`${title} status`}>
       <ModalHeader>
         <Title headingLevel="h1" size="2xl">
           <Flex gap={{ default: 'gapMd' }} alignItems={{ default: 'alignItemsCenter' }}>
@@ -43,10 +37,10 @@ export const ModelStatusModal: React.FC<Props> = ({ model, clusters, onClose }) 
       </ModalHeader>
       <ModalBody>
         {gitMessage ? (
-          <p data-testid="model-status-modal-message">{gitMessage}</p>
+          <p>{gitMessage}</p>
         ) : (
           <Stack hasGutter>
-            <p data-testid="model-status-modal-message">The model isn’t ready on one or more of its clusters.</p>
+            <p>The model isn’t ready on one or more of its clusters.</p>
             <ModelClustersTable model={model} clusters={clusters} isNested opensClusters={false} />
           </Stack>
         )}

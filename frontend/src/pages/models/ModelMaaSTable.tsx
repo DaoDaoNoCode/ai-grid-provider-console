@@ -14,7 +14,7 @@ type Props = {
 };
 
 export const ModelMaaSTable: React.FC<Props> = ({ model, clusters }) => (
-  <Table aria-label={`Availability of ${titleOf(model)}`} variant="compact" data-testid={`model-maas-${model.id}`}>
+  <Table aria-label={`Availability of ${titleOf(model)}`} variant="compact">
     <Thead>
       <Tr>
         <Th>Ingress cluster</Th>
@@ -25,21 +25,16 @@ export const ModelMaaSTable: React.FC<Props> = ({ model, clusters }) => (
     </Thead>
     <Tbody>
       {model.ingress.map((ingress) => (
-        <Tr key={ingress.cluster} data-testid="model-maas-row">
+        <Tr key={ingress.cluster}>
           <Td dataLabel="Ingress cluster">{ingress.cluster}</Td>
           <Td dataLabel="Region">{regionOf(clusters, ingress.cluster)}</Td>
           <Td dataLabel="Availability" modifier="fitContent">
             {ingress.maas ? (
               <div>
-                <StatusLabel
-                  isCompact
-                  status={ingress.maas}
-                  screenReaderSuffix={` on ${ingress.cluster}`}
-                  data-testid="model-maas-state"
-                />
+                <StatusLabel isCompact status={ingress.maas} screenReaderSuffix={` on ${ingress.cluster}`} />
               </div>
             ) : (
-              <span data-testid="model-maas-state">{EMPTY_VALUE}</span>
+              EMPTY_VALUE
             )}
           </Td>
           <Td dataLabel="MaaS message" modifier="breakWord">

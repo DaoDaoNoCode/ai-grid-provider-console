@@ -73,7 +73,6 @@ export const ModelAvailability: React.FC<Props> = ({ model, availability }) => {
           variant={opens ? 'filled' : 'outline'}
           isClickable={opens}
           onClick={opens ? () => setOpen(true) : undefined}
-          data-testid="model-availability-label"
         >
           {availability.label}
           <span className="pf-v6-screen-reader"> availability of {titleOf(model)}</span>
@@ -87,15 +86,12 @@ export const ModelAvailability: React.FC<Props> = ({ model, availability }) => {
             className="pf-v6-c-content--small"
             style={subtextStyle(availability.label)}
             onClick={() => setOpen(true)}
-            data-testid="model-availability-subtext"
           >
             {availability.subtext}
             <span className="pf-v6-screen-reader">: {titleOf(model)}</span>
           </Button>
         ) : (
-          <div className="pf-v6-c-content--small" data-testid="model-availability-subtext">
-            {availability.subtext}
-          </div>
+          <div className="pf-v6-c-content--small">{availability.subtext}</div>
         ))}
       {open && opens && <AvailabilityModal model={model} availability={availability} onClose={() => setOpen(false)} />}
     </>
@@ -105,13 +101,7 @@ export const ModelAvailability: React.FC<Props> = ({ model, availability }) => {
 const AvailabilityModal: React.FC<Props & { onClose: () => void }> = ({ model, availability, onClose }) => {
   const title = titleOf(model);
   return (
-    <Modal
-      {...statusModalLayout}
-      isOpen
-      onClose={onClose}
-      data-testid="model-availability-modal"
-      aria-label={`${title} availability`}
-    >
+    <Modal {...statusModalLayout} isOpen onClose={onClose} aria-label={`${title} availability`}>
       <ModalHeader>
         <Title headingLevel="h1" size="2xl">
           <Flex gap={{ default: 'gapMd' }} alignItems={{ default: 'alignItemsCenter' }}>
@@ -133,7 +123,7 @@ const AvailabilityModal: React.FC<Props & { onClose: () => void }> = ({ model, a
             {availability.body}
           </Alert>
           {model.ingress.length > 0 && (
-            <DescriptionList isCompact aria-label="What MaaS reported" data-testid="model-availability-reports">
+            <DescriptionList isCompact aria-label="What MaaS reported">
               {model.ingress.map((ingress) => (
                 <DescriptionListGroup key={ingress.cluster}>
                   <DescriptionListTerm>MaaS on {ingress.cluster}</DescriptionListTerm>

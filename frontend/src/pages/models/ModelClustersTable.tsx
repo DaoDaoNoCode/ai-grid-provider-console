@@ -70,7 +70,6 @@ const ViewLink: React.FC<{ status?: ModelClusterView; cluster: string }> = ({ st
         icon={<ExternalLinkAltIcon />}
         iconPosition="end"
         aria-label={`View on ${cluster} in ${where}`}
-        data-testid="model-cluster-view"
       >
         View
       </Button>
@@ -94,13 +93,7 @@ const ClusterStatusModal: React.FC<{
     </DescriptionListGroup>
   );
   return (
-    <Modal
-      {...statusModalLayout}
-      isOpen
-      onClose={onClose}
-      aria-label={`${titleOf(model)} on ${status.cluster}`}
-      data-testid="cluster-status-modal"
-    >
+    <Modal {...statusModalLayout} isOpen onClose={onClose} aria-label={`${titleOf(model)} on ${status.cluster}`}>
       <ModalHeader>
         <Title headingLevel="h1" size="2xl">
           <Flex gap={{ default: 'gapMd' }} alignItems={{ default: 'alignItemsCenter' }}>
@@ -119,7 +112,7 @@ const ClusterStatusModal: React.FC<{
       </ModalHeader>
       <ModalBody>
         <Stack hasGutter>
-          {gitMessage && <p data-testid="cluster-status-git-message">{gitMessage}</p>}
+          {gitMessage && <p>{gitMessage}</p>}
           <DescriptionList isCompact aria-label={`What ${status.cluster} reported`}>
             {row('Region', region)}
             {row('Git sync', status.sync ?? 'No report')}
@@ -153,7 +146,6 @@ export const ModelClustersTable: React.FC<Props> = ({ model, clusters, isNested,
         variant="compact"
         isNested={isNested}
         borders={isNested ? false : undefined}
-        data-testid={reported ? `model-clusters-${model.id}` : `model-selected-clusters-${model.id}`}
       >
         <Thead>
           {/* resetOffset: inside the Models page's expanded row, the nested table's first column lines
@@ -167,11 +159,7 @@ export const ModelClustersTable: React.FC<Props> = ({ model, clusters, isNested,
         </Thead>
         <Tbody>
           {rows.map(({ cluster, status }) => (
-            <Tr
-              key={cluster}
-              resetOffset={isNested}
-              data-testid={reported ? 'model-cluster-row' : 'model-selected-cluster-row'}
-            >
+            <Tr key={cluster} resetOffset={isNested}>
               <Td dataLabel="Cluster">
                 <Link to={`/clusters/${encodeURIComponent(cluster)}`}>{cluster}</Link>
               </Td>
@@ -183,7 +171,6 @@ export const ModelClustersTable: React.FC<Props> = ({ model, clusters, isNested,
                     status={status ? clusterStatus(status) : 'Pending sync'}
                     onClick={status?.state && opensClusters ? () => setOpenCluster(cluster) : undefined}
                     screenReaderSuffix={` on ${cluster}`}
-                    data-testid="model-cluster-status"
                   />
                 </div>
               </Td>
