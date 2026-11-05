@@ -80,7 +80,8 @@ a failed load.
   list, the Status labels Saved to Git, Syncing and Partially ready are filled and open
   `ModelStatusModal`, and an Availability label with more to say is filled and opens its dialog; the
   other words stay outline. A model's page keeps an outline Status label; its alert explains the
-  status.
+  status. A model's Status tooltip explains its word from the clusters that aren't Ready
+  (`stateTooltipOf`), never the phase's message, which can disagree; Ready has none.
 - On the Clusters list, a status with a non-empty hub message is filled and opens that cluster's
   message as text in a dialog, including Ready. Without a message it stays outline and
   noninteractive. AI Grid status stays outline. Refresh keeps the selected cluster's identity.

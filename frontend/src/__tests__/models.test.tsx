@@ -480,8 +480,10 @@ describe('the status', () => {
       expect((await status(id)).querySelector('.pf-v6-c-label')).toHaveClass('pf-m-outline');
       expect(within(await status(id)).queryByRole('button')).not.toBeInTheDocument();
     }
-    await user.hover(within(await status('pending')).getByText('Starting'));
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('Not ready on site1');
+    await user.hover(within(await status('failed')).getByText('Failed'));
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      'A runtime template this model needs isn’t installed on the hub. Install the template on the hub, or deploy the model with another runtime.',
+    );
     for (const id of ['partial', 'saved', 'syncing']) {
       expect(within(await status(id)).getByRole('button')).toBeInTheDocument();
     }
@@ -490,6 +492,50 @@ describe('the status', () => {
     expect(modal).toHaveTextContent('waiting for Argo CD to synchronize');
     // The design's Sync now waits until after the freeze.
     expect(within(modal).queryByRole('button', { name: 'Sync now' })).not.toBeInTheDocument();
+  });
+
+  it('explains the state in the tooltip, never the phase that disagrees with it', async () => {
+    const user = userEvent.setup();
+    const service = new MockConsoleService();
+    const at = (id: string, status: Parameters<typeof modelObject>[0]['status']) =>
+      modelObject({
+        id,
+        metadata: { name: id, version: 1 },
+        spec: { model: { uri: `hf://x/${id}`, name: id } },
+        status,
+      });
+    const cluster = (name: string, phase: ModelPhase, state: ModelState, deploymentMessage = '') =>
+      create(ModelClusterStatusSchema, { cluster: name, phase, state, deploymentMessage });
+    modelsOf(service).models = [
+      // The phase says one cluster failed; the state, from the same clusters, says Ready.
+      at('ready', {
+        phase: ModelPhase.PARTIALLY_AVAILABLE,
+        reason: 'PartiallyAvailable',
+        message: 'Failed on site-b; ready on site-a',
+        state: ModelState.READY,
+        clusters: [
+          cluster('site-a', ModelPhase.READY, ModelState.READY),
+          cluster('site-b', ModelPhase.FAILED, ModelState.READY),
+        ],
+      }),
+      at('starting', {
+        phase: ModelPhase.FAILED,
+        reason: 'Failed',
+        message: 'Failed on site-b',
+        state: ModelState.STARTING,
+        clusters: [
+          cluster('site-b', ModelPhase.FAILED, ModelState.STARTING, 'Deployment does not have minimum availability.'),
+        ],
+      }),
+    ];
+    renderAt('/models', service);
+    const status = async (id: string) => within(await rowOf(id)).getByTestId('model-phase');
+    // Ready has nothing to add: no tooltip, so the label takes no focus.
+    const ready = within(await status('ready')).getByText('Ready');
+    expect(ready.closest('.pf-v6-c-label')).not.toHaveAttribute('tabindex');
+    await user.hover(within(await status('starting')).getByText('Starting'));
+    const tooltip = await screen.findByRole('tooltip');
+    expect(tooltip).toHaveTextContent(/^site-b: Starting\. Deployment does not have minimum availability\.$/);
   });
 
   it('sorts the list by Status, in rollout order', async () => {

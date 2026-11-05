@@ -1,7 +1,7 @@
 import { ExpandableSection, List, ListItem, Stack } from '@patternfly/react-core';
 import { titleOf, type ModelView } from './modelView';
 import { StatusLabel } from '../../components/StatusLabel';
-import { rolloutExplanation, statusOpens } from './modelStatusInfo';
+import { rolloutExplanation, stateTooltipOf, statusOpens } from './modelStatusInfo';
 
 /** The rollout explained (rolloutExplanation): its sentence, each cluster that isn't Ready, and the raw reason folded away. */
 export const ModelStatusDetails: React.FC<{ model: ModelView }> = ({ model }) => {
@@ -31,7 +31,8 @@ export const ModelStatusDetails: React.FC<{ model: ModelView }> = ({ model }) =>
 /**
  * The model's Status column (ModelStatus.state): the backend's rollout word (status.state). Saved to Git, Syncing
  * and Partially ready open the model's status dialog through `onOpen`; the other words are outline,
- * with the backend's message in a tooltip. Without `onOpen` (the model page), nothing opens.
+ * with what explains the word in a tooltip (stateTooltipOf), never the phase's message. Without
+ * `onOpen` (the model page), nothing opens.
  */
 export const ModelStatusLabel: React.FC<{ model: ModelView; onOpen?: () => void }> = ({ model, onOpen }) => {
   const opens = statusOpens(model.state) && !!onOpen;
@@ -40,7 +41,7 @@ export const ModelStatusLabel: React.FC<{ model: ModelView; onOpen?: () => void 
       <StatusLabel
         isCompact
         status={model.state}
-        reason={opens ? undefined : (model.statusMessage ?? model.reason)}
+        reason={opens ? undefined : stateTooltipOf(model)}
         onClick={opens ? onOpen : undefined}
         screenReaderSuffix={onOpen ? ` for ${titleOf(model)}` : undefined}
       />

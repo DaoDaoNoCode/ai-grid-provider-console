@@ -1381,6 +1381,47 @@ it('caps a new subscription id at the backend maximum, leaving room for -policy'
 });
 
 describe('subscription creation model status', () => {
+  it("explains a model's state in the picker's tooltip, never the phase that disagrees with it", async () => {
+    const user = userEvent.setup();
+    const service = seeded();
+    // The phase says site2 failed; the state, from the same clusters, says Ready.
+    const ready = fleetOf(service).find('granite-3-8b');
+    ready.status!.phase = ModelPhase.PARTIALLY_AVAILABLE;
+    ready.status!.message = 'Failed on site2; ready on site1';
+    ready.status!.state = ModelState.READY;
+    ready.status!.clusters.push(
+      create(ModelClusterStatusSchema, { cluster: 'site2', phase: ModelPhase.FAILED, state: ModelState.READY }),
+    );
+    const starting = fleetOf(service).find('llama-3-70b');
+    starting.status!.phase = ModelPhase.FAILED;
+    starting.status!.message = 'Failed on site2';
+    starting.status!.state = ModelState.STARTING;
+    starting.status!.clusters = [
+      create(ModelClusterStatusSchema, {
+        cluster: 'site2',
+        phase: ModelPhase.FAILED,
+        state: ModelState.STARTING,
+        deploymentMessage: 'Deployment does not have minimum availability.',
+      }),
+    ];
+    renderAt('/subscriptions/create', service);
+    await user.click(await screen.findByRole('button', { name: 'Add models' }));
+    const picker = await screen.findByRole('dialog', { name: 'Add models' });
+    const label = (title: string) =>
+      within(
+        within(picker)
+          .getByRole('checkbox', { name: `Select ${title}` })
+          .closest('tr')!,
+      ).getByTestId('model-phase');
+    // Ready has nothing to add: no tooltip, so the label takes no focus.
+    expect(label('Granite 3.3 8B Instruct')).toHaveTextContent(/^Ready$/);
+    expect(label('Granite 3.3 8B Instruct').querySelector('.pf-v6-c-label')).not.toHaveAttribute('tabindex');
+    await user.hover(within(label('Llama 3.3 70B Instruct')).getByText('Starting'));
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      /^site2: Starting\. Deployment does not have minimum availability\.$/,
+    );
+  });
+
   it('suspends the picker for partial status without confirming selections and keeps the subscription draft', async () => {
     const user = userEvent.setup();
     const service = seeded();
