@@ -24,6 +24,7 @@ import {
   Title,
 } from '@patternfly/react-core';
 import { PendingIcon } from '@patternfly/react-icons';
+import { subtextClassName } from '../../utilities/phaseLabelUtils';
 import { statusLabelProps } from '../../utilities/status';
 import { EMPTY_VALUE } from '../../utilities/format';
 import type { AvailabilityView } from './modelStatusInfo';
@@ -75,12 +76,17 @@ export const ModelAvailability: React.FC<Props> = ({ model, availability, onMode
           <span className="pf-v6-screen-reader"> availability of {titleOf(model)}</span>
         </Label>
       </div>
-      {/* The reason under the label, in small text. One that opens the dialog is an inline link:
-          PatternFly underlines it and gives it the link colour; the label above carries the tone. */}
+      {/* The reason under the label, in small text and the label's tone, as a subscription's subtext
+          (getSubtextProps). One that opens the dialog is an inline link, which PatternFly underlines. */}
       {availability.subtext && (
-        <Content component="small">
+        <Content component="small" className={opens ? undefined : subtextClassName(availability.label)}>
           {opens ? (
-            <Button variant="link" isInline onClick={() => setOpen(true)}>
+            <Button
+              variant="link"
+              isInline
+              className={subtextClassName(availability.label)}
+              onClick={() => setOpen(true)}
+            >
               {availability.subtext}
               <span className="pf-v6-screen-reader">: {titleOf(model)}</span>
             </Button>

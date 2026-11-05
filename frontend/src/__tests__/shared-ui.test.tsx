@@ -1,4 +1,6 @@
 // Small shared pieces: page states, status labels, short lists and chart ticks.
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { useState } from 'react';
 import { render, screen, within } from '@testing-library/react';
 import { TestApp } from './TestApp';
@@ -22,7 +24,7 @@ import { ErrorState } from '../components/states/ErrorState';
 import { LoadFailedAlert } from '../components/states/LoadFailedAlert';
 import { PageStateSection } from '../components/states/PageStateSection';
 import { SectionEmptyState } from '../components/states/SectionEmptyState';
-import { getSubtextProps } from '../utilities/phaseLabelUtils';
+import { getSubtextProps, subtextClassName } from '../utilities/phaseLabelUtils';
 import { statusLabelProps } from '../utilities/status';
 
 it("opens a status's reason from the keyboard", async () => {
@@ -114,6 +116,20 @@ it('gives a phase the same colour in its label and its subtext', () => {
   expect(statusLabelProps('Degraded').status).toBe('warning');
   expect(getSubtextProps('Partially ready')).toEqual({ className: 'pf-v6-u-text-color-status-warning' });
   expect(getSubtextProps('Ready')).toBeUndefined();
+  // Pending's info tone: PatternFly 6.7 ships the info text colour as -status-default.
+  expect(getSubtextProps('Pending')).toEqual({ className: 'pf-v6-u-text-color-status-default' });
+});
+
+it('colours a subtext only with text colour classes PatternFly ships', () => {
+  const css = readFileSync(
+    createRequire(import.meta.url).resolve('@patternfly/react-styles/css/utilities/Text/text.css'),
+    'utf8',
+  );
+  for (const status of ['Pending', 'Unavailable', 'Failed', 'Partially ready']) {
+    const className = subtextClassName(status);
+    expect(className, status).toBeDefined();
+    expect(css, className).toContain(`.${className} {`);
+  }
 });
 
 it('offers Log out while the console configuration is still loading', async () => {

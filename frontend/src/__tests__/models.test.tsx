@@ -2801,6 +2801,23 @@ describe('the deployment and MaaS statuses', () => {
     expect(within(modal).getByRole('link', { name: 'Go to Subscriptions' })).toHaveAttribute('href', '/subscriptions');
   });
 
+  it("colours the Availability subtext in its label's tone, as a subscription's", async () => {
+    const service = running();
+    const smollm2 = modelsOf(service).find('smollm2');
+    renderAt('/models', service);
+    const subtext = async () => within(await rowOf('smollm2')).getByRole('button', { name: /: smollm2$/ });
+    for (const [state, className] of [
+      [ModelMaasState.AWAITING_SUBSCRIPTION, 'pf-v6-u-text-color-status-default'],
+      [ModelMaasState.UNAVAILABLE, 'pf-v6-u-text-color-status-warning'],
+      [ModelMaasState.FAILED, 'pf-v6-u-text-color-status-danger'],
+    ] as [ModelMaasState, string][]) {
+      smollm2.status!.maas = state;
+      cleanup();
+      renderAt('/models', service);
+      expect(await subtext()).toHaveClass(className);
+    }
+  });
+
   it('links to the model from the Availability dialog on the list, and not on its own page', async () => {
     const user = userEvent.setup();
     const service = running();
