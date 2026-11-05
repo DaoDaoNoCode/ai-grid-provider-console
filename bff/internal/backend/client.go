@@ -1,10 +1,11 @@
 // Package backend holds the gRPC connection to ai-grid-backend.
 //
 // The backend owns every interaction with the hub, Keycloak and metrics. The
-// BFF calls it over gRPC for the readiness probe only (AiGrid/Ping), and a
-// call made for a caller carries the caller's identity in request metadata
-// (forwardIdentity); the pages call it over Connect through the relay
-// (internal/relay).
+// BFF calls it over gRPC for the readiness probe only (the standard gRPC
+// health service, grpc.health.v1.Health/Check, whose client ships with
+// grpc-go), and a call made for a caller carries the caller's identity in
+// request metadata (forwardIdentity); the pages call it over Connect through
+// the relay (internal/relay).
 package backend
 
 import (
@@ -20,9 +21,9 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 
-	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/identity"
 )
 
@@ -58,7 +59,9 @@ type Client struct {
 	conn         *grpc.ClientConn
 	timeout      time.Duration
 	writeTimeout time.Duration
-	Health       aigridv1.AiGridClient
+	// Health is the standard gRPC health service, which the backend registers
+	// for every service it serves (grpchealth in its cmd/ai-grid-provider-backend).
+	Health healthpb.HealthClient
 }
 
 // Dial creates the connection. It does not connect until the first RPC, so a
@@ -85,7 +88,7 @@ func Dial(cfg Config, extra ...grpc.DialOption) (*Client, error) {
 		conn:         conn,
 		timeout:      timeout,
 		writeTimeout: writeTimeout,
-		Health:       aigridv1.NewAiGridClient(conn),
+		Health:       healthpb.NewHealthClient(conn),
 	}, nil
 }
 
@@ -191,9 +194,9 @@ func forwardIdentity(ctx context.Context, method string, req, reply any, cc *grp
 // UTF-8 for a name such as `équipe-ops`. The groups are encoded one by one
 // and joined with `,`; a group never contains one (package identity splits
 // the header on it), so the receiver splits first and then decodes. This is
-// a proposal to the backend team, not yet agreed: the fake decodes it, the
-// shipped backend doesn't yet and sees a non-ASCII name still encoded
-// (harmless while these values are advisory, docs/plan/bff-api.md).
+// a proposal to the backend team, not yet agreed: the backend doesn't decode
+// it yet and sees a non-ASCII name still encoded (harmless while these values
+// are advisory, docs/plan/bff-api.md).
 func EncodeMetadataValue(v string) string {
 	if !strings.ContainsFunc(v, func(r rune) bool { return r == '%' || r < 0x20 || r > 0x7e }) {
 		return v

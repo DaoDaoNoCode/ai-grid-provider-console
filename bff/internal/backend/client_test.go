@@ -5,7 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/backend"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/backend/backendtest"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/identity"
@@ -48,7 +49,7 @@ func TestForwardsIdentity(t *testing.T) {
 	}
 	ctx, cancel := client.Context(identity.WithIdentity(t.Context(), id))
 	defer cancel()
-	if _, err := client.Health.Ping(ctx, &aigridv1.PingRequest{Name: "bff"}); err != nil {
+	if _, err := client.Health.Check(ctx, &healthpb.HealthCheckRequest{}); err != nil {
 		t.Fatal(err)
 	}
 	got := func(k string) string { return strings.Join(fake.Metadata.Get(k), "|") }
@@ -59,7 +60,7 @@ func TestForwardsIdentity(t *testing.T) {
 	// No identity: nothing forwarded.
 	ctx2, cancel2 := client.Context(t.Context())
 	defer cancel2()
-	if _, err := client.Health.Ping(ctx2, &aigridv1.PingRequest{}); err != nil {
+	if _, err := client.Health.Check(ctx2, &healthpb.HealthCheckRequest{}); err != nil {
 		t.Fatal(err)
 	}
 	if got(backend.MetaAuthorization) != "" {
@@ -82,7 +83,7 @@ func TestForwardsNonASCIIIdentity(t *testing.T) {
 	}
 	ctx, cancel := client.Context(identity.WithIdentity(t.Context(), id))
 	defer cancel()
-	if _, err := client.Health.Ping(ctx, &aigridv1.PingRequest{Name: "bff"}); err != nil {
+	if _, err := client.Health.Check(ctx, &healthpb.HealthCheckRequest{}); err != nil {
 		t.Fatalf("an accented identity must reach the backend: %v", err)
 	}
 	decoded := func(k string) string {

@@ -10,38 +10,29 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
-	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/backend"
 )
 
-// Fake answers the console's draft API, as the console's fake backend serves
-// it (`make run-fake`), from fixed data; CatalogItems and the draft-only
-// methods it has no data for answer Unimplemented. Set Err to make every
-// RPC fail with that status, or Errs to fail one RPC by method name
-// ("UpdateManagedCluster"), so a read can succeed and the write that follows
-// it fail. Calls lists the methods reached, in order, and Metadata records the
-// incoming metadata of the last call so tests can assert on identity
-// forwarding.
-// Capabilities is what GetHubCapabilities answers, Unimplemented when nil
-// like the backend.
+// Fake answers what the BFF calls over gRPC: the gRPC health service, which
+// the readiness probe asks. Set Err to make every RPC fail with that status,
+// or Errs to fail one RPC by method name ("Check"). Calls lists the methods
+// reached, in order, and Metadata records the incoming metadata of the last
+// call so tests can assert on identity forwarding.
 //
 // Each RPC runs under a lock, so concurrent calls are safe. A test reads the
 // recorded fields after its call returned: the answer orders them.
 type Fake struct {
-	aigridv1.UnimplementedAiGridServer
-	aigridv1.UnimplementedModelsServer
-	aigridv1.UnimplementedCatalogItemsServer
+	healthpb.UnimplementedHealthServer
 
 	Err      error
 	Errs     map[string]error
 	Calls    []string
 	Metadata metadata.MD
-
-	Capabilities *aigridv1.HubCapabilities
 
 	mu sync.Mutex
 }
@@ -64,42 +55,26 @@ func (f *Fake) Reached(method string) bool {
 	return slices.Contains(f.Calls, method)
 }
 
-// Ping implements AiGrid.
-func (f *Fake) Ping(ctx context.Context, req *aigridv1.PingRequest) (*aigridv1.PingResponse, error) {
+// Check implements the gRPC health service: the server is serving.
+func (f *Fake) Check(ctx context.Context, _ *healthpb.HealthCheckRequest) (*healthpb.HealthCheckResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if err := f.begin(ctx, "Ping"); err != nil {
+	if err := f.begin(ctx, "Check"); err != nil {
 		return nil, err
 	}
-	return &aigridv1.PingResponse{Message: "pong " + req.GetName()}, nil
-}
-
-// GetHubCapabilities implements AiGrid: Unimplemented until Capabilities is set.
-func (f *Fake) GetHubCapabilities(ctx context.Context, _ *aigridv1.GetHubCapabilitiesRequest) (*aigridv1.GetHubCapabilitiesResponse, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if err := f.begin(ctx, "GetHubCapabilities"); err != nil {
-		return nil, err
-	}
-	if f.Capabilities == nil {
-		return nil, status.Error(codes.Unimplemented, "method GetHubCapabilities not implemented")
-	}
-	return &aigridv1.GetHubCapabilitiesResponse{Capabilities: f.Capabilities}, nil
+	return &healthpb.HealthCheckResponse{Status: healthpb.HealthCheckResponse_SERVING}, nil
 }
 
 // Status is a shorthand for a gRPC error.
 func Status(code codes.Code, msg string) error { return status.Error(code, msg) }
 
 // Start serves the fake over an in-memory connection and returns a client
-// dialed to it, as `make run-fake` dials the fake backend. Both are stopped
-// when the test ends. StartV1 serves the backend's own API, which production
-// calls.
+// dialed to it. Both are stopped when the test ends. StartV1 serves the
+// backend's own API, which production calls.
 func Start(t *testing.T, fake *Fake) *backend.Client {
 	t.Helper()
 	srv := grpc.NewServer()
-	aigridv1.RegisterAiGridServer(srv, fake)
-	aigridv1.RegisterModelsServer(srv, fake)
-	aigridv1.RegisterCatalogItemsServer(srv, fake)
+	healthpb.RegisterHealthServer(srv, fake)
 	return serve(t, srv, backend.Config{})
 }
 

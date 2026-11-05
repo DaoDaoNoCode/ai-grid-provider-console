@@ -13,11 +13,10 @@ import (
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/backend/backendtest"
 )
 
-// The BFF reaches two kinds of backend over gRPC. The console's fake serves the draft API
-// (`make run-fake`); ai-grid-provider-backend serves its own ai_grid.v1, of which the BFF calls
-// only AiGrid/Ping (the pages call the rest over Connect, through the relay). The tests in this
-// file run what both share against both, so a change that works on the fake and breaks the
-// production path fails.
+// The BFF reaches the backend over gRPC only for its health service, which ai-grid-provider-backend
+// serves (backendtest.V1) and the handler tests' double answers too (backendtest.Fake); the pages
+// call the rest over Connect, through the relay. The tests in this file run what both share against both, so a change that
+// works on the test double and breaks the production path fails.
 
 // backendShape is one backend the BFF can be dialed to. start fails every call with err when
 // it is set.
@@ -27,7 +26,7 @@ type backendShape struct {
 }
 
 var backendShapes = []backendShape{
-	{"draft", func(t *testing.T, err error) *backend.Client {
+	{"fake", func(t *testing.T, err error) *backend.Client {
 		return backendtest.Start(t, &backendtest.Fake{Err: err})
 	}},
 	{"v1", func(t *testing.T, err error) *backend.Client {
@@ -43,7 +42,7 @@ func wantStatus(t *testing.T, what string, rec *httptest.ResponseRecorder, want 
 	}
 }
 
-// The readiness probe pings either backend, and says when it can't.
+// The readiness probe asks either backend's health service, and says when it can't.
 func TestReadyzOnEveryBackend(t *testing.T) {
 	t.Parallel()
 	for _, shape := range backendShapes {

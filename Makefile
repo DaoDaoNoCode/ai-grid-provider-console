@@ -136,8 +136,8 @@ dev-bff-fake-infra:
 
 ##@ Checks
 
-lint: ## Lint the BFF (vet, golangci-lint, buf lint on mock/proto) and the frontend (ESLint, Prettier, tsc, generated API current)
-	$(MAKE) -C bff vet lint lint-proto
+lint: ## Lint the BFF (vet, golangci-lint) and the frontend (ESLint, Prettier, tsc, generated API current)
+	$(MAKE) -C bff vet lint
 	cd frontend && pnpm lint && pnpm format:check && pnpm typecheck
 	$(MAKE) --no-print-directory check-generated-api
 
