@@ -27,7 +27,9 @@ Each image is `repository:tag`, `repository@digest`, or `repository:tag@digest` 
 ## Identity provider secrets
 
 An organization's identity provider names the Secret that holds its OIDC client secret (key
-`client-secret`), never the secret itself (ai-grid-provider-backend#64). By default the chart creates
+`client-secret`), never the secret itself (`config.client_secret_secret_name`; the backend reads
+the Secret's namespace from `AI_GRID_IDP_SECRET_NAMESPACE` in ai-grid-provider-backend's
+`cmd/ai-grid-provider-backend/main.go`). By default the chart creates
 namespace `ai-grid-idp-secrets` for those Secrets, sets the backend's `AI_GRID_IDP_SECRET_NAMESPACE`
 to it, and lets the backend `get` Secrets there: not list, watch or write them. A provider admin
 creates each Secret before creating the organization:
