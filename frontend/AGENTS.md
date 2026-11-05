@@ -87,7 +87,9 @@ a failed load.
 - In Create subscription and its Add models picker, every model shows its status as the Models list
   does (`ModelStatusLabel`), and only Partially ready models with cluster reports open the shared
   model status dialog. Suspend the picker while status is open; retain its filter, sort and
-  unconfirmed selections, then restore focus to the trigger when returning.
+  unconfirmed selections, then restore focus to the trigger when returning. When a refresh leaves
+  the model without that status, its dialog closes; opened from the selected models, focus goes to
+  Add models, since the trigger is no longer a button.
   Inspecting status preserves the subscription draft and token limits. Edit and view stay unchanged.
 - A label is clickable (filled) where a whole column opens each row's details, for every row: the
   Status column of a model's clusters table (`ModelClustersTable`), which opens what that cluster

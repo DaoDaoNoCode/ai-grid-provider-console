@@ -4,7 +4,7 @@
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
 // The console adds the Organization field: required on create, kept on edit. Telemetry is dropped.
 // It writes Subscriptions/Create and Update over Connect.
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ActionGroup,
@@ -147,7 +147,6 @@ export const CreateSubscriptionForm: React.FC<Props> = ({
   const [statusModelId, setStatusModelId] = useState<string>();
   const [pickerFocusModelId, setPickerFocusModelId] = useState<string>();
   const statusModel = availableModels.find((model) => model.id === statusModelId);
-  if (statusModelId && !hasPartialModelStatus(statusModel)) setStatusModelId(undefined);
   const { data: organizations, known: organizationsKnown, error: organizationsError } = useOrganizations();
   const { createSubscription, updateSubscription } = useSubscriptionWrites();
   const isEditing = !!subscriptionInfo?.object;
@@ -201,6 +200,20 @@ export const CreateSubscriptionForm: React.FC<Props> = ({
     handleSaveRateLimits,
     handleCloseRateLimitsModal,
   } = useSubscriptionModels(initialModels);
+
+  // A poll that leaves the inspected model without its partial status closes its dialog. Opened from
+  // the selected models, the dialog would return focus to that row's status, which is no longer a
+  // button, so focus goes to Add models instead. The picker restores its own focus (AddModelsModal).
+  const addModelsRef = useRef<HTMLButtonElement>(null);
+  // Counts the closes that move focus; the effect runs after the dialog's unmount has tried its trigger.
+  const [addModelsFocus, setAddModelsFocus] = useState(0);
+  if (statusModelId && !hasPartialModelStatus(statusModel)) {
+    setStatusModelId(undefined);
+    if (!isAddModelsModalOpen) setAddModelsFocus((n) => n + 1);
+  }
+  useEffect(() => {
+    if (addModelsFocus) addModelsRef.current?.focus();
+  }, [addModelsFocus]);
 
   const isNameValid = isK8sNameDescriptionDataValid(nameDescData);
   const selectedGroupNames = selectedGroups.filter((g) => g.selected).map((g) => String(g.id));
@@ -509,6 +522,7 @@ export const CreateSubscriptionForm: React.FC<Props> = ({
             rows={rows}
             editable
             onAddModels={canAddModels ? () => setIsAddModelsModalOpen(true) : undefined}
+            addModelsRef={addModelsRef}
             onEditLimits={(index) => setEditLimitsTarget(index)}
             onRemoveModel={(index) => {
               setModelsTouched(true);

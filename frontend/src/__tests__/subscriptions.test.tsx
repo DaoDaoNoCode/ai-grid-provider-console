@@ -1560,6 +1560,27 @@ describe('subscription creation model status', () => {
     expect(within(picker).queryByRole('button', { name: /^(Partially ready|Ready)/ })).not.toBeInTheDocument();
   });
 
+  it('returns focus to Add models when polling closes the status of a selected model', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      const service = seeded();
+      const model = fleetOf(service).find('granite-3-8b');
+      model.status!.state = ModelState.PARTIALLY_READY;
+      renderAt('/subscriptions/create', service);
+      await fillNewSubscription(user);
+      const selected = screen.getByRole('grid', { name: 'subscription models' });
+      await user.click(within(selected).getByRole('button', { name: 'Partially ready for Granite 3.3 8B Instruct' }));
+      expect(await screen.findByRole('dialog', { name: 'Granite 3.3 8B Instruct status' })).toBeVisible();
+      model.status!.state = ModelState.READY;
+      await act(() => vi.advanceTimersByTimeAsync(30_000));
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      expect(screen.getByRole('button', { name: 'Add models' })).toHaveFocus();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps model status noninteractive while editing an existing subscription', async () => {
     const user = userEvent.setup();
     const service = seeded();

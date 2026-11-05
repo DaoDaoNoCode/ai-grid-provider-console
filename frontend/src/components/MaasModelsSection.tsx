@@ -4,7 +4,7 @@
 // upstream commit: 8051fbbea117457b4da4074fb2856b732e6677a4
 // Only the subscription uses are ported, so the PoC's customization props are dropped. The page
 // words each row (its title, status and limits) from the backend's messages.
-import { Fragment } from 'react';
+import { Fragment, type Ref } from 'react';
 import {
   Button,
   FormGroup,
@@ -42,6 +42,8 @@ type Props = {
   /** A form field with add, edit-limits and remove actions, instead of a read-only section. */
   editable?: boolean;
   onAddModels?: () => void;
+  /** The Add models button, for a form that moves focus to it. */
+  addModelsRef?: Ref<HTMLButtonElement>;
   onEditLimits?: (index: number) => void;
   onRemoveModel?: (index: number) => void;
   validationError?: string;
@@ -56,6 +58,7 @@ export const MaasModelsSection: React.FC<Props> = ({
   rows,
   editable = false,
   onAddModels,
+  addModelsRef,
   onEditLimits,
   onRemoveModel,
   validationError,
@@ -159,6 +162,7 @@ export const MaasModelsSection: React.FC<Props> = ({
               isInline
               icon={<PlusCircleIcon />}
               onClick={onAddModels}
+              ref={addModelsRef}
               data-testid="add-models-button"
             >
               Add models
