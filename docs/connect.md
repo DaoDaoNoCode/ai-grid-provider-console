@@ -162,11 +162,20 @@ called inside that provider would get Perses's query client instead.
   waits for the answer and keeps every refusal; once the backend answers, the notification
   center says so and follows what the hub does next ("Writes that take long"), in place of a page
   toast of its own. The BFF has
-  no `/api/v1/clusters` routes any more. Remove's dialog for an Ingress or Combined cluster warns
-  that the subscriptions lose their API keys: Argo CD deletes the cluster's copies of the
-  subscriptions, and MaaS then revokes their keys in the shared database, on every cluster. The
-  backend refuses such a Remove while subscriptions exist (below), and the dialog shows that in
-  its words, with the form kept.
+  no `/api/v1/clusters` routes any more. Remove's dialog for an Ingress or Combined cluster says
+  what happens to organizations' users (`removeText`, `clusterInfo.ts`): their requests go
+  through the other ingress clusters and their API keys keep working, because the backend refuses
+  a Remove that would revoke them (below). Deleting a cluster's copy of a subscription runs MaaS's
+  `maas.opendatahub.io/subscription-cleanup` finalizer, which revokes the subscription's keys in
+  the shared database, on every cluster; so the backend refuses while the cluster holds a copy
+  Argo CD would delete, which today is while any subscription exists, and once the catalog marks
+  subscriptions as kept on removal (Argo CD `Delete=false`, label `ai-grid/kept-on-removal`),
+  while a copy on it isn't kept. The dialog shows a refusal in the backend's words, with the form
+  kept. It also says that a kept copy still has the finalizer, so deleting the copy, uninstalling
+  MaaS or deleting the copy's namespace on the removed cluster revokes the keys on every cluster.
+  It gives no cleanup procedure, because no safe one is known: maas-controller puts the finalizer
+  back whenever it reconciles a subscription that isn't being deleted, and taking it off triggers
+  such a reconcile, so a delete after it can find the finalizer back.
 - **The backend's role rules.** The pinned backend checks every `Clusters/Update`, after the
   version, and answers the first rule that refuses (its `docs/UI_API_REFERENCE.md`, "Roles"):
   InvalidArgument for an `ai-grid/role` the update sets or changes to anything but `ingress`,
