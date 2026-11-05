@@ -186,7 +186,7 @@ func TestReadyzReflectsBackend(t *testing.T) {
 func TestAPIRequiresToken(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t, testConfig(t), nil)
-	rec := serve(app, httptest.NewRequest(http.MethodGet, "/api/v1/tenants", nil))
+	rec := serve(app, httptest.NewRequest(http.MethodGet, "/api/v1/grid/overview?range=1h", nil))
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", rec.Code)
 	}
@@ -212,7 +212,8 @@ func TestWrongMethodIsJSON405(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t, testConfig(t), nil)
 	cases := map[string]string{
-		"PUT /api/v1/tenants/t-1": "GET, HEAD, PATCH, DELETE",
+		"POST /api/v1/grid/overview": "GET, HEAD",
+		"PUT /api/v1/user":           "GET, HEAD",
 	}
 	for req, allow := range cases {
 		t.Run(req, func(t *testing.T) {
@@ -242,31 +243,8 @@ func TestHeadUserAndConfigAreOpenLikeGet(t *testing.T) {
 	if rec := serve(denied, asUser(http.MethodHead, "/api/v1/user")); rec.Code != http.StatusOK {
 		t.Errorf("HEAD /user by a non-admin: %d", rec.Code)
 	}
-	if rec := serve(denied, asUser(http.MethodHead, "/api/v1/tenants")); rec.Code != http.StatusForbidden {
-		t.Errorf("HEAD /tenants by a non-admin: %d, want 403", rec.Code)
-	}
-}
-
-// The subscriptions list takes no query parameters and refuses them instead
-// of answering the whole list as if it were filtered or paged; tenants and
-// models refuse a repeated offset or limit as they refuse a repeated filter.
-func TestListQueryParameters(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t, testConfig(t), &backendtest.Fake{Tenants: seedTenants()})
-	for _, path := range []string{
-		"/api/v1/tenants?offset=-1",
-		"/api/v1/tenants?offset=1&offset=2",
-		"/api/v1/tenants?limit=1&limit=1",
-	} {
-		rec := serve(app, asUser(http.MethodGet, path))
-		if rec.Code != http.StatusUnprocessableEntity {
-			t.Errorf("GET %s: %d %s, want 422", path, rec.Code, rec.Body.String())
-		}
-	}
-	for _, path := range []string{"/api/v1/tenants", "/api/v1/tenants?offset=0&limit=10"} {
-		if rec := serve(app, asUser(http.MethodGet, path)); rec.Code != http.StatusOK {
-			t.Errorf("GET %s: %d %s", path, rec.Code, rec.Body.String())
-		}
+	if rec := serve(denied, asUser(http.MethodHead, "/api/v1/grid/overview")); rec.Code != http.StatusForbidden {
+		t.Errorf("HEAD /grid/overview by a non-admin: %d, want 403", rec.Code)
 	}
 }
 
@@ -305,14 +283,14 @@ func TestUserFromProxyHeaders(t *testing.T) {
 // used to make every backend call 502: grpc-go refuses such metadata values.
 func TestNonASCIIIdentityReachesTheBackend(t *testing.T) {
 	t.Parallel()
-	fake := &backendtest.Fake{Tenants: []*aigridv1.Tenant{{Id: "t-1", Name: "acme"}}}
+	fake := &backendtest.Fake{}
 	app := newTestApp(t, testConfig(t), fake)
-	req := asUser(http.MethodGet, "/api/v1/tenants")
+	req := asUser(http.MethodGet, "/api/v1/grid/overview?range=1h")
 	req.Header.Set(config.DefaultAuthUserHeader, "rené")
 	req.Header.Set(config.DefaultAuthGroupsHeader, "équipe-ops,cluster-admins")
 	rec := serve(app, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("GET /tenants as rené in équipe-ops: %d %s", rec.Code, rec.Body.String())
+		t.Fatalf("GET /grid/overview as rené in équipe-ops: %d %s", rec.Code, rec.Body.String())
 	}
 	if got := fake.Metadata.Get("x-forwarded-user"); len(got) != 1 || got[0] != "ren%C3%A9" {
 		t.Fatalf("x-forwarded-user = %q, want it percent-encoded", got)
@@ -325,18 +303,20 @@ func TestNonASCIIIdentityReachesTheBackend(t *testing.T) {
 func TestOnlyProviderAdminsReachTheAPI(t *testing.T) {
 	t.Parallel()
 	cfg := testConfig(t)
-	patch := func() *http.Request {
-		return withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/tenants/t-1", `{"description":"Acme Robotics"}`), `"1"`)
-	}
-	fake := &backendtest.Fake{Tenants: seedTenants()}
+	overview := func() *http.Request { return asUser(http.MethodGet, "/api/v1/grid/overview?range=1h") }
+	fake := &backendtest.Fake{}
 	denied := newTestAppWithHub(t, cfg, fake, &fakeHub{allowed: false})
-	for _, req := range []*http.Request{patch(), asUser(http.MethodGet, "/api/v1/tenants")} {
+	// Every /api/v1 route but /user and /config reads; the Connect relay's writes get the same
+	// check (relay_test.go).
+	for _, req := range []*http.Request{overview(), asUser(http.MethodHead, "/api/v1/grid/overview?range=1h")} {
 		rec := serve(denied, req)
 		if rec.Code != http.StatusForbidden {
 			t.Fatalf("%s %s by a non-admin: got %d %s, want 403", req.Method, req.URL.Path, rec.Code, rec.Body.String())
 		}
-		// The same words for a read and a write: who the console is for, not
-		// the one verb the check asks about.
+		// Who the console is for, not the one verb the check asks about.
+		if rec.Body.Len() == 0 {
+			continue // HEAD: no body
+		}
 		if got := decodeError(t, rec).Error.Message; got != "this console is only for provider admins, users who may patch ManagedClusters on the hub, and the hub says you are not one" {
 			t.Fatalf("%s %s by a non-admin: message %q", req.Method, req.URL.Path, got)
 		}
@@ -350,10 +330,10 @@ func TestOnlyProviderAdminsReachTheAPI(t *testing.T) {
 			t.Fatalf("GET %s by a non-admin: got %d %s", path, rec.Code, rec.Body.String())
 		}
 	}
-	if rec := serve(newTestApp(t, cfg, fake), patch()); rec.Code != http.StatusOK {
-		t.Fatalf("PATCH by a provider admin: got %d %s", rec.Code, rec.Body.String())
+	if rec := serve(newTestApp(t, cfg, fake), overview()); rec.Code != http.StatusOK {
+		t.Fatalf("GET by a provider admin: got %d %s", rec.Code, rec.Body.String())
 	}
-	if rec := serve(newTestAppWithHub(t, cfg, fake, &fakeHub{status: http.StatusUnauthorized}), patch()); rec.Code != http.StatusUnauthorized {
+	if rec := serve(newTestAppWithHub(t, cfg, fake, &fakeHub{status: http.StatusUnauthorized}), overview()); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expired token: got %d, want 401", rec.Code)
 	}
 }
@@ -448,23 +428,6 @@ func TestClusterGPUsPassThrough(t *testing.T) {
 	}
 }
 
-func TestTenantsFromBackend(t *testing.T) {
-	t.Parallel()
-	fake := &backendtest.Fake{Tenants: []*aigridv1.Tenant{
-		{Id: "2", Name: "tenant-b", Domains: []string{"b.example.com"}},
-		{Id: "1", Name: "tenant-a"},
-	}}
-	var out []Tenant
-	rec := serve(newTestApp(t, testConfig(t), fake), asUser(http.MethodGet, "/api/v1/tenants"))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
-	}
-	decodeData(t, rec, &out)
-	if len(out) != 2 || out[0].Name != "tenant-a" || out[0].Domains == nil || out[1].Domains[0] != "b.example.com" {
-		t.Fatalf("tenants = %+v", out)
-	}
-}
-
 // A hub slower than the access review's timeout is the hub's failure (502
 // with the hub message), not the backend's 504; a slow backend stays 504.
 func TestSlowHubIs502AndSlowBackendIs504(t *testing.T) {
@@ -483,7 +446,7 @@ func TestSlowHubIs502AndSlowBackendIs504(t *testing.T) {
 		t.Fatal(err)
 	}
 	app := NewApp(testConfig(t), slog.New(slog.DiscardHandler), backendtest.Start(t, &backendtest.Fake{}), hubClient)
-	for _, path := range []string{"/api/v1/user", "/api/v1/tenants"} {
+	for _, path := range []string{"/api/v1/user", "/api/v1/grid/overview?range=1h"} {
 		rec := serve(app, asUser(http.MethodGet, path))
 		if rec.Code != http.StatusBadGateway {
 			t.Fatalf("GET %s with a slow hub: %d %s, want 502", path, rec.Code, rec.Body.String())
@@ -494,36 +457,36 @@ func TestSlowHubIs502AndSlowBackendIs504(t *testing.T) {
 	}
 
 	fake := &backendtest.Fake{Err: backendtest.Status(codes.DeadlineExceeded, "slow")}
-	rec := serve(newTestApp(t, testConfig(t), fake), asUser(http.MethodGet, "/api/v1/tenants"))
+	rec := serve(newTestApp(t, testConfig(t), fake), asUser(http.MethodGet, "/api/v1/grid/overview?range=1h"))
 	if rec.Code != http.StatusGatewayTimeout {
 		t.Fatalf("slow backend: %d %s, want 504", rec.Code, rec.Body.String())
 	}
 }
 
-// The request line and the handler's own line ("cluster updated") say which
-// request and which admin, so an audit can tell who changed what; the token
+// The request line and a failure's own line ("request failed") say which
+// request and which admin, so an audit can tell who asked what; the token
 // never reaches the log.
 func TestLogsNameTheRequestAndTheUser(t *testing.T) {
 	t.Parallel()
 	var logs bytes.Buffer
-	fake := &backendtest.Fake{Tenants: seedTenants()}
+	fake := &backendtest.Fake{Err: backendtest.Status(codes.Internal, "boom")}
 	app := NewApp(testConfig(t), slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo})), backendtest.Start(t, fake), startHub(t, &fakeHub{allowed: true}))
 
-	rec := serve(app, withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/tenants/t-1", `{"description":"Acme Robotics"}`), `"1"`))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("PATCH: %d %s", rec.Code, rec.Body.String())
+	rec := serve(app, asUser(http.MethodGet, "/api/v1/grid/overview?range=1h"))
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("GET: %d %s", rec.Code, rec.Body.String())
 	}
 	id := rec.Header().Get("X-Request-Id")
-	var request, updated string
+	var request, failed string
 	for line := range strings.SplitSeq(logs.String(), "\n") {
 		switch {
 		case strings.Contains(line, "msg=request "):
 			request = line
-		case strings.Contains(line, `msg="tenant updated"`):
-			updated = line
+		case strings.Contains(line, `msg="request failed"`):
+			failed = line
 		}
 	}
-	for what, line := range map[string]string{"request line": request, "handler line": updated} {
+	for what, line := range map[string]string{"request line": request, "failure line": failed} {
 		if !strings.Contains(line, "id="+id) || !strings.Contains(line, "user=alice") {
 			t.Errorf("%s = %q, want id=%s and user=alice", what, line, id)
 		}
@@ -534,7 +497,7 @@ func TestLogsNameTheRequestAndTheUser(t *testing.T) {
 
 	// A request refused before the identity is known has no user.
 	logs.Reset()
-	serve(app, httptest.NewRequest(http.MethodGet, "/api/v1/tenants", nil))
+	serve(app, httptest.NewRequest(http.MethodGet, "/api/v1/grid/overview?range=1h", nil))
 	if !strings.Contains(logs.String(), "msg=request ") || strings.Contains(logs.String(), "user=") {
 		t.Errorf("anonymous request: %q", logs.String())
 	}
@@ -920,125 +883,20 @@ func TestStateStrings(t *testing.T) {
 	}
 }
 
-// withIfMatch sets the If-Match header every PATCH and DELETE must carry.
-func withIfMatch(req *http.Request, v string) *http.Request {
-	req.Header.Set("If-Match", v)
-	return req
-}
-
-// Every write is refused with 415 unless its body is declared JSON, before
-// anything reaches the backend: a cross-site form or a text/plain fetch,
-// which a browser sends without a CORS preflight, cannot create or change
-// anything.
-func TestWritesRequireJSONContentType(t *testing.T) {
-	t.Parallel()
-	writes := []struct{ method, path, body string }{
-		{http.MethodPost, "/api/v1/tenants", `{"name": "evil"}`},
-		{http.MethodPatch, "/api/v1/tenants/t-1", `{"enabled": false}`},
-	}
-	for _, ct := range []string{"", "text/plain", "text/plain;charset=UTF-8", "application/x-www-form-urlencoded", "multipart/form-data; boundary=x", "application/jsonp", "application/merge-patch+json", "json", "application/json;;"} {
-		for _, wr := range writes {
-			fake := &backendtest.Fake{Tenants: seedTenants()}
-			app := newTestApp(t, testConfig(t), fake)
-			req := jsonRequest(wr.method, wr.path, wr.body)
-			if ct == "" {
-				req.Header.Del("Content-Type")
-			} else {
-				req.Header.Set("Content-Type", ct)
-			}
-			rec := serve(app, req)
-			if rec.Code != http.StatusUnsupportedMediaType {
-				t.Errorf("%s %s with Content-Type %q -> %d %s, want 415", wr.method, wr.path, ct, rec.Code, rec.Body.String())
-				continue
-			}
-			if e := decodeError(t, rec); e.Error.Code != "415" || e.Error.Message != "request body must be JSON: send Content-Type: application/json" {
-				t.Errorf("415 body = %+v", e)
-			}
-			if len(fake.Calls) != 0 {
-				t.Errorf("%s %s with %q reached the backend: %v", wr.method, wr.path, ct, fake.Calls)
-			}
-		}
-	}
-	// application/json in any case, with parameters, is accepted.
-	for _, ct := range []string{"application/json", "application/json; charset=utf-8", "Application/JSON"} {
-		fake := &backendtest.Fake{Tenants: seedTenants()}
-		app := newTestApp(t, testConfig(t), fake)
-		req := jsonRequest(http.MethodPost, "/api/v1/tenants", `{"name": "ok"}`)
-		req.Header.Set("Content-Type", ct)
-		if rec := serve(app, req); rec.Code != http.StatusCreated {
-			t.Errorf("Content-Type %q -> %d %s, want 201", ct, rec.Code, rec.Body.String())
-		}
-	}
-	// A DELETE has no body to check.
-	fake := &backendtest.Fake{Tenants: seedTenants()}
-	if rec := serve(newTestApp(t, testConfig(t), fake), withIfMatch(asUser(http.MethodDelete, "/api/v1/tenants/t-1"), `"1"`)); rec.Code != http.StatusNoContent {
-		t.Errorf("DELETE without a Content-Type -> %d", rec.Code)
-	}
-}
-
-// Every PATCH and DELETE needs If-Match: without it the answer is 428 before
-// the body is read and before any backend call. The 415 content-type check
-// comes first (TestWritesRequireJSONContentType sends no If-Match and gets
-// 415), the 428 next, the body decoding last.
-func TestWritesRequireIfMatch(t *testing.T) {
-	t.Parallel()
-	const want = `this write needs an If-Match header: send the ETag that GET answered (the object's resourceVersion), for example If-Match: "42"`
-	writes := []struct{ method, path, body string }{
-		{http.MethodPatch, "/api/v1/tenants/t-1", `{"enabled": false}`},
-		{http.MethodDelete, "/api/v1/tenants/t-1", ""},
-		// A body that would be 422 is 428 first, an unknown object too.
-		{http.MethodPatch, "/api/v1/tenants/missing", `null`},
-	}
-	for _, wr := range writes {
-		fake := &backendtest.Fake{Tenants: seedTenants()}
-		req := asUser(wr.method, wr.path)
-		if wr.body != "" {
-			req = jsonRequest(wr.method, wr.path, wr.body)
-		}
-		rec := serve(newTestApp(t, testConfig(t), fake), req)
-		if e := decodeError(t, rec); rec.Code != http.StatusPreconditionRequired || e.Error.Code != "428" || e.Error.Message != want || len(fake.Calls) != 0 {
-			t.Errorf("%s %s %s without If-Match = %d %+v, calls %v; want 428 and no call", wr.method, wr.path, wr.body, rec.Code, e, fake.Calls)
-		}
-	}
-}
-
-func TestListMeta(t *testing.T) {
-	t.Parallel()
-	n := func(v int) *int { return &v }
-	for _, tc := range []struct {
-		name          string
-		offset, limit *int
-		size          int
-		total         *int32
-		want          string
-	}{
-		{"backend count wins", n(10), n(10), 10, proto.Int32(25), `{"size":10,"total":25,"offset":10,"limit":10}`},
-		{"zero is a count", nil, n(0), 0, proto.Int32(0), `{"size":0,"total":0,"offset":0,"limit":0}`},
-		{"no count, everything", nil, nil, 8, nil, `{"size":8,"total":8,"offset":0}`},
-		{"no count, a short page ends the list", n(10), n(10), 5, nil, `{"size":5,"total":15,"offset":10,"limit":10}`},
-		{"no count, a full page leaves the total unknown", n(10), n(10), 10, nil, `{"size":10,"offset":10,"limit":10}`},
-	} {
-		b, err := json.Marshal(listMeta(tc.offset, tc.limit, tc.size, tc.total))
-		if err != nil || string(b) != tc.want {
-			t.Errorf("%s: %s, want %s (%v)", tc.name, b, tc.want, err)
-		}
-	}
-}
-
 func TestFieldErrorsReachTheBody(t *testing.T) {
 	t.Parallel()
-	st := status.New(codes.InvalidArgument, "The organization is invalid.")
+	st := status.New(codes.InvalidArgument, "Choose a time range of 1h, 6h, or 24h.")
 	st, _ = st.WithDetails(&errdetails.BadRequest{FieldViolations: []*errdetails.BadRequest_FieldViolation{
-		{Field: "identityProvider.config.issuer", Description: "Enter a valid HTTP or HTTPS URL."},
+		{Field: "range", Description: "Choose a time range of 1h, 6h, or 24h."},
 	}})
 	fake := &backendtest.Fake{Err: st.Err()}
 	app := newTestApp(t, testConfig(t), fake)
-	rec := serve(app, asUser(http.MethodGet, "/api/v1/tenants"))
+	rec := serve(app, asUser(http.MethodGet, "/api/v1/grid/overview?range=2h"))
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status %d", rec.Code)
 	}
 	body := decodeError(t, rec)
-	if body.Error.FieldErrors["identityProvider.config.issuer"] != "Enter a valid HTTP or HTTPS URL." {
+	if body.Error.FieldErrors["range"] != "Choose a time range of 1h, 6h, or 24h." {
 		t.Fatalf("fieldErrors %+v", body.Error.FieldErrors)
 	}
 }
@@ -1063,7 +921,7 @@ func TestFieldErrorsOnlyForInvalidArgument(t *testing.T) {
 				t.Fatal(err)
 			}
 			app := newTestApp(t, testConfig(t), &backendtest.Fake{Err: st.Err()})
-			rec := serve(app, asUser(http.MethodGet, "/api/v1/tenants"))
+			rec := serve(app, asUser(http.MethodGet, "/api/v1/grid/overview?range=1h"))
 			if rec.Code != tc.want {
 				t.Fatalf("status %d, want %d", rec.Code, tc.want)
 			}
@@ -1086,30 +944,6 @@ func TestConfigReportsFakeBackend(t *testing.T) {
 	decodeData(t, serve(app, asUser(http.MethodGet, "/api/v1/config")), &got)
 	if !got.FakeBackend {
 		t.Fatal("fakeBackend not reported")
-	}
-}
-
-// TestBFFForwardsWhatItDecodes: the BFF validates nothing. A tenant with a
-// blank name reaches the backend unchanged, and the backend's InvalidArgument
-// with a BadRequest comes back as 422 with its fieldErrors.
-func TestBFFForwardsWhatItDecodes(t *testing.T) {
-	t.Parallel()
-	// Whatever the backend says; the BFF passes it on word for word.
-	const msg = "the backend's message about the name"
-	st, err := status.New(codes.InvalidArgument, msg).WithDetails(&errdetails.BadRequest{
-		FieldViolations: []*errdetails.BadRequest_FieldViolation{{Field: "name", Description: msg}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	fake := &backendtest.Fake{Errs: map[string]error{"CreateTenant": st.Err()}}
-	app := newTestApp(t, testConfig(t), fake)
-	rec := serve(app, jsonRequest(http.MethodPost, "/api/v1/tenants", `{"name": "   ", "domains": []}`))
-	if got := fake.LastCreateTenant.GetObject().GetName(); got != "   " {
-		t.Fatalf("forwarded name %q", got)
-	}
-	if rec.Code != http.StatusUnprocessableEntity || decodeError(t, rec).Error.FieldErrors["name"] != msg {
-		t.Fatalf("backend's field errors: %d %s", rec.Code, rec.Body)
 	}
 }
 

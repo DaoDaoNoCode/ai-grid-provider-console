@@ -2,8 +2,8 @@
 # Call the local BFF as the user from `oc login`, sending the headers
 # kube-auth-proxy would set.
 #
-#   hack/api.sh /api/v1/clusters
-#   hack/api.sh /api/v1/tenants
+#   hack/api.sh /api/v1/config
+#   hack/api.sh -X POST -H 'Connect-Protocol-Version: 1' -d '{}' /ai_grid.v1.Tenants/List
 #
 # BFF_URL overrides the base URL (default http://127.0.0.1:8080).
 set -euo pipefail
@@ -17,7 +17,7 @@ path=""
 for a in "$@"; do
   if [[ "$a" == /* ]]; then path="$a"; else args+=("$a"); fi
 done
-[[ -n "$path" ]] || { echo "usage: hack/api.sh [curl options] /api/v1/<path>" >&2; exit 2; }
+[[ -n "$path" ]] || { echo "usage: hack/api.sh [curl options] /api/v1/<path> or /ai_grid.v1.<Service>/<Method>" >&2; exit 2; }
 curl -sS -H "x-forwarded-access-token: ${TOKEN}" -H "x-forwarded-user: ${USER_NAME}" \
   ${AUTH_GROUPS:+-H "x-forwarded-groups: ${AUTH_GROUPS}"} \
   -H 'Content-Type: application/json' ${args[@]+"${args[@]}"} "${BFF_URL}${path}"

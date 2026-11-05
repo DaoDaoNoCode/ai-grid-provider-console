@@ -1,0 +1,16 @@
+{
+  "request": "POST /api/v1/grid/overview",
+  "requestBody": {},
+  "token": "dev-token",
+  "user": "dev-user",
+  "status": 405,
+  "responseHeaders": {
+    "Allow": "GET, HEAD"
+  },
+  "body": {
+    "error": {
+      "code": "405",
+      "message": "POST is not allowed on /api/v1/grid/overview; use GET, HEAD"
+    }
+  }
+}

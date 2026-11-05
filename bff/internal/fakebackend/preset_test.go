@@ -109,25 +109,6 @@ func TestPoCPresetMatchesThePoC(t *testing.T) {
 		}
 		wantPhase(t, m, aigridv1.ModelPhase_MODEL_PHASE_READY, "")
 	}
-
-	tenants, err := s.ListTenants(ctx, &aigridv1.ListTenantsRequest{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var tenantNames []string
-	tenantIDs := map[string]bool{}
-	for _, tn := range tenants.GetTenants() {
-		tenantNames = append(tenantNames, tn.GetName())
-		tenantIDs[tn.GetId()] = true
-		if tn.GetIdentityProvider() == nil || tn.GetResourceVersion() == "" || tn.GetCreateTime() == nil {
-			t.Errorf("%s: identity provider %v, version %q, created %v; want all three", tn.GetName(), tn.GetIdentityProvider(), tn.GetResourceVersion(), tn.GetCreateTime())
-		}
-	}
-	slices.Sort(tenantNames)
-	if !slices.Equal(tenantNames, []string{"acme-robotics", "globex-research", "initech-labs"}) {
-		t.Errorf("organizations %v", tenantNames)
-	}
-
 }
 
 // TestPoCPresetEnrollsSite4AsProvisioning: as in the PoC, enrolling site4

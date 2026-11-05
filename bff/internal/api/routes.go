@@ -12,11 +12,6 @@ func (a *App) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+APIPrefix+"/user", a.getUser)
 	mux.HandleFunc("GET "+APIPrefix+"/config", a.getConfig)
 
-	mux.HandleFunc("GET "+APIPrefix+"/tenants", a.listTenants)
-	mux.HandleFunc("POST "+APIPrefix+"/tenants", a.createTenant)
-	mux.HandleFunc("GET "+APIPrefix+"/tenants/{id}", a.getTenant)
-	mux.HandleFunc("PATCH "+APIPrefix+"/tenants/{id}", a.patchTenant)
-	mux.HandleFunc("DELETE "+APIPrefix+"/tenants/{id}", a.deleteTenant)
 	mux.HandleFunc("GET "+APIPrefix+"/grid/overview", a.getGridOverview)
 
 	// Unknown API paths get a JSON 404 instead of the SPA fallback, and a known

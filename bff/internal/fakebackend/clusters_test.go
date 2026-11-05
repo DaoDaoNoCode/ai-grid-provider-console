@@ -137,9 +137,6 @@ func TestRequiresAuthorizationExceptPing(t *testing.T) {
 	if _, err := s.GetManagedCluster(anon, &aigridv1.GetManagedClusterRequest{Name: "a"}); status.Code(err) != codes.Unauthenticated {
 		t.Errorf("Get without authorization = %v, want Unauthenticated", err)
 	}
-	if _, err := s.ListTenants(anon, &aigridv1.ListTenantsRequest{}); status.Code(err) != codes.Unauthenticated {
-		t.Errorf("ListTenants without authorization = %v, want Unauthenticated", err)
-	}
 	// x-forwarded-user alone grants nothing (advisory header).
 	onlyUser := metadata.NewIncomingContext(anon, metadata.Pairs("x-forwarded-user", "alice"))
 	if _, err := s.ListManagedClusters(onlyUser, &aigridv1.ListManagedClustersRequest{}); status.Code(err) != codes.Unauthenticated {
@@ -201,10 +198,6 @@ func TestUpdateHonoursHubRBAC(t *testing.T) {
 		},
 		"Get": func(ctx context.Context) error {
 			_, err := s.GetManagedCluster(ctx, &aigridv1.GetManagedClusterRequest{Name: "a"})
-			return err
-		},
-		"ListTenants": func(ctx context.Context) error {
-			_, err := s.ListTenants(ctx, &aigridv1.ListTenantsRequest{})
 			return err
 		},
 	} {

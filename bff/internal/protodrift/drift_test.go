@@ -1,21 +1,17 @@
-// Package protodrift proves that the BFF's copy of the backend's messages
-// (mock/proto/ai_grid/backend/v1, compiled into bff/gen/ai_grid/backend/v1) still matches
-// the backend's real proto (mock/proto/upstream, vendored from
-// ai-grid-cloud/ai-grid-provider-backend), and that the RPCs the BFF calls still exist and
-// still take and return what the BFF sends and reads, field for field on the wire: the ones
-// bff/internal/backend/v1.go calls by path, and AiGrid/Ping, which /readyz calls through the
-// draft's client.
+// Package protodrift proves that the RPCs the BFF calls on the backend over gRPC still take
+// and return, field for field on the wire, the messages the BFF sends and reads: today
+// AiGrid/Ping, which /readyz calls through the draft's client (bff/gen/ai_grid/v1), against the
+// backend's real proto (mock/proto/upstream, vendored from ai-grid-cloud/ai-grid-provider-backend).
 //
-// The copy is a stopgap: the BFF calls the backend's ai_grid.v1 Tenants
-// service while the rest of the console still speaks the draft. Protobuf is wire
-// compatible across package names, so a copied field that the backend renumbers, retypes
-// or drops would silently send or read the wrong data. hack/sync-upstream-proto.sh
-// refreshes the vendored copy (nightly in .github/workflows/drift.yaml) and this test
-// fails on every such difference. Fields the backend has and the copy lacks are fine: the
-// BFF doesn't use them.
+// Protobuf is wire compatible across message names, so a field the backend renumbers, retypes
+// or drops would silently send or read the wrong data. hack/sync-upstream-proto.sh refreshes the
+// vendored copy (nightly in .github/workflows/drift.yaml) and this test fails on every such
+// difference. Fields the backend has and the BFF's message lacks are fine: the BFF doesn't use
+// them. The pages call the backend's other RPCs over Connect with clients generated from the
+// backend's own proto (frontend/src/gen), through the relay, which reads no body.
 //
-// When the console generates its types from the backend's proto (Connect, docs/adr), the
-// copy goes, and this package, mock/proto/upstream and drift.yaml go with it.
+// When the readiness probe calls the backend with the backend's own generated types, this
+// package, mock/proto/upstream and drift.yaml go.
 package protodrift
 
 import (
@@ -32,7 +28,6 @@ import (
 	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/descriptorpb"
 
-	backendv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/backend/v1"
 	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
 )
 
@@ -40,48 +35,23 @@ const (
 	upstreamDir     = "../../../mock/proto/upstream"
 	upstreamImage   = "image.binpb"
 	upstreamPackage = "ai_grid.v1"
-	copyPackage     = "ai_grid.backend.v1"
 )
 
-// calls are the backend RPCs the BFF invokes, with the messages it sends and reads: its
-// copy's for the ones in bff/internal/backend/v1.go, the draft's for Ping. Their names may
-// differ from the backend's (AiGridPingRequest); their fields may not.
-// TestCallsMatchTheBFF keeps this list in step with the code.
+// calls are the backend RPCs the BFF invokes over gRPC, with the messages it sends and reads.
+// Their names may differ from the backend's (AiGridPingRequest); their fields may not.
 var calls = []struct {
 	method        string
 	input, output protoreflect.FullName
 }{
 	{"ai_grid.v1.AiGrid.Ping", "ai_grid.v1.PingRequest", "ai_grid.v1.PingResponse"},
-	{"ai_grid.v1.Tenants.List", "ai_grid.backend.v1.TenantsListRequest", "ai_grid.backend.v1.TenantsListResponse"},
-	{"ai_grid.v1.Tenants.Get", "ai_grid.backend.v1.TenantsGetRequest", "ai_grid.backend.v1.TenantsGetResponse"},
-	{"ai_grid.v1.Tenants.Create", "ai_grid.backend.v1.TenantsCreateRequest", "ai_grid.backend.v1.TenantsCreateResponse"},
-	{"ai_grid.v1.Tenants.Update", "ai_grid.backend.v1.TenantsUpdateRequest", "ai_grid.backend.v1.TenantsUpdateResponse"},
-	{"ai_grid.v1.Tenants.Delete", "ai_grid.backend.v1.TenantsDeleteRequest", "ai_grid.backend.v1.TenantsDeleteResponse"},
 }
 
-// TestCallsMatchTheBFF fails when the BFF calls a backend method that calls doesn't list,
-// or stops calling one it does: the method paths in bff/internal/backend/v1.go, plus Ping.
-func TestCallsMatchTheBFF(t *testing.T) {
+// TestCallsAreTheBFFs keeps calls in step with the code: the readiness probe's Ping.
+func TestCallsAreTheBFFs(t *testing.T) {
 	t.Parallel()
-	src, err := os.ReadFile("../backend/v1.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	called := map[string]bool{strings.ReplaceAll(strings.TrimPrefix(aigridv1.AiGrid_Ping_FullMethodName, "/"), "/", "."): true}
-	for _, m := range regexp.MustCompile(`"/(ai_grid\.v1\.\w+)/(\w+)"`).FindAllStringSubmatch(string(src), -1) {
-		called[m[1]+"."+m[2]] = true
-	}
-	listed := map[string]bool{}
-	for _, c := range calls {
-		listed[c.method] = true
-		if !called[c.method] {
-			t.Errorf("calls lists %s, which the BFF doesn't call", c.method)
-		}
-	}
-	for m := range called {
-		if !listed[m] {
-			t.Errorf("the BFF calls %s, which calls doesn't list: add it with the messages it sends and reads", m)
-		}
+	ping := strings.ReplaceAll(strings.TrimPrefix(aigridv1.AiGrid_Ping_FullMethodName, "/"), "/", ".")
+	if len(calls) != 1 || calls[0].method != ping {
+		t.Fatalf("calls = %v, want %s alone", calls, ping)
 	}
 }
 
@@ -110,11 +80,6 @@ func upstreamFiles(t *testing.T, set *descriptorpb.FileDescriptorSet) *protoregi
 	return files
 }
 
-// copyFile is the BFF's copy, as linked into the binary.
-func copyFile() protoreflect.FileDescriptor {
-	return backendv1.File_ai_grid_backend_v1_backend_proto
-}
-
 func TestUpstreamCommitIsRecorded(t *testing.T) {
 	t.Parallel()
 	raw, err := os.ReadFile(filepath.Join(upstreamDir, "COMMIT"))
@@ -138,21 +103,21 @@ func TestUpstreamCommitIsRecorded(t *testing.T) {
 	}
 }
 
-// TestCopyMatchesUpstream is the test that fails the day the backend changes a message or
-// RPC the BFF uses.
-func TestCopyMatchesUpstream(t *testing.T) {
+// TestCallsMatchUpstream is the test that fails the day the backend changes an RPC the BFF
+// calls, or a message it sends or reads.
+func TestCallsMatchUpstream(t *testing.T) {
 	t.Parallel()
 	c := &checker{upstream: upstreamFiles(t, readImage(t))}
-	c.check(copyFile())
+	c.check()
 	for _, diff := range c.diffs {
 		t.Error(diff)
 	}
 	if len(c.diffs) > 0 {
-		t.Log("the backend proto in mock/proto/upstream no longer matches the BFF's copy in mock/proto/ai_grid/backend/v1: update the copy and bff/internal/backend/v1.go")
+		t.Log("the backend proto in mock/proto/upstream no longer matches what the BFF sends: update the draft message the BFF calls it with")
 	}
 }
 
-// checker compares the copy with an upstream registry and collects differences.
+// checker compares the BFF's calls with an upstream registry and collects differences.
 type checker struct {
 	upstream *protoregistry.Files
 	diffs    []string
@@ -162,24 +127,9 @@ func (c *checker) errorf(format string, args ...any) {
 	c.diffs = append(c.diffs, fmt.Sprintf(format, args...))
 }
 
-// upstreamName is the name the backend gives a copied type: same short name, the
-// backend's package. Well-known types keep theirs.
-func upstreamName(name protoreflect.FullName) protoreflect.FullName {
-	if rest, ok := strings.CutPrefix(string(name), copyPackage+"."); ok {
-		return protoreflect.FullName(upstreamPackage + "." + rest)
-	}
-	return name
-}
-
-func (c *checker) check(copied protoreflect.FileDescriptor) {
+func (c *checker) check() {
 	for _, call := range calls {
 		c.checkCall(call.method, call.input, call.output)
-	}
-	for i := 0; i < copied.Messages().Len(); i++ {
-		c.checkMessage(copied.Messages().Get(i))
-	}
-	for i := 0; i < copied.Enums().Len(); i++ {
-		c.checkEnum(copied.Enums().Get(i))
 	}
 }
 
@@ -198,9 +148,6 @@ func (c *checker) checkCall(method string, input, output protoreflect.FullName) 
 		up   protoreflect.MessageDescriptor
 		bff  protoreflect.FullName
 	}{{"takes", m.Input(), input}, {"returns", m.Output(), output}} {
-		if upstreamName(side.bff) == side.up.FullName() && strings.HasPrefix(string(side.bff), copyPackage+".") {
-			continue // the same copied message, which checkMessage compares
-		}
 		d, err := protoregistry.GlobalFiles.FindDescriptorByName(side.bff)
 		bff, ok := d.(protoreflect.MessageDescriptor)
 		if err != nil || !ok {
@@ -215,81 +162,34 @@ func (c *checker) checkCall(method string, input, output protoreflect.FullName) 
 	}
 }
 
-func (c *checker) checkMessage(copied protoreflect.MessageDescriptor) {
-	name := upstreamName(copied.FullName())
-	d, err := c.upstream.FindDescriptorByName(name)
-	up, ok := d.(protoreflect.MessageDescriptor)
-	if err != nil || !ok {
-		c.errorf("copied message %s has no %s in the backend", copied.FullName(), name)
-		return
-	}
-	c.compareFields(up, copied)
-	for i := 0; i < copied.Messages().Len(); i++ {
-		if !copied.Messages().Get(i).IsMapEntry() {
-			c.checkMessage(copied.Messages().Get(i))
-		}
-	}
-	for i := 0; i < copied.Enums().Len(); i++ {
-		c.checkEnum(copied.Enums().Get(i))
-	}
-}
-
 // compareFields reports every field of the BFF's message that the backend's message no
 // longer has with the same number, name, cardinality, presence, oneof and type.
-func (c *checker) compareFields(up, copied protoreflect.MessageDescriptor) {
-	for i := 0; i < copied.Fields().Len(); i++ {
-		cf := copied.Fields().Get(i)
-		uf := up.Fields().ByNumber(cf.Number())
+func (c *checker) compareFields(up, bff protoreflect.MessageDescriptor) {
+	for i := 0; i < bff.Fields().Len(); i++ {
+		bf := bff.Fields().Get(i)
+		uf := up.Fields().ByNumber(bf.Number())
 		if uf == nil {
-			c.errorf("field %s (number %d) is gone from the backend's %s", cf.FullName(), cf.Number(), up.FullName())
+			c.errorf("field %s (number %d) is gone from the backend's %s", bf.FullName(), bf.Number(), up.FullName())
 			continue
 		}
-		if uf.Name() != cf.Name() {
-			c.errorf("field %d of %s: the backend calls it %q, the copy %q", cf.Number(), up.FullName(), uf.Name(), cf.Name())
+		if uf.Name() != bf.Name() {
+			c.errorf("field %d of %s: the backend calls it %q, the BFF %q", bf.Number(), up.FullName(), uf.Name(), bf.Name())
 		}
-		if uf.Cardinality() != cf.Cardinality() {
-			c.errorf("field %s: backend cardinality %v, copy %v", uf.FullName(), uf.Cardinality(), cf.Cardinality())
+		if uf.Cardinality() != bf.Cardinality() {
+			c.errorf("field %s: backend cardinality %v, BFF %v", uf.FullName(), uf.Cardinality(), bf.Cardinality())
 		}
-		if uf.HasPresence() != cf.HasPresence() {
-			c.errorf("field %s: backend presence (optional) %v, copy %v", uf.FullName(), uf.HasPresence(), cf.HasPresence())
+		if uf.HasPresence() != bf.HasPresence() {
+			c.errorf("field %s: backend presence (optional) %v, BFF %v", uf.FullName(), uf.HasPresence(), bf.HasPresence())
 		}
-		if uf.IsMap() != cf.IsMap() {
-			c.errorf("field %s: backend map %v, copy map %v", uf.FullName(), uf.IsMap(), cf.IsMap())
-		} else if uf.IsMap() {
-			if uk, ck := typeName(uf.MapKey()), typeName(cf.MapKey()); uk != ck {
-				c.errorf("field %s: backend map key %s, copy %s", uf.FullName(), uk, ck)
-			}
-			if uv, cv := typeName(uf.MapValue()), typeName(cf.MapValue()); uv != cv {
-				c.errorf("field %s: backend map value %s, copy %s", uf.FullName(), uv, cv)
-			}
+		if uf.IsMap() != bf.IsMap() {
+			c.errorf("field %s: backend map %v, BFF map %v", uf.FullName(), uf.IsMap(), bf.IsMap())
 			continue
 		}
-		if uo, co := oneofName(uf), oneofName(cf); uo != co {
-			c.errorf("field %s: backend oneof %q, copy oneof %q", uf.FullName(), uo, co)
+		if uo, bo := oneofName(uf), oneofName(bf); uo != bo {
+			c.errorf("field %s: backend oneof %q, BFF oneof %q", uf.FullName(), uo, bo)
 		}
-		if ut, ct := typeName(uf), typeName(cf); ut != ct {
-			c.errorf("field %s: backend type %s, copy type %s", uf.FullName(), ut, ct)
-		}
-	}
-}
-
-func (c *checker) checkEnum(copied protoreflect.EnumDescriptor) {
-	name := upstreamName(copied.FullName())
-	d, err := c.upstream.FindDescriptorByName(name)
-	up, ok := d.(protoreflect.EnumDescriptor)
-	if err != nil || !ok {
-		c.errorf("copied enum %s has no %s in the backend", copied.FullName(), name)
-		return
-	}
-	for i := 0; i < copied.Values().Len(); i++ {
-		cv := copied.Values().Get(i)
-		uv := up.Values().ByName(cv.Name())
-		if uv == nil {
-			c.errorf("enum value %s is gone from the backend's %s", cv.Name(), name)
-			continue
-		}
-		if uv.Number() != cv.Number() {
-			c.errorf("enum value %s: backend number %d, copy number %d", cv.Name(), uv.Number(), cv.Number())
+		if ut, bt := typeName(uf), typeName(bf); ut != bt {
+			c.errorf("field %s: backend type %s, BFF type %s", uf.FullName(), ut, bt)
 		}
 	}
 }
@@ -303,14 +203,13 @@ func oneofName(f protoreflect.FieldDescriptor) string {
 	return ""
 }
 
-// typeName renders a field's type in the backend's names, so a copied message type and
-// the backend's compare equal: "string", "message ai_grid.v1.Metadata", "enum ...".
+// typeName renders a field's type: "string", "message ai_grid.v1.Metadata", "enum ...".
 func typeName(f protoreflect.FieldDescriptor) string {
 	switch f.Kind() {
 	case protoreflect.MessageKind, protoreflect.GroupKind:
-		return fmt.Sprintf("message %s", upstreamName(f.Message().FullName()))
+		return fmt.Sprintf("message %s", f.Message().FullName())
 	case protoreflect.EnumKind:
-		return fmt.Sprintf("enum %s", upstreamName(f.Enum().FullName()))
+		return fmt.Sprintf("enum %s", f.Enum().FullName())
 	default:
 		return f.Kind().String()
 	}
@@ -320,6 +219,10 @@ func typeName(f protoreflect.FieldDescriptor) string {
 // applied to a copy of the vendored image, and the comparison must report it.
 func TestDriftIsDetected(t *testing.T) {
 	t.Parallel()
+	const (
+		takes   = "method ai_grid.v1.AiGrid.Ping takes ai_grid.v1.AiGridPingRequest, which no longer matches the BFF's ai_grid.v1.PingRequest:"
+		returns = "method ai_grid.v1.AiGrid.Ping returns ai_grid.v1.AiGridPingResponse, which no longer matches the BFF's ai_grid.v1.PingResponse:"
+	)
 	cases := []struct {
 		name   string
 		mutate func(t *testing.T, set *descriptorpb.FileDescriptorSet)
@@ -328,137 +231,92 @@ func TestDriftIsDetected(t *testing.T) {
 		{
 			name: "field type changed",
 			mutate: func(t *testing.T, set *descriptorpb.FileDescriptorSet) {
-				field(t, set, "Metadata", "version").Type = descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()
+				field(t, set, "AiGridPingResponse", "message").Type = descriptorpb.FieldDescriptorProto_TYPE_INT32.Enum()
 			},
-			want: []string{"Metadata.version: backend type string, copy type int32"},
+			want: []string{returns, "field ai_grid.v1.AiGridPingResponse.message: backend type int32, BFF type string"},
 		},
 		{
 			name: "field renamed in place",
 			mutate: func(t *testing.T, set *descriptorpb.FileDescriptorSet) {
-				field(t, set, "TenantSpec", "domains").Name = proto.String("hosts")
+				field(t, set, "AiGridPingRequest", "name").Name = proto.String("caller")
 			},
-			want: []string{`field 1 of ai_grid.v1.TenantSpec: the backend calls it "hosts", the copy "domains"`},
+			want: []string{takes, `field 1 of ai_grid.v1.AiGridPingRequest: the backend calls it "caller", the BFF "name"`},
 		},
 		{
 			name: "field renumbered",
 			mutate: func(t *testing.T, set *descriptorpb.FileDescriptorSet) {
-				field(t, set, "Metadata", "version").Number = proto.Int32(18)
+				field(t, set, "AiGridPingRequest", "name").Number = proto.Int32(2)
 			},
-			want: []string{"field ai_grid.backend.v1.Metadata.version (number 8) is gone from the backend's ai_grid.v1.Metadata"},
+			want: []string{takes, "field ai_grid.v1.PingRequest.name (number 1) is gone from the backend's ai_grid.v1.AiGridPingRequest"},
 		},
 		{
 			name: "field became repeated",
 			mutate: func(t *testing.T, set *descriptorpb.FileDescriptorSet) {
-				field(t, set, "TenantsUpdateRequest", "lock").Label = descriptorpb.FieldDescriptorProto_LABEL_REPEATED.Enum()
+				field(t, set, "AiGridPingResponse", "message").Label = descriptorpb.FieldDescriptorProto_LABEL_REPEATED.Enum()
 			},
-			want: []string{"TenantsUpdateRequest.lock: backend cardinality repeated, copy optional"},
+			want: []string{returns, "AiGridPingResponse.message: backend cardinality repeated, BFF optional"},
 		},
 		{
-			name: "optional field lost its presence",
+			name: "field gained presence",
 			mutate: func(t *testing.T, set *descriptorpb.FileDescriptorSet) {
-				msg := message(t, set, "TenantsListRequest")
-				offset := field(t, set, "TenantsListRequest", "offset")
-				if offset.OneofIndex == nil {
-					t.Fatal("TenantsListRequest.offset has no synthetic oneof to drop")
-				}
-				// Drop the synthetic oneof that held it, wherever the backend declares it,
-				// and renumber the ones after it.
-				dropped := offset.GetOneofIndex()
-				offset.Proto3Optional, offset.OneofIndex = nil, nil
-				msg.OneofDecl = append(msg.OneofDecl[:dropped], msg.OneofDecl[dropped+1:]...)
-				for _, f := range msg.Field {
-					if f.OneofIndex != nil && f.GetOneofIndex() > dropped {
-						f.OneofIndex = proto.Int32(f.GetOneofIndex() - 1)
-					}
-				}
+				msg := message(t, set, "AiGridPingRequest")
+				msg.OneofDecl = append(msg.OneofDecl, &descriptorpb.OneofDescriptorProto{Name: proto.String("_name")})
+				name := field(t, set, "AiGridPingRequest", "name")
+				name.Proto3Optional, name.OneofIndex = proto.Bool(true), proto.Int32(int32(len(msg.OneofDecl)-1))
 			},
-			want: []string{"TenantsListRequest.offset: backend presence (optional) false, copy true"},
+			want: []string{takes, "AiGridPingRequest.name: backend presence (optional) true, BFF false"},
 		},
 		{
-			name: "message renamed",
+			name: "field moved into a oneof",
 			mutate: func(t *testing.T, set *descriptorpb.FileDescriptorSet) {
-				msg := message(t, set, "TenantStatus")
-				msg.Name = proto.String("TenantState")
-				field(t, set, "Tenant", "status").TypeName = proto.String(".ai_grid.v1.TenantState")
+				msg := message(t, set, "AiGridPingRequest")
+				msg.OneofDecl = append(msg.OneofDecl, &descriptorpb.OneofDescriptorProto{Name: proto.String("ref")})
+				field(t, set, "AiGridPingRequest", "name").OneofIndex = proto.Int32(int32(len(msg.OneofDecl) - 1))
 			},
+			// A oneof member also has presence, so the field is reported twice.
 			want: []string{
-				"field ai_grid.v1.Tenant.status: backend type message ai_grid.v1.TenantState, copy type message ai_grid.v1.TenantStatus",
-				"copied message ai_grid.backend.v1.TenantStatus has no ai_grid.v1.TenantStatus in the backend",
+				takes,
+				"field ai_grid.v1.AiGridPingRequest.name: backend presence (optional) true, BFF false",
+				`field ai_grid.v1.AiGridPingRequest.name: backend oneof "ref", BFF oneof ""`,
 			},
 		},
 		{
 			name: "method output changed to a message with other fields",
 			mutate: func(t *testing.T, set *descriptorpb.FileDescriptorSet) {
-				method(t, set, "Tenants", "Get").OutputType = proto.String(".ai_grid.v1.TenantsListResponse")
+				method(t, set, "AiGrid", "Ping").OutputType = proto.String(".ai_grid.v1.AiGridPingRequest")
 			},
 			want: []string{
-				"method ai_grid.v1.Tenants.Get returns ai_grid.v1.TenantsListResponse, which no longer matches the BFF's ai_grid.backend.v1.TenantsGetResponse:",
-				`field 1 of ai_grid.v1.TenantsListResponse: the backend calls it "size", the copy "object"`,
-				"field ai_grid.v1.TenantsListResponse.size: backend presence (optional) false, copy true",
-				"field ai_grid.v1.TenantsListResponse.size: backend type int32, copy type message ai_grid.v1.Tenant",
-			},
-		},
-		{
-			name: "Ping's request changed on the wire",
-			mutate: func(t *testing.T, set *descriptorpb.FileDescriptorSet) {
-				field(t, set, "AiGridPingRequest", "name").Number = proto.Int32(2)
-			},
-			want: []string{
-				"method ai_grid.v1.AiGrid.Ping takes ai_grid.v1.AiGridPingRequest, which no longer matches the BFF's ai_grid.v1.PingRequest:",
-				"field ai_grid.v1.PingRequest.name (number 1) is gone from the backend's ai_grid.v1.AiGridPingRequest",
+				"method ai_grid.v1.AiGrid.Ping returns ai_grid.v1.AiGridPingRequest, which no longer matches the BFF's ai_grid.v1.PingResponse:",
+				`field 1 of ai_grid.v1.AiGridPingRequest: the backend calls it "name", the BFF "message"`,
 			},
 		},
 		{
 			name: "method renamed",
 			mutate: func(t *testing.T, set *descriptorpb.FileDescriptorSet) {
-				method(t, set, "Tenants", "List").Name = proto.String("ListTenants")
+				method(t, set, "AiGrid", "Ping").Name = proto.String("Hello")
 			},
-			want: []string{"the BFF calls ai_grid.v1.Tenants.List, which the backend no longer has"},
+			want: []string{"the BFF calls ai_grid.v1.AiGrid.Ping, which the backend no longer has"},
 		},
 		{
 			name: "method became server streaming",
 			mutate: func(t *testing.T, set *descriptorpb.FileDescriptorSet) {
-				method(t, set, "Tenants", "List").ServerStreaming = proto.Bool(true)
+				method(t, set, "AiGrid", "Ping").ServerStreaming = proto.Bool(true)
 			},
-			want: []string{"method ai_grid.v1.Tenants.List became streaming"},
+			want: []string{"method ai_grid.v1.AiGrid.Ping became streaming"},
 		},
 		{
 			name: "method became client streaming",
 			mutate: func(t *testing.T, set *descriptorpb.FileDescriptorSet) {
-				method(t, set, "Tenants", "Update").ClientStreaming = proto.Bool(true)
+				method(t, set, "AiGrid", "Ping").ClientStreaming = proto.Bool(true)
 			},
-			want: []string{"method ai_grid.v1.Tenants.Update became streaming"},
-		},
-		{
-			name: "map value type changed",
-			mutate: func(t *testing.T, set *descriptorpb.FileDescriptorSet) {
-				for _, entry := range message(t, set, "Metadata").NestedType {
-					if entry.GetName() == "LabelsEntry" {
-						entry.Field[1].Type = descriptorpb.FieldDescriptorProto_TYPE_INT32.Enum()
-					}
-				}
-			},
-			want: []string{"field ai_grid.v1.Metadata.labels: backend map value int32, copy string"},
-		},
-		{
-			name: "field moved into a oneof",
-			mutate: func(t *testing.T, set *descriptorpb.FileDescriptorSet) {
-				msg := message(t, set, "TenantsGetRequest")
-				msg.OneofDecl = append(msg.OneofDecl, &descriptorpb.OneofDescriptorProto{Name: proto.String("ref")})
-				field(t, set, "TenantsGetRequest", "id").OneofIndex = proto.Int32(int32(len(msg.OneofDecl) - 1))
-			},
-			// A oneof member also has presence, so the field is reported twice.
-			want: []string{
-				"field ai_grid.v1.TenantsGetRequest.id: backend presence (optional) true, copy false",
-				`field ai_grid.v1.TenantsGetRequest.id: backend oneof "ref", copy oneof ""`,
-			},
+			want: []string{"method ai_grid.v1.AiGrid.Ping became streaming"},
 		},
 		{
 			name: "additions the BFF doesn't use pass",
 			mutate: func(t *testing.T, set *descriptorpb.FileDescriptorSet) {
-				status := message(t, set, "ModelPlacementStatus")
-				status.Field = append(status.Field, &descriptorpb.FieldDescriptorProto{
-					Name: proto.String("site"), Number: proto.Int32(99), JsonName: proto.String("site"),
+				resp := message(t, set, "AiGridPingResponse")
+				resp.Field = append(resp.Field, &descriptorpb.FieldDescriptorProto{
+					Name: proto.String("version"), Number: proto.Int32(99), JsonName: proto.String("version"),
 					Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
 				})
 			},
@@ -471,7 +329,7 @@ func TestDriftIsDetected(t *testing.T) {
 			set := proto.Clone(base).(*descriptorpb.FileDescriptorSet)
 			tc.mutate(t, set)
 			c := &checker{upstream: upstreamFiles(t, set)}
-			c.check(copyFile())
+			c.check()
 			if len(c.diffs) != len(tc.want) {
 				t.Fatalf("want %d difference(s) %q, got %d: %q", len(tc.want), tc.want, len(c.diffs), c.diffs)
 			}

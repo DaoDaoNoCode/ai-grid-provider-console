@@ -30,7 +30,7 @@ func TestBackendContextPicksTheTimeoutByMethod(t *testing.T) {
 		http.MethodDelete: write,
 	} {
 		start := time.Now()
-		ctx, cancel := app.backendContext(httptest.NewRequest(method, "/api/v1/tenants", nil))
+		ctx, cancel := app.backendContext(httptest.NewRequest(method, "/api/v1/grid/overview", nil))
 		deadline, ok := ctx.Deadline()
 		cancel()
 		// The deadline is set after start, at most the bound after it; the two bounds are far apart.

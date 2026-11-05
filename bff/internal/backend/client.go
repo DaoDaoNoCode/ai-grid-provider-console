@@ -1,8 +1,10 @@
 // Package backend holds the gRPC connection to ai-grid-backend.
 //
 // The backend owns every interaction with the hub, Keycloak and metrics. The
-// BFF only translates its RPCs into the JSON the frontend uses and forwards the
-// caller's identity in request metadata so the backend can authorize.
+// BFF calls it over gRPC for the readiness probe (AiGrid/Ping) and the
+// Monitoring fallback's Grid/GetOverview, forwarding the caller's identity in
+// request metadata; the pages call it over Connect through the relay
+// (internal/relay).
 package backend
 
 import (
@@ -49,9 +51,6 @@ type Config struct {
 	// WriteTimeout bounds every RPC that changes data (Client.WriteContext,
 	// and the relay's write procedures). Zero means 30 seconds.
 	WriteTimeout time.Duration
-	// DraftAPI says the backend serves the console's draft proto (the fake).
-	// Otherwise tenants use the backend's real RPCs (v1.go).
-	DraftAPI bool
 }
 
 // Client wraps the generated service clients.
@@ -60,7 +59,6 @@ type Client struct {
 	timeout      time.Duration
 	writeTimeout time.Duration
 	Health       aigridv1.AiGridClient
-	Tenants      aigridv1.TenantsClient
 	Grid         aigridv1.GridClient
 }
 
@@ -84,16 +82,11 @@ func Dial(cfg Config, extra ...grpc.DialOption) (*Client, error) {
 		return nil, fmt.Errorf("connect to backend %s: %w", cfg.Address, err)
 	}
 	timeout, writeTimeout := cfg.Timeouts()
-	var tenants aigridv1.TenantsClient = v1Tenants{conn}
-	if cfg.DraftAPI {
-		tenants = aigridv1.NewTenantsClient(conn)
-	}
 	return &Client{
 		conn:         conn,
 		timeout:      timeout,
 		writeTimeout: writeTimeout,
 		Health:       aigridv1.NewAiGridClient(conn),
-		Tenants:      tenants,
 		Grid:         aigridv1.NewGridClient(conn),
 	}, nil
 }

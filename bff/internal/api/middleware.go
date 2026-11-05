@@ -41,7 +41,7 @@ func (a *App) requireIdentity(next http.Handler) http.Handler {
 // own token), reads as well as writes. The backend acts with its own
 // ServiceAccount and authorizes nothing yet, and kube-auth-proxy admits any
 // OpenShift login, so without this any signed-in user could read every
-// cluster and tenant and write through the backend's rights. GET /user and
+// cluster and organization and write through the backend's rights. GET /user and
 // GET /config stay open (and HEAD, which net/http routes to the same
 // handlers): the UI needs them to say who the caller is.
 func (a *App) requireProviderAdmin(next http.Handler) http.Handler {
@@ -127,7 +127,7 @@ type requestInfoKey struct{}
 
 // log is the logger for lines about r: with the request id the client got in
 // X-Request-Id and the forwarded user name (never the token), so a line such
-// as "tenant updated" says which admin changed what.
+// as "request failed" says which admin asked what.
 func (a *App) log(r *http.Request) *slog.Logger {
 	info, ok := r.Context().Value(requestInfoKey{}).(*requestInfo)
 	if !ok {

@@ -4,217 +4,120 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 
-	backendv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/backend/v1"
-	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/backend"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/backend/backendtest"
 )
 
-// The BFF reaches two kinds of backend. The console's fake serves the draft
-// API (backend.Config.DraftAPI, `make run-fake`); ai-grid-provider-backend
-// serves its own ai_grid.v1, which the BFF calls through the adapters in
-// internal/backend (production). The tests in this file run each behaviour
-// both share against both, with the same fleet seeded in each one's shape,
-// so a change that works on the fake and breaks the production path fails.
+// The BFF reaches two kinds of backend over gRPC. The console's fake serves the draft API
+// (`make run-fake`); ai-grid-provider-backend serves its own ai_grid.v1, of which the BFF calls
+// only AiGrid/Ping (the pages call the rest over Connect, through the relay). The tests in this
+// file run what both share against both, so a change that works on the fake and breaks the
+// production path fails.
 
-// backendShape is one backend the BFF can be dialed to, seeded with the
-// fleet: tenant t-1 "acme" at version 3. start fails
-// every call with err when it is set, and returns the client and the
-// incoming metadata of the last call.
+// backendShape is one backend the BFF can be dialed to. start fails every call with err when
+// it is set.
 type backendShape struct {
 	name  string
-	start func(t *testing.T, err error) (*backend.Client, func() metadata.MD)
+	start func(t *testing.T, err error) *backend.Client
 }
 
 var backendShapes = []backendShape{
-	{"draft", func(t *testing.T, err error) (*backend.Client, func() metadata.MD) {
-		fake := &backendtest.Fake{
-			Err:     err,
-			Tenants: []*aigridv1.Tenant{{Id: "t-1", Name: "acme", Domains: []string{"acme.example.com"}, ResourceVersion: "3"}},
-		}
-		return backendtest.Start(t, fake), func() metadata.MD { return fake.Metadata }
+	{"draft", func(t *testing.T, err error) *backend.Client {
+		return backendtest.Start(t, &backendtest.Fake{Err: err})
 	}},
-	{"v1", func(t *testing.T, err error) (*backend.Client, func() metadata.MD) {
-		v1 := &backendtest.V1{
-			Err: err,
-			Tenants: []*backendv1.Tenant{{Id: "t-1", Metadata: &backendv1.Metadata{Name: "acme", Version: 3},
-				Spec: &backendv1.TenantSpec{Domains: []string{"acme.example.com"}}}},
-		}
-		return backendtest.StartV1(t, v1), v1.Metadata
+	{"v1", func(t *testing.T, err error) *backend.Client {
+		return backendtest.StartV1(t, &backendtest.V1{Err: err})
 	}},
 }
 
-// onEveryBackend runs test once per backend shape, on a BFF of its own.
-func onEveryBackend(t *testing.T, test func(t *testing.T, app *App)) {
-	t.Helper()
-	for _, shape := range backendShapes {
-		t.Run(shape.name, func(t *testing.T) {
-			t.Parallel()
-			client, _ := shape.start(t, nil)
-			test(t, NewApp(testConfig(t), slog.New(slog.DiscardHandler), client, startHub(t, &fakeHub{allowed: true})))
-		})
-	}
-}
-
-// wantStatus fails the test unless rec answered want, and then checks the
-// ETag when wantETag is set.
-func wantStatus(t *testing.T, what string, rec *httptest.ResponseRecorder, want int, wantETag string) {
+// wantStatus fails the test unless rec answered want.
+func wantStatus(t *testing.T, what string, rec *httptest.ResponseRecorder, want int) {
 	t.Helper()
 	if rec.Code != want {
 		t.Fatalf("%s: status %d (%s), want %d", what, rec.Code, strings.TrimSpace(rec.Body.String()), want)
 	}
-	if got := rec.Header().Get("ETag"); wantETag != "" && got != wantETag {
-		t.Fatalf("%s: ETag %s, want %s", what, got, wantETag)
-	}
 }
 
-func TestTenantsOnEveryBackend(t *testing.T) {
-	t.Parallel()
-	onEveryBackend(t, func(t *testing.T, app *App) {
-		var list []Tenant
-		rec := serve(app, asUser(http.MethodGet, "/api/v1/tenants?limit=10"))
-		wantStatus(t, "list", rec, http.StatusOK, "")
-		if meta := decodeList(t, rec, &list); len(list) != 1 || list[0].ID != "t-1" || !list[0].Enabled || total(meta) != 1 {
-			t.Fatalf("list: %+v, meta %+v; want enabled t-1, total 1", list, meta)
-		}
-		wantStatus(t, "get", serve(app, asUser(http.MethodGet, "/api/v1/tenants/t-1")), http.StatusOK, `"3"`)
-		wantStatus(t, "get unknown", serve(app, asUser(http.MethodGet, "/api/v1/tenants/t-9")), http.StatusNotFound, "")
-
-		rec = serve(app, jsonRequest(http.MethodPost, "/api/v1/tenants", `{"name": "globex", "domains": ["globex.example.com"]}`))
-		wantStatus(t, "create", rec, http.StatusCreated, `"1"`)
-		if loc := rec.Header().Get("Location"); loc != "/api/v1/tenants/t-2" {
-			t.Fatalf("create: Location %q, want /api/v1/tenants/t-2", loc)
-		}
-		wantStatus(t, "create a taken name", serve(app, jsonRequest(http.MethodPost, "/api/v1/tenants", `{"name": "acme"}`)), http.StatusConflict, "")
-
-		rename := `{"domains": ["acme.example.org"]}`
-		wantStatus(t, "stale patch", serve(app, withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/tenants/t-1", rename), `"2"`)), http.StatusConflict, "")
-		rec = serve(app, withIfMatch(jsonRequest(http.MethodPatch, "/api/v1/tenants/t-1", rename), `"3"`))
-		wantStatus(t, "patch", rec, http.StatusOK, `"4"`)
-		var patched Tenant
-		if decodeData(t, rec, &patched); len(patched.Domains) != 1 || patched.Domains[0] != "acme.example.org" {
-			t.Fatalf("patched domains %v, want [acme.example.org]", patched.Domains)
-		}
-
-		wantStatus(t, "stale delete", serve(app, withIfMatch(asUser(http.MethodDelete, "/api/v1/tenants/t-1"), `"3"`)), http.StatusConflict, "")
-		wantStatus(t, "delete", serve(app, withIfMatch(asUser(http.MethodDelete, "/api/v1/tenants/t-1"), `"4"`)), http.StatusNoContent, "")
-		wantStatus(t, "get after delete", serve(app, asUser(http.MethodGet, "/api/v1/tenants/t-1")), http.StatusNotFound, "")
-	})
-}
-
-// The caller's identity reaches either backend, and the backend's codes map
-// to the same HTTP statuses through the adapters as through the draft.
-func TestIdentityAndErrorsOnEveryBackend(t *testing.T) {
+// The readiness probe pings either backend, and says when it can't.
+func TestReadyzOnEveryBackend(t *testing.T) {
 	t.Parallel()
 	for _, shape := range backendShapes {
 		t.Run(shape.name, func(t *testing.T) {
 			t.Parallel()
-			client, md := shape.start(t, nil)
-			app := NewApp(testConfig(t), slog.New(slog.DiscardHandler), client, startHub(t, &fakeHub{allowed: true}))
-			wantStatus(t, "list", serve(app, asUser(http.MethodGet, "/api/v1/tenants")), http.StatusOK, "")
-			got := md()
-			for key, want := range map[string]string{
-				backend.MetaAuthorization: "Bearer sha256~token",
-				backend.MetaUser:          "alice",
-				backend.MetaEmail:         "alice@example.com",
-				backend.MetaGroups:        "system:authenticated,cluster-admins",
-			} {
-				if v := strings.Join(got.Get(key), "|"); v != want {
-					t.Errorf("metadata %s = %q, want %q", key, v, want)
-				}
-			}
+			ready := NewApp(testConfig(t), slog.New(slog.DiscardHandler), shape.start(t, nil), startHub(t, &fakeHub{allowed: true}))
+			wantStatus(t, "ready", serve(ready, httptest.NewRequest(http.MethodGet, "/readyz", nil)), http.StatusOK)
+			down := NewApp(testConfig(t), slog.New(slog.DiscardHandler), shape.start(t, backendtest.Status(codes.Unavailable, "down")), startHub(t, &fakeHub{allowed: true}))
+			wantStatus(t, "down", serve(down, httptest.NewRequest(http.MethodGet, "/readyz", nil)), http.StatusServiceUnavailable)
+		})
+	}
+}
 
-			// keep: the answer carries the backend's message (a client-caused failure).
-			for _, tc := range []struct {
-				code codes.Code
-				want int
-				keep bool
-			}{
-				{codes.PermissionDenied, http.StatusForbidden, true},
-				{codes.Unauthenticated, http.StatusUnauthorized, false},
-				{codes.NotFound, http.StatusNotFound, true},
-				{codes.Aborted, http.StatusConflict, true},
-				{codes.FailedPrecondition, http.StatusPreconditionFailed, true},
-				{codes.InvalidArgument, http.StatusUnprocessableEntity, true},
-				{codes.Unimplemented, http.StatusNotImplemented, false},
-				{codes.Unavailable, http.StatusServiceUnavailable, false},
-				{codes.Internal, http.StatusBadGateway, false},
-			} {
-				t.Run(tc.code.String(), func(t *testing.T) {
-					client, _ := shape.start(t, backendtest.Status(tc.code, "backend said no"))
-					app := NewApp(testConfig(t), slog.New(slog.DiscardHandler), client, startHub(t, &fakeHub{allowed: true}))
-					for _, path := range []string{"/api/v1/tenants"} {
-						rec := serve(app, asUser(http.MethodGet, path))
-						if msg := decodeError(t, rec).Error.Message; rec.Code != tc.want || (msg == "backend said no") != tc.keep {
-							t.Errorf("GET %s: %d %q, want %d (backend's message kept: %v)", path, rec.Code, msg, tc.want, tc.keep)
-						}
-					}
-				})
+// The caller's identity reaches the backend, and the backend's codes map to HTTP statuses,
+// keeping the backend's message only for a client-caused failure.
+func TestIdentityAndErrorsReachTheBackend(t *testing.T) {
+	t.Parallel()
+	fake := &backendtest.Fake{}
+	app := newTestApp(t, testConfig(t), fake)
+	wantStatus(t, "overview", serve(app, asUser(http.MethodGet, "/api/v1/grid/overview?range=1h")), http.StatusOK)
+	for key, want := range map[string]string{
+		backend.MetaAuthorization: "Bearer sha256~token",
+		backend.MetaUser:          "alice",
+		backend.MetaEmail:         "alice@example.com",
+		backend.MetaGroups:        "system:authenticated,cluster-admins",
+	} {
+		if v := strings.Join(fake.Metadata.Get(key), "|"); v != want {
+			t.Errorf("metadata %s = %q, want %q", key, v, want)
+		}
+	}
+
+	// keep: the answer carries the backend's message (a client-caused failure).
+	for _, tc := range []struct {
+		code codes.Code
+		want int
+		keep bool
+	}{
+		{codes.PermissionDenied, http.StatusForbidden, true},
+		{codes.Unauthenticated, http.StatusUnauthorized, false},
+		{codes.NotFound, http.StatusNotFound, true},
+		{codes.Aborted, http.StatusConflict, true},
+		{codes.FailedPrecondition, http.StatusPreconditionFailed, true},
+		{codes.InvalidArgument, http.StatusUnprocessableEntity, true},
+		{codes.Unimplemented, http.StatusNotImplemented, false},
+		{codes.Unavailable, http.StatusServiceUnavailable, false},
+		{codes.Internal, http.StatusBadGateway, false},
+	} {
+		t.Run(tc.code.String(), func(t *testing.T) {
+			t.Parallel()
+			app := newTestApp(t, testConfig(t), &backendtest.Fake{Err: backendtest.Status(tc.code, "backend said no")})
+			rec := serve(app, asUser(http.MethodGet, "/api/v1/grid/overview?range=1h"))
+			if msg := decodeError(t, rec).Error.Message; rec.Code != tc.want || (msg == "backend said no") != tc.keep {
+				t.Errorf("%d %q, want %d (backend's message kept: %v)", rec.Code, msg, tc.want, tc.keep)
 			}
 		})
 	}
 }
 
-// The backend has no Grid service (a method it doesn't
-// serve answers Unimplemented without reaching a handler), and the adapters
-// refuse with 501 what its API cannot carry, before any call: tenant fields
-// its Tenant lacks.
+// The backend has no Grid service: a method it doesn't serve answers Unimplemented without
+// reaching a handler, which the BFF answers 501.
 func TestV1BackendAnswers501ForWhatItLacks(t *testing.T) {
 	t.Parallel()
-	for _, tc := range []struct{ method, path, body, ifMatch string }{
-		{http.MethodGet, "/api/v1/grid/overview?range=1h", "", ""},
-		{http.MethodGet, "/api/v1/grid/overview?range=24h&site=brussels&metrics=false", "", ""},
-		{http.MethodPost, "/api/v1/tenants", `{"name": "globex", "description": "Globex Corp."}`, ""},
-		{http.MethodPatch, "/api/v1/tenants/t-1", `{"alias": "acme"}`, `"3"`},
+	for _, path := range []string{
+		"/api/v1/grid/overview?range=1h",
+		"/api/v1/grid/overview?range=24h&site=brussels&metrics=false",
 	} {
-		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+		t.Run(path, func(t *testing.T) {
 			t.Parallel()
 			v1 := &backendtest.V1{}
 			app := NewApp(testConfig(t), slog.New(slog.DiscardHandler), backendtest.StartV1(t, v1), startHub(t, &fakeHub{allowed: true}))
-			req := asUser(tc.method, tc.path)
-			if tc.body != "" {
-				req = jsonRequest(tc.method, tc.path, tc.body)
-			}
-			if tc.ifMatch != "" {
-				req = withIfMatch(req, tc.ifMatch)
-			}
-			rec := serve(app, req)
-			wantStatus(t, tc.method+" "+tc.path, rec, http.StatusNotImplemented, "")
+			wantStatus(t, path, serve(app, asUser(http.MethodGet, path)), http.StatusNotImplemented)
 			if calls := v1.Calls(); len(calls) != 0 {
 				t.Errorf("reached the backend's %v", calls)
 			}
 		})
-	}
-}
-
-// The backend pages tenants and counts them, but doesn't evaluate a filter:
-// the adapter answers no total for a filtered list, and the BFF refuses it
-// with 501 rather than show the unfiltered rows as the result (requireTotal).
-func TestV1TenantFilterIs501AndPagingWorks(t *testing.T) {
-	t.Parallel()
-	v1 := &backendtest.V1{}
-	for _, name := range []string{"org-1", "org-2", "org-3"} {
-		v1.Tenants = append(v1.Tenants, &backendv1.Tenant{Id: "id-" + name, Metadata: &backendv1.Metadata{Name: name, Version: 1}})
-	}
-	app := NewApp(testConfig(t), slog.New(slog.DiscardHandler), backendtest.StartV1(t, v1), startHub(t, &fakeHub{allowed: true}))
-	for _, q := range []string{"filter=false", "filter=" + url.QueryEscape(`this.name == "org-1"`) + "&limit=5"} {
-		rec := serve(app, asUser(http.MethodGet, "/api/v1/tenants?"+q))
-		wantStatus(t, q, rec, http.StatusNotImplemented, "")
-		if got, want := decodeError(t, rec).Error.Message, "the AI Grid backend does not support filtering or paging tenants yet; list them without filter, offset or limit"; got != want {
-			t.Errorf("%s: message %q, want %q", q, got, want)
-		}
-	}
-	var page []Tenant
-	rec := serve(app, asUser(http.MethodGet, "/api/v1/tenants?offset=1&limit=1"))
-	wantStatus(t, "page", rec, http.StatusOK, "")
-	if meta := decodeList(t, rec, &page); len(page) != 1 || page[0].Name != "org-2" || meta.Offset != 1 || total(meta) != 3 {
-		t.Fatalf("page: %+v, meta %+v; want org-2 of 3 at offset 1", page, meta)
 	}
 }
