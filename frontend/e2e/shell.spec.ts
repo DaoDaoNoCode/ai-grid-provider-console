@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 // A phone-width screen: the masthead title stays clear of the user menu, which shows only its
 // icon there, and the fake-backend banner wraps inside the viewport.

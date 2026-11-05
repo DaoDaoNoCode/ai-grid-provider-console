@@ -123,10 +123,22 @@ filter, sort and page lists, call the backend over Connect.
 
 - **The SPA** (every path outside `/api`, `/perses/api`, `/healthcheck` and `/readyz`:
   `index.html`, the client routes that fall back to it, and the files under `/assets/`) is
-  sent with `Content-Security-Policy: frame-ancestors 'none'`, `X-Frame-Options: DENY`,
-  `X-Content-Type-Options: nosniff` and `Referrer-Policy: same-origin`. The console must not
-  be framed by any page, including another app under the cluster's `*.apps` domain: that is
-  same-site, so `SameSite=Lax` on the proxy's cookie does not stop it.
+  sent with `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`,
+  `Referrer-Policy: same-origin` and this `Content-Security-Policy` (`pagePolicy` in
+  `bff/internal/api/static.go`, which says why each directive allows what it does):
+  `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'
+  data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action
+  'self'; frame-ancestors 'none'`. The bundle's own files are the only scripts: no inline
+  script, inline event handler, `javascript:` URL or eval, so markup a component puts into a
+  page cannot run script; no plugins, no `<base>`, no form posting off the console. Inline
+  styles are allowed because the Monitoring page's Perses components insert `<style>` elements;
+  `data:` images for the empty favicon. When `MAP_TILE_URL` names a tile server, its scheme,
+  host and port (a `{s}` first label as `*.`) join `img-src`; the BFF refuses to start with a
+  tile URL that is neither a path on the console nor an `http(s)` URL of a host name. The
+  console must not be framed by any page, including another app under the cluster's `*.apps`
+  domain: that is same-site, so `SameSite=Lax` on the proxy's cookie does not stop it.
+  kube-auth-proxy and the Route pass the header through unchanged. Every browser spec loads its
+  pages from the BFF and fails on any violation (`frontend/e2e/fixtures.ts`).
 - **Caching.** Every file under `/assets/` is `Cache-Control: public, max-age=31536000,
   immutable`: Vite writes only content-hashed names there (`index-BPyNsiKc.css`, with
   base64url hashes), so a new build has new URLs. `index.html`, the client routes and the

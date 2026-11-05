@@ -85,7 +85,8 @@ type Config struct {
 	// GridEndpoint is the consumer-facing inference URL shown to admins.
 	GridEndpoint string
 	// MapTileURL is the tile server for the fleet map; empty draws a bundled
-	// land outline.
+	// land outline. Its host is the one image source the console's pages allow
+	// besides their own origin (MapTileSource).
 	MapTileURL string
 	// MapTileAttribution is the attribution shown with MapTileURL's tiles;
 	// unused when MapTileURL is empty.
@@ -197,6 +198,9 @@ func Parse(args []string, lookupEnv func(string) (string, bool)) (Config, error)
 	}
 	if cfg.BackendWriteTimeout <= 0 || cfg.BackendWriteTimeout > MaxBackendTimeout {
 		return Config{}, fmt.Errorf("backend-write-timeout must be positive and at most %s, to stay inside the server's %s write timeout", MaxBackendTimeout, WriteTimeout)
+	}
+	if _, err := MapTileSource(cfg.MapTileURL); err != nil {
+		return Config{}, err
 	}
 	hardware, err := ParseModelHardware(modelHardware)
 	if err != nil {

@@ -127,6 +127,9 @@ export const consoleErrorMap: z.core.$ZodErrorMap = (issue) => {
   }
 };
 
-z.config({ customError: consoleErrorMap });
+// jitless: zod compiles object schemas with `new Function` unless told not to, and first probes for
+// it; the console's Content-Security-Policy refuses eval (bff/internal/api/static.go, pagePolicy),
+// and the refused probe is reported as a policy violation on every page.
+z.config({ customError: consoleErrorMap, jitless: true });
 
 export { z };

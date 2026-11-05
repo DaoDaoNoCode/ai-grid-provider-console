@@ -29,9 +29,10 @@ const onBackendFakes = [
   'models.spec.ts',
   'subscriptions.spec.ts',
   'organizations.spec.ts',
+  'csp.spec.ts',
 ];
 
-export default defineConfig({
+export default defineConfig<object, { bffURL: string }>({
   testDir: './e2e',
   timeout: 30_000,
   retries: 0,
@@ -48,13 +49,19 @@ export default defineConfig({
     navigationTimeout: 15_000,
   },
   projects: [
-    { name: 'chromium', use: browser, testIgnore: onBackendFakes },
+    // bffURL: each page comes from the stack's BFF, with the console's page headers (e2e/fixtures.ts).
+    { name: 'chromium', use: { ...browser, bffURL: `http://127.0.0.1:${bffPort}` }, testIgnore: onBackendFakes },
     // One test at a time. A Models or Subscriptions write must be confirmed within the form's short
     // wait plus an assertion's, as a user sees it confirmed; run beside another spec's catalog
     // reads and writes, it queued behind them past both (the deploy flow failed so in CI). Alone,
     // each write takes the time the backend needs for it, and the fixture clusters the writers
     // change are theirs for the run.
-    { name: 'backend fakes', use: { ...browser, baseURL: fakesOrigin }, testMatch: onBackendFakes, workers: 1 },
+    {
+      name: 'backend fakes',
+      use: { ...browser, baseURL: fakesOrigin, bffURL: `http://127.0.0.1:${fakesBffPort}` },
+      testMatch: onBackendFakes,
+      workers: 1,
+    },
   ],
   // The console's fake stack on the PoC preset (mock/fixtures-poc), with the frontend as it ships: the production bundle,
   // served by `vite preview`, whose proxy is the dev server's (vite.config.ts), so the identity
@@ -62,7 +69,9 @@ export default defineConfig({
   // made pages load in seconds and reported errors React's production build does not.
   // Playwright starts the three in parallel and fails the run at once if one exits before it answers.
   // Outside CI it reuses whatever already answers on the ports. A running `make dev-fake` serves
-  // mock/fixtures, not mock/fixtures-poc, so stop it first; the specs need the PoC's names.
+  // mock/fixtures, not mock/fixtures-poc, so stop it first; the specs need the PoC's names. Each
+  // page itself comes from the BFF, with its Content-Security-Policy (e2e/fixtures.ts), so a BFF
+  // reused from elsewhere must serve the bundle too (--static-assets-dir).
   webServer: [
     {
       // make -C bff fake-backend on the PoC preset (mock/fixtures-poc): the specs use the PoC's
@@ -74,8 +83,9 @@ export default defineConfig({
       timeout: 180_000,
     },
     {
-      // make -C bff run-fake.
-      command: `go run ./cmd --port=${bffPort} --backend-address=127.0.0.1:${backendPort} --hub-api-url=http://127.0.0.1:${hubPort} --fake-backend`,
+      // make -C bff run-fake, serving the bundle too, as the deployed console does: the specs load
+      // each page from it, with its headers (e2e/fixtures.ts).
+      command: `go run ./cmd --port=${bffPort} --backend-address=127.0.0.1:${backendPort} --hub-api-url=http://127.0.0.1:${hubPort} --fake-backend --static-assets-dir=../frontend/dist`,
       cwd: '../bff',
       url: `http://127.0.0.1:${bffPort}/healthcheck`,
       reuseExistingServer: !process.env.CI,
@@ -111,8 +121,9 @@ export default defineConfig({
       },
     },
     {
-      // make dev-bff-fake-infra: the BFF relays /ai_grid.v1.* to that backend.
-      command: `go run ./cmd --port=${fakesBffPort} --backend-address=127.0.0.1:${fakesBackendPort} --hub-api-url=http://127.0.0.1:${fakesBackendPort + 1}`,
+      // make dev-bff-fake-infra: the BFF relays /ai_grid.v1.* to that backend, and serves the
+      // bundle below for the pages, as the first stack's BFF does.
+      command: `go run ./cmd --port=${fakesBffPort} --backend-address=127.0.0.1:${fakesBackendPort} --hub-api-url=http://127.0.0.1:${fakesBackendPort + 1} --static-assets-dir=../frontend/dist-backend-fakes`,
       cwd: '../bff',
       url: `http://127.0.0.1:${fakesBffPort}/healthcheck`,
       reuseExistingServer: !process.env.CI,

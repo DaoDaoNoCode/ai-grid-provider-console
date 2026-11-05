@@ -1,5 +1,6 @@
-import { expect, test, type APIRequestContext } from '@playwright/test';
+import type { APIRequestContext } from '@playwright/test';
 import { callBackend, tryBackend } from './backend';
+import { expect, test } from './fixtures';
 
 // The Organizations pages call the backend's Tenants API over Connect, so this spec runs on the
 // backend's own fakes (playwright.config.ts, "backend fakes"): its fake Keycloak holds the PoC's

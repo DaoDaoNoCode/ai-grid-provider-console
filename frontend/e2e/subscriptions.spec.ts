@@ -1,7 +1,7 @@
-import { expect, test } from '@playwright/test';
 import { create, fromJsonString, toJsonString } from '@bufbuild/protobuf';
 import { ModelsListResponseSchema } from '../src/gen/ai_grid/v1/models_service_pb';
 import { ModelClusterStatusSchema, ModelState, ModelStatusSchema } from '../src/gen/ai_grid/v1/model_type_pb';
+import { expect, test } from './fixtures';
 import { createModel, tryBackend, writeConfirmed } from './backend';
 
 // On the backend's own fakes (playwright.config.ts, "backend fakes"): the pages read and write the

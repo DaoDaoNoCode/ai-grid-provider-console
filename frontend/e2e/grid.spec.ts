@@ -1,4 +1,5 @@
-import { expect, test, type Locator } from '@playwright/test';
+import type { Locator } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 // Runs on the backend's own fakes (playwright.config.ts): the map reads Clusters/List over Connect.
 // The fixture AI Grid sites with coordinates (the backend's fixtures/poc/managedclusters.json). The map
