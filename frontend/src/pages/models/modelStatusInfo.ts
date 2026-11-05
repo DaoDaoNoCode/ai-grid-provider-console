@@ -25,10 +25,6 @@ export const modelPhase = (model: Pick<ModelView, 'phase'>): string => model.pha
 /** A placed model serving on some of its clusters but not all (the backend's phase, proposal P13). */
 export const PARTIALLY_AVAILABLE = 'Partially ready';
 
-/** The status's title: "Deployment failed" for Failed, else the phase. */
-export const modelStatusTitle = (model: ModelView): string =>
-  modelPhase(model) === 'Failed' ? 'Deployment failed' : modelPhase(model);
-
 /** Whether the model has anything to explain beyond its phase. */
 export const hasModelStatusDetails = (model: ModelView): boolean => !!(model.reason || model.statusMessage);
 

@@ -38,7 +38,7 @@ export const ModelStatusModal: React.FC<Props> = ({ model, clusters, onClose }) 
           </Flex>
         </Title>
         <p>
-          <strong>Deployment status</strong>
+          <strong>Model status</strong>
         </p>
       </ModalHeader>
       <ModalBody>
@@ -46,7 +46,7 @@ export const ModelStatusModal: React.FC<Props> = ({ model, clusters, onClose }) 
           <p data-testid="model-status-modal-message">{gitMessage}</p>
         ) : (
           <Stack hasGutter>
-            <p data-testid="model-status-modal-message">One or more model deployments are not ready.</p>
+            <p data-testid="model-status-modal-message">The model isn’t ready on one or more of its clusters.</p>
             <ModelClustersTable model={model} clusters={clusters} isNested opensClusters={false} />
           </Stack>
         )}

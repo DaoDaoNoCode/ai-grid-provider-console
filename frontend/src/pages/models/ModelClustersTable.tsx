@@ -113,7 +113,7 @@ const ClusterStatusModal: React.FC<{
           </Flex>
         </Title>
         <p>
-          <strong>Deployment status</strong> on cluster{' '}
+          <strong>Model status</strong> on cluster{' '}
           <Link to={`/clusters/${encodeURIComponent(status.cluster)}`}>{status.cluster}</Link>
         </p>
       </ModalHeader>

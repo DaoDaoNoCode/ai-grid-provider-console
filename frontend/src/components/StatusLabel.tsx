@@ -11,7 +11,7 @@ type Props = {
   isCompact?: boolean;
   /** Opens the status's details; the label is then filled, a button. */
   onClick?: LabelProps['onClick'];
-  /** Read after the word by a screen reader only, e.g. " at us-east" in a table of locations. */
+  /** Read after the word by a screen reader only, e.g. " on site1" in a table of clusters. */
   screenReaderSuffix?: string;
   'data-testid'?: string;
 };

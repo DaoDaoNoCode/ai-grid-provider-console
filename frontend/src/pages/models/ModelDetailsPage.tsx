@@ -55,7 +55,7 @@ export const ModelDetailsPage: React.FC = () => {
             <Alert
               isInline
               variant={model.state === 'Failed' ? 'danger' : model.state === PARTIALLY_AVAILABLE ? 'warning' : 'info'}
-              title={model.state === 'Failed' ? 'Deployment failed' : model.state}
+              title={model.state === 'Failed' ? 'Unable to deploy model' : model.state}
               data-testid="model-status-alert"
             >
               <ModelStatusDetails model={model} />

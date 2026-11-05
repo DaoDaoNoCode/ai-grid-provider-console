@@ -503,7 +503,7 @@ describe('the status', () => {
     const user = userEvent.setup();
     renderAt('/models/failed', phases());
     const alert = await screen.findByTestId('model-status-alert');
-    expect(alert).toHaveTextContent('Deployment failed');
+    expect(alert).toHaveTextContent('Unable to deploy model');
     expect(alert).toHaveTextContent('Install the template on the hub, or deploy the model with another runtime.');
     const raw = screen.getByText(/v3-6-0-kserve-config-llm-template-tpu" not found/);
     expect(raw).not.toBeVisible();
@@ -2791,7 +2791,7 @@ describe('the deployment and MaaS statuses', () => {
     renderAt('/models', running());
     await user.click(within(await rowOf('smollm2')).getByRole('button', { name: 'Partially ready for smollm2' }));
     const modal = await screen.findByTestId('model-status-modal');
-    expect(modal).toHaveTextContent('One or more model deployments are not ready.');
+    expect(modal).toHaveTextContent('The model isn’t ready on one or more of its clusters.');
     const rows = within(modal).getAllByTestId('model-cluster-row');
     expect(rows).toHaveLength(2);
     // The dialog's cluster statuses open nothing: PatternFly's dialogs don't stack.
