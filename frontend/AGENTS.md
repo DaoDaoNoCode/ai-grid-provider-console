@@ -85,7 +85,8 @@ a failed load.
   message as text in a dialog, including Ready. Without a message it stays outline and
   noninteractive. AI Grid status stays outline. Refresh keeps the selected cluster's identity.
 - In Create subscription and its Add models picker, every model shows its status as the Models list
-  does (`ModelStatusLabel`), and only Partially ready models with cluster reports open the shared
+  does (`ModelStatusLabel`, from the latest poll; a model the subscription has saved shows its
+  registration), and only Partially ready models with cluster reports open the shared
   model status dialog. Suspend the picker while status is open; retain its filter, sort and
   unconfirmed selections, then restore focus to the trigger when returning. When a refresh leaves
   the model without that status, its dialog closes; opened from the selected models, focus goes to

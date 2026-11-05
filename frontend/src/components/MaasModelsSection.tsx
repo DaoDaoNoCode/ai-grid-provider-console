@@ -16,6 +16,8 @@ import {
 } from '@patternfly/react-core';
 import { MinusCircleIcon, PlusCircleIcon } from '@patternfly/react-icons';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
+import { ModelStatusLabel } from '../pages/models/ModelStatus';
+import type { ModelView } from '../pages/models/modelView';
 import { formatTokenRateLimitLine, type TokenLimit } from '../utilities/rateLimits';
 import { DetailsSection } from './DetailsSection';
 import { SectionEmptyState } from './states/SectionEmptyState';
@@ -32,6 +34,8 @@ export type SubscriptionModelRow = {
   /** The status label's word, and its reason in the tooltip. */
   status: string;
   reason?: string;
+  /** The model as the Models list last read it: the row shows its label (ModelStatusLabel) instead. */
+  model?: ModelView;
   onOpenStatus?: () => void;
   tokenRateLimits: TokenLimit[];
   unlimited: boolean;
@@ -125,13 +129,17 @@ export const MaasModelsSection: React.FC<Props> = ({
                 <TableRowTitleDescription title={<strong>{row.title}</strong>} subtitle={<code>{row.name}</code>} />
               </Td>
               <Td dataLabel="Status">
-                <StatusLabel
-                  isCompact
-                  status={row.status}
-                  reason={row.onOpenStatus ? undefined : row.reason}
-                  onClick={row.onOpenStatus}
-                  screenReaderSuffix={row.onOpenStatus ? ` for ${row.title}` : undefined}
-                />
+                {row.model ? (
+                  <ModelStatusLabel model={row.model} onOpen={row.onOpenStatus} />
+                ) : (
+                  <StatusLabel
+                    isCompact
+                    status={row.status}
+                    reason={row.onOpenStatus ? undefined : row.reason}
+                    onClick={row.onOpenStatus}
+                    screenReaderSuffix={row.onOpenStatus ? ` for ${row.title}` : undefined}
+                  />
+                )}
               </Td>
               <Td dataLabel="Token limits">{tokenLimits}</Td>
               {editable && (

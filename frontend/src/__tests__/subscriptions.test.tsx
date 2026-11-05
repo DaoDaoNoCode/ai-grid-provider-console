@@ -943,7 +943,10 @@ describe('subscription phases', () => {
     );
     const user = userEvent.setup();
     renderAt('/subscriptions', service);
-    expect(await screen.findByTestId('phase-label-subtext')).toHaveTextContent('Setting up subscription');
+    const subtext = await screen.findByTestId('phase-label-subtext');
+    expect(subtext).toHaveTextContent('Setting up subscription');
+    // In Pending's tone, as the label.
+    expect(subtext).toHaveClass('pf-v6-u-text-color-status-default');
     await user.hover(within(screen.getByTestId('phase-label')).getByText('Pending'));
     expect(await screen.findByRole('tooltip')).toHaveTextContent(message);
   });
@@ -1576,6 +1579,32 @@ describe('subscription creation model status', () => {
       await act(() => vi.advanceTimersByTimeAsync(30_000));
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
       expect(screen.getByRole('button', { name: 'Add models' })).toHaveFocus();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("follows a selected model's state as the models poll, keeping its token limits", async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      const service = seeded();
+      const model = fleetOf(service).find('granite-3-8b');
+      model.status!.state = ModelState.STARTING;
+      renderAt('/subscriptions/create', service);
+      await fillNewSubscription(user);
+      const selected = () => screen.getByRole('grid', { name: 'subscription models' });
+      const statusOf = () => {
+        const headers = within(selected()).getAllByRole('columnheader');
+        const [row] = within(selected()).getAllByRole('row').slice(1);
+        return within(row).getAllByRole('cell')[headers.findIndex((h) => h.textContent === 'Status')];
+      };
+      expect(statusOf()).toHaveTextContent(/^Starting$/);
+      model.status!.state = ModelState.READY;
+      await act(() => vi.advanceTimersByTimeAsync(30_000));
+      await waitFor(() => expect(statusOf()).toHaveTextContent(/^Ready$/));
+      expect(selected()).toHaveTextContent('1,000 / 1 hour');
+      expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('Test team');
     } finally {
       vi.useRealTimers();
     }

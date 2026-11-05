@@ -364,16 +364,20 @@ export const CreateSubscriptionForm: React.FC<Props> = ({
   const rows: SubscriptionModelRow[] = models.map((entry) => {
     const currentModel = availableModels.find((model) => model.id === entryModelId(entry));
     const opensStatus = !isEditing && hasPartialModelStatus(currentModel);
+    // A model the subscription has saved shows its registration in it. One added here shows the
+    // Models list's label, from the latest poll of the models (the copy taken when it was added
+    // only while the poll doesn't list it), so a row never keeps a status the model has left.
+    const latest = currentModel ?? entry.model;
     const status =
       entry.saved && subscriptionInfo
         ? registrationStatusOf(subscriptionInfo.modelRegistrations, entry.ref)
-        : { status: entry.model?.phase ?? 'Unknown', reason: entry.model?.statusMessage };
+        : { status: latest?.state ?? 'Unknown', model: latest };
     return {
       key: entryKey(entry),
       title: refTitleOf(entry.ref, entry.model),
       name: entry.ref.name,
       ...status,
-      ...(opensStatus ? { status: currentModel.state, onOpenStatus: () => setStatusModelId(currentModel.id) } : {}),
+      ...(opensStatus ? { onOpenStatus: () => setStatusModelId(currentModel.id) } : {}),
       tokenRateLimits: entry.tokenRateLimits,
       unlimited: entry.unlimited,
     };
