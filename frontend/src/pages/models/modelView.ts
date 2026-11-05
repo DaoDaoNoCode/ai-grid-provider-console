@@ -8,7 +8,9 @@ import {
   ModelDeploymentState,
   ModelMaasState,
   ModelPhase,
+  ModelState,
   ModelSyncState,
+  ModelViewTarget,
   type Model,
   type ModelEnvVar,
   type ModelSpec,
@@ -37,7 +39,31 @@ export type AcceleratorRequest = { resource: string; count: string };
 const SAVED_TO_GIT = 'SavedToGit';
 
 /** A model's phase as the pages word it. */
-export type ModelPhaseWord = 'Ready' | 'Pending' | 'Failed' | 'Partially available' | 'Saved to Git' | 'Unknown';
+export type ModelPhaseWord = 'Ready' | 'Pending' | 'Failed' | 'Partially ready' | 'Saved to Git' | 'Unknown';
+
+/**
+ * A model's rollout, Git sync and deployment in one word, as the Status column shows it
+ * (the backend's ModelState): Saved to Git, Syncing, Synced, Starting, Ready,
+ * Partially ready (a model only), Failed, Stopped; Unknown for a value newer than the pin.
+ */
+export type StateWord =
+  'Saved to Git' | 'Syncing' | 'Synced' | 'Starting' | 'Ready' | 'Partially ready' | 'Failed' | 'Stopped' | 'Unknown';
+
+/**
+ * Whether Argo CD has applied Git's change on a cluster (ModelSyncState): Synced, Out of sync (not
+ * applied yet, or being retried) or Sync failed; none while the cluster has no Application.
+ */
+export type SyncWord = 'Synced' | 'Out of sync' | 'Sync failed' | 'Unknown';
+
+/** A model in MaaS as the Availability column words it (ModelMaasState); none while unreported. */
+export type MaaSWord =
+  | 'Available'
+  | 'Awaiting subscription'
+  | 'Configuring routing'
+  | 'Awaiting subscription and backend'
+  | 'Unavailable'
+  | 'Failed'
+  | 'Unknown';
 
 /** The model on one cluster its placement names, as the backend reports it (`status.clusters`). */
 export type ModelClusterView = {
@@ -59,6 +85,8 @@ export type ModelClusterView = {
   deployment: ModelDeploymentWord;
   /** KServe's message about the deployment, for example "Deployment does not have minimum availability.". */
   deploymentMessage?: string;
+  /** Whether Argo CD has applied the model on the cluster as Git has it; undefined with no report. */
+  sync?: SyncWord;
   /**
    * Whether Argo CD's sync of the model to the cluster failed and it stopped retrying (`sync`
    * FAILED): the revision Git holds never lands there, an admission refusal or a bad manifest.
@@ -66,6 +94,12 @@ export type ModelClusterView = {
   syncFailed?: boolean;
   /** Argo CD's sync operation message while the sync failed or is being retried (`sync_message`). */
   syncMessage?: string;
+  /** Git sync and deployment in one word (ModelClusterStatus.state); undefined with no report. */
+  state?: StateWord;
+  /** Where to see the model on this cluster (view_url); undefined when the hub can't link it. */
+  viewUrl?: string;
+  /** Whether viewUrl opens OpenShift AI or the OpenShift console. */
+  viewTarget?: 'OpenShift AI' | 'OpenShift console';
 };
 
 /** What a placed cluster's LLMInferenceService reports, in words (ModelDeploymentState). */
@@ -79,11 +113,16 @@ const deploymentWords: Record<ModelDeploymentState, ModelDeploymentWord> = {
   [ModelDeploymentState.STOPPED]: 'Stopped',
 };
 
-/**
- * The model in MaaS on one ingress cluster (`status.ingress`): whether MaaS or Argo CD reports it
- * failed there, and their message.
- */
-export type ModelIngressView = { cluster: string; failed: boolean; message?: string };
+/** The model in MaaS on one ingress cluster, as the backend reports it (`status.ingress`). */
+export type ModelIngressView = {
+  cluster: string;
+  /** Undefined while the cluster hasn't reported the model. */
+  maas?: MaaSWord;
+  /** Whether MaaS or Argo CD reports the model failed there. */
+  failed: boolean;
+  /** MaaS's or Argo CD's message, for example "Awaiting governance pairing". */
+  message?: string;
+};
 
 /** A Model as the pages show it. */
 export type ModelView = {
@@ -120,18 +159,20 @@ export type ModelView = {
   creationTimestamp?: string;
   /** metadata.version, sent back with `lock` by an edit and with a delete. */
   version: number;
-  /** The `location` labels of the clusters the placement chose (status.placement.locations). */
-  locations: string[];
   /** The clusters the placement chose, by name (status.placement.selected_clusters). */
   selectedClusters: string[];
   /** Each placed cluster's status; empty while no cluster has reported the model. */
   clusters: ModelClusterView[];
+  /** The model in MaaS over the ingress clusters (status.maas); undefined while none has reported. */
+  maas?: MaaSWord;
   /**
    * Whether the model failed in MaaS (`status.maas` FAILED): MaaS or the AI gateway reports it
    * failed on an ingress cluster, or Argo CD couldn't sync it there.
    */
   maasFailed: boolean;
-  /** The model in MaaS on each ingress cluster (`status.ingress`); empty while none has reported. */
+  /** The rollout in one word (status.state): what the Status column shows. */
+  state: StateWord;
+  /** Each ingress cluster's MaaS status; empty while no cluster has reported the model. */
   ingress: ModelIngressView[];
   /**
    * The clusters a `name In [...]` placement names, the only shape the console edits; undefined
@@ -147,8 +188,51 @@ const phaseWords: Record<ModelPhase, ModelPhaseWord> = {
   [ModelPhase.PENDING]: 'Pending',
   [ModelPhase.READY]: 'Ready',
   [ModelPhase.FAILED]: 'Failed',
-  [ModelPhase.PARTIALLY_AVAILABLE]: 'Partially available',
+  [ModelPhase.PARTIALLY_AVAILABLE]: 'Partially ready',
 };
+
+const syncWords: Partial<Record<ModelSyncState, SyncWord>> = {
+  [ModelSyncState.SYNCED]: 'Synced',
+  [ModelSyncState.OUT_OF_SYNC]: 'Out of sync',
+  [ModelSyncState.FAILED]: 'Sync failed',
+};
+
+const maasWords: Partial<Record<ModelMaasState, MaaSWord>> = {
+  [ModelMaasState.AVAILABLE]: 'Available',
+  [ModelMaasState.AWAITING_SUBSCRIPTION]: 'Awaiting subscription',
+  [ModelMaasState.CONFIGURING_ROUTING]: 'Configuring routing',
+  [ModelMaasState.AWAITING_SUBSCRIPTION_AND_BACKEND]: 'Awaiting subscription and backend',
+  [ModelMaasState.UNAVAILABLE]: 'Unavailable',
+  [ModelMaasState.FAILED]: 'Failed',
+};
+
+const stateWords: Partial<Record<ModelState, StateWord>> = {
+  [ModelState.SAVED_TO_GIT]: 'Saved to Git',
+  [ModelState.SYNCING]: 'Syncing',
+  [ModelState.SYNCED]: 'Synced',
+  [ModelState.STARTING]: 'Starting',
+  [ModelState.READY]: 'Ready',
+  [ModelState.PARTIALLY_READY]: 'Partially ready',
+  [ModelState.FAILED]: 'Failed',
+  [ModelState.STOPPED]: 'Stopped',
+};
+
+/** The rollout in words: undefined when unreported (0), Unknown for a value newer than the pin. */
+export const stateWordOf = (state: ModelState | undefined): StateWord | undefined =>
+  state ? (stateWords[state] ?? 'Unknown') : undefined;
+
+const viewTargets: Partial<Record<ModelViewTarget, 'OpenShift AI' | 'OpenShift console'>> = {
+  [ModelViewTarget.OPENSHIFT_AI]: 'OpenShift AI',
+  [ModelViewTarget.OPENSHIFT_CONSOLE]: 'OpenShift console',
+};
+
+/** The sync in words: undefined when unreported (0), Unknown for a value newer than the pin. */
+export const syncWordOf = (state: ModelSyncState | undefined): SyncWord | undefined =>
+  state ? (syncWords[state] ?? 'Unknown') : undefined;
+
+/** The MaaS status in words: undefined when unreported (0), Unknown for a value newer than the pin. */
+export const maasWordOf = (state: ModelMaasState | undefined): MaaSWord | undefined =>
+  state ? (maasWords[state] ?? 'Unknown') : undefined;
 
 /**
  * The phase in words. The backend leaves the phase unspecified with reason SavedToGit while no
@@ -216,7 +300,6 @@ export const toModelView = (model: Model): ModelView => {
     url: nonEmpty(status?.url),
     creationTimestamp: created ? timestampDate(created).toISOString() : undefined,
     version: model.metadata?.version ?? 0,
-    locations: [...(status?.placement?.locations ?? [])],
     selectedClusters: [...(status?.placement?.selectedClusters ?? [])],
     clusters: (status?.clusters ?? []).map((c) => ({
       cluster: c.cluster,
@@ -225,12 +308,22 @@ export const toModelView = (model: Model): ModelView => {
       message: nonEmpty(c.message),
       deployment: deploymentWords[c.deployment] ?? 'Unknown',
       deploymentMessage: nonEmpty(c.deploymentMessage),
+      sync: syncWordOf(c.sync),
       syncFailed: c.sync === ModelSyncState.FAILED,
       syncMessage: nonEmpty(c.syncMessage),
+      state: stateWordOf(c.state),
+      viewUrl: nonEmpty(c.viewUrl),
+      viewTarget: viewTargets[c.viewTarget],
     })),
+    maas: maasWordOf(status?.maas),
     maasFailed: status?.maas === ModelMaasState.FAILED,
+    // A backend that doesn't report a state yet leaves only the phase: Saved to Git while it says so.
+    state:
+      stateWordOf(status?.state) ??
+      (phaseWordOf(status?.phase, status?.reason) === 'Saved to Git' ? 'Saved to Git' : 'Unknown'),
     ingress: (status?.ingress ?? []).map((i) => ({
       cluster: i.cluster,
+      maas: maasWordOf(i.state),
       failed: i.state === ModelMaasState.FAILED,
       message: nonEmpty(i.message),
     })),
@@ -249,3 +342,37 @@ export const olderServedNameOf = (model: Pick<ModelView, 'id' | 'modelName'>): s
 
 /** The name a page shows for the model: its display name, else its id. */
 export const titleOf = (model: Pick<ModelView, 'id' | 'displayName'>) => model.displayName ?? model.id;
+
+/** Phases a model or one of its clusters leaves on its own, so the pages poll sooner while one shows. */
+const unsettledPhases: ReadonlySet<ModelPhaseWord> = new Set(['Pending', 'Saved to Git', 'Unknown']);
+
+/** A placed cluster's states that leave on their own (ModelClusterStatus.state). */
+const changingStates: ReadonlySet<StateWord> = new Set(['Syncing', 'Synced', 'Starting']);
+
+/**
+ * Whether a placed cluster's report is still changing: Syncing, Synced or Starting. Ready, Failed and
+ * Stopped stay so until someone acts, and a cluster drifting from Git while it serves reads Ready. An
+ * entry without a state, from a backend that doesn't report it, goes by its phase.
+ */
+const clusterUnsettled = (c: ModelClusterView): boolean =>
+  c.state ? changingStates.has(c.state) : unsettledPhases.has(c.phase);
+
+/** MaaS states that leave on their own once a cluster serves the model. */
+const maasChanging: ReadonlySet<MaaSWord> = new Set(['Configuring routing', 'Awaiting subscription and backend']);
+
+/**
+ * Whether anything the model's pages show is still changing, so they poll sooner: the model is
+ * Saved to Git, or Unknown, or Pending with no cluster entry; a placed cluster is (clusterUnsettled);
+ * or MaaS is still routing the model, or hasn't reported it, while a cluster serves it (MaaS never
+ * routes a model stopped or failed everywhere). A model without a placement goes to no cluster, so
+ * nothing changes until it is edited.
+ */
+export const isUnsettled = (model: Pick<ModelView, 'phase' | 'state' | 'clusters' | 'placed' | 'ingress'>): boolean =>
+  model.placed &&
+  (model.state === 'Saved to Git' ||
+    model.phase === 'Saved to Git' ||
+    model.phase === 'Unknown' ||
+    (model.clusters.length === 0 && model.phase === 'Pending') ||
+    model.clusters.some(clusterUnsettled) ||
+    (model.ingress.some((i) => !i.maas || maasChanging.has(i.maas)) &&
+      model.clusters.some((c) => c.deployment === 'Running')));

@@ -8,7 +8,7 @@ import { ServiceError } from '../api/ConsoleService';
 import { MockConsoleService } from '../api/MockConsoleService';
 import { renderAt, findVisible } from './render';
 import { modelsOf } from './connectModels';
-import { ModelPhase } from '../gen/ai_grid/v1/model_type_pb';
+import { ModelState } from '../gen/ai_grid/v1/model_type_pb';
 import '../pages/models/ModelsPage';
 import '../pages/subscriptions/SubscriptionsPage';
 import { seedSubscriptionsOf } from './connectSubscriptions';
@@ -19,6 +19,7 @@ import { PageLoading } from '../components/PageLoading';
 import { StatusLabel } from '../components/StatusLabel';
 import { EmptyListState } from '../components/states/EmptyListState';
 import { ErrorState } from '../components/states/ErrorState';
+import { LoadFailedAlert } from '../components/states/LoadFailedAlert';
 import { PageStateSection } from '../components/states/PageStateSection';
 import { SectionEmptyState } from '../components/states/SectionEmptyState';
 import { tickLabel } from '../pages/grid/chartScale';
@@ -61,18 +62,19 @@ it('gives every status label in one column one variant, whatever the status: /su
   }
 });
 
-it("gives the Models list's status column one variant, whatever the phase: outline, opening nothing", async () => {
+it("gives the Models list's Status labels the design's variants: Partially ready opens, Ready and Failed don't", async () => {
   const service = new MockConsoleService();
   const models = modelsOf(service);
-  const phases = [ModelPhase.READY, ModelPhase.FAILED, ModelPhase.PARTIALLY_AVAILABLE];
-  models.models.forEach((m, i) => (m.status!.phase = phases[i % phases.length]));
+  const states = [ModelState.READY, ModelState.FAILED, ModelState.PARTIALLY_READY];
+  models.models.forEach((m, i) => (m.status!.state = states[i % states.length]));
   renderAt('/models', service);
   const rows = await screen.findByTestId('model-deployments-table');
   const labels = Array.from(rows.querySelectorAll<HTMLElement>('td[data-label="Status"] .pf-v6-c-label'));
   expect(new Set(labels.map((l) => l.textContent)).size).toBeGreaterThan(2);
-  expect(new Set(labels.map((l) => l.classList.contains('pf-m-outline')))).toEqual(new Set([true]));
   for (const label of labels) {
-    expect(within(label).queryByRole('button')).not.toBeInTheDocument();
+    const opens = label.textContent?.startsWith('Partially ready') ?? false;
+    expect(label.classList.contains('pf-m-outline')).toBe(!opens);
+    expect(!!within(label).queryByRole('button')).toBe(opens);
   }
 });
 
@@ -118,7 +120,7 @@ it('gives a phase the same colour in its label and its subtext', () => {
   expect(statusLabelProps('Failed').status).toBe('danger');
   expect(getSubtextProps('Failed')).toEqual({ className: 'pf-v6-u-text-color-status-danger' });
   expect(statusLabelProps('Degraded').status).toBe('warning');
-  expect(getSubtextProps('Partially available')).toEqual({ className: 'pf-v6-u-text-color-status-warning' });
+  expect(getSubtextProps('Partially ready')).toEqual({ className: 'pf-v6-u-text-color-status-warning' });
   expect(getSubtextProps('Ready')).toBeUndefined();
 });
 
@@ -225,6 +227,23 @@ describe('page states', () => {
     expect(screen.getByRole('heading', { level: 3, name: 'No parts' }).closest('.pf-v6-c-empty-state')).toHaveClass(
       'pf-m-xs',
     );
+  });
+
+  it("says what a page can't show when data beside its own fails to load, with Retry", async () => {
+    const user = userEvent.setup();
+    const retry = vi.fn();
+    render(
+      <LoadFailedAlert object="widgets" error={new Error('Hub unavailable.')} onRetry={retry}>
+        Parts show a dash until the widgets load.
+      </LoadFailedAlert>,
+    );
+    const alert = screen
+      .getByRole('heading', { name: 'Warning alert: Unable to load widgets' })
+      .closest('.pf-v6-c-alert');
+    expect(alert).toHaveClass('pf-m-warning', 'pf-m-inline');
+    expect(alert).toHaveTextContent('Parts show a dash until the widgets load.Hub unavailable.');
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(retry).toHaveBeenCalledOnce();
   });
 
   it('labels its action as asked', () => {

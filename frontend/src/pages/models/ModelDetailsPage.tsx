@@ -1,4 +1,4 @@
-import { Alert, Breadcrumb, BreadcrumbItem, Flex, List, ListItem, Stack } from '@patternfly/react-core';
+import { Alert, Breadcrumb, BreadcrumbItem, Flex, Stack } from '@patternfly/react-core';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ServiceError } from '../../api/ConsoleService';
 import { DetailsList } from '../../components/DetailsList';
@@ -8,22 +8,29 @@ import { PageStateSection } from '../../components/states/PageStateSection';
 import { SectionEmptyState } from '../../components/states/SectionEmptyState';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
 import { useConsoleSession } from '../../context/useConsoleSession';
-import { locationLabel, modelNotFound, modelPath, siteNamesOf } from './modelUtils';
-import { ModelLocationsTable } from './ModelLocationsTable';
+import { modelNotFound, modelPath } from './modelUtils';
+import { ClusterLoadNote } from './ClusterLoadNote';
+import { ModelClustersTable } from './ModelClustersTable';
+import { ModelMaaSTable } from './ModelMaaSTable';
+import { ModelAvailability } from './ModelAvailability';
 import { ModelStatusDetails, ModelStatusLabel } from './ModelStatus';
-import { PARTIALLY_AVAILABLE, hasModelStatusDetails, modelPhase, modelStatusTitle } from './modelStatusInfo';
+import { availabilityOf, rolloutExplanation } from './modelStatusInfo';
 import { titleOf } from './modelView';
 import { useDeleteModel } from './useDeleteModel';
 import { useModel } from './useModels';
 import { acceleratorsText, runtimeImageText } from './modelHardware';
 import { useClusterList } from '../clusters/useClusters';
 
-/** A model deployment at /models/:id: its status explained, its configuration and its locations. */
+/**
+ * A model deployment at /models/:id: its status explained, its configuration, its MaaS endpoint on
+ * each ingress cluster, and its sync and deployment on each cluster it is placed on.
+ */
 export const ModelDetailsPage: React.FC = () => {
   const { id = '' } = useParams();
   const navigate = useNavigate();
   const { data: loadedModel, loaded, error, refresh } = useModel(id);
-  const { data: clusters } = useClusterList();
+  const clusterList = useClusterList();
+  const clusters = clusterList.data;
   const { user } = useConsoleSession();
   // A 404 means the deployment is gone, even when an earlier answer is still held (PageStateSection
   // shows the not-found state then).
@@ -33,27 +40,31 @@ export const ModelDetailsPage: React.FC = () => {
     onDeleted: () => navigate('/models'),
   });
   const title = model ? titleOf(model) : id;
-  const siteNames = siteNamesOf(clusters);
 
   const body = () => {
     if (!model) {
       return null;
     }
-    const phase = modelPhase(model);
-    const edit = user?.isProviderAdmin ? () => navigate(`${modelPath(model)}/edit`) : undefined;
+    const availability = availabilityOf(model);
     return (
       <Flex direction={{ default: 'column' }} flexWrap={{ default: 'nowrap' }} spaceItems={{ default: 'spaceItemsXl' }}>
-        {/* Saved to Git says all the backend knows yet; the status label shows it, so no alert repeats it. */}
-        {phase !== 'Ready' && phase !== 'Saved to Git' && hasModelStatusDetails(model) && (
-          <Alert
-            isInline
-            variant={phase === 'Failed' ? 'danger' : phase === PARTIALLY_AVAILABLE ? 'warning' : 'info'}
-            title={modelStatusTitle(model)}
-            data-testid="model-status-alert"
-          >
-            <ModelStatusDetails model={model} />
-          </Alert>
-        )}
+        <ClusterLoadNote clusters={clusterList} />
+        {/* The alert explains the header's Status word (status.state) from the placed clusters'
+            reports (rolloutExplanation). Ready, Saved to Git and Unknown say all there is; MaaS has
+            its own Availability section. */}
+        {model.state !== 'Ready' &&
+          model.state !== 'Saved to Git' &&
+          model.state !== 'Unknown' &&
+          rolloutExplanation(model) && (
+            <Alert
+              isInline
+              variant={model.state === 'Failed' ? 'danger' : model.state === 'Partially ready' ? 'warning' : 'info'}
+              title={model.state === 'Failed' ? 'Unable to deploy model' : model.state}
+              data-testid="model-status-alert"
+            >
+              <ModelStatusDetails model={model} />
+            </Alert>
+          )}
         <DetailsSection title="Deployment">
           <DetailsList
             aria-label="Deployment"
@@ -74,25 +85,31 @@ export const ModelDetailsPage: React.FC = () => {
             ]}
           />
         </DetailsSection>
-        <DetailsSection title="Locations">
-          {model.clusters.length || model.selectedClusters.length || model.locations.length ? (
-            // model-locations names the section either way: each cluster's status once one reports,
-            // the clusters the placement chose until then.
-            <Stack hasGutter data-testid="model-locations">
-              {model.clusters.length || model.selectedClusters.length ? (
-                <ModelLocationsTable model={model} clusters={clusters} siteNames={siteNames} onEdit={edit} />
-              ) : (
-                <List>
-                  {model.locations.map((location) => (
-                    <ListItem key={location}>{locationLabel(location, siteNames)}</ListItem>
-                  ))}
-                </List>
-              )}
+        <DetailsSection title="Availability">
+          {model.ingress.length > 0 ? (
+            <Stack hasGutter data-testid="model-maas-endpoint">
+              {availability && <ModelAvailability model={model} availability={availability} onModelPage />}
+              <ModelMaaSTable model={model} clusters={clusters} />
+            </Stack>
+          ) : (
+            <SectionEmptyState title="No MaaS report yet">
+              No ingress cluster has reported this model yet.
+            </SectionEmptyState>
+          )}
+        </DetailsSection>
+        <DetailsSection title="Clusters">
+          {model.clusters.length || model.selectedClusters.length ? (
+            // model-clusters names the section either way: each cluster's sync and deployment once
+            // one reports, the clusters the placement chose until then.
+            <Stack hasGutter data-testid="model-clusters">
+              <ModelClustersTable model={model} clusters={clusters} />
               <Link to={`/ai-grid?model=${encodeURIComponent(model.id)}`}>View on the AI Grid map</Link>
             </Stack>
           ) : (
-            <SectionEmptyState title="No locations selected">
-              No AI Grid cluster matches this model&apos;s placement.
+            <SectionEmptyState title="No clusters selected">
+              {model.placed
+                ? 'No AI Grid cluster matches this model’s placement.'
+                : 'To serve this model, select one or more clusters.'}
             </SectionEmptyState>
           )}
         </DetailsSection>

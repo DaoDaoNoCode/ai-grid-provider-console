@@ -86,7 +86,7 @@ export const useDeleteModel = ({
     >
       <Stack hasGutter>
         <p>
-          The model is removed from every location it is deployed to. Remove it from any subscriptions and authorization
+          The model is removed from every cluster it is deployed to. Remove it from any subscriptions and authorization
           policies first.
         </p>
         <ReferencingSubscriptions modelId={selected.id} onInUse={setInUse} />

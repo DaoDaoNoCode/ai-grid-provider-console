@@ -4,10 +4,11 @@ import {
   CheckCircleIcon,
   ExclamationCircleIcon,
   ExclamationTriangleIcon,
-  InfoCircleIcon,
   InProgressIcon,
   OutlinedQuestionCircleIcon,
   PendingIcon,
+  RhUiClockIcon,
+  RhUiOffIcon,
 } from '@patternfly/react-icons';
 
 /**
@@ -38,10 +39,22 @@ const tones: Record<string, StatusTone> = {
   // isn't published there yet (watchActive in notifications/writeWatches.ts): a warning, as
   // odh-dashboard's MaaS pages show it.
   Degraded: 'warning',
-  // A placed model serving on some of its clusters but not all (proposal P13).
-  'Partially available': 'warning',
-  // A model the backend saved to Git in git mode, without reading its status from the clusters.
+  // A model's Status column and each cluster's (the backend's ModelState):
+  // Partially ready when clusters disagree; the Git states Saved to Git (grey), Syncing (blue) and
+  // Synced; Starting (blue, not PatternFly's purple info); Stopped (grey). Pending sync: a placed
+  // cluster that hasn't reported yet.
+  'Partially ready': 'warning',
   'Saved to Git': 'neutral',
+  Syncing: 'info',
+  Synced: 'success',
+  Starting: 'neutral',
+  Stopped: 'neutral',
+  'Pending sync': 'neutral',
+  // A cluster's Git sync in its dialog (ModelSyncState).
+  'Out of sync': 'info',
+  'Sync failed': 'danger',
+  // The Availability column (ModelMaasState): MaaS publishes the model but no cluster serves it.
+  Unavailable: 'warning',
   // A subscription's model that the hub doesn't have.
   'Not found': 'danger',
   // ACM add-ons (feature.open-cluster-management.io/addon-* labels).
@@ -71,7 +84,22 @@ export const statusLabelProps = (status: string | undefined): Pick<LabelProps, '
     return { ...props, icon: <PendingIcon /> };
   }
   if (status === 'Saved to Git') {
-    return { ...props, icon: <InfoCircleIcon /> };
+    return { color: 'grey', icon: <RhUiClockIcon /> };
+  }
+  if (status === 'Starting' || status === 'Syncing') {
+    return { color: 'blue', icon: <InProgressIcon /> };
+  }
+  if (status === 'Stopped') {
+    return { color: 'grey', icon: <RhUiOffIcon /> };
+  }
+  // Pending sync, and the MaaS words that are Pending in ModelAvailability, use the purple hourglass.
+  if (
+    status === 'Pending sync' ||
+    status === 'Awaiting subscription' ||
+    status === 'Configuring routing' ||
+    status === 'Awaiting subscription and backend'
+  ) {
+    return { color: 'purple', icon: <PendingIcon /> };
   }
   if (status === 'Disabled' || status === 'Not provisioned' || status === 'Not added') {
     return { ...props, icon: <BanIcon /> };

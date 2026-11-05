@@ -329,7 +329,7 @@ describe('watchReady', () => {
     });
   });
 
-  it.each<ModelView['phase']>(['Pending', 'Partially available', 'Saved to Git', 'Unknown'])(
+  it.each<ModelView['phase']>(['Pending', 'Partially ready', 'Saved to Git', 'Unknown'])(
     'keeps watching a model that is %s while site-c runs no copy, and warns after 30 minutes',
     async (phase) => {
       expect(await watchReady(model('create'), SINCE, reads(view(phase)), during)).toEqual({

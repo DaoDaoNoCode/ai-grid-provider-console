@@ -80,14 +80,20 @@ test('deploys a model to a cluster, edits it in the same wizard, and deletes it'
   const row = page.getByRole('row').filter({ hasText: unique });
   await expect(row).toBeVisible();
   // The backend saved it to Git; no cluster has reported it yet.
-  await expect(row.getByTestId('model-phase')).toHaveText('Saved to Git');
-  await expect(row.getByTestId(`model-locations-${unique}`)).toContainText(CLUSTER);
+  const status = row.getByRole('button', { name: `Saved to Git for ${unique}`, exact: true });
+  await expect(status).toBeVisible();
+  await expect(row.getByTestId(`model-cluster-names-${unique}`)).toContainText(CLUSTER);
+  await status.click();
+  const statusDialog = page.getByRole('dialog', { name: `${unique} status`, exact: true });
+  await expect(statusDialog).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(statusDialog).toBeHidden();
 
   // The model's page, at /models/<id>.
   await row.getByRole('link', { name: unique, exact: true }).click();
   await expect(page).toHaveURL(`/models/${unique}`);
   await expect(page.getByRole('heading', { level: 1, name: unique, exact: true })).toBeVisible();
-  await expect(page.getByTestId('model-locations')).toContainText(CLUSTER);
+  await expect(page.getByTestId('model-clusters')).toContainText(CLUSTER);
   await expect(page.getByLabel('Deployment', { exact: true })).toContainText(/Accelerators\s*None \(CPU only\)/);
 
   // Edit in the deploy wizard: the name users send is read-only, every step opens directly, and Save
@@ -166,7 +172,7 @@ test("deploys a model on NVIDIA GPUs with the cluster's default image", async ({
   await expect(writeConfirmed(page, `Model ${unique} saved to Git`)).toBeVisible();
 
   const row = page.getByRole('row').filter({ hasText: unique });
-  await expect(row.getByTestId('model-phase')).toHaveText('Saved to Git');
+  await expect(row.getByRole('button', { name: `Saved to Git for ${unique}`, exact: true })).toBeVisible();
 
   // The model's page shows what the backend stored: one NVIDIA GPU, and no image of its own.
   await row.getByRole('link', { name: unique, exact: true }).click();

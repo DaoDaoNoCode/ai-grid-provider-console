@@ -1,38 +1,49 @@
-import { ExpandableSection, Stack } from '@patternfly/react-core';
-import type { ModelView } from './modelView';
+import { ExpandableSection, List, ListItem, Stack } from '@patternfly/react-core';
+import { titleOf, type ModelView } from './modelView';
 import { StatusLabel } from '../../components/StatusLabel';
-import { failureExplanations, modelPhase } from './modelStatusInfo';
+import { rolloutExplanation, statusOpens } from './modelStatusInfo';
 
-/**
- * The status in words: a sentence and the next step for a known failure, else the backend's
- * message; the raw reason and message fold away under "Details".
- */
+/** The rollout explained (rolloutExplanation): its sentence, each cluster that isn't Ready, and the raw reason folded away. */
 export const ModelStatusDetails: React.FC<{ model: ModelView }> = ({ model }) => {
-  const known = model.reason ? failureExplanations[model.reason] : undefined;
-  const failed = modelPhase(model) === 'Failed';
-  if (!known && !failed) {
-    return <>{model.statusMessage ?? model.reason}</>;
-  }
+  const explained = rolloutExplanation(model);
+  if (!explained) return null;
+  const { summary, next, raw, clusters } = explained;
   return (
     <Stack hasGutter>
-      <p>{known?.summary ?? 'Unable to deploy this model.'}</p>
-      {known && <p>{known.next}</p>}
-      <ExpandableSection toggleText="Details">
-        <code className="pf-v6-u-font-size-sm pf-v6-u-text-break-word">
-          {[model.reason, model.statusMessage].filter(Boolean).join(': ')}
-        </code>
-      </ExpandableSection>
+      {summary && <p>{summary}</p>}
+      {next && <p>{next}</p>}
+      {clusters.length > 0 && (
+        <List aria-label={`Clusters where ${titleOf(model)} isn’t ready`}>
+          {clusters.map((line) => (
+            <ListItem key={line}>{line}</ListItem>
+          ))}
+        </List>
+      )}
+      {raw && (
+        <ExpandableSection toggleText="Details">
+          <code className="pf-v6-u-font-size-sm pf-v6-u-text-break-word">{raw}</code>
+        </ExpandableSection>
+      )}
     </Stack>
   );
 };
 
 /**
- * The model's phase as an outline StatusLabel, the backend's message (else its reason) in a tooltip.
- * A model's status opens nothing: its locations are in the row's expanded content and on its page,
- * where each cluster's status opens what that cluster reported.
+ * The model's Status column (ModelStatus.state): the backend's rollout word (status.state). Saved to Git, Syncing
+ * and Partially ready open the model's status dialog through `onOpen`; the other words are outline,
+ * with the backend's message in a tooltip. Without `onOpen` (the model page), nothing opens.
  */
-export const ModelStatusLabel: React.FC<{ model: ModelView }> = ({ model }) => (
-  <span data-testid="model-phase">
-    <StatusLabel isCompact status={modelPhase(model)} reason={model.statusMessage ?? model.reason} />
-  </span>
-);
+export const ModelStatusLabel: React.FC<{ model: ModelView; onOpen?: () => void }> = ({ model, onOpen }) => {
+  const opens = statusOpens(model.state) && !!onOpen;
+  return (
+    <span data-testid="model-phase">
+      <StatusLabel
+        isCompact
+        status={model.state}
+        reason={opens ? undefined : (model.statusMessage ?? model.reason)}
+        onClick={opens ? onOpen : undefined}
+        screenReaderSuffix={onOpen ? ` for ${titleOf(model)}` : undefined}
+      />
+    </span>
+  );
+};

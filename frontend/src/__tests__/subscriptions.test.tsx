@@ -36,7 +36,6 @@ import '../pages/subscriptions/EditSubscriptionPage';
 import '../pages/subscriptions/SubscriptionsPage';
 import '../pages/subscriptions/ViewSubscriptionPage';
 import { TestApp } from './TestApp';
-import type { Model } from '../gen/ai_grid/v1/model_type_pb';
 
 /** A service whose backend has the PoC's subscriptions (connectSubscriptions.ts, seedSubscriptionsOf). */
 const seeded = () => {
@@ -187,9 +186,9 @@ describe('administrator subscription flows', () => {
     const user = userEvent.setup();
     const service = seeded();
     // The model's status names two clusters but one location label value: the cell must show the clusters.
-    const granite = fleetOf(service).get({ id: 'granite-3-8b' } as never, {} as never) as { object?: Model };
-    granite.object!.status!.placement!.selectedClusters = ['site1', 'site2'];
-    granite.object!.status!.placement!.locations = ['us-east'];
+    const granite = fleetOf(service).find('granite-3-8b');
+    granite.status!.placement!.selectedClusters = ['site1', 'site2'];
+    granite.status!.placement!.locations = ['us-east'];
     renderAt('/subscriptions', service);
     const table = await screen.findByTestId('subscriptions-table');
     const row = within(table).getByRole('link', { name: 'Engineering' }).closest('tr')!;
@@ -948,6 +947,82 @@ describe('subscription phases', () => {
     expect(await screen.findByTestId('phase-label-subtext')).toHaveTextContent('Setting up subscription');
     await user.hover(within(screen.getByTestId('phase-label')).getByText('Pending'));
     expect(await screen.findByRole('tooltip')).toHaveTextContent(message);
+  });
+});
+
+describe('polling while something is still changing', () => {
+  // Only the polls are faked (refetchInterval's setInterval); user-event, findBy and the tooltips keep real timers.
+  beforeEach(() => vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] }));
+  afterEach(() => vi.useRealTimers());
+
+  const phaseOf = (service: MockConsoleService, name: string) => {
+    const status = subscriptionsOf(service).subscriptions.find((s) => s.id === name)!.status!;
+    return {
+      set: (phase: string) => {
+        status.phase = phase;
+      },
+    };
+  };
+
+  it('polls the list every 10 seconds while a subscription is Pending, and every 30 once all are Active', async () => {
+    const service = seeded();
+    onlySubscriptions(service, withPhase('pending-sub', 'Pending'));
+    renderAt('/subscriptions', service);
+    const label = async () =>
+      within((await screen.findByRole('link', { name: 'pending-sub' })).closest('tr')!).getByTestId('phase-label');
+    expect(await label()).toHaveTextContent('Pending');
+    phaseOf(service, 'pending-sub').set('Active');
+    await act(() => vi.advanceTimersByTimeAsync(10_000));
+    await waitFor(async () => expect(await label()).toHaveTextContent('Active'));
+    phaseOf(service, 'pending-sub').set('Pending');
+    await act(() => vi.advanceTimersByTimeAsync(10_000));
+    expect(await label()).toHaveTextContent('Active');
+    await act(() => vi.advanceTimersByTimeAsync(20_000));
+    await waitFor(async () => expect(await label()).toHaveTextContent('Pending'));
+  });
+
+  it("polls a subscription's page while it is Pending, and stops once it is Active", async () => {
+    const service = seeded();
+    onlySubscriptions(service, withPhase('pending-sub', 'Pending'));
+    let gets = 0;
+    subscriptionsOf(service).before.get = () => {
+      gets += 1;
+    };
+    renderAt('/subscriptions/view/pending-sub', service);
+    expect(await screen.findByTestId('subscription-phase')).toHaveTextContent('Pending');
+    phaseOf(service, 'pending-sub').set('Active');
+    await act(() => vi.advanceTimersByTimeAsync(10_000));
+    await waitFor(() => expect(screen.getByTestId('subscription-phase')).toHaveTextContent('Active'));
+    const settled = gets;
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    expect(gets).toBe(settled);
+  });
+
+  it("polls a subscription's page while a model it names is still Saved to Git", async () => {
+    const service = seeded();
+    const fake = subscriptionsOf(service);
+    const reports = fake.registrations;
+    fake.registrations = [];
+    renderAt('/subscriptions/view/engineering', service);
+    const models = await screen.findByTestId('subscription-models-table');
+    expect(models).toHaveTextContent('Saved to Git');
+    fake.registrations = reports;
+    await act(() => vi.advanceTimersByTimeAsync(10_000));
+    await waitFor(() => expect(screen.getByTestId('subscription-models-table')).toHaveTextContent('Ready'));
+  });
+
+  it('does not poll the edit page, which keeps the version it opened', async () => {
+    const service = seeded();
+    onlySubscriptions(service, withPhase('pending-sub', 'Pending'));
+    let gets = 0;
+    subscriptionsOf(service).before.get = () => {
+      gets += 1;
+    };
+    renderAt('/subscriptions/edit/pending-sub', service);
+    expect(await screen.findByTestId('subscription-name-desc-name')).toBeVisible();
+    const opened = gets;
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    expect(gets).toBe(opened);
   });
 });
 

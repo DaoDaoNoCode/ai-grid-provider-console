@@ -11,7 +11,7 @@ type Props = {
   isCompact?: boolean;
   /** Opens the status's details; the label is then filled, a button. */
   onClick?: LabelProps['onClick'];
-  /** Read after the word by a screen reader only, e.g. " at us-east" in a table of locations. */
+  /** Read after the word by a screen reader only, e.g. " on site1" in a table of clusters. */
   screenReaderSuffix?: string;
   'data-testid'?: string;
 };
@@ -19,10 +19,10 @@ type Props = {
 /**
  * A status as PatternFly's status pattern shows it, the same on every page: a label in the status
  * colour with its icon, the word and colour from utilities/status. A status label is an outline label
- * with its reason in a tooltip, and opens nothing. It is clickable (filled, with onClick) only where a
- * whole column opens each row's details, for every row (today only ModelLocationsTable's, which opens
- * a location's deployment status): PatternFly's one type for clickable labels, another for the rest,
- * never mixed in one column.
+ * with its reason in a tooltip, and opens nothing. It is clickable (filled, with onClick) where the
+ * Models interaction pattern (frontend/AGENTS.md, Status) opens a dialog: a model's clusters table's Status column (what a
+ * cluster reported), and on the Models list the Status words Saved to Git, Syncing and Partially
+ * ready beside outline ones (frontend/AGENTS.md, Status).
  */
 export const StatusLabel: React.FC<Props> = ({
   status,

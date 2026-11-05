@@ -186,15 +186,19 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
 ### The Models area
 
 - **Reads.** `useModelList` and `useModel` (`frontend/src/pages/models/useModels.ts`) call
-  `Models/List` and `Models/Get`, polling every 30 s as the Clusters pages do (the edit page loads
-  its model once, and keeps the first answer, so an edit is checked against the version it
-  started from). `toModelView` (`modelView.ts`) words the generated `Model`: the display name and
+  `Models/List` and `Models/Get`, polling every 30 s as the Clusters pages do, and every 10 s while
+  something shown is still changing (`isUnsettled`, under **Polling**); the
+  edit page loads its model once, and keeps the first answer, so an edit is checked against the
+  version it started from. `toModelView` (`modelView.ts`) words the generated `Model`: the display name and
   description from the `openshift.io/display-name` and `openshift.io/description` annotations
   the backend documents; the phase from `status.phase` (`MODEL_PHASE_PARTIALLY_AVAILABLE` is
-  Partially available; `UNSPECIFIED` with reason `SavedToGit` is Saved to Git, any other
-  unspecified phase Unknown); `status.message` as the status's tooltip and the page's alert;
-  `status.url` as the endpoint; `status.placement.locations` (the `location` labels) in the
-  Locations column; the main container's `requests` as CPU, memory and accelerators (any request
+  Partially ready; `UNSPECIFIED` with reason `SavedToGit` is Saved to Git, any other
+  unspecified phase Unknown); `status.message` as the status's tooltip; the page's alert
+  explains `status.state` from the placed clusters' reports, each cluster that isn't Ready with its
+  word and its message, and for Failed the failure KServe names in `status.reason`
+  (`rolloutExplanation`), never MaaS's, which the Availability section shows;
+  `status.url` as the endpoint; `status.placement.selected_clusters` (cluster names) in the
+  Clusters column (no Replicas column: the model page shows it); the main container's `requests` as CPU, memory and accelerators (any request
   with a domain, such as `nvidia.com/gpu`), worded as Accelerators ("1 GPU (nvidia.com/gpu)", or
   "None (CPU only)"; `acceleratorsText` in `modelHardware.ts`), and `base_refs` as Presets. A
   model's pages never match it against the config's `models.hardware`, which can change or fail
@@ -211,30 +215,54 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   hardware's accelerator (for an edit without hardware, the model's request) is `nvidia.com/gpu`,
   or the model keeps presets; an edit that keeps the model's hardware and presets requires it only
   where it would clear an image the model has. Pages are at `/models/:id` and `/models/:id/edit`.
-- **Each cluster.** The expanded row and the model's page list `status.clusters`, the backend's
-  status of the model on each cluster its placement names, as it reports them: one row per
-  entry, named by the cluster's location, each status opening what that cluster reported (its
-  reason and message). It is the one clickable status column; a model's own status label is
-  outline, its message in a tooltip. While no cluster has reported (`status.clusters` empty,
-  reason `SavedToGit`), the rows are `status.placement.selected_clusters` with no Status column.
-  At the pin the backend lists only placed clusters there; an ingress cluster's reports count in
-  the phase, `status.message` and `status.ingress` only.
+- **Status and Availability** follow the Models design at
+  `jgiardino/ai-grid-provider-console@a4e6090` (Jenn Giardino, 2026-11-02). The Models
+  list's **Status** is `status.state`, Git sync and deployment in one word: Saved to Git, Syncing,
+  Synced, Starting, Ready, Partially ready, Failed, Stopped (`stateWordOf`), sorted in that rollout
+  order by default. Saved to Git, Syncing and Partially ready open `ModelStatusModal`: the design's sentence
+  for the Git states (its Sync now button waits until after the 11-06 freeze), or each cluster's
+  status for Partially ready. **Availability** is `status.maas` (`availabilityOf`): Available;
+  Pending with Awaiting subscription, Configuring routing or Awaiting subscription and backend;
+  Unavailable (no cluster serves it, while MaaS publishes or routes it); Failed. The label and its reason open a
+  dialog with the design's copy, MaaS's own message for each ingress cluster (`status.ingress`), and a link
+  to Subscriptions where a subscription is missing.
+- **Each cluster.** The expanded row, the Partially ready dialog and the model's page list
+  `status.clusters` with Cluster (a link to the cluster), Site and Region (the cluster's
+  `status.location.site_name` and `status.location.region` from `Clusters/List`, as the deploy
+  wizard and the Clusters pages show them; a dash for either when it is empty, never one in place
+  of the other; `clusterPlaces.ts`; when `Clusters/List` fails, `ClusterLoadNote` says so above the
+  page's content, `LoadFailedAlert` before any answer and `StaleDataAlert` after one, so a dash
+  doesn't read as a cluster without a site or region), Status (`clusters[].state`, opening what that cluster
+  reported: its Site and Region, Git sync, deployment, their messages, the backend's per-cluster
+  message) and
+  View (`view_url`: OpenShift AI's model deployments, or the OpenShift console on a cluster without
+  the dashboard; only an absolute https URL with a host and no user name or password renders,
+  `viewHref`). While no cluster has reported, the rows are
+  `status.placement.selected_clusters`, each Pending sync, opening nothing; a reported cluster
+  with no state yet also reads Pending sync, and opens nothing either, as the design has it (Pending
+  sync stays an outline label). Inside the Partially ready dialog, cluster statuses open nothing:
+  PatternFly's dialogs don't stack. The design's progress stepper isn't here: the backend doesn't
+  report the `LLMInferenceService` condition tree. The design's Location column is Site and Region
+  here; the Location label stays on the Clusters pages and the map.
+- **The model page** keeps its layout: the Status label, an Availability section (the label, then
+  each ingress cluster, a link to it, with its Site, Region and MaaS's message) and a Clusters
+  section with the same table.
+- **Polling.** A model counts as still changing (`isUnsettled`) while it is Saved to Git or Unknown,
+  or Pending with no cluster entry; while a placed cluster is Syncing, Synced or Starting; or while
+  MaaS is still routing the model, or hasn't reported it, and a cluster serves it. Ready, Failed and
+  Stopped stay so until someone acts, and a cluster drifting from Git while it serves reads Ready.
+  A cluster whose Application is gone (it left AI Grid after the model was placed) reads Pending
+  sync for good, and keeps its page at 10 s while it's open.
 - **Where status comes from.** The pinned backend reads it from the health the hub's catalog
   Argo CD Applications record for each cluster (`acm-models-catalog-{models,ingress}-<cluster>`
   in `openshift-gitops`; the chart grants the read, `templates/rbac.yaml`). A model's phase and
   each cluster's can be Failed (an object Degraded for a reason that isn't a step still under
   way, or Argo CD's sync of it failed for good), and a cluster's reason can be Stopped (the
-  model carries `serving.kserve.io/stop`); the pages show both as they show any phase. A model
-  waiting only for a subscription is Ready (or Partially available), no longer Pending. The
-  backend also reports, apart from MaaS, each placed cluster's `deployment`, `sync`, `state`
-  and a View link (`view_url`, `view_target`), the model's `deployment`, `maas` and `state`
-  summaries, and each ingress cluster's MaaS state (`status.ingress`), for the Status and
-  Availability columns the Models pages don't show yet. `toModelView` reads only
-  `clusters[].deployment` and `deployment_message`, whether `clusters[].sync` is FAILED and its
-  `sync_message`, `status.maas` and each `status.ingress` entry's failure and message today, for
-  the notification center's watches ("Writes that take
-  long"). The pages still show the phase: a model that runs while MaaS failed to publish it reads
-  Failed ("Deployment failed") there.
+  model carries `serving.kserve.io/stop`). A model waiting only for a subscription is Ready (or
+  Partially ready), no longer Pending. Besides the Status and Availability above, the
+  notification center's watches ("Writes that take long") read each placed cluster's
+  `deployment` and `deployment_message`, whether its `sync` is FAILED and its `sync_message`,
+  `status.maas` and each `status.ingress` entry's failure and message.
 - **Writes.** The wizard calls `Models/Create` with the id and `metadata.name`, the annotations,
   `spec.model` (the URI only: no served name, because the backend serves a model as its id, the
   name users send; the wizard starts the id from the URI's last path segment and shows it on
@@ -272,16 +300,22 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   backend joins a model ref to its model (`SubscriptionModelRef.model_id`) and evaluates the
   filter after the join.
 - **The map and Monitoring** read the same `Models/List`: a member's models are those whose
-  `status.placement.selected_clusters` name it, and Monitoring's target sites the clusters at
-  `status.placement.locations`.
+  `status.placement.selected_clusters` name it, and Monitoring offers a model, and lists its
+  clusters, by the AI Grid clusters `status.placement.selected_clusters` names
+  (`ObservabilityPanel.tsx`). No page reads `status.placement.locations`, the clusters' `location`
+  labels.
 
 ### The Subscriptions area
 
 - **Reads.** `useSubscriptionList`, `useSubscription`, `useModelsByIds` and `useTenantList`
   (`frontend/src/pages/subscriptions/useSubscriptions.ts`) call `Subscriptions/List` and `Get`,
-  `Models/List` and `Tenants/List`; the lists poll every 30 s. A subscription's page and its edit
-  page load `Get` once, and the edit page keeps the first answer, so a save is checked against the
-  version it started from. Models are read with a CEL filter on their ids,
+  `Models/List` and `Tenants/List`; the lists poll every 30 s, and the subscriptions list every
+  10 s while a subscription isn't Active. A subscription's page polls `Get` every 10 s while the
+  subscription isn't Active or a model it names is Pending, Saved to Git or Unknown
+  (`isUnsettledSubscriptionInfo`), and stops once nothing is. A state that never settles, such as
+  a subscription no ingress cluster reports or a model whose placement matches no cluster, keeps
+  its page at 10 s while it is open. The edit page loads `Get` once and
+  keeps the first answer, so a save is checked against the version it started from. Models are read with a CEL filter on their ids,
   `this.id in ["<id>", ...]`: the list page asks for the models its subscriptions name, the edit
   page for its subscription's, and a subscription's page for none, because the backend joins the
   names it shows. The model picker reads every model when it opens, and the create page for its
