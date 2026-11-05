@@ -376,3 +376,22 @@ export const isUnsettled = (model: Pick<ModelView, 'phase' | 'state' | 'clusters
     model.clusters.some(clusterUnsettled) ||
     (model.ingress.some((i) => !i.maas || maasChanging.has(i.maas)) &&
       model.clusters.some((c) => c.deployment === 'Running')));
+
+/**
+ * What the model's pages show of a model still changing (isUnsettled), in its status words: its id,
+ * state and phase, each placed cluster's state, phase, sync and deployment, and each ingress
+ * cluster's MaaS word. No messages, which can change while nothing moves. A model that stays on the
+ * same words is stuck, and the pages stop polling it fast (useLoadOptions); undefined when settled.
+ */
+export const changingOf = (
+  model: Pick<ModelView, 'id' | 'phase' | 'state' | 'clusters' | 'placed' | 'ingress'>,
+): string | undefined =>
+  isUnsettled(model)
+    ? [
+        model.id,
+        model.state,
+        model.phase,
+        ...model.clusters.map((c) => `${c.cluster}=${c.state ?? ''}/${c.phase}/${c.sync ?? ''}/${c.deployment}`),
+        ...model.ingress.map((i) => `${i.cluster}=${i.maas ?? ''}`),
+      ].join(' ')
+    : undefined;

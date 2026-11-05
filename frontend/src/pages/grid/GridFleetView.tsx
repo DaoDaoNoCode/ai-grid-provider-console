@@ -30,6 +30,7 @@ import {
 import { AngleLeftIcon } from '@patternfly/react-icons';
 import { Link, useSearchParams } from 'react-router-dom';
 import { titleOf, type ModelView } from '../models/modelView';
+import { ModelStatusLabel } from '../models/ModelStatus';
 import type { ClusterView } from '../clusters/clusterView';
 import { DetailsList } from '../../components/DetailsList';
 import { DetailsSection } from '../../components/DetailsSection';
@@ -80,7 +81,11 @@ const selectionFrom = (params: URLSearchParams): Selection | null => {
   return cluster ? { kind: 'cluster', name: cluster } : model ? { kind: 'model', name: model } : null;
 };
 
-/** A card in the drawer's list: one control that opens the item, with its status beside the name. */
+/**
+ * A card in the drawer's list: one control that opens the item, with its status beside the name.
+ * The label has no tooltip, which would put a second control in the card; a model's card shows
+ * its Status word (status.state), as the Models list does, and its panel explains it.
+ */
 const FleetCard: React.FC<{
   id: string;
   title: string;
@@ -243,7 +248,11 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
           <Title headingLevel="h2" size="lg" className="pf-v6-u-text-break-word">
             {selectedCluster?.name ?? (selectedModel && titleOf(selectedModel))}
           </Title>
-          <StatusLabel isCompact status={selectedCluster?.status ?? selectedModel?.phase ?? 'Unknown'} />
+          {selectedModel ? (
+            <ModelStatusLabel model={selectedModel} />
+          ) : (
+            <StatusLabel isCompact status={selectedCluster?.status ?? 'Unknown'} />
+          )}
         </Flex>
         {(selectedModel || (selectedCluster && whereOf(selectedCluster))) && (
           <SubtleText>
@@ -401,7 +410,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
                   key={m.id}
                   id={m.id.replace(/\W/g, '-')}
                   title={titleOf(m)}
-                  status={m.phase}
+                  status={m.state}
                   actionLabel={`View ${titleOf(m)} details`}
                   onOpen={() => open({ kind: 'model', name: m.id })}
                 >

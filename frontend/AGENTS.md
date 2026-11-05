@@ -80,13 +80,20 @@ a failed load.
   list, the Status labels Saved to Git, Syncing and Partially ready are filled and open
   `ModelStatusModal`, and an Availability label with more to say is filled and opens its dialog; the
   other words stay outline. A model's page keeps an outline Status label; its alert explains the
-  status.
+  status. A model's Status tooltip explains its word from the clusters that aren't Ready
+  (`stateTooltipOf`), never the phase's message, which can disagree; Ready has none. The AI Grid
+  page shows the same word: a model's card has the label without a tooltip (a card is one
+  control), and its panel has `ModelStatusLabel`.
 - On the Clusters list, a status with a non-empty hub message is filled and opens that cluster's
   message as text in a dialog, including Ready. Without a message it stays outline and
   noninteractive. AI Grid status stays outline. Refresh keeps the selected cluster's identity.
-- In Create subscription and its Add models picker, only Partially ready models with cluster
-  reports open the shared model status dialog. Suspend the picker while status is open; retain its
-  filter, sort and unconfirmed selections, then restore focus to the trigger when returning.
+- In Create subscription and its Add models picker, every model shows its status as the Models list
+  does (`ModelStatusLabel`, from the latest poll; a model the subscription has saved shows its
+  registration), and only Partially ready models with cluster reports open the shared
+  model status dialog. Suspend the picker while status is open; retain its filter, sort and
+  unconfirmed selections, then restore focus to the trigger when returning. When a refresh leaves
+  the model without that status, its dialog closes; opened from the selected models, focus goes to
+  Add models, since the trigger is no longer a button.
   Inspecting status preserves the subscription draft and token limits. Edit and view stay unchanged.
 - A label is clickable (filled) where a whole column opens each row's details, for every row: the
   Status column of a model's clusters table (`ModelClustersTable`), which opens what that cluster

@@ -152,3 +152,27 @@ export const isUnsettledSubscriptionInfo = (info: SubscriptionsGetResponse): boo
     modelRefsOf(info.object).some((ref) =>
       unsettledRegistrations.has(registrationStatusOf(info.modelRegistrations, ref).status),
     ));
+
+/**
+ * A subscription still changing (isUnsettledSubscription) in its status words, its id and phase,
+ * for the pages to tell one still moving from one stuck (useLoadOptions); undefined when settled.
+ */
+export const changingSubscriptionOf = (subscription: Subscription): string | undefined =>
+  isUnsettledSubscription(subscription)
+    ? `${subscription.id} ${normalizePhase(subscription.status?.phase)}`
+    : undefined;
+
+/**
+ * The subscription's page still changing (isUnsettledSubscriptionInfo) in its status words: the
+ * subscription's phase and each model's registration status; undefined when settled.
+ */
+export const changingSubscriptionInfoOf = (info: SubscriptionsGetResponse): string | undefined =>
+  info.object && isUnsettledSubscriptionInfo(info)
+    ? [
+        info.object.id,
+        normalizePhase(info.object.status?.phase),
+        ...modelRefsOf(info.object).map(
+          (ref) => `${refKey(ref)}=${registrationStatusOf(info.modelRegistrations, ref).status}`,
+        ),
+      ].join(' ')
+    : undefined;

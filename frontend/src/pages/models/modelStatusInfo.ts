@@ -74,6 +74,27 @@ export const gitStatusMessage: Partial<Record<StateWord, string>> = {
     'Argo CD has successfully synchronized configuration manifests to all target clusters. The cluster is now spinning up the model deployment.',
 };
 
+/** A line of rolloutExplanation as a sentence, for a tooltip that joins several. */
+const sentence = (line: string) => (/[.!?]$/.test(line) ? line : `${line}.`);
+
+/**
+ * The Status label's tooltip: what its word (status.state) means for this model, from what
+ * explains that word: rolloutExplanation's sentences and each cluster that isn't Ready, else the
+ * Git state's sentence (gitStatusMessage). Never the phase's message (status.message), which the
+ * backend derives apart from the state and can contradict it: a model reads Ready while the
+ * message says it failed on one cluster. Ready says all there is, so it has none; undefined when
+ * there is nothing to add.
+ */
+export const stateTooltipOf = (
+  model: Pick<ModelView, 'state' | 'reason' | 'statusMessage' | 'clusters'>,
+): string | undefined => {
+  if (model.state === 'Ready') return undefined;
+  const explained = rolloutExplanation(model);
+  if (!explained) return gitStatusMessage[model.state];
+  const { summary, next, clusters } = explained;
+  return [summary, next, ...clusters.map(sentence)].filter(Boolean).join(' ') || undefined;
+};
+
 /** The model Status labels that open ModelStatusModal: the Git states and Partially ready. */
 export const statusOpens = (state: StateWord): boolean =>
   state === 'Partially ready' || state === 'Saved to Git' || state === 'Syncing';
@@ -106,7 +127,7 @@ export type AvailabilityView = {
   body?: string;
   /** The model needs a subscription: the dialog links to Subscriptions. */
   subscriptionsLink?: boolean;
-  /** Availability also waits on the deployment: the dialog links to the model's page. */
+  /** Availability also waits on the model's clusters: the dialog links to the model's page. */
   modelsLink?: boolean;
 };
 
@@ -123,7 +144,7 @@ const availabilityViews: Record<MaaSWord, AvailabilityView> = {
     label: 'Pending',
     subtext: 'Awaiting subscription and backend',
     heading: 'Awaiting subscription and backend',
-    body: 'Consumers can’t access this model yet. To enable access, set up a subscription. Availability also depends on a healthy inference service. Check the deployment status on the Models page.',
+    body: 'Consumers can’t access this model yet. To enable access, set up a subscription. The model must also be ready on its clusters; its status shows where it isn’t.',
     subscriptionsLink: true,
     modelsLink: true,
   },

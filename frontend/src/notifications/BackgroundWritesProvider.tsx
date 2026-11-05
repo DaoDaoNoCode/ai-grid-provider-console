@@ -19,6 +19,7 @@ import { Models } from '../gen/ai_grid/v1/models_service_pb';
 import { get as getModel } from '../gen/ai_grid/v1/models_service-Models_connectquery';
 import { Subscriptions } from '../gen/ai_grid/v1/subscriptions_service_pb';
 import { get as getSubscription } from '../gen/ai_grid/v1/subscriptions_service-Subscriptions_connectquery';
+import { noteUserAction } from '../pages/clusters/useClusters';
 import { toModelView } from '../pages/models/modelView';
 import { readyConditionOf } from '../pages/subscriptions/subscriptionText';
 import type { GetStorage } from '../utilities/signInAgain';
@@ -498,6 +499,8 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
      * renamed).
      */
     function landedFn(target: WriteTarget) {
+      // The user's write landed: the pages poll what it changes fast again (useLoadOptions).
+      noteUserAction();
       refreshFn(target.subject);
       const isCluster = target.subject === 'cluster';
       if (isCluster && target.op === 'update' && !target.role) return;

@@ -11,7 +11,7 @@
 // MaaS controller's Failed and Invalid, and the PoC's Saved, aren't reported, so they aren't worded
 // here. A status label opens nothing (frontend/AGENTS.md, "Status").
 import type { ContentProps } from '@patternfly/react-core';
-import { statusTone } from './status';
+import { statusTone, type StatusTone } from './status';
 
 export enum PhaseStatus {
   ACTIVE = 'Active',
@@ -32,10 +32,22 @@ export const MODEL_NOT_FOUND_STATUS_MESSAGE = 'Model not found. It may have been
 export const getStatusSubtext = (phase: string): React.ReactNode | undefined =>
   phase === PhaseStatus.PENDING ? 'Setting up subscription' : undefined;
 
+/**
+ * PatternFly's text colour utility for each tone a subtext takes. PatternFly 6.7's docs call the info
+ * one pf-v6-u-text-color-status-info, but the CSS it ships names it -status-default (its colour is
+ * --pf-t--global--text--color--status--info--default), so that is the class that colours.
+ */
+const subtextClasses: Partial<Record<StatusTone, string>> = {
+  warning: 'pf-v6-u-text-color-status-warning',
+  danger: 'pf-v6-u-text-color-status-danger',
+  info: 'pf-v6-u-text-color-status-default',
+};
+
+/** The class that colours a subtext in its status label's tone; none for the other tones. */
+export const subtextClassName = (status: string): string | undefined => subtextClasses[statusTone(status)];
+
 /** The subtext's colour, the label's tone. It isn't underlined: it isn't a link. */
 export const getSubtextProps = (phase: string): ContentProps | undefined => {
-  const tone = statusTone(phase);
-  return tone === 'warning' || tone === 'danger' || tone === 'info'
-    ? { className: `pf-v6-u-text-color-status-${tone}` }
-    : undefined;
+  const className = subtextClassName(phase);
+  return className ? { className } : undefined;
 };

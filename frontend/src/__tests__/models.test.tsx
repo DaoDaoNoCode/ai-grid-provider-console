@@ -480,8 +480,10 @@ describe('the status', () => {
       expect((await status(id)).querySelector('.pf-v6-c-label')).toHaveClass('pf-m-outline');
       expect(within(await status(id)).queryByRole('button')).not.toBeInTheDocument();
     }
-    await user.hover(within(await status('pending')).getByText('Starting'));
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('Not ready on site1');
+    await user.hover(within(await status('failed')).getByText('Failed'));
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      'A runtime template this model needs isn’t installed on the hub. Install the template on the hub, or deploy the model with another runtime.',
+    );
     for (const id of ['partial', 'saved', 'syncing']) {
       expect(within(await status(id)).getByRole('button')).toBeInTheDocument();
     }
@@ -490,6 +492,50 @@ describe('the status', () => {
     expect(modal).toHaveTextContent('waiting for Argo CD to synchronize');
     // The design's Sync now waits until after the freeze.
     expect(within(modal).queryByRole('button', { name: 'Sync now' })).not.toBeInTheDocument();
+  });
+
+  it('explains the state in the tooltip, never the phase that disagrees with it', async () => {
+    const user = userEvent.setup();
+    const service = new MockConsoleService();
+    const at = (id: string, status: Parameters<typeof modelObject>[0]['status']) =>
+      modelObject({
+        id,
+        metadata: { name: id, version: 1 },
+        spec: { model: { uri: `hf://x/${id}`, name: id } },
+        status,
+      });
+    const cluster = (name: string, phase: ModelPhase, state: ModelState, deploymentMessage = '') =>
+      create(ModelClusterStatusSchema, { cluster: name, phase, state, deploymentMessage });
+    modelsOf(service).models = [
+      // The phase says one cluster failed; the state, from the same clusters, says Ready.
+      at('ready', {
+        phase: ModelPhase.PARTIALLY_AVAILABLE,
+        reason: 'PartiallyAvailable',
+        message: 'Failed on site-b; ready on site-a',
+        state: ModelState.READY,
+        clusters: [
+          cluster('site-a', ModelPhase.READY, ModelState.READY),
+          cluster('site-b', ModelPhase.FAILED, ModelState.READY),
+        ],
+      }),
+      at('starting', {
+        phase: ModelPhase.FAILED,
+        reason: 'Failed',
+        message: 'Failed on site-b',
+        state: ModelState.STARTING,
+        clusters: [
+          cluster('site-b', ModelPhase.FAILED, ModelState.STARTING, 'Deployment does not have minimum availability.'),
+        ],
+      }),
+    ];
+    renderAt('/models', service);
+    const status = async (id: string) => within(await rowOf(id)).getByTestId('model-phase');
+    // Ready has nothing to add: no tooltip, so the label takes no focus.
+    const ready = within(await status('ready')).getByText('Ready');
+    expect(ready.closest('.pf-v6-c-label')).not.toHaveAttribute('tabindex');
+    await user.hover(within(await status('starting')).getByText('Starting'));
+    const tooltip = await screen.findByRole('tooltip');
+    expect(tooltip).toHaveTextContent(/^site-b: Starting\. Deployment does not have minimum availability\.$/);
   });
 
   it('sorts the list by Status, in rollout order', async () => {
@@ -699,11 +745,13 @@ describe('a background poll', () => {
     await user.click(within(await rowOf('granite-3-8b')).getByRole('button', { name: 'Details' }));
     await user.click(screen.getByRole('button', { name: 'Synced on site1' }));
     const modal = await screen.findByRole('dialog', { name: 'Granite 3.3 8B Instruct on site1' });
-    const deployment = () => within(modal).getByText('Deployment').closest('.pf-v6-c-description-list__group');
-    expect(deployment()).toHaveTextContent(/^DeploymentNot on the cluster yet$/);
+    const reported = within(modal).getByLabelText('What site1 reported');
+    const deployment = () =>
+      within(reported).getByText('Model on the cluster').closest('.pf-v6-c-description-list__group');
+    expect(deployment()).toHaveTextContent(/^Model on the clusterNot deployed yet$/);
     granite.status!.clusters[0].deployment = ModelDeploymentState.RUNNING;
     await act(() => vi.advanceTimersByTimeAsync(30000));
-    await waitFor(() => expect(deployment()).toHaveTextContent(/^DeploymentRunning$/));
+    await waitFor(() => expect(deployment()).toHaveTextContent(/^Model on the clusterRunning$/));
     const reports = granite.status!.clusters;
     granite.status!.clusters = [];
     await act(() => vi.advanceTimersByTimeAsync(30000));
@@ -2799,6 +2847,23 @@ describe('the deployment and MaaS statuses', () => {
     expect(within(modal).getByRole('link', { name: 'Go to Subscriptions' })).toHaveAttribute('href', '/subscriptions');
   });
 
+  it("colours the Availability subtext in its label's tone, as a subscription's", async () => {
+    const service = running();
+    const smollm2 = modelsOf(service).find('smollm2');
+    renderAt('/models', service);
+    const subtext = async () => within(await rowOf('smollm2')).getByRole('button', { name: /: smollm2$/ });
+    for (const [state, className] of [
+      [ModelMaasState.AWAITING_SUBSCRIPTION, 'pf-v6-u-text-color-status-default'],
+      [ModelMaasState.UNAVAILABLE, 'pf-v6-u-text-color-status-warning'],
+      [ModelMaasState.FAILED, 'pf-v6-u-text-color-status-danger'],
+    ] as [ModelMaasState, string][]) {
+      smollm2.status!.maas = state;
+      cleanup();
+      renderAt('/models', service);
+      expect(await subtext()).toHaveClass(className);
+    }
+  });
+
   it('links to the model from the Availability dialog on the list, and not on its own page', async () => {
     const user = userEvent.setup();
     const service = running();
@@ -2806,6 +2871,9 @@ describe('the deployment and MaaS statuses', () => {
     renderAt('/models', service);
     await user.click(await screen.findByRole('button', { name: 'Pending availability of smollm2' }));
     const dialog = await screen.findByRole('dialog', { name: 'smollm2 availability' });
+    expect(dialog).toHaveTextContent(
+      'Consumers can’t access this model yet. To enable access, set up a subscription. The model must also be ready on its clusters; its status shows where it isn’t.',
+    );
     await user.click(within(dialog).getByRole('link', { name: 'Go to the model' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'smollm2' })).toBeVisible();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -2845,9 +2913,10 @@ describe('the deployment and MaaS statuses', () => {
     expect(rows.map((r) => cellIn(r, 'Status').textContent)).toEqual(['Ready on site1', 'Starting on site2']);
     await user.click(within(rows[1]).getByRole('button', { name: 'Starting on site2' }));
     const modal = await screen.findByRole('dialog', { name: 'smollm2 on site2' });
-    const deployment = within(modal).getByText('Deployment').closest('.pf-v6-c-description-list__group') as HTMLElement;
-    expect(deployment).toHaveTextContent(/^DeploymentStarting$/);
-    expect(modal).toHaveTextContent('Deployment does not have minimum availability.');
+    const reported = within(modal).getByLabelText('What site2 reported');
+    expect(reported).toHaveTextContent('Model on the clusterStarting');
+    expect(reported).toHaveTextContent('Model messageDeployment does not have minimum availability.');
+    expect(reported).not.toHaveTextContent(/Deployment(?! does)/);
   });
 
   it("lists MaaS on each ingress cluster on the model page, with MaaS's message", async () => {

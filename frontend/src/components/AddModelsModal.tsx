@@ -18,12 +18,12 @@ import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import { entryModelId, type SubscriptionModelEntry } from '../pages/subscriptions/hooks/useSubscriptionModels';
 import { titleOf, type ModelView } from '../pages/models/modelView';
 import type { ClusterPlaces } from '../pages/models/clusterPlaces';
+import { ModelStatusLabel } from '../pages/models/ModelStatus';
 import { ModelStatusContent } from '../pages/models/ModelStatusModal';
 import { hasPartialModelStatus } from '../pages/subscriptions/partialModelStatus';
 import { useModelList } from '../pages/models/useModels';
 import { LoadError } from './LoadError';
 import { PageLoading } from './PageLoading';
-import { StatusLabel } from './StatusLabel';
 
 type Props = {
   currentModels: SubscriptionModelEntry[];
@@ -191,14 +191,10 @@ export const AddModelsModal: React.FC<Props> = ({
                             </Td>
                             <Td dataLabel="Model name">{name}</Td>
                             <Td dataLabel="Status">
+                              {/* The Models list's label and word (model.state) for every row; only an
+                                  eligible row opens the status. */}
                               <span id={`picker-status-${model.id}`}>
-                                <StatusLabel
-                                  isCompact
-                                  status={openStatus ? model.state : model.phase}
-                                  reason={openStatus ? undefined : model.statusMessage}
-                                  onClick={openStatus}
-                                  screenReaderSuffix={openStatus ? ` for ${name}` : undefined}
-                                />
+                                <ModelStatusLabel model={model} onOpen={openStatus} />
                               </span>
                             </Td>
                           </Tr>

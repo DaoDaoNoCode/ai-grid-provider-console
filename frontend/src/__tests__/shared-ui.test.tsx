@@ -1,4 +1,6 @@
 // Small shared pieces: page states, status labels, short lists and chart ticks.
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { useState } from 'react';
 import { render, screen, within } from '@testing-library/react';
 import { TestApp } from './TestApp';
@@ -22,8 +24,9 @@ import { ErrorState } from '../components/states/ErrorState';
 import { LoadFailedAlert } from '../components/states/LoadFailedAlert';
 import { PageStateSection } from '../components/states/PageStateSection';
 import { SectionEmptyState } from '../components/states/SectionEmptyState';
-import { getSubtextProps } from '../utilities/phaseLabelUtils';
+import { getSubtextProps, subtextClassName } from '../utilities/phaseLabelUtils';
 import { statusLabelProps } from '../utilities/status';
+import { InProgressIcon } from '@patternfly/react-icons';
 
 it("opens a status's reason from the keyboard", async () => {
   const user = userEvent.setup();
@@ -114,6 +117,32 @@ it('gives a phase the same colour in its label and its subtext', () => {
   expect(statusLabelProps('Degraded').status).toBe('warning');
   expect(getSubtextProps('Partially ready')).toEqual({ className: 'pf-v6-u-text-color-status-warning' });
   expect(getSubtextProps('Ready')).toBeUndefined();
+  // Pending's info tone: PatternFly 6.7 ships the info text colour as -status-default.
+  expect(getSubtextProps('Pending')).toEqual({ className: 'pf-v6-u-text-color-status-default' });
+});
+
+it('gives the rollout in progress one look, Synced included: only Ready is a success', () => {
+  // Synced: Argo CD applied the model, which isn't serving yet (Saved to Git, Syncing, Synced, Starting, Ready).
+  for (const status of ['Syncing', 'Synced', 'Starting']) {
+    expect(statusLabelProps(status), status).toEqual({ color: 'blue', icon: <InProgressIcon /> });
+  }
+  render(<StatusLabel isCompact status="Synced" />);
+  const label = screen.getByText('Synced').closest('.pf-v6-c-label');
+  expect(label).toHaveClass('pf-m-blue');
+  expect(label).not.toHaveClass('pf-m-success');
+  expect(statusLabelProps('Ready').status).toBe('success');
+});
+
+it('colours a subtext only with text colour classes PatternFly ships', () => {
+  const css = readFileSync(
+    createRequire(import.meta.url).resolve('@patternfly/react-styles/css/utilities/Text/text.css'),
+    'utf8',
+  );
+  for (const status of ['Pending', 'Unavailable', 'Failed', 'Partially ready']) {
+    const className = subtextClassName(status);
+    expect(className, status).toBeDefined();
+    expect(css, className).toContain(`.${className} {`);
+  }
 });
 
 it('offers Log out while the console configuration is still loading', async () => {

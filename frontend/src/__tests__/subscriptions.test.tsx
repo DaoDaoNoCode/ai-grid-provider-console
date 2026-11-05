@@ -943,7 +943,10 @@ describe('subscription phases', () => {
     );
     const user = userEvent.setup();
     renderAt('/subscriptions', service);
-    expect(await screen.findByTestId('phase-label-subtext')).toHaveTextContent('Setting up subscription');
+    const subtext = await screen.findByTestId('phase-label-subtext');
+    expect(subtext).toHaveTextContent('Setting up subscription');
+    // In Pending's tone, as the label.
+    expect(subtext).toHaveClass('pf-v6-u-text-color-status-default');
     await user.hover(within(screen.getByTestId('phase-label')).getByText('Pending'));
     expect(await screen.findByRole('tooltip')).toHaveTextContent(message);
   });
@@ -1378,6 +1381,47 @@ it('caps a new subscription id at the backend maximum, leaving room for -policy'
 });
 
 describe('subscription creation model status', () => {
+  it("explains a model's state in the picker's tooltip, never the phase that disagrees with it", async () => {
+    const user = userEvent.setup();
+    const service = seeded();
+    // The phase says site2 failed; the state, from the same clusters, says Ready.
+    const ready = fleetOf(service).find('granite-3-8b');
+    ready.status!.phase = ModelPhase.PARTIALLY_AVAILABLE;
+    ready.status!.message = 'Failed on site2; ready on site1';
+    ready.status!.state = ModelState.READY;
+    ready.status!.clusters.push(
+      create(ModelClusterStatusSchema, { cluster: 'site2', phase: ModelPhase.FAILED, state: ModelState.READY }),
+    );
+    const starting = fleetOf(service).find('llama-3-70b');
+    starting.status!.phase = ModelPhase.FAILED;
+    starting.status!.message = 'Failed on site2';
+    starting.status!.state = ModelState.STARTING;
+    starting.status!.clusters = [
+      create(ModelClusterStatusSchema, {
+        cluster: 'site2',
+        phase: ModelPhase.FAILED,
+        state: ModelState.STARTING,
+        deploymentMessage: 'Deployment does not have minimum availability.',
+      }),
+    ];
+    renderAt('/subscriptions/create', service);
+    await user.click(await screen.findByRole('button', { name: 'Add models' }));
+    const picker = await screen.findByRole('dialog', { name: 'Add models' });
+    const label = (title: string) =>
+      within(
+        within(picker)
+          .getByRole('checkbox', { name: `Select ${title}` })
+          .closest('tr')!,
+      ).getByTestId('model-phase');
+    // Ready has nothing to add: no tooltip, so the label takes no focus.
+    expect(label('Granite 3.3 8B Instruct')).toHaveTextContent(/^Ready$/);
+    expect(label('Granite 3.3 8B Instruct').querySelector('.pf-v6-c-label')).not.toHaveAttribute('tabindex');
+    await user.hover(within(label('Llama 3.3 70B Instruct')).getByText('Starting'));
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      /^site2: Starting\. Deployment does not have minimum availability\.$/,
+    );
+  });
+
   it('suspends the picker for partial status without confirming selections and keeps the subscription draft', async () => {
     const user = userEvent.setup();
     const service = seeded();
@@ -1534,6 +1578,79 @@ describe('subscription creation model status', () => {
       vi.useRealTimers();
     }
   });
+  it('words each model in the picker by its state, as the Models list does, when its status opens nothing', async () => {
+    const user = userEvent.setup();
+    const service = seeded();
+    // Partially ready with no cluster reports: the phase still says Ready.
+    const partial = fleetOf(service).find('granite-3-8b');
+    partial.status!.state = ModelState.PARTIALLY_READY;
+    partial.status!.clusters = [];
+    // Ready, from a backend whose legacy phase still says partially available.
+    const legacy = fleetOf(service).find('llama-3-70b');
+    legacy.status!.phase = ModelPhase.PARTIALLY_AVAILABLE;
+    legacy.status!.state = ModelState.READY;
+    renderAt('/subscriptions/create', service);
+    await user.click(await screen.findByRole('button', { name: 'Add models' }));
+    const picker = await screen.findByRole('dialog', { name: 'Add models' });
+    const statusOf = (name: string) => {
+      const row = within(picker)
+        .getByRole('checkbox', { name: `Select ${name}` })
+        .closest('tr')!;
+      const headers = within(row.closest('table')!).getAllByRole('columnheader');
+      return within(row).getAllByRole('cell')[headers.findIndex((h) => h.textContent === 'Status')];
+    };
+    expect(statusOf('Granite 3.3 8B Instruct')).toHaveTextContent(/^Partially ready$/);
+    expect(statusOf('Llama 3.3 70B Instruct')).toHaveTextContent(/^Ready$/);
+    expect(within(picker).queryByRole('button', { name: /^(Partially ready|Ready)/ })).not.toBeInTheDocument();
+  });
+
+  it('returns focus to Add models when polling closes the status of a selected model', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      const service = seeded();
+      const model = fleetOf(service).find('granite-3-8b');
+      model.status!.state = ModelState.PARTIALLY_READY;
+      renderAt('/subscriptions/create', service);
+      await fillNewSubscription(user);
+      const selected = screen.getByRole('grid', { name: 'subscription models' });
+      await user.click(within(selected).getByRole('button', { name: 'Partially ready for Granite 3.3 8B Instruct' }));
+      expect(await screen.findByRole('dialog', { name: 'Granite 3.3 8B Instruct status' })).toBeVisible();
+      model.status!.state = ModelState.READY;
+      await act(() => vi.advanceTimersByTimeAsync(30_000));
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      expect(screen.getByRole('button', { name: 'Add models' })).toHaveFocus();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("follows a selected model's state as the models poll, keeping its token limits", async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      const service = seeded();
+      const model = fleetOf(service).find('granite-3-8b');
+      model.status!.state = ModelState.STARTING;
+      renderAt('/subscriptions/create', service);
+      await fillNewSubscription(user);
+      const selected = () => screen.getByRole('grid', { name: 'subscription models' });
+      const statusOf = () => {
+        const headers = within(selected()).getAllByRole('columnheader');
+        const [row] = within(selected()).getAllByRole('row').slice(1);
+        return within(row).getAllByRole('cell')[headers.findIndex((h) => h.textContent === 'Status')];
+      };
+      expect(statusOf()).toHaveTextContent(/^Starting$/);
+      model.status!.state = ModelState.READY;
+      await act(() => vi.advanceTimersByTimeAsync(30_000));
+      await waitFor(() => expect(statusOf()).toHaveTextContent(/^Ready$/));
+      expect(selected()).toHaveTextContent('1,000 / 1 hour');
+      expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('Test team');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps model status noninteractive while editing an existing subscription', async () => {
     const user = userEvent.setup();
     const service = seeded();
