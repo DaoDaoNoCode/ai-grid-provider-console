@@ -13,7 +13,8 @@ type ConsoleConfig struct {
 	MapTileAttribution string `json:"mapTileAttribution"`
 	BillingURL         string `json:"billingUrl"`
 	Version            string `json:"version"`
-	// FakeBackend tells the UI to show its fake-backend banner.
+	// FakeBackend tells the UI the backend runs on fake infrastructure: it
+	// shows its fake-backend banner, and no login proxy runs.
 	FakeBackend bool `json:"fakeBackend"`
 	// Monitoring says whether /perses/api reaches a Perses server, and the one project it
 	// reads, whose dashboard- objects are the Monitoring tabs (always set when enabled).

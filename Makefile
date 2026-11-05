@@ -13,7 +13,7 @@ CONTAINER_ENGINE ?= $(shell command -v podman 2>/dev/null || command -v docker)
 # BACKEND_ADDRESS is the backend's gRPC, which the BFF dials: make dev-cluster forwards the hub's
 # backend there, make dev expects yours there, and the fakes listen there.
 BACKEND_ADDRESS ?= 127.0.0.1:9090
-# The fake hub, which answers the BFF's access review in make dev-fake and make dev-fake-infra.
+# The backend's fake hub, which answers the BFF's access review in make dev-fake-infra.
 FAKE_HUB_ADDRESS ?= 127.0.0.1:9091
 BFF_PORT ?= 8080
 FRONTEND_PORT ?= 9000
@@ -41,9 +41,9 @@ generate-api-into = cd frontend && \
 	$(BUF) generate '$(API_INPUT)' --exclude-path ai_grid/draft --template buf.gen.yaml -o "$(1)" && \
 	$(BUF) generate '$(GOOGLEAPIS)' --path google/rpc/error_details.proto --template buf.gen.yaml -o "$(1)"
 
-.PHONY: help install dev-cluster dev dev-fake dev-fake-infra backend-pin generate-api \
+.PHONY: help install dev-cluster dev dev-fake-infra backend-pin generate-api \
 	dev-forward-backend dev-forward-perses dev-bff dev-frontend \
-	dev-fake-backend dev-bff-fake dev-frontend-fake dev-fake-infra-backend dev-bff-fake-infra \
+	dev-frontend-fake dev-fake-infra-backend dev-bff-fake-infra \
 	lint test e2e check-generated-api chart-check chart-test \
 	build image push manifests deploy undeploy
 
@@ -76,14 +76,6 @@ dev: ## Against a backend you run yourself on BACKEND_ADDRESS (default 127.0.0.1
 	@trap 'kill 0' INT TERM; \
 	$(MAKE) -s dev-bff & \
 	$(MAKE) -s dev-frontend & \
-	wait
-
-dev-fake: ## Without a cluster, on the console's own fake backend (:9090) and hub (:9091), from mock/fixtures
-	@echo "==> Clusters and the AI Grid map use the backend's API and need make dev-fake-infra"
-	@trap 'kill 0' INT TERM; \
-	$(MAKE) -s dev-fake-backend & \
-	$(MAKE) -s dev-bff-fake & \
-	$(MAKE) -s dev-frontend-fake & \
 	wait
 
 dev-fake-infra: ## Without a cluster, on the backend at .backend-api-version and its own fakes (:9090-:9094; BACKEND_DIR for your checkout)
@@ -124,15 +116,8 @@ dev-bff:
 dev-frontend:
 	cd frontend && BFF_URL=http://127.0.0.1:$(BFF_PORT) FRONTEND_PORT=$(FRONTEND_PORT) pnpm dev
 
-# dev-fake: the fake backend and hub, the BFF against them, and the Vite dev server as dev-user
-# with a fixture token (AUTH_TOKEN=viewer-token AUTH_USER=viewer for a user who isn't a provider
-# admin; dev-fake-infra uses it too).
-dev-fake-backend:
-	$(MAKE) -C bff fake-backend BACKEND_ADDRESS=$(BACKEND_ADDRESS) FAKE_HUB_ADDRESS=$(FAKE_HUB_ADDRESS)
-
-dev-bff-fake:
-	$(MAKE) -C bff run-fake PORT=$(BFF_PORT) BACKEND_ADDRESS=$(BACKEND_ADDRESS) FAKE_HUB_ADDRESS=$(FAKE_HUB_ADDRESS)
-
+# dev-fake-infra: the Vite dev server as dev-user with a fixture token (AUTH_TOKEN=viewer-token
+# AUTH_USER=viewer for a user who isn't a provider admin).
 dev-frontend-fake:
 	cd frontend && BFF_URL=http://127.0.0.1:$(BFF_PORT) FRONTEND_PORT=$(FRONTEND_PORT) \
 		AUTH_TOKEN=$${AUTH_TOKEN:-dev-token} AUTH_USER=$${AUTH_USER:-dev-user} pnpm dev
