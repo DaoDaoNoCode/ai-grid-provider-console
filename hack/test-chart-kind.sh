@@ -8,7 +8,8 @@
 #      hack/deploy.sh does it (hack/chart-takeover.sh);
 #   2. helm install: the pod is ready, the proxy refuses a caller without a token, accepts a
 #      ServiceAccount token (TokenReview) and drops the identity headers a caller forges, the BFF answers isProviderAdmin from the cluster's access
-#      review, and Clusters/List over the relay lists ManagedClusters through the backend; the
+#      review, and Clusters/List over the relay lists ManagedClusters through the backend; no
+#      response, the proxy's own included, carries the caller's token; the
 #      backend may get and list the catalog's Argo CD Applications in openshift-gitops and no
 #      more; only the proxy listens off loopback;
 #   3. helm upgrade with backend.clusterWrites: the backend may label ManagedClusters ai-grid/*, and
@@ -335,6 +336,24 @@ for service in Models Subscriptions; do
 done
 expect 200 "a provider admin's Connect call reaches the backend through the relay" "${auth[@]}" "${connect[@]}" "${u}/ai_grid.v1.AiGrid/Ping"
 expect 200 "the frontend is served" "${auth[@]}" "${u}/"
+# The proxy passes the caller's token to the BFF in a request header (the checks above need it for
+# the access review), never back to the browser: no X-Auth-Request-* header, and no header or body
+# that holds the token, on the proxied paths or the proxy's own. The token is compared, never printed.
+no_token() { # no_token <status> <description> curl-args...
+  local want=$1 what=$2 got names
+  shift 2
+  got="$(curl -sk -D "${TMP}/headers" -o "${TMP}/body" -w '%{http_code}' "$@")"
+  [[ "${got}" == "${want}" ]] || fail "${what}: got ${got}, want ${want}"
+  names="$(tr -d '\r' <"${TMP}/headers" | cut -d: -f1 | grep -i '^x-auth-request-' | tr '\n' ' ' || true)"
+  [[ -z "${names}" ]] || fail "${what}: the response has ${names}"
+  ! grep -qF -- "${TOKEN}" "${TMP}/headers" "${TMP}/body" || fail "${what}: the response holds the caller's token"
+  pass "${what} carries no token (${got})"
+}
+no_token 200 "the user's answer" "${auth[@]}" "${u}/api/v1/user"
+no_token 200 "the frontend" "${auth[@]}" "${u}/"
+no_token 200 "a Connect call's answer" "${auth[@]}" "${connect[@]}" "${u}/ai_grid.v1.AiGrid/Ping"
+no_token 202 "the proxy's /oauth2/auth" "${auth[@]}" "${u}/oauth2/auth"
+no_token 200 "the proxy's /oauth2/userinfo" "${auth[@]}" "${u}/oauth2/userinfo"
 # Models and Subscriptions read their status from the catalog's Argo CD Applications in
 # openshift-gitops: the backend may get and list them there, and nothing else of Argo CD's.
 can() { k auth can-i "$@" --as="${SA}" 2>/dev/null || true; }
