@@ -26,6 +26,7 @@ import { PageStateSection } from '../components/states/PageStateSection';
 import { SectionEmptyState } from '../components/states/SectionEmptyState';
 import { getSubtextProps, subtextClassName } from '../utilities/phaseLabelUtils';
 import { statusLabelProps } from '../utilities/status';
+import { InProgressIcon } from '@patternfly/react-icons';
 
 it("opens a status's reason from the keyboard", async () => {
   const user = userEvent.setup();
@@ -118,6 +119,18 @@ it('gives a phase the same colour in its label and its subtext', () => {
   expect(getSubtextProps('Ready')).toBeUndefined();
   // Pending's info tone: PatternFly 6.7 ships the info text colour as -status-default.
   expect(getSubtextProps('Pending')).toEqual({ className: 'pf-v6-u-text-color-status-default' });
+});
+
+it('gives the rollout in progress one look, Synced included: only Ready is a success', () => {
+  // Synced: Argo CD applied the model, which isn't serving yet (Saved to Git, Syncing, Synced, Starting, Ready).
+  for (const status of ['Syncing', 'Synced', 'Starting']) {
+    expect(statusLabelProps(status), status).toEqual({ color: 'blue', icon: <InProgressIcon /> });
+  }
+  render(<StatusLabel isCompact status="Synced" />);
+  const label = screen.getByText('Synced').closest('.pf-v6-c-label');
+  expect(label).toHaveClass('pf-m-blue');
+  expect(label).not.toHaveClass('pf-m-success');
+  expect(statusLabelProps('Ready').status).toBe('success');
 });
 
 it('colours a subtext only with text colour classes PatternFly ships', () => {

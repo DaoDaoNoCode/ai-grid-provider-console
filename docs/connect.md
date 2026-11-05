@@ -247,7 +247,8 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   `jgiardino/ai-grid-provider-console@a4e6090` (Jenn Giardino, 2026-11-02). The Models
   list's **Status** is `status.state`, Git sync and deployment in one word: Saved to Git, Syncing,
   Synced, Starting, Ready, Partially ready, Failed, Stopped (`stateWordOf`), sorted in that rollout
-  order by default. Saved to Git, Syncing and Partially ready open `ModelStatusModal`: the design's sentence
+  order by default. Syncing, Synced and Starting share the in-progress look (blue): Synced means
+  Argo CD applied the model, not that it serves, so only Ready is green. Saved to Git, Syncing and Partially ready open `ModelStatusModal`: the design's sentence
   for the Git states (its Sync now button waits until after the 11-06 freeze), or each cluster's
   status for Partially ready. **Availability** is `status.maas` (`availabilityOf`): Available;
   Pending with Awaiting subscription, Configuring routing or Awaiting subscription and backend;

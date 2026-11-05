@@ -40,13 +40,14 @@ const tones: Record<string, StatusTone> = {
   // odh-dashboard's MaaS pages show it.
   Degraded: 'warning',
   // A model's Status column and each cluster's (the backend's ModelState):
-  // Partially ready when clusters disagree; the Git states Saved to Git (grey), Syncing (blue) and
-  // Synced; Starting (blue, not PatternFly's purple info); Stopped (grey). Pending sync: a placed
-  // cluster that hasn't reported yet.
+  // Partially ready when clusters disagree; the Git states Saved to Git (grey), then Syncing, Synced
+  // and Starting, the rollout in progress (blue, not PatternFly's purple info): Synced means Argo CD
+  // applied the model, not that it serves, so only Ready is a success; Stopped (grey). Pending
+  // sync: a placed cluster that hasn't reported yet.
   'Partially ready': 'warning',
   'Saved to Git': 'neutral',
   Syncing: 'info',
-  Synced: 'success',
+  Synced: 'info',
   Starting: 'neutral',
   Stopped: 'neutral',
   'Pending sync': 'neutral',
@@ -83,7 +84,7 @@ export const statusLabelProps = (status: string | undefined): Pick<LabelProps, '
   if (status === 'Saved to Git') {
     return { color: 'grey', icon: <RhUiClockIcon /> };
   }
-  if (status === 'Starting' || status === 'Syncing') {
+  if (status === 'Syncing' || status === 'Synced' || status === 'Starting') {
     return { color: 'blue', icon: <InProgressIcon /> };
   }
   if (status === 'Stopped') {
