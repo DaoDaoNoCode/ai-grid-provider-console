@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import type { UseQueryResult } from '@tanstack/react-query';
 import { createClient, type Client } from '@connectrpc/connect';
 import { useQuery as useConnectQuery, useTransport } from '@connectrpc/connect-query';
@@ -53,7 +53,10 @@ export const loadErrorOf = (hasData: boolean, raw: unknown): Error | undefined =
 export const useLoaded = <R, T>(query: UseQueryResult<R, unknown>, select: (answer: R | undefined) => T): Loaded<T> => {
   const { refetch, data: answer } = query;
   const data = useMemo(() => select(answer), [select, answer]);
-  const refresh = useCallback(async () => (await refetch()).isSuccess, [refetch]);
+  const refresh = useCallback(async () => {
+    noteUserAction();
+    return (await refetch()).isSuccess;
+  }, [refetch]);
   return {
     data,
     loaded: query.isFetched,
@@ -68,15 +71,56 @@ export const useLoaded = <R, T>(query: UseQueryResult<R, unknown>, select: (answ
 export const UNSETTLED_POLL_MS = 10_000;
 
 /**
- * The query options the pages' loads share: poll until the session ends, and no retries (the page
- * offers Retry). With `unsettled`, the load polls every UNSETTLED_POLL_MS while the last answer has
- * something still changing, and every `settledMs` (POLL_MS, or `false` for none) once nothing does.
+ * How long a page polls every UNSETTLED_POLL_MS while what is unsettled stays the same: 5 minutes.
+ * Argo CD looks at the catalog every 3 minutes by default (its reconciliation timeout, 180 s), so a
+ * model waiting for Argo CD's next look is still polled fast when it comes; the rollout steps
+ * after it (Syncing, Synced, Starting) each change a word, which starts the window again. What
+ * hasn't changed a word in 5 minutes is stuck until someone acts, and polling it every 10 s
+ * forever would only load the backend. At most 30 fast polls per stuck state.
  */
-export const useLoadOptions = <T>(unsettled?: (answer: T) => boolean, settledMs: number | false = POLL_MS) => {
+export const UNSETTLED_WINDOW_MS = 5 * 60_000;
+
+/** Counts the user's actions that start every page's fast window again (noteUserAction). */
+let userActions = 0;
+
+/**
+ * The user acted: a Refresh or Retry (useLoaded's refresh), or a write the console sent that
+ * landed (BackgroundWritesProvider). Every page polling something unsettled polls fast again from
+ * its next answer, for UNSETTLED_WINDOW_MS. Only compared for a change, so a count is enough.
+ */
+export const noteUserAction = () => {
+  userActions += 1;
+};
+
+/**
+ * The query options the pages' loads share: poll until the session ends, and no retries (the page
+ * offers Retry). With `unsettled`, which words what in the answer is still changing (undefined or
+ * empty when nothing is), the load polls every UNSETTLED_POLL_MS while the last answer has
+ * something still changing, and every `settledMs` (POLL_MS, or `false` for none) once nothing does.
+ * The fast polling lasts UNSETTLED_WINDOW_MS while those words stay the same; then the load polls
+ * every `settledMs`, or POLL_MS where that is `false`, so a page still showing something unsettled
+ * keeps updating at the other pages' pace. The window starts again when the words change, when the
+ * user acts (noteUserAction), and when the page mounts.
+ */
+export const useLoadOptions = <T>(
+  unsettled?: (answer: T) => string | undefined,
+  settledMs: number | false = POLL_MS,
+) => {
   const { sessionEnded } = useConsoleSession();
+  // The fast window of this mount: what was unsettled when it began, when, and the actions counted then.
+  const fast = useRef<{ changing: string; since: number; actions: number } | undefined>(undefined);
   const refetchInterval = (query: { state: { data: T | undefined } }) => {
     const answer = query.state.data;
-    return answer !== undefined && unsettled?.(answer) ? UNSETTLED_POLL_MS : settledMs;
+    const changing = answer !== undefined ? unsettled?.(answer) : undefined;
+    if (!changing) {
+      fast.current = undefined;
+      return settledMs;
+    }
+    const now = Date.now();
+    if (fast.current?.changing !== changing || fast.current.actions !== userActions) {
+      fast.current = { changing, since: now, actions: userActions };
+    }
+    return now - fast.current.since < UNSETTLED_WINDOW_MS ? UNSETTLED_POLL_MS : settledMs || POLL_MS;
   };
   return { refetchInterval: sessionEnded ? (false as const) : refetchInterval, retry: false };
 };

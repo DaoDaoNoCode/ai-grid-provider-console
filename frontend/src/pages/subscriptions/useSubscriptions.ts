@@ -30,14 +30,16 @@ import type { TenantsListResponse } from '../../gen/ai_grid/v1/tenants_service_p
 import { list as listTenants } from '../../gen/ai_grid/v1/tenants_service-Tenants_connectquery';
 import { useLoadOptions, useLoaded, type Loaded } from '../clusters/useClusters';
 import { displayNameOf, toModelView, type ModelView } from '../models/modelView';
-import { isUnsettledSubscription, isUnsettledSubscriptionInfo } from './subscriptionText';
+import { changingSubscriptionInfoOf, changingSubscriptionOf } from './subscriptionText';
 
 const subscriptionItems = (answer: SubscriptionsListResponse | undefined) => answer?.items ?? [];
 const subscriptionInfo = (answer: SubscriptionsGetResponse | undefined) => (answer?.object ? answer : undefined);
 const modelViews = (answer: ModelsListResponse | undefined) => answer?.items.map(toModelView) ?? [];
 const tenantItems = (answer: TenantsListResponse | undefined) => answer?.items ?? [];
 
-const anyUnsettled = (answer: SubscriptionsListResponse) => answer.items.some(isUnsettledSubscription);
+/** The subscriptions in the answer still changing (changingSubscriptionOf); undefined when none is. */
+const anyUnsettled = (answer: SubscriptionsListResponse) =>
+  answer.items.map(changingSubscriptionOf).filter(Boolean).join('\n') || undefined;
 
 /** Every subscription, from Subscriptions/List. */
 export const useSubscriptionList = (): Loaded<Subscription[]> =>
@@ -90,7 +92,7 @@ export const useSubscription = (
   id: string,
   { poll = false }: { poll?: boolean } = {},
 ): Loaded<SubscriptionsGetResponse | undefined> => {
-  const options = useLoadOptions(isUnsettledSubscriptionInfo, false);
+  const options = useLoadOptions(changingSubscriptionInfoOf, false);
   return useLoaded(useQuery(get, { id }, poll ? options : { retry: false, refetchInterval: false }), subscriptionInfo);
 };
 

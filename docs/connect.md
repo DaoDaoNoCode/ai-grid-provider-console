@@ -281,7 +281,15 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   MaaS is still routing the model, or hasn't reported it, and a cluster serves it. Ready, Failed and
   Stopped stay so until someone acts, and a cluster drifting from Git while it serves reads Ready.
   A cluster whose Application is gone (it left AI Grid after the model was placed) reads Pending
-  sync for good, and keeps its page at 10 s while it's open.
+  sync for good. Fast polling is capped (`useLoadOptions`, `UNSETTLED_WINDOW_MS`): after 5 minutes
+  in which the status words of what is changing stay the same (`changingOf`: the model's state and
+  phase, each cluster's state, phase, sync and deployment, each ingress cluster's MaaS word; never
+  a message), the page polls every 30 s again. Argo CD looks at the catalog every 3 minutes by
+  default, so a model waiting for its next sync isn't slowed first, and each rollout step changes
+  a word. The fast window starts again when a word changes, after a Refresh or Retry, when a write
+  the console sent lands (`noteUserAction`), and when the page mounts. Every load through
+  `useLoadOptions` gets the cap; only the Models list and page, the Subscriptions list and a
+  subscription's page poll fast at all.
 - **Where status comes from.** The pinned backend reads it from the health the hub's catalog
   Argo CD Applications record for each cluster (`acm-models-catalog-{models,ingress}-<cluster>`
   in `openshift-gitops`; the chart grants the read, `templates/rbac.yaml`). A model's phase and
@@ -339,8 +347,9 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   10 s while a subscription isn't Active. A subscription's page polls `Get` every 10 s while the
   subscription isn't Active or a model it names is Pending, Saved to Git or Unknown
   (`isUnsettledSubscriptionInfo`), and stops once nothing is. A state that never settles, such as
-  a subscription no ingress cluster reports or a model whose placement matches no cluster, keeps
-  its page at 10 s while it is open. The edit page loads `Get` once and
+  a subscription no ingress cluster reports or a model whose placement matches no cluster, is
+  polled every 10 s for 5 minutes while its words stay the same, then every 30 s (the cap under
+  the Models area's **Polling**). The edit page loads `Get` once and
   keeps the first answer, so a save is checked against the version it started from. Models are read with a CEL filter on their ids,
   `this.id in ["<id>", ...]`: the list page asks for the models its subscriptions name, the edit
   page for its subscription's, and a subscription's page for none, because the backend joins the

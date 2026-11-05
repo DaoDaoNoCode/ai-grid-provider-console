@@ -26,18 +26,19 @@ import type { SubscriptionsListResponse } from '../../gen/ai_grid/v1/subscriptio
 import { useLoadOptions, useLoaded, type Loaded } from '../clusters/useClusters';
 import type { ModelDraft } from './modelDraft';
 import { createRequestOf, updateRequestOf, type ModelInput } from './modelRequests';
-import { isUnsettled, titleOf, toModelView, type ModelView } from './modelView';
+import { changingOf, titleOf, toModelView, type ModelView } from './modelView';
 
 const modelViews = (answer: ModelsListResponse | undefined) => answer?.items.map(toModelView) ?? [];
 const modelView = (answer: ModelsGetResponse | undefined) => answer?.object && toModelView(answer.object);
 const clusterNames = (answer: ModelsListPlacementClustersResponse | undefined) => answer?.clusters ?? [];
 const subscriptionItems = (answer: SubscriptionsListResponse | undefined) => answer?.items ?? [];
 
-/** Whether any model in the answer is still changing (isUnsettled), so the page polls sooner. */
-const anyUnsettled = (answer: ModelsListResponse) => modelViews(answer).some(isUnsettled);
+/** The models in the answer still changing (changingOf), so the page polls sooner; undefined when none is. */
+const anyUnsettled = (answer: ModelsListResponse) =>
+  modelViews(answer).map(changingOf).filter(Boolean).join('\n') || undefined;
 const unsettledModel = (answer: ModelsGetResponse) => {
   const model = modelView(answer);
-  return !!model && isUnsettled(model);
+  return model && changingOf(model);
 };
 
 /** Every model, from Models/List. */
