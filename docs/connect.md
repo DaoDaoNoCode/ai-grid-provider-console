@@ -212,15 +212,16 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   hardware's accelerator (for an edit without hardware, the model's request) is `nvidia.com/gpu`,
   or the model keeps presets; an edit that keeps the model's hardware and presets requires it only
   where it would clear an image the model has. Pages are at `/models/:id` and `/models/:id/edit`.
-- **Status and Availability** follow the UX design of console #114 (Chris, 2026-11-02). The Models
+- **Status and Availability** follow the Models design at
+  `jgiardino/ai-grid-provider-console@a4e6090` (Jenn Giardino, 2026-11-02). The Models
   list's **Status** is `status.state`, Git sync and deployment in one word: Saved to Git, Syncing,
   Synced, Starting, Ready, Partially ready, Failed, Stopped (`stateWordOf`), sorted in that rollout
-  order by default. Saved to Git, Syncing and Partially ready open `ModelStatusModal`: #114's sentence
+  order by default. Saved to Git, Syncing and Partially ready open `ModelStatusModal`: the design's sentence
   for the Git states (its Sync now button waits until after the 11-06 freeze), or each cluster's
   status for Partially ready. **Availability** is `status.maas` (`availabilityOf`): Available;
   Pending with Awaiting subscription, Configuring routing or Awaiting subscription and backend;
   Unavailable (no cluster serves it, while MaaS publishes or routes it); Failed. The label and its reason open a
-  dialog with #114's copy, MaaS's own message for each ingress cluster (`status.ingress`), and a link
+  dialog with the design's copy, MaaS's own message for each ingress cluster (`status.ingress`), and a link
   to Subscriptions where a subscription is missing.
 - **Each cluster.** The expanded row, the Partially ready dialog and the model's page list
   `status.clusters` with Cluster (a link to the cluster), Region (the cluster's
@@ -229,9 +230,9 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   View (`view_url`: OpenShift AI's model deployments, or the OpenShift console on a cluster without
   the dashboard; only an http(s) link renders). While no cluster has reported, the rows are
   `status.placement.selected_clusters`, each Pending sync, opening nothing; a reported cluster
-  with no state yet also reads Pending sync, and opens its dialog. Inside the Partially ready
-  dialog, cluster statuses open nothing: PatternFly's dialogs don't stack. #114's progress stepper
-  isn't here: the backend doesn't report the `LLMInferenceService` condition tree.
+  with no state yet also reads Pending sync, and opens nothing either, as the design has it (Pending
+  sync stays an outline label). Inside the Partially ready dialog, cluster statuses open nothing:
+  PatternFly's dialogs don't stack. The design's progress stepper isn't here: the backend doesn't report the `LLMInferenceService` condition tree.
 - **The model page** keeps its layout: the Status label, an Availability section (the label, then
   each ingress cluster with MaaS's message) and a Clusters section with the same table.
 - **Polling.** A model counts as still changing (`isUnsettled`) while it is Saved to Git or Unknown,

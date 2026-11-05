@@ -74,13 +74,14 @@ a failed load.
 - `StatusLabel` only, compact in tables and page headers. The word and its colour come from
   `utilities/status.tsx`; one word per state ("Active" for a subscription and its policy alike).
 - A status label is an outline label with its reason in a tooltip, and opens nothing, except where
-  the Models design (console #114) opens a dialog: on the Models list, the Status labels Saved to
-  Git, Syncing and Partially ready are filled and open `ModelStatusModal`, and an Availability label
-  with more to say is filled and opens its dialog; the other words stay outline. A model's page keeps
-  an outline Status label; its alert explains the phase.
+  the Models design (`jgiardino/ai-grid-provider-console@a4e6090`) opens a dialog: on the Models
+  list, the Status labels Saved to Git, Syncing and Partially ready are filled and open
+  `ModelStatusModal`, and an Availability label with more to say is filled and opens its dialog; the
+  other words stay outline. A model's page keeps an outline Status label; its alert explains the
+  status.
 - A label is clickable (filled) where a whole column opens each row's details, for every row: the
   Status column of a model's clusters table (`ModelClustersTable`), which opens what that cluster
-  reported; a placed cluster that hasn't reported yet (Pending sync) opens nothing, and inside the
+  reported; a placed cluster without a state yet (Pending sync) opens nothing, and inside the
   Partially ready dialog no cluster opens one (PatternFly's dialogs don't stack).
 
 ## Time
