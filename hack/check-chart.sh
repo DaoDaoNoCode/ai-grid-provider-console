@@ -3,6 +3,7 @@
 #   - helm lint --strict, with the default values and with every option turned on;
 #   - values.schema.json refuses a misspelled value instead of letting Helm drop it;
 #   - the Deployment's strategy is Recreate (one backend at a time);
+#   - kube-auth-proxy passes the caller's token to the BFF and puts none in its responses;
 #   - in git mode, the backend may get and list the catalog's Argo CD Applications in
 #     openshift-gitops, and without a Git URL the chart grants no such Role;
 #   - with its default values, it renders the same objects as manifests/base, apart from the
@@ -198,6 +199,17 @@ got="$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[] | se
   | .args[] | select(test("^--upstream-timeout="))' <<<"${defaults}")"
 [[ "${got}" == --upstream-timeout=65s ]] || { echo "check-chart: kube-auth-proxy's upstream timeout is '${got}', want 65s" >&2; exit 1; }
 refused "route.timeout=soon" --set route.timeout=soon
+# kube-auth-proxy passes the caller's token to the BFF as a request header and sets no response
+# header from the session: --set-xauthrequest would hand the token to the page
+# (X-Auth-Request-Access-Token), --set-authorization-header and --set-basic-auth a credential.
+# hack/test-chart-kind.sh checks the responses themselves.
+proxy_args="$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[] | select(.name == "kube-auth-proxy")
+  | .args[]' <<<"${defaults}")"
+for arg in --pass-access-token=true --pass-user-headers=true --set-xauthrequest=false; do
+  grep -qx -- "${arg}" <<<"${proxy_args}" || { echo "check-chart: kube-auth-proxy lacks ${arg}" >&2; exit 1; }
+done
+got="$(grep -E -- '^--(set-xauthrequest|set-authorization-header|set-basic-auth)(=|$)' <<<"${proxy_args}" | grep -vx -- --set-xauthrequest=false || true)"
+[[ -z "${got}" ]] || { echo "check-chart: kube-auth-proxy sets session data on responses: ${got}" >&2; exit 1; }
 
 # backend.idpSecrets: on by default, the namespace sets AI_GRID_IDP_SECRET_NAMESPACE and holds the Role,
 # Helm keeps the namespace on uninstall, and off renders neither the objects nor the variable.

@@ -305,7 +305,9 @@ OpenShift OAuth, the proxy RHOAI uses), the console image (BFF plus frontend) an
 loopback, so nothing on the pod network can reach either of them without going through the
 proxy. The kubelet probes the
 BFF's `/readyz` through the proxy, which passes that one path without login; it pings the
-backend, so it is the readiness signal for all three containers.
+backend, so it is the readiness signal for all three containers. The proxy passes the caller's
+token and name to the BFF as request headers and puts neither in its responses
+(`--set-xauthrequest=false`), so no script in the page can read the token.
 
 CI publishes the console to `ghcr.io/ai-grid-cloud/ai-grid-provider-console`: every merge to
 `main` as `sha-<full commit>` and `latest`, each `v*` tag by version, and each open pull request
