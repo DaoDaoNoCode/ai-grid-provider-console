@@ -169,7 +169,7 @@ it('shows the backend refusing to remove an ingress cluster while subscriptions 
     cluster('site-a', 'Ready', { 'ai-grid/enabled': 'true', 'ai-grid/role': 'ingress', location: 'eu' }),
   ]);
   const message =
-    'Cluster "site-a" serves ingress, and 3 subscriptions exist. Removing it would revoke their API keys on every cluster; delete the subscriptions first.';
+    'Cluster "site-a" serves ingress, and 3 subscriptions exist (sub-a, sub-b, sub-c). When a cluster stops serving ingress, the API keys of every subscription are revoked on all clusters. Delete the subscriptions first, or keep the cluster in AI Grid.';
   // 412 is FailedPrecondition over Connect (connectClusters.ts).
   vi.spyOn(service, 'removeClusterFromGrid').mockRejectedValueOnce(new ServiceError(412, message));
   renderAt('/clusters', service);

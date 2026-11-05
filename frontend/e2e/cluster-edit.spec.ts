@@ -2,10 +2,13 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import { callBackend as call } from './backend';
 
 // Edit on the backend's own fakes (its fixtures/poc), through the BFF's Connect relay. The fixtures
-// give no member a role: this spec gives site2 the inference role first, as Add to AI Grid writes it,
-// and edits its location label in the browser (its role is then read-only), and sets a role on
+// give no member a role: this spec gives site2 the inference role first, as Add to AI Grid writes
+// it, and edits its location label in the browser (its role is then read-only), and sets a role on
 // site3 in the browser. It puts both clusters' labels back afterwards: its project in
 // playwright.config.ts runs one test at a time, so the other specs see them as the fixture has them.
+// Both roles are inference: the backend refuses to take ingress away from AI Grid's only ingress
+// cluster while other members stay (docs/connect.md, "The backend's role rules"), so an ingress role
+// given here could not be put back.
 const WITH_ROLE = 'site2';
 const WITHOUT_ROLE = 'site3';
 

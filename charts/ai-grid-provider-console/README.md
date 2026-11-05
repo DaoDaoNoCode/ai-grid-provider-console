@@ -5,13 +5,6 @@ frontend) and `ai-grid-provider-backend`. `hack/deploy.sh` (`make deploy`) insta
 OAuthClient and Secrets it expects; `docs/dev-setup.md`, "Deploy to a cluster", has the details.
 `values.yaml` documents every value and `values.schema.json` refuses any it doesn't list.
 
-With `backend.git.url` set, the chart grants the console's ServiceAccount `get` and `list` on
-Argo CD Applications in `backend.git.catalogNamespace` (default `openshift-gitops`) and configures
-the backend to read that namespace. Without these reads, models stay Saved to Git and
-subscriptions have no observed phase. The namespace must already exist, and the installer needs
-permission to create its Role and RoleBinding. Listing Applications exposes every Application's
-spec in that namespace, including inline Helm values or plugin settings; keep secrets out of them.
-
 ## Images
 
 Each image is `repository:tag`, `repository@digest`, or `repository:tag@digest` when both are set.
@@ -30,6 +23,33 @@ Each image is `repository:tag`, `repository@digest`, or `repository:tag@digest` 
   values.yaml", before `helm package`).
 - **Proxy** (`images.authProxy`): `quay.io/opendatahub/odh-kube-auth-proxy:latest`; the kind test
   pins a digest.
+
+## Identity provider secrets
+
+An organization's identity provider names the Secret that holds its OIDC client secret (key
+`client-secret`), never the secret itself (`config.client_secret_secret_name`; the backend reads
+the Secret's namespace from `AI_GRID_IDP_SECRET_NAMESPACE` in ai-grid-provider-backend's
+`cmd/ai-grid-provider-backend/main.go`). By default the chart creates
+namespace `ai-grid-idp-secrets` for those Secrets, sets the backend's `AI_GRID_IDP_SECRET_NAMESPACE`
+to it, and lets the backend `get` Secrets there: not list, watch or write them. A provider admin
+creates each Secret before creating the organization:
+
+```sh
+oc -n ai-grid-idp-secrets create secret generic acme-idp --from-literal=client-secret=CLIENT_SECRET
+```
+
+Replace `CLIENT_SECRET` with the client secret from the organization's identity provider.
+
+- `backend.idpSecrets.namespace` moves it to another namespace. Keep only identity provider client
+  secrets in it, because the backend can get every Secret there. The chart refuses the release
+  namespace, which holds the console's own credentials.
+- `backend.idpSecrets.createNamespace=false` uses a namespace that already exists or something else
+  owns. Helm keeps the namespace it creates on uninstall, so the Secrets in it survive. Argo CD keeps it
+  too: it doesn't prune it or delete it with the Application.
+- `backend.idpSecrets.enabled=false` renders none of this. Creating an organization with an identity
+  provider then fails.
+
+`manifests/idp-secrets` holds the same objects for an install from `manifests/base`.
 
 ## Timeouts
 

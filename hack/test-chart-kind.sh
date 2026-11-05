@@ -8,11 +8,13 @@
 #      hack/deploy.sh does it (hack/chart-takeover.sh);
 #   2. helm install: the pod is ready, the proxy refuses a caller without a token, accepts a
 #      ServiceAccount token (TokenReview) and drops the identity headers a caller forges, the BFF answers isProviderAdmin from the cluster's access
-#      review, and Clusters/List over the relay lists ManagedClusters through the backend; only
-#      the proxy listens off loopback;
+#      review, and Clusters/List over the relay lists ManagedClusters through the backend; the
+#      backend may get and list the catalog's Argo CD Applications in openshift-gitops and no
+#      more; only the proxy listens off loopback;
 #   3. helm upgrade with backend.clusterWrites: the backend may label ManagedClusters ai-grid/*, and
 #      the admission policy refuses its other changes;
-#   4. helm uninstall removes the cluster-scoped objects.
+#   4. helm uninstall removes the cluster-scoped objects and the Role in openshift-gitops, and
+#      keeps the IdP secret namespace and the Secrets in it.
 # Not covered: OpenShift's OAuth login in a browser, the service CA and the Route's router.
 #
 #   hack/test-chart-kind.sh             # creates kind cluster ai-grid-chart and deletes it after
@@ -27,7 +29,6 @@ CHART="${ROOT}/charts/ai-grid-provider-console"
 CLUSTER="${KIND_CLUSTER:-ai-grid-chart}"
 CTX="kind-${CLUSTER}"
 NS=ai-grid
-CATALOG_NS="${CATALOG_NAMESPACE:-openshift-gitops}"
 NAME=ai-grid-provider-console
 SA="system:serviceaccount:${NS}:${NAME}"
 PORT="${LOCAL_PORT:-18443}"
@@ -39,7 +40,7 @@ PORT="${LOCAL_PORT:-18443}"
 # 2026-10-28 from opendatahub-io/kube-auth-proxy 099df59, on ubi9/ubi-minimal release 1793050346,
 # whose ca-certificates distrusts eMudhra, CVE-2026-114406). busybox runs netstat for step 2.
 BACKEND_PIN="$(cat "${ROOT}/.backend-api-version")"
-BACKEND_IMAGE="${BACKEND_IMAGE:-ghcr.io/ai-grid-cloud/ai-grid-provider-backend:sha-1e4bc716283708818e05486392f6828d65a6a016@sha256:92a2d955d07c62edbbf128001b19d15acd90a68de3f750cd0071443fd3bb7564}"
+BACKEND_IMAGE="${BACKEND_IMAGE:-ghcr.io/ai-grid-cloud/ai-grid-provider-backend:sha-57b2fbac336777bb06ba562c826e4e0a0a516f0e@sha256:a1f6086f00ccaa157026a9559df4f63bd1a9f11e1014581eda690619fe43a371}"
 PROXY_IMAGE="${PROXY_IMAGE:-quay.io/opendatahub/odh-kube-auth-proxy@sha256:5dc37f1a1e30927abe2dffbbfcb5a31ed8692cf498fb2684cca1b747b98b00a0}"
 BUSYBOX_IMAGE=docker.io/library/busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
 ROUTE_CRD=https://raw.githubusercontent.com/openshift/api/a9b3f04dd8db4c20aacca607afeff8ddbc25d863/route/v1/zz_generated.crd-manifests/routes.crd.yaml
@@ -106,7 +107,7 @@ k wait --for=condition=Established --timeout=60s \
 if [[ -z "${created}" ]]; then
   step "reusing kind cluster ${CLUSTER}: removing what an earlier run left"
   helm --kube-context "${CTX}" uninstall console -n "${NS}" --ignore-not-found --wait >/dev/null
-  k delete namespace "${NS}" --ignore-not-found --wait >/dev/null
+  k delete namespace "${NS}" ai-grid-idp-secrets --ignore-not-found --wait >/dev/null
   k delete managedcluster site-a --ignore-not-found >/dev/null
   k delete clusterrolebinding,clusterrole tester-managedclusters --ignore-not-found >/dev/null
   k -n default delete serviceaccount tester --ignore-not-found >/dev/null
@@ -133,13 +134,33 @@ IMAGES=(--set images.console.repository=localhost/ai-grid-provider-console --set
 # Subscriptions answer 503 until the clone succeeds. .invalid never resolves, so the run needs no
 # network or repository.
 GIT_URL=https://git.invalid/catalog.git
-VALUES=(--set tls.serviceCA=false --set backend.git.url="${GIT_URL}"
-  --set-string backend.git.catalogNamespace="${CATALOG_NS}" "${IMAGES[@]}")
+VALUES=(--set tls.serviceCA=false --set backend.git.url="${GIT_URL}" "${IMAGES[@]}")
 
 step "namespace ${NS} and the secrets the chart expects to exist"
 k create namespace "${NS}" --dry-run=client -o yaml | k apply -f - >/dev/null
-# Argo CD owns this namespace on a hub; kind only needs it for the catalog's read-only RBAC.
-k create namespace "${CATALOG_NS}" --dry-run=client -o yaml | k apply -f - >/dev/null
+# In git mode the chart grants the backend a Role in Argo CD's namespace, where the catalog's
+# Applications are (templates/rbac.yaml). kind has no Argo CD: the namespace and a bare
+# Application CRD stand in for it. Without the CRD, `kubectl auth can-i ... applications.argoproj.io`
+# can't map the resource and checks a core-group resource of that name instead, so every answer
+# below would be "no", whatever the Role grants.
+k create namespace openshift-gitops --dry-run=client -o yaml | k apply -f - >/dev/null
+k apply -f - >/dev/null <<'YAML'
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: applications.argoproj.io
+spec:
+  group: argoproj.io
+  scope: Namespaced
+  names: {plural: applications, singular: application, kind: Application}
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema: {type: object, x-kubernetes-preserve-unknown-fields: true}
+YAML
+k wait --for=condition=Established crd/applications.argoproj.io --timeout=60s >/dev/null
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=${NAME}.${NS}.svc" \
   -addext "subjectAltName=DNS:${NAME}.${NS}.svc,DNS:localhost" \
   -keyout "${TMP}/tls.key" -out "${TMP}/tls.crt" 2>/dev/null
@@ -254,6 +275,17 @@ pods_gone
 step "2. helm install"
 helm --kube-context "${CTX}" install console "${CHART}" -n "${NS}" "${VALUES[@]}" >/dev/null
 rollout
+# backend.idpSecrets: the backend gets an organization's IdP client secret by name, and nothing more.
+[[ "$(k auth can-i get secrets -n ai-grid-idp-secrets --as "${SA}")" == yes ]] ||
+  fail "the backend can't get Secrets in ai-grid-idp-secrets"
+for verb in list watch create update patch delete; do
+  [[ "$(k auth can-i "${verb}" secrets -n ai-grid-idp-secrets --as "${SA}" || true)" == no ]] ||
+    fail "the backend can ${verb} Secrets in ai-grid-idp-secrets"
+done
+# Its own namespace holds the OAuth, Keycloak and Git credentials.
+[[ "$(k auth can-i get secrets -n "${NS}" --as "${SA}" || true)" == no ]] ||
+  fail "the backend can get Secrets in ${NS}"
+pass "the backend can only get Secrets in ai-grid-idp-secrets"
 forward
 u="https://127.0.0.1:${PORT}"
 expect 200 "readyz without a login, and the backend answers its ping" "${u}/readyz"
@@ -303,6 +335,17 @@ for service in Models Subscriptions; do
 done
 expect 200 "a provider admin's Connect call reaches the backend through the relay" "${auth[@]}" "${connect[@]}" "${u}/ai_grid.v1.AiGrid/Ping"
 expect 200 "the frontend is served" "${auth[@]}" "${u}/"
+# Models and Subscriptions read their status from the catalog's Argo CD Applications in
+# openshift-gitops: the backend may get and list them there, and nothing else of Argo CD's.
+can() { k auth can-i "$@" --as="${SA}" 2>/dev/null || true; }
+for verb in get list; do
+  [[ "$(can "${verb}" applications.argoproj.io -n openshift-gitops)" == yes ]] ||
+    fail "the backend may not ${verb} Applications in openshift-gitops"
+done
+[[ "$(can watch applications.argoproj.io -n openshift-gitops)" == no ]] || fail "the backend may watch Applications"
+[[ "$(can list applications.argoproj.io -n "${NS}")" == no ]] || fail "the backend may list Applications in ${NS}"
+[[ "$(can list applications.argoproj.io --all-namespaces)" == no ]] || fail "the backend may list Applications everywhere"
+pass "the backend may get and list the catalog's Applications in openshift-gitops, and no more"
 
 # Only the proxy may listen off loopback: the BFF trusts identity headers, and the backend's gRPC
 # port and REST gateway have no authentication of their own.
@@ -362,13 +405,19 @@ k label managedcluster site-a team=a >/dev/null || fail "the policy must not app
 pass "other users are not limited"
 
 step "4. helm uninstall"
+# A provider admin's Secret, made by hand as the chart README says.
+k -n ai-grid-idp-secrets create secret generic test-idp --from-literal=client-secret=x >/dev/null
 helm --kube-context "${CTX}" uninstall console -n "${NS}" --wait >/dev/null
 left="$(k get clusterrole,clusterrolebinding,validatingadmissionpolicy,validatingadmissionpolicybinding \
   -l app.kubernetes.io/name="${NAME}" -o name)"
 [[ -z "${left}" ]] || fail "uninstall left: ${left}"
 pass "no cluster-scoped objects remain"
-left="$(k -n "${CATALOG_NS}" get role,rolebinding -l app.kubernetes.io/name="${NAME}" -o name)"
-[[ -z "${left}" ]] || fail "uninstall left catalog RBAC: ${left}"
-pass "no catalog Roles or RoleBindings remain"
+left="$(k -n openshift-gitops get role,rolebinding -l app.kubernetes.io/name="${NAME}" -o name)"
+[[ -z "${left}" ]] || fail "uninstall left in openshift-gitops: ${left}"
+pass "nothing of the chart remains in openshift-gitops"
+[[ "$(k get namespace ai-grid-idp-secrets -o jsonpath='{.status.phase}')" == Active ]] ||
+  fail "uninstall removed namespace ai-grid-idp-secrets"
+k -n ai-grid-idp-secrets get secret test-idp >/dev/null || fail "uninstall removed Secret test-idp"
+pass "namespace ai-grid-idp-secrets and its Secrets remain"
 
 echo "test-chart-kind: all checks passed"

@@ -35,6 +35,10 @@ const tones: Record<string, StatusTone> = {
   Active: 'success',
   Pending: 'info',
   Failed: 'danger',
+  // A subscription or authorization policy a cluster reports failed, or a subscription whose model
+  // isn't published there yet (watchActive in notifications/writeWatches.ts): a warning, as
+  // odh-dashboard's MaaS pages show it.
+  Degraded: 'warning',
   // A model's Status column and each cluster's (the backend's ModelState):
   // Partially ready when clusters disagree; the Git states Saved to Git (grey), Syncing (blue) and
   // Synced; Starting (blue, not PatternFly's purple info); Stopped (grey). Pending sync: a placed

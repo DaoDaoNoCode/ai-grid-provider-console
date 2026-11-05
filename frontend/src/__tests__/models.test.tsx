@@ -677,7 +677,7 @@ describe('a background poll', () => {
     expect(deployment()).toHaveTextContent(/^DeploymentNot on the cluster yet$/);
     granite.status!.clusters[0].deployment = ModelDeploymentState.RUNNING;
     await act(() => vi.advanceTimersByTimeAsync(30000));
-    await waitFor(() => expect(deployment()).toHaveTextContent(/^DeploymentReady$/));
+    await waitFor(() => expect(deployment()).toHaveTextContent(/^DeploymentRunning$/));
     granite.status!.clusters = [];
     await act(() => vi.advanceTimersByTimeAsync(30000));
     await waitFor(() => expect(screen.queryByTestId('cluster-status-modal')).not.toBeInTheDocument());

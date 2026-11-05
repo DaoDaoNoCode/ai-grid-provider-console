@@ -2,7 +2,9 @@
 // review. The backend commits these writes to a Git repository, and Argo CD applies them to the
 // clusters later, so the words name each stage as it is: a write is "saved to Git" (or "deleted
 // from Git"), a model is "ready" only once it runs on every cluster it is placed on (each cluster's
-// status; users reach it through MaaS once a subscription covers it too).
+// deployment; users reach it through MaaS once a subscription covers it too), "running but isn't
+// available to users" when it runs but MaaS failed to publish it, and a subscription is "active"
+// only once it and its authorization policy are active on every ingress cluster.
 // They follow frontend/AGENTS.md, "Wording": "Unable to <verb> <object>" for errors, no end
 // punctuation in titles.
 import { modelPath } from '../pages/models/modelUtils';
@@ -31,6 +33,8 @@ export type WriteTarget = {
   expected?: WriteFields;
   /** For a model: the clusters the write deploys it to, or removes it from. */
   clusters?: string[];
+  /** For a created subscription: its organization's name, when the form had it. */
+  organization?: string;
 };
 
 const subjects: Record<
@@ -94,7 +98,10 @@ const thing = (t: WriteTarget) =>
 /** How long a write that outlasts the form is checked for, in the words below. */
 export const READBACK_MINUTES = 2;
 
-/** How long a deployed model is watched until it is ready (and an edited one at all), in the words below. */
+/**
+ * How long a deployed model is watched until it is ready, a created subscription until it is
+ * active (and an edited one of either at all), in the words below.
+ */
 export const READY_MINUTES = 30;
 
 /** The info entry while the write is out: the form left before the backend answered. */
@@ -226,6 +233,20 @@ export const modelNotReadyText = (id: string, name: string, clusters: string[]):
   actions: [{ title: 'View model', to: modelPath({ id }) }],
 });
 
+/** What a status watch says when its last read failed: nothing about the status it couldn't read. */
+const unreadStatus = (object: string) =>
+  `The console couldn't read its status ${READY_MINUTES} minutes after it was saved to Git. Open the ${object} to check its status.`;
+
+/**
+ * A deployed model's readiness watch reached READY_MINUTES with its last read failed: whether it
+ * is ready is unknown, so a warning that says so, not that it isn't ready.
+ */
+export const modelUnconfirmedText = (id: string, name: string): Text => ({
+  title: `Unable to confirm model ${name} is ready`,
+  message: unreadStatus('model'),
+  actions: [{ title: 'View model', to: modelPath({ id }) }],
+});
+
 /** A deployed model failed: why, in the words the model's page uses. */
 export const modelFailedText = (id: string, name: string, why: string | undefined): Text => ({
   title: `Unable to deploy model ${name}`,
@@ -233,9 +254,107 @@ export const modelFailedText = (id: string, name: string, why: string | undefine
   actions: [{ title: 'View model', to: modelPath({ id }) }],
 });
 
+/** A message as the end of a sentence of ours: trimmed, without its own final period. */
+const withoutPeriod = (message: string) => message.trim().replace(/\.+$/, '');
+
+/**
+ * A deployed model runs on every cluster it is placed on, but MaaS failed to publish it on an
+ * ingress cluster, so users can't call it: a warning, not "ready" and not "Unable to deploy". It
+ * names the clusters it runs on, and each ingress cluster MaaS failed on with MaaS's (or Argo CD's)
+ * message, for example "It runs on site-b. MaaS couldn't publish it on site-a: <message>. Open the
+ * model to check its status."
+ */
+export const modelUnavailableText = (
+  id: string,
+  name: string,
+  runsOn: string[],
+  failedOn: { cluster: string; message?: string }[],
+): Text => {
+  const where = failedOn.map((f) => (f.message ? `on ${f.cluster}: ${withoutPeriod(f.message)}` : `on ${f.cluster}`));
+  const runs = runsOn.length ? `It runs on ${listOf(runsOn)}. ` : '';
+  const maas = where.length ? `MaaS couldn't publish it ${where.join('; ')}.` : "MaaS couldn't publish it.";
+  return {
+    title: `Model ${name} is running but isn't available to users`,
+    message: `${runs}${maas} Open the model to check its status.`,
+    actions: [{ title: 'View model', to: modelPath({ id }) }],
+  };
+};
+
 /** An edited model failed while its changes rolled out: why, in the words the model's page uses. */
 export const modelChangesFailedText = (id: string, name: string, why: string | undefined): Text => ({
   title: `Unable to roll out changes to model ${name}`,
   message: why ?? 'The model failed after the changes were saved to Git. Open it for details.',
   actions: [{ title: 'View model', to: modelPath({ id }) }],
+});
+
+/**
+ * Who a subscription serves: the users in its groups (the glossary's words), in its organization
+ * when the form knew the organization's name. The name is never first, so it keeps its own case.
+ */
+const usersOf = (t: WriteTarget) =>
+  t.organization ? `users in its groups in the ${t.organization} organization` : 'users in its groups';
+
+/**
+ * A created subscription is active, and so is its authorization policy, on every ingress cluster:
+ * its users can call its models. MaaS needs both, the policy for access and the subscription for
+ * the quota.
+ */
+export const subscriptionActiveText = (t: WriteTarget): Text => {
+  const users = usersOf(t);
+  return {
+    title: `Subscription ${t.name} is active`,
+    message: `${users.charAt(0).toUpperCase()}${users.slice(1)} can use its models.`,
+    actions: [viewAction(t)],
+  };
+};
+
+/**
+ * A created subscription, or its authorization policy, isn't active on every ingress cluster after
+ * READY_MINUTES: what that means for its users, and where to look. A warning: it may still turn
+ * active. A subscription turns active once every model it names is registered on the cluster, so
+ * its models' status on its page is the first place to look.
+ */
+export const subscriptionNotActiveText = (t: WriteTarget, inactive: 'subscription' | 'policy'): Text => {
+  const after = `${READY_MINUTES} minutes after it was saved to Git, so ${usersOf(t)} might not be able to use its models`;
+  return {
+    title: `Subscription ${t.name} isn't active yet`,
+    message:
+      inactive === 'policy'
+        ? `Its authorization policy isn't active on every ingress cluster ${after}. Open the subscription to check the policy's status.`
+        : `It isn't active on every ingress cluster ${after}. Open the subscription to check its status and its models' status.`,
+    actions: [viewAction(t)],
+  };
+};
+
+/**
+ * A created subscription's watch reached READY_MINUTES with an ingress cluster reporting the
+ * subscription, or its authorization policy, failed (Degraded): a reported failure, so not "yet",
+ * with the backend's message when the status carries one. A warning, not an error: Degraded is also
+ * how a subscription reads while a model it names isn't published yet.
+ */
+export const subscriptionFailedText = (
+  t: WriteTarget,
+  failed: 'subscription' | 'policy',
+  message: string | undefined,
+): Text => {
+  const what = failed === 'policy' ? 'its authorization policy' : 'it';
+  const reported = message
+    ? `An ingress cluster reports ${what} failed: ${withoutPeriod(message)}.`
+    : `An ingress cluster reports ${what} failed.`;
+  const check =
+    failed === 'policy'
+      ? "Open the subscription to check the policy's status."
+      : "Open the subscription to check its status and its models' status.";
+  return { title: `Subscription ${t.name} isn't active`, message: `${reported} ${check}`, actions: [viewAction(t)] };
+};
+
+/**
+ * A created subscription's watch reached READY_MINUTES without a status to judge by: its last read
+ * failed, or found no status (the backend's read of the clusters' reports failed). Whether it is
+ * active is unknown, so a warning that says so, not that it isn't active.
+ */
+export const subscriptionUnconfirmedText = (t: WriteTarget): Text => ({
+  title: `Unable to confirm subscription ${t.name} is active`,
+  message: unreadStatus('subscription'),
+  actions: [viewAction(t)],
 });

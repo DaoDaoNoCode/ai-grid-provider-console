@@ -85,7 +85,7 @@
             "tokenUrl": "https://sso.example.com/realms/globex-research/protocol/openid-connect/token",
             "defaultScopes": "openid profile email",
             "userInfoUrl": "",
-            "jwksUrl": "",
+            "jwksUrl": "https://sso.example.com/realms/globex-research/protocol/openid-connect/certs",
             "logoutUrl": "",
             "validateSignature": true
           }
@@ -115,7 +115,7 @@
             "tokenUrl": "https://sso.example.com/realms/initech-labs/protocol/openid-connect/token",
             "defaultScopes": "openid profile email",
             "userInfoUrl": "",
-            "jwksUrl": "",
+            "jwksUrl": "https://sso.example.com/realms/initech-labs/protocol/openid-connect/certs",
             "logoutUrl": "",
             "validateSignature": true
           }

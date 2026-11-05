@@ -20,6 +20,7 @@ import { MockConsoleService } from '../api/MockConsoleService';
 import { ConditionStatus } from '../gen/ai_grid/v1/condition_type_pb';
 import { SubscriptionSchema, type Subscription } from '../gen/ai_grid/v1/subscription_type_pb';
 import { DISPLAY_NAME } from '../pages/models/modelView';
+import { watchesKey } from '../notifications/storageKeys';
 import {
   ACME_ID,
   fleetOf,
@@ -375,6 +376,15 @@ describe('administrator subscription flows', () => {
     await screen.findByTestId('subscriptions-table');
     expect(await screen.findByRole('link', { name: 'Test team' })).toBeVisible();
     expect(await screen.findByText('Subscription Test team saved to Git')).toBeVisible();
+    // The notification center follows it until it is active, to name its organization then.
+    expect(JSON.parse(window.sessionStorage.getItem(watchesKey('dev-user')) ?? '[]')).toContainEqual(
+      expect.objectContaining({
+        subject: 'subscription',
+        id: 'test-team',
+        stage: 'ready',
+        organization: 'acme-robotics',
+      }),
+    );
     // Subscriptions/Create: the id, the display name annotation, the organization, bare groups,
     // and the model by its id with no namespace (SubscriptionModelRef.model_id).
     const [{ object }] = subscriptionsOf(service).sent('create');
@@ -600,6 +610,22 @@ it('requires an organization and shows it in the table', async () => {
     'No organization has the ID retired-org. It was deleted, or created again with a new ID. The organization of a subscription can’t be changed, so delete this subscription and create it again for the organization.',
   );
   expect(stored(service, 'test-team').spec?.organization?.id).toBe('8d2e7b31-0c4f-4a9d-b5e6-7f8a9b0c1d2e');
+});
+
+it('names an organization without a name by its id, as the select shows it, for the notification that the subscription is active', async () => {
+  const service = seeded();
+  service.organizations.push({ ...service.organizations[2], id: 'nameless-org', name: '' });
+  const user = userEvent.setup();
+  renderAt('/subscriptions/create', service);
+  await fillNewSubscription(user);
+  await pickOrganization(user, 'nameless-org');
+  expect(screen.getByRole('combobox', { name: 'Organization' })).toHaveValue('nameless-org');
+  await user.click(screen.getByTestId('create-subscription-button'));
+  expect(await screen.findByText('Subscription Test team saved to Git')).toBeVisible();
+  // The watch that says it is active names its organization as the select did.
+  expect(JSON.parse(window.sessionStorage.getItem(watchesKey('dev-user')) ?? '[]')).toContainEqual(
+    expect.objectContaining({ subject: 'subscription', id: 'test-team', stage: 'ready', organization: 'nameless-org' }),
+  );
 });
 
 /** Sets a stored subscription's organization id. */
@@ -888,6 +914,7 @@ describe('subscription phases', () => {
       withPhase('unreported-sub', ''),
       withPhase('pending-sub', 'Pending'),
       withPhase('active-sub', 'Active'),
+      withPhase('degraded-sub', 'Degraded'),
     );
     renderAt('/subscriptions', service);
     const table = await screen.findByTestId('subscriptions-table');
@@ -898,7 +925,11 @@ describe('subscription phases', () => {
     expect(label('pending-sub')).toHaveTextContent('Pending');
     // Active, as its policy's phase reads beside it.
     expect(label('active-sub')).toHaveTextContent('Active');
-    for (const name of ['unreported-sub', 'pending-sub', 'active-sub']) {
+    // A cluster reports it failed (maasPhase), or a model it names isn't published there yet: a
+    // warning, as odh-dashboard shows MaaS's Degraded, not a neutral unknown word.
+    expect(label('degraded-sub')).toHaveTextContent('Degraded');
+    expect(label('degraded-sub')).toHaveClass('pf-m-warning');
+    for (const name of ['unreported-sub', 'pending-sub', 'active-sub', 'degraded-sub']) {
       expect(label(name)).toHaveClass('pf-m-outline');
       expect(within(label(name)).queryByRole('button')).not.toBeInTheDocument();
     }

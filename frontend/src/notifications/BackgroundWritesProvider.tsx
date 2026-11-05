@@ -2,9 +2,10 @@
 // repository, which takes seconds and on a slow day longer than the BFF waits. A form waits briefly
 // for the answer; past that it leaves as on success and the write goes on here, at the app root:
 // its answer, or when the answer is lost, a read-back of the object, becomes a notification. Each
-// model deployed is then watched until it is ready, and each model edited while its changes roll
-// out. The watches are kept in the tab's session storage under the signed-in user, so a reload
-// resumes them; they are never shared with another tab, user or admin.
+// model deployed is then watched until it is ready, and each subscription created until it is
+// active; each model or subscription edited while its changes are applied. The watches are kept
+// in the tab's session storage under the signed-in user, so a reload resumes them; they are never
+// shared with another tab, user or admin.
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Code, ConnectError } from '@connectrpc/connect';
 import { createConnectQueryKey, createQueryOptions, useTransport } from '@connectrpc/connect-query';
@@ -15,6 +16,7 @@ import { get as getModel } from '../gen/ai_grid/v1/models_service-Models_connect
 import { Subscriptions } from '../gen/ai_grid/v1/subscriptions_service_pb';
 import { get as getSubscription } from '../gen/ai_grid/v1/subscriptions_service-Subscriptions_connectquery';
 import { toModelView } from '../pages/models/modelView';
+import { readyConditionOf } from '../pages/subscriptions/subscriptionText';
 import type { GetStorage } from '../utilities/signInAgain';
 import { isObject, readRecords, removeRecords, writeRecords } from './sessionRecords';
 import { draftsKey, watchesKey } from './storageKeys';
@@ -26,13 +28,19 @@ import { modelFields, subscriptionFields } from './writeFields';
 import { failedText, pendingText, succeededText, type WriteTarget } from './writeText';
 import {
   READBACK_POLL_MS,
+  READY_MS,
   READY_POLL_MS,
+  nextHistory,
   readBack,
   statusOf,
+  watchActive,
   watchChanges,
   watchReady,
+  watchSubscriptionChanges,
   type ReadAnswer,
   type ReadObject,
+  type SubscriptionHistory,
+  type Verdict,
 } from './writeWatches';
 
 /**
@@ -53,10 +61,16 @@ const defaultFormWait = (signal: AbortSignal) =>
 /**
  * A watch as kept in storage. `sent`: the write's request is out, kept before it was sent; a write
  * whose answer this page no longer awaits (a reload) is read back. `readback`: confirming a write
- * whose answer was lost. `ready`: a deployed model, until it is ready. `changes`: an edited model,
- * while its changes roll out (watchChanges). `notificationId` is the write's in-progress entry,
- * which its outcome replaces. `status`: a model watch's last seen status (statusOf), so a reload
- * still tells a change from none.
+ * whose answer was lost. `ready`: a deployed model until it is ready (watchReady), a created
+ * subscription until it is active (watchActive). `changes`: an edited model while its changes roll
+ * out (watchChanges), an edited subscription while they are applied (watchSubscriptionChanges).
+ * `notificationId` is the write's in-progress entry, which its outcome replaces. `status`: a status
+ * watch's last seen status (statusOf), so a reload still tells a change from none. `empties`,
+ * `lastVerdict` and `lastMessage`: a subscription watch's history (SubscriptionHistory), so a reload
+ * goes on counting.
+ * `edit`: on a `ready` watch, the latest edit of the object made while it ran (its name and when it
+ * landed), whose name the watch's outcome uses (a rename), and which the watch goes on following as
+ * a `changes` watch once it ends, until that edit's own READY_MS has run out.
  */
 type WatchRecord = WriteTarget & {
   key: string;
@@ -64,10 +78,45 @@ type WatchRecord = WriteTarget & {
   since: number;
   notificationId?: string;
   status?: string;
+  empties?: number;
+  lastVerdict?: Verdict;
+  lastMessage?: string;
+  edit?: { name: string; since: number };
 };
 
-/** The watches that follow a model's status after its write landed. */
-const modelStages: ReadonlySet<WatchRecord['stage']> = new Set(['ready', 'changes']);
+/**
+ * The id of a watch's outcome in the notification center when it has no in-progress entry to
+ * replace: the same for every run of the watch (its kind, stage, object and start), so an outcome
+ * reached again after a reload replaces the first rather than adding a second.
+ */
+const outcomeId = (record: WatchRecord) => `watch:${record.subject}:${record.stage}:${record.id}:${record.since}`;
+
+const outcomeVariants = {
+  [NotificationResponseStatus.SUCCESS]: 'success',
+  [NotificationResponseStatus.ERROR]: 'danger',
+  [NotificationResponseStatus.WARNING]: 'warning',
+} as const;
+
+/** The write a record follows, without the record's own bookkeeping. */
+const targetOf = ({ subject, op, id, name, version, expected, clusters, organization }: WatchRecord): WriteTarget => ({
+  subject,
+  op,
+  id,
+  name,
+  ...(version === undefined ? {} : { version }),
+  ...(expected ? { expected } : {}),
+  ...(clusters ? { clusters } : {}),
+  ...(organization ? { organization } : {}),
+});
+
+const historyOf = (record: WatchRecord): SubscriptionHistory => ({
+  empties: record.empties ?? 0,
+  ...(record.lastVerdict ? { last: record.lastVerdict } : {}),
+  ...(record.lastMessage ? { message: record.lastMessage } : {}),
+});
+
+/** The watches that follow an object's status after its write landed. */
+const statusStages: ReadonlySet<WatchRecord['stage']> = new Set(['ready', 'changes']);
 
 const isFields = (value: unknown) => isObject(value) && Object.values(value).every((v) => typeof v === 'string');
 
@@ -82,6 +131,21 @@ const isRecord = (value: unknown): value is WatchRecord =>
   (value.expected === undefined || isFields(value.expected)) &&
   (value.notificationId === undefined || typeof value.notificationId === 'string') &&
   (value.status === undefined || typeof value.status === 'string') &&
+  (value.organization === undefined || typeof value.organization === 'string') &&
+  (value.empties === undefined ||
+    (typeof value.empties === 'number' && Number.isInteger(value.empties) && value.empties >= 0)) &&
+  (value.lastVerdict === undefined ||
+    value.lastVerdict === 'active' ||
+    value.lastVerdict === 'policy' ||
+    value.lastVerdict === 'subscription' ||
+    value.lastVerdict === 'policyDegraded' ||
+    value.lastVerdict === 'subscriptionDegraded') &&
+  (value.lastMessage === undefined || typeof value.lastMessage === 'string') &&
+  (value.edit === undefined ||
+    (isObject(value.edit) &&
+      typeof value.edit.name === 'string' &&
+      typeof value.edit.since === 'number' &&
+      Number.isFinite(value.edit.since))) &&
   (value.clusters === undefined ||
     (Array.isArray(value.clusters) && value.clusters.every((c) => typeof c === 'string'))) &&
   (value.subject === 'model' || value.subject === 'subscription') &&
@@ -136,7 +200,7 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
   // The watches registered with the watcher, and the writes whose answer this page still awaits.
   // Sets that live as long as the provider, so an effect's cleanup reads the same ones.
   const registered = useRef(new Set<string>());
-  // Each model watch's last seen status (statusOf), to refresh the pages only on a change.
+  // Each status watch's last seen status (statusOf), to refresh the pages only on a change.
   const lastStatus = useRef(new Map<string, string>());
   const inFlight = useRef(new Set<string>());
 
@@ -187,12 +251,26 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
             }
           );
         }
-        const { object } = await queryClient.fetchQuery({
+        const { object, authPolicies } = await queryClient.fetchQuery({
           ...createQueryOptions(getSubscription, { id }, { transport }),
           staleTime: 0,
           retry: false,
         });
-        return object && { version: object.metadata?.version ?? 0, fields: subscriptionFields(object) };
+        return (
+          object && {
+            version: object.metadata?.version ?? 0,
+            fields: subscriptionFields(object),
+            subscription: {
+              phase: object.status?.phase.trim() ?? '',
+              message: readyConditionOf(object.status?.conditions).statusMessage?.trim() || undefined,
+              policies: authPolicies.map((p) => ({
+                id: p.id,
+                phase: p.phase.trim(),
+                message: readyConditionOf(p.conditions).statusMessage?.trim() || undefined,
+              })),
+            },
+          }
+        );
       } catch (err) {
         if (ConnectError.from(err).code === Code.NotFound) return undefined;
         throw err;
@@ -208,19 +286,33 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
      */
     function startWatchFn(record: WatchRecord) {
       keep(record);
-      const { key, stage, since, notificationId, status: kept, ...target } = record;
-      const followsModel = modelStages.has(stage);
+      const { key, stage, since, notificationId, status: kept } = record;
+      const followsStatus = statusStages.has(stage);
+      const isModel = record.subject === 'model';
       registered.current.add(key);
       if (kept !== undefined) lastStatus.current.set(key, kept);
+      // The subscription watch's history, as its record has it (a reload goes on from it).
+      let history = historyOf(record);
       registerNotification({
         id: key,
         notificationId,
-        callbackDelay: followsModel ? READY_POLL_MS : READBACK_POLL_MS,
+        callbackDelay: followsStatus ? READY_POLL_MS : READBACK_POLL_MS,
         callback: async (signal) => {
-          // What this poll read, to tell whether the object changed since the last one.
-          const seen: { answered: boolean; answer?: ReadAnswer } = { answered: false };
+          // The write this watch follows, under the name of the latest edit made while it runs
+          // (`edit`, which a rename changes): its outcome names the object as the pages show it.
+          const latestEdit = records.current.find((r) => r.key === key)?.edit;
+          const target = { ...targetOf(record), ...(latestEdit ? { name: latestEdit.name } : {}) };
+          // What this poll read, to tell whether the object changed since the last one, or that the
+          // read failed.
+          const seen: { answered: boolean; failed: boolean; answer?: ReadAnswer } = { answered: false, failed: false };
           const observe: ReadObject = async (subject, id) => {
-            const answer = await read(subject, id);
+            let answer: ReadAnswer | undefined;
+            try {
+              answer = await read(subject, id);
+            } catch (err) {
+              seen.failed = true;
+              throw err;
+            }
             seen.answered = true;
             seen.answer = answer;
             return answer;
@@ -228,51 +320,119 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
           const before = lastStatus.current.get(key);
           const response =
             stage === 'ready'
-              ? await watchReady(target, since, observe, now)
+              ? isModel
+                ? await watchReady(target, since, observe, now)
+                : await watchActive(target, since, observe, now, history)
               : stage === 'changes'
-                ? await watchChanges(target, since, observe, now, before)
+                ? isModel
+                  ? await watchChanges(target, since, observe, now, before)
+                  : await watchSubscriptionChanges(target, since, observe, now, history)
                 : await readBack(target, since, observe, now);
           if (signal.aborted) return response;
           const final = response.status !== NotificationResponseStatus.REPOLL;
-          // A model watch that sees the model's status change (its phase, or any cluster's) has
-          // every page showing it refetch at once, rather than on its next poll; so does any watch
-          // that ends. A poll that sees no change refetches nothing.
+          // A status watch that sees the object's status change (a model's phase or any cluster's,
+          // a subscription's phase or its policy's) has every page showing objects of its kind
+          // refetch at once, rather than on its next poll; so does any watch that ends. A poll that
+          // sees no change refetches nothing. A failed read leaves the status as it was, and ends a
+          // run of empty reads (nextHistory).
           let changed = false;
-          if (followsModel && seen.answered) {
-            const status = statusOf(seen.answer);
+          if (followsStatus && (seen.answered || seen.failed)) {
+            const status = seen.answered ? statusOf(seen.answer) : before;
+            const nextStatusHistory = nextHistory(history, seen.answered ? seen.answer : 'failed');
             changed = before !== undefined && before !== status;
-            lastStatus.current.set(key, status);
-            if (!final && status !== before) keep({ ...record, status });
+            if (status !== undefined) lastStatus.current.set(key, status);
+            const historyMoved =
+              nextStatusHistory.empties !== history.empties ||
+              nextStatusHistory.last !== history.last ||
+              nextStatusHistory.message !== history.message;
+            history = nextStatusHistory;
+            if (!final && (status !== before || historyMoved)) {
+              keep({
+                ...(records.current.find((r) => r.key === key) ?? record),
+                ...(status === undefined ? {} : { status }),
+                empties: history.empties,
+                ...(history.last ? { lastVerdict: history.last } : {}),
+                lastMessage: history.message,
+              });
+            }
           }
           if (final || changed) refreshFn(target.subject);
           if (final) {
+            // The outcome goes to the notification center, which keeps it in storage at once,
+            // before the watch's record goes: a reload in between resumes the watch, which comes to
+            // the same outcome and replaces this entry (the same id), rather than losing both. The
+            // watcher is then told to stop, so it raises nothing of its own.
+            if (response.status !== NotificationResponseStatus.STOP) {
+              notify({
+                id: notificationId ?? outcomeId(record),
+                variant: outcomeVariants[response.status],
+                title: response.title,
+                message: response.message,
+                actions: response.actions,
+              });
+            }
+            const current = records.current.find((r) => r.key === key) ?? record;
+            const seenStatus = lastStatus.current.get(key);
             lastStatus.current.delete(key);
             registered.current.delete(key);
+            // A create's watch that reached its own end (ready or active, failed, or out of time)
+            // while an edit made meanwhile still has time goes on following the object for that
+            // edit, silently, until the edit's READY_MS runs out. A watch that stopped (the object is
+            // gone, or no status) has nothing to follow.
+            const edit = current.edit;
+            if (
+              stage === 'ready' &&
+              response.status !== NotificationResponseStatus.STOP &&
+              edit &&
+              now() < edit.since + READY_MS
+            ) {
+              startWatchFn({
+                ...targetOf(current),
+                op: 'update',
+                name: edit.name,
+                key: newKey(),
+                stage: 'changes',
+                since: edit.since,
+                ...(seenStatus === undefined ? {} : { status: seenStatus }),
+                empties: history.empties,
+                ...(history.last ? { lastVerdict: history.last } : {}),
+                lastMessage: history.message,
+              });
+            }
             drop(key);
-            if (response.status === NotificationResponseStatus.SUCCESS && !followsModel) {
+            if (response.status === NotificationResponseStatus.SUCCESS && !followsStatus) {
               landedFn(target);
             }
+            return { status: NotificationResponseStatus.STOP };
           }
           return response;
         },
       });
     }
     /**
-     * A write that landed: the pages refetch, and a model's status is followed. One watch per model,
-     * so nothing is said twice:
-     * - a deploy is watched until the model is ready, replacing any earlier watch of the id (a model
-     *   deleted and deployed again within the first's 30 minutes);
-     * - an edit is watched while its changes roll out (watchChanges, never "ready": the status
-     *   doesn't say which revision it describes), replacing the previous edit's watch; while a
-     *   deploy's readiness watch of the model still runs, that one goes on alone, as it follows the
-     *   same status and reports the same failures;
-     * - a delete stops the model's watches at once.
+     * A write that landed: the pages refetch, and the object's status is followed. One watch per
+     * model and per subscription, so nothing is said twice:
+     * - a deploy is watched until the model is ready, a create until the subscription is active,
+     *   replacing any earlier watch of the id (an object deleted and created again within the
+     *   first's 30 minutes);
+     * - an edit is watched while its changes are applied (watchChanges, watchSubscriptionChanges:
+     *   never "ready" or "active", as the status doesn't say which version it describes),
+     *   replacing the previous edit's watch; while a create's readiness watch of the object still
+     *   runs, that one goes on as the one watch, as it follows the same status (and, for a model,
+     *   reports the same failures), and records the edit: when it ends, it goes on as the edit's
+     *   watch until the edit's own 30 minutes run out;
+     * - a delete stops the object's watches at once.
      */
     function landedFn(target: WriteTarget) {
       refreshFn(target.subject);
-      if (target.subject !== 'model') return;
-      const watches = records.current.filter((r) => modelStages.has(r.stage) && r.id === target.id);
-      if (target.op === 'update' && watches.some((r) => r.stage === 'ready')) return;
+      const watches = records.current.filter(
+        (r) => statusStages.has(r.stage) && r.subject === target.subject && r.id === target.id,
+      );
+      const ready = watches.find((r) => r.stage === 'ready');
+      if (target.op === 'update' && ready) {
+        keep({ ...ready, edit: { name: target.name, since: now() } });
+        return;
+      }
       for (const earlier of watches) {
         unregisterNotification(earlier.key);
         registered.current.delete(earlier.key);
@@ -288,7 +448,7 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
       void queryClient.invalidateQueries({ queryKey: createConnectQueryKey({ schema, cardinality: undefined }) });
     }
     return { startWatch: startWatchFn, landed: landedFn };
-  }, [keep, drop, read, now, registerNotification, unregisterNotification, queryClient]);
+  }, [keep, drop, read, now, notify, registerNotification, unregisterNotification, queryClient]);
 
   // Storage is read once per user: when the user is first known (a reload resumes that user's
   // watches) and when it changes (the previous user's watches stop and leave the tab). Every run,

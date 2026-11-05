@@ -20,6 +20,8 @@ test('creates, views, edits and deletes an organization', async ({ page }) => {
   await page.getByRole('textbox', { name: /^Issuer/ }).fill(issuer);
   await page.getByRole('textbox', { name: /^Authorization URL/ }).fill(`${issuer}/auth`);
   await page.getByRole('textbox', { name: /^Token URL/ }).fill(`${issuer}/token`);
+  // Required while Validate signature is on, as it is by default.
+  await page.getByRole('textbox', { name: /^JWKS URL/ }).fill(`${issuer}/certs`);
   await page.getByRole('button', { name: 'Next' }).click();
 
   // Step 3: review

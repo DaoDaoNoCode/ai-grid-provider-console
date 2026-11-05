@@ -63,6 +63,19 @@ const url = z
   .url('Enter a valid HTTP or HTTPS URL.')
   .refine((value) => /^https?:\/\//.test(value), 'Use HTTP or HTTPS.');
 const optionalUrl = z.union([z.literal(''), url]).default('');
+/** The message for an identity provider that validates signatures without a JWKS URL. */
+export const JWKS_REQUIRED = 'Enter the JWKS URL, or turn off Validate signature.';
+
+/**
+ * Keycloak validates a token's signature with the provider's keys from the JWKS URL. With
+ * validation on and no JWKS URL, every sign-in through the provider fails, so the URL is
+ * required while Validate signature is on.
+ */
+function requireJwksToValidate(value: { jwksUrl?: string; validateSignature?: boolean }, ctx: z.RefinementCtx) {
+  if (value.validateSignature !== false && !value.jwksUrl) {
+    ctx.addIssue({ code: 'custom', path: ['jwksUrl'], message: JWKS_REQUIRED });
+  }
+}
 export const oidcConfigSchema = z
   .object({
     clientId: z.string().trim().min(1, 'Client ID is required.').max(253),
@@ -85,7 +98,8 @@ export const oidcConfigSchema = z
     logoutUrl: optionalUrl,
     validateSignature: z.boolean().default(true),
   })
-  .strict();
+  .strict()
+  .superRefine(requireJwksToValidate);
 export const identityProviderSchema = z
   .object({
     title: z.string().trim().max(253).default(''),

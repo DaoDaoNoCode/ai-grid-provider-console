@@ -1,6 +1,7 @@
 // Stopgap: the messages of the backend's real ai_grid.v1 Tenants service, copied from
 // ai-grid-provider-backend proto/ai_grid/v1 at 8c1a1bc (metadata_type, tenant_type,
-// tenants_service), so
+// tenants_service), with TenantSpec.identity_provider, IdentityProvider and OidcConfig from
+// 57b2fba, so
 // the BFF can call those RPCs. Fields the BFF doesn't use are
 // left out. Field numbers, names and types are unchanged; the validation and HTTP
 // options are dropped. The package is renamed because the draft in ../../v1 declares the same
@@ -35,6 +36,27 @@ message Tenant {
 
 message TenantSpec {
   repeated string domains = 1;
+  IdentityProvider identity_provider = 2;
+}
+
+message IdentityProvider {
+  string title = 1;
+  string description = 2;
+  optional bool enabled = 3;
+  OidcConfig config = 4;
+}
+
+message OidcConfig {
+  string client_id = 1;
+  string client_secret_secret_name = 2;
+  string issuer = 3;
+  string authorization_url = 4;
+  string token_url = 5;
+  string default_scopes = 6;
+  string user_info_url = 7;
+  string jwks_url = 8;
+  string logout_url = 9;
+  optional bool validate_signature = 10;
 }
 
 message TenantStatus {}

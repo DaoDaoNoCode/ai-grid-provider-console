@@ -50,12 +50,6 @@ export type StateWord =
   'Saved to Git' | 'Syncing' | 'Synced' | 'Starting' | 'Ready' | 'Partially ready' | 'Failed' | 'Stopped' | 'Unknown';
 
 /**
- * A model's deployment on a cluster as the pages word it (ModelDeploymentState): Ready, Starting,
- * Failed, or Stopped (KServe's stop annotation); none while it isn't on the cluster.
- */
-export type DeploymentWord = 'Ready' | 'Starting' | 'Failed' | 'Stopped' | 'Unknown';
-
-/**
  * Whether Argo CD has applied Git's change on a cluster (ModelSyncState): Synced, Out of sync (not
  * applied yet, or being retried) or Sync failed; none while the cluster has no Application.
  */
@@ -74,19 +68,31 @@ export type MaaSWord =
 /** The model on one cluster its placement names, as the backend reports it (`status.clusters`). */
 export type ModelClusterView = {
   cluster: string;
-  /** Ready, Failed or Pending. */
+  /**
+   * Ready, Failed or Pending: every report from the cluster ready, one failed, or one not ready or
+   * missing. On a combined cluster its MaaSModelRef and ExternalModel reports count too.
+   */
   phase: ModelPhaseWord;
-  /** Ready, Failed, NotReady or NoReport. */
+  /** Ready, Failed, NotReady, Stopped or NoReport. */
   reason: string;
   /** What the cluster reported, for example "LLMInferenceService not ready". */
   message?: string;
-  /** The cluster's LLMInferenceService; undefined while it hasn't reported one. */
-  deployment?: DeploymentWord;
-  /** KServe's message about it, for example "Deployment does not have minimum availability.". */
+  /**
+   * What the cluster's LLMInferenceService reports (`deployment`), whatever MaaS reports on a
+   * combined cluster and Argo CD's sync: Running (Ready), Starting, Stopped, Failed, or Unknown
+   * while it isn't on the cluster.
+   */
+  deployment: ModelDeploymentWord;
+  /** KServe's message about the deployment, for example "Deployment does not have minimum availability.". */
   deploymentMessage?: string;
   /** Whether Argo CD has applied the model on the cluster as Git has it; undefined with no report. */
   sync?: SyncWord;
-  /** Argo CD's message while its sync failed or is being retried. */
+  /**
+   * Whether Argo CD's sync of the model to the cluster failed and it stopped retrying (`sync`
+   * FAILED): the revision Git holds never lands there, an admission refusal or a bad manifest.
+   */
+  syncFailed?: boolean;
+  /** Argo CD's sync operation message while the sync failed or is being retried (`sync_message`). */
   syncMessage?: string;
   /** Git sync and deployment in one word (ModelClusterStatus.state); undefined with no report. */
   state?: StateWord;
@@ -96,11 +102,24 @@ export type ModelClusterView = {
   viewTarget?: 'OpenShift AI' | 'OpenShift console';
 };
 
+/** What a placed cluster's LLMInferenceService reports, in words (ModelDeploymentState). */
+export type ModelDeploymentWord = 'Running' | 'Starting' | 'Stopped' | 'Failed' | 'Unknown';
+
+const deploymentWords: Record<ModelDeploymentState, ModelDeploymentWord> = {
+  [ModelDeploymentState.UNSPECIFIED]: 'Unknown',
+  [ModelDeploymentState.STARTING]: 'Starting',
+  [ModelDeploymentState.RUNNING]: 'Running',
+  [ModelDeploymentState.FAILED]: 'Failed',
+  [ModelDeploymentState.STOPPED]: 'Stopped',
+};
+
 /** The model in MaaS on one ingress cluster, as the backend reports it (`status.ingress`). */
 export type ModelIngressView = {
   cluster: string;
   /** Undefined while the cluster hasn't reported the model. */
   maas?: MaaSWord;
+  /** Whether MaaS or Argo CD reports the model failed there. */
+  failed: boolean;
   /** MaaS's or Argo CD's message, for example "Awaiting governance pairing". */
   message?: string;
 };
@@ -146,10 +165,13 @@ export type ModelView = {
   selectedClusters: string[];
   /** Each placed cluster's status; empty while no cluster has reported the model. */
   clusters: ModelClusterView[];
-  /** The deployment over the placed clusters (status.deployment); undefined while none has reported. */
-  deployment?: DeploymentWord;
   /** The model in MaaS over the ingress clusters (status.maas); undefined while none has reported. */
   maas?: MaaSWord;
+  /**
+   * Whether the model failed in MaaS (`status.maas` FAILED): MaaS or the AI gateway reports it
+   * failed on an ingress cluster, or Argo CD couldn't sync it there.
+   */
+  maasFailed: boolean;
   /** The rollout in one word (status.state): what the Status column shows. */
   state: StateWord;
   /** Each ingress cluster's MaaS status; empty while no cluster has reported the model. */
@@ -169,13 +191,6 @@ const phaseWords: Record<ModelPhase, ModelPhaseWord> = {
   [ModelPhase.READY]: 'Ready',
   [ModelPhase.FAILED]: 'Failed',
   [ModelPhase.PARTIALLY_AVAILABLE]: 'Partially ready',
-};
-
-const deploymentWords: Partial<Record<ModelDeploymentState, DeploymentWord>> = {
-  [ModelDeploymentState.RUNNING]: 'Ready',
-  [ModelDeploymentState.STARTING]: 'Starting',
-  [ModelDeploymentState.FAILED]: 'Failed',
-  [ModelDeploymentState.STOPPED]: 'Stopped',
 };
 
 const syncWords: Partial<Record<ModelSyncState, SyncWord>> = {
@@ -212,10 +227,6 @@ const viewTargets: Partial<Record<ModelViewTarget, 'OpenShift AI' | 'OpenShift c
   [ModelViewTarget.OPENSHIFT_AI]: 'OpenShift AI',
   [ModelViewTarget.OPENSHIFT_CONSOLE]: 'OpenShift console',
 };
-
-/** The deployment in words: undefined when unreported (0), Unknown for a value newer than the pin. */
-export const deploymentWordOf = (state: ModelDeploymentState | undefined): DeploymentWord | undefined =>
-  state ? (deploymentWords[state] ?? 'Unknown') : undefined;
 
 /** The sync in words: undefined when unreported (0), Unknown for a value newer than the pin. */
 export const syncWordOf = (state: ModelSyncState | undefined): SyncWord | undefined =>
@@ -298,16 +309,17 @@ export const toModelView = (model: Model): ModelView => {
       phase: phaseWordOf(c.phase, c.reason),
       reason: c.reason,
       message: nonEmpty(c.message),
-      deployment: deploymentWordOf(c.deployment),
+      deployment: deploymentWords[c.deployment] ?? 'Unknown',
       deploymentMessage: nonEmpty(c.deploymentMessage),
       sync: syncWordOf(c.sync),
+      syncFailed: c.sync === ModelSyncState.FAILED,
       syncMessage: nonEmpty(c.syncMessage),
       state: stateWordOf(c.state),
       viewUrl: nonEmpty(c.viewUrl),
       viewTarget: viewTargets[c.viewTarget],
     })),
-    deployment: deploymentWordOf(status?.deployment),
     maas: maasWordOf(status?.maas),
+    maasFailed: status?.maas === ModelMaasState.FAILED,
     // A backend that doesn't report a state yet leaves only the phase: Saved to Git while it says so.
     state:
       stateWordOf(status?.state) ??
@@ -315,6 +327,7 @@ export const toModelView = (model: Model): ModelView => {
     ingress: (status?.ingress ?? []).map((i) => ({
       cluster: i.cluster,
       maas: maasWordOf(i.state),
+      failed: i.state === ModelMaasState.FAILED,
       message: nonEmpty(i.message),
     })),
     placementClusters: placementClustersOf(spec),
@@ -365,4 +378,4 @@ export const isUnsettled = (model: Pick<ModelView, 'phase' | 'state' | 'clusters
     (model.clusters.length === 0 && model.phase === 'Pending') ||
     model.clusters.some(clusterUnsettled) ||
     (model.ingress.some((i) => !i.maas || maasChanging.has(i.maas)) &&
-      model.clusters.some((c) => c.deployment === 'Ready')));
+      model.clusters.some((c) => c.deployment === 'Running')));

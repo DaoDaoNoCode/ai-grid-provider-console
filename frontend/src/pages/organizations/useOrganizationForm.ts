@@ -30,7 +30,7 @@ const initialValues = (initial?: Organization): FormValues =>
     ? {
         name: initial.name,
         domains: initial.domains,
-        // An organization created without one gets the empty form to add it.
+        // Without one, a blank provider: the edit never sends it, and the step shows a note instead.
         identityProvider: initial.identityProvider ?? emptyOrganizationInput().identityProvider,
       }
     : emptyOrganizationInput();
@@ -51,18 +51,24 @@ export const useOrganizationForm = (service: OrganizationsService, initial?: Org
 
   const detailErrors = fieldErrorsOf(tenantDetailsSchema, { name: values.name, domains: values.domains });
   const detailsValid = Object.keys(detailErrors).length === 0;
-  // Optional: the backend's Tenants API has no identity provider yet, so a blank form is valid, but
-  // only for an organization without one. A save leaves an absent field alone, so clearing an
-  // existing one would change nothing; its form must stay complete.
-  const idpBlank = !initial?.identityProvider && isBlankIdentityProvider(values.identityProvider);
-  const idpValid = idpBlank || identityProviderSchema.safeParse(values.identityProvider).success;
-  const toSave: OrganizationInput = idpBlank ? { ...values, identityProvider: undefined } : values;
+  // The backend sets an identity provider only on create: an edit can't add, change or remove one.
+  // The edit shows the stored one read-only and leaves it out of the save, which keeps it as it is.
+  const idpLocked = !!initial;
+  // Optional on create: a blank form is valid, and is left out on save.
+  const idpBlank = !idpLocked && isBlankIdentityProvider(values.identityProvider);
+  const idpValid = idpLocked || idpBlank || identityProviderSchema.safeParse(values.identityProvider).success;
+  // What Review shows: on edit, the stored identity provider or none.
+  const toSave: OrganizationInput = idpBlank
+    ? { ...values, identityProvider: undefined }
+    : idpLocked
+      ? { ...values, identityProvider: initial?.identityProvider }
+      : values;
   const serverErrors = server ? currentServerErrors(server.errors, server.sent, values) : {};
 
   const leave = () => navigate(initial ? `/organizations/${encodeURIComponent(initial.id)}` : '/organizations');
 
   const save = async () => {
-    const input = organizationInputSchema.safeParse(toSave);
+    const input = organizationInputSchema.safeParse(idpLocked ? { ...toSave, identityProvider: undefined } : toSave);
     if (saving || !input.success) return;
     setSaving(true);
     setError(undefined);
@@ -97,6 +103,8 @@ export const useOrganizationForm = (service: OrganizationsService, initial?: Org
     detailErrors,
     detailsValid,
     idpValid,
+    /** Editing: the identity provider can't change, so it's shown, never sent. */
+    idpLocked,
     /** What a save sends, which the Review step shows: the values without a blank identity provider. */
     toSave,
     /** The server's errors for name and domains, keyed like detailErrors. */

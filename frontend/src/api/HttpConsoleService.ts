@@ -79,7 +79,7 @@ export class HttpConsoleService implements ConsoleService {
     );
   }
 
-  /** PATCHes only what the PoC can change: the domains and the identity provider, not the name. */
+  /** PATCHes the domains, and the identity provider when the form sends one; never the name. */
   async updateOrganization(id: string, input: OrganizationInput, resourceVersion: string): Promise<Organization> {
     const { domains, identityProvider } = input;
     return toOrganization(

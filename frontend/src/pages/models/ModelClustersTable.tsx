@@ -124,7 +124,7 @@ const ClusterStatusModal: React.FC<{
             {row('Region', region)}
             {row('Git sync', status.sync ?? 'No report')}
             {status.syncMessage && row('Sync message', status.syncMessage)}
-            {row('Deployment', status.deployment ?? 'Not on the cluster yet')}
+            {row('Deployment', status.deployment === 'Unknown' ? 'Not on the cluster yet' : status.deployment)}
             {status.deploymentMessage && row('Deployment message', status.deploymentMessage)}
             {row('Reported', status.message ?? EMPTY_VALUE)}
           </DescriptionList>

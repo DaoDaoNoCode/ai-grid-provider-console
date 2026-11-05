@@ -7,8 +7,23 @@ import { Code, ConnectError } from '@connectrpc/connect';
 import { useQuery } from '@connectrpc/connect-query';
 import { BackendProvider } from '../api/connect/BackendProvider';
 import { fakeClients } from '../api/connect/testing';
-import { ModelClusterStatusSchema, ModelPhase, ModelSchema } from '../gen/ai_grid/v1/model_type_pb';
+import {
+  ModelClusterStatusSchema,
+  ModelDeploymentState,
+  ModelIngressStatusSchema,
+  ModelMaasState,
+  ModelPhase,
+  ModelSchema,
+  ModelState,
+  ModelSyncState,
+} from '../gen/ai_grid/v1/model_type_pb';
 import { list as listModels } from '../gen/ai_grid/v1/models_service-Models_connectquery';
+import { ConditionStatus } from '../gen/ai_grid/v1/condition_type_pb';
+import { AuthPolicySchema, SubscriptionSchema } from '../gen/ai_grid/v1/subscription_type_pb';
+import {
+  get as getSubscription,
+  list as listSubscriptions,
+} from '../gen/ai_grid/v1/subscriptions_service-Subscriptions_connectquery';
 import { memoryStorage } from '../__tests__/memoryStorage';
 import { deferred } from '../__tests__/render';
 import { BackgroundWritesProvider } from './BackgroundWritesProvider';
@@ -124,6 +139,16 @@ it("publishes nothing of a write into the next user's notifications or storage w
   expect(storage.values.get(watchesKey('bob'))).toBeUndefined();
   expect(storage.values.get(notificationsKey('bob'))).toBeUndefined();
 });
+
+/** site-b's report once the model's deployment runs there. */
+const runningOnSiteB = () =>
+  create(ModelClusterStatusSchema, {
+    cluster: 'site-b',
+    phase: ModelPhase.READY,
+    reason: 'Ready',
+    deployment: ModelDeploymentState.RUNNING,
+    state: ModelState.READY,
+  });
 
 /** A model placed on site-b, which hasn't reported it ready. */
 const pendingOnSiteB = () =>
@@ -250,9 +275,7 @@ it('refreshes the lists when a readiness watch sees the status change, and not o
     // site-b becomes ready (the whole model stays Pending, as an ingress cluster keeps it): the
     // watch says so, and the list shows it at once.
     model = pendingOnSiteB();
-    model.status!.clusters = [
-      create(ModelClusterStatusSchema, { cluster: 'site-b', phase: ModelPhase.READY, reason: 'Ready' }),
-    ];
+    model.status!.clusters = [runningOnSiteB()];
     await act(async () => {
       await vi.advanceTimersByTimeAsync(READY_POLL_MS);
     });
@@ -270,10 +293,14 @@ it('refreshes the lists when a readiness watch sees the status change, and not o
 
 /** The console with a Models list that polls nothing itself, around a model the test changes. */
 const editing = (stored: object[] = []) => {
-  const state = { model: pendingOnSiteB(), listCalls: 0 };
+  // `failing`: Get fails (Unavailable) while set.
+  const state = { model: pendingOnSiteB(), listCalls: 0, failing: false };
   const { transport } = fakeClients({
     models: {
-      get: () => ({ object: state.model }),
+      get: () => {
+        if (state.failing) throw new ConnectError('the Git catalog is unreachable', Code.Unavailable);
+        return { object: state.model };
+      },
       list: () => {
         state.listCalls += 1;
         return { items: [state.model], size: 1, total: 1 };
@@ -330,9 +357,7 @@ it("refreshes the lists when an edited model's status changes, not on a poll tha
 
     // site-b runs the new revision: the list shows it at once, and nothing says "ready".
     state.model = pendingOnSiteB();
-    state.model.status!.clusters = [
-      create(ModelClusterStatusSchema, { cluster: 'site-b', phase: ModelPhase.READY, reason: 'Ready' }),
-    ];
+    state.model.status!.clusters = [runningOnSiteB()];
     await pass(READY_POLL_MS);
     expect(state.listCalls).toBe(afterLanding + 1);
     // The refetch's answer reaches the page: the query cache tells it with a setTimeout(0), which
@@ -362,7 +387,17 @@ it('says once that an edited model failed to roll out its changes', async () => 
 
     state.model = pendingOnSiteB();
     state.model.status!.phase = ModelPhase.FAILED;
-    state.model.status!.reason = 'ConfigNotFound';
+    state.model.status!.reason = 'Failed';
+    state.model.status!.clusters = [
+      create(ModelClusterStatusSchema, {
+        cluster: 'site-b',
+        phase: ModelPhase.FAILED,
+        reason: 'Failed',
+        deployment: ModelDeploymentState.FAILED,
+        deploymentMessage: 'OOMKilled',
+        state: ModelState.FAILED,
+      }),
+    ];
     await pass(READY_POLL_MS);
     expect(screen.getAllByText('Unable to roll out changes to model Widget')).toHaveLength(1);
     expect(modelWatches(storage)).toEqual([]);
@@ -370,6 +405,42 @@ it('says once that an edited model failed to roll out its changes', async () => 
     await pass(READY_MS);
     expect(screen.getAllByText('Unable to roll out changes to model Widget')).toHaveLength(1);
     expect(screen.queryByText('Unable to deploy model Widget')).not.toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+/** The notifications the tab keeps for the user, with their messages. */
+const storedNotifications = (storage: ReturnType<typeof memoryStorage>) =>
+  JSON.parse(storage.values.get(notificationsKey('dev-user')) ?? '[]') as { title: string; message?: string }[];
+
+it("says a deployed model couldn't be deployed as soon as Argo CD gives up its sync on a placed cluster", async () => {
+  vi.useFakeTimers();
+  try {
+    const { state, storage } = editing([readyRecord(Date.now())]);
+    // The LLMInferenceService never lands on site-b: its deployment has no report.
+    state.model.status!.phase = ModelPhase.FAILED;
+    state.model.status!.reason = 'Failed';
+    state.model.status!.clusters = [
+      create(ModelClusterStatusSchema, {
+        cluster: 'site-b',
+        phase: ModelPhase.FAILED,
+        reason: 'Failed',
+        message: 'Sync failed',
+        sync: ModelSyncState.FAILED,
+        syncMessage: 'admission webhook "validating.kserve.io" denied the request',
+        state: ModelState.FAILED,
+      }),
+    ];
+    await pass(0);
+    expect(screen.getAllByText('Unable to deploy model Widget')).toHaveLength(1);
+    expect(storedNotifications(storage)).toContainEqual(
+      expect.objectContaining({
+        title: 'Unable to deploy model Widget',
+        message: 'site-b: admission webhook "validating.kserve.io" denied the request',
+      }),
+    );
+    expect(modelWatches(storage)).toEqual([]);
   } finally {
     vi.useRealTimers();
   }
@@ -383,6 +454,114 @@ it("adds no watch to an edited model whose deploy's readiness watch still runs",
   });
   expect(modelWatches(storage)).toMatchObject([{ key: 'r1', stage: 'ready' }]);
 });
+
+it("follows a model edited at 29 minutes of its deploy's watch until 59 minutes, after the deploy's warning", async () => {
+  vi.useFakeTimers();
+  try {
+    const { state, storage } = editing([readyRecord(Date.now())]);
+    await pass(0);
+    await pass(29 * 60_000);
+    await act(async () => {
+      await submitWrite(edit, async () => undefined);
+    });
+    // The deploy's 30 minutes run out: its warning, once, and the edit's watch goes on.
+    await pass(3 * READY_POLL_MS);
+    expect(screen.getAllByText("Model Widget isn't ready yet")).toHaveLength(1);
+    expect(modelWatches(storage)).toMatchObject([{ stage: 'changes' }]);
+
+    // At about 45 minutes site-b runs it: the list refetches.
+    await pass(14 * 60_000);
+    const lists = state.listCalls;
+    state.model = pendingOnSiteB();
+    state.model.status!.clusters = [runningOnSiteB()];
+    await pass(READY_POLL_MS);
+    expect(state.listCalls).toBe(lists + 1);
+
+    // Past 59 minutes it ends without a word.
+    await pass(15 * 60_000);
+    expect(modelWatches(storage)).toEqual([]);
+    expect(screen.getAllByText("Model Widget isn't ready yet")).toHaveLength(1);
+    expect(screen.queryByText(/is ready/)).not.toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('names a model renamed while its deploy is watched by the new name when it is ready', async () => {
+  vi.useFakeTimers();
+  try {
+    const { state, storage } = editing([readyRecord(Date.now())]);
+    await pass(0);
+    await act(async () => {
+      await submitWrite({ ...edit, name: 'Widget Pro' }, async () => undefined);
+    });
+    expect(screen.getByText('Changes to model Widget Pro saved to Git')).toBeInTheDocument();
+    expect(modelWatches(storage)).toMatchObject([{ key: 'r1', stage: 'ready' }]);
+
+    state.model = pendingOnSiteB();
+    state.model.status!.clusters = [runningOnSiteB()];
+    await pass(READY_POLL_MS);
+    expect(screen.getByText('Model Widget Pro is ready on site-b')).toBeInTheDocument();
+    expect(screen.queryByText(/^Model Widget is/)).not.toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('warns, by its new name, that a model renamed during its deploy runs but MaaS failed to publish it', async () => {
+  vi.useFakeTimers();
+  try {
+    const { state } = editing([readyRecord(Date.now())]);
+    await pass(0);
+    await act(async () => {
+      await submitWrite({ ...edit, name: 'Widget Pro' }, async () => undefined);
+    });
+
+    // The backend calls the whole model Failed: it runs on site-b, but MaaS failed on site-a.
+    state.model = pendingOnSiteB();
+    state.model.status!.phase = ModelPhase.FAILED;
+    state.model.status!.reason = 'Failed';
+    state.model.status!.maas = ModelMaasState.FAILED;
+    state.model.status!.ingress = [
+      create(ModelIngressStatusSchema, {
+        cluster: 'site-a',
+        state: ModelMaasState.FAILED,
+        message: 'HTTPRoute rejected by the gateway',
+      }),
+    ];
+    state.model.status!.clusters = [runningOnSiteB()];
+    await pass(READY_POLL_MS);
+    expect(screen.getByText("Model Widget Pro is running but isn't available to users")).toBeInTheDocument();
+    expect(screen.queryByText(/Unable to deploy|is ready|^Model Widget is/)).not.toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it.each([
+  ['not ready', false, "Model Widget Pro isn't ready yet"],
+  ['unknown, its last read failed', true, 'Unable to confirm model Widget Pro is ready'],
+])(
+  'names a model renamed while its deploy is watched by the new name when its 30 minutes run out (%s), after a reload',
+  async (_, failing, title) => {
+    vi.useFakeTimers();
+    try {
+      // Resumed after a reload with one check left, the rename recorded on the watch.
+      const renamed = {
+        ...readyRecord(Date.now() - READY_MS + READY_POLL_MS / 2),
+        edit: { name: 'Widget Pro', since: Date.now() - 60_000 },
+      };
+      const { state } = editing([renamed]);
+      state.failing = failing;
+      await pass(0);
+      await pass(READY_POLL_MS);
+      expect(screen.getByText(title)).toBeInTheDocument();
+      expect(screen.queryByText(/model Widget is|Model Widget isn't/)).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
 
 it("replaces an edited model's watch on the next edit, and stops it when the model is deleted", async () => {
   const { storage } = editing();
@@ -403,4 +582,573 @@ it("replaces an edited model's watch on the next edit, and stops it when the mod
     await submitWrite({ ...edit, op: 'delete' }, async () => undefined);
   });
   expect(modelWatches(storage)).toEqual([]);
+});
+
+it('resumes the watches an earlier console kept, and drops a record of a shape it never writes', async () => {
+  vi.useFakeTimers();
+  try {
+    // As the console before subscription watches kept them: a deploy's readiness watch with its
+    // last seen status, and a subscription create being read back (no history, no edit, matched by
+    // id alone back then); and a record without a kind, which no console writes.
+    const since = Date.now();
+    const deploy = { ...readyRecord(since), key: 'old-model', id: 'team-a', status: '["Pending"]' };
+    const readback = {
+      key: 'old-sub',
+      subject: 'subscription',
+      op: 'create',
+      id: 'team-a',
+      name: 'Team A',
+      stage: 'readback',
+      since,
+    };
+    const kindless = { key: 'odd', op: 'create', id: 'team-a', name: 'Team A', stage: 'ready', since };
+    const storage = memoryStorage({ [watchesKey('dev-user')]: JSON.stringify([deploy, readback, kindless]) });
+    const { transport } = fakeClients({
+      models: { get: () => ({ object: pendingOnSiteB() }) },
+      subscriptions: { get: () => teamA('Pending') },
+    });
+    render(
+      <BackendProvider transport={transport} checkSession={() => undefined}>
+        <NotificationsProvider storage={storage.get} owner="dev-user">
+          <NotificationWatcherProvider>
+            <BackgroundWritesProvider storage={storage.get} owner="dev-user">
+              <Titles />
+            </BackgroundWritesProvider>
+          </NotificationWatcherProvider>
+        </NotificationsProvider>
+      </BackendProvider>,
+    );
+    await pass(0);
+    await pass(1);
+    // The read-back confirms the create, which starts the subscription's readiness watch; the
+    // deploy's watch of the model with the same id goes on beside it.
+    expect(screen.getByText('Subscription Team A saved to Git')).toBeInTheDocument();
+    const kept = JSON.parse(storage.values.get(watchesKey('dev-user')) ?? '[]') as {
+      key: string;
+      subject: string;
+      stage: string;
+    }[];
+    expect(kept.map((r) => [r.subject, r.stage])).toEqual([
+      ['model', 'ready'],
+      ['subscription', 'ready'],
+    ]);
+    expect(kept[0].key).toBe('old-model');
+    expect(kept.some((r) => r.key === 'odd')).toBe(false);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+/**
+ * Subscription team-a as Subscriptions/Get answers it: its phase, from the clusters' reports in the
+ * catalog's Argo CD Applications, and its authorization policy's (maasPhase and
+ * withAuthPolicyStatus in the backend's internal/servers/subscriptions_git.go).
+ */
+const teamA = (phase: string, policyPhase = phase) => ({
+  object: create(SubscriptionSchema, {
+    id: 'team-a',
+    metadata: { name: 'team-a', version: 1 },
+    spec: { organization: { id: 'acme' }, owner: { groups: ['admins'] } },
+    status: { phase },
+  }),
+  authPolicies: [create(AuthPolicySchema, { id: 'team-a-policy', phase: policyPhase })],
+});
+
+/** The Subscriptions list and a subscription's page as the pages show them, neither polling on its own. */
+const SubscriptionPages: React.FC = () => {
+  const { data: listed } = useQuery(listSubscriptions, {});
+  const { data: viewed } = useQuery(getSubscription, { id: 'team-a' }, { refetchInterval: false });
+  const phase = listed?.items.find((s) => s.id === 'team-a')?.status?.phase;
+  return (
+    <>
+      <p>{`list ${phase || 'none'}`}</p>
+      <p>{`page ${viewed?.object?.status?.phase || 'none'}`}</p>
+    </>
+  );
+};
+
+type SubscriptionState = {
+  answer: ReturnType<typeof teamA>;
+  gone: boolean;
+  gets: number;
+  lists: number;
+  /** Get fails (Unavailable) while set. */
+  failing?: boolean;
+};
+
+/**
+ * The console around subscription team-a, whose status the test changes, or deletes. Given the
+ * storage and state of an earlier one (unmounted), it is that console after a reload.
+ */
+const subscribing = (
+  stored: object[] = [],
+  reload?: { storage: ReturnType<typeof memoryStorage>; state: SubscriptionState },
+) => {
+  const state: SubscriptionState = reload?.state ?? { answer: teamA('Pending'), gone: false, gets: 0, lists: 0 };
+  const { transport } = fakeClients({
+    subscriptions: {
+      get: () => {
+        state.gets += 1;
+        if (state.gone) throw new ConnectError('Subscription "team-a" not found', Code.NotFound);
+        if (state.failing) throw new ConnectError('the Git catalog is unreachable', Code.Unavailable);
+        return state.answer;
+      },
+      list: () => {
+        state.lists += 1;
+        return state.gone ? { items: [], size: 0, total: 0 } : { items: [state.answer.object], size: 1, total: 1 };
+      },
+    },
+  });
+  const storage = reload?.storage ?? memoryStorage({ [watchesKey('dev-user')]: JSON.stringify(stored) });
+  const { unmount } = render(
+    <BackendProvider transport={transport} checkSession={() => undefined}>
+      <NotificationsProvider storage={storage.get} owner="dev-user">
+        <NotificationWatcherProvider>
+          <BackgroundWritesProvider storage={storage.get} owner="dev-user">
+            <SubscriptionPages />
+            <Titles />
+            <Writes />
+          </BackgroundWritesProvider>
+        </NotificationWatcherProvider>
+      </NotificationsProvider>
+    </BackendProvider>,
+  );
+  return { state, storage, unmount };
+};
+
+const createTeamA = {
+  subject: 'subscription',
+  op: 'create',
+  id: 'team-a',
+  name: 'Team A',
+  organization: 'Acme Robotics',
+} as const;
+const editTeamA = { subject: 'subscription', op: 'update', id: 'team-a', name: 'Team A', version: 1 } as const;
+
+/** The watches that follow a subscription's status, as the tab keeps them. */
+const subscriptionWatches = (storage: ReturnType<typeof memoryStorage>) =>
+  (
+    JSON.parse(storage.values.get(watchesKey('dev-user')) ?? '[]') as {
+      key: string;
+      subject: string;
+      id: string;
+      stage: string;
+    }[]
+  ).filter((r) => r.subject === 'subscription' && (r.stage === 'ready' || r.stage === 'changes'));
+
+/** A created subscription's readiness watch, as the tab keeps it across a reload. */
+const activeRecord = (since: number) => ({
+  key: 's1',
+  subject: 'subscription',
+  op: 'create',
+  id: 'team-a',
+  name: 'Team A',
+  organization: 'Acme Robotics',
+  stage: 'ready',
+  since,
+});
+
+describe('a subscription watch', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('follows a created subscription from Pending to Active: says so once, refreshes the pages, and stops polling', async () => {
+    const { state, storage } = subscribing();
+    await pass(0);
+    await act(async () => {
+      expect(await submitWrite(createTeamA, async () => undefined)).toBe('done');
+    });
+    await pass(0);
+    expect(screen.getByText('Subscription Team A saved to Git')).toBeInTheDocument();
+    expect(subscriptionWatches(storage)).toMatchObject([{ stage: 'ready' }]);
+    await pass(1);
+    expect(screen.getByText('list Pending')).toBeInTheDocument();
+    const lists = state.lists;
+
+    // A poll that sees the same status leaves the pages alone.
+    await pass(READY_POLL_MS);
+    expect(state.lists).toBe(lists);
+
+    // The ingress clusters apply the subscription and its policy.
+    state.answer = teamA('Active');
+    await pass(READY_POLL_MS);
+    expect(screen.getAllByText('Subscription Team A is active')).toHaveLength(1);
+    await pass(1);
+    expect(state.lists).toBe(lists + 1);
+    expect(screen.getByText('list Active')).toBeInTheDocument();
+    expect(screen.getByText('page Active')).toBeInTheDocument();
+    expect(subscriptionWatches(storage)).toEqual([]);
+
+    // Nothing polls any more.
+    const gets = state.gets;
+    await pass(READY_MS);
+    expect(state.gets).toBe(gets);
+    expect(screen.getAllByText('Subscription Team A is active')).toHaveLength(1);
+  });
+
+  it("refreshes the pages when a created subscription's policy turns Active before the subscription does", async () => {
+    const { state } = subscribing();
+    await pass(0);
+    await act(async () => {
+      await submitWrite(createTeamA, async () => undefined);
+    });
+    await pass(1);
+    const lists = state.lists;
+    state.answer = teamA('Pending', 'Active');
+    await pass(READY_POLL_MS);
+    expect(state.lists).toBe(lists + 1);
+    expect(screen.queryByText('Subscription Team A is active')).not.toBeInTheDocument();
+  });
+
+  it("judges by the policy's phase from Subscriptions/Get, which List doesn't carry", async () => {
+    const { state } = subscribing([activeRecord(Date.now())]);
+    // The list shows the subscription Active; only Get says its policy isn't yet.
+    state.answer = teamA('Active', 'Pending');
+    await pass(0);
+    await pass(READY_POLL_MS);
+    expect(screen.getByText('list Active')).toBeInTheDocument();
+    expect(screen.queryByText('Subscription Team A is active')).not.toBeInTheDocument();
+    state.answer = teamA('Active');
+    await pass(READY_POLL_MS);
+    expect(screen.getByText('Subscription Team A is active')).toBeInTheDocument();
+  });
+
+  it("warns that a created subscription isn't active yet when its 30 minutes run out", async () => {
+    // Resumed after a reload with one check left inside its 30 minutes.
+    const { storage } = subscribing([activeRecord(Date.now() - READY_MS + READY_POLL_MS / 2)]);
+    await pass(0);
+    expect(screen.queryByText("Subscription Team A isn't active yet")).not.toBeInTheDocument();
+    await pass(READY_POLL_MS);
+    expect(screen.getByText("Subscription Team A isn't active yet")).toBeInTheDocument();
+    expect(subscriptionWatches(storage)).toEqual([]);
+  });
+
+  it("says at the deadline, after a reload, that an ingress cluster reports its policy failed, in the policy's words", async () => {
+    const first = subscribing([activeRecord(Date.now())]);
+    // Subscriptions/Get: the policy's Ready condition says where it failed (withAuthPolicyStatus).
+    first.state.answer = {
+      ...teamA('Active'),
+      authPolicies: [
+        create(AuthPolicySchema, {
+          id: 'team-a-policy',
+          phase: 'Degraded',
+          conditions: [
+            {
+              type: 'Ready',
+              status: ConditionStatus.FALSE,
+              reason: 'Failed',
+              message: 'Failed on site-a; ready on site-b',
+            },
+          ],
+        }),
+      ],
+    };
+    await pass(0);
+    expect(subscriptionWatches(first.storage)).toMatchObject([
+      { key: 's1', lastVerdict: 'policyDegraded', lastMessage: 'Failed on site-a; ready on site-b' },
+    ]);
+    first.unmount();
+
+    // After the reload the backend can't read the clusters' reports: the kept status is what it says.
+    first.state.answer = teamA('');
+    const second = subscribing([], first);
+    await pass(READY_MS);
+    expect(screen.getAllByText("Subscription Team A isn't active")).toHaveLength(1);
+    expect(storedNotifications(second.storage)).toContainEqual(
+      expect.objectContaining({
+        title: "Subscription Team A isn't active",
+        message:
+          "An ingress cluster reports its authorization policy failed: Failed on site-a; ready on site-b. Open the subscription to check the policy's status.",
+      }),
+    );
+    expect(subscriptionWatches(second.storage)).toEqual([]);
+  });
+
+  it("resumes a created subscription's watch after a reload", async () => {
+    const { state, storage } = subscribing([activeRecord(Date.now())]);
+    await pass(0);
+    expect(state.gets).toBeGreaterThan(0);
+    expect(subscriptionWatches(storage)).toMatchObject([{ key: 's1', stage: 'ready' }]);
+    state.answer = teamA('Active');
+    await pass(READY_POLL_MS);
+    expect(screen.getByText('Subscription Team A is active')).toBeInTheDocument();
+    expect(subscriptionWatches(storage)).toEqual([]);
+  });
+
+  it('stops silently when no ingress cluster reports a status, without claiming anything', async () => {
+    const { state, storage } = subscribing();
+    state.answer = teamA('');
+    await pass(0);
+    await act(async () => {
+      await submitWrite(createTeamA, async () => undefined);
+    });
+    // The read as the write lands, then two more.
+    await pass(0);
+    await pass(READY_POLL_MS);
+    expect(subscriptionWatches(storage)).toHaveLength(1);
+    await pass(READY_POLL_MS);
+    expect(subscriptionWatches(storage)).toEqual([]);
+    const gets = state.gets;
+    await pass(READY_MS);
+    expect(state.gets).toBe(gets);
+    expect(screen.getByRole('list', { name: 'Titles' }).children).toHaveLength(1);
+    expect(screen.getByText('Subscription Team A saved to Git')).toBeInTheDocument();
+  });
+
+  it('counts empty reads across a reload, and stops on the third in a row', async () => {
+    const first = subscribing([activeRecord(Date.now())]);
+    first.state.answer = teamA('');
+    // Two empty reads: as the console starts, and one poll later.
+    await pass(0);
+    await pass(READY_POLL_MS);
+    expect(subscriptionWatches(first.storage)).toMatchObject([{ key: 's1', empties: 2 }]);
+    first.unmount();
+
+    // The reload's first read is the third empty one in a row.
+    const second = subscribing([], first);
+    await pass(0);
+    expect(subscriptionWatches(second.storage)).toEqual([]);
+    const gets = second.state.gets;
+    await pass(READY_MS);
+    expect(second.state.gets).toBe(gets);
+    expect(screen.getByRole('list', { name: 'Titles' }).children).toHaveLength(0);
+  });
+
+  it("takes a failed read for the end of a run of empty reads, across a reload, and says it can't confirm at the deadline", async () => {
+    const first = subscribing([activeRecord(Date.now())]);
+    first.state.answer = teamA('');
+    // Two empty reads, then a failed one: the run of empty reads starts again, in storage too.
+    await pass(0);
+    await pass(READY_POLL_MS);
+    expect(subscriptionWatches(first.storage)).toMatchObject([{ key: 's1', empties: 2 }]);
+    first.state.failing = true;
+    await pass(READY_POLL_MS);
+    expect(subscriptionWatches(first.storage)).toMatchObject([{ key: 's1', empties: 0 }]);
+    first.unmount();
+
+    // After the reload: two empty reads go on, not stop, then empty and failed reads take turns.
+    first.state.failing = false;
+    const second = subscribing([], first);
+    await pass(0);
+    await pass(READY_POLL_MS);
+    expect(subscriptionWatches(second.storage)).toMatchObject([{ key: 's1', empties: 2 }]);
+    for (let poll = 0; poll < READY_MS / READY_POLL_MS; poll += 1) {
+      second.state.failing = !second.state.failing;
+      await pass(READY_POLL_MS);
+    }
+    expect(subscriptionWatches(second.storage)).toEqual([]);
+    expect(screen.getAllByText('Unable to confirm subscription Team A is active')).toHaveLength(1);
+  });
+
+  it('goes on through empty reads once it has found a status: Pending, then empty, then Active', async () => {
+    const { state, storage } = subscribing([activeRecord(Date.now())]);
+    await pass(0);
+    // The backend can't read the clusters' reports for a while (more than three polls).
+    state.answer = teamA('');
+    await pass(4 * READY_POLL_MS);
+    expect(subscriptionWatches(storage)).toMatchObject([{ key: 's1', lastVerdict: 'subscription' }]);
+    state.answer = teamA('Active');
+    await pass(READY_POLL_MS);
+    expect(screen.getAllByText('Subscription Team A is active')).toHaveLength(1);
+    expect(subscriptionWatches(storage)).toEqual([]);
+  });
+
+  it('keeps its outcome through a reload at any point of its last step, and says it once', async () => {
+    // A storage that copies itself after every write while armed: each copy is what a reload
+    // right after that write would find.
+    const base = memoryStorage({ [watchesKey('dev-user')]: JSON.stringify([activeRecord(Date.now())]) });
+    const snapshots: Record<string, string>[] = [];
+    let armed = false;
+    const inner = base.get();
+    const recorded = (write: () => void) => {
+      write();
+      if (armed) snapshots.push(Object.fromEntries(base.values));
+    };
+    const storage: Storage = {
+      get length() {
+        return inner.length;
+      },
+      clear: () => inner.clear(),
+      getItem: (key) => inner.getItem(key),
+      key: (index) => inner.key(index),
+      removeItem: (key) => recorded(() => inner.removeItem(key)),
+      setItem: (key, value) => recorded(() => inner.setItem(key, value)),
+    };
+    const first = subscribing([], {
+      storage: { get: () => storage, values: base.values },
+      state: { answer: teamA('Pending'), gone: false, gets: 0, lists: 0 },
+    });
+    await pass(0);
+    armed = true;
+    first.state.answer = teamA('Active');
+    await pass(READY_POLL_MS);
+    await pass(1);
+    armed = false;
+    expect(screen.getAllByText('Subscription Team A is active')).toHaveLength(1);
+    first.unmount();
+    expect(snapshots.length).toBeGreaterThan(1);
+
+    for (const snapshot of snapshots) {
+      const reloaded = subscribing([], {
+        storage: memoryStorage(snapshot),
+        state: { answer: teamA('Active'), gone: false, gets: 0, lists: 0 },
+      });
+      await pass(0);
+      await pass(READY_POLL_MS);
+      expect(screen.getAllByText('Subscription Team A is active')).toHaveLength(1);
+      expect(subscriptionWatches(reloaded.storage)).toEqual([]);
+      reloaded.unmount();
+    }
+  });
+
+  it('watches a subscription once, whatever earlier watch of the id still runs, apart from a model of the same id', async () => {
+    const modelOfTheSameId = { ...readyRecord(Date.now()), key: 'm1', id: 'team-a' };
+    const { storage } = subscribing([activeRecord(Date.now()), modelOfTheSameId]);
+    await pass(0);
+    await act(async () => {
+      await submitWrite(createTeamA, async () => undefined);
+    });
+    const watches = subscriptionWatches(storage);
+    expect(watches).toMatchObject([{ stage: 'ready', id: 'team-a' }]);
+    expect(watches[0].key).not.toBe('s1');
+    const kept = JSON.parse(storage.values.get(watchesKey('dev-user')) ?? '[]') as { key: string }[];
+    expect(kept.map((r) => r.key)).toContain('m1');
+  });
+
+  it('follows an edited subscription silently: refreshes the pages on a phase change, never says it is active', async () => {
+    const { state, storage } = subscribing();
+    await pass(0);
+    await act(async () => {
+      expect(await submitWrite(editTeamA, async () => undefined)).toBe('done');
+    });
+    await pass(1);
+    expect(screen.getByText('Changes to subscription Team A saved to Git')).toBeInTheDocument();
+    expect(subscriptionWatches(storage)).toMatchObject([{ stage: 'changes' }]);
+    const lists = state.lists;
+
+    await pass(READY_POLL_MS);
+    expect(state.lists).toBe(lists);
+
+    state.answer = teamA('Active');
+    await pass(READY_POLL_MS);
+    expect(state.lists).toBe(lists + 1);
+    await pass(1);
+    expect(screen.getByText('list Active')).toBeInTheDocument();
+    expect(screen.getByText('page Active')).toBeInTheDocument();
+    expect(screen.queryByText(/is active/)).not.toBeInTheDocument();
+
+    // After 30 minutes the watch ends without a word.
+    await pass(READY_MS);
+    expect(subscriptionWatches(storage)).toEqual([]);
+    expect(screen.getByRole('list', { name: 'Titles' }).children).toHaveLength(1);
+  });
+
+  it('follows an edit made at 29 minutes until 59 minutes, after saying once that the subscription is active', async () => {
+    const { state, storage } = subscribing([activeRecord(Date.now())]);
+    await pass(0);
+    await pass(29 * 60_000);
+    await act(async () => {
+      await submitWrite(editTeamA, async () => undefined);
+    });
+    expect(subscriptionWatches(storage)).toMatchObject([{ key: 's1', stage: 'ready', edit: { name: 'Team A' } }]);
+
+    state.answer = teamA('Active');
+    await pass(READY_POLL_MS);
+    expect(screen.getAllByText('Subscription Team A is active')).toHaveLength(1);
+    expect(subscriptionWatches(storage)).toMatchObject([{ stage: 'changes' }]);
+
+    // At about 45 minutes the phase changes: the pages refetch.
+    await pass(15 * 60_000);
+    let lists = state.lists;
+    state.answer = teamA('Pending');
+    await pass(READY_POLL_MS);
+    expect(state.lists).toBe(lists + 1);
+    // At about 58 minutes, again.
+    await pass(13 * 60_000);
+    lists = state.lists;
+    state.answer = teamA('Active');
+    await pass(READY_POLL_MS);
+    expect(state.lists).toBe(lists + 1);
+
+    // Past 59 minutes, 30 after the edit, it ends without a word.
+    await pass(2 * 60_000);
+    expect(subscriptionWatches(storage)).toEqual([]);
+    expect(screen.getAllByText('Subscription Team A is active')).toHaveLength(1);
+    expect(screen.queryByText(/isn't active/)).not.toBeInTheDocument();
+  });
+
+  it('names a subscription renamed while its create is watched by the new name when it is active', async () => {
+    const { state, storage } = subscribing([activeRecord(Date.now())]);
+    await pass(0);
+    await act(async () => {
+      await submitWrite({ ...editTeamA, name: 'Team Alpha' }, async () => undefined);
+    });
+    expect(screen.getByText('Changes to subscription Team Alpha saved to Git')).toBeInTheDocument();
+    expect(subscriptionWatches(storage)).toMatchObject([{ key: 's1', stage: 'ready' }]);
+
+    state.answer = teamA('Active');
+    await pass(READY_POLL_MS);
+    expect(screen.getByText('Subscription Team Alpha is active')).toBeInTheDocument();
+    expect(screen.queryByText(/^Subscription Team A /)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['not active', false, "Subscription Team Alpha isn't active yet"],
+    ['unknown, its last read failed', true, 'Unable to confirm subscription Team Alpha is active'],
+  ])(
+    'names a subscription renamed while its create is watched by the new name when its 30 minutes run out (%s), after a reload',
+    async (_, failing, title) => {
+      // Resumed after a reload with one check left, the rename recorded on the watch.
+      const renamed = {
+        ...activeRecord(Date.now() - READY_MS + READY_POLL_MS / 2),
+        edit: { name: 'Team Alpha', since: Date.now() - 60_000 },
+      };
+      const { state } = subscribing([renamed]);
+      state.failing = failing;
+      await pass(0);
+      // A failed read takes longer: the watch's Get shares the subscription page's, which the
+      // query cache retries (1 s, 2 s, 4 s) before it fails, so the last poll comes a poll later.
+      await pass(2 * READY_POLL_MS);
+      expect(screen.getByText(title)).toBeInTheDocument();
+      expect(screen.queryByText(/subscription Team A |Subscription Team A /)).not.toBeInTheDocument();
+    },
+  );
+
+  it("adds no watch to an edited subscription whose create's readiness watch still runs", async () => {
+    const { storage } = subscribing([activeRecord(Date.now())]);
+    await pass(0);
+    await act(async () => {
+      await submitWrite(editTeamA, async () => undefined);
+    });
+    expect(subscriptionWatches(storage)).toMatchObject([{ key: 's1', stage: 'ready' }]);
+  });
+
+  it("stops a subscription's watch at once when the console deletes it", async () => {
+    const { state, storage } = subscribing([activeRecord(Date.now())]);
+    await pass(0);
+    await act(async () => {
+      await submitWrite({ ...editTeamA, op: 'delete' }, async () => undefined);
+    });
+    expect(subscriptionWatches(storage)).toEqual([]);
+    state.gone = true;
+    const gets = state.gets;
+    await pass(READY_MS);
+    // The pages' refetch after the delete, and no read of the watch's.
+    expect(state.gets).toBeLessThanOrEqual(gets + 1);
+    expect(screen.queryByText(/active/)).not.toBeInTheDocument();
+  });
+
+  it('ends quietly when someone else deletes the subscription it follows', async () => {
+    const { state, storage } = subscribing([activeRecord(Date.now())]);
+    await pass(0);
+    state.gone = true;
+    await pass(READY_POLL_MS);
+    expect(subscriptionWatches(storage)).toEqual([]);
+    await pass(READY_MS);
+    expect(screen.getByRole('list', { name: 'Titles' }).children).toHaveLength(0);
+  });
 });

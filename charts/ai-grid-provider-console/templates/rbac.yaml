@@ -23,7 +23,8 @@ subjects:
 # grant that get: ai-grid-env-setup does, with a Role in apps/ai-grid-policies. Without it, a
 # cluster added to the grid stays at Provisioning in the console.
 #
-# In git mode, catalog-status.yaml grants the backend read access to the catalog's Applications.
+# In git mode (backend.git.url) the backend also reads what the spokes report about Models and
+# Subscriptions from the catalog's Argo CD Applications: the Role at the end of this file.
 #
 # TODO(backend-as-caller): delete this ClusterRole and its binding once the backend builds its hub
 # client from the forwarded user token (work-breakdown backend item 2).
@@ -52,3 +53,42 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "console.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
+{{- if .Values.backend.git.url }}
+---
+# In git mode the backend reads the status of Models and Subscriptions from the health of the
+# catalog's Argo CD Applications in openshift-gitops (AI_GRID_CATALOG_APP_NAMESPACE, which the chart
+# leaves at the backend's default): one Application per cluster and ApplicationSet,
+# acm-models-catalog-{models,ingress,subscriptions}-<cluster>. Without this Role the backend logs
+# once that it can't list them, every model stays Saved to Git and no subscription has a phase.
+# list can't be limited by name, so the backend can read every Application in openshift-gitops,
+# with any inline Helm values or plugin settings their specs carry: keep secrets out of Application
+# specs there. These rules are the backend's deploy/openshift/rbac.yaml
+# (ai-grid-provider-backend-catalog-status).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "console.fullname" . }}-catalog-status
+  namespace: openshift-gitops
+  labels:
+    {{- include "console.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "console.fullname" . }}-catalog-status
+  namespace: openshift-gitops
+  labels:
+    {{- include "console.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "console.fullname" . }}-catalog-status
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "console.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

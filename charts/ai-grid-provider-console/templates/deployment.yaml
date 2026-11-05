@@ -229,6 +229,11 @@ spec:
                   name: {{ $kc }}
                   key: {{ index . 1 }}
             {{- end }}
+            {{- if .Values.backend.idpSecrets.enabled }}
+            # Where organization identity providers' client secrets are (templates/idp-secrets.yaml).
+            - name: AI_GRID_IDP_SECRET_NAMESPACE
+              value: {{ .Values.backend.idpSecrets.namespace | quote }}
+            {{- end }}
             {{- with .Values.backend.git }}
             {{- if .url }}
             # Git mode: Models and Subscriptions are commits to this repository, which Argo CD
@@ -240,8 +245,6 @@ spec:
               value: {{ .branch | quote }}
             - name: AI_GRID_GIT_TOKEN_FILE
               value: /var/run/secrets/ai-grid-git/token
-            - name: AI_GRID_CATALOG_APP_NAMESPACE
-              value: {{ .catalogNamespace | quote }}
             {{- with .gridNamespace }}
             - name: AI_GRID_GRID_NAMESPACE
               value: {{ . | quote }}

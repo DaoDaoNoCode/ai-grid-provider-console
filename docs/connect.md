@@ -67,38 +67,23 @@ generated Connect Query descriptors (`frontend/src/gen/ai_grid/v1/*_connectquery
 per RPC) with the hooks from `@connectrpc/connect-query`:
 
 ```tsx
-import {
-  createConnectQueryKey,
-  useMutation,
-  useQuery,
-} from "@connectrpc/connect-query";
-import { useQueryClient } from "@tanstack/react-query";
-import { Clusters } from "../gen/ai_grid/v1/clusters_service_pb";
-import {
-  list,
-  update,
-} from "../gen/ai_grid/v1/clusters_service-Clusters_connectquery";
-import { describeError } from "../api/connect/errors";
+import { createConnectQueryKey, useMutation, useQuery } from '@connectrpc/connect-query';
+import { useQueryClient } from '@tanstack/react-query';
+import { Clusters } from '../gen/ai_grid/v1/clusters_service_pb';
+import { list, update } from '../gen/ai_grid/v1/clusters_service-Clusters_connectquery';
+import { describeError } from '../api/connect/errors';
 
 const queryClient = useQueryClient();
 const clusters = useQuery(list, { limit: 50 }, { refetchInterval: 30_000 });
 const save = useMutation(update, {
   // Refetch every Clusters query once the write lands.
   onSuccess: () =>
-    queryClient.invalidateQueries({
-      queryKey: createConnectQueryKey({
-        schema: Clusters,
-        cardinality: undefined,
-      }),
-    }),
+    queryClient.invalidateQueries({ queryKey: createConnectQueryKey({ schema: Clusters, cardinality: undefined }) }),
 });
 
 save.mutate({
-  object: {
-    id: c.id,
-    metadata: { labels: next, version: c.metadata?.version },
-  },
-  updateMask: { paths: ["metadata.labels"] },
+  object: { id: c.id, metadata: { labels: next, version: c.metadata?.version } },
+  updateMask: { paths: ['metadata.labels'] },
   lock: true, // the backend answers Aborted if someone changed it since c was read
 });
 // clusters.error and save.error are ConnectErrors: describeError(error) gives the page's state.
@@ -151,8 +136,19 @@ regression passing when updating these dependencies.
   no `/api/v1/clusters` routes any more. Remove's dialog for an Ingress or Combined cluster warns
   that the subscriptions lose their API keys: Argo CD deletes the cluster's copies of the
   subscriptions, and MaaS then revokes their keys in the shared database, on every cluster. The
-  backend refusing it (FailedPrecondition, while subscriptions exist) shows in its words, with the
-  form kept.
+  backend refuses such a Remove while subscriptions exist (below), and the dialog shows that in
+  its words, with the form kept.
+- **The backend's role rules.** The pinned backend checks every `Clusters/Update`, after the
+  version, and answers the first rule that refuses (its `docs/UI_API_REFERENCE.md`, "Roles"):
+  InvalidArgument for an `ai-grid/role` the update sets or changes to anything but `ingress`,
+  `inference` or `combined`; then, for an AI Grid member whose role changes or that leaves AI
+  Grid, FailedPrecondition when it stops serving ingress while any subscription exists, when it
+  stops serving ingress and no other member does (the last member may leave), and when it stops
+  serving inference, or leaves whatever its role, while models are placed on it; Unavailable when
+  the Git catalog can't be read for those checks. A cluster joining AI Grid isn't checked. So a
+  cluster that is AI Grid's only ingress cluster stays in it until another cluster serves ingress,
+  or until it is the last member. Edit and Remove show each refusal in the dialog, in the
+  backend's words, with the form kept; Unavailable reads as the console's own text.
 - **Edit** (`EditClusterModal.tsx`, `gridSettings.ts`, its words in `editClusterText.ts`), for AI
   Grid clusters, in the list's row menu and the cluster page's Actions: the location label
   (checked as Add checks it), and the role only of a cluster without one (no `ai-grid/role`, or a
@@ -244,6 +240,16 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   Stopped stay so until someone acts, and a cluster drifting from Git while it serves reads Ready.
   A cluster whose Application is gone (it left AI Grid after the model was placed) reads Pending
   sync for good, and keeps its page at 10 s while it's open.
+- **Where status comes from.** The pinned backend reads it from the health the hub's catalog
+  Argo CD Applications record for each cluster (`acm-models-catalog-{models,ingress}-<cluster>`
+  in `openshift-gitops`; the chart grants the read, `templates/rbac.yaml`). A model's phase and
+  each cluster's can be Failed (an object Degraded for a reason that isn't a step still under
+  way, or Argo CD's sync of it failed for good), and a cluster's reason can be Stopped (the
+  model carries `serving.kserve.io/stop`). A model waiting only for a subscription is Ready (or
+  Partially ready), no longer Pending. Besides the Status and Availability above, the
+  notification center's watches ("Writes that take long") read each placed cluster's
+  `deployment` and `deployment_message`, whether its `sync` is FAILED and its `sync_message`,
+  `status.maas` and each `status.ingress` entry's failure and message.
 - **Writes.** The wizard calls `Models/Create` with the id and `metadata.name`, the annotations,
   `spec.model` (the URI only: no served name, because the backend serves a model as its id, the
   name users send; the wizard starts the id from the URI's last path segment and shows it on
@@ -301,10 +307,15 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   "No models available" warning.
 - **Words.** `subscriptionText.ts` reads the subscription: the display name and description
   annotations (as `modelView.ts` reads a model's), `spec.organization.id`, and `status.phase`,
-  Active or Pending in git mode and none until a cluster reports, which reads Unknown, with the
-  Ready condition's message in the tooltip. A model is the Models pages' `ModelView`, its phase
-  worded there. A referenced model's status on a subscription's page is its `model_registrations`
-  entry: its phase; Saved to Git for one with no phase and a Ready condition of reason
+  Active, Pending or Degraded in git mode and none until a cluster reports, which reads Unknown,
+  with the Ready condition's message in the tooltip. Degraded (a cluster reports the
+  subscription or its policy failed) is a warning label, as odh-dashboard shows MaaS's Degraded:
+  MaaS also calls a subscription Degraded or Failed while a model it names has no MaaSModelRef or
+  route on the cluster yet, and the catalog's health check reads both as Degraded, so a
+  subscription created with its model reads Degraded until the model is published. A model is
+  the Models pages' `ModelView`, its phase worded there. A referenced model's status on a
+  subscription's page is its `model_registrations` entry: its phase (Ready, Failed or Pending);
+  Saved to Git for one with no phase and a Ready condition of reason
   `SavedToGit`, the reading `phaseWordOf` gives a model; Not found without an entry, as the
   backend's `gitModelRegistrations` says a client takes it.
 - **The model join.** A ref names its model by `SubscriptionModelRef.model_id`, which the backend
@@ -322,7 +333,11 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
 - **Testing.** Page tests answer from `frontend/src/__tests__/connectSubscriptions.ts`, an
   in-memory Subscriptions service over the generated messages that answers as git mode does,
   joined to `connectModels.ts`'s models; the browser test (`e2e/subscriptions.spec.ts`) runs on the
-  backend's fakes and commits a model of its own first (`e2e/backend.ts`).
+  backend's fakes and commits a model of its own first (`e2e/backend.ts`). The fake hub's catalog
+  Applications are static: they report subscription `team-a` and its policy active on site3 and
+  no other subscription there yet (the backend's `fixtures/poc/applications.json`), so any other
+  subscription reads Pending for good, and the test creates `team-a` to see the notification
+  center say it is active.
 - The BFF has no `/api/v1/subscriptions` or `/api/v1/models` routes and no `--models-namespace`.
 
 ### Writes that take long
@@ -359,35 +374,108 @@ subscription) are sent from the app root, never from the form (`frontend/src/not
   tell: a warning that the write couldn't be confirmed, with a link to the object, never a
   success. Reads that keep failing are a warning too.
 - A deployed model is then watched every 20 s until it runs on every cluster it is placed on:
-  each entry of `status.clusters` (one per cluster in `placement.selected_clusters`) READY, which
-  that cluster's LLMInferenceService reports. Then "Model <name> is ready on <clusters>". The
-  model's overall phase isn't used for this: it also counts the ingress clusters that publish the
-  model through MaaS, whose report turns ready only once a subscription covers the model, so a
-  model running on its clusters can read Pending for good. "Ready" means running on its clusters;
-  users reach it through MaaS once a subscription covers it too. An overall Failed (or a cluster
-  reported failed, which git mode doesn't report) is an error. After 30 minutes the watch warns
-  "Model <name> isn't ready yet", naming the clusters it isn't ready on; a model that is gone
-  stops it.
+  each entry of `status.clusters` (one per cluster in `placement.selected_clusters`) reporting its
+  deployment `RUNNING`, which that cluster's LLMInferenceService reports Ready. Then "Model <name>
+  is ready on <clusters>". Neither the model's overall phase nor a cluster's is used for this:
+  the overall phase also counts the ingress clusters that publish the model through MaaS, and a
+  combined cluster's phase its MaaSModelRef and ExternalModel, which stay pending while MaaS sets
+  up the route, and a model whose Argo CD sync reads OutOfSync while it runs. "Ready" means
+  running on its clusters; users reach it through MaaS once its route is set up and a subscription
+  covers it (a model waiting only for a subscription reads Ready in the backend too). A placed
+  cluster whose deployment KServe reports failed (`deployment` FAILED) is an error, "Unable to
+  deploy model <name>", with the cluster and KServe's message (`deployment_message`); so is a
+  placed cluster whose sync Argo CD gave up on (`sync` FAILED: an admission refusal, a bad
+  manifest), with the cluster and Argo CD's message (`sync_message`), as the LLMInferenceService
+  never lands there and its deployment would stay Unknown. A model with no placed cluster (on the
+  hub alone) is ready when its phase is Ready, and "Unable to deploy model <name>", with the
+  model's `status.message`, when its phase is Failed. Otherwise the model's overall Failed isn't
+  a failure: the backend also reports it when MaaS fails to publish the model on an ingress
+  cluster. When every placed cluster runs the
+  model but MaaS failed (`status.maas`, or a `status.ingress` entry, FAILED), the watch ends with
+  a warning instead of "ready": "Model <name> is running but isn't available to users", "It runs
+  on <clusters>. MaaS couldn't publish it on <ingress cluster>: <MaaS's message>. Open the model
+  to check its status." MaaS still routing, or waiting for a subscription, isn't a failure. A
+  model stopped on a cluster isn't running there. After 30 minutes the watch warns "Model <name>
+  isn't ready yet", naming the clusters it isn't ready on; a model that is gone stops it.
 - An edited model is watched the same way, every 20 s for 30 minutes, but never said to be ready:
   its status doesn't say which revision it describes, and during a rolling update the previous pod
   keeps its cluster Ready, so the previous revision's Ready would read as the edit's. It reports
   one thing, a failure it sees happen: "Unable to roll out changes to model <name>", with the
-  reason and a link to the model, when the model, or a cluster it is placed on, turns Failed. Its
-  first read comes as the edit lands, before Argo CD can have applied it, so a model already
-  failed then is the previous revision's failure, reported only if its status changes. After 30
+  cluster, KServe's message and a link to the model, when a placed cluster's deployment turns
+  failed, or with Argo CD's message when it gives up the sync of the changes on a placed cluster
+  (MaaS failing to publish the model isn't one). Its first read comes as the edit lands,
+  before Argo CD can have applied it, so a deployment already failed then is the previous
+  revision's failure, reported only if its status (each cluster's phase, reason and deployment,
+  and whether its sync failed) changes. After 30
   minutes it ends without a word; a model that is gone stops it. Edits get a "ready" once the
   backend reports the revision its status describes.
-- One watch follows a model at a time, so nothing is said twice: deploying an id again replaces
-  its earlier watch; an edit replaces the previous edit's watch, and adds none while a deploy's
-  readiness watch of the model still runs, as that one follows the same status and reports the
-  same failures; a delete stops the model's watch at once.
+- A created subscription is watched the same way, every 20 s for up to 30 minutes, through
+  `Subscriptions/Get`, until it and its authorization policy (the managed `<id>-policy`, which
+  `Get` returns as `auth_policies`) both read Active: "Subscription <name> is active", "Users in
+  its groups in the <organization> organization can use its models." (the organization's name as
+  the form's select showed it, left out when it didn't load). MaaS needs both: the policy gives
+  the users access to the models, the subscription their quota. A subscription `Get` lists no
+  policy for isn't active: the backend creates the policy with it, so none listed is a policy not
+  there yet, and the watch goes on to its deadline and warns about the policy. The backend reads
+  both phases from the health the catalog's Argo CD Applications
+  (`acm-models-catalog-subscriptions-<cluster>`) record for each cluster (`maasPhase` and
+  `withAuthPolicyStatus` in its `internal/servers/subscriptions_git.go`): Active when every
+  cluster reports the object ready, Degraded when any reports it failed, Pending while any
+  reports it pending or doesn't list it yet, and empty when no cluster has an Application in that
+  ApplicationSet (or the backend can't list them). Degraded doesn't end the watch, and it reports
+  no error before the deadline: MaaS calls a subscription Degraded or Failed while a model it
+  names has no MaaSModelRef or route on the cluster yet, which the health check reads as Degraded,
+  so a subscription created with its model reads Degraded until the model is published, then
+  Active. `Get`'s `model_registrations` say when each model is published, but nothing says how
+  long MaaS and Argo CD take to turn the subscription Active after that, so the watch doesn't end
+  early on a Degraded that persists. There is no per-cluster list for a subscription. After 30
+  minutes, when the last read that found a status had the subscription or its policy Degraded,
+  it warns "Subscription <name> isn't active" (no "yet": a cluster reported a failure): "An
+  ingress cluster reports it failed: <message>. Open the subscription to check its status and its
+  models' status.", or for the policy "An ingress cluster reports its authorization policy
+  failed: <message>. Open the subscription to check the policy's status." The message is the
+  Ready condition's (`status.conditions` for the subscription, which git mode leaves empty, so
+  the sentence ends at "failed"; the policy's says which cluster reports it how, "Failed on
+  site-a; ready on site-b"). Otherwise it warns "Subscription <name> isn't active yet", saying
+  whether the subscription or its policy isn't active (from the last read that found a status)
+  and where to look; when its last read failed, or no read found a
+  status, it says "Unable to confirm subscription <name> is active" instead, as a model's watch
+  says "Unable to confirm model <name> is ready". An empty phase claims nothing. Before any status
+  has been found it describes the environment (no cluster has a catalog Application for
+  subscriptions, or the backend may not list the Applications: the chart's Role), not the
+  subscription, so three empty reads in a row (about 40 s) stop the watch
+  without a word, rather than polling Git for 30 minutes to say nothing. After a status has been
+  found it means the backend couldn't read the clusters' reports this time (its `readReports`
+  logs that and reports nothing), and the watch goes on. A failed read isn't an empty one: it says
+  nothing about the reports, and ends a run of empty reads, so empty, failed, empty, failed,
+  empty goes on to the deadline and ends in "Unable to confirm". The count is kept in the watch's
+  record, so a reload goes on counting. A subscription that is gone stops it.
+- An edited subscription is watched every 20 s for 30 minutes too, and never said to be active:
+  the clusters' reports name objects, not versions, and the previous version stays Active while
+  the new one is applied. Degraded may be a model not published yet (above), so it only has the
+  pages refetch when the phase changes, and ends without a word (or after three empty phases in a
+  row with no status found, as above).
+- One watch follows a model, and one a subscription, at a time, so nothing is said twice:
+  deploying or creating an id again replaces its earlier watch; an edit replaces the previous
+  edit's watch. An edit made while a create's readiness watch of the object still runs adds no
+  watch of its own: that one follows the same status (and, for a model, reports the same
+  failures), and records the edit, whose name its outcome then uses, so a model or subscription
+  renamed meanwhile is "ready" or "active" (or not, or unconfirmed) under its new name. When it
+  ends on its own terms (ready or active, failed, or its warning), it goes on as the edit's
+  silent watch until 30 minutes after the edit, so an edit at minute 29 is followed until minute
+  59. A delete stops the object's watch at once. A model and
+  a subscription with the same id are watched apart.
 - The pages refetch what a watch learns at once, rather than on their own next poll: every
-  Models query (lists and `Get`s alike) when a model's watch sees its status change (its phase or
-  reason, or any `status.clusters` entry), and every query of the object's kind, Models or
-  Subscriptions, when any watch ends. A poll that sees no change refetches nothing.
+  query of the object's kind, Models or Subscriptions (lists and `Get`s alike, so the
+  Subscriptions list and a subscription's page, which doesn't poll), when its watch sees its
+  status change (a model's phase or reason, or any `status.clusters` entry; a subscription's
+  phase or its policy's), and when any watch ends. A poll that sees no change refetches nothing.
 - The watches and the notifications are kept in the browser tab's session storage under the
   signed-in user (`storageKeys.ts`), so a reload resumes them: a write's record is kept before its
-  request goes out, and one whose answer the page no longer awaits is read back. When another user
+  request goes out, and one whose answer the page no longer awaits is read back. A watch's outcome
+  is in storage before its record leaves it (`notify` writes storage at once), under an id that is
+  the same for every run of the watch, so a reload between the two resumes the watch, which comes
+  to the same outcome and replaces the entry: never lost, never said twice. When another user
   signs in to the tab, the previous user's records stop and leave it. They belong to that tab
   only: another tab, browser or admin sees none of them.
 
@@ -395,7 +483,9 @@ The words name each stage as it is, since the backend only commits to Git and Ar
 change later: "Model <name> saved to Git" with "It's being deployed to <clusters>", "Changes to
 model <name> saved to Git", "Model <name> deleted from Git", and for a subscription that it takes
 effect once the ingress clusters apply it. A model is "ready" once it runs on every cluster it
-is placed on (each cluster's status), and only then. The pages raise no success notice of their own for these writes:
+is placed on (each cluster's deployment), and only then, unless MaaS failed to publish it, when it
+"is running but isn't available to users"; a subscription is "active" once it and its
+authorization policy are active on every ingress cluster, and only then. The pages raise no success notice of their own for these writes:
 the center says it on both paths (`writeText.ts`).
 
 Every toast goes through the notification center (`NotificationToasts`), a page's own success
@@ -449,9 +539,7 @@ prereleases, the first with React 19 support (perses/shared#390, perses/plugins#
 const { clients } = fakeClients({
   clusters: {
     list: () => ({ items: [siteA], size: 1, total: 1 }), // checked against ClustersListResponse
-    update: () => {
-      throw new ConnectError("stale", Code.Aborted);
-    },
+    update: () => { throw new ConnectError('stale', Code.Aborted); },
   },
 });
 ```
@@ -513,3 +601,9 @@ still sent a served name would fail every model create on that backend (the back
 - A nightly job that proposes moving the pin to the backend's newest `main` and runs typecheck and
   tests (the pattern OSAC uses for its UI).
 - Connect GET: no backend method is marked free of side effects yet, so every call is a POST.
+- An organization's identity provider. The pinned backend's `Tenants/Create` takes
+  `spec.identity_provider` (OIDC, immutable afterwards), and reads its client secret by name from
+  the namespace in `AI_GRID_IDP_SECRET_NAMESPACE` (default `ai-grid-idp-secrets`), which the
+  chart doesn't create or grant yet. The console still creates organizations through `/api/v1`,
+  whose stopgap refuses `identityProvider` with 501 (`bff/internal/backend/v1.go`), so it sends
+  none.
