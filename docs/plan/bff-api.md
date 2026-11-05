@@ -271,6 +271,17 @@ What a dashboard needs to appear on the page, for the team that writes them:
   reaches Prometheus or Loki through its `proxy`, not `directUrl`: the browser can't reach the
   hub's services. A datasource defined inside the dashboard itself fails in its panel.
 - Its panels are among the bundled ones listed below.
+- For a cluster's details, it defines hidden text variables named `CLUSTER_DETAILS_*`, as
+  odh-dashboard reads them (`ClusterDetailsVariablesProvider`), and a `cluster_name` list
+  variable whose values are ManagedCluster names (`frontend/src/pages/monitoring/clusterDetails.ts`).
+  With one cluster selected, the console sets `CLUSTER_DETAILS_INFRASTRUCTURE_PROVIDER`,
+  `CLUSTER_DETAILS_OPENSHIFT_VERSION` and `CLUSTER_DETAILS_API_SERVER` from that cluster's
+  `platform.open-cluster-management.io`, `version.openshift.io` and `apiserverurl.openshift.io`
+  claims in `Clusters/List`, and `CLUSTER_DETAILS_CHANNEL` to "Not available" (the hub doesn't
+  know the OpenShift AI operator's channel). A claim the hub doesn't report, or a cluster it doesn't
+  list, is "Not available"; All or several clusters are "Select one cluster". It sets only the
+  `CLUSTER_DETAILS_*` variables a dashboard defines, and reads `Clusters/List` only for such a
+  dashboard. Like every variable, the values also appear in the URL as `var-<name>`.
 - Only provider admins may create or edit the `PersesDashboard`s and `PersesDatasource`s in that
   project and the `PersesGlobalDatasource`s: Perses sends the signed-in admin's hub token to every
   datasource it queries, so whoever can point a datasource somewhere can collect that token.

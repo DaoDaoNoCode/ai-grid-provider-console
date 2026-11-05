@@ -208,3 +208,105 @@ test('real Perses panels remain compatible with the shared Query runtime', async
 
   expect(errors).toEqual([]);
 });
+
+// The AI Grid cluster dashboard's shape (ai-grid-cluster-gitops
+// apps/ai-grid-o11y/manifests/perses-dashboard-cluster.yaml): a multi-select cluster variable with
+// All, and hidden CLUSTER_DETAILS_* text variables that its Markdown panel prints.
+const detailNames = ['INFRASTRUCTURE_PROVIDER', 'OPENSHIFT_VERSION', 'CHANNEL', 'API_SERVER'];
+const clusterDashboard = {
+  kind: 'Dashboard',
+  metadata: { name: 'dashboard-0-cluster', project: 'ai-grid' },
+  spec: {
+    display: { name: 'Cluster' },
+    duration: '1h',
+    refreshInterval: '0s',
+    variables: [
+      {
+        kind: 'ListVariable',
+        spec: {
+          name: 'cluster_name',
+          display: { name: 'Cluster' },
+          allowMultiple: true,
+          allowAllValue: true,
+          customAllValue: '.*',
+          defaultValue: '$__all',
+          plugin: { kind: 'PrometheusLabelValuesVariable', spec: { labelName: 'cluster' } },
+        },
+      },
+      ...detailNames.map((name) => ({
+        kind: 'TextVariable',
+        spec: { name: `CLUSTER_DETAILS_${name}`, value: 'N/A', display: { name, hidden: true } },
+      })),
+    ],
+    panels: {
+      details: {
+        kind: 'Panel',
+        spec: {
+          display: { name: 'Cluster details' },
+          plugin: {
+            kind: 'Markdown',
+            spec: { text: detailNames.map((name) => `${name}=\${CLUSTER_DETAILS_${name}}`).join('\n\n') },
+          },
+        },
+      },
+    },
+    layouts: [
+      {
+        kind: 'Grid',
+        spec: { items: [{ x: 0, y: 0, width: 24, height: 6, content: { $ref: '#/spec/panels/details' } }] },
+      },
+    ],
+  },
+};
+
+test("fills in the cluster details panel from the selected cluster's claims", async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push('Uncaught: ' + error.message));
+  const config = structuredClone(configExample.body);
+  config.data.monitoring = { enabled: true, persesProject: 'ai-grid' };
+  await page.route('**/api/v1/user', (route) => route.fulfill({ json: userExample.body }));
+  await page.route('**/api/v1/config', (route) => route.fulfill({ json: config }));
+  // Clusters/List over Connect, as the backend answers it: site-a with the claims ACM writes.
+  const claim = (name: string, value: string) => ({ name, value });
+  await page.route('**/ai_grid.v1.Clusters/List**', (route) =>
+    route.fulfill({
+      json: {
+        items: [
+          {
+            id: 'site-a',
+            status: {
+              clusterClaims: [
+                claim('platform.open-cluster-management.io', 'AWS'),
+                claim('version.openshift.io', '4.21.36'),
+                claim('apiserverurl.openshift.io', 'https://api.site-a.example.com:6443'),
+              ],
+            },
+          },
+        ],
+        size: 1,
+        total: 1,
+      },
+    }),
+  );
+  await page.route('**/perses/api/**', async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith('/dashboards')) return route.fulfill({ json: [clusterDashboard] });
+    if (url.pathname.includes('/api/v1/projects/ai-grid/datasources')) return route.fulfill({ json: [datasource] });
+    if (url.pathname.includes('/api/v1/globaldatasources')) return route.fulfill({ json: [] });
+    if (url.pathname.includes('/label/cluster/values'))
+      return route.fulfill({ json: { status: 'success', data: ['site-a', 'site-b'] } });
+    errors.push(`Unhandled fixture: ${route.request().method()} ${url.pathname}`);
+    return route.fulfill({ status: 404, json: { message: 'No fixture' } });
+  });
+
+  await page.goto('/monitoring');
+  for (const name of detailNames) {
+    await expect(page.getByText(`${name}=Select one cluster`, { exact: true })).toBeVisible();
+  }
+  await page.goto('/monitoring?var-cluster_name=site-a');
+  await expect(page.getByText('INFRASTRUCTURE_PROVIDER=AWS', { exact: true })).toBeVisible();
+  await expect(page.getByText('OPENSHIFT_VERSION=4.21.36', { exact: true })).toBeVisible();
+  await expect(page.getByText('CHANNEL=Not available', { exact: true })).toBeVisible();
+  await expect(page.getByText('API_SERVER=https://api.site-a.example.com:6443', { exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
+});

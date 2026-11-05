@@ -118,6 +118,11 @@ Query v5 is pinned for the console and Perses plugins in `pnpm-workspace.yaml`. 
 still declares v4 support; `e2e/perses.spec.ts` verifies the actual renderer on v5. Keep that
 regression passing when updating these dependencies.
 
+The page's one Connect call is `Clusters/List`, for a dashboard's cluster details
+(`docs/plan/bff-api.md`, "The Perses relay"). `PersesDashboardView` makes it above Perses's own
+`QueryClientProvider`, so it shares the console's cache with the Clusters pages and the map; a hook
+called inside that provider would get Perses's query client instead.
+
 ### The Clusters area
 
 - **Reads.** `useClusterList` and `useCluster` (`frontend/src/pages/clusters/useClusters.ts`) call
