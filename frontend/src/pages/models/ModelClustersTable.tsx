@@ -133,9 +133,13 @@ const ClusterStatusModal: React.FC<{
 /** The model's clusters: each placed cluster's status and View link, or the clusters the placement chose. */
 export const ModelClustersTable: React.FC<Props> = ({ model, clusters, isNested, opensClusters = true }) => {
   // The open dialog's cluster, not its entry: each poll brings new entries, and the dialog shows the
-  // current one, or closes when the model no longer has the cluster.
+  // current one, or closes when the model no longer has the cluster or its state. Closing forgets
+  // the cluster, so a poll that brings it back doesn't open the dialog again without a click.
   const [openCluster, setOpenCluster] = useState<string>();
   const open = model.clusters.find((c) => c.cluster === openCluster && c.state);
+  if (openCluster && !open) {
+    setOpenCluster(undefined);
+  }
   const title = titleOf(model);
   const reported = model.clusters.length > 0;
   const rows: { cluster: string; status?: ModelClusterView }[] = reported

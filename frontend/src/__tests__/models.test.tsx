@@ -685,7 +685,7 @@ describe('a background poll', () => {
     expect(models.models.some((m) => m.id === 'granite-research')).toBe(true);
   });
 
-  it("keeps an open cluster's status current, and closes it when the cluster goes", async () => {
+  it("keeps an open cluster's status current, closes it when the cluster goes, and doesn't reopen it", async () => {
     const service = new MockConsoleService();
     const models = modelsOf(service);
     const granite = models.find('granite-3-8b');
@@ -703,9 +703,17 @@ describe('a background poll', () => {
     granite.status!.clusters[0].deployment = ModelDeploymentState.RUNNING;
     await act(() => vi.advanceTimersByTimeAsync(30000));
     await waitFor(() => expect(deployment()).toHaveTextContent(/^DeploymentRunning$/));
+    const reports = granite.status!.clusters;
     granite.status!.clusters = [];
     await act(() => vi.advanceTimersByTimeAsync(30000));
     await waitFor(() => expect(modal).not.toBeInTheDocument());
+    // The report comes back: the dialog stays closed until the user opens it again.
+    granite.status!.clusters = reports;
+    await act(() => vi.advanceTimersByTimeAsync(30000));
+    const again = await screen.findByRole('button', { name: 'Ready on site1' });
+    expect(screen.queryByRole('dialog', { name: 'Granite 3.3 8B Instruct on site1' })).not.toBeInTheDocument();
+    await user.click(again);
+    expect(await screen.findByRole('dialog', { name: 'Granite 3.3 8B Instruct on site1' })).toBeVisible();
   });
 });
 
