@@ -138,10 +138,10 @@ fake hub and Keycloak of its own repository (its `make dev-fake`: gRPC, Connect 
 :9090, the fake hub on :9091, REST on :9092, Keycloak on :9093, its draft fake on :9094), the BFF
 against it with `FAKE_BACKEND=true` (the console shows a fake-backend banner, and since no login
 proxy runs, an ended session stays on the page instead of going to sign in), and the frontend as
-`dev-user` with `dev-token`. The backend's fixtures (its `fixtures/default`) seed the clusters,
-organizations and models; Models and Subscriptions are commits to a local Git catalog
-(`bin/dev-catalog.git` in the backend's checkout). Monitoring needs a Perses (`make dev-cluster`)
-and says it is not set up here. The browser tests run the same backend on its PoC fixtures, on
+`dev-user` with `dev-token`. The backend's fixtures (its `fixtures/default`) seed the clusters and
+organizations; Models and Subscriptions are commits to a local Git catalog
+(`bin/dev-catalog.git` in the backend's checkout), empty until you deploy a model. Monitoring
+needs a Perses (`make dev-cluster`), so it isn't available here. The browser tests run the same backend on its PoC fixtures, on
 ports of their own (`frontend/playwright.config.ts` starts it through `hack/backend-fakes.sh`).
 The Vite dev server forwards `/ai_grid.v1.*` to the BFF as it does `/api`, in every mode.
 
