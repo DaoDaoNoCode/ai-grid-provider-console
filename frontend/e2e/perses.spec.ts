@@ -310,3 +310,93 @@ test("fills in the cluster details panel from the selected cluster's claims", as
   await expect(page.getByText('API_SERVER=https://api.site-a.example.com:6443', { exact: true })).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+// A bar chart as the AI Grid model dashboard's "Response time distribution" draws one: a bar per
+// series, named from a label value, which here holds characters HTML gives a meaning to.
+const bucketName = '<b>p99</b> & Fast <1s';
+const barDashboard = {
+  kind: 'Dashboard',
+  metadata: { name: 'dashboard-1-model', project: 'ai-grid' },
+  spec: {
+    display: { name: 'Model' },
+    duration: '1h',
+    refreshInterval: '0s',
+    variables: [],
+    panels: {
+      latency: {
+        kind: 'Panel',
+        spec: {
+          display: { name: 'Response time distribution' },
+          plugin: { kind: 'BarChart', spec: { calculation: 'last', sort: 'asc' } },
+          queries: [
+            {
+              kind: 'TimeSeriesQuery',
+              spec: {
+                plugin: {
+                  kind: 'PrometheusTimeSeriesQuery',
+                  spec: { query: 'latency_requests', seriesNameFormat: '{{bucket}}' },
+                },
+              },
+            },
+          ],
+        },
+      },
+    },
+    layouts: [
+      {
+        kind: 'Grid',
+        spec: { items: [{ x: 0, y: 0, width: 24, height: 8, content: { $ref: '#/spec/panels/latency' } }] },
+      },
+    ],
+  },
+};
+
+test('draws a bar chart, and shows a bar name in its tooltip as written', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push('Uncaught: ' + error.message));
+  const config = structuredClone(configExample.body);
+  config.data.monitoring = { enabled: true, persesProject: 'ai-grid' };
+  await page.route('**/api/v1/user', (route) => route.fulfill({ json: userExample.body }));
+  await page.route('**/api/v1/config', (route) => route.fulfill({ json: config }));
+  await page.route('**/perses/api/**', async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.pathname.endsWith('/dashboards')) return route.fulfill({ json: [barDashboard] });
+    if (url.pathname.includes('/api/v1/projects/ai-grid/datasources')) return route.fulfill({ json: [datasource] });
+    if (url.pathname.includes('/api/v1/globaldatasources')) return route.fulfill({ json: [] });
+    if (url.pathname.endsWith('/api/v1/query_range')) {
+      const params = request.method() === 'POST' ? new URLSearchParams(request.postData() || '') : url.searchParams;
+      const end = Number(params.get('end')) || Date.now() / 1000;
+      const result = {
+        metric: { __name__: 'latency_requests', bucket: bucketName },
+        values: [
+          [end - 60, '40'],
+          [end, '42'],
+        ],
+      };
+      return route.fulfill({ json: { status: 'success', data: { resultType: 'matrix', result: [result] } } });
+    }
+    errors.push(`Unhandled fixture: ${request.method()} ${url.pathname}`);
+    return route.fulfill({ status: 404, json: { message: 'No fixture' } });
+  });
+
+  await page.goto('/monitoring');
+  await expect(page.getByText('Response time distribution', { exact: true })).toBeVisible();
+  const chart = page.locator('canvas').first();
+  await expect(chart).toBeVisible();
+  // The one bar ends up across the middle of the chart, but ECharts grows it from zero: move over the
+  // middle until the bar is under the pointer and its tooltip shows.
+  const box = (await chart.boundingBox())!;
+  const tooltip = page.getByText(bucketName, { exact: true });
+  let nudge = 0;
+  await expect
+    .poll(async () => {
+      nudge = 1 - nudge;
+      await page.mouse.move(box.x + box.width / 2 + nudge, box.y + box.height / 2);
+      return tooltip.isVisible();
+    })
+    .toBe(true);
+  // The name's own <b> is text, not an element of the tooltip.
+  await expect(page.locator('b').getByText('p99', { exact: true })).toHaveCount(0);
+  expect(errors).toEqual([]);
+});

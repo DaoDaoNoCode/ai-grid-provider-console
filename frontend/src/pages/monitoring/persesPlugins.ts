@@ -3,16 +3,18 @@
 // doesn't work under Vite and runs CommonJS require(), so every plugin a dashboard may use is
 // listed here. A panel whose plugin is missing shows Perses's own "plugin not found" error.
 //
-// Not the bar chart (@perses-dev/bar-chart-plugin 0.13): its tooltip is HTML built from the series
-// name, a label value from the query, without escaping, so a label could put markup on the console's
-// page. Add it back once Perses escapes it. The others keep data out of HTML: the gauge and pie
-// charts draw it on the canvas (the pie's tooltip escapes it), and the markdown panel sanitizes its
-// HTML with DOMPurify. Loki's datasource, queries and variables are bundled ahead of the monitoring
+// The bar chart is patched (patches/@perses-dev__bar-chart-plugin@*.patch, pnpm's patchedDependencies
+// in pnpm-workspace.yaml) to escape names in its tooltip: ECharts renders a tooltip formatter's string
+// as HTML, so the patch escapes the category and series names and the marker color in it (& < > " '),
+// as the pie chart already does, and a name such as "Fast <1s" shows as written. Drop the patch once
+// a Perses release escapes them the same way. The gauge and pie charts draw on the canvas, and the
+// markdown panel sanitizes its HTML with DOMPurify. Loki's datasource, queries and variables are bundled ahead of the monitoring
 // team's Loki dashboards and not yet tried against a Loki: the hub's Perses has none. Its queries
 // draw in the time series, stat and table panels. Not the logs table (@perses-dev/logs-table-plugin
 // 0.3): it imports an ansiColors.css its package doesn't ship.
 import { dynamicImportPluginLoader, getPluginModuleCompoundKey } from '@perses-dev/plugin-system';
 import type { PluginModuleResource } from '@perses-dev/plugin-system';
+import * as bar from '@perses-dev/bar-chart-plugin';
 import * as gauge from '@perses-dev/gauge-chart-plugin';
 import * as loki from '@perses-dev/loki-plugin';
 import * as markdown from '@perses-dev/markdown-plugin';
@@ -54,6 +56,7 @@ export const pluginLoader = dynamicImportPluginLoader([
   bundled(loki),
   bundled(timeseries),
   bundled(stat),
+  bundled(bar),
   bundled(table),
   bundled(gauge),
   bundled(pie),

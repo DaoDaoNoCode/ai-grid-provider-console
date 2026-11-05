@@ -291,9 +291,11 @@ dashboards of `monitoring.persesProject` through the relay and shows each `dashb
 tab, ordered by name and selected with `?dashboard=<name>`. A panel whose datasource the dashboard
 defines itself shows an error in the panel instead of querying it. It renders the selected one with
 Perses's own React components and the plugins bundled in `persesPlugins.ts` (Prometheus and
-Loki datasources and queries; time series, stat, table, gauge, pie and markdown panels), loaded
-with the page only. Not the bar chart: its tooltip is HTML built from unescaped series names, which
-are label values. Not the logs table either: its package imports a stylesheet it doesn't ship
+Loki datasources and queries; time series, stat, bar, table, gauge, pie and markdown panels), loaded
+with the page only. The bar chart is patched (`frontend/patches`, pnpm's `patchedDependencies`)
+to escape names in its tooltip, which ECharts renders as HTML: the category and series names and
+the marker color, as the pie chart already does, until a Perses release does the same. Not the logs
+table: its package imports a stylesheet it doesn't ship
 (`ansiColors.css`, missing from 0.4.0 and from 0.5.0-beta.0, the release for Perses 0.56). Without
 `monitoring.enabled`, `/monitoring` says Monitoring is not set up for this console and names the
 chart's `console.perses.url` and `console.perses.project`, which a hub administrator sets; it

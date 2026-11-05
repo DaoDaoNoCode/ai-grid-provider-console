@@ -1,0 +1,40 @@
+diff --git a/lib/BarChartBase.js b/lib/BarChartBase.js
+index 17fbafd27d893d2e259c0ee6abc357abcd4a0cd6..4e98e020760bb4aa1d8b90feee73e0d57786644b 100644
+--- a/lib/BarChartBase.js
++++ b/lib/BarChartBase.js
+@@ -28,6 +28,15 @@ registerECharts([
+     LegendComponent,
+     CanvasRenderer
+ ]);
++// ECharts renders a tooltip formatter's string as HTML: escape the category and series names and
++// the marker color in it, as the pie chart does, so they show as text.
++const escapeHTML = (value)=>String(value).replace(/[&<>"']/g, (c)=>({
++        "&": "&amp;",
++        "<": "&lt;",
++        ">": "&gt;",
++        '"': "&quot;",
++        "'": "&#39;"
++    })[c]);
+ const BAR_WIN_WIDTH = 14;
+ const BAR_GAP = 6;
+ const LEGEND_HEIGHT = 20;
+@@ -173,8 +182,8 @@ export function BarChartBase(props) {
+                         if (!params.length) {
+                             return "";
+                         }
+-                        const header = `<b>${params[0]?.name}</b><br/>`;
+-                        const rows = params.filter(_temp).map((p_0)=>`<span style="display:inline-block;margin-right:5px;border-radius:50%;width:10px;height:10px;background-color:${p_0.color}"></span>` + `${p_0.seriesName}: <b>${formatValue(p_0.data, format)}</b>`).join("<br/>");
++                        const header = `<b>${escapeHTML(params[0]?.name)}</b><br/>`;
++                        const rows = params.filter(_temp).map((p_0)=>`<span style="display:inline-block;margin-right:5px;border-radius:50%;width:10px;height:10px;background-color:${escapeHTML(p_0.color)}"></span>` + `${escapeHTML(p_0.seriesName)}: <b>${formatValue(p_0.data, format)}</b>`).join("<br/>");
+                         return header + rows;
+                     }
+                 };
+@@ -374,7 +383,7 @@ export function BarChartBase(props) {
+             t16 = {
+                 appendToBody: true,
+                 confine: true,
+-                formatter: (params_2)=>params_2.data[1] && `<b>${params_2.name}</b> &emsp; ${formatValue(params_2.data[1], format)}`
++                formatter: (params_2)=>params_2.data[1] && `<b>${escapeHTML(params_2.name)}</b> &emsp; ${formatValue(params_2.data[1], format)}`
+             };
+             $[56] = format;
+             $[57] = t16;

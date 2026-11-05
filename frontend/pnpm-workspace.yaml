@@ -18,3 +18,10 @@ overrides:
   # GHSA-6pq8-jhm2-2vcw (qs.stringify denial of service): @perses-dev/explore 0.56.0-beta.0 pins
   # qs 6.16.0. Drop this once the Perses release in use depends on qs 6.16.1 or later.
   'qs@>=6.7.0 <6.16.1': 6.16.1
+
+# Escape names in the bar chart tooltip: ECharts renders the tooltip formatter's string as HTML, so the
+# patch escapes the category and series names and the marker color (& < > " ') in lib/BarChartBase.js,
+# the build Vite bundles, as the pie chart already does (src/pages/monitoring/persesPlugins.ts).
+# Drop it once a Perses release escapes them the same way.
+patchedDependencies:
+  '@perses-dev/bar-chart-plugin@0.15.0-beta.0': patches/@perses-dev__bar-chart-plugin@0.15.0-beta.0.patch

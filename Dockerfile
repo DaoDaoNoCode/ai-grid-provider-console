@@ -13,6 +13,8 @@ FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi9/nodejs-22:1793597
 WORKDIR /opt/app-root/src/frontend
 RUN npm install -g pnpm@11.22.0
 COPY --chown=1001:0 frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
+# The patches pnpm-workspace.yaml's patchedDependencies apply during the install.
+COPY --chown=1001:0 frontend/patches/ ./patches/
 RUN pnpm install --frozen-lockfile
 COPY --chown=1001:0 frontend/ ./
 RUN pnpm run build
