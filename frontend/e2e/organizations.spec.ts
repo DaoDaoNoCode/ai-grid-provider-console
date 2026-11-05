@@ -62,7 +62,7 @@ test('creates, views, edits and deletes an organization', async ({ page }) => {
 
     // View
     await row.getByRole('link', { name: unique, exact: true }).click();
-    await expect(page.getByRole('heading', { name: unique })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: unique, exact: true })).toBeVisible();
     await expect(page.getByText(domain).first()).toBeVisible();
 
     // Edit a domain in the create wizard, whose steps are all open when editing; the deep link and
