@@ -32,6 +32,7 @@ export type SubscriptionModelRow = {
   /** The status label's word, and its reason in the tooltip. */
   status: string;
   reason?: string;
+  onOpenStatus?: () => void;
   tokenRateLimits: TokenLimit[];
   unlimited: boolean;
 };
@@ -121,7 +122,13 @@ export const MaasModelsSection: React.FC<Props> = ({
                 <TableRowTitleDescription title={<strong>{row.title}</strong>} subtitle={<code>{row.name}</code>} />
               </Td>
               <Td dataLabel="Status">
-                <StatusLabel isCompact status={row.status} reason={row.reason} />
+                <StatusLabel
+                  isCompact
+                  status={row.status}
+                  reason={row.onOpenStatus ? undefined : row.reason}
+                  onClick={row.onOpenStatus}
+                  screenReaderSuffix={row.onOpenStatus ? ` for ${row.title}` : undefined}
+                />
               </Td>
               <Td dataLabel="Token limits">{tokenLimits}</Td>
               {editable && (

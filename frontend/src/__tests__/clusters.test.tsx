@@ -1030,3 +1030,111 @@ it("shows each cluster's site and region apart, or what to fix", async () => {
   expect(await screen.findByText('ai-grid/latitude "40,7" is not a decimal number of degrees')).toBeInTheDocument();
   expect(within(screen.getByRole('row', { name: /^nowhere / })).getAllByText('—').length).toBeGreaterThan(0);
 });
+
+it('opens the hub message from a compact cluster status and returns focus after dismissal', async () => {
+  const user = userEvent.setup();
+  const message = '<strong>Hub has not received a heartbeat.</strong>';
+  renderAt('/clusters', serviceWith([{ ...cluster('edge-a', 'Offline'), statusMessage: message }]));
+  const trigger = await screen.findByRole('button', { name: 'Offline for edge-a' });
+  expect(trigger.closest('.pf-v6-c-label')).toHaveClass('pf-m-compact');
+  expect(trigger.closest('.pf-v6-c-label')).not.toHaveClass('pf-m-outline');
+  await user.click(trigger);
+  const dialog = await screen.findByRole('dialog', { name: 'edge-a status' });
+  expect(within(dialog).getByText('Offline')).toBeVisible();
+  expect(within(dialog).getByText(message)).toBeVisible();
+  expect(dialog.querySelector('strong')).toBeNull();
+  await user.keyboard('{Escape}');
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  await waitFor(() => expect(trigger).toHaveFocus());
+  await user.keyboard('{Enter}');
+  await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Close' }));
+  await waitFor(() => expect(trigger).toHaveFocus());
+});
+
+it('opens Ready only with a hub message and keeps message-free and AI Grid statuses noninteractive', async () => {
+  const user = userEvent.setup();
+  renderAt(
+    '/clusters',
+    serviceWith([
+      {
+        ...cluster('ready-message', 'Ready', { 'ai-grid/enabled': 'true', 'ai-grid/provisioned': 'true' }),
+        statusMessage: 'All checks passed.',
+      },
+      cluster('ready-quiet', 'Ready'),
+      cluster('offline-quiet', 'Offline'),
+      { ...cluster('whitespace', 'Unknown'), statusMessage: '   ' },
+    ]),
+  );
+  await user.click(await screen.findByRole('button', { name: 'Ready for ready-message' }));
+  expect(
+    within(await screen.findByRole('dialog', { name: 'ready-message status' })).getByText('All checks passed.'),
+  ).toBeVisible();
+  await user.keyboard('{Escape}');
+  for (const name of ['ready-quiet', 'offline-quiet', 'whitespace']) {
+    const row = screen.getByRole('row', { name: new RegExp(`^${name} `) });
+    expect(within(row).queryByRole('button', { name: /Ready|Offline|Unknown/ })).not.toBeInTheDocument();
+    expect(
+      within(row)
+        .getByText(name === 'ready-quiet' ? 'Ready' : name === 'offline-quiet' ? 'Offline' : 'Unknown')
+        .closest('.pf-v6-c-label'),
+    ).toHaveClass('pf-m-outline');
+  }
+  const provisioned = within(screen.getByRole('row', { name: /^ready-message / })).getByText('Provisioned');
+  expect(provisioned.closest('.pf-v6-c-label')).toHaveClass('pf-m-outline');
+  expect(provisioned.closest('button')).toBeNull();
+});
+
+it('keeps the cluster list filter, sort, and page while reading a status message', async () => {
+  const user = userEvent.setup();
+  renderAt(
+    '/clusters',
+    serviceWith(
+      Array.from({ length: 24 }, (_, i) => ({
+        ...cluster(`edge-${String(i).padStart(2, '0')}`, 'Offline'),
+        statusMessage: `Heartbeat ${i} is missing.`,
+      })),
+    ),
+  );
+  const search = await screen.findByRole('textbox', { name: 'Filter clusters' });
+  await user.type(search, 'edge');
+  await user.click(within(screen.getByRole('columnheader', { name: 'Name' })).getByRole('button'));
+  await user.click(screen.getAllByRole('button', { name: 'Go to next page' })[0]);
+  const names = () =>
+    within(screen.getByTestId('clusters-table'))
+      .getAllByRole('link')
+      .map((link) => link.textContent);
+  const before = names();
+  expect(before[0]).toBe('edge-13');
+  await user.click(screen.getByRole('button', { name: 'Offline for edge-13' }));
+  await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Close' }));
+  expect(search).toHaveValue('edge');
+  expect(names()).toEqual(before);
+  expect(screen.getByRole('columnheader', { name: 'Name' })).toHaveAttribute('aria-sort', 'descending');
+});
+
+it('refreshes the selected cluster by identity and forgets a dialog when its cluster disappears', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const a = { ...cluster('edge-a', 'Offline'), statusMessage: 'Waiting for a heartbeat.' };
+    const b = { ...cluster('edge-b', 'Offline'), statusMessage: 'Other cluster report.' };
+    const service = serviceWith([a, b]);
+    renderAt('/clusters', service);
+    await user.click(await screen.findByRole('button', { name: 'Offline for edge-a' }));
+    service.clusters = [b, { ...a, status: 'Ready', statusMessage: 'Heartbeat received.' }];
+    await act(() => vi.advanceTimersByTimeAsync(30000));
+    const dialog = await screen.findByRole('dialog', { name: 'edge-a status' });
+    expect(within(dialog).getByText('Heartbeat received.')).toBeVisible();
+    expect(within(dialog).getByText('Ready')).toBeVisible();
+    expect(within(dialog).queryByText('Other cluster report.')).not.toBeInTheDocument();
+    service.clusters = [b];
+    await act(() => vi.advanceTimersByTimeAsync(30000));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    service.clusters = [a, b];
+    await act(() => vi.advanceTimersByTimeAsync(30000));
+    await screen.findByRole('button', { name: 'Offline for edge-a' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});

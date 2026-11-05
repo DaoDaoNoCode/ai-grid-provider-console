@@ -131,6 +131,10 @@ regression passing when updating these dependencies.
   claims `ManagedClusterStatus.cluster_claims` names, and `capacity["nvidia.com/gpu"]` as a number.
   The GPU sections read `status.gpus` as generated. The Models and Subscriptions pages take their
   site names from the same list.
+- **Status messages.** On the Clusters list, a status with a non-empty `state_message` is a compact
+  filled label that opens an informational dialog, including Ready. The hub message renders as text;
+  statuses without a message stay noninteractive, and AI Grid membership stays outline. The
+  selected cluster is resolved by identity as the list refreshes, preserving list controls.
 - **Writes.** Add and Remove call `Clusters/Update` (in the relay's allowlist): the labels map as
   read with `ai-grid/enabled`, `ai-grid/role` and `location` set (or `ai-grid/enabled` dropped),
   `update_mask: metadata.labels`, `metadata.version` with `lock: true`. Aborted is the conflict
@@ -335,6 +339,14 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   Saved to Git for one with no phase and a Ready condition of reason
   `SavedToGit`, the reading `phaseWordOf` gives a model; Not found without an entry, as the
   backend's `gitModelRegistrations` says a client takes it.
+- **Create-form model status.** Partially ready in the selected-model table and Add models
+  picker opens the shared `ModelStatusModal` with the backend rollout report and per-cluster View
+  links. The picker is suspended while status is shown, preserving its filter, sort and pending
+  selections; returning restores trigger focus without confirming changes. The subscription
+  draft and token limits are retained. Other statuses, missing reports, and edit/view model tables
+  remain noninteractive. Browser coverage supplies a rollout report at the Models/List boundary
+  because the fake hub does not report deployments of newly created models; subscription writes
+  still use the real backend.
 - **The model join.** A ref names its model by `SubscriptionModelRef.model_id`, which the backend
   fills (with `display_name` and `description`) for a ref to a model in its catalog; a ref it
   can't join has no model and shows its name. A model the form adds is sent as the model's id in

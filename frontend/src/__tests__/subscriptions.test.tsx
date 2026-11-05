@@ -10,7 +10,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
 import type { NavigateFunction } from 'react-router-dom';
-import { clone } from '@bufbuild/protobuf';
+import { clone, create } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 import { Code, ConnectError } from '@connectrpc/connect';
 import { focusManager } from '@tanstack/react-query';
@@ -19,6 +19,7 @@ import { GLOBEX_ID, tenantObject, tenantsOf } from './connectTenants';
 import { MockConsoleService } from '../api/MockConsoleService';
 import { ConditionStatus } from '../gen/ai_grid/v1/condition_type_pb';
 import { SubscriptionSchema, type Subscription } from '../gen/ai_grid/v1/subscription_type_pb';
+import { ModelClusterStatusSchema, ModelPhase, ModelState, ModelViewTarget } from '../gen/ai_grid/v1/model_type_pb';
 import { DISPLAY_NAME } from '../pages/models/modelView';
 import { watchesKey } from '../notifications/storageKeys';
 import {
@@ -1374,4 +1375,174 @@ it('caps a new subscription id at the backend maximum, leaving room for -policy'
   await user.paste('a'.repeat(70));
   await user.click(screen.getByTestId('subscription-name-desc-editResourceLink'));
   expect(screen.getByTestId('subscription-name-desc-resourceName')).toHaveValue('a'.repeat(56));
+});
+
+describe('subscription creation model status', () => {
+  it('suspends the picker for partial status without confirming selections and keeps the subscription draft', async () => {
+    const user = userEvent.setup();
+    const service = seeded();
+    const model = fleetOf(service).find('granite-3-8b');
+    model.status!.state = ModelState.PARTIALLY_READY;
+    model.status!.clusters.push(
+      create(ModelClusterStatusSchema, {
+        cluster: 'site2',
+        state: ModelState.STARTING,
+        message: 'Waiting for the model server.',
+        viewUrl: 'https://console.site2.example.com/model',
+        viewTarget: ModelViewTarget.OPENSHIFT_CONSOLE,
+      }),
+    );
+    renderAt('/subscriptions/create', service);
+    await user.type(await screen.findByRole('textbox', { name: 'Name' }), 'Status team');
+    await pickOrganization(user, 'acme-robotics');
+    await user.click(screen.getByRole('button', { name: 'Add models' }));
+    const picker = await screen.findByRole('dialog', { name: 'Add models' });
+    await user.click(within(picker).getByRole('checkbox', { name: 'Select Granite 3.3 8B Instruct' }));
+    await user.type(within(picker).getByRole('textbox', { name: 'Search input' }), 'Granite');
+    await user.click(within(picker).getByRole('button', { name: 'Model name' }));
+    await user.click(within(picker).getByRole('button', { name: 'Partially ready for Granite 3.3 8B Instruct' }));
+    const status = await screen.findByRole('dialog', { name: 'Granite 3.3 8B Instruct status' });
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    expect(status).toHaveTextContent('The model isn’t ready on one or more of its clusters.');
+    const clusterTable = within(status).getByRole('grid', { name: 'Clusters of Granite 3.3 8B Instruct' });
+    expect(
+      within(clusterTable)
+        .getAllByRole('columnheader')
+        .map((header) => header.textContent),
+    ).toEqual(['Cluster', 'Site', 'Region', 'Status', 'View']);
+    const site2 = within(clusterTable).getByRole('cell', { name: 'site2' }).closest('tr')!;
+    expect(
+      within(site2)
+        .getAllByRole('cell')
+        .map((cell) => cell.textContent),
+    ).toEqual(['site2', 'New York', 'us-east', 'Starting on site2', 'View']);
+    expect(within(status).getByRole('link', { name: 'View on site2 in the OpenShift console' })).toHaveAttribute(
+      'href',
+      'https://console.site2.example.com/model',
+    );
+    expect(within(status).queryByRole('button', { name: 'Starting on site2' })).not.toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    const returned = await screen.findByRole('dialog', { name: 'Add models' });
+    expect(within(returned).getByRole('checkbox', { name: 'Select Granite 3.3 8B Instruct' })).toBeChecked();
+    expect(within(returned).getByRole('textbox', { name: 'Search input' })).toHaveValue('Granite');
+    expect(within(returned).getByRole('columnheader', { name: 'Model name' })).toHaveAttribute(
+      'aria-sort',
+      'descending',
+    );
+    await waitFor(() =>
+      expect(
+        within(returned).getByRole('button', { name: 'Partially ready for Granite 3.3 8B Instruct' }),
+      ).toHaveFocus(),
+    );
+    await user.click(within(returned).getByRole('button', { name: 'Add models' }));
+    expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('Status team');
+    expect(screen.getByRole('combobox', { name: 'Organization' })).toHaveValue('acme-robotics');
+    const selected = screen.getByRole('grid', { name: 'subscription models' });
+    const trigger = within(selected).getByRole('button', { name: 'Partially ready for Granite 3.3 8B Instruct' });
+    await user.click(trigger);
+    await user.click(
+      within(await screen.findByRole('dialog', { name: 'Granite 3.3 8B Instruct status' })).getByRole('button', {
+        name: 'Close',
+      }),
+    );
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('Status team');
+  });
+  it('keeps groups, token limits and pending model removals while inspecting status', async () => {
+    const user = userEvent.setup();
+    const service = seeded();
+    fleetOf(service).find('granite-3-8b').status!.state = ModelState.PARTIALLY_READY;
+    renderAt('/subscriptions/create', service);
+    await fillNewSubscription(user);
+    await pickOrganization(user, 'acme-robotics');
+    const selected = screen.getByRole('grid', { name: 'subscription models' });
+    expect(selected).toHaveTextContent('1,000 / 1 hour');
+    await user.click(within(selected).getByRole('button', { name: 'Partially ready for Granite 3.3 8B Instruct' }));
+    await user.keyboard('{Escape}');
+    expect(screen.getByRole('grid', { name: 'subscription models' })).toHaveTextContent('1,000 / 1 hour');
+    expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('Test team');
+    expect(screen.getByTestId('subscription-groups')).toHaveTextContent('engineering');
+    expect(screen.getByRole('combobox', { name: 'Organization' })).toHaveValue('acme-robotics');
+    await user.click(screen.getByRole('button', { name: 'Add models' }));
+    const picker = await screen.findByRole('dialog', { name: 'Add models' });
+    await user.click(within(picker).getByRole('checkbox', { name: 'Select Granite 3.3 8B Instruct' }));
+    await user.click(within(picker).getByRole('checkbox', { name: 'Select Llama 3.3 70B Instruct' }));
+    await user.click(within(picker).getByRole('button', { name: 'Partially ready for Granite 3.3 8B Instruct' }));
+    await user.click(
+      within(await screen.findByRole('dialog', { name: 'Granite 3.3 8B Instruct status' })).getByRole('button', {
+        name: 'Close',
+      }),
+    );
+    const returned = await screen.findByRole('dialog', { name: 'Add models' });
+    expect(within(returned).getByRole('checkbox', { name: 'Select Granite 3.3 8B Instruct' })).not.toBeChecked();
+    expect(within(returned).getByRole('checkbox', { name: 'Select Llama 3.3 70B Instruct' })).toBeChecked();
+    await user.click(within(returned).getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByRole('grid', { name: 'subscription models' })).toHaveTextContent('1,000 / 1 hour');
+  });
+
+  it('does not open status from a legacy phase or a partial model without cluster details', async () => {
+    const user = userEvent.setup();
+    const service = seeded();
+    const partial = fleetOf(service).find('granite-3-8b');
+    partial.status!.state = ModelState.PARTIALLY_READY;
+    partial.status!.clusters = [];
+    const legacy = fleetOf(service).find('llama-3-70b');
+    legacy.status!.phase = ModelPhase.PARTIALLY_AVAILABLE;
+    legacy.status!.state = ModelState.READY;
+    renderAt('/subscriptions/create', service);
+    await user.click(await screen.findByRole('button', { name: 'Add models' }));
+    const picker = await screen.findByRole('dialog', { name: 'Add models' });
+    expect(within(picker).queryByRole('button', { name: /^Partially ready/ })).not.toBeInTheDocument();
+    await user.click(within(picker).getByRole('checkbox', { name: 'Select Granite 3.3 8B Instruct' }));
+    await user.click(within(picker).getByRole('button', { name: 'Add models' }));
+    expect(
+      within(screen.getByRole('grid', { name: 'subscription models' })).queryByRole('button', {
+        name: /^Partially ready/,
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('returns to the picker when a refreshed model becomes ineligible and does not reopen status later', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      const service = seeded();
+      const model = fleetOf(service).find('granite-3-8b');
+      model.status!.state = ModelState.PARTIALLY_READY;
+      renderAt('/subscriptions/create', service);
+      await user.click(await screen.findByRole('button', { name: 'Add models' }));
+      await user.click(
+        within(await screen.findByRole('dialog', { name: 'Add models' })).getByRole('button', {
+          name: 'Partially ready for Granite 3.3 8B Instruct',
+        }),
+      );
+      model.status!.state = ModelState.READY;
+      await act(() => vi.advanceTimersByTimeAsync(30_000));
+      expect(await screen.findByRole('dialog', { name: 'Add models' })).toBeVisible();
+      expect(screen.queryByRole('dialog', { name: 'Granite 3.3 8B Instruct status' })).not.toBeInTheDocument();
+      model.status!.state = ModelState.PARTIALLY_READY;
+      await act(() => vi.advanceTimersByTimeAsync(30_000));
+      expect(await screen.findByRole('button', { name: 'Partially ready for Granite 3.3 8B Instruct' })).toBeVisible();
+      expect(screen.queryByRole('dialog', { name: 'Granite 3.3 8B Instruct status' })).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Partially ready for Granite 3.3 8B Instruct' }));
+      fleetOf(service).models = fleetOf(service).models.filter((entry) => entry.id !== model.id);
+      await act(() => vi.advanceTimersByTimeAsync(30_000));
+      expect(await screen.findByRole('dialog', { name: 'Add models' })).toBeVisible();
+      expect(screen.queryByRole('dialog', { name: 'Granite 3.3 8B Instruct status' })).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('keeps model status noninteractive while editing an existing subscription', async () => {
+    const user = userEvent.setup();
+    const service = seeded();
+    fleetOf(service).find('granite-3-8b').status!.state = ModelState.PARTIALLY_READY;
+    renderAt('/subscriptions/edit/engineering', service);
+    await screen.findByRole('grid', { name: 'subscription models' });
+    expect(screen.queryByRole('button', { name: /^Partially ready/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Add models' }));
+    const picker = await screen.findByRole('dialog', { name: 'Add models' });
+    expect(within(picker).queryByRole('button', { name: /^Partially ready/ })).not.toBeInTheDocument();
+  });
 });

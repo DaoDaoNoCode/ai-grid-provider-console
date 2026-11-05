@@ -15,11 +15,11 @@ type Props = {
   onClose: () => void;
 };
 
-export const ModelStatusModal: React.FC<Props> = ({ model, clusters, onClose }) => {
+export const ModelStatusContent: React.FC<Pick<Props, 'model' | 'clusters'>> = ({ model, clusters }) => {
   const title = titleOf(model);
   const gitMessage = gitStatusMessage[model.state];
   return (
-    <Modal {...statusModalLayout} isOpen onClose={onClose} aria-label={`${title} status`}>
+    <>
       <ModalHeader>
         <Title headingLevel="h1" size="2xl">
           <Flex gap={{ default: 'gapMd' }} alignItems={{ default: 'alignItemsCenter' }}>
@@ -45,6 +45,12 @@ export const ModelStatusModal: React.FC<Props> = ({ model, clusters, onClose }) 
           </Stack>
         )}
       </ModalBody>
-    </Modal>
+    </>
   );
 };
+
+export const ModelStatusModal: React.FC<Props> = ({ model, clusters, onClose }) => (
+  <Modal {...statusModalLayout} isOpen onClose={onClose} aria-label={`${titleOf(model)} status`}>
+    <ModelStatusContent model={model} clusters={clusters} />
+  </Modal>
+);

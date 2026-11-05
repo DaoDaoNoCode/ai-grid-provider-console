@@ -44,7 +44,7 @@ import { formatLocaleNumber } from '../../../utilities/format';
 import { getSectionUrl } from '../../../utilities/maasGovernanceNavigation';
 import { fieldErrorsOf } from '../../../validation';
 import type { SubscriptionModelEntry } from '../hooks/useSubscriptionModels';
-import { entryKey, useSubscriptionModels } from '../hooks/useSubscriptionModels';
+import { entryKey, entryModelId, useSubscriptionModels } from '../hooks/useSubscriptionModels';
 import {
   descriptionOf,
   groupsOf,
@@ -61,6 +61,9 @@ import {
 } from '../subscriptionText';
 import { DESCRIPTION, DISPLAY_NAME, displayNameOf, type ModelView } from '../../models/modelView';
 import { useOrganizations, useSubscriptionWrites } from '../useSubscriptions';
+import { useClusterList } from '../../clusters/useClusters';
+import { ModelStatusModal } from '../../models/ModelStatusModal';
+import { hasPartialModelStatus } from '../partialModelStatus';
 import { EditRateLimitsModal } from './EditRateLimitsModal';
 
 type Props = {
@@ -140,6 +143,11 @@ export const CreateSubscriptionForm: React.FC<Props> = ({
   draft,
 }) => {
   const navigate = useNavigate();
+  const { data: clusters } = useClusterList();
+  const [statusModelId, setStatusModelId] = useState<string>();
+  const [pickerFocusModelId, setPickerFocusModelId] = useState<string>();
+  const statusModel = availableModels.find((model) => model.id === statusModelId);
+  if (statusModelId && !hasPartialModelStatus(statusModel)) setStatusModelId(undefined);
   const { data: organizations, known: organizationsKnown, error: organizationsError } = useOrganizations();
   const { createSubscription, updateSubscription } = useSubscriptionWrites();
   const isEditing = !!subscriptionInfo?.object;
@@ -341,6 +349,8 @@ export const CreateSubscriptionForm: React.FC<Props> = ({
   const canAddModels = isEditing || availableModels.length > 0;
 
   const rows: SubscriptionModelRow[] = models.map((entry) => {
+    const currentModel = availableModels.find((model) => model.id === entryModelId(entry));
+    const opensStatus = !isEditing && hasPartialModelStatus(currentModel);
     const status =
       entry.saved && subscriptionInfo
         ? registrationStatusOf(subscriptionInfo.modelRegistrations, entry.ref)
@@ -350,6 +360,7 @@ export const CreateSubscriptionForm: React.FC<Props> = ({
       title: refTitleOf(entry.ref, entry.model),
       name: entry.ref.name,
       ...status,
+      ...(opensStatus ? { status: currentModel.state, onOpenStatus: () => setStatusModelId(currentModel.id) } : {}),
       tokenRateLimits: entry.tokenRateLimits,
       unlimited: entry.unlimited,
     };
@@ -510,6 +521,20 @@ export const CreateSubscriptionForm: React.FC<Props> = ({
         {isAddModelsModalOpen && canAddModels && (
           <AddModelsModal
             currentModels={models}
+            status={
+              hasPartialModelStatus(statusModel)
+                ? { model: statusModel, clusters, onClose: () => setStatusModelId(undefined) }
+                : undefined
+            }
+            focusModelId={pickerFocusModelId}
+            onOpenStatus={
+              isEditing
+                ? undefined
+                : (model) => {
+                    setPickerFocusModelId(model.id);
+                    setStatusModelId(model.id);
+                  }
+            }
             onAdd={(added) => {
               setModelsTouched(true);
               handleAddModels(added);
@@ -520,6 +545,10 @@ export const CreateSubscriptionForm: React.FC<Props> = ({
             }}
             onClose={() => setIsAddModelsModalOpen(false)}
           />
+        )}
+
+        {!isAddModelsModalOpen && hasPartialModelStatus(statusModel) && (
+          <ModelStatusModal model={statusModel} clusters={clusters} onClose={() => setStatusModelId(undefined)} />
         )}
 
         {editLimitsTarget != null && editingModel && (

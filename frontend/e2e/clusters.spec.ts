@@ -31,3 +31,25 @@ for (const { name, width } of [
     await page.keyboard.press('Escape');
   });
 }
+
+// fixtures/poc/managedclusters.json gives site1 a Ready condition with this hub message.
+test('opens a cluster status message from the keyboard without changing the list filter', async ({ page }) => {
+  await page.goto('/clusters');
+  const filter = page.getByRole('textbox', { name: 'Filter clusters' });
+  await filter.fill(MEMBER);
+  const status = page.getByRole('button', { name: `Ready for ${MEMBER}`, exact: true });
+  await expect(status).toBeVisible();
+  await status.focus();
+  await page.keyboard.press('Enter');
+  const dialog = page.getByRole('dialog', { name: `${MEMBER} status`, exact: true });
+  await expect(dialog.getByText('Managed cluster is available', { exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(status).toBeFocused();
+  await page.keyboard.press('Enter');
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(status).toBeFocused();
+  await expect(filter).toHaveValue(MEMBER);
+  await expect(page.getByRole('link', { name: MEMBER, exact: true })).toBeVisible();
+});
