@@ -2519,7 +2519,7 @@ describe('each cluster of a placed model (status.clusters, proposal P13)', () =>
     return service;
   };
 
-  it('expands a model to each placed cluster the backend reports, with its region, sync and deployment', async () => {
+  it('expands a model to each placed cluster the backend reports, with its site, region and status', async () => {
     const user = userEvent.setup();
     renderAt('/models', partial());
     const row = await rowOf('mistral-7b-instruct');
@@ -2528,12 +2528,10 @@ describe('each cluster of a placed model (status.clusters, proposal P13)', () =>
     await user.click(within(row).getByRole('button', { name: 'Details' }));
     const rows = await tableRows('Clusters of Mistral 7B Instruct');
     // As the backend lists them: hub-ingress, in the message only, has no row.
-    expect(rows.map((r) => within(r).getAllByRole('cell')[0].textContent)).toEqual(['site1', 'site2', 'site3']);
-    expect(rows.map((r) => within(r).getAllByRole('cell')[1].textContent)).toEqual([
-      'us-west',
-      'us-east',
-      'europe-west',
-    ]);
+    expect(rows.map((r) => cellIn(r, 'Cluster').textContent)).toEqual(['site1', 'site2', 'site3']);
+    expect(within(rows[0]).getByRole('link', { name: 'site1' })).toHaveAttribute('href', '/clusters/site1');
+    expect(rows.map((r) => cellIn(r, 'Site').textContent)).toEqual(['San Francisco', 'New York', 'Brussels']);
+    expect(rows.map((r) => cellIn(r, 'Region').textContent)).toEqual(['us-west', 'us-east', 'europe-west']);
     expect(rows.map((r) => cellIn(r, 'Status').textContent)).toEqual([
       'Ready on site1',
       'Starting on site2',
@@ -2558,7 +2556,8 @@ describe('each cluster of a placed model (status.clusters, proposal P13)', () =>
       await user.click(await screen.findByRole('button', { name: 'Starting on site2' }));
       const modal = await screen.findByRole('dialog', { name: 'Mistral 7B Instruct on site2' });
       expect(within(modal).getByRole('heading', { name: /Mistral 7B Instruct status/ })).toBeVisible();
-      expect(modal).toHaveTextContent('us-east');
+      expect(modal).toHaveTextContent('SiteNew York');
+      expect(modal).toHaveTextContent('Regionus-east');
       expect(modal).toHaveTextContent('LLMInferenceService not ready');
       expect(within(modal).queryByRole('button', { name: /Edit|Stop/ })).not.toBeInTheDocument();
       await user.keyboard('{Escape}');
@@ -2574,6 +2573,25 @@ describe('each cluster of a placed model (status.clusters, proposal P13)', () =>
     const table = await screen.findByRole('grid', { name: 'Clusters of Mistral 7B Instruct' });
     expect(screen.getByTestId('model-clusters')).toContainElement(table);
     expect(await within(table).findByRole('button', { name: 'Ready on site1' })).toBeVisible();
+  });
+
+  it('shows a dash for a missing site or region, never one in place of the other', async () => {
+    const user = userEvent.setup();
+    const service = partial();
+    const [site1, site2] = ['site1', 'site2'].map((name) => service.clusters.find((c) => c.name === name)!);
+    site1.siteName = undefined;
+    site2.region = undefined;
+    renderAt('/models/mistral-7b-instruct', service);
+    const rows = await tableRows('Clusters of Mistral 7B Instruct');
+    expect(rows.map((r) => [cellIn(r, 'Site').textContent, cellIn(r, 'Region').textContent])).toEqual([
+      ['—', 'us-west'],
+      ['New York', '—'],
+      ['Brussels', 'europe-west'],
+    ]);
+    await user.click(within(rows[0]).getByRole('button', { name: 'Ready on site1' }));
+    const modal = await screen.findByRole('dialog', { name: 'Mistral 7B Instruct on site1' });
+    expect(modal).toHaveTextContent('Site—');
+    expect(modal).toHaveTextContent('Regionus-west');
   });
 });
 
@@ -2609,7 +2627,7 @@ describe('the Models list expands every row', () => {
     renderAt('/models', service);
     await user.click(within(await rowOf('widget')).getByRole('button', { name: 'Details' }));
     const [row] = await tableRows('Clusters of Widget');
-    expect(row).toHaveTextContent(/^site1us-westPending sync on site1—$/);
+    expect(row).toHaveTextContent(/^site1San Franciscous-westPending sync on site1—$/);
     // Nothing has reported, so the status opens nothing.
     expect(within(row).queryByRole('button')).not.toBeInTheDocument();
   });
@@ -2755,8 +2773,10 @@ describe('the deployment and MaaS statuses', () => {
     expect(within(section).getByRole('button', { name: 'Pending availability of smollm2' })).toBeVisible();
     const rows = await tableRows('Availability of smollm2', section);
     expect(rows).toHaveLength(1);
-    // hub-ingress isn't a cluster the hub lists here, so its region is a dash.
-    expect(rows[0]).toHaveTextContent('hub-ingress—');
+    expect(within(rows[0]).getByRole('link', { name: 'hub-ingress' })).toHaveAttribute('href', '/clusters/hub-ingress');
+    // hub-ingress isn't a cluster the hub lists here, so its site and region are dashes.
+    expect(cellIn(rows[0], 'Site')).toHaveTextContent(/^—$/);
+    expect(cellIn(rows[0], 'Region')).toHaveTextContent(/^—$/);
     expect(cellIn(rows[0], 'Availability')).toHaveTextContent(/^Awaiting subscription on hub-ingress$/);
     expect(rows[0]).toHaveTextContent('Awaiting governance pairing');
   });

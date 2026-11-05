@@ -3,7 +3,7 @@
 // lists each cluster's status. The design's Sync now button waits until after the 11-06 freeze.
 import { Flex, FlexItem, Label, Modal, ModalBody, ModalHeader, Stack, Title } from '@patternfly/react-core';
 import { statusLabelProps } from '../../utilities/status';
-import type { ClusterRegions } from './clusterRegions';
+import type { ClusterPlaces } from './clusterPlaces';
 import { ModelClustersTable } from './ModelClustersTable';
 import { gitStatusMessage } from './modelStatusInfo';
 import { titleOf, type ModelView } from './modelView';
@@ -11,7 +11,7 @@ import { statusModalLayout } from './statusModalLayout';
 
 type Props = {
   model: ModelView;
-  clusters: ClusterRegions;
+  clusters: ClusterPlaces;
   onClose: () => void;
 };
 

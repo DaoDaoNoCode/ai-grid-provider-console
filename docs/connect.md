@@ -224,17 +224,23 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   dialog with the design's copy, MaaS's own message for each ingress cluster (`status.ingress`), and a link
   to Subscriptions where a subscription is missing.
 - **Each cluster.** The expanded row, the Partially ready dialog and the model's page list
-  `status.clusters` with Cluster (a link to the cluster), Region (the cluster's
-  `status.location.region` from `Clusters/List`), Status (`clusters[].state`, opening what that
-  cluster reported: Git sync, deployment, their messages, the backend's per-cluster message) and
+  `status.clusters` with Cluster (a link to the cluster), Site and Region (the cluster's
+  `status.location.site_name` and `status.location.region` from `Clusters/List`, as the deploy
+  wizard and the Clusters pages show them; a dash for either when it is empty, never one in place
+  of the other; `clusterPlaces.ts`), Status (`clusters[].state`, opening what that cluster
+  reported: its Site and Region, Git sync, deployment, their messages, the backend's per-cluster
+  message) and
   View (`view_url`: OpenShift AI's model deployments, or the OpenShift console on a cluster without
   the dashboard; only an http(s) link renders). While no cluster has reported, the rows are
   `status.placement.selected_clusters`, each Pending sync, opening nothing; a reported cluster
   with no state yet also reads Pending sync, and opens nothing either, as the design has it (Pending
   sync stays an outline label). Inside the Partially ready dialog, cluster statuses open nothing:
-  PatternFly's dialogs don't stack. The design's progress stepper isn't here: the backend doesn't report the `LLMInferenceService` condition tree.
+  PatternFly's dialogs don't stack. The design's progress stepper isn't here: the backend doesn't
+  report the `LLMInferenceService` condition tree. The design's Location column is Site and Region
+  here; the Location label stays on the Clusters pages and the map.
 - **The model page** keeps its layout: the Status label, an Availability section (the label, then
-  each ingress cluster with MaaS's message) and a Clusters section with the same table.
+  each ingress cluster, a link to it, with its Site, Region and MaaS's message) and a Clusters
+  section with the same table.
 - **Polling.** A model counts as still changing (`isUnsettled`) while it is Saved to Git or Unknown,
   or Pending with no cluster entry; while a placed cluster is Syncing, Synced or Starting; or while
   MaaS is still routing the model, or hasn't reported it, and a cluster serves it. Ready, Failed and
