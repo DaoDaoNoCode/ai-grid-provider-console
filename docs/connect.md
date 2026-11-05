@@ -119,9 +119,12 @@ use Query declare `@tanstack/react-query` `^5.105.0` as their peer, which the co
 dependency satisfies, so `pnpm why @tanstack/react-query` finds one copy. Bump every
 `@perses-dev` package together, with the `echarts` and `immer` versions their peers name.
 `e2e/perses.spec.ts` renders real Perses panels; keep it passing when updating Perses, its
-plugins or Query. `frontend/patches/` holds a pnpm patch to `@perses-dev/components`: its time
-series tooltip reads ECharts scale internals that ECharts 6.1 moved, and showed no tooltip
-without it; `pnpm-workspace.yaml` says when to drop it.
+plugins or Query. `frontend/patches/` holds two pnpm patches: one to `@perses-dev/components`,
+whose time series tooltip reads ECharts scale internals that ECharts 6.1 moved, and showed no
+tooltip without it; and one to `@perses-dev/bar-chart-plugin`, which escapes the names in its
+tooltip. A patch is keyed by the exact version it applies to, so moving a patched package means
+renaming its patch, and checking that it still applies; `pnpm-workspace.yaml` says when to drop
+each.
 
 Navigations render as React transitions, React Router's default. On React 18 the console turned
 them off (f24e1aa, `routerProps` in the `frontend/src/router.ts` this move deletes): React 18 can drop a class component's update that lands mid-render, which left

@@ -5,9 +5,11 @@ allowBuilds:
 
 # pnpm refuses a version published less than a day ago (minimumReleaseAge, one day by default),
 # even in a frozen install from a lockfile that names it. These Perses plugin prereleases were
-# published on 2026-11-05 between 11:36 and 11:56 UTC; the list names exactly them, so every other
-# package keeps the delay. Drop it after 2026-11-06 11:57 UTC, when they're all a day old.
+# published on 2026-11-05 between 11:37 and 11:56 UTC (the bar chart at 11:41:22, the time series
+# last, at 11:56:15); the list names exactly them, so every other package keeps the delay. Drop it
+# after 2026-11-06 11:57 UTC, when they're all a day old.
 minimumReleaseAgeExclude:
+  - '@perses-dev/bar-chart-plugin@0.15.0-beta.1'
   - '@perses-dev/gauge-chart-plugin@0.15.0-beta.1'
   - '@perses-dev/loki-plugin@0.8.0-beta.1'
   - '@perses-dev/markdown-plugin@0.14.0-beta.1'
@@ -32,7 +34,7 @@ patchedDependencies:
   # so the patch escapes the category and series names and the marker color (& < > " ') in
   # lib/BarChartBase.js, the build Vite bundles, as the pie chart already does
   # (src/pages/monitoring/persesPlugins.ts).
-  '@perses-dev/bar-chart-plugin@0.15.0-beta.0': patches/@perses-dev__bar-chart-plugin@0.15.0-beta.0.patch
+  '@perses-dev/bar-chart-plugin@0.15.0-beta.1': patches/@perses-dev__bar-chart-plugin@0.15.0-beta.1.patch
   # The time series tooltip finds the series near the cursor from the y axis scale's private
   # _interval (and a log scale's _extent), which ECharts 6.1 no longer has, so on the ECharts these
   # Perses releases require it never shows. The patch reads the same values where ECharts 6.1 keeps

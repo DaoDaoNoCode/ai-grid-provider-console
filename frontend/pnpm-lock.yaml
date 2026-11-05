@@ -9,7 +9,7 @@ overrides:
   qs@>=6.7.0 <6.16.1: 6.16.1
 
 patchedDependencies:
-  '@perses-dev/bar-chart-plugin@0.15.0-beta.0': 4fee1fb6a3e30699a42465eb09a1748d36bacf895af6cf0963428e3976fbd7b5
+  '@perses-dev/bar-chart-plugin@0.15.0-beta.1': 4fee1fb6a3e30699a42465eb09a1748d36bacf895af6cf0963428e3976fbd7b5
   '@perses-dev/components@0.56.0-beta.1': 089332f4006c231f705083adfcff50d03505c82633b40654fd222e0f9d47bbff
 
 importers:
@@ -59,8 +59,8 @@ importers:
         specifier: ~6.7.0
         version: 6.7.0
       '@perses-dev/bar-chart-plugin':
-        specifier: 0.15.0-beta.0
-        version: 0.15.0-beta.0(patch_hash=4fee1fb6a3e30699a42465eb09a1748d36bacf895af6cf0963428e3976fbd7b5)(b33f1405675777da7673e3f46500b8d3)
+        specifier: 0.15.0-beta.1
+        version: 0.15.0-beta.1(patch_hash=4fee1fb6a3e30699a42465eb09a1748d36bacf895af6cf0963428e3976fbd7b5)(b33f1405675777da7673e3f46500b8d3)
       '@perses-dev/client':
         specifier: 0.56.0-beta.1
         version: 0.56.0-beta.1(react@19.3.1)
@@ -1137,19 +1137,19 @@ packages:
   '@patternfly/react-tokens@6.7.0':
     resolution: {integrity: sha512-jH96EUmjSUSTabxkBvxb95Fr+7baMACNlGBSUwOYJJcJQTE2N78lhRf8muoUKBFzpkmzn/w0KThoiBQRD2TdMw==}
 
-  '@perses-dev/bar-chart-plugin@0.15.0-beta.0':
-    resolution: {integrity: sha512-0Q9FTXA7Q2gH8+mApUQmVMFHOlpp133gkvvAD0mSUgjy4P5E899b/YOjw47e06K3w71Z8g8QgouqmfMnXIQ1bg==}
+  '@perses-dev/bar-chart-plugin@0.15.0-beta.1':
+    resolution: {integrity: sha512-GCCDI/oSQKnpDJwxyJnkUn2owaiLt4QwjcPRTsxAjHmnfVwQB9ROTD74NYRdQloUhjQ2hytYxHEIkK3dLnL8Hw==}
     peerDependencies:
       '@emotion/react': ^11.7.1
       '@emotion/styled': ^11.6.0
       '@hookform/resolvers': ^5.9.1
-      '@perses-dev/components': ^0.56.0-beta.0
-      '@perses-dev/plugin-system': ^0.56.0-beta.0
+      '@perses-dev/components': ^0.56.0-beta.1
+      '@perses-dev/plugin-system': ^0.56.0-beta.1
       '@perses-dev/spec': ^0.3.0
       date-fns: ^4.1.0
       date-fns-tz: ^3.2.0
-      echarts: 5.5.0
-      immer: ^10.1.1
+      echarts: 6.1.0
+      immer: ^11.2.9
       lodash: ^4.17.21
       react: ^18.3.0 || ^19.0.0
       react-dom: ^18.3.0 || ^19.0.0
@@ -4183,7 +4183,7 @@ snapshots:
 
   '@patternfly/react-tokens@6.7.0': {}
 
-  '@perses-dev/bar-chart-plugin@0.15.0-beta.0(patch_hash=4fee1fb6a3e30699a42465eb09a1748d36bacf895af6cf0963428e3976fbd7b5)(b33f1405675777da7673e3f46500b8d3)':
+  '@perses-dev/bar-chart-plugin@0.15.0-beta.1(patch_hash=4fee1fb6a3e30699a42465eb09a1748d36bacf895af6cf0963428e3976fbd7b5)(b33f1405675777da7673e3f46500b8d3)':
     dependencies:
       '@emotion/react': 11.14.0(@types/react@19.3.0)(react@19.3.1)
       '@emotion/styled': 11.14.1(@emotion/react@11.14.0(@types/react@19.3.0)(react@19.3.1))(@types/react@19.3.0)(react@19.3.1)
