@@ -66,7 +66,7 @@ BFF with only a backend connection.
 
 ## Backend authorization: ownership accepted, impersonation proposed
 
-`docs/plan/bff-api.md` has always said "the backend decides what the caller may do". The
+`docs/plan/bff-api.md` (now `docs/bff.md`) has always said "the backend decides what the caller may do". The
 backend does not: since [backend PR #9](https://github.com/ai-grid-cloud/ai-grid-provider-backend/pull/9)
 it constructs `connect.NewServer()` with no authentication or authorization interceptor
 (`cmd/ai-grid-provider-backend/main.go`) and talks to Kubernetes with its own ServiceAccount

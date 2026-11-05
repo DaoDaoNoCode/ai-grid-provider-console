@@ -22,8 +22,8 @@ subjects:
 # at Provisioning in the console.
 #
 # TODO(backend-as-caller): delete this ClusterRole and its binding once the
-# backend builds its hub client from the forwarded user token (work-breakdown
-# backend item 2). The ServiceAccount then only needs system:auth-delegator
+# backend builds its hub client from the forwarded user token (ADR-0004,
+# "Backend authorization"). The ServiceAccount then only needs system:auth-delegator
 # for the proxy's TokenReviews. Order matters: ship the backend that does this, and the
 # console that calls it, first, or the Clusters page stops working.
 apiVersion: rbac.authorization.k8s.io/v1

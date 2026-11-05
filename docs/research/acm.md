@@ -1080,7 +1080,7 @@ OFFLINE, Unknown/missing -> UNKNOWN.
 
 The BFF's `GridCluster` then adds `status`, `statusMessage`, `consoleUrl`, `siteName`, `latitude`,
 `longitude`, `platform`, `product`, `gpuCapacity` (`capacity["nvidia.com/gpu"]`), `kubernetesVersion`,
-`addons`, as planned in `docs/plan/bff-api.md`.
+`addons`, as planned in `docs/bff.md`.
 
 ### `Placements` service
 

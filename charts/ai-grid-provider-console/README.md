@@ -55,7 +55,7 @@ Replace `CLIENT_SECRET` with the client secret from the organization's identity 
 
 A call goes through the OpenShift router, then kube-auth-proxy, then the BFF, and each waits for the
 next. The BFF answers within its 60s server write timeout (a write to the backend is bounded by
-`BACKEND_WRITE_TIMEOUT`, 30s by default and at most 50s; `docs/plan/bff-api.md`). So the two in
+`BACKEND_WRITE_TIMEOUT`, 30s by default and at most 50s; `docs/bff.md`). So the two in
 front of it wait longer, and a slow model or subscription write ends in the BFF's own answer rather
 than a proxy's 504:
 

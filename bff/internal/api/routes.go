@@ -7,7 +7,7 @@ import (
 )
 
 // registerRoutes attaches every authenticated endpoint. Keep this list in sync
-// with docs/plan/bff-api.md.
+// with docs/bff.md.
 func (a *App) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+APIPrefix+"/user", a.getUser)
 	mux.HandleFunc("GET "+APIPrefix+"/config", a.getConfig)

@@ -9,7 +9,7 @@ type Props = {
 
 /**
  * What a signed-in user who is not a provider admin sees instead of the pages and their nav: the
- * BFF answers them 403 on everything but /user and /config (docs/plan/bff-api.md, Identity), so
+ * BFF answers them 403 on everything but /user and /config (docs/bff.md, Identity), so
  * every page would only show an error.
  */
 export const ProviderAdminsOnly: React.FC<Props> = ({ username, canSignOut }) => {

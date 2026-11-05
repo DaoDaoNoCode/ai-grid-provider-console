@@ -5,8 +5,9 @@ PatternFly 6's components and documented patterns: use them before writing CSS, 
 [PatternFly's empty state](https://www.patternfly.org/components/empty-state/design-guidelines),
 [table](https://www.patternfly.org/components/table/design-guidelines) and
 [content](https://www.patternfly.org/content-design/overview) guidelines when in doubt. The repository's
-rules (what the BFF may do, how a feature is added) are in [../AGENTS.md](../AGENTS.md); building
-against the fake backend is in [../mock/AGENTS.md](../mock/AGENTS.md).
+rules (what the BFF may do, how a feature is added) are in [../AGENTS.md](../AGENTS.md); calling
+the backend's API is in [../docs/connect.md](../docs/connect.md), and running the console without
+a cluster (`make dev-fake`) in [../docs/dev-setup.md](../docs/dev-setup.md).
 
 ## A page
 

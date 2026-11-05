@@ -1,6 +1,6 @@
 import type { DashboardResource } from '@perses-dev/client';
 
-/** Where the BFF relays the hub's Perses API (bff/internal/perses, docs/plan/bff-api.md "The Perses relay"). */
+/** Where the BFF relays the hub's Perses API (bff/internal/perses, docs/bff.md "The Perses relay"). */
 export const PERSES_API = '/perses/api';
 
 /** The Monitoring page: the hub's Perses dashboards, read through the BFF's relay. */

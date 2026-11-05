@@ -196,7 +196,7 @@ func forwardIdentity(ctx context.Context, method string, req, reply any, cc *grp
 // the header on it), so the receiver splits first and then decodes. This is
 // a proposal to the backend team, not yet agreed: the backend doesn't decode
 // it yet and sees a non-ASCII name still encoded (harmless while these values
-// are advisory, docs/plan/bff-api.md).
+// are advisory, docs/bff.md).
 func EncodeMetadataValue(v string) string {
 	if !strings.ContainsFunc(v, func(r rune) bool { return r == '%' || r < 0x20 || r > 0x7e }) {
 		return v
