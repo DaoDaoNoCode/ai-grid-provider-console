@@ -3,11 +3,12 @@
 // it, and a dialog with the longer explanation. The state is the backend's (ModelStatus.maas); the
 // dialog also lists MaaS's own message for each ingress cluster (ModelStatus.ingress), because MaaS
 // has more pending reasons than the design's copy names.
-import { useState, type CSSProperties } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Alert,
   Button,
+  Content,
   DescriptionList,
   DescriptionListDescription,
   DescriptionListGroup,
@@ -50,15 +51,6 @@ const alertVariant = (label: string): 'info' | 'warning' | 'danger' => {
   return 'info';
 };
 
-/** The reason under the label, in its status color (the token is set directly: Content's own wins). */
-const subtextStyle = (label: string): CSSProperties => {
-  const tone = label === 'Pending' ? 'info' : label === 'Unavailable' ? 'warning' : label === 'Failed' ? 'danger' : '';
-  return {
-    textDecoration: 'underline dotted',
-    ...(tone ? { color: `var(--pf-t--global--text--color--status--${tone}--default)` } : {}),
-  };
-};
-
 /**
  * Availability on the Models list and the model page: a compact label, and the short reason under it.
  * The label and the reason open the dialog when it has more to say; Available doesn't.
@@ -83,21 +75,20 @@ export const ModelAvailability: React.FC<Props> = ({ model, availability, onMode
           <span className="pf-v6-screen-reader"> availability of {titleOf(model)}</span>
         </Label>
       </div>
-      {availability.subtext &&
-        (opens ? (
-          <Button
-            variant="link"
-            isInline
-            className="pf-v6-c-content--small"
-            style={subtextStyle(availability.label)}
-            onClick={() => setOpen(true)}
-          >
-            {availability.subtext}
-            <span className="pf-v6-screen-reader">: {titleOf(model)}</span>
-          </Button>
-        ) : (
-          <div className="pf-v6-c-content--small">{availability.subtext}</div>
-        ))}
+      {/* The reason under the label, in small text. One that opens the dialog is an inline link:
+          PatternFly underlines it and gives it the link colour; the label above carries the tone. */}
+      {availability.subtext && (
+        <Content component="small">
+          {opens ? (
+            <Button variant="link" isInline onClick={() => setOpen(true)}>
+              {availability.subtext}
+              <span className="pf-v6-screen-reader">: {titleOf(model)}</span>
+            </Button>
+          ) : (
+            availability.subtext
+          )}
+        </Content>
+      )}
       {open && opens && (
         <AvailabilityModal
           model={model}
