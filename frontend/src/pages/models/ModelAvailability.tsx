@@ -33,6 +33,11 @@ import { titleOf, type ModelView } from './modelView';
 type Props = {
   model: Pick<ModelView, 'id' | 'displayName' | 'ingress'>;
   availability: AvailabilityView;
+  /**
+   * On the model's own page: the dialog leaves out "Go to the model", which would only reload the
+   * page behind it.
+   */
+  onModelPage?: boolean;
 };
 
 /** Pending is the subscriptions hourglass in nonstatus purple; the other words use the shared tones. */
@@ -58,7 +63,7 @@ const subtextStyle = (label: string): CSSProperties => {
  * Availability on the Models list and the model page: a compact label, and the short reason under it.
  * The label and the reason open the dialog when it has more to say; Available doesn't.
  */
-export const ModelAvailability: React.FC<Props> = ({ model, availability }) => {
+export const ModelAvailability: React.FC<Props> = ({ model, availability, onModelPage }) => {
   const [open, setOpen] = useState(false);
   const opens = !!availability.heading && !!availability.body;
   if (open && !opens) {
@@ -73,7 +78,6 @@ export const ModelAvailability: React.FC<Props> = ({ model, availability }) => {
           variant={opens ? 'filled' : 'outline'}
           isClickable={opens}
           onClick={opens ? () => setOpen(true) : undefined}
-          data-testid="model-availability-label"
         >
           {availability.label}
           <span className="pf-v6-screen-reader"> availability of {titleOf(model)}</span>
@@ -87,31 +91,35 @@ export const ModelAvailability: React.FC<Props> = ({ model, availability }) => {
             className="pf-v6-c-content--small"
             style={subtextStyle(availability.label)}
             onClick={() => setOpen(true)}
-            data-testid="model-availability-subtext"
           >
             {availability.subtext}
             <span className="pf-v6-screen-reader">: {titleOf(model)}</span>
           </Button>
         ) : (
-          <div className="pf-v6-c-content--small" data-testid="model-availability-subtext">
-            {availability.subtext}
-          </div>
+          <div className="pf-v6-c-content--small">{availability.subtext}</div>
         ))}
-      {open && opens && <AvailabilityModal model={model} availability={availability} onClose={() => setOpen(false)} />}
+      {open && opens && (
+        <AvailabilityModal
+          model={model}
+          availability={availability}
+          onModelPage={onModelPage}
+          onClose={() => setOpen(false)}
+        />
+      )}
     </>
   );
 };
 
-const AvailabilityModal: React.FC<Props & { onClose: () => void }> = ({ model, availability, onClose }) => {
+const AvailabilityModal: React.FC<Props & { onClose: () => void }> = ({
+  model,
+  availability,
+  onModelPage,
+  onClose,
+}) => {
   const title = titleOf(model);
+  const modelsLink = availability.modelsLink && !onModelPage;
   return (
-    <Modal
-      {...statusModalLayout}
-      isOpen
-      onClose={onClose}
-      data-testid="model-availability-modal"
-      aria-label={`${title} availability`}
-    >
+    <Modal {...statusModalLayout} isOpen onClose={onClose} aria-label={`${title} availability`}>
       <ModalHeader>
         <Title headingLevel="h1" size="2xl">
           <Flex gap={{ default: 'gapMd' }} alignItems={{ default: 'alignItemsCenter' }}>
@@ -133,7 +141,7 @@ const AvailabilityModal: React.FC<Props & { onClose: () => void }> = ({ model, a
             {availability.body}
           </Alert>
           {model.ingress.length > 0 && (
-            <DescriptionList isCompact aria-label="What MaaS reported" data-testid="model-availability-reports">
+            <DescriptionList isCompact aria-label="What MaaS reported">
               {model.ingress.map((ingress) => (
                 <DescriptionListGroup key={ingress.cluster}>
                   <DescriptionListTerm>MaaS on {ingress.cluster}</DescriptionListTerm>
@@ -146,7 +154,7 @@ const AvailabilityModal: React.FC<Props & { onClose: () => void }> = ({ model, a
           )}
         </Stack>
       </ModalBody>
-      {(availability.subscriptionsLink || availability.modelsLink) && (
+      {(availability.subscriptionsLink || modelsLink) && (
         <ModalFooter>
           <Flex gap={{ default: 'gapMd' }}>
             {availability.subscriptionsLink && (
@@ -154,7 +162,7 @@ const AvailabilityModal: React.FC<Props & { onClose: () => void }> = ({ model, a
                 Go to <strong>Subscriptions</strong>
               </Button>
             )}
-            {availability.modelsLink && (
+            {modelsLink && (
               <Button variant="link" isInline component={(props) => <Link {...props} to={modelPath(model)} />}>
                 Go to the model
               </Button>

@@ -1,24 +1,24 @@
 // Ported from krisv/ai-grid-cloud-provider-poc src/app/pages/tenants/TenantWizardPage.tsx at 62319b8.
+import { useState } from 'react';
 import { Breadcrumb, BreadcrumbItem } from '@patternfly/react-core';
 import { Link, useParams } from 'react-router-dom';
-import type { UserService } from '../../api/ConsoleService';
-import type { OrganizationsService } from '../../api/organizations';
-import type { Organization } from '../../api/types';
 import { PageStateSection } from '../../components/states/PageStateSection';
-import { useServiceData } from '../../hooks/useServiceData';
 import { OrganizationFormWizard } from './OrganizationFormWizard';
 import { organizationNotFound } from './organizationNotFound';
-
-type Props = { service: OrganizationsService & UserService };
+import type { OrganizationView } from './organizationView';
+import { useOrganization } from './useOrganizations';
 
 /** Create at /organizations/create, edit at /organizations/:id/edit: the same wizard. */
-export const OrganizationWizardPage: React.FC<Props> = ({ service }) => {
+export const OrganizationWizardPage: React.FC = () => {
   const { id } = useParams();
-  const [organization, loaded, error, refresh] = useServiceData<Organization | undefined>(
-    () => (id ? service.getOrganization(id) : Promise.resolve(undefined)),
-    undefined,
-    0,
-  );
+  const { data, loaded, fresh, error, refresh } = useOrganization(id);
+  // The first answer read on this page stays the form's: Save sends its version, so a later answer
+  // (a refetch on window focus) mustn't replace it underneath the user, and an answer the cache
+  // kept from an earlier page mustn't stand in for it. Someone else's save in between is then a
+  // conflict, not overwritten.
+  const [kept, setKept] = useState<OrganizationView>();
+  if (id !== undefined && data?.id === id && fresh && !error && kept?.id !== id) setKept(data);
+  const organization = kept?.id === id ? kept : undefined;
   const name = organization?.name ?? id;
   const title = id ? `Edit ${name}` : 'Create organization';
 
@@ -43,8 +43,9 @@ export const OrganizationWizardPage: React.FC<Props> = ({ service }) => {
           <BreadcrumbItem isActive>{id ? 'Edit' : title}</BreadcrumbItem>
         </Breadcrumb>
       }
-      loaded={loaded}
-      error={error}
+      loaded={id === undefined || !!organization || (loaded && fresh && !!error)}
+      // Once the form has its organization, a later load's failure says nothing about it.
+      error={id === undefined || organization ? undefined : error}
       onRetry={() => void refresh()}
       subject="Organizations"
       object="organization"
@@ -52,7 +53,9 @@ export const OrganizationWizardPage: React.FC<Props> = ({ service }) => {
       notFound={id === undefined ? undefined : organizationNotFound(id)}
       isWizard
     >
-      <OrganizationFormWizard key={organization?.id} service={service} organization={organization} />
+      {(id === undefined || organization) && (
+        <OrganizationFormWizard key={organization?.id} organization={organization} />
+      )}
     </PageStateSection>
   );
 };

@@ -62,24 +62,20 @@ type example struct {
 var examples = []example{
 	{file: "get-user.json", method: http.MethodGet, path: "/api/v1/user", as: admin},
 	{file: "get-config.json", method: http.MethodGet, path: "/api/v1/config", as: admin},
-	{file: "get-tenants.json", method: http.MethodGet, path: "/api/v1/tenants", as: admin},
-	{file: "get-tenant.json", method: http.MethodGet, path: "/api/v1/tenants/3f1c9a72-5b6e-4d2a-8c01-2d3e4f5a6b7c", as: admin},
 	{file: "get-grid-overview.json", method: http.MethodGet, path: "/api/v1/grid/overview?range=1h", as: admin},
-	{file: "post-tenant.json", method: http.MethodPost, path: "/api/v1/tenants", body: `{"name": "hooli-cloud", "description": "Hooli, US region", "domains": ["hooli.example.com"]}`, as: admin},
 	{file: "error-401-expired-token.json", method: http.MethodGet, path: "/api/v1/user", as: expired},
-	{file: "error-403-viewer-patch.json", method: http.MethodPatch, path: "/api/v1/tenants/3f1c9a72-5b6e-4d2a-8c01-2d3e4f5a6b7c", body: `{"description": "Acme Robotics, EU"}`, header: map[string]string{"If-Match": `"1"`}, as: viewer},
-	{file: "error-404-unknown-tenant.json", method: http.MethodGet, path: "/api/v1/tenants/unknown-tenant", as: admin},
-	{file: "error-409-stale-if-match.json", method: http.MethodPatch, path: "/api/v1/tenants/3f1c9a72-5b6e-4d2a-8c01-2d3e4f5a6b7c", body: `{"description": "Acme Robotics, EU"}`, header: map[string]string{"If-Match": `"7"`}, as: admin},
-	{file: "error-428-missing-if-match.json", method: http.MethodPatch, path: "/api/v1/tenants/3f1c9a72-5b6e-4d2a-8c01-2d3e4f5a6b7c", body: `{"enabled": false}`, as: admin},
-	{file: "error-415-not-json.json", method: http.MethodPost, path: "/api/v1/tenants", body: `{"name": "from-a-form"}`, header: map[string]string{"Content-Type": "text/plain"}, as: admin},
+	{file: "error-403-viewer.json", method: http.MethodGet, path: "/api/v1/grid/overview?range=1h", as: viewer},
+	// The organizations moved to the backend's Tenants over Connect; the JSON path is gone.
+	{file: "error-404-unknown-path.json", method: http.MethodGet, path: "/api/v1/tenants", as: admin},
+	{file: "error-405-wrong-method.json", method: http.MethodPost, path: "/api/v1/grid/overview", body: `{}`, as: admin},
 }
 
 // recordedHeaders are the response headers a golden file keeps.
-var recordedHeaders = []string{"ETag", "Location"}
+var recordedHeaders = []string{"Allow"}
 
 // golden is the file format: the request line, its headers beyond the
-// identity ones, who sent it, the status code, the ETag and Location
-// response headers when set, and the response body exactly as the BFF
+// identity ones, who sent it, the status code, the Allow response header
+// when set, and the response body exactly as the BFF
 // encoded it (re-indented).
 type golden struct {
 	Request         string            `json:"request"`
@@ -93,8 +89,7 @@ type golden struct {
 }
 
 // TestGoldenResponses renders every example on a BFF and fake of its own,
-// loaded from the fixtures, so a write never changes what another example
-// records.
+// loaded from the fixtures, so no example depends on another.
 func TestGoldenResponses(t *testing.T) {
 	want := map[string]bool{}
 	for _, ex := range examples {
@@ -161,7 +156,7 @@ func newApp(t *testing.T) *api.App {
 	srv := grpc.NewServer()
 	fake.Register(srv)
 	go func() { _ = srv.Serve(lis) }()
-	client, err := backend.Dial(backend.Config{Address: "passthrough:///bufconn", Insecure: true, DraftAPI: true},
+	client, err := backend.Dial(backend.Config{Address: "passthrough:///bufconn", Insecure: true},
 		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return lis.DialContext(ctx) }))
 	if err != nil {
 		t.Fatal(err)
@@ -177,8 +172,7 @@ func newApp(t *testing.T) *api.App {
 		t.Fatal(err)
 	}
 	// No environment, so the files do not depend on the shell that ran the
-	// test. Every setting is its default except the models namespace, which
-	// `make run-fake` sets for the fake backend's fixtures.
+	// test: every setting is its default.
 	cfg, err := config.Parse([]string{"--hub-api-url=" + hubSrv.URL}, func(string) (string, bool) { return "", false })
 	if err != nil {
 		t.Fatal(err)

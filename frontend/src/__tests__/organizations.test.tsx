@@ -1,16 +1,21 @@
 // Ported from krisv/ai-grid-cloud-provider-poc src/app/__tests__/tenants.test.tsx at 62319b8.
-// The PoC drives its Git-backed API; here the same cases run on MockConsoleService, and the
-// BFF and fake backend rules are covered by bff/internal/api and bff/internal/fakebackend tests.
+// The PoC drives its Git-backed API; here the same cases run on the backend's Tenants API over
+// Connect, answered by connectTenants.ts's FakeTenants, which follows the backend's rules and
+// messages at .backend-api-version.
 // Rulings: the localStorage persistence case keeps only its stale-version assertions (D3), and
 // the "name matches the create route" case opens an organization named create by id (D2).
+import { create } from '@bufbuild/protobuf';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { Code, ConnectError } from '@connectrpc/connect';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
 import type { NavigateFunction } from 'react-router-dom';
 import { ServiceError } from '../api/ConsoleService';
-import { HttpConsoleService } from '../api/HttpConsoleService';
+import { fakeClients } from '../api/connect/testing';
 import { MockConsoleService } from '../api/MockConsoleService';
-import type { Organization, OrganizationInput } from '../api/types';
+import { TenantSchema, type Tenant } from '../gen/ai_grid/v1/tenant_type_pb';
+import { tenantOf, toOrganizationView, type OrganizationInput } from '../pages/organizations/organizationView';
+import { ACME_ID, GLOBEX_ID, fieldViolations, tenantsOf } from './connectTenants';
 import { deferred, renderAt, findVisible } from './render';
 // The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
 import '../pages/organizations/OrganizationDetailsPage';
@@ -33,14 +38,38 @@ const input: Required<OrganizationInput> = {
       tokenUrl: 'https://sso.example.com/token',
       defaultScopes: 'openid profile email',
       userInfoUrl: '',
-      jwksUrl: '',
+      jwksUrl: 'https://sso.example.com/certs',
       logoutUrl: '',
       validateSignature: true,
     },
   },
 };
 
-const emptyService = () => new MockConsoleService(undefined, undefined, []);
+/** A console whose backend has no organizations. */
+const emptyService = () => {
+  const service = new MockConsoleService();
+  tenantsOf(service).tenants = [];
+  return service;
+};
+
+/** Stores an organization in the service's backend, as a Create would, at version 1. */
+const addOrganization = (service: object, value: OrganizationInput, id = `org-${value.name}`) => {
+  const { metadata, spec } = tenantOf(value);
+  const tenant = create(TenantSchema, { id, metadata, spec, status: {} });
+  if (tenant.metadata) tenant.metadata.version = 1;
+  tenantsOf(service).tenants.push(tenant);
+  return toOrganizationView(tenant);
+};
+
+/** The organizations the service's backend stores, by id. */
+const storedIds = (service: object) => tenantsOf(service).tenants.map((t) => t.id);
+
+/** A copy of what the backend stores now, to compare with later. */
+const snapshot = (service: object): Tenant[] => tenantsOf(service).tenants.map((t) => create(TenantSchema, t));
+
+const unavailable = () => new ConnectError('keycloak is unreachable', Code.Unavailable);
+/** The console's words for Unavailable (describeError): the backend's own message isn't shown. */
+const UNAVAILABLE = 'The AI Grid backend is unavailable. Try again.';
 
 type User = ReturnType<typeof userEvent.setup>;
 
@@ -74,6 +103,8 @@ const requiredIdp: [string, string][] = [
   ['Issuer', 'https://idp.example.com'],
   ['Authorization URL', 'https://idp.example.com/auth'],
   ['Token URL', 'https://idp.example.com/token'],
+  // Required while Validate signature is on, as it is by default.
+  ['JWKS URL', 'https://idp.example.com/certs'],
 ];
 
 it('onboards organization details then IdP, saves only after review and orders navigation', async () => {
@@ -103,13 +134,14 @@ it('onboards organization details then IdP, saves only after review and orders n
   await user.click(screen.getByRole('textbox', { name: 'Title' }));
   await user.paste('Tenant 1 SSO');
   expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
-  expect(await service.listOrganizations()).toEqual([]);
+  expect(tenantsOf(service).sent('create')).toEqual([]);
   await fillRequiredIdp(user, [
     ['Client ID', 'tenant1-client'],
     ['Client secret reference', 'tenant1-secret'],
     ['Issuer', 'https://sso.example.com/tenant1'],
     ['Authorization URL', 'https://sso.example.com/auth'],
     ['Token URL', 'https://sso.example.com/token'],
+    ['JWKS URL', 'https://sso.example.com/certs'],
   ]);
   await user.click(screen.getByRole('button', { name: 'Next' }));
   const review = screen.getByTestId('organization-configuration-details');
@@ -124,15 +156,18 @@ it('onboards organization details then IdP, saves only after review and orders n
   await user.click(screen.getByRole('button', { name: 'Next' }));
   await user.click(screen.getByRole('button', { name: 'Create organization' }));
   const table = await screen.findByTestId('organizations-table');
-  expect(table).toHaveTextContent('Enabled');
+  expect(table).toHaveTextContent('Tenant 1 SSO');
   expect(table).toHaveTextContent('tenant1.example.com');
   expect(await screen.findByText('Organization created')).toBeVisible();
-  expect(service.organizations[0].identityProvider?.config.clientSecretSecret.name).toBe('tenant1-secret');
+  const [sent] = tenantsOf(service).sent('create');
+  expect(sent.object?.metadata?.name).toBe('tenant1');
+  expect(sent.object?.spec?.domains).toEqual(['tenant1.example.com']);
+  expect(tenantsOf(service).tenants[0].spec?.identityProvider?.config?.clientSecretSecretName).toBe('tenant1-secret');
 });
 
-it('opens an organization from the list and edits its identity provider', async () => {
+it('opens an organization from the list and edits its domains, its identity provider read-only', async () => {
   const service = emptyService();
-  await service.createOrganization(input);
+  addOrganization(service, input);
   const user = userEvent.setup();
   renderAt('/organizations', service);
   const table = await screen.findByTestId('organizations-table');
@@ -150,18 +185,25 @@ it('opens an organization from the list and edits its identity provider', async 
   // Nothing changed yet, so Review can't save.
   await openStep(user, 'Review');
   expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
+  // The backend keeps an identity provider immutable, so the edit shows it but can't change it.
   await openStep(user, 'Identity provider');
-  const title = screen.getByRole('textbox', { name: 'Title' });
-  await user.clear(title);
-  await user.paste('Updated SSO');
+  expect(screen.getByRole('textbox', { name: 'Title' })).toBeDisabled();
+  expect(screen.getByRole('textbox', { name: 'Client ID' })).toBeDisabled();
+  expect(screen.getByText('Identity provider cannot be edited')).toBeVisible();
+  await openStep(user, 'Organization details');
+  const domain = screen.getByRole('textbox', { name: 'Domain 1' });
+  await user.clear(domain);
+  await user.paste('updated.example.com');
   await saveEdit(user);
   expect(await screen.findByText('Organization updated')).toBeVisible();
-  expect(await screen.findByTestId('organization-configuration-details')).toHaveTextContent('Updated SSO');
+  const details = await screen.findByTestId('organization-configuration-details');
+  expect(details).toHaveTextContent('updated.example.com');
+  expect(details).toHaveTextContent('https://sso.example.com/tenant1');
 });
 
 it('deletes an organization from its page after its name is typed', async () => {
   const service = emptyService();
-  await service.createOrganization(input);
+  addOrganization(service, input);
   const user = userEvent.setup();
   renderAt('/organizations', service);
   await user.click(within(await screen.findByTestId('organizations-table')).getByRole('link', { name: 'tenant1' }));
@@ -177,12 +219,12 @@ it('deletes an organization from its page after its name is typed', async () => 
   expect(await screen.findByText('Organization deleted')).toBeVisible();
   // The list reloads after the delete; the toast can show before it does.
   expect(await screen.findByRole('heading', { name: 'No organizations' })).toBeVisible();
-  expect(await service.listOrganizations()).toEqual([]);
+  expect(tenantsOf(service).tenants).toEqual([]);
 });
 
 it('keeps onboarding input on conflicts and allows cancel without saving', async () => {
   const service = emptyService();
-  await service.createOrganization(input);
+  addOrganization(service, input);
   const user = userEvent.setup();
   renderAt('/organizations/create', service);
   await user.click(await screen.findByRole('textbox', { name: 'Name' }));
@@ -191,52 +233,62 @@ it('keeps onboarding input on conflicts and allows cancel without saving', async
   await fillRequiredIdp(user, requiredIdp);
   await user.click(screen.getByRole('button', { name: 'Next' }));
   await user.click(screen.getByRole('button', { name: 'Create organization' }));
-  expect(await screen.findByText('An organization with this name already exists.')).toBeVisible();
+  // The backend's AlreadyExists, in its words.
+  expect(await screen.findByText('tenant "tenant1" already exists')).toBeVisible();
   expect(screen.getByTestId('organization-configuration-details')).toHaveTextContent('tenant1');
   await user.click(screen.getByRole('button', { name: 'Cancel' }));
   await user.click(within(await screen.findByTestId('discard-changes-modal')).getByRole('button', { name: 'Discard' }));
   expect(await screen.findByTestId('organizations-table')).toHaveTextContent('Tenant 1 SSO');
-  expect(await service.listOrganizations()).toHaveLength(1);
+  expect(tenantsOf(service).tenants).toHaveLength(1);
 });
 
+// The version rules every page test relies on, as the backend's Tenants answers them.
 it('protects edits from stale versions', async () => {
   const service = emptyService();
-  const organization = await service.createOrganization(input);
-  expect(await service.getOrganization(organization.id)).toEqual(organization);
-  const next = await service.updateOrganization(
-    organization.id,
-    { ...input, domains: [] },
-    organization.resourceVersion,
-  );
-  const stale = {
-    status: 409,
-    message: `object with identifier '${organization.id}' has resource version 2, the request carries "1"; fetch it again and retry`,
-  };
-  await expect(service.updateOrganization(organization.id, input, organization.resourceVersion)).rejects.toMatchObject(
-    stale,
-  );
-  await expect(service.deleteOrganization(organization.id, organization.resourceVersion)).rejects.toMatchObject(stale);
-  await service.deleteOrganization(organization.id, next.resourceVersion);
-  expect(await service.listOrganizations()).toEqual([]);
+  const { clients } = fakeClients({ tenants: tenantsOf(service).backend() });
+  const organization = addOrganization(service, input);
+  const read = (await clients.tenants.get({ id: organization.id })).object;
+  expect(read && toOrganizationView(read)).toEqual(organization);
+  const next = await clients.tenants.update({
+    object: { id: organization.id, metadata: { version: organization.version }, spec: { domains: [] } },
+    updateMask: { paths: ['spec.domains'] },
+    lock: true,
+  });
+  expect(next.object?.metadata?.version).toBe(2);
+  await expect(
+    clients.tenants.update({
+      object: { id: organization.id, metadata: { version: organization.version }, spec: { domains: input.domains } },
+      updateMask: { paths: ['spec.domains'] },
+      lock: true,
+    }),
+  ).rejects.toMatchObject({
+    code: Code.Aborted,
+    rawMessage: `update tenant "${organization.id}": the tenant changed since it was read; reload and retry`,
+  });
+  await expect(clients.tenants.delete({ id: organization.id, version: organization.version })).rejects.toMatchObject({
+    code: Code.Aborted,
+    rawMessage: `delete tenant "${organization.id}": the tenant changed since it was read; reload and retry`,
+  });
+  await clients.tenants.delete({ id: organization.id, version: 2 });
+  expect(tenantsOf(service).tenants).toEqual([]);
 });
 
 it('shows a retry action when organization loading fails', async () => {
   const service = emptyService();
-  const list = service.listOrganizations;
-  service.listOrganizations = async () => {
-    service.listOrganizations = list;
-    throw new ServiceError(503, 'Organization service unavailable.');
+  tenantsOf(service).before.list = () => {
+    delete tenantsOf(service).before.list;
+    throw unavailable();
   };
   const user = userEvent.setup();
   renderAt('/organizations', service);
-  expect(await screen.findByText('Organization service unavailable.')).toBeVisible();
+  expect(await screen.findByText(UNAVAILABLE)).toBeVisible();
   await user.click(screen.getByRole('button', { name: 'Retry' }));
   expect(await screen.findByRole('heading', { name: 'No organizations' })).toBeVisible();
 });
 
 it('an organization named create opens its details by id', async () => {
   const service = emptyService();
-  const created = await service.createOrganization({ ...input, name: 'create', domains: [] });
+  const created = addOrganization(service, { ...input, name: 'create', domains: [] });
   const user = userEvent.setup();
   renderAt('/organizations', service);
   const table = await screen.findByTestId('organizations-table');
@@ -249,7 +301,8 @@ it('an organization named create opens its details by id', async () => {
 
 it('create: Back keeps input, and Cancel asks before discarding it', async () => {
   const service = emptyService();
-  const existing = await service.createOrganization(input);
+  addOrganization(service, input);
+  const existing = snapshot(service);
   const user = userEvent.setup();
   renderAt('/organizations/create', service);
   await user.click(await screen.findByRole('textbox', { name: 'Name' }));
@@ -267,12 +320,13 @@ it('create: Back keeps input, and Cancel asks before discarding it', async () =>
   await user.click(screen.getByRole('button', { name: 'Cancel' }));
   await user.click(within(await screen.findByTestId('discard-changes-modal')).getByRole('button', { name: 'Discard' }));
   expect(await screen.findByTestId('organizations-table')).toHaveTextContent('Tenant 1 SSO');
-  expect(await service.listOrganizations()).toEqual([existing]);
+  expect(tenantsOf(service).tenants).toEqual(existing);
 });
 
 it('edit: Cancel leaves at once without changes, and returns to the organization after discarding', async () => {
   const service = emptyService();
-  const existing = await service.createOrganization(input);
+  const existing = addOrganization(service, input);
+  const stored = snapshot(service);
   const user = userEvent.setup();
   renderAt(`/organizations/${existing.id}/edit`, service);
   await user.click(await screen.findByRole('button', { name: 'Cancel' }));
@@ -281,27 +335,25 @@ it('edit: Cancel leaves at once without changes, and returns to the organization
 
   await user.click(screen.getByTestId('organization-actions'));
   await user.click(screen.getByRole('menuitem', { name: 'Edit' }));
-  await openStep(user, 'Identity provider');
-  const title = await screen.findByRole('textbox', { name: 'Title' });
-  await user.clear(title);
-  await user.paste('Unsaved IdP');
+  const domain = await screen.findByRole('textbox', { name: 'Domain 1' });
+  await user.clear(domain);
+  await user.paste('unsaved.example.com');
   await user.click(screen.getByRole('button', { name: 'Cancel' }));
   await user.click(within(await screen.findByTestId('discard-changes-modal')).getByRole('button', { name: 'Discard' }));
   expect(await screen.findByTestId('organization-configuration-details')).toHaveTextContent('Tenant 1 SSO');
-  expect(await service.listOrganizations()).toEqual([existing]);
+  expect(tenantsOf(service).tenants).toEqual(stored);
 });
 
 it('keeps input on conflict', async () => {
   const service = emptyService();
-  const existing = await service.createOrganization(input);
+  const existing = addOrganization(service, input);
   const user = userEvent.setup();
   renderAt(`/organizations/${existing.id}/edit`, service);
-  await openStep(user, 'Identity provider');
-  const title = await screen.findByRole('textbox', { name: 'Title' });
-  await user.clear(title);
-  await user.paste('My unsaved title');
+  const domain = await screen.findByRole('textbox', { name: 'Domain 1' });
+  await user.clear(domain);
+  await user.paste('unsaved.example.com');
   // Another tab saves first, so the version this form read is stale.
-  await service.updateOrganization(existing.id, input, existing.resourceVersion);
+  tenantsOf(service).bump(existing.id);
   await saveEdit(user);
   // The PoC's message, not the backend's text.
   expect(
@@ -309,10 +361,10 @@ it('keeps input on conflict', async () => {
   ).toBeVisible();
   expect(screen.getByText('Unable to save organization')).toBeVisible();
   expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled();
-  await openStep(user, 'Identity provider');
-  expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('My unsaved title');
-  expect(service.organizations[0].identityProvider?.title).toBe('Tenant 1 SSO');
-  expect(service.organizations[0].resourceVersion).toBe('2');
+  await openStep(user, 'Organization details');
+  expect(screen.getByRole('textbox', { name: 'Domain 1' })).toHaveValue('unsaved.example.com');
+  expect(tenantsOf(service).tenants[0].spec?.domains).toEqual(['tenant1.example.com']);
+  expect(tenantsOf(service).tenants[0].metadata?.version).toBe(2);
 });
 
 it('hides write actions until it knows the user is a provider admin', async () => {
@@ -326,7 +378,7 @@ it('hides write actions until it knows the user is a provider admin', async () =
 
   list.unmount();
 
-  renderAt(`/organizations/${service.organizations[0].id}`, service);
+  renderAt(`/organizations/${ACME_ID}`, service);
   await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('Unable to load user'));
   expect(await screen.findByRole('heading', { name: 'acme-robotics' })).toBeInTheDocument();
   expect(screen.queryByTestId('organization-actions')).not.toBeInTheDocument();
@@ -334,9 +386,10 @@ it('hides write actions until it knows the user is a provider admin', async () =
 
 it('shows field errors from the server next to the field', async () => {
   const service = emptyService();
-  service.createOrganization = async () => {
-    throw new ServiceError(422, 'The organization is invalid.', {
-      'identityProvider.config.issuer': 'Enter a valid HTTP or HTTPS URL.',
+  // The backend names the field by its proto path; the form shows it next to Issuer.
+  tenantsOf(service).before.create = () => {
+    throw fieldViolations('The organization is invalid.', {
+      'spec.identity_provider.config.issuer': 'Enter a valid HTTP or HTTPS URL.',
     });
   };
   const user = userEvent.setup();
@@ -361,7 +414,7 @@ it('shows field errors from the server next to the field', async () => {
 
 it('deletes an organization from the list and says so', async () => {
   const service = emptyService();
-  await service.createOrganization(input);
+  addOrganization(service, input);
   const user = userEvent.setup();
   renderAt('/organizations', service);
   await user.click(await screen.findByRole('button', { name: 'Actions for tenant1' }));
@@ -377,11 +430,10 @@ it('deletes an organization from the list and says so', async () => {
 
 it.each(['', '/edit'])('offers Retry when an organization fails to load: %s', async (suffix) => {
   const service = new MockConsoleService();
-  const [first] = await service.listOrganizations();
-  const get = service.getOrganization;
-  service.getOrganization = async () => {
-    service.getOrganization = get;
-    throw new ServiceError(503, 'Service unavailable.');
+  const first = { id: ACME_ID, name: 'acme-robotics' };
+  tenantsOf(service).before.get = () => {
+    delete tenantsOf(service).before.get;
+    throw unavailable();
   };
   const user = userEvent.setup();
   renderAt(`/organizations/${encodeURIComponent(first.id)}${suffix}`, service);
@@ -396,18 +448,20 @@ it('keeps the list under a warning when a reload fails', async () => {
   const user = userEvent.setup();
   renderAt('/organizations', service);
   expect(await screen.findByRole('link', { name: 'initech-labs' })).toBeVisible();
-  vi.spyOn(service, 'listOrganizations').mockRejectedValue(new ServiceError(503, 'Service unavailable.'));
+  tenantsOf(service).before.list = () => {
+    throw unavailable();
+  };
   await user.click(screen.getByRole('button', { name: 'Refresh' }));
   expect(await screen.findByTestId('stale-data-alert')).toHaveTextContent(
-    'Showing the last loaded organizationsService unavailable.',
+    `Showing the last loaded organizations${UNAVAILABLE}`,
   );
   expect(screen.getByRole('link', { name: 'initech-labs' })).toBeVisible();
 });
 
 it('shows the not-available state when the backend cannot delete organizations yet', async () => {
   const service = new MockConsoleService();
-  service.deleteOrganization = async () => {
-    throw new ServiceError(501, 'The AI Grid backend does not support this operation.');
+  tenantsOf(service).before.delete = () => {
+    throw new ConnectError('no such method', Code.Unimplemented);
   };
   const user = userEvent.setup();
   renderAt('/organizations', service);
@@ -429,41 +483,13 @@ it('shows one pagination, in the toolbar, for a single page', async () => {
   expect(screen.getAllByRole('navigation', { name: /pagination/i })).toHaveLength(1);
 });
 
-// The BFF's tenant JSON, as GET /api/v1/tenants/{id} sends it (mock/examples/get-tenant.json), trimmed.
-const tenantJson = {
-  id: '3f1c9a72-5b6e-4d2a-8c01-2d3e4f5a6b7c',
-  name: 'acme-robotics',
-  alias: 'acme-robotics',
-  enabled: true,
-  description: 'Acme Robotics, EU region',
-  domains: ['acme-robotics.example.com'],
-  domainDetails: [{ name: 'acme-robotics.example.com', verified: true, autoRedirect: true }],
-  attributes: { 'billing-account': 'ACME-0042' },
-  resourceVersion: '3',
-  createTime: '2026-09-01T09:00:00Z',
-  identityProvider: { ...input.identityProvider, title: 'Acme SSO' },
-};
-
-const jsonResponse = (status: number, body: unknown) =>
-  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
-
-/** A MockConsoleService whose organization calls go through HttpConsoleService to fetchFn. */
-const serviceOnTenantJson = (fetchFn: typeof fetch) => {
+it('edit sends Tenants/Update with the domains, their mask and the version read, leaving the identity provider out', async () => {
   const service = new MockConsoleService();
-  const http = new HttpConsoleService(fetchFn);
-  service.listOrganizations = () => http.listOrganizations();
-  service.getOrganization = (id) => http.getOrganization(id);
-  service.createOrganization = (value) => http.createOrganization(value);
-  service.updateOrganization = (id, value, version) => http.updateOrganization(id, value, version);
-  return service;
-};
-
-it('edit sends PATCH with domains, identity provider, and If-Match', async () => {
-  const fetchFn = vi.fn(async (url: string, _init?: RequestInit) =>
-    jsonResponse(200, { data: url.endsWith('/tenants') ? [tenantJson] : tenantJson }),
-  );
+  // acme-robotics after two edits elsewhere.
+  tenantsOf(service).bump(ACME_ID);
+  tenantsOf(service).bump(ACME_ID);
   const user = userEvent.setup();
-  renderAt(`/organizations/${tenantJson.id}/edit`, serviceOnTenantJson(fetchFn as unknown as typeof fetch));
+  renderAt(`/organizations/${ACME_ID}/edit`, service);
   const domain = await screen.findByRole('textbox', { name: 'Domain 1' });
   await waitFor(() => expect(domain).toHaveValue('acme-robotics.example.com'));
   await user.clear(domain);
@@ -471,26 +497,29 @@ it('edit sends PATCH with domains, identity provider, and If-Match', async () =>
   await saveEdit(user);
   expect(await screen.findByText('Organization updated')).toBeVisible();
 
-  const patch = fetchFn.mock.calls.find(([, init]) => init?.method === 'PATCH');
-  expect(patch?.[0]).toBe(`/api/v1/tenants/${tenantJson.id}`);
-  expect(patch?.[1]?.headers).toMatchObject({ 'If-Match': '"3"', 'Content-Type': 'application/json' });
-  // The PoC can't rename, and alias, description, and attributes have no inputs: only these two go.
-  expect(JSON.parse(String(patch?.[1]?.body))).toEqual({
-    domains: ['acme.example.net'],
-    identityProvider: { ...input.identityProvider, title: 'Acme SSO' },
-  });
+  const [update] = tenantsOf(service).sent('update');
+  expect(update.object?.id).toBe(ACME_ID);
+  expect(update.object?.metadata?.version).toBe(3);
+  expect(update.lock).toBe(true);
+  // The name can't change, and the backend keeps an existing identity provider as it is: only the
+  // domains go, and the mask names them alone.
+  expect(update.updateMask?.paths).toEqual(['spec.domains']);
+  expect(update.object?.spec?.domains).toEqual(['acme.example.net', 'acme.example.org']);
+  expect(update.object?.spec?.identityProvider).toBeUndefined();
+  expect(update.object?.metadata?.name).toBe('');
 });
 
-it('edit: clearing an existing identity provider is not a valid save', async () => {
-  const fetchFn = vi.fn(async (url: string, _init?: RequestInit) =>
-    jsonResponse(200, { data: url.endsWith('/tenants') ? [tenantJson] : tenantJson }),
-  );
+it('edit: an existing identity provider is shown read-only', async () => {
+  const service = new MockConsoleService();
   const user = userEvent.setup();
-  renderAt(`/organizations/${tenantJson.id}/edit`, serviceOnTenantJson(fetchFn as unknown as typeof fetch));
+  renderAt(`/organizations/${ACME_ID}/edit`, service);
   await openStep(user, 'Identity provider');
-  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Client ID' })).toHaveValue('tenant1-client'));
-  for (const box of screen.getAllByRole('textbox')) await user.clear(box);
-  expect(screen.getByRole('button', { name: 'Review' })).toBeDisabled();
+  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Client ID' })).toHaveValue('ai-grid'));
+  for (const box of screen.getAllByRole('textbox')) expect(box).toBeDisabled();
+  expect(screen.getByRole('checkbox', { name: 'Validate signature' })).toBeDisabled();
+  // Nothing can change here, so Review stays open and has nothing to save.
+  await openStep(user, 'Review');
+  expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
 });
 
 it('leaves the create form out of history once the organization is created, so Back skips it', async () => {
@@ -517,13 +546,9 @@ it('leaves the create form out of history once the organization is created, so B
 });
 
 it('create without an identity provider sends none, and Review says so', async () => {
-  const fetchFn = vi.fn(async (url: string, init?: RequestInit) =>
-    init?.method === 'POST'
-      ? jsonResponse(201, { data: { ...tenantJson, identityProvider: undefined } })
-      : jsonResponse(200, { data: url.endsWith('/tenants') ? [] : tenantJson }),
-  );
+  const service = emptyService();
   const user = userEvent.setup();
-  renderAt('/organizations/create', serviceOnTenantJson(fetchFn as unknown as typeof fetch));
+  renderAt('/organizations/create', service);
   await user.click(await screen.findByRole('textbox', { name: 'Name' }));
   await user.paste('tenant1');
   await user.click(screen.getByRole('button', { name: 'Next' }));
@@ -533,47 +558,38 @@ it('create without an identity provider sends none, and Review says so', async (
   );
   await user.click(screen.getByRole('button', { name: 'Create organization' }));
   expect(await screen.findByText('Organization created')).toBeVisible();
-  const post = fetchFn.mock.calls.find(([, init]) => init?.method === 'POST');
-  expect(JSON.parse(String(post?.[1]?.body))).toEqual({ name: 'tenant1', domains: [] });
+  const [sent] = tenantsOf(service).sent('create');
+  expect(sent.object?.metadata?.name).toBe('tenant1');
+  expect(sent.object?.spec?.domains).toEqual([]);
+  expect(sent.object?.spec?.identityProvider).toBeUndefined();
 });
 
-it('lists the identity provider by title, a dash without one, and Disabled for a disabled organization', async () => {
-  const fetchFn = vi.fn(async () =>
-    jsonResponse(200, {
-      data: [
-        tenantJson,
-        {
-          ...tenantJson,
-          id: 'u',
-          name: 'umbrella-biotech',
-          enabled: false,
-          createTime: undefined,
-          identityProvider: undefined,
-        },
-      ],
-    }),
-  );
-  renderAt('/organizations', serviceOnTenantJson(fetchFn as unknown as typeof fetch));
+it('lists the identity provider by title and a dash without one, and no status the backend lacks', async () => {
+  const service = new MockConsoleService();
+  addOrganization(service, { name: 'umbrella-biotech', domains: ['umbrella.example.com'] }, 'u');
+  renderAt('/organizations', service);
   const acme = await screen.findByRole('row', { name: /^acme-robotics / });
-  expect(within(acme).getByText('Enabled')).toBeInTheDocument();
-  expect(acme).toHaveTextContent('Acme SSO');
-  expect(acme).not.toHaveTextContent(tenantJson.identityProvider.config.issuer);
+  expect(acme).toHaveTextContent('Acme Robotics SSO');
+  expect(acme).not.toHaveTextContent('https://sso.example.com/realms/acme-robotics');
   const umbrella = screen.getByRole('row', { name: /^umbrella-biotech / });
-  expect(within(umbrella).getByText('Disabled')).toBeInTheDocument();
   expect(within(umbrella).getAllByText('—')).toHaveLength(1);
+  // The backend's Tenant reports no state (TenantStatus is empty), so the list has no Status column.
+  expect(screen.queryByRole('columnheader', { name: /Status/ })).not.toBeInTheDocument();
 });
 
-it('the organization page shows its description, verified domains, attributes and created date, endpoints folded', async () => {
-  const fetchFn = vi.fn(async () => jsonResponse(200, { data: tenantJson }));
+it('the organization page shows its domains and created date, endpoints folded', async () => {
+  const service = new MockConsoleService();
   const user = userEvent.setup();
-  renderAt(`/organizations/${tenantJson.id}`, serviceOnTenantJson(fetchFn as unknown as typeof fetch));
+  renderAt(`/organizations/${ACME_ID}`, service);
   const details = await screen.findByTestId('organization-configuration-details');
-  expect(details).toHaveTextContent('Acme Robotics, EU region');
-  expect(details).toHaveTextContent('acme-robotics.example.com Verified');
-  expect(details).toHaveTextContent('billing-account: ACME-0042');
+  expect(details).toHaveTextContent('acme-robotics.example.com');
+  expect(details).toHaveTextContent('acme.example.org');
+  // The backend's Tenant has no attributes or domain verification to show.
+  expect(details).not.toHaveTextContent('Attributes');
+  expect(details).not.toHaveTextContent('Verified');
   // Created reads relative, as on every page, with the time itself on the element.
-  expect(within(details).getByText(/ ago$/)).toHaveAttribute('datetime', '2026-09-01T09:00:00Z');
-  const tokenUrl = screen.getByText(tenantJson.identityProvider.config.tokenUrl);
+  expect(within(details).getByText(/ ago$/)).toHaveAttribute('datetime', '2026-09-01T09:00:00.000Z');
+  const tokenUrl = screen.getByText('https://sso.example.com/realms/acme-robotics/protocol/openid-connect/token');
   expect(tokenUrl).not.toBeVisible();
   await user.click(screen.getByRole('button', { name: 'OIDC endpoints' }));
   expect(tokenUrl).toBeVisible();
@@ -581,7 +597,10 @@ it('the organization page shows its description, verified domains, attributes an
 
 it.each(['', '/edit'])('loads the other organization when the id in /organizations/:id%s changes', async (suffix) => {
   const service = new MockConsoleService();
-  const [acme, globex] = service.organizations;
+  const [acme, globex] = [
+    { id: ACME_ID, name: 'acme-robotics' },
+    { id: GLOBEX_ID, name: 'globex-research' },
+  ];
   let navigate: NavigateFunction = () => undefined;
   const Navigator = () => {
     navigate = useNavigate();
@@ -606,53 +625,67 @@ it.each(['', '/edit'])('loads the other organization when the id in /organizatio
 
 it('locks the edit wizard while it saves', async () => {
   const service = new MockConsoleService();
-  const [organization] = service.organizations;
-  let finish: () => void = () => undefined;
-  const update = service.updateOrganization.bind(service);
-  service.updateOrganization = (...args) =>
-    new Promise((resolve, reject) => {
-      finish = () => void update(...args).then(resolve, reject);
-    });
+  const organization = { id: ACME_ID };
+  const saving = deferred<void>();
+  tenantsOf(service).before.update = () => saving.promise;
   const user = userEvent.setup();
   renderAt(`/organizations/${encodeURIComponent(organization.id)}/edit`, service);
-  await openStep(user, 'Identity provider');
-  await user.click(await screen.findByRole('textbox', { name: 'Title' }));
-  await user.paste(' (new)');
+  await user.click(await screen.findByRole('textbox', { name: 'Domain 1' }));
+  await user.paste('x');
   await saveEdit(user);
   // The steps and the buttons stay put until the save answers.
   expect(screen.getByRole('button', { name: 'Identity provider' })).toBeDisabled();
   expect(screen.getByRole('button', { name: 'Back' })).toBeDisabled();
   expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
-  finish();
+  await act(async () => saving.resolve());
   expect(await screen.findByText('Organization updated')).toBeVisible();
 });
 
 it('moves an edit refused for a field to that field, once, and lets the user return to Review', async () => {
   const service = new MockConsoleService();
-  const [organization] = service.organizations;
-  service.updateOrganization = async () => {
-    throw new ServiceError(422, 'The organization is invalid.', {
-      'identityProvider.config.issuer': 'Enter a valid HTTP or HTTPS URL.',
-    });
+  const organization = { id: ACME_ID };
+  // The backend names the domain by its proto path; the form shows it next to Domain 1.
+  tenantsOf(service).before.update = () => {
+    throw fieldViolations('The organization is invalid.', { 'spec.domains[0]': 'The domain is already taken.' });
   };
   const user = userEvent.setup();
   renderAt(`/organizations/${encodeURIComponent(organization.id)}/edit`, service);
+  await user.click(await screen.findByRole('textbox', { name: 'Domain 1' }));
+  await user.paste('x');
   await openStep(user, 'Identity provider');
-  await user.click(await screen.findByRole('textbox', { name: 'Title' }));
-  await user.paste(' (new)');
   await saveEdit(user);
-  // On the Identity provider step, with the server's message next to Issuer.
-  expect(await screen.findByRole('textbox', { name: 'Issuer' })).toHaveAttribute('aria-invalid', 'true');
-  expect(screen.getByText('Enter a valid HTTP or HTTPS URL.')).toBeVisible();
+  // Back on the Organization details step, with the server's message next to the domain.
+  expect(await screen.findByRole('textbox', { name: 'Domain 1' })).toHaveAttribute('aria-invalid', 'true');
+  expect(screen.getByText('The domain is already taken.')).toBeVisible();
   // Going back to Review stays there: the move happens once per refused save.
   await openStep(user, 'Review');
   expect(screen.getByRole('button', { name: 'Save changes' })).toBeVisible();
-  expect(screen.queryByRole('textbox', { name: 'Issuer' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('textbox', { name: 'Domain 1' })).not.toBeInTheDocument();
+});
+
+it('edit: an organization without an identity provider says one can be added only on create', async () => {
+  const service = emptyService();
+  const organization = addOrganization(service, { name: input.name, domains: input.domains });
+  const user = userEvent.setup();
+  renderAt(`/organizations/${encodeURIComponent(organization.id)}/edit`, service);
+  await openStep(user, 'Identity provider');
+  expect(
+    screen.getByText(
+      'This organization has no identity provider. One can be added only when an organization is created.',
+    ),
+  ).toBeVisible();
+  expect(screen.queryByRole('textbox', { name: 'Client ID' })).not.toBeInTheDocument();
+  await openStep(user, 'Organization details');
+  await user.click(screen.getByRole('textbox', { name: 'Domain 1' }));
+  await user.paste('x');
+  await saveEdit(user);
+  expect(await screen.findByText('Organization updated')).toBeVisible();
+  expect(tenantsOf(service).sent('update')[0].object?.spec?.identityProvider).toBeUndefined();
 });
 
 it('reloads an organization after a stale delete from its page, keeping the typed name, so a retry succeeds', async () => {
   const service = new MockConsoleService();
-  const [organization] = service.organizations;
+  const organization = { id: ACME_ID, name: 'acme-robotics' };
   const user = userEvent.setup();
   renderAt(`/organizations/${organization.id}`, service);
   await user.click(await screen.findByTestId('organization-actions'));
@@ -661,7 +694,7 @@ it('reloads an organization after a stale delete from its page, keeping the type
   await user.click(within(modal).getByTestId('delete-modal-input'));
   await user.paste(organization.name);
   // Someone else saves the organization while the dialog is open.
-  service.organizations[0] = { ...organization, resourceVersion: String(Number(organization.resourceVersion) + 1) };
+  tenantsOf(service).bump(organization.id);
   await user.click(within(modal).getByRole('button', { name: 'Delete' }));
   expect(
     await within(modal).findByText(
@@ -671,12 +704,13 @@ it('reloads an organization after a stale delete from its page, keeping the type
   expect(within(modal).getByTestId('delete-modal-input')).toHaveValue(organization.name);
   await user.click(within(modal).getByRole('button', { name: 'Delete' }));
   expect(await screen.findByText('Organization deleted')).toBeVisible();
-  expect(service.organizations.some((o) => o.id === organization.id)).toBe(false);
+  expect(storedIds(service)).not.toContain(organization.id);
 });
 
 it('keeps the delete dialog busy until the reloaded organization is in, and says when the reload fails', async () => {
   const service = new MockConsoleService();
-  const [organization] = service.organizations;
+  const organization = { id: ACME_ID, name: 'acme-robotics' };
+  const fake = tenantsOf(service);
   const user = userEvent.setup();
   renderAt('/organizations', service);
   await user.click(await screen.findByRole('button', { name: `Actions for ${organization.name}` }));
@@ -684,29 +718,28 @@ it('keeps the delete dialog busy until the reloaded organization is in, and says
   const modal = await screen.findByTestId('delete-organization-modal');
   await user.click(within(modal).getByTestId('delete-modal-input'));
   await user.paste(organization.name);
-  service.organizations[0] = { ...organization, resourceVersion: String(Number(organization.resourceVersion) + 1) };
-  const deleteSpy = vi.spyOn(service, 'deleteOrganization');
-  const reload = deferred<Organization>();
-  const reloadSpy = vi.spyOn(service, 'getOrganization').mockReturnValueOnce(reload.promise);
+  fake.bump(organization.id);
+  // The list page reads no single organization, so the dialog's reload is the first Get.
+  const reload = deferred<void>();
+  fake.before.get = () => reload.promise;
   await user.click(within(modal).getByRole('button', { name: 'Delete' }));
-  await waitFor(() => expect(reloadSpy).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(fake.sent('get')).toHaveLength(1));
   // The reload is still out: Delete stays busy, so no retry with the stale version.
   expect(within(modal).getByRole('button', { name: /Delete/ })).toBeDisabled();
   await user.type(within(modal).getByTestId('delete-modal-input'), '{Enter}');
-  expect(deleteSpy).toHaveBeenCalledTimes(1);
+  expect(fake.sent('delete')).toHaveLength(1);
   await act(async () => {
-    reload.resolve(service.organizations[0]);
+    reload.resolve();
   });
   expect(within(modal).getByRole('button', { name: 'Delete' })).toBeEnabled();
 
   // A second stale delete whose reload fails says so.
-  service.organizations[0] = {
-    ...service.organizations[0],
-    resourceVersion: String(Number(service.organizations[0].resourceVersion) + 1),
+  fake.bump(organization.id);
+  fake.before.get = () => {
+    throw unavailable();
   };
-  reloadSpy.mockRejectedValueOnce(new ServiceError(503, 'Service unavailable.'));
   await user.click(within(modal).getByRole('button', { name: 'Delete' }));
-  expect(await within(modal).findByText(/Unable to reload the latest version: Service unavailable\./)).toBeVisible();
+  expect(await within(modal).findByText(`Unable to reload the latest version: ${UNAVAILABLE}`)).toBeVisible();
   expect(within(modal).getByRole('button', { name: 'Delete' })).toBeEnabled();
 });
 
@@ -742,10 +775,28 @@ it('heads the wizard sections at h2, moves focus to an added domain, and names t
   expect(domains[domains.length - 1]).toHaveFocus();
   wizard.unmount();
 
-  const [organization] = service.organizations;
+  const organization = { id: ACME_ID, name: 'acme-robotics' };
   renderAt(`/organizations/${organization.id}`, service);
   await user.click(await screen.findByTestId('organization-actions'));
   await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
   const modal = await screen.findByTestId('delete-organization-modal');
   expect(within(modal).getByRole('textbox', { name: `Type ${organization.name} to confirm:` })).toBeVisible();
+});
+
+it('edit: an identity provider saved without a JWKS URL is kept, and the domains still save', async () => {
+  const service = new MockConsoleService();
+  const organization = { id: ACME_ID };
+  // Saved before the JWKS rule, with Validate signature on. The edit can't change the provider and
+  // leaves it out of the save, so the rule doesn't block it.
+  const config = tenantsOf(service).find(ACME_ID)?.spec?.identityProvider?.config;
+  if (!config) throw new Error('acme-robotics has no identity provider');
+  config.jwksUrl = '';
+  config.validateSignature = true;
+  const user = userEvent.setup();
+  renderAt(`/organizations/${encodeURIComponent(organization.id)}/edit`, service);
+  await user.click(await screen.findByRole('textbox', { name: 'Domain 1' }));
+  await user.paste('x');
+  await saveEdit(user);
+  expect(await screen.findByText('Organization updated')).toBeVisible();
+  expect(tenantsOf(service).sent('update')[0].object?.spec?.identityProvider).toBeUndefined();
 });

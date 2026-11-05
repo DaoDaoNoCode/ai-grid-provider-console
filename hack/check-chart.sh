@@ -3,6 +3,9 @@
 #   - helm lint --strict, with the default values and with every option turned on;
 #   - values.schema.json refuses a misspelled value instead of letting Helm drop it;
 #   - the Deployment's strategy is Recreate (one backend at a time);
+#   - kube-auth-proxy passes the caller's token to the BFF and puts none in its responses;
+#   - in git mode, the backend may get and list the catalog's Argo CD Applications in
+#     openshift-gitops, and without a Git URL the chart grants no such Role;
 #   - with its default values, it renders the same objects as manifests/base, apart from the
 #     Namespace (Helm installs into one: --create-namespace) and Helm's own labels. The chart is the
 #     install path; manifests/base is kept for hack/undeploy.sh's fallback and the takeover test
@@ -41,43 +44,10 @@ for url in http://github.com/example/catalog.git https://user:token@github.com/e
   'https://?q=/catalog.git' https://:443/catalog.git https://github.com; do
   refused "backend.git.url=${url}" --set-string "backend.git.url=${url}"
 done
-for key in gridNamespace modelsNamespace catalogNamespace; do
+for key in gridNamespace modelsNamespace; do
   refused "backend.git.${key}=Not_A_Namespace" --set-string backend.git.url=https://github.com/example/catalog.git \
     --set-string "backend.git.${key}=Not_A_Namespace"
 done
-refused "backend.git.catalogNamespace is empty" --set-string backend.git.catalogNamespace=
-# Catalog status reads stay in Argo CD's namespace while the binding names the console's account.
-catalog_status() {
-  local catalog_namespace=$1 console_namespace=$2 account=$3 rendered got
-  rendered="$(helm template console "${CHART}" -n "${console_namespace}" \
-    --set-string backend.git.url=https://github.com/example/catalog.git \
-    --set-string "backend.git.catalogNamespace=${catalog_namespace}" --set-string "fullnameOverride=${account}")"
-  got="$(yq -o=json -I=0 'select(.kind == "Role") | .rules' <<<"${rendered}")"
-  [[ "${got}" == '[{"apiGroups":["argoproj.io"],"resources":["applications"],"verbs":["get","list"]}]' ]] || {
-    echo "check-chart: catalog Role grants unexpected permissions: ${got}" >&2; exit 1;
-  }
-  got="$(yq -N 'select(.kind == "Role" or .kind == "RoleBinding") | .metadata.namespace' <<<"${rendered}")"
-  [[ "${got}" == "${catalog_namespace}"$'\n'"${catalog_namespace}" ]] || {
-    echo "check-chart: catalog RBAC namespaces are '${got}', not '${catalog_namespace}'" >&2; exit 1;
-  }
-  got="$(yq -o=json -I=0 'select(.kind == "RoleBinding") | .subjects' <<<"${rendered}")"
-  [[ "${got}" == "[{\"kind\":\"ServiceAccount\",\"name\":\"${account}\",\"namespace\":\"${console_namespace}\"}]" ]] || {
-    echo "check-chart: catalog RoleBinding has unexpected subjects: ${got}" >&2; exit 1;
-  }
-  got="$(yq 'select(.kind == "RoleBinding") | .roleRef.kind + "/" + .roleRef.name' <<<"${rendered}")"
-  [[ "${got}" == "Role/${account}-catalog-status" ]] || {
-    echo "check-chart: catalog RoleBinding refers to '${got}'" >&2; exit 1;
-  }
-  got="$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[] | select(.name == "ai-grid-backend")
-    | .env[] | select(.name == "AI_GRID_CATALOG_APP_NAMESPACE") | .value' <<<"${rendered}")"
-  [[ "${got}" == "${catalog_namespace}" ]] || {
-    echo "check-chart: backend reads catalog namespace '${got}', not '${catalog_namespace}'" >&2; exit 1;
-  }
-}
-catalog_status openshift-gitops ai-grid ai-grid-provider-console
-catalog_status custom-gitops custom-console custom-console-name
-got="$(helm template console "${CHART}" -n ai-grid | yq 'select(.kind == "Role" or .kind == "RoleBinding") | .kind')"
-[[ -z "${got}" ]] || { echo "check-chart: catalog RBAC renders without backend.git.url" >&2; exit 1; }
 # backend.git.modelsNamespace sets AI_GRID_MODELS_NAMESPACE; empty leaves the backend's default.
 models_ns() {
   helm template console "${CHART}" -n ai-grid --set-string backend.git.url=https://github.com/example/catalog.git "$@" |
@@ -91,6 +61,23 @@ got="$(models_ns --set-string backend.git.modelsNamespace=ai-grid-internal-model
 }
 got="$(models_ns)"
 [[ -z "${got}" ]] || { echo "check-chart: without backend.git.modelsNamespace, AI_GRID_MODELS_NAMESPACE is '${got}'" >&2; exit 1; }
+# In git mode the backend reads the catalog's Argo CD Applications in openshift-gitops, the
+# backend's default AI_GRID_CATALOG_APP_NAMESPACE: get and list on them there, and nothing more.
+# Without a Git URL there is no catalog to read, and no Role.
+catalog_rules() {
+  local role
+  role="$(helm template console "${CHART}" -n ai-grid "$@" |
+    yq 'select(.kind == "Role" and .metadata.name == "ai-grid-provider-console-catalog-status")')"
+  [[ -z "${role}" ]] || yq -o=json -I=0 '[.metadata.namespace, .rules]' <<<"${role}"
+}
+got="$(catalog_rules --set-string backend.git.url=https://github.com/example/catalog.git)"
+want='["openshift-gitops",[{"apiGroups":["argoproj.io"],"resources":["applications"],"verbs":["get","list"]}]]'
+[[ "${got}" == "${want}" ]] || {
+  echo "check-chart: in git mode the catalog status Role is '${got}', want '${want}'" >&2
+  exit 1
+}
+got="$(catalog_rules)"
+[[ -z "${got}" ]] || { echo "check-chart: without backend.git.url the chart renders a catalog status Role: ${got}" >&2; exit 1; }
 for url in https://github.com/example/catalog.git https://git.example.com:8443/team/repo@archive.git; do
   helm template console "${CHART}" -n ai-grid --set-string "backend.git.url=${url}" >/dev/null || {
     echo "check-chart: backend.git.url=${url} doesn't render; values.schema.json must accept it" >&2
@@ -195,7 +182,9 @@ canonical() {
 strategy="$(helm template console "${CHART}" -n ai-grid | yq 'select(.kind == "Deployment") | .spec.strategy.type')"
 [[ "${strategy}" == Recreate ]] || { echo "check-chart: the Deployment's strategy is '${strategy}', not Recreate" >&2; exit 1; }
 chart="$(helm template console "${CHART}" -n ai-grid | canonical)"
-base="$(kubectl kustomize "${ROOT}/manifests/base" | canonical)"
+# manifests/idp-secrets is the chart's backend.idpSecrets objects: ../base can't hold them, because its
+# kustomization puts every object in ai-grid.
+base="$({ kubectl kustomize "${ROOT}/manifests/base"; echo ---; kubectl kustomize "${ROOT}/manifests/idp-secrets"; } | canonical)"
 if [[ "${chart}" != "${base}" ]]; then
   echo "check-chart: the chart's defaults and manifests/base differ (< chart, > base):" >&2
   diff <(yq -p=json -P '.' <<<"${chart}") <(yq -p=json -P '.' <<<"${base}") >&2 || true
@@ -210,6 +199,65 @@ got="$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[] | se
   | .args[] | select(test("^--upstream-timeout="))' <<<"${defaults}")"
 [[ "${got}" == --upstream-timeout=65s ]] || { echo "check-chart: kube-auth-proxy's upstream timeout is '${got}', want 65s" >&2; exit 1; }
 refused "route.timeout=soon" --set route.timeout=soon
+# kube-auth-proxy passes the caller's token to the BFF as a request header and sets no response
+# header from the session: --set-xauthrequest would hand the token to the page
+# (X-Auth-Request-Access-Token), --set-authorization-header and --set-basic-auth a credential.
+# hack/test-chart-kind.sh checks the responses themselves.
+proxy_args="$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[] | select(.name == "kube-auth-proxy")
+  | .args[]' <<<"${defaults}")"
+for arg in --pass-access-token=true --pass-user-headers=true --set-xauthrequest=false; do
+  grep -qx -- "${arg}" <<<"${proxy_args}" || { echo "check-chart: kube-auth-proxy lacks ${arg}" >&2; exit 1; }
+done
+got="$(grep -E -- '^--(set-xauthrequest|set-authorization-header|set-basic-auth)(=|$)' <<<"${proxy_args}" | grep -vx -- --set-xauthrequest=false || true)"
+[[ -z "${got}" ]] || { echo "check-chart: kube-auth-proxy sets session data on responses: ${got}" >&2; exit 1; }
+
+# backend.idpSecrets: on by default, the namespace sets AI_GRID_IDP_SECRET_NAMESPACE and holds the Role,
+# Helm keeps the namespace on uninstall, and off renders neither the objects nor the variable.
+idp_ns_env() {
+  yq 'select(.kind == "Deployment") | .spec.template.spec.containers[] | select(.name == "ai-grid-backend")
+    | .env[] | select(.name == "AI_GRID_IDP_SECRET_NAMESPACE") | .value'
+}
+got="$(idp_ns_env <<<"${defaults}")"
+[[ "${got}" == ai-grid-idp-secrets ]] || { echo "check-chart: by default AI_GRID_IDP_SECRET_NAMESPACE is '${got}'" >&2; exit 1; }
+got="$(yq 'select(.kind == "Namespace" and .metadata.name == "ai-grid-idp-secrets")
+  | .metadata.annotations["helm.sh/resource-policy"]' <<<"${defaults}")"
+[[ "${got}" == keep ]] || { echo "check-chart: the IdP secret namespace's resource-policy is '${got}', want keep" >&2; exit 1; }
+# Argo CD ignores Helm's keep when it prunes: the namespace carries its own sync options.
+got="$(yq 'select(.kind == "Namespace" and .metadata.name == "ai-grid-idp-secrets")
+  | .metadata.annotations["argocd.argoproj.io/sync-options"]' <<<"${defaults}")"
+[[ "${got}" == Delete=false,Prune=false ]] || {
+  echo "check-chart: the IdP secret namespace's Argo CD sync options are '${got}', want Delete=false,Prune=false" >&2
+  exit 1
+}
+custom="$(helm template console "${CHART}" -n ai-grid --set backend.idpSecrets.namespace=tenant-idp)"
+got="$(idp_ns_env <<<"${custom}")"
+[[ "${got}" == tenant-idp ]] || { echo "check-chart: backend.idpSecrets.namespace=tenant-idp sets AI_GRID_IDP_SECRET_NAMESPACE to '${got}'" >&2; exit 1; }
+got="$(yq 'select(.kind == "Role" or .kind == "RoleBinding" or .kind == "Namespace") | [.kind, .metadata.namespace // .metadata.name] | join(" ")' <<<"${custom}" | grep -v '^$' | sort | tr '\n' ',')"
+[[ "${got}" == "Namespace tenant-idp,Role tenant-idp,RoleBinding tenant-idp," ]] || {
+  echo "check-chart: backend.idpSecrets.namespace=tenant-idp renders ${got}" >&2
+  exit 1
+}
+got="$(helm template console "${CHART}" -n ai-grid --set backend.idpSecrets.createNamespace=false |
+  yq 'select(.kind == "Namespace") | .metadata.name')"
+[[ -z "${got}" ]] || { echo "check-chart: backend.idpSecrets.createNamespace=false still renders Namespace ${got}" >&2; exit 1; }
+off="$(helm template console "${CHART}" -n ai-grid --set backend.idpSecrets.enabled=false)"
+got="$(idp_ns_env <<<"${off}")$(yq 'select(.metadata.namespace == "ai-grid-idp-secrets" or .metadata.name == "ai-grid-idp-secrets") | .kind' <<<"${off}")"
+[[ -z "${got}" ]] || { echo "check-chart: backend.idpSecrets.enabled=false still renders: ${got}" >&2; exit 1; }
+# An all-digit name is a valid namespace; unquoted, YAML would read it as a number.
+got="$(helm template console "${CHART}" -n ai-grid --set-string backend.idpSecrets.namespace=123 |
+  yq 'select(.kind == "Namespace" or .kind == "Role" or .kind == "RoleBinding") | (.metadata.namespace // .metadata.name) | type' | grep -v '^---$' | sort -u)"
+[[ "${got}" == '!!str' ]] || { echo "check-chart: backend.idpSecrets.namespace=123 renders as ${got}, not a string" >&2; exit 1; }
+refused "backend.idpSecrets.namespace=Not_A_Namespace" --set-string backend.idpSecrets.namespace=Not_A_Namespace
+refused "backend.idpSecrets.namespace empty" --set-string backend.idpSecrets.namespace=
+# A null namespace would get past the release-namespace guard and put the Role in the release namespace.
+refused "backend.idpSecrets.namespace=null" --set backend.idpSecrets.namespace=null --set backend.idpSecrets.createNamespace=false
+# The backend can get every Secret in that namespace, so it must not be the console's own.
+if out="$(helm template console "${CHART}" -n ai-grid --set backend.idpSecrets.namespace=ai-grid \
+  --set backend.idpSecrets.createNamespace=false 2>&1 >/dev/null)" ||
+  ! grep -q 'backend.idpSecrets.namespace must not be the release namespace "ai-grid"' <<<"${out}"; then
+  echo "check-chart: backend.idpSecrets.namespace equal to the release namespace must fail the render: ${out}" >&2
+  exit 1
+fi
 refused "authProxy.upstreamTimeout=65" --set-string authProxy.upstreamTimeout=65
 
 echo "check-chart: lint passes; the chart's defaults render manifests/base"

@@ -74,13 +74,13 @@ const Pages: React.FC<Props> = ({ service }) => (
         </ByParams>
       }
     />
-    <Route path="/organizations" element={<OrganizationListPage service={service} />} />
-    <Route path="/organizations/create" element={<OrganizationWizardPage service={service} />} />
+    <Route path="/organizations" element={<OrganizationListPage />} />
+    <Route path="/organizations/create" element={<OrganizationWizardPage />} />
     <Route
       path="/organizations/:id"
       element={
         <ByParams>
-          <OrganizationDetailsPage service={service} />
+          <OrganizationDetailsPage />
         </ByParams>
       }
     />
@@ -88,7 +88,7 @@ const Pages: React.FC<Props> = ({ service }) => (
       path="/organizations/:id/edit"
       element={
         <ByParams>
-          <OrganizationWizardPage service={service} />
+          <OrganizationWizardPage />
         </ByParams>
       }
     />

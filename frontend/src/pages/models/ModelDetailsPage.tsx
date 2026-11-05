@@ -9,11 +9,12 @@ import { SectionEmptyState } from '../../components/states/SectionEmptyState';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
 import { useConsoleSession } from '../../context/useConsoleSession';
 import { modelNotFound, modelPath } from './modelUtils';
+import { ClusterLoadNote } from './ClusterLoadNote';
 import { ModelClustersTable } from './ModelClustersTable';
 import { ModelMaaSTable } from './ModelMaaSTable';
 import { ModelAvailability } from './ModelAvailability';
 import { ModelStatusDetails, ModelStatusLabel } from './ModelStatus';
-import { PARTIALLY_AVAILABLE, availabilityOf, hasModelStatusDetails } from './modelStatusInfo';
+import { availabilityOf, rolloutExplanation } from './modelStatusInfo';
 import { titleOf } from './modelView';
 import { useDeleteModel } from './useDeleteModel';
 import { useModel } from './useModels';
@@ -28,7 +29,8 @@ export const ModelDetailsPage: React.FC = () => {
   const { id = '' } = useParams();
   const navigate = useNavigate();
   const { data: loadedModel, loaded, error, refresh } = useModel(id);
-  const { data: clusters } = useClusterList();
+  const clusterList = useClusterList();
+  const clusters = clusterList.data;
   const { user } = useConsoleSession();
   // A 404 means the deployment is gone, even when an earlier answer is still held (PageStateSection
   // shows the not-found state then).
@@ -46,16 +48,18 @@ export const ModelDetailsPage: React.FC = () => {
     const availability = availabilityOf(model);
     return (
       <Flex direction={{ default: 'column' }} flexWrap={{ default: 'nowrap' }} spaceItems={{ default: 'spaceItemsXl' }}>
-        {/* The alert explains the header's Status word (status.state). Ready, Saved to Git and
-            Unknown say all there is; MaaS has its own Availability section. */}
+        <ClusterLoadNote clusters={clusterList} />
+        {/* The alert explains the header's Status word (status.state) from the placed clusters'
+            reports (rolloutExplanation). Ready, Saved to Git and Unknown say all there is; MaaS has
+            its own Availability section. */}
         {model.state !== 'Ready' &&
           model.state !== 'Saved to Git' &&
           model.state !== 'Unknown' &&
-          hasModelStatusDetails(model) && (
+          rolloutExplanation(model) && (
             <Alert
               isInline
-              variant={model.state === 'Failed' ? 'danger' : model.state === PARTIALLY_AVAILABLE ? 'warning' : 'info'}
-              title={model.state === 'Failed' ? 'Deployment failed' : model.state}
+              variant={model.state === 'Failed' ? 'danger' : model.state === 'Partially ready' ? 'warning' : 'info'}
+              title={model.state === 'Failed' ? 'Unable to deploy model' : model.state}
               data-testid="model-status-alert"
             >
               <ModelStatusDetails model={model} />
@@ -84,7 +88,7 @@ export const ModelDetailsPage: React.FC = () => {
         <DetailsSection title="Availability">
           {model.ingress.length > 0 ? (
             <Stack hasGutter data-testid="model-maas-endpoint">
-              {availability && <ModelAvailability model={model} availability={availability} />}
+              {availability && <ModelAvailability model={model} availability={availability} onModelPage />}
               <ModelMaaSTable model={model} clusters={clusters} />
             </Stack>
           ) : (

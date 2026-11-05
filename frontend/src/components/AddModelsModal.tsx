@@ -17,7 +17,7 @@ import {
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import { entryModelId, type SubscriptionModelEntry } from '../pages/subscriptions/hooks/useSubscriptionModels';
 import { titleOf, type ModelView } from '../pages/models/modelView';
-import type { ClusterRegions } from '../pages/models/clusterRegions';
+import type { ClusterPlaces } from '../pages/models/clusterPlaces';
 import { ModelStatusContent } from '../pages/models/ModelStatusModal';
 import { hasPartialModelStatus } from '../pages/subscriptions/partialModelStatus';
 import { useModelList } from '../pages/models/useModels';
@@ -27,7 +27,7 @@ import { StatusLabel } from './StatusLabel';
 
 type Props = {
   currentModels: SubscriptionModelEntry[];
-  status?: { model: ModelView; clusters: ClusterRegions; onClose: () => void };
+  status?: { model: ModelView; clusters: ClusterPlaces; onClose: () => void };
   focusModelId?: string;
   onOpenStatus?: (model: ModelView) => void;
   onAdd: (models: ModelView[]) => void;

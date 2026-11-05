@@ -54,12 +54,10 @@ under optimistic locking.
 
 What the BFF does:
 
-- decodes request bodies strictly: exactly one JSON object, no unknown fields, at most 1 MiB;
-- answers 415 for a POST, PATCH or PUT that is not `application/json`;
-- requires `If-Match` on PATCH and DELETE (428 without it) and maps it to the request's version
-  field (`resource_version`, with `lock: true` where the RPC has one);
-- maps query parameters to the List request (`offset`, `limit`, `filter` as sent);
-- maps gRPC codes to HTTP statuses, keeping the backend's message, and its own body errors to 422;
+- serves a JSON API that only reads (`/api/v1/user`, `/api/v1/config` and the Monitoring
+  fallback's `/api/v1/grid/overview`): every write goes to the backend over Connect, through the
+  relay below;
+- maps gRPC codes to HTTP statuses, keeping the backend's message;
 - forwards the caller's identity (the token as `authorization`, plus user, email and groups);
 - serves the SPA, `/healthcheck`, `/readyz`, `/api/v1/config`, and asks the hub for
   `isProviderAdmin` (a `SelfSubjectAccessReview` with the caller's token);
@@ -81,9 +79,7 @@ What the BFF does:
 What belongs in the backend, and so in the fake (`bff/internal/fakebackend`) until the backend
 ships it: validation of values, normalization and defaults, resource versions and the
 precondition check, list filtering, ordering and counting, deciding whether an update changes
-anything, which keys a caller may change, and every field derived from other fields. Every object
-the backend returns carries a non-empty `resource_version`: with `If-Match` required, an object
-without one could never be updated or deleted.
+anything, which keys a caller may change, and every field derived from other fields.
 
 ## Adding a feature
 
@@ -118,9 +114,10 @@ behaviour and points at its source (a file, a function or an upstream commit), n
 ## The backend's own API over Connect
 
 The console is moving to the backend's RPCs, called from the browser over Connect (ADRs 0002
-and 0004), through one provider at the app root. The Clusters pages, the Models pages, the Subscriptions pages
-and the AI Grid map read and write through it (`docs/connect.md`, "The Clusters area", "The
-Models area" and "The Subscriptions area"); the other areas still use `/api/v1`:
+and 0004), through one provider at the app root. The Clusters, Models, Subscriptions and
+Organizations pages and the AI Grid map read and write through it (`docs/connect.md`, "The
+Clusters area", "The Models area", "The Subscriptions area" and "The Organizations area"); only
+the Monitoring fallback's grid overview still reads `/api/v1`:
 
 - `.backend-api-version` holds the backend commit (one full SHA) whose `proto/` (package
   `ai_grid.v1`, not `ai_grid/draft`) the frontend is generated from. `make generate-api` writes
@@ -175,8 +172,7 @@ when the RPCs allow it.
 > the frontend — each one becomes a field in the contract or stays a backend derivation. A
 > couple are resolved by the OSAC standard outright: it has first-class
 > `metadata.display_name` and `metadata.description`, so `toModel` reading
-> `openshift.io/display-name` goes away. `requireTotal` goes away with the shipped backend it
-> exists to tolerate.
+> `openshift.io/display-name` goes away.
 
 - The Connect relay allowlist (`allowedProcedures`, `bff/internal/relay/relay.go`): the relay
   passes only the reviewed procedures the console's API already offers, so every other procedure
@@ -200,22 +196,10 @@ when the RPCs allow it.
   that do not parse or are out of range left out; `consoleUrl`, `platform` and `product` from
   cluster claims; `gpuCapacity` from `status.capacity["nvidia.com/gpu"]`; `addons` from the
   `feature.open-cluster-management.io/addon-*` labels; the list sorted by name.
-- The stopgap clients for the backend's current `ai_grid.v1` (`bff/internal/backend/v1.go`),
-  until the console moves to Connect and the backend's contract: the tenant writes refuse with
-  `Unimplemented` the draft fields the backend's `Tenant` lacks. They accept those fields when
-  they hold what a read shows (`description: ""`, `enabled: true`, `attributes: {}`), which may
-  not be what Keycloak stores (`readBackValue`), and send a PATCH that sets only such fields as
-  an update with the mask `id`.
-- `toTenant` (`bff/internal/api/tenants.go`), fallbacks for the shipped backend: `enabled`
-  defaults to true, `domainDetails` is built from `domains`.
 - `toGridOverview` (`bff/internal/api/grid.go`): drops metric points whose value is NaN or
   ±Inf (JSON cannot carry them), always sends `demo: false`, and writes `updatedAt` as
   `2006-01-02T15:04:05.000Z` (the PoC's millisecond format) whatever precision the backend
   sends.
-- `requireTotal` (`bff/internal/api/respond.go`): a list answer without `total` comes from a
-  backend that ignored `filter`, `offset` and `limit` (the shipped one), so the BFF answers 501
-  when the caller sent any of them; without them `listMeta` falls back to a total it can prove.
-  This is compatibility with the shipped backend, not filtering.
 - `requireProviderAdmin` (`bff/internal/api/middleware.go`), the BFF's one authorization
   decision: every `/api/v1` call except `GET` (or `HEAD`) `/user` and `/config` needs the caller's
   `isProviderAdmin` review to pass (403 otherwise), until the backend authorizes the caller.

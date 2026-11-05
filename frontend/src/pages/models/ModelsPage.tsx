@@ -10,7 +10,7 @@
 // (useModels.ts).
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Button, Label, LabelGroup, ToolbarItem } from '@patternfly/react-core';
+import { Button, Label, LabelGroup, Stack, ToolbarItem } from '@patternfly/react-core';
 import { ExpandableRowContent, Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { ThProps } from '@patternfly/react-table';
 import { RefreshButton } from '../../components/RefreshButton';
@@ -25,6 +25,7 @@ import { useConsoleSession } from '../../context/useConsoleSession';
 import { EMPTY_VALUE } from '../../utilities/format';
 import { modelPath } from './modelUtils';
 import { ModelClustersTable } from './ModelClustersTable';
+import { ClusterLoadNote } from './ClusterLoadNote';
 import { NotPlaced } from './NotPlaced';
 import { ModelAvailability } from './ModelAvailability';
 import { ModelStatusLabel } from './ModelStatus';
@@ -55,7 +56,8 @@ const STATUS_COLUMN = columns.findIndex((c) => c.label === 'Status');
 export const ModelsPage: React.FC = () => {
   const navigate = useNavigate();
   const { data: models, loaded, error, refresh } = useModelList();
-  const { data: clusters } = useClusterList();
+  const clusterList = useClusterList();
+  const clusters = clusterList.data;
   const { user } = useConsoleSession();
   const canWrite = !!user?.isProviderAdmin;
   const [filter, setFilter] = useState('');
@@ -119,131 +121,134 @@ export const ModelsPage: React.FC = () => {
       );
     }
     return (
-      <PaginatedTable
-        rows={rows}
-        toolbar={
-          <>
-            <ToolbarSearch
-              label="Filter models"
-              placeholder="Filter by name or cluster"
-              value={filter}
-              onChange={setFilter}
-            />
-            {deployButton && <ToolbarItem>{deployButton}</ToolbarItem>}
-            <ToolbarItem>
-              <RefreshButton onRefresh={() => void refresh()} />
-            </ToolbarItem>
-          </>
-        }
-      >
-        {(pageRows) => (
-          <Table aria-label="Models" isExpandable data-testid="model-deployments-table">
-            <Thead>
-              <Tr>
-                <Th screenReaderText="Show clusters" />
-                {columns.map((c, i) => (
-                  <Th key={c.label} sort={sortParams(i)} modifier="wrap">
-                    {c.label}
-                  </Th>
-                ))}
-                {canWrite && <Th screenReaderText="Actions" />}
-              </Tr>
-            </Thead>
-            {rows.length === 0 ? (
-              <Tbody>
-                <TableEmptyRow
-                  colSpan={columns.length + 1 + (canWrite ? 1 : 0)}
-                  body="Change the filter to see more models."
-                  onClear={() => setFilter('')}
-                />
-              </Tbody>
-            ) : (
-              pageRows.map((model, rowIndex) => {
-                const title = titleOf(model);
-                const availability = availabilityOf(model);
-                const isExpanded = expanded.has(model.id);
-                const edit = canWrite ? () => navigate(`${modelPath(model)}/edit`) : undefined;
-                return (
-                  <Tbody key={model.id} isExpanded={isExpanded}>
-                    <Tr isContentExpanded={isExpanded}>
-                      {/* Every row expands: to each placed cluster's sync and deployment, to the
+      <Stack hasGutter>
+        <ClusterLoadNote clusters={clusterList} />
+        <PaginatedTable
+          rows={rows}
+          toolbar={
+            <>
+              <ToolbarSearch
+                label="Filter models"
+                placeholder="Filter by name or cluster"
+                value={filter}
+                onChange={setFilter}
+              />
+              {deployButton && <ToolbarItem>{deployButton}</ToolbarItem>}
+              <ToolbarItem>
+                <RefreshButton onRefresh={() => void refresh()} />
+              </ToolbarItem>
+            </>
+          }
+        >
+          {(pageRows) => (
+            <Table aria-label="Models" isExpandable data-testid="model-deployments-table">
+              <Thead>
+                <Tr>
+                  <Th screenReaderText="Show clusters" />
+                  {columns.map((c, i) => (
+                    <Th key={c.label} sort={sortParams(i)} modifier="wrap">
+                      {c.label}
+                    </Th>
+                  ))}
+                  {canWrite && <Th screenReaderText="Actions" />}
+                </Tr>
+              </Thead>
+              {rows.length === 0 ? (
+                <Tbody>
+                  <TableEmptyRow
+                    colSpan={columns.length + 1 + (canWrite ? 1 : 0)}
+                    body="Change the filter to see more models."
+                    onClear={() => setFilter('')}
+                  />
+                </Tbody>
+              ) : (
+                pageRows.map((model, rowIndex) => {
+                  const title = titleOf(model);
+                  const availability = availabilityOf(model);
+                  const isExpanded = expanded.has(model.id);
+                  const edit = canWrite ? () => navigate(`${modelPath(model)}/edit`) : undefined;
+                  return (
+                    <Tbody key={model.id} isExpanded={isExpanded}>
+                      <Tr isContentExpanded={isExpanded}>
+                        {/* Every row expands: to each placed cluster's sync and deployment, to the
                           clusters its placement chose while none has reported, or to say it has none. */}
-                      <Td
-                        expand={{
-                          rowIndex,
-                          isExpanded,
-                          onToggle: () => setRowExpanded(model.id, !isExpanded),
-                          expandId: `model-clusters-toggle-${model.id}`,
-                        }}
-                      />
-                      <Td dataLabel="Name">
-                        <Link to={modelPath(model)}>{title}</Link>
-                      </Td>
-                      <Td dataLabel="Model" modifier="breakWord">
-                        {model.modelName ?? EMPTY_VALUE}
-                      </Td>
-                      <Td dataLabel="Clusters" data-testid={`model-cluster-names-${model.id}`}>
-                        {model.selectedClusters.length ? (
-                          <LabelGroup numLabels={5}>
-                            {model.selectedClusters.map((cluster) => (
-                              <Label key={cluster} color="grey" isCompact>
-                                {cluster}
-                              </Label>
-                            ))}
-                          </LabelGroup>
-                        ) : (
-                          EMPTY_VALUE
-                        )}
-                      </Td>
-                      <Td dataLabel="Created" modifier="nowrap">
-                        <RelativeTime time={model.creationTimestamp} />
-                      </Td>
-                      <Td dataLabel="Status">
-                        <ModelStatusLabel model={model} onOpen={() => setStatusModelId(model.id)} />
-                      </Td>
-                      <Td dataLabel="Availability" data-testid={`model-availability-${model.id}`}>
-                        {availability ? <ModelAvailability model={model} availability={availability} /> : EMPTY_VALUE}
-                      </Td>
-                      {canWrite && (
-                        <Td isActionCell>
-                          <SimpleMenuActions
-                            testId={`model-actions-${model.id}`}
-                            ariaLabel={`Actions for ${title}`}
-                            dropdownItems={[
-                              { key: 'view', label: 'View details', onClick: () => navigate(modelPath(model)) },
-                              { key: 'edit', label: 'Edit', onClick: () => navigate(`${modelPath(model)}/edit`) },
-                              { isSpacer: true },
-                              {
-                                key: 'delete',
-                                label: 'Delete',
-                                isDanger: true,
-                                onClick: () => confirmDelete(model),
-                              },
-                            ]}
-                          />
+                        <Td
+                          expand={{
+                            rowIndex,
+                            isExpanded,
+                            onToggle: () => setRowExpanded(model.id, !isExpanded),
+                            expandId: `model-clusters-toggle-${model.id}`,
+                          }}
+                        />
+                        <Td dataLabel="Name">
+                          <Link to={modelPath(model)}>{title}</Link>
                         </Td>
-                      )}
-                    </Tr>
-                    <Tr isExpanded={isExpanded}>
-                      <Td />
-                      <Td colSpan={columns.length + (canWrite ? 1 : 0)}>
-                        <ExpandableRowContent>
-                          {isExpanded &&
-                            (model.clusters.length > 0 || model.selectedClusters.length > 0 ? (
-                              <ModelClustersTable model={model} clusters={clusters} isNested />
-                            ) : (
-                              <NotPlaced model={model} onEdit={edit} />
-                            ))}
-                        </ExpandableRowContent>
-                      </Td>
-                    </Tr>
-                  </Tbody>
-                );
-              })
-            )}
-          </Table>
-        )}
-      </PaginatedTable>
+                        <Td dataLabel="Model" modifier="breakWord">
+                          {model.modelName ?? EMPTY_VALUE}
+                        </Td>
+                        <Td dataLabel="Clusters" data-testid={`model-cluster-names-${model.id}`}>
+                          {model.selectedClusters.length ? (
+                            <LabelGroup numLabels={5}>
+                              {model.selectedClusters.map((cluster) => (
+                                <Label key={cluster} color="grey" isCompact>
+                                  {cluster}
+                                </Label>
+                              ))}
+                            </LabelGroup>
+                          ) : (
+                            EMPTY_VALUE
+                          )}
+                        </Td>
+                        <Td dataLabel="Created" modifier="nowrap">
+                          <RelativeTime time={model.creationTimestamp} />
+                        </Td>
+                        <Td dataLabel="Status">
+                          <ModelStatusLabel model={model} onOpen={() => setStatusModelId(model.id)} />
+                        </Td>
+                        <Td dataLabel="Availability" data-testid={`model-availability-${model.id}`}>
+                          {availability ? <ModelAvailability model={model} availability={availability} /> : EMPTY_VALUE}
+                        </Td>
+                        {canWrite && (
+                          <Td isActionCell>
+                            <SimpleMenuActions
+                              testId={`model-actions-${model.id}`}
+                              ariaLabel={`Actions for ${title}`}
+                              dropdownItems={[
+                                { key: 'view', label: 'View details', onClick: () => navigate(modelPath(model)) },
+                                { key: 'edit', label: 'Edit', onClick: () => navigate(`${modelPath(model)}/edit`) },
+                                { isSpacer: true },
+                                {
+                                  key: 'delete',
+                                  label: 'Delete',
+                                  isDanger: true,
+                                  onClick: () => confirmDelete(model),
+                                },
+                              ]}
+                            />
+                          </Td>
+                        )}
+                      </Tr>
+                      <Tr isExpanded={isExpanded}>
+                        <Td />
+                        <Td colSpan={columns.length + (canWrite ? 1 : 0)}>
+                          <ExpandableRowContent>
+                            {isExpanded &&
+                              (model.clusters.length > 0 || model.selectedClusters.length > 0 ? (
+                                <ModelClustersTable model={model} clusters={clusters} isNested />
+                              ) : (
+                                <NotPlaced model={model} onEdit={edit} />
+                              ))}
+                          </ExpandableRowContent>
+                        </Td>
+                      </Tr>
+                    </Tbody>
+                  );
+                })
+              )}
+            </Table>
+          )}
+        </PaginatedTable>
+      </Stack>
     );
   };
 

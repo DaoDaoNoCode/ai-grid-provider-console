@@ -26,7 +26,7 @@ import {
 } from '@patternfly/react-core';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import { Link } from 'react-router-dom';
-import type { GridCluster, GridMetric, GridRange, Organization } from '../../api/types';
+import type { GridCluster, GridMetric, GridRange } from '../../api/types';
 import { titleOf, type ModelView } from '../models/modelView';
 import { HelpPopover } from '../../components/HelpPopover';
 import { StatCard } from '../../components/StatCard';
@@ -287,7 +287,8 @@ type Props = {
   clusters: GridCluster[];
   models: ModelView[];
   modelsError?: string;
-  organizations: Organization[];
+  /** The organizations' ids and names (Tenants/List). */
+  organizations: { id: string; name: string }[];
   organizationsError?: string;
   metrics: GridMetric[];
   loading: boolean;

@@ -1,29 +1,20 @@
 // Ported from krisv/ai-grid-cloud-provider-poc src/app/pages/tenants/TenantDetailsPage.tsx at 62319b8.
 import { Breadcrumb, BreadcrumbItem } from '@patternfly/react-core';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import type { OrganizationsService } from '../../api/organizations';
-import type { Organization } from '../../api/types';
 import { PageStateSection } from '../../components/states/PageStateSection';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
-import { StatusLabel } from '../../components/StatusLabel';
 import { useConsoleSession } from '../../context/useConsoleSession';
-import { useServiceData } from '../../hooks/useServiceData';
 import { OrganizationConfigurationDetails } from './OrganizationConfigurationDetails';
 import { organizationNotFound } from './organizationNotFound';
 import { useDeleteOrganization } from './useDeleteOrganization';
+import { useOrganization } from './useOrganizations';
 
-type Props = { service: OrganizationsService };
-
-export const OrganizationDetailsPage: React.FC<Props> = ({ service }) => {
+export const OrganizationDetailsPage: React.FC = () => {
   const { id = '' } = useParams();
   const navigate = useNavigate();
-  const [organization, loaded, error, refresh] = useServiceData<Organization | undefined>(
-    () => service.getOrganization(id),
-    undefined,
-    0,
-  );
+  const { data: organization, loaded, error, refresh } = useOrganization(id);
   const { user } = useConsoleSession();
-  const [confirmDelete, deleteModal] = useDeleteOrganization(service, {
+  const [confirmDelete, deleteModal] = useDeleteOrganization({
     refresh: () => void refresh(),
     onDeleted: () => navigate('/organizations', { state: { notice: 'Organization deleted' } }),
   });
@@ -49,7 +40,6 @@ export const OrganizationDetailsPage: React.FC<Props> = ({ service }) => {
     <>
       <PageStateSection
         title={organization?.name ?? id}
-        status={organization && <StatusLabel isCompact status={organization.status} />}
         headerAction={actions}
         breadcrumb={
           <Breadcrumb>

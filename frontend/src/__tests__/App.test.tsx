@@ -1,9 +1,11 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
+import { Code, ConnectError } from '@connectrpc/connect';
 import { MockConsoleService } from '../api/MockConsoleService';
 import { ServiceError } from '../api/ConsoleService';
 import type { ConsoleConfig, User } from '../api/types';
+import { tenantsOf } from './connectTenants';
 import { deferred, findVisible } from './render';
 import { TestApp } from './TestApp';
 import { SIGN_IN_AGAIN_KEY, SIGN_IN_AGAIN_WINDOW_MS, type Navigation } from '../utilities/signInAgain';
@@ -186,8 +188,8 @@ describe('App', () => {
 
   it('shows a not-available state, not an error, when the backend lacks the RPC', async () => {
     const service = new MockConsoleService();
-    service.listOrganizations = async () => {
-      throw new ServiceError(501, 'The AI Grid backend does not support this operation.');
+    tenantsOf(service).before.list = () => {
+      throw new ConnectError('no such method', Code.Unimplemented);
     };
     render(
       <MemoryRouter>
@@ -202,8 +204,9 @@ describe('App', () => {
 
   it('shows the backend error when organizations cannot be loaded', async () => {
     const service = new MockConsoleService();
-    service.listOrganizations = async () => {
-      throw new ServiceError(502, 'The AI Grid backend failed to process the request.');
+    // A failure of the backend's own: the console's words, not the backend's.
+    tenantsOf(service).before.list = () => {
+      throw new ConnectError('keycloak: connection refused', Code.Internal);
     };
     render(
       <MemoryRouter>
@@ -282,8 +285,8 @@ describe('an ended session', () => {
     service.listClusters = async () => {
       throw expired();
     };
-    service.listOrganizations = async () => {
-      throw expired();
+    tenantsOf(service).before.list = () => {
+      throw new ConnectError(expired().message, Code.Unauthenticated);
     };
     return service;
   };
@@ -373,10 +376,14 @@ describe('an ended session', () => {
     // call (a call over Connect would ask for the user again first, sessionCheck).
     const service = new MockConsoleService();
     const organizations = deferred<never>();
-    service.listOrganizations = () => organizations.promise;
+    tenantsOf(service).before.list = () => organizations.promise;
     renderEnded(service, navigation, undefined, '/organizations');
     await waitFor(() => expect(screen.getByTestId('masthead-user')).toHaveTextContent('dev-user'));
-    await act(async () => organizations.reject(expired()));
+    // The token expires meanwhile: /user, which Unauthenticated makes the console ask again, too.
+    service.getUser = async () => {
+      throw expired();
+    };
+    await act(async () => organizations.reject(new ConnectError(expired().message, Code.Unauthenticated)));
     expect(await screen.findByRole('heading', { level: 1, name: 'Your session has ended' })).toBeInTheDocument();
     expectFullPage();
     expect(navigation.assign).toHaveBeenCalledTimes(1);
@@ -387,8 +394,9 @@ describe('an ended session', () => {
     const navigation = fakeNavigation();
     const service = expiredService();
     const user = deferred<User>();
-    service.getUser = () => user.promise;
-    // A page call to the BFF answers 401 while the user is still loading.
+    // A page call answers Unauthenticated while the user is still loading, and so does the /user
+    // that makes the console ask (sessionCheck).
+    service.getUser = vi.fn<() => Promise<User>>().mockReturnValueOnce(user.promise).mockRejectedValue(expired());
     const first = renderEnded(service, navigation, undefined, '/organizations');
     expect(await screen.findByRole('heading', { level: 1, name: 'Your session has ended' })).toBeInTheDocument();
     await act(async () => user.resolve(await new MockConsoleService().getUser()));

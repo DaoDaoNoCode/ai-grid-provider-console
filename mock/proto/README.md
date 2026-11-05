@@ -13,10 +13,10 @@ The first backend's proto had three RPCs. The console needs more than that, so i
 **draft** of the next proto in `mock/proto/ai_grid/v1/`, split by type as the style guide in
 `mock/research/backend-conventions.md` section 5 says (`ai_grid.proto`, `condition_type.proto`,
 `metadata_type.proto`, `managed_cluster_type.proto`, `managed_clusters_service.proto`,
-`tenant_type.proto`, `tenants_service.proto`, `model_type.proto`, `models_service.proto`, and
-`grid_service.proto`, whose `Grid/GetNetwork` and the whole of `catalog_items_service.proto` are
-still placeholders; the draft's subscriptions are gone, because the Subscriptions pages call the
-backend's own `ai_grid.v1.Subscriptions` over Connect). It is the
+`model_type.proto`, `models_service.proto`, and `grid_service.proto`, whose `Grid/GetNetwork`
+and the whole of `catalog_items_service.proto` are still placeholders; the draft's subscriptions
+and tenants are gone, because the Subscriptions and Organizations pages call the backend's own
+`ai_grid.v1.Subscriptions` and `ai_grid.v1.Tenants` over Connect). It is the
 console's **proposal** to the backend team, nothing more: the shapes are the ones drafted in
 section 6 of that report, every file says so in its header, and the `go_package` is the
 console's own (`bff/gen/ai_grid/v1`), not the backend's.
@@ -33,13 +33,13 @@ What keeps it honest:
   backend's `proto/ai_grid/v1` at the commit in `mock/proto/upstream/COMMIT`, and
   `mock/proto/upstream/image.binpb` is those files compiled with their imports by `buf build`.
   `hack/sync-upstream-proto.sh <ref>` refreshes all three.
-- **A test guards the BFF's copy.** Against the real backend the BFF calls `Clusters`,
-  `Tenants` and `Models` with a copy of their messages, `mock/proto/ai_grid/backend/v1`.
-  `bff/internal/protodrift` loads the vendored image and checks that every copied message,
-  field (same number, name, cardinality, presence, oneof and type) and enum value is still
-  the backend's, and that the RPCs the BFF calls still take and return those messages.
-  The day the backend changes one of them, the sync script plus this test name every
-  difference. `TestFakeImplementsEveryProtoMethod` in
+- **A test guards the BFF's one gRPC call.** Against the real backend the BFF calls only
+  `AiGrid/Ping` (for `/readyz`), with the draft's `PingRequest` and `PingResponse`; the pages
+  call the backend's other RPCs over Connect with types generated from its own proto.
+  `bff/internal/protodrift` loads the vendored image and checks that the RPC still exists, is
+  unary, and takes and returns messages whose fields (same number, name, cardinality,
+  presence, oneof and type) are still the draft's. The day the backend changes it, the sync
+  script plus this test name every difference. `TestFakeImplementsEveryProtoMethod` in
   `bff/internal/fakebackend` then calls every method of every draft service and fails on an
   `Unimplemented` answer, except for the methods listed in `intentionallyUnimplemented`
   (`fakebackend_test.go`), each with its reason: the placeholder `Grid/GetNetwork` and
@@ -98,24 +98,14 @@ the `Models` service wraps one Placement and one MWRS per model (`mock/research/
 "Proposal"). `AiGrid` gained `GetHubCapabilities` (`manifest_work_replica_set_enabled`,
 `observability_installed`, `acm_version`).
 
-The Tenants area first removed two drafted fields: `Tenant.version` (field 8) and
-`UpdateTenantRequest.lock` (field 3) are `reserved`, because Keycloak Organizations have no
-server-side version, etag or `Last-Modified` (`mock/research/keycloak.md` 8.1). The review of
-the fake server PR brought a version back under a new name and number, kept by the backend
-itself in an organization attribute (`mock/areas/tenants.md`, "Version"):
-`Tenant.resource_version = 10`, checked when `UpdateTenantRequest.object.resource_version` or
-the new `DeleteTenantRequest.resource_version = 2` is set (no flag; `lock` stays reserved), and
-`Aborted` when stale. `DeleteModelRequest` gained the same precondition (`resource_version =
-3`, a Kubernetes delete precondition), and `ListTenantsResponse.total` and
-`ListModelsResponse.total` became `optional`, so a backend that ignores paging and filters
-(the shipped one) is visible by the missing count. The Tenants area also added `TenantDomain` and
-`repeated TenantDomain domain_details = 9` (`name`, `verified`, `identity_provider_alias`,
-`auto_redirect`, the fields Keycloak 26.8 keeps per domain), and kept `domains` as the list of
-names. `ListTenantsRequest.filter` was first narrowed to the one CEL form that pushes down to
-Keycloak's `search`; it is general CEL again, as is `ListModelsRequest.filter`: an expression
-over `this` (the message, proto field names) and `now` in cel-go's standard library plus its
-strings extension (`ext.Strings()`), which the client writes, the BFF forwards and the backend
-evaluates before paging (the fake in memory, `bff/internal/fakebackend/celfilter`).
+The Tenants area is gone from the draft: the Organizations pages call the backend's own
+`ai_grid.v1.Tenants` over Connect (`mock/areas/tenants.md`). `ListModelsRequest.filter` is
+general CEL: an expression over `this` (the message, proto field names) and `now` in cel-go's
+standard library plus its strings extension (`ext.Strings()`), which the client writes, the BFF
+forwards and the backend evaluates before paging (the fake in memory,
+`bff/internal/fakebackend/celfilter`); `ListModelsResponse.total` is `optional`, so a backend
+that ignores paging and filters is visible by the missing count. `DeleteModelRequest` carries a
+precondition (`resource_version = 3`, a Kubernetes delete precondition).
 
 ## Proposals from the port
 
@@ -127,8 +117,6 @@ comment in the draft says the same. Proposals the port first made and the fake l
 
 | Id | Proposal | What the fake implements |
 |---|---|---|
-| P1 | `Tenant.identity_provider = 11`, with the port's `IdentityProvider` and `OidcConfig` messages | Validates the provider with the PoC's rules on create and on an update whose mask names `identity_provider` (`BadRequest` violations under `identityProvider.*`), trims and stores it. An organization without one is accepted. The check runs after the version check, so a stale update is `Aborted` whatever else is wrong |
-| P3 | `Tenant.create_time = 12`, output only | Stamps the time at create and keeps it out of `attributes`, as the backend would in the attribute `ai-grid/create-time`; an organization created some other way has none, and the console shows "—" |
 | P6 | `ModelSubscriptionRef.namespace = 8` | The namespace of the referenced model; empty means the console's models namespace (`ai-grid-models`). Pairing with auth policies, status and the delete guard all use namespace and name |
 | P7 | `Models.ListLocations`, `ListLocationsResponse.locations = 1` | The names of the clusters that are AI Grid members (`ai-grid/enabled` and `ai-grid/provisioned` both `true`) with `ai-grid/role` inference or combined and Available, sorted: what the backend's `Models/ListPlacementClusters` answers (`internal/servers/models_server.go`), the values of a placement's `name In [...]` |
 | P8 | So far `PlacementStatus.locations = 4` | The `location` labels of the decided clusters, unique and sorted; a decided cluster without the label adds nothing |
@@ -136,8 +124,9 @@ comment in the draft says the same. Proposals the port first made and the fake l
 | P13 | `ModelPhase.MODEL_PHASE_PARTIALLY_AVAILABLE = 4`, and `ManifestWorkStatus.phase = 7`, `reason = 8` and `message = 9`, output only | Each work's phase on its cluster: READY when the spoke's `ready` feedback is True; FAILED when `Applied` is False or `Degraded` is True, with that condition's reason and message, Applied first; otherwise PENDING, with no reason before the agent reports, else `Available`'s reason and message while it is not True, else `Progressing`'s. A placed model with some works READY and others not reads PARTIALLY_AVAILABLE, reason `PartiallyAvailable`, message "<n> of <m> clusters are serving the model.", after READY and before FAILED. The console's Models page lists each cluster's phase under the model (the UX team's "models per cluster" design) |
 | P12 | The MaaS status the research implies (`mock/research/models-maas.md` 8.1). `Subscription.phase = 10` is `Active`, `Degraded`, `Failed` or `Invalid`, and empty until the first reconcile (the controller never writes `Pending`), fields 11 and 12 are `reserved`, and `conditions = 16`, `model_ref_statuses = 17` and `token_rate_limit_statuses = 18` are new. `AuthPolicy` gains `conditions = 7` and `model_refs = 8` (`AuthPolicyModelRef {name, namespace}`, replacing the reserved bare names in 5). New messages `ResourceRefStatus`, `TokenRateLimitStatus` and `ModelRegistration`, and `GetSubscriptionResponse.model_registrations = 4`. All output only | The controller's phases, conditions, reasons and messages, word for word, derived on every read; the timing is in `mock/README.md`, area 4. A model ref with a namespace pairs with a policy that names the same namespace |
 
-P2, P4 and P5 were dropped: the fake covers them (`Tenant.resource_version`,
-`DeleteTenantRequest.resource_version` and `DeleteModelRequest.resource_version`). P10 (map-key
+P1 and P3 (the tenant's identity provider and creation time) went with the draft's tenants; the
+backend's `Tenant` has both. P2, P4 and P5 were dropped: the fake covers
+`DeleteModelRequest.resource_version`, and the tenant ones went with the draft's tenants. P10 (map-key
 field masks) was dropped: the fake settled on whole maps. P9 (cluster `grid` fields) and the rest
 of P8 are not in the draft yet.
 

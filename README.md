@@ -56,12 +56,12 @@ describes). Run them all against the fake backend with `make dev-fake`, as
 
 ## Status
 
-Implemented in the BFF and the fake backend: login, user, config, clusters (list, get,
-enroll), organizations and the grid overview, with readiness tied to the backend. The Models and
-Subscriptions pages call the backend's own API over Connect (`docs/connect.md`). The shipped `ai-grid-backend` serves clusters (list, get, and the update
-behind Add to AI Grid, Edit and Remove) and tenants, the console's organizations (list, get, create,
-update, delete). A tenant create or update that sets a field the backend's tenant doesn't have
-answers 501 instead of dropping it. Against it, the grid overview is 501, and so is a list request with `filter`, `offset` or `limit`, which it
-doesn't apply; the pages show these as not available on this AI Grid backend. `/user` and
+Implemented in the BFF and the fake backend: login, user, config and the Monitoring fallback's
+grid overview, with readiness tied to the backend. The Clusters, Organizations, Models and
+Subscriptions pages and the AI Grid map call the backend's own API over Connect
+(`docs/connect.md`); the shipped `ai-grid-backend` serves clusters (list, get, and the update
+behind Add to AI Grid, Edit and Remove), tenants, the console's organizations (list, get, create,
+update, delete), models and subscriptions. Against it, the grid overview is 501, which the page
+shows as not available on this AI Grid backend. `/user` and
 `/config` work on any backend (neither calls it). See the "Waiting on backend RPCs" table in
 `docs/plan/bff-api.md`.

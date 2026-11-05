@@ -4,8 +4,9 @@
 // mock/research/backend-conventions.md section 6, so the console's fake backend, BFF
 // and UI can be built against them; the fake backend serves it. The backend is now
 // ai-grid-cloud/ai-grid-provider-backend, whose ai_grid.v1 is shaped differently: the
-// BFF calls it through the copy in mock/proto/ai_grid/backend/v1, which
-// bff/internal/protodrift checks against mock/proto/upstream.
+// pages call it over Connect with types generated from its own proto (frontend/src/gen),
+// and bff/internal/protodrift checks the one RPC the BFF calls itself, AiGrid/Ping,
+// against mock/proto/upstream.
 //
 // When the backend ships these RPCs the console switches to them and deletes this draft.
 //

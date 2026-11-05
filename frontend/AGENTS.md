@@ -40,18 +40,19 @@ step is spaced by a `Stack` or a `Form`.
 All in `src/components/states/`; `LoadError` (`src/components/LoadError.tsx`) picks the right one for
 a failed load.
 
-| State                           | Component                                          | Looks like                                                                                                                                                          |
-| ------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Loading                         | `PageLoading`                                      | a spinner in the middle of the section, under a list's header; alone on an object's page                                                                            |
-| Load failed, nothing to show    | `ErrorState`                                       | large empty state, red exclamation (`status="danger"`), h2 "Unable to load &lt;object&gt;" (singular on a page for one object), the server's message, primary Retry |
-| 404 on a page for one object    | `NotFoundState`                                    | large, path-missing icon, "&lt;Object&gt; not found", "Go to &lt;List&gt;"; the header shows the list's name, not the id                                            |
-| 501 (the backend lacks the RPC) | `NotAvailableState`                                | large, grey wrench, no Retry                                                                                                                                        |
-| 401                             | `SessionEnded`, once for the console               | `LoadError` shows nothing                                                                                                                                           |
-| No access                       | `FullPageState`                                    | large, lock icon; `inPage` under a page's header (a 403)                                                                                                            |
-| Data still shown, reload failed | `StaleDataAlert`                                   | warning inline alert under the header, "Showing the last loaded &lt;objects&gt;", the server's message, Retry; a section that failed gets one inside the section    |
-| Empty list                      | `EmptyListState`                                   | large, grey plus-circle (cubes for a list nobody creates here, such as Clusters), "No &lt;objects&gt;", the create button for a user who may create                 |
-| Empty section                   | `SectionEmptyState`                                | extra small, no icon                                                                                                                                                |
-| Filter matches nothing          | `TableEmptyRow` (`NoResultsState` outside a table) | "No results found", Clear all filters; only for a filter, never for a table with no rows                                                                            |
+| State                                                     | Component                                          | Looks like                                                                                                                                                                                          |
+| --------------------------------------------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Loading                                                   | `PageLoading`                                      | a spinner in the middle of the section, under a list's header; alone on an object's page                                                                                                            |
+| Load failed, nothing to show                              | `ErrorState`                                       | large empty state, red exclamation (`status="danger"`), h2 "Unable to load &lt;object&gt;" (singular on a page for one object), the server's message, primary Retry                                 |
+| 404 on a page for one object                              | `NotFoundState`                                    | large, path-missing icon, "&lt;Object&gt; not found", "Go to &lt;List&gt;"; the header shows the list's name, not the id                                                                            |
+| 501 (the backend lacks the RPC)                           | `NotAvailableState`                                | large, grey wrench, no Retry                                                                                                                                                                        |
+| 401                                                       | `SessionEnded`, once for the console               | `LoadError` shows nothing                                                                                                                                                                           |
+| No access                                                 | `FullPageState`                                    | large, lock icon; `inPage` under a page's header (a 403)                                                                                                                                            |
+| Data still shown, reload failed                           | `StaleDataAlert`                                   | warning inline alert under the header, "Showing the last loaded &lt;objects&gt;", the server's message, Retry; a section that failed gets one inside the section                                    |
+| Data beside the page's own failed to load, none shown yet | `LoadFailedAlert`                                  | warning inline alert, "Unable to load &lt;objects&gt;", what the page shows without it, the server's message, Retry; the page's own content stays (the Models pages' clusters, for Site and Region) |
+| Empty list                                                | `EmptyListState`                                   | large, grey plus-circle (cubes for a list nobody creates here, such as Clusters), "No &lt;objects&gt;", the create button for a user who may create                                                 |
+| Empty section                                             | `SectionEmptyState`                                | extra small, no icon                                                                                                                                                                                |
+| Filter matches nothing                                    | `TableEmptyRow` (`NoResultsState` outside a table) | "No results found", Clear all filters; only for a filter, never for a table with no rows                                                                                                            |
 
 `LoadError` takes `onRetry` always: every failure that can pass offers Retry.
 
@@ -74,10 +75,11 @@ a failed load.
 - `StatusLabel` only, compact in tables and page headers. The word and its colour come from
   `utilities/status.tsx`; one word per state ("Active" for a subscription and its policy alike).
 - A status label is an outline label with its reason in a tooltip, and opens nothing, except where
-  the Models design (console #114) opens a dialog: on the Models list, the Status labels Saved to
-  Git, Syncing and Partially ready are filled and open `ModelStatusModal`, and an Availability label
-  with more to say is filled and opens its dialog; the other words stay outline. A model's page keeps
-  an outline Status label; its alert explains the phase.
+  the Models design (`jgiardino/ai-grid-provider-console@a4e6090`) opens a dialog: on the Models
+  list, the Status labels Saved to Git, Syncing and Partially ready are filled and open
+  `ModelStatusModal`, and an Availability label with more to say is filled and opens its dialog; the
+  other words stay outline. A model's page keeps an outline Status label; its alert explains the
+  status.
 - On the Clusters list, a status with a non-empty hub message is filled and opens that cluster's
   message as text in a dialog, including Ready. Without a message it stays outline and
   noninteractive. AI Grid status stays outline. Refresh keeps the selected cluster's identity.
@@ -87,7 +89,7 @@ a failed load.
   Inspecting status preserves the subscription draft and token limits. Edit and view stay unchanged.
 - A label is clickable (filled) where a whole column opens each row's details, for every row: the
   Status column of a model's clusters table (`ModelClustersTable`), which opens what that cluster
-  reported; a placed cluster that hasn't reported yet (Pending sync) opens nothing, and inside the
+  reported; a placed cluster without a state yet (Pending sync) opens nothing, and inside the
   Partially ready dialog no cluster opens one (PatternFly's dialogs don't stack).
 
 ## Time

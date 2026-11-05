@@ -3,7 +3,7 @@
 // lists each cluster's status. The design's Sync now button waits until after the 11-06 freeze.
 import { Flex, FlexItem, Label, Modal, ModalBody, ModalHeader, Stack, Title } from '@patternfly/react-core';
 import { statusLabelProps } from '../../utilities/status';
-import type { ClusterRegions } from './clusterRegions';
+import type { ClusterPlaces } from './clusterPlaces';
 import { ModelClustersTable } from './ModelClustersTable';
 import { gitStatusMessage } from './modelStatusInfo';
 import { titleOf, type ModelView } from './modelView';
@@ -11,7 +11,7 @@ import { statusModalLayout } from './statusModalLayout';
 
 type Props = {
   model: ModelView;
-  clusters: ClusterRegions;
+  clusters: ClusterPlaces;
   onClose: () => void;
 };
 
@@ -32,15 +32,15 @@ export const ModelStatusContent: React.FC<Pick<Props, 'model' | 'clusters'>> = (
           </Flex>
         </Title>
         <p>
-          <strong>Deployment status</strong>
+          <strong>Model status</strong>
         </p>
       </ModalHeader>
       <ModalBody>
         {gitMessage ? (
-          <p data-testid="model-status-modal-message">{gitMessage}</p>
+          <p>{gitMessage}</p>
         ) : (
           <Stack hasGutter>
-            <p data-testid="model-status-modal-message">One or more model deployments are not ready.</p>
+            <p>The model isn’t ready on one or more of its clusters.</p>
             <ModelClustersTable model={model} clusters={clusters} isNested opensClusters={false} />
           </Stack>
         )}
@@ -50,13 +50,7 @@ export const ModelStatusContent: React.FC<Pick<Props, 'model' | 'clusters'>> = (
 };
 
 export const ModelStatusModal: React.FC<Props> = ({ model, clusters, onClose }) => (
-  <Modal
-    {...statusModalLayout}
-    isOpen
-    onClose={onClose}
-    aria-label={`${titleOf(model)} status`}
-    data-testid="model-status-modal"
-  >
+  <Modal {...statusModalLayout} isOpen onClose={onClose} aria-label={`${titleOf(model)} status`}>
     <ModelStatusContent model={model} clusters={clusters} />
   </Modal>
 );

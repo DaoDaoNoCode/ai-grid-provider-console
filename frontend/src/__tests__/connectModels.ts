@@ -89,8 +89,7 @@ export const seedModelObjects = (): Model[] =>
         ...(id === 'granite-research'
           ? { reason: 'ModelNotReady', message: 'The model endpoint is starting.' }
           : { reason: 'Ready' }),
-        // The seed clusters' location label is their name.
-        placement: { selectedClusters: clusters, locations: clusters, numberOfSelectedClusters: clusters.length },
+        placement: { selectedClusters: clusters, numberOfSelectedClusters: clusters.length },
         // As the backend reports a ready cluster: synced and running.
         clusters: clusters.map((cluster) => ({
           cluster,

@@ -1,6 +1,7 @@
-// The model on each cluster its placement names, following
-// jgiardino/ai-grid-provider-console@a4e6090 ModelLocationsTable.tsx:
-// Cluster, Region, Status and View. Status is the backend's word for the cluster
+// The model on each cluster its placement names. The design's table
+// (jgiardino/ai-grid-provider-console@a4e6090 ModelLocationsTable.tsx) has Cluster, Location, Status
+// and actions; here it is Cluster, Site, Region, Status and View, Site and Region in the glossary's
+// words in place of Location (clusterPlaces.ts). Status is the backend's word for the cluster
 // (ModelClusterStatus.state: Syncing, Synced, Starting, Ready, Failed, Stopped) and opens what the
 // cluster reported; View opens OpenShift AI's model deployments there, or the OpenShift console where
 // the cluster runs no dashboard (view_url). While no cluster has reported the model (the backend's
@@ -30,14 +31,15 @@ import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import { StatusLabel } from '../../components/StatusLabel';
 import { EMPTY_VALUE } from '../../utilities/format';
 import { statusLabelProps } from '../../utilities/status';
-import { regionOf, type ClusterRegions } from './clusterRegions';
+import { regionOf, siteOf, type ClusterPlaces } from './clusterPlaces';
 import { gitStatusMessage } from './modelStatusInfo';
+import { viewHref } from './modelUtils';
 import { titleOf, type ModelClusterView, type ModelView } from './modelView';
 import { statusModalLayout } from './statusModalLayout';
 
 type Props = {
   model: ModelView;
-  clusters: ClusterRegions;
+  clusters: ClusterPlaces;
   /** Inside the Models page's expanded row, or a dialog. */
   isNested?: boolean;
   /**
@@ -50,12 +52,9 @@ type Props = {
 /** The word a cluster's row shows: the backend's, or Pending sync while it has none. */
 const clusterStatus = (c: Pick<ModelClusterView, 'state'>) => c.state ?? 'Pending sync';
 
-/** Only an http(s) link opens; the backend sends nothing else, and the page checks again. */
-const safeHref = (href: string | undefined) => (href && /^https?:\/\//i.test(href) ? href : undefined);
-
 /** View: OpenShift AI's model deployments on the cluster, or the OpenShift console. */
 const ViewLink: React.FC<{ status?: ModelClusterView; cluster: string }> = ({ status, cluster }) => {
-  const href = safeHref(status?.viewUrl);
+  const href = viewHref(status?.viewUrl);
   if (!href) return <>{EMPTY_VALUE}</>;
   const where = status?.viewTarget === 'OpenShift AI' ? 'OpenShift AI' : 'the OpenShift console';
   return (
@@ -70,7 +69,6 @@ const ViewLink: React.FC<{ status?: ModelClusterView; cluster: string }> = ({ st
         icon={<ExternalLinkAltIcon />}
         iconPosition="end"
         aria-label={`View on ${cluster} in ${where}`}
-        data-testid="model-cluster-view"
       >
         View
       </Button>
@@ -82,9 +80,10 @@ const ViewLink: React.FC<{ status?: ModelClusterView; cluster: string }> = ({ st
 const ClusterStatusModal: React.FC<{
   model: ModelView;
   status: ModelClusterView;
+  site: string;
   region: string;
   onClose: () => void;
-}> = ({ model, status, region, onClose }) => {
+}> = ({ model, status, site, region, onClose }) => {
   const word = clusterStatus(status);
   const gitMessage = gitStatusMessage[word as keyof typeof gitStatusMessage];
   const row = (term: string, value: React.ReactNode) => (
@@ -94,13 +93,7 @@ const ClusterStatusModal: React.FC<{
     </DescriptionListGroup>
   );
   return (
-    <Modal
-      {...statusModalLayout}
-      isOpen
-      onClose={onClose}
-      aria-label={`${titleOf(model)} on ${status.cluster}`}
-      data-testid="cluster-status-modal"
-    >
+    <Modal {...statusModalLayout} isOpen onClose={onClose} aria-label={`${titleOf(model)} on ${status.cluster}`}>
       <ModalHeader>
         <Title headingLevel="h1" size="2xl">
           <Flex gap={{ default: 'gapMd' }} alignItems={{ default: 'alignItemsCenter' }}>
@@ -113,18 +106,19 @@ const ClusterStatusModal: React.FC<{
           </Flex>
         </Title>
         <p>
-          <strong>Deployment status</strong> on cluster{' '}
+          <strong>Model status</strong> on cluster{' '}
           <Link to={`/clusters/${encodeURIComponent(status.cluster)}`}>{status.cluster}</Link>
         </p>
       </ModalHeader>
       <ModalBody>
         <Stack hasGutter>
-          {gitMessage && <p data-testid="cluster-status-git-message">{gitMessage}</p>}
+          {gitMessage && <p>{gitMessage}</p>}
           <DescriptionList isCompact aria-label={`What ${status.cluster} reported`}>
+            {row('Site', site)}
             {row('Region', region)}
             {row('Git sync', status.sync ?? 'No report')}
             {status.syncMessage && row('Sync message', status.syncMessage)}
-            {row('Deployment', status.deployment ?? 'Not on the cluster yet')}
+            {row('Deployment', status.deployment === 'Unknown' ? 'Not on the cluster yet' : status.deployment)}
             {status.deploymentMessage && row('Deployment message', status.deploymentMessage)}
             {row('Reported', status.message ?? EMPTY_VALUE)}
           </DescriptionList>
@@ -137,9 +131,13 @@ const ClusterStatusModal: React.FC<{
 /** The model's clusters: each placed cluster's status and View link, or the clusters the placement chose. */
 export const ModelClustersTable: React.FC<Props> = ({ model, clusters, isNested, opensClusters = true }) => {
   // The open dialog's cluster, not its entry: each poll brings new entries, and the dialog shows the
-  // current one, or closes when the model no longer has the cluster.
+  // current one, or closes when the model no longer has the cluster or its state. Closing forgets
+  // the cluster, so a poll that brings it back doesn't open the dialog again without a click.
   const [openCluster, setOpenCluster] = useState<string>();
   const open = model.clusters.find((c) => c.cluster === openCluster && c.state);
+  if (openCluster && !open) {
+    setOpenCluster(undefined);
+  }
   const title = titleOf(model);
   const reported = model.clusters.length > 0;
   const rows: { cluster: string; status?: ModelClusterView }[] = reported
@@ -153,13 +151,13 @@ export const ModelClustersTable: React.FC<Props> = ({ model, clusters, isNested,
         variant="compact"
         isNested={isNested}
         borders={isNested ? false : undefined}
-        data-testid={reported ? `model-clusters-${model.id}` : `model-selected-clusters-${model.id}`}
       >
         <Thead>
           {/* resetOffset: inside the Models page's expanded row, the nested table's first column lines
               up with the row's Name, as PatternFly's nested tables and the UX design do. */}
           <Tr resetOffset={isNested}>
             <Th>Cluster</Th>
+            <Th>Site</Th>
             <Th>Region</Th>
             <Th>Status</Th>
             <Th modifier="fitContent" screenReaderText="View" />
@@ -167,14 +165,11 @@ export const ModelClustersTable: React.FC<Props> = ({ model, clusters, isNested,
         </Thead>
         <Tbody>
           {rows.map(({ cluster, status }) => (
-            <Tr
-              key={cluster}
-              resetOffset={isNested}
-              data-testid={reported ? 'model-cluster-row' : 'model-selected-cluster-row'}
-            >
+            <Tr key={cluster} resetOffset={isNested}>
               <Td dataLabel="Cluster">
                 <Link to={`/clusters/${encodeURIComponent(cluster)}`}>{cluster}</Link>
               </Td>
+              <Td dataLabel="Site">{siteOf(clusters, cluster)}</Td>
               <Td dataLabel="Region">{regionOf(clusters, cluster)}</Td>
               <Td dataLabel="Status">
                 <div>
@@ -183,7 +178,6 @@ export const ModelClustersTable: React.FC<Props> = ({ model, clusters, isNested,
                     status={status ? clusterStatus(status) : 'Pending sync'}
                     onClick={status?.state && opensClusters ? () => setOpenCluster(cluster) : undefined}
                     screenReaderSuffix={` on ${cluster}`}
-                    data-testid="model-cluster-status"
                   />
                 </div>
               </Td>
@@ -198,6 +192,7 @@ export const ModelClustersTable: React.FC<Props> = ({ model, clusters, isNested,
         <ClusterStatusModal
           model={model}
           status={open}
+          site={siteOf(clusters, open.cluster)}
           region={regionOf(clusters, open.cluster)}
           onClose={() => setOpenCluster(undefined)}
         />

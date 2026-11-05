@@ -58,12 +58,20 @@ spec:
             - --skip-provider-button
             - --pass-access-token=true
             - --pass-user-headers=true
-            - --set-xauthrequest=true
+            # The caller's token and name go to the BFF as request headers only (the two flags
+            # above), never back to the browser. --set-xauthrequest=true, which the gateway template
+            # has, adds X-Auth-Request-User, -Email and -Groups and, with --pass-access-token,
+            # X-Auth-Request-Access-Token to every signed-in response, where any script in the page
+            # could read the token that the HttpOnly cookie keeps from it. The gateway calls the
+            # proxy's /oauth2/auth from Envoy (ext_authz), which keeps those headers from the
+            # browser; here the proxy answers the browser itself. --set-authorization-header and
+            # --set-basic-auth stay off, their default. hack/test-chart-kind.sh checks that no
+            # response carries the token.
+            - --set-xauthrequest=false
             # Drop the X-Forwarded-* identity headers (user, email, groups, preferred
             # username, access token) a client sends before setting its own: the BFF
             # trusts them. The proxy's default, stated so that a change of default can't
             # let a caller name itself; hack/test-chart-kind.sh sends forged ones.
-            # (--set-xauthrequest sets X-Auth-Request-* on responses, not requests.)
             - --skip-auth-strip-headers=true
             - --skip-jwt-bearer-tokens=true
             - --enable-k8s-token-validation=true
@@ -229,6 +237,11 @@ spec:
                   name: {{ $kc }}
                   key: {{ index . 1 }}
             {{- end }}
+            {{- if .Values.backend.idpSecrets.enabled }}
+            # Where organization identity providers' client secrets are (templates/idp-secrets.yaml).
+            - name: AI_GRID_IDP_SECRET_NAMESPACE
+              value: {{ .Values.backend.idpSecrets.namespace | quote }}
+            {{- end }}
             {{- with .Values.backend.git }}
             {{- if .url }}
             # Git mode: Models and Subscriptions are commits to this repository, which Argo CD
@@ -240,8 +253,6 @@ spec:
               value: {{ .branch | quote }}
             - name: AI_GRID_GIT_TOKEN_FILE
               value: /var/run/secrets/ai-grid-git/token
-            - name: AI_GRID_CATALOG_APP_NAMESPACE
-              value: {{ .catalogNamespace | quote }}
             {{- with .gridNamespace }}
             - name: AI_GRID_GRID_NAMESPACE
               value: {{ . | quote }}

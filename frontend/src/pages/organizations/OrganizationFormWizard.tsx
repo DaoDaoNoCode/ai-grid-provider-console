@@ -2,21 +2,19 @@
 // Combined adaptation of OSAC TenantCreatePage and IdentityProviderCreateWizard.
 // Source commit: 8cb0a227e45cc9b17421b6e79ce493ed370ebd5d. Break-glass flow is omitted.
 import { useEffect, useRef } from 'react';
-import { Form, Wizard, WizardStep, useWizardContext } from '@patternfly/react-core';
-import type { OrganizationsService } from '../../api/organizations';
-import type { Organization, OrganizationInput } from '../../api/types';
+import { Alert, Content, Form, Wizard, WizardStep, useWizardContext } from '@patternfly/react-core';
 import { ConsoleWizardFooter } from '../../components/ConsoleWizardFooter';
 import { useConfirmDiscard } from '../../hooks/useConfirmDiscard';
 import { IdentityProviderFields } from './IdentityProviderFields';
 import type { OrganizationSection } from './OrganizationConfigurationDetails';
 import { OrganizationConfigurationDetails } from './OrganizationConfigurationDetails';
 import { OrganizationDetailsFields } from './OrganizationDetailsFields';
+import type { OrganizationInput, OrganizationView } from './organizationView';
 import { useOrganizationForm } from './useOrganizationForm';
 
 type Props = {
-  service: OrganizationsService;
   /** The organization to edit; without it the wizard creates one. */
-  organization?: Organization;
+  organization?: OrganizationView;
 };
 
 const stepOf: Record<OrganizationSection, string> = {
@@ -57,11 +55,12 @@ const GoToRefusedField: React.FC<{ refused?: object; errorStep?: string }> = ({ 
 /**
  * Creates an organization in three steps: its details, its identity provider, then a review. With
  * `organization` it edits that one through the same steps: every step can be opened from the start,
- * the name is read-only, and Save changes on the Review step stays disabled until something changed.
+ * the name and the identity provider are read-only, and Save changes on the Review step
+ * stays disabled until something changed.
  */
-export const OrganizationFormWizard: React.FC<Props> = ({ service, organization }) => {
+export const OrganizationFormWizard: React.FC<Props> = ({ organization }) => {
   const editing = !!organization;
-  const form = useOrganizationForm(service, organization);
+  const form = useOrganizationForm(organization);
   const { values, setValues, saving } = form;
   const [requestLeave, discardModal] = useConfirmDiscard(form.isDirty && !saving, form.leave);
 
@@ -113,12 +112,25 @@ export const OrganizationFormWizard: React.FC<Props> = ({ service, organization 
         </WizardStep>
         <WizardStep name="Identity provider" id="organization-idp" isDisabled={!form.detailsValid || saving}>
           <Form maxWidth="750px">
-            <IdentityProviderFields
-              value={values.identityProvider}
-              serverErrors={form.idpServerErrors}
-              onChange={(identityProvider) => setValues({ ...values, identityProvider })}
-              isDisabled={saving}
-            />
+            {form.idpLocked && !organization?.identityProvider ? (
+              <Content component="p">
+                This organization has no identity provider. One can be added only when an organization is created.
+              </Content>
+            ) : (
+              <>
+                {form.idpLocked && (
+                  <Alert variant="info" isInline isPlain title="Identity provider cannot be edited">
+                    It is set when the organization is created.
+                  </Alert>
+                )}
+                <IdentityProviderFields
+                  value={values.identityProvider}
+                  serverErrors={form.idpServerErrors}
+                  onChange={(identityProvider) => setValues({ ...values, identityProvider })}
+                  isDisabled={saving || form.idpLocked}
+                />
+              </>
+            )}
           </Form>
         </WizardStep>
         <WizardStep name="Review" id="organization-review" isDisabled={!form.detailsValid || !form.idpValid || saving}>

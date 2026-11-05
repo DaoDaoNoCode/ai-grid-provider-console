@@ -1,5 +1,5 @@
-import { toGridCluster, toOrganization } from './adapters';
-import type { ApiCluster, ApiTenant } from './types';
+import { toGridCluster } from './adapters';
+import type { ApiCluster } from './types';
 
 // A cluster of GET /api/v1/grid/overview (mock/examples/get-grid-overview.json), trimmed.
 const apiCluster = (overrides: Partial<ApiCluster> = {}): ApiCluster => ({
@@ -122,89 +122,5 @@ describe('toGridCluster', () => {
 
   it('gives a cluster without labels an empty map', () => {
     expect(toGridCluster(apiCluster({ labels: undefined })).labels).toEqual({});
-  });
-});
-
-// A tenant of GET /api/v1/tenants (mock/examples/get-tenants.json), trimmed.
-const apiTenant = (overrides: Partial<ApiTenant> = {}): ApiTenant => ({
-  id: '3f1c9a72-5b6e-4d2a-8c01-2d3e4f5a6b7c',
-  name: 'acme-robotics',
-  alias: 'acme-robotics',
-  enabled: true,
-  description: 'Acme Robotics, EU region',
-  domains: ['acme-robotics.example.com', 'acme.example.org'],
-  domainDetails: [],
-  attributes: {},
-  resourceVersion: '3',
-  createTime: '2026-09-01T09:00:00Z',
-  identityProvider: {
-    title: 'Acme Robotics SSO',
-    description: '',
-    enabled: true,
-    config: {
-      clientId: 'ai-grid',
-      clientSecretSecret: { name: 'acme-robotics-oidc-client' },
-      issuer: 'https://sso.example.com/realms/acme-robotics',
-      authorizationUrl: 'https://sso.example.com/realms/acme-robotics/auth',
-      tokenUrl: 'https://sso.example.com/realms/acme-robotics/token',
-      defaultScopes: 'openid profile email',
-      userInfoUrl: '',
-      jwksUrl: '',
-      logoutUrl: '',
-      validateSignature: false,
-    },
-  },
-  ...overrides,
-});
-
-describe('toOrganization', () => {
-  it('maps a tenant to an organization', () => {
-    expect(toOrganization(apiTenant())).toEqual({
-      id: '3f1c9a72-5b6e-4d2a-8c01-2d3e4f5a6b7c',
-      name: 'acme-robotics',
-      domains: ['acme-robotics.example.com', 'acme.example.org'],
-      description: 'Acme Robotics, EU region',
-      status: 'Enabled',
-      resourceVersion: '3',
-      creationTimestamp: '2026-09-01T09:00:00Z',
-      identityProvider: apiTenant().identityProvider,
-    });
-  });
-
-  it('keeps attributes and which domains are verified, when the tenant has them', () => {
-    const organization = toOrganization(
-      apiTenant({
-        attributes: { 'billing-account': 'ACME-0042' },
-        domainDetails: [{ name: 'acme-robotics.example.com', verified: true, autoRedirect: true }],
-      }),
-    );
-    expect(organization.attributes).toEqual({ 'billing-account': 'ACME-0042' });
-    expect(organization.domainDetails).toEqual([{ name: 'acme-robotics.example.com', verified: true }]);
-  });
-
-  it('shows Disabled for a disabled tenant', () => {
-    expect(toOrganization(apiTenant({ enabled: false })).status).toBe('Disabled');
-  });
-
-  it('has no identity provider when the tenant has none', () => {
-    const organization = toOrganization(apiTenant({ identityProvider: undefined, resourceVersion: undefined }));
-    expect(organization.identityProvider).toBeUndefined();
-    expect(organization.resourceVersion).toBe('');
-  });
-
-  it('reads omitted identity provider booleans as true', () => {
-    const config = { clientId: 'ai-grid', clientSecretSecret: { name: 's' }, issuer: 'https://sso.example.com' };
-    const organization = toOrganization(apiTenant({ identityProvider: { title: 'SSO', config } }));
-    expect(organization.identityProvider?.enabled).toBe(true);
-    expect(organization.identityProvider?.config.validateSignature).toBe(true);
-  });
-
-  it('shows the registered date', () => {
-    expect(toOrganization(apiTenant()).creationTimestamp).toBe('2026-09-01T09:00:00Z');
-  });
-
-  it('shows a dash without a creation time', () => {
-    // The list prints a dash for an empty creationTimestamp.
-    expect(toOrganization(apiTenant({ createTime: undefined })).creationTimestamp).toBe('');
   });
 });

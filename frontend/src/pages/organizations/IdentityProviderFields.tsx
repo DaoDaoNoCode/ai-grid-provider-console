@@ -11,7 +11,7 @@ import {
   TextArea,
   TextInput,
 } from '@patternfly/react-core';
-import type { IdentityProvider, OidcConfig } from '../../api/types';
+import type { IdentityProvider, OidcConfig } from './organizationView';
 import { fieldErrorsOf, identityProviderSchema } from '../../validation';
 
 type TextKey = Exclude<keyof OidcConfig, 'clientSecretSecret' | 'validateSignature'>;
@@ -27,7 +27,7 @@ const endpointFields: Field[] = [
   { key: 'authorizationUrl', label: 'Authorization URL', required: true },
   { key: 'tokenUrl', label: 'Token URL', required: true },
   { key: 'userInfoUrl', label: 'User info URL' },
-  { key: 'jwksUrl', label: 'JWKS URL' },
+  { key: 'jwksUrl', label: 'JWKS URL', help: 'Required while Validate signature is on.' },
   { key: 'logoutUrl', label: 'Logout URL' },
 ];
 
@@ -66,12 +66,14 @@ export const IdentityProviderFields: React.FC<Props> = ({ value, onChange, serve
 
   const textField = (field: Field) => {
     const path = `config.${field.key}`;
+    // Keycloak validates signatures with the keys at the JWKS URL.
+    const required = field.required || (field.key === 'jwksUrl' && value.config.validateSignature);
     return (
-      <FormGroup key={field.key} label={field.label} fieldId={`idp-${field.key}`} isRequired={field.required}>
+      <FormGroup key={field.key} label={field.label} fieldId={`idp-${field.key}`} isRequired={required}>
         <TextInput
           id={`idp-${field.key}`}
           value={value.config[field.key]}
-          isRequired={field.required}
+          isRequired={required}
           isDisabled={isDisabled}
           validated={error(path) ? 'error' : 'default'}
           onBlur={() => touch(path)}

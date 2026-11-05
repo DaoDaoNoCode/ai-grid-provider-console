@@ -1,29 +1,14 @@
 import type { DashboardResource } from '@perses-dev/client';
-import { toGridCluster, toOrganization } from './adapters';
+import { toGridCluster } from './adapters';
 import type { ConsoleService } from './ConsoleService';
 import { RelayedError, ServiceError } from './ConsoleService';
 import { PERSES_API } from './monitoring';
-import type {
-  ApiCluster,
-  ApiTenant,
-  ConsoleConfig,
-  GridOverview,
-  GridRange,
-  Organization,
-  OrganizationInput,
-  User,
-} from './types';
+import type { ApiCluster, ConsoleConfig, GridOverview, GridRange, User } from './types';
 
 const API_PREFIX = '/api/v1';
 
 type Envelope<T> = { data: T };
 type ErrorBody = { error?: { code?: string; message?: string; fieldErrors?: Record<string, string> } };
-
-export type RequestOptions = {
-  body?: unknown;
-  /** The version the caller read; sent as `If-Match: "<version>"` unless empty. */
-  ifMatch?: string;
-};
 
 export class HttpConsoleService implements ConsoleService {
   constructor(private readonly fetchFn: typeof fetch = (...args) => fetch(...args)) {}
@@ -64,36 +49,6 @@ export class HttpConsoleService implements ConsoleService {
     return (await response.json()) as DashboardResource[];
   }
 
-  async listOrganizations(): Promise<Organization[]> {
-    return (await this.request<ApiTenant[]>('GET', '/tenants')).map(toOrganization);
-  }
-
-  async getOrganization(id: string): Promise<Organization> {
-    return toOrganization(await this.request<ApiTenant>('GET', `/tenants/${encodeURIComponent(id)}`));
-  }
-
-  async createOrganization(input: OrganizationInput): Promise<Organization> {
-    const { name, domains, identityProvider } = input;
-    return toOrganization(
-      await this.request<ApiTenant>('POST', '/tenants', { body: { name, domains, identityProvider } }),
-    );
-  }
-
-  /** PATCHes only what the PoC can change: the domains and the identity provider, not the name. */
-  async updateOrganization(id: string, input: OrganizationInput, resourceVersion: string): Promise<Organization> {
-    const { domains, identityProvider } = input;
-    return toOrganization(
-      await this.request<ApiTenant>('PATCH', `/tenants/${encodeURIComponent(id)}`, {
-        body: { domains, identityProvider },
-        ifMatch: resourceVersion,
-      }),
-    );
-  }
-
-  deleteOrganization(id: string, resourceVersion: string): Promise<void> {
-    return this.request<void>('DELETE', `/tenants/${encodeURIComponent(id)}`, { ifMatch: resourceVersion });
-  }
-
   async getGridOverview(
     range: GridRange,
     opts: { site?: string; includeMetrics?: boolean } = {},
@@ -112,24 +67,16 @@ export class HttpConsoleService implements ConsoleService {
     return { ...overview, clusters: overview.clusters.map(toGridCluster) };
   }
 
-  /** Calls the BFF and unwraps its data envelope; `undefined` for 204. */
-  async request<T>(method: string, path: string, opts: RequestOptions = {}): Promise<T> {
-    const { body, ifMatch } = opts;
-    const headers: Record<string, string> = { Accept: 'application/json' };
-    if (body !== undefined) {
-      headers['Content-Type'] = 'application/json';
-    }
-    // An object the backend gave no version is read with "": send no
-    // precondition then (the BFF answers 422 to an empty entity tag).
-    if (ifMatch) {
-      headers['If-Match'] = JSON.stringify(ifMatch);
-    }
+  /**
+   * Calls the BFF and unwraps its data envelope; `undefined` for 204. The BFF's JSON API only
+   * reads: every write goes to the backend over Connect (src/api/connect).
+   */
+  async request<T>(method: string, path: string): Promise<T> {
     let response: Response;
     try {
       response = await this.fetchFn(`${API_PREFIX}${path}`, {
         method,
-        headers,
-        body: body === undefined ? undefined : JSON.stringify(body),
+        headers: { Accept: 'application/json' },
         credentials: 'same-origin',
       });
     } catch {

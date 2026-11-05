@@ -4,7 +4,8 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ServiceError } from '../api/ConsoleService';
-import { MockConsoleService, seedOrganizations } from '../api/MockConsoleService';
+import { MockConsoleService } from '../api/MockConsoleService';
+import { tenantsOf } from './connectTenants';
 import { serviceOnBffExamples } from './bffExamples';
 import { renderAt } from './render';
 import { modelsOf } from './connectModels';
@@ -16,7 +17,8 @@ import '../pages/monitoring/MonitoringPage';
 /** The mock with the PoC test's two organizations. */
 const withOrganizations = () => {
   const service = new MockConsoleService();
-  service.organizations = seedOrganizations().filter((o) => ['acme-robotics', 'globex-research'].includes(o.name));
+  const fake = tenantsOf(service);
+  fake.tenants = fake.tenants.filter((t) => ['acme-robotics', 'globex-research'].includes(t.metadata?.name ?? ''));
   return service;
 };
 

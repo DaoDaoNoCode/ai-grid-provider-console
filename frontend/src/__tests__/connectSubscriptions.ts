@@ -1,5 +1,5 @@
 // The backend's Subscriptions API for page tests, in memory, joined to the models of
-// connectModels.ts's FakeModels, with Tenants/List over a MockConsoleService's organizations. It answers as the backend's git mode does at
+// connectModels.ts's FakeModels. It answers as the backend's git mode does at
 // .backend-api-version (internal/servers/subscriptions_server.go and subscriptions_git.go): Active,
 // Pending or no phase; a managed <id>-policy; a model ref joined to its model by model_id; versions
 // from 1, Aborted on a stale one; refs to a model that doesn't exist refused.
@@ -7,7 +7,7 @@ import { clone, create } from '@bufbuild/protobuf';
 import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 import { Code, ConnectError } from '@connectrpc/connect';
 import type { FakeBackend } from '../api/connect/testing';
-import type { GridCluster, Organization } from '../api/types';
+import type { GridCluster } from '../api/types';
 import { ConditionStatus } from '../gen/ai_grid/v1/condition_type_pb';
 import { MetadataSchema } from '../gen/ai_grid/v1/metadata_type_pb';
 import type { Model } from '../gen/ai_grid/v1/model_type_pb';
@@ -20,14 +20,14 @@ import {
   type ModelRegistration,
   type Subscription,
 } from '../gen/ai_grid/v1/subscription_type_pb';
-import { TenantSchema } from '../gen/ai_grid/v1/tenant_type_pb';
 import { DESCRIPTION, DISPLAY_NAME } from '../pages/models/modelView';
 import { modelsOf, type FakeModels } from './connectModels';
+import { ACME_ID } from './connectTenants';
 
 /** The backend's default subscription namespace (AI_GRID_SUBSCRIPTION_NAMESPACE), where refs point. */
 export const SUBSCRIPTION_NAMESPACE = 'models-as-a-service';
-/** The fixture organization acme-robotics (MockConsoleService's seedOrganizations). */
-export const ACME_ID = '3f1c9a72-5b6e-4d2a-8c01-2d3e4f5a6b7c';
+/** The fixture organization acme-robotics (connectTenants.ts). */
+export { ACME_ID };
 
 const ready = (message: string) => ({
   type: 'Ready',
@@ -117,14 +117,9 @@ const seedPolicies = (subscriptions: Subscription[]): AuthPolicy[] =>
     }),
   );
 
-/** An organization as the backend's Tenant. */
-export const toTenant = (o: Organization) =>
-  create(TenantSchema, { id: o.id, metadata: { name: o.name }, spec: { domains: o.domains } });
-
-/** The service a test renders: its clusters place FakeModels' models, its organizations are the tenants. */
+/** The service a test renders: its clusters place FakeModels' models. */
 export type SubscriptionsSource = {
   clusters?: GridCluster[];
-  listOrganizations: () => Promise<Organization[]>;
 };
 
 /** A service without clusters places models on none; one stand-in per service, so its FakeModels stays. */
@@ -370,16 +365,7 @@ export const subscriptionsOf = (service: SubscriptionsSource): FakeSubscriptions
 /** The service's subscriptions, seeded with the PoC's (seedSubscriptions). */
 export const seedSubscriptionsOf = (service: SubscriptionsSource): FakeSubscriptions => subscriptionsOf(service).seed();
 
-/** Subscriptions and Tenants/List over the service. */
-export const subscriptionsBackend = (
-  service: SubscriptionsSource,
-  call: <T>(fn: () => Promise<T>) => Promise<T>,
-): Pick<FakeBackend, 'subscriptions' | 'tenants'> => ({
+/** Subscriptions over the service. */
+export const subscriptionsBackend = (service: SubscriptionsSource): Pick<FakeBackend, 'subscriptions'> => ({
   subscriptions: subscriptionsOf(service).backend(),
-  tenants: {
-    list: async () => {
-      const items = (await call(() => service.listOrganizations())).map(toTenant);
-      return { items, size: items.length, total: items.length };
-    },
-  },
 });

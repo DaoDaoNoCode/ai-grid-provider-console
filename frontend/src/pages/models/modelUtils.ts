@@ -1,24 +1,22 @@
-import type { ClusterView } from '../clusters/clusterView';
 import type { NotFound } from '../../components/LoadError';
 
 /** A model deployment's page, by the backend's model id. */
 export const modelPath = (model: { id: string }) => `/models/${encodeURIComponent(model.id)}`;
 
-/** Each location's site name, from the first cluster at that location that has one. */
-export const siteNamesOf = (clusters: Pick<ClusterView, 'location' | 'siteName'>[]): Map<string, string> => {
-  const names = new Map<string, string>();
-  for (const cluster of clusters) {
-    if (cluster.location && cluster.siteName && !names.has(cluster.location)) {
-      names.set(cluster.location, cluster.siteName);
-    }
+/**
+ * A cluster's View link (ModelClusterStatus.view_url) as the page renders it: an absolute https URL
+ * with a host and no user name or password, else nothing. The backend builds it from the cluster's
+ * console URL claim, which the cluster itself reports, so the page checks it again.
+ */
+export const viewHref = (href: string | undefined): string | undefined => {
+  if (!href) return undefined;
+  let url: URL;
+  try {
+    url = new URL(href);
+  } catch {
+    return undefined;
   }
-  return names;
-};
-
-/** "Paris DC1 (paris)", or the bare location when no cluster names its site. */
-export const locationLabel = (location: string, siteNames: Map<string, string>): string => {
-  const site = siteNames.get(location);
-  return site ? `${site} (${location})` : location;
+  return url.protocol === 'https:' && url.hostname && !url.username && !url.password ? url.href : undefined;
 };
 
 /** The schemes whose first path segment says where the model is kept (a registry, a bucket), not what it is. */

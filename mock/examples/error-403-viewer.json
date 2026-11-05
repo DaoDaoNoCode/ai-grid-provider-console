@@ -1,11 +1,5 @@
 {
-  "request": "PATCH /api/v1/tenants/3f1c9a72-5b6e-4d2a-8c01-2d3e4f5a6b7c",
-  "requestHeaders": {
-    "If-Match": "\"1\""
-  },
-  "requestBody": {
-    "description": "Acme Robotics, EU"
-  },
+  "request": "GET /api/v1/grid/overview?range=1h",
   "token": "viewer-token",
   "user": "viewer",
   "status": 403,

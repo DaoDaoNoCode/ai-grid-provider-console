@@ -15,12 +15,13 @@ import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 import { Code, ConnectError } from '@connectrpc/connect';
 import { focusManager } from '@tanstack/react-query';
 import { ServiceError } from '../api/ConsoleService';
-import type { Organization } from '../api/types';
+import { GLOBEX_ID, tenantObject, tenantsOf } from './connectTenants';
 import { MockConsoleService } from '../api/MockConsoleService';
 import { ConditionStatus } from '../gen/ai_grid/v1/condition_type_pb';
 import { SubscriptionSchema, type Subscription } from '../gen/ai_grid/v1/subscription_type_pb';
 import { ModelClusterStatusSchema, ModelPhase, ModelState, ModelViewTarget } from '../gen/ai_grid/v1/model_type_pb';
 import { DISPLAY_NAME } from '../pages/models/modelView';
+import { watchesKey } from '../notifications/storageKeys';
 import {
   ACME_ID,
   fleetOf,
@@ -376,6 +377,15 @@ describe('administrator subscription flows', () => {
     await screen.findByTestId('subscriptions-table');
     expect(await screen.findByRole('link', { name: 'Test team' })).toBeVisible();
     expect(await screen.findByText('Subscription Test team saved to Git')).toBeVisible();
+    // The notification center follows it until it is active, to name its organization then.
+    expect(JSON.parse(window.sessionStorage.getItem(watchesKey('dev-user')) ?? '[]')).toContainEqual(
+      expect.objectContaining({
+        subject: 'subscription',
+        id: 'test-team',
+        stage: 'ready',
+        organization: 'acme-robotics',
+      }),
+    );
     // Subscriptions/Create: the id, the display name annotation, the organization, bare groups,
     // and the model by its id with no namespace (SubscriptionModelRef.model_id).
     const [{ object }] = subscriptionsOf(service).sent('create');
@@ -603,30 +613,45 @@ it('requires an organization and shows it in the table', async () => {
   expect(stored(service, 'test-team').spec?.organization?.id).toBe('8d2e7b31-0c4f-4a9d-b5e6-7f8a9b0c1d2e');
 });
 
+it('names an organization without a name by its id, as the select shows it, for the notification that the subscription is active', async () => {
+  const service = seeded();
+  tenantsOf(service).tenants.push(tenantObject({ id: 'nameless-org', metadata: { name: '', version: 1 } }));
+  const user = userEvent.setup();
+  renderAt('/subscriptions/create', service);
+  await fillNewSubscription(user);
+  await pickOrganization(user, 'nameless-org');
+  expect(screen.getByRole('combobox', { name: 'Organization' })).toHaveValue('nameless-org');
+  await user.click(screen.getByTestId('create-subscription-button'));
+  expect(await screen.findByText('Subscription Test team saved to Git')).toBeVisible();
+  // The watch that says it is active names its organization as the select did.
+  expect(JSON.parse(window.sessionStorage.getItem(watchesKey('dev-user')) ?? '[]')).toContainEqual(
+    expect.objectContaining({ subject: 'subscription', id: 'test-team', stage: 'ready', organization: 'nameless-org' }),
+  );
+});
+
 /** Sets a stored subscription's organization id. */
 const setOrganization = (service: MockConsoleService, id: string, organizationId: string) => {
   stored(service, id).spec!.organization = { $typeName: 'ai_grid.v1.SubscriptionOrganization', id: organizationId };
 };
 
-/** Answers the next Tenants/List calls with a promise the test settles. */
+/** Holds the next Tenants/List answers until the test settles the promise; they list the tenants stored then. */
 const deferOrganizations = (service: MockConsoleService) => {
-  const answer = deferred<Organization[]>();
+  const answer = deferred<void>();
   const listOrganizations = vi.fn(() => answer.promise);
-  service.listOrganizations = listOrganizations;
+  tenantsOf(service).before.list = listOrganizations;
   return { ...answer, listOrganizations };
 };
 
 it('shows a missing organization on the subscription page and the edit form only once the organizations load', async () => {
   const service = seeded();
   setOrganization(service, 'data-science', 'retired-org');
-  const organizations = service.organizations;
   const view = deferOrganizations(service);
   const { unmount } = renderAt('/subscriptions/view/data-science', service);
   // While the organizations load, the id stands in for the name.
   await waitFor(() => expect(screen.getByTestId('subscription-organization')).toHaveTextContent('retired-org'));
   expect(view.listOrganizations).toHaveBeenCalled();
   expect(screen.queryByTestId('subscription-organization-missing')).not.toBeInTheDocument();
-  await act(async () => view.resolve(organizations));
+  await act(async () => view.resolve());
   expect(await screen.findByTestId('subscription-organization-missing')).toHaveTextContent(/^Organization not found$/);
   unmount();
 
@@ -637,7 +662,7 @@ it('shows a missing organization on the subscription page and the edit form only
   expect(organization).toHaveValue('retired-org');
   expect(edit.listOrganizations).toHaveBeenCalled();
   expect(screen.queryByTestId('subscription-organization-missing')).not.toBeInTheDocument();
-  await act(async () => edit.resolve(organizations));
+  await act(async () => edit.resolve());
   expect(
     await screen.findByText(
       'Organization not found. No organization has the ID retired-org. It was deleted, or created again with a new ID. The organization of a subscription can’t be changed, so delete this subscription and create it again for the organization.',
@@ -681,7 +706,7 @@ describe('organizations the console loaded before the subscription', () => {
     );
     // The organizations are loaded, and cached, before the new one exists.
     await waitFor(() => expect(screen.getByTestId('subscription-organization')).toHaveTextContent('acme-robotics'));
-    service.organizations.push({ ...service.organizations[2], id: NEW_ID, name: 'new-team' });
+    tenantsOf(service).tenants.push(tenantObject({ id: NEW_ID, metadata: { name: 'new-team', version: 1 } }));
     setOrganization(service, 'data-science', NEW_ID);
     const fresh = deferOrganizations(service);
 
@@ -691,8 +716,8 @@ describe('organizations the console loaded before the subscription', () => {
     expect(fresh.listOrganizations).toHaveBeenCalled();
     expect(screen.queryByTestId('subscription-organization-missing')).not.toBeInTheDocument();
 
-    const organizations = service.organizations.filter((o) => listed || o.id !== NEW_ID);
-    await act(async () => fresh.resolve(organizations));
+    if (!listed) tenantsOf(service).tenants = tenantsOf(service).tenants.filter((t) => t.id !== NEW_ID);
+    await act(async () => fresh.resolve());
     if (listed) {
       await waitFor(() => expect(shownOrganization(path)).toBe('new-team'));
       expect(screen.queryByTestId('subscription-organization-missing')).not.toBeInTheDocument();
@@ -703,9 +728,6 @@ describe('organizations the console loaded before the subscription', () => {
     }
   });
 });
-
-/** The fixture organization globex-research (MockConsoleService's seedOrganizations). */
-const GLOBEX_ID = '8d2e7b31-0c4f-4a9d-b5e6-7f8a9b0c1d2e';
 
 it('sorts the organization column by what it shows, a missing organization as Organization not found', async () => {
   const service = seeded();
@@ -737,7 +759,9 @@ it('sorts the organization column by what it shows, a missing organization as Or
 
 it('shows an organization id, not a missing one, when the organizations fail to load', async () => {
   const service = seeded();
-  service.listOrganizations = () => Promise.reject(new ServiceError(503, 'keycloak is unreachable'));
+  tenantsOf(service).before.list = () => {
+    throw new ConnectError('keycloak is unreachable', Code.Unavailable);
+  };
   renderAt('/subscriptions', service);
   const table = await screen.findByTestId('subscriptions-table');
   const row = (await within(table).findByRole('link', { name: 'Engineering' })).closest('tr')!;
@@ -804,13 +828,13 @@ describe('a failed background poll', () => {
     const field = await screen.findByTestId(testId);
     await user.clear(field);
     await user.paste('Unsaved input');
-    const failed = vi.fn(async () => {
-      throw new ServiceError(503, 'Service unavailable.');
+    const failed = vi.fn(() => {
+      throw new ConnectError('Service unavailable.', Code.Unavailable);
     });
     vi.spyOn(fleetOf(service), 'list').mockImplementation(() => {
       throw new ConnectError('Service unavailable.', Code.Unavailable);
     });
-    service.listOrganizations = failed;
+    tenantsOf(service).before.list = failed;
     await act(async () => {
       vi.advanceTimersByTime(30000);
     });
@@ -889,6 +913,7 @@ describe('subscription phases', () => {
       withPhase('unreported-sub', ''),
       withPhase('pending-sub', 'Pending'),
       withPhase('active-sub', 'Active'),
+      withPhase('degraded-sub', 'Degraded'),
     );
     renderAt('/subscriptions', service);
     const table = await screen.findByTestId('subscriptions-table');
@@ -899,7 +924,11 @@ describe('subscription phases', () => {
     expect(label('pending-sub')).toHaveTextContent('Pending');
     // Active, as its policy's phase reads beside it.
     expect(label('active-sub')).toHaveTextContent('Active');
-    for (const name of ['unreported-sub', 'pending-sub', 'active-sub']) {
+    // A cluster reports it failed (maasPhase), or a model it names isn't published there yet: a
+    // warning, as odh-dashboard shows MaaS's Degraded, not a neutral unknown word.
+    expect(label('degraded-sub')).toHaveTextContent('Degraded');
+    expect(label('degraded-sub')).toHaveClass('pf-m-warning');
+    for (const name of ['unreported-sub', 'pending-sub', 'active-sub', 'degraded-sub']) {
       expect(label(name)).toHaveClass('pf-m-outline');
       expect(within(label(name)).queryByRole('button')).not.toBeInTheDocument();
     }

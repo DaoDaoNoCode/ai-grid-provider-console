@@ -5,8 +5,8 @@
 > [ADR-0001](../docs/adr/0001-the-contract-lives-in-the-backend.md) the contract moves to
 > `ai-grid-cloud/ai-grid-provider-backend`, and the fake and its fixtures move with it, and
 > under [ADR-0002](../docs/adr/0002-connect-end-to-end-with-vanguard-for-rest.md) the browser
-> speaks Connect — so the JSON envelope, the `ETag`/`If-Match` protocol and the HTTP status
-> table on this page all go away. Don't invest in the parts marked for deletion; do read
+> speaks Connect — so the JSON envelope and the HTTP status table on this page go away (the
+> `ETag`/`If-Match` protocol already went with the last JSON write). Don't invest in the parts marked for deletion; do read
 > ADR-0001 before adding an RPC.
 >
 > **The backend copy has landed** (merged 2026-10-22). It carries the draft as `ai_grid.draft.v1` on its own port, the fake as
@@ -14,12 +14,12 @@
 > It is **not** reconciled to OSAC conventions in
 > one step: each area is reshaped and deleted from the draft as the real backend implements it,
 > so the other pages keep working meanwhile. Console cleanup remains pending and removes
-> the draft proto, generated draft code and `bff/internal/fakebackend` from here. Models
-> and Subscriptions have already moved to real backend services (the backend's
-> `internal/servers/models_git.go` and `subscriptions_git.go`). The Models and Subscriptions pages
-> call the backend's API over Connect, so they run on `make dev-fake-infra`, not on this fake,
-> which serves no subscriptions and whose models no console page reads. The
-> vendored upstream proto and drift guard remain during migration.
+> the draft proto, generated draft code and `bff/internal/fakebackend` from here. Clusters,
+> Models, Subscriptions and Organizations have already moved to real backend services. Their
+> pages call the backend's API over Connect, so they run on `make dev-fake-infra`, not on this
+> fake, which serves no subscriptions or tenants and whose clusters and models only the
+> Monitoring fallback reads. The vendored upstream proto and drift guard remain during
+> migration.
 
 Monitoring uses the hub's Perses dashboards when configured. Its fallback page uses the
 draft grid overview described below.
@@ -34,7 +34,7 @@ points to the detail:
 | Every endpoint, JSON shape, body rule and error mapping | [docs/plan/bff-api.md](../docs/plan/bff-api.md) |
 | The draft proto the BFF and the fake compile against, and the deliberate stubs | [proto/README.md](proto/README.md) |
 | The fixture files and what each one seeds | [fixtures/README.md](fixtures/README.md) |
-| What the fake and the BFF implement per area, deviations, invented texts, what remains | [areas/clusters.md](areas/clusters.md), [areas/tenants.md](areas/tenants.md), [areas/models.md](areas/models.md) |
+| What the fake and the BFF implement per area, deviations, invented texts, what remains | [areas/clusters.md](areas/clusters.md), [areas/models.md](areas/models.md); [areas/tenants.md](areas/tenants.md) says where the organizations went |
 | What the BFF returns for the shipped fixtures | [examples/](examples/) (below) |
 
 Background reading, not needed to build against the fake: [README.md](README.md) on why the
@@ -55,18 +55,18 @@ hub and the fake backend decide by token alone (`fixtures/access.json`):
 | `AUTH_TOKEN` | Who you are |
 |---|---|
 | `dev-token` (default, user `dev-user`) or any token not listed below | provider admin: reads and writes |
-| `viewer-token` (`AUTH_USER=viewer`) | signed in, not a provider admin: `GET /api/v1/user` and `GET /api/v1/config` work; every other `/api/v1` request, reads included, is 403 from the BFF (see "Errors") |
+| `viewer-token` (`AUTH_USER=viewer`) | signed in, not a provider admin: `GET /api/v1/user` and `GET /api/v1/config` work; every other `/api/v1` request is 403 from the BFF (see "Errors") |
 | `expired-token` | rejected by the hub and the backend: 401 from every endpoint but `/api/v1/config` (see "Errors") |
 
 Without the frontend, call the BFF directly:
 
 ```sh
 curl -s -H 'x-forwarded-access-token: dev-token' -H 'x-forwarded-user: dev-user' \
-  http://127.0.0.1:8080/api/v1/tenants
+  'http://127.0.0.1:8080/api/v1/grid/overview?range=1h'
 ```
 
 The browser tests (`make e2e`) start the same fake on `fixtures-poc/` instead (the PoC's four
-sites, three models and three organizations, no scenario events, no latency),
+sites and three models, no scenario events, no latency),
 from `frontend/playwright.config.ts`. To run the pieces separately, see
 `docs/dev-setup.md`, "Run the pieces separately".
 
@@ -85,8 +85,7 @@ logged, so a BFF that asks the wrong question fails instead of being answered by
 `authorization` metadata like the real backend; the BFF forwards it from the proxy headers, with
 the user, email and groups percent-encoded (`docs/plan/bff-api.md`, Identity), and the fake
 decodes the user it logs and names in its 403 messages.
-Edit the fixtures and restart to change the fleet, the tenants or the models: `tenants.json`
-can reproduce a Keycloak that is unreachable or has no `ai-grid` realm, and
+Edit the fixtures and restart to change the fleet or the models:
 `manifestWorkReplicaSetEnabled: false` in `settings.json` mirrors the dev hub: creating a
 model with a `placement` is refused with 412, and the seeded placed models read `pending` with
 an empty rollout status. The fake moves clusters and models over time (see "Timed scenarios").
@@ -95,93 +94,38 @@ an empty rollout status. The fake moves clusters and models over time (see "Time
 
 [docs/plan/bff-api.md](../docs/plan/bff-api.md) is the contract: every endpoint, the JSON
 shapes with examples, the body rules and the error table. The BFF's structs in
-`bff/internal/api/*.go` are what it encodes. Every success is `{"data": ...}`; a paged list
-adds `"meta": {"size", "total", "offset", "limit"}` (`limit` only when the request sent one,
-`total` omitted when it is unknown); every error is
-`{"error": {"code": "<status>", "message": "..."}}`; `DELETE` answers 204 with no body. Every
-`/api/v1` path needs `x-forwarded-access-token` (401 without it); `x-forwarded-user`,
-`-email` and `-groups` are optional.
+`bff/internal/api/*.go` are what it encodes. Every success is `{"data": ...}`; every error is
+`{"error": {"code": "<status>", "message": "..."}}`. Every `/api/v1` path needs
+`x-forwarded-access-token` (401 without it); `x-forwarded-user`, `-email` and `-groups` are
+optional. Every route reads: the writes go to the backend over Connect.
 
 | Method | Path | Request body | Response `data` |
 |---|---|---|---|
 | GET | `/api/v1/user` | | `{username, email?, groups, isProviderAdmin}` |
 | GET | `/api/v1/config` | | `{gridEndpoint, mapTileUrl, mapTileAttribution, billingUrl, version, fakeBackend, monitoring: {enabled, persesProject}, models: {hardware}}`; `hardware` is the BFF's built-in NVIDIA GPU and CPU only unless `MODEL_HARDWARE` sets a list |
-| GET | `/api/v1/tenants?offset=&limit=&filter=` | | `Tenant[]` by name, plus `meta` |
-| GET | `/api/v1/tenants/{id}` | | `Tenant`, `ETag` |
-| POST | `/api/v1/tenants` | `{name, alias?, description?, enabled?, domains?, attributes?, identityProvider?}` | 201, `Tenant`, `Location` and `ETag` headers |
-| PATCH | `/api/v1/tenants/{id}` | `{name?, description?, enabled?, domains?, attributes?, identityProvider?, alias?}` (the backend refuses a changed alias) | `Tenant` after the write, `ETag` |
-| DELETE | `/api/v1/tenants/{id}` | | 204 |
 | GET | `/api/v1/grid/overview?range=&site=&metrics=false` | | `{clusters, metrics, metricsSource?, inventorySource?, demo, updatedAt?}` |
-
-Request bodies must be sent with `Content-Type: application/json` (charset allowed), or the
-POST, PUT or PATCH is 415 `request body must be JSON: send Content-Type: application/json`. They
-are exactly one JSON object of at most 1 MiB: `null`, an array or a scalar is 422 (`invalid
-request body: must be a JSON object`), so are unknown fields, wrong types and anything after
-the object, and a larger body is 413. The BFF checks the body before it calls the hub or the
-backend. Field semantics (what an absent field, an empty string or `null` inside the object
-means) are in `bff-api.md`.
-
-List filters. `GET /tenants` and `GET /models` take `filter`, a CEL expression over `this` (the
-proto message, proto field names) that the page writes and the BFF forwards unchanged; the fake
-evaluates it with cel-go and its strings extension before paging, so `meta.total` counts the
-matches. For example `this.name.lowerAscii().contains("acme") || this.domains.exists(d,
-d.lowerAscii().contains("acme"))` (lower the term yourself) or `"ai-grid/family" in
-this.metadata.labels && this.metadata.labels["ai-grid/family"] == "granite"` (the `in` guard is
-needed: CEL fails on a missing key instead of answering false). `bff-api.md`, "Writes, versions
-and lists", has more examples and the error texts.
-
-What a PATCH writes. One update, with every field the body names, and nothing read first: the
-BFF does not merge, compare or validate. `labels` and `annotations` are whole maps that replace
-the stored ones, so a page edits the map it loaded and sends all of it: to enrol
-`site-frankfurt-1`, send its `labels` with `"ai-grid/enabled": "true"` added; to remove a label,
-leave it out. Only the console's keys may change: a cluster PATCH that adds, changes or removes
-a label or annotation outside `ai-grid/*`, `ai-grid-mock/*` and the `location` label is 422
-(keys the hub puts back by itself, such as `name`, may be left out), and hub acceptance is not
-writable. The cluster's site name and
-coordinates are its `ai-grid/site-name`, `ai-grid/latitude` and `ai-grid/longitude` annotations,
-and the fake refuses a coordinate that is not a number in range (422; surrounding whitespace and
-an empty value pass, as the read side ignores them). A body that names no field (`{}`) is 422
-before any call. The fake decides what an update changes: one that leaves the object as stored
-(the stored maps sent back, or a tenant's unchanged `alias`) is not written and keeps the
-`resourceVersion`, like the API server.
-
-Stale tabs (`ETag`, `If-Match`). `GET` of one cluster or tenant and the answer to its
-POST or PATCH carry `ETag: "<resourceVersion>"`. Every PATCH, PUT and DELETE must send it back as `If-Match`: a write against an object
-that changed since is 409 (the backend's `Aborted`) instead of overwriting it, and a PATCH, PUT
-or DELETE without `If-Match` (or with `If-Match: *`, which names no version) is 428 before
-anything is called. The BFF checks a write in this order: 415 for a body that is not JSON, 428,
-then the body (422, 413). Anything but one quoted tag is 422. A tenant's `resourceVersion` is
-kept by the backend (Keycloak has none); every tenant starts at `"1"` in the fixtures. Details in `bff-api.md`, "Writes, versions and lists".
 
 ## Golden responses (`examples/`)
 
 What the BFF returns for the shipped fixtures at scenario time zero, one file per request:
-`{"request", "requestHeaders"?, "requestBody"?, "token", "user", "status",
-"responseHeaders"?, "body"}`, with `body` as the BFF encoded it (re-indented),
-`requestHeaders` the headers sent besides the identity ones and a body's default
-`Content-Type: application/json`, and `responseHeaders` the `ETag` and `Location` headers
-when the BFF set them.
+`{"request", "requestBody"?, "token", "user", "status", "responseHeaders"?, "body"}`, with
+`body` as the BFF encoded it (re-indented) and `responseHeaders` the `Allow` header when the
+BFF set it.
 
 | File | Request |
 |---|---|
 | `get-user.json` | `GET /api/v1/user` as `dev-user` |
 | `get-config.json` | `GET /api/v1/config` (every setting at its default) |
-| `get-tenants.json` | `GET /api/v1/tenants`, all six tenants with `meta` |
-| `get-tenant.json` | `GET /api/v1/tenants/{id}` for `acme-robotics` |
 | `get-grid-overview.json` | `GET /api/v1/grid/overview?range=1h`, the members with the demo metrics |
-| `post-tenant.json` | `POST /api/v1/tenants`: 201 with `Location` and `ETag` |
 | `error-401-expired-token.json` | `GET /api/v1/user` with `expired-token` |
-| `error-403-viewer-patch.json` | `PATCH /api/v1/tenants/{id}` with `viewer-token` and the tenant's `If-Match` |
-| `error-404-unknown-tenant.json` | `GET /api/v1/tenants/unknown-tenant` |
-| `error-409-stale-if-match.json` | `PATCH /api/v1/tenants/{id}` with an `If-Match` that isn't the tenant's version |
-| `error-428-missing-if-match.json` | `PATCH /api/v1/tenants/{id}` for `acme-robotics` without `If-Match` |
-| `error-415-not-json.json` | `POST /api/v1/tenants` with `Content-Type: text/plain` |
+| `error-403-viewer.json` | `GET /api/v1/grid/overview?range=1h` with `viewer-token` |
+| `error-404-unknown-path.json` | `GET /api/v1/tenants`, a path the BFF no longer has (the organizations are the backend's, over Connect) |
+| `error-405-wrong-method.json` | `POST /api/v1/grid/overview`: 405 with `Allow: GET, HEAD` |
 
 They are produced by `bff/internal/examples/golden_test.go`, each on a BFF and fake of its
-own, so a write never shows in another file: the fake backend loaded from
-`fixtures/` over an in-memory gRPC connection with its clock frozen at
-2026-10-15T12:00:00Z, no latency, deterministic tenant ids and work names (`g0001`, ...), the
-fake hub over `httptest`, and the real BFF handler. `go test ./...` (and so CI) fails when a
+own: the fake backend loaded from `fixtures/` over an in-memory gRPC connection with its clock
+frozen at 2026-10-15T12:00:00Z, no latency, deterministic uids and work names (`g0001`, ...),
+the fake hub over `httptest`, and the real BFF handler. `go test ./...` (and so CI) fails when a
 file no longer matches. After changing a fixture or the BFF's JSON, regenerate and review the
 diff:
 
@@ -189,10 +133,9 @@ diff:
 make -C bff golden    # go test -count=1 ./internal/examples -run Golden -update
 ```
 
-The running fake differs from the files only in what moves: times, `resourceVersion` (and so
-`ETag`), the scenario state, work names (a random five-character suffix instead of `g0001`),
-the ids of tenants you create (random UUIDs instead of `00000000-0000-4000-8000-...`) and
-`version` in `/api/v1/config` (the git revision under `make dev-fake`, `dev` in the files).
+The running fake differs from the files only in what moves: times, `resourceVersion`, the
+scenario state, work names (a random five-character suffix instead of `g0001`) and `version` in
+`/api/v1/config` (the git revision under `make dev-fake`, `dev` in the files).
 Never hard-code those.
 
 ## What the fixtures seed (`fixtures/`)
@@ -218,15 +161,6 @@ field, and `areas/*.md` what the fake derives from them.
 
 GPU inventories (`status.gpus` on `GridCluster.gpus`) come from `gpunodes.json`, the GPU nodes as
 ACM Search returns them; a cluster without an entry there has none.
-
-**Tenants** (`tenants.json`): `umbrella-biotech` is disabled; `acme-robotics` has two domains
-(one verified, with `autoRedirect`) and attributes; `vandelay-industries` has a wildcard
-domain (`*.vandelay.example.com`); `initech-labs` has no domains; `globex-research` has the
-alias `globex`, different from its name; `wayne-aerospace` has one verified domain. No domain
-names an identity provider: the fake realm has none, so the fake refuses to start on one. Every
-tenant has `resourceVersion` `"1"`. Replace the file with `{"unavailable": "<text>"}`,
-`{"realmMissing": true}` or `{"organizationsDisabled": true}` for Keycloak's failure modes
-(503, 412, 412).
 
 **Models** (`models.json`, namespace `ai-grid-models`):
 
@@ -298,18 +232,12 @@ is in the gRPC status only).
 
 | Status | How to get it from the fake | Message |
 |---|---|---|
-| 401 | `AUTH_TOKEN=expired-token` on any `/api/v1` endpoint but `GET /config`: the hub rejects the token in the BFF's provider-admin check (the access review, for `GET /user`), before the BFF's own checks (415, 428, 422, 413). `GET /config` asks neither and answers 200. A request without the token header is 401 on every `/api/v1` path, `/config` included | `the hub rejected the credentials; log in again`, `missing x-forwarded-access-token header` |
-| 403 | `viewer-token` on any `/api/v1` request but `GET /user` and `GET /config`, reads included: the BFF's provider-admin check refuses it before its own checks (415, 428, the body) and before the backend. The backend's own 403 texts are behind that check until the backend authorizes the caller | `this console is only for provider admins, users who may patch ManagedClusters on the hub, and the hub says you are not one` |
-| 404 | an unknown cluster, tenant or model | `object with identifier '<name>' not found` for a cluster, `'<id>'` for a tenant, `'<namespace>/<name>'` for a model |
+| 401 | `AUTH_TOKEN=expired-token` on any `/api/v1` endpoint but `GET /config`: the hub rejects the token in the BFF's provider-admin check (the access review, for `GET /user`). `GET /config` asks neither and answers 200. A request without the token header is 401 on every `/api/v1` path, `/config` included | `the hub rejected the credentials; log in again`, `missing x-forwarded-access-token header` |
+| 403 | `viewer-token` on any `/api/v1` request but `GET /user` and `GET /config`: the BFF's provider-admin check refuses it before the backend. The backend's own 403 texts are behind that check until the backend authorizes the caller | `this console is only for provider admins, users who may patch ManagedClusters on the hub, and the hub says you are not one` |
+| 404 | a path the BFF has no route for, such as the removed `/api/v1/tenants` | `the requested resource could not be found` |
 | 405 | a known `/api/v1` path with a method it has no route for, such as `POST /api/v1/grid/overview` | `POST is not allowed on /api/v1/grid/overview; use GET, HEAD`, with an `Allow` header |
-| 409 | a taken tenant name or alias, or model name; a blank `name` in a tenant PATCH (Keycloak's own answer); an `If-Match` older than the object (also for an update that would change nothing) | `A organization with the same name already exists.`, `... same alias already exists`, the API server's `... already exists` for a model, `object with identifier '<id>' has resource version <v>, the request carries "<v>"; fetch it again and retry` |
-| 412 | `manifestWorkReplicaSetEnabled: false` in `settings.json`, then a model with `placement` (a POST, or a PATCH that adds one); `{"realmMissing": true}` or `{"organizationsDisabled": true}` in `tenants.json` | `ManifestWorkReplicaSet feature gate disabled on hub`; `Keycloak realm "ai-grid": Realm not found.`, `Keycloak realm "ai-grid": Organizations not enabled for this realm.` |
-| 413 | a body over 1 MiB | `request body must not exceed 1048576 bytes` |
-| 415 | a POST, PUT or PATCH without `Content-Type: application/json` (an HTML form, `text/plain`) | `request body must be JSON: send Content-Type: application/json` |
-| 428 | a PATCH, PUT or DELETE without `If-Match`, or with `If-Match: *` | `this write needs an If-Match header: send the ETag that GET answered (the object's resourceVersion), for example If-Match: "42"`, `If-Match: * names no version: ...`: send the `ETag` of the GET the page showed |
-| 422 | a body the BFF rejects (unknown field, such as the removed `aiGridEnabled` or `hubAcceptsClient` or a model's `displayName`, wrong type, trailing content) or that names no field (`the request body names no field to change`), a repeated `filter`, `offset` or `limit`, a malformed `If-Match`, a list query with the removed `search`, `namespace` or `label`, a `filter` the backend cannot evaluate, or a value the backend rejects | `query parameter "search" is not supported; send a CEL filter in "filter"`, `filter <f> is not a valid CEL expression: ...`, `filter <f> failed on '<id>': no such key: <k>`, Keycloak's texts (`Name can not be null`, `Invalid domain format: <d>`, `Cannot change the alias`, `Domain <d> is already linked to organization <o> in realm ai-grid`), the CRD's (`replicas and scaling are mutually exclusive; ...`) and the console's own checks (`spec.rollout requires spec.placement`, `attribute "ai-grid/resource-version" is reserved ...`); Keycloak's `Identity provider with alias '<a>' does not exist in realm ai-grid` exists in the fake but no BFF body can send a domain's identity provider |
-| 501 | not reachable through today's endpoints on the fake. The shipped backend answers it for every RPC it lacks: `GET /models` with `filter`, `offset` or an order; and the BFF answers it for `GET /tenants` and `GET /clusters` with `filter`, and for a tenant write that sets a field the backend's `Tenant` lacks (`identityProvider`, `description`, `attributes`, `enabled: false`, an `alias` other than the name) | `The AI Grid backend does not support this operation.`, or `the AI Grid backend does not support filtering or paging tenants yet; ...`: show "not available on this AI Grid backend", not an error page |
-| 503 | `{"unavailable": "..."}` in `tenants.json`, then any tenants endpoint as a provider admin (a viewer stays 403, an expired token 401: the token checks come first) | `The AI Grid backend is unavailable. Try again.` |
+| 422 | `GET /api/v1/grid/overview` with a `range` other than `1h`, `6h` and `24h` | `Choose a time range of 1h, 6h, or 24h.` |
+| 501 | not reachable on the fake. The shipped backend has no `Grid/GetOverview`, so `GET /api/v1/grid/overview` answers it there | `The AI Grid backend does not support this operation.`: show "not available on this AI Grid backend", not an error page |
 
 The full table, including 502 and 504, is in `bff-api.md`, "Errors".
 

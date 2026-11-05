@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Organization identity providers' client secrets: the backend gets each Secret by name, nothing
+# more. Apply after ../base. Its own kustomization, because ../base puts every object in ai-grid.
+namespace: ai-grid-idp-secrets
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: ai-grid-provider-console
+      app.kubernetes.io/part-of: ai-grid
+
+resources:
+  - rbac.yaml

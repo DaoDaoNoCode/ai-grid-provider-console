@@ -19,6 +19,7 @@ import { PageLoading } from '../components/PageLoading';
 import { StatusLabel } from '../components/StatusLabel';
 import { EmptyListState } from '../components/states/EmptyListState';
 import { ErrorState } from '../components/states/ErrorState';
+import { LoadFailedAlert } from '../components/states/LoadFailedAlert';
 import { PageStateSection } from '../components/states/PageStateSection';
 import { SectionEmptyState } from '../components/states/SectionEmptyState';
 import { tickLabel } from '../pages/grid/chartScale';
@@ -118,6 +119,7 @@ it('shows billions as B on chart ticks', () => {
 it('gives a phase the same colour in its label and its subtext', () => {
   expect(statusLabelProps('Failed').status).toBe('danger');
   expect(getSubtextProps('Failed')).toEqual({ className: 'pf-v6-u-text-color-status-danger' });
+  expect(statusLabelProps('Degraded').status).toBe('warning');
   expect(getSubtextProps('Partially ready')).toEqual({ className: 'pf-v6-u-text-color-status-warning' });
   expect(getSubtextProps('Ready')).toBeUndefined();
 });
@@ -225,6 +227,23 @@ describe('page states', () => {
     expect(screen.getByRole('heading', { level: 3, name: 'No parts' }).closest('.pf-v6-c-empty-state')).toHaveClass(
       'pf-m-xs',
     );
+  });
+
+  it("says what a page can't show when data beside its own fails to load, with Retry", async () => {
+    const user = userEvent.setup();
+    const retry = vi.fn();
+    render(
+      <LoadFailedAlert object="widgets" error={new Error('Hub unavailable.')} onRetry={retry}>
+        Parts show a dash until the widgets load.
+      </LoadFailedAlert>,
+    );
+    const alert = screen
+      .getByRole('heading', { name: 'Warning alert: Unable to load widgets' })
+      .closest('.pf-v6-c-alert');
+    expect(alert).toHaveClass('pf-m-warning', 'pf-m-inline');
+    expect(alert).toHaveTextContent('Parts show a dash until the widgets load.Hub unavailable.');
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(retry).toHaveBeenCalledOnce();
   });
 
   it('labels its action as asked', () => {

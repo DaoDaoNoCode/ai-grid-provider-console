@@ -111,10 +111,10 @@ export type RegistrationStatus = { status: string; reason?: string };
 
 /**
  * A referenced model's status on the subscription's page, from Subscriptions/Get's
- * model_registrations: the registration's phase (Ready or Pending in git mode); Saved to Git for one
- * with no phase and a Ready condition of reason SavedToGit, the reading modelView.ts's phaseWordOf
- * gives a model with the same reason; and Not found for a ref without a registration, which the
- * backend's gitModelRegistrations says a client takes as missing.
+ * model_registrations: the registration's phase (Ready, Failed or Pending in git mode); Saved to
+ * Git for one with no phase and a Ready condition of reason SavedToGit, the reading modelView.ts's
+ * phaseWordOf gives a model with the same reason; and Not found for a ref without a registration,
+ * which the backend's gitModelRegistrations says a client takes as missing.
  */
 export const registrationStatusOf = (
   registrations: ModelRegistration[],

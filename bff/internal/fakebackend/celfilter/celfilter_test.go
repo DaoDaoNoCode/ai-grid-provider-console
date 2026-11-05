@@ -16,11 +16,11 @@ import (
 func TestEmptyFilterMatchesEverything(t *testing.T) {
 	t.Parallel()
 	for _, src := range []string{"", "  \n"} {
-		f, err := Compile(src, &aigridv1.Tenant{})
+		f, err := Compile(src, &aigridv1.ManagedCluster{})
 		if err != nil || f != nil {
 			t.Fatalf("%q = %v, %v; want no filter", src, f, err)
 		}
-		if ok, err := f.Match(t.Context(), &aigridv1.Tenant{}, "x", time.Now()); !ok || err != nil {
+		if ok, err := f.Match(t.Context(), &aigridv1.ManagedCluster{}, "x", time.Now()); !ok || err != nil {
 			t.Errorf("nil filter = %v, %v", ok, err)
 		}
 	}
@@ -42,11 +42,11 @@ func TestNowIsTheCallersTime(t *testing.T) {
 // A dyn result the checker cannot type is checked at run time.
 func TestDynResultMustBeABool(t *testing.T) {
 	t.Parallel()
-	f, err := Compile(`dyn(this.name)`, &aigridv1.Tenant{})
+	f, err := Compile(`dyn(this.name)`, &aigridv1.ManagedCluster{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = f.Match(t.Context(), &aigridv1.Tenant{Name: "a"}, "t-1", time.Now())
+	_, err = f.Match(t.Context(), &aigridv1.ManagedCluster{Name: "a"}, "t-1", time.Now())
 	if status.Code(err) != codes.InvalidArgument || status.Convert(err).Message() != "filter dyn(this.name) must evaluate to a bool, not string" {
 		t.Errorf("dyn string = %v", err)
 	}
@@ -58,24 +58,24 @@ func TestDynResultMustBeABool(t *testing.T) {
 // race detector) to reach.
 func TestCostLimitStopsARunawayFilter(t *testing.T) {
 	t.Parallel()
-	tenant := func(domains int) *aigridv1.Tenant {
-		tn := &aigridv1.Tenant{}
-		for i := range domains {
-			tn.Domains = append(tn.Domains, fmt.Sprintf("d%d.example.com", i))
+	cluster := func(finalizers int) *aigridv1.ManagedCluster {
+		c := &aigridv1.ManagedCluster{}
+		for i := range finalizers {
+			c.Finalizers = append(c.Finalizers, fmt.Sprintf("example.com/f%d", i))
 		}
-		return tn
+		return c
 	}
-	src := `this.domains.all(a, this.domains.all(b, this.domains.all(c, a != "")))`
-	f, err := compile(src, &aigridv1.Tenant{}, 1000)
+	src := `this.finalizers.all(a, this.finalizers.all(b, this.finalizers.all(c, a != "")))`
+	f, err := compile(src, &aigridv1.ManagedCluster{}, 1000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ok, err := f.Match(t.Context(), tenant(2), "t-1", time.Now()); !ok || err != nil {
-		t.Fatalf("2 domains, 8 steps: %v, %v; want a match", ok, err)
+	if ok, err := f.Match(t.Context(), cluster(2), "c-1", time.Now()); !ok || err != nil {
+		t.Fatalf("2 finalizers, 8 steps: %v, %v; want a match", ok, err)
 	}
-	_, err = f.Match(t.Context(), tenant(20), "t-2", time.Now())
+	_, err = f.Match(t.Context(), cluster(20), "c-2", time.Now())
 	if status.Code(err) != codes.InvalidArgument || !strings.Contains(status.Convert(err).Message(), "cost limit exceeded") {
-		t.Errorf("20 domains, 8000 steps: %v; want InvalidArgument with cost limit exceeded", err)
+		t.Errorf("20 finalizers, 8000 steps: %v; want InvalidArgument with cost limit exceeded", err)
 	}
 }
 
@@ -83,13 +83,13 @@ func TestCostLimitStopsARunawayFilter(t *testing.T) {
 // not InvalidArgument: the filter is not at fault.
 func TestMatchStopsWhenTheContextEnds(t *testing.T) {
 	t.Parallel()
-	f, err := Compile(`this.name.contains("a")`, &aigridv1.Tenant{})
+	f, err := Compile(`this.name.contains("a")`, &aigridv1.ManagedCluster{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	_, err = f.Match(ctx, &aigridv1.Tenant{Name: "a"}, "t-1", time.Now())
+	_, err = f.Match(ctx, &aigridv1.ManagedCluster{Name: "a"}, "t-1", time.Now())
 	if status.Code(err) != codes.Canceled {
 		t.Fatalf("Match after cancel = %v, want Canceled", err)
 	}

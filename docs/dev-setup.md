@@ -17,7 +17,8 @@ sends your name and token the way kube-auth-proxy would, and the BFF forwards th
 
 With `make run-hub`, Organizations need `make run-hub KEYCLOAK=hub`. The last two act on a real
 hub: adding or removing clusters, and organization changes, are real changes to it. `make dev-fake`
-runs the console's own fake, where Clusters and the AI Grid map say the backend is unavailable.
+runs the console's own fake, where Clusters, Organizations, Models, Subscriptions and the AI Grid
+map say the backend is unavailable.
 
 ## Prerequisites
 
@@ -49,8 +50,8 @@ exactly where the deployed console's do. On a hub set up by ai-grid-env-setup, w
 chart with `backend.clusterWrites: true` (`patch` on ManagedClusters for that ServiceAccount),
 Add to AI Grid, Edit and Remove change the hub's clusters. With `make deploy` alone, the chart
 grants only `get`, `list` and `watch` (unless `HELM_ARGS="--set backend.clusterWrites=true"`), so
-they are refused (403). Organization create, update and delete go to the backend's Tenants RPCs and
-change the hub's Keycloak; one that sets a field the backend's tenant doesn't have answers 501.
+they are refused (403). Organization create, update and delete go to the backend's Tenants RPCs
+over Connect and change the hub's Keycloak.
 Before it starts
 anything, `make dev-cluster` checks your login, `pods/portforward` in the namespace, an available pod
 and a free local port. The forward listens on one loopback address only, reconnects when a rollout
@@ -115,13 +116,12 @@ Without the frontend, run two of the pieces (below, "Run the pieces separately")
 make dev-forward-backend   # or your own backend on :9090
 make dev-bff
 hack/api.sh /api/v1/user
-hack/api.sh /api/v1/tenants
-hack/api.sh /api/v1/tenants
+hack/api.sh -X POST -H 'Connect-Protocol-Version: 1' -d '{}' /ai_grid.v1.Tenants/List
 curl -s http://127.0.0.1:8080/readyz
 ```
 
 `hack/smoke.sh` builds the BFF, starts it on a spare port against the backend on :9090 and
-checks the read-only endpoints.
+checks the read-only endpoints and lists clusters and organizations through the relay.
 
 ## Run without a cluster
 
@@ -240,16 +240,14 @@ job, `CI passed`, fails unless every job a pull request runs succeeded; that is 
 `main` ruleset should require, since GitHub counts a skipped job as passing. A separate
 nightly workflow (`.github/workflows/drift.yaml`, also runnable by hand)
 refreshes the vendored backend proto from the backend's `main` in the runner's checkout and
-runs the drift test, so a backend change to a message or RPC the BFF uses is reported the day
-after it merges.
+runs the drift test, so a backend change to the RPC the BFF calls over gRPC (`AiGrid/Ping`) is
+reported the day after it merges.
 
 ## The proto the BFF compiles against
 
 The BFF imports `bff/gen/ai_grid/v1`, generated from the console's draft proto in
 `mock/proto/ai_grid/v1` (the console's proposal, which the fake backend serves; see
-`mock/proto/README.md`), and `bff/gen/ai_grid/backend/v1`, generated from its copy of the real
-backend's Clusters, Tenants and Models messages in `mock/proto/ai_grid/backend/v1`. After editing a
-`.proto` file:
+`mock/proto/README.md`). After editing a `.proto` file:
 
 ```sh
 make -C bff generate      # buf generate; buf and the protoc plugins run through `go run`, nothing to install
@@ -307,7 +305,9 @@ OpenShift OAuth, the proxy RHOAI uses), the console image (BFF plus frontend) an
 loopback, so nothing on the pod network can reach either of them without going through the
 proxy. The kubelet probes the
 BFF's `/readyz` through the proxy, which passes that one path without login; it pings the
-backend, so it is the readiness signal for all three containers.
+backend, so it is the readiness signal for all three containers. The proxy passes the caller's
+token and name to the BFF as request headers and puts neither in its responses
+(`--set-xauthrequest=false`), so no script in the page can read the token.
 
 CI publishes the console to `ghcr.io/ai-grid-cloud/ai-grid-provider-console`: every merge to
 `main` as `sha-<full commit>` and `latest`, each `v*` tag by version, and each open pull request
@@ -380,13 +380,13 @@ namespace, creates it enabled for the grid, and reads model status from it, so s
 `modelsNamespace` commits models that are never delivered, routed or reported. Changing it on a
 live install moves each model to the new namespace on its next write, and Argo CD prunes the old
 copy. Models nobody edits stay in the old namespace, so the spokes serve from both until each
-model is written again. With `url` set, the chart grants `get` and `list` on Argo CD Applications in
-`catalogNamespace` (default `openshift-gitops`) and sets `AI_GRID_CATALOG_APP_NAMESPACE` to match.
-The namespace must exist, and the installer needs permission to create its Role and RoleBinding.
-Without those reads, models stay Saved to Git and subscriptions have no observed phase. The grant
-exposes every Application spec in that namespace; keep secrets out of inline Helm values and plugin
-settings. Backend images with git mode don't start without `url`; leave it empty for older
-ones. `hack/deploy.sh` sets it from `GIT_URL`, `GIT_BRANCH`, `GIT_TOKEN`,
+model is written again. With `url` set, the chart also grants `get` and `list` on Argo CD
+Applications in `openshift-gitops` (a Role and RoleBinding there): the backend reads the spokes'
+status of models and subscriptions from the health the catalog's Applications
+(`acm-models-catalog-{models,ingress,subscriptions}-<cluster>`) record. Without it every model
+stays Saved to Git and no subscription has a phase. `list` can't be limited by name, so keep
+secrets out of the Application specs in that namespace. Backend images with git mode don't start
+without `url`; leave it empty for older ones. `hack/deploy.sh` sets it from `GIT_URL`, `GIT_BRANCH`, `GIT_TOKEN`,
 `GIT_GRID_NAMESPACE` (`grid` on the dev hub) and `GIT_MODELS_NAMESPACE`, creating the Secret.
 
 The chart doesn't create the `OAuthClient`, the proxy's Secret, the backend's Keycloak Secret or its Git token Secret:
