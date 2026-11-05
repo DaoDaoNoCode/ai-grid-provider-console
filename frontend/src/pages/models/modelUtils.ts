@@ -3,6 +3,22 @@ import type { NotFound } from '../../components/LoadError';
 /** A model deployment's page, by the backend's model id. */
 export const modelPath = (model: { id: string }) => `/models/${encodeURIComponent(model.id)}`;
 
+/**
+ * A cluster's View link (ModelClusterStatus.view_url) as the page renders it: an absolute https URL
+ * with a host and no user name or password, else nothing. The backend builds it from the cluster's
+ * console URL claim, which the cluster itself reports, so the page checks it again.
+ */
+export const viewHref = (href: string | undefined): string | undefined => {
+  if (!href) return undefined;
+  let url: URL;
+  try {
+    url = new URL(href);
+  } catch {
+    return undefined;
+  }
+  return url.protocol === 'https:' && url.hostname && !url.username && !url.password ? url.href : undefined;
+};
+
 /** The schemes whose first path segment says where the model is kept (a registry, a bucket), not what it is. */
 const LOCATION_FIRST = new Set(['oci', 's3']);
 

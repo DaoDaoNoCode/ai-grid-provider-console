@@ -33,6 +33,7 @@ import { EMPTY_VALUE } from '../../utilities/format';
 import { statusLabelProps } from '../../utilities/status';
 import { regionOf, siteOf, type ClusterPlaces } from './clusterPlaces';
 import { gitStatusMessage } from './modelStatusInfo';
+import { viewHref } from './modelUtils';
 import { titleOf, type ModelClusterView, type ModelView } from './modelView';
 import { statusModalLayout } from './statusModalLayout';
 
@@ -51,12 +52,9 @@ type Props = {
 /** The word a cluster's row shows: the backend's, or Pending sync while it has none. */
 const clusterStatus = (c: Pick<ModelClusterView, 'state'>) => c.state ?? 'Pending sync';
 
-/** Only an http(s) link opens; the backend sends nothing else, and the page checks again. */
-const safeHref = (href: string | undefined) => (href && /^https?:\/\//i.test(href) ? href : undefined);
-
 /** View: OpenShift AI's model deployments on the cluster, or the OpenShift console. */
 const ViewLink: React.FC<{ status?: ModelClusterView; cluster: string }> = ({ status, cluster }) => {
-  const href = safeHref(status?.viewUrl);
+  const href = viewHref(status?.viewUrl);
   if (!href) return <>{EMPTY_VALUE}</>;
   const where = status?.viewTarget === 'OpenShift AI' ? 'OpenShift AI' : 'the OpenShift console';
   return (

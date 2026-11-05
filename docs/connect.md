@@ -236,7 +236,8 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   reported: its Site and Region, Git sync, deployment, their messages, the backend's per-cluster
   message) and
   View (`view_url`: OpenShift AI's model deployments, or the OpenShift console on a cluster without
-  the dashboard; only an http(s) link renders). While no cluster has reported, the rows are
+  the dashboard; only an absolute https URL with a host and no user name or password renders,
+  `viewHref`). While no cluster has reported, the rows are
   `status.placement.selected_clusters`, each Pending sync, opening nothing; a reported cluster
   with no state yet also reads Pending sync, and opens nothing either, as the design has it (Pending
   sync stays an outline label). Inside the Partially ready dialog, cluster statuses open nothing:

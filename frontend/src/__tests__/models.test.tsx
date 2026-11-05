@@ -23,6 +23,7 @@ import {
   ModelViewTarget,
 } from '../gen/ai_grid/v1/model_type_pb';
 import { modelObject, modelsOf, subscriptionUsing } from './connectModels';
+import { viewHref } from '../pages/models/modelUtils';
 import { deferred, renderAt, findVisible } from './render';
 // The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
 import '../pages/models/ModelDetailsPage';
@@ -2895,15 +2896,31 @@ describe('the deployment and MaaS statuses', () => {
     const smollm2 = modelsOf(service).find('smollm2');
     smollm2.status!.clusters[0].viewUrl = 'https://rh-ai.apps.site1.example.com/ai-hub/models/deployments/internal/m';
     smollm2.status!.clusters[0].viewTarget = ModelViewTarget.OPENSHIFT_AI;
-    smollm2.status!.clusters[1].viewUrl = 'javascript:alert(1)';
+    smollm2.status!.clusters[1].viewUrl = 'http://console-openshift-console.apps.site2.example.com/k8s/ns/models';
     smollm2.status!.clusters[1].viewTarget = ModelViewTarget.OPENSHIFT_CONSOLE;
     renderAt('/models/smollm2', service);
     const rows = await tableRows('Clusters of smollm2');
     const view = within(rows[0]).getByRole('link', { name: 'View on site1 in OpenShift AI' });
     expect(view).toHaveAttribute('target', '_blank');
     expect(view).toHaveAttribute('rel', 'noopener noreferrer');
-    // A link that isn't http(s) isn't rendered.
+    // A link that isn't https isn't rendered, plain http included.
     expect(within(rows[1]).queryByRole('link', { name: /^View/ })).not.toBeInTheDocument();
+    expect(cellIn(rows[1], 'View')).toHaveTextContent(/^—$/);
+  });
+
+  it.each([
+    ['an https URL', 'https://console.apps.site1.example.com/k8s/ns/models', true],
+    ['an https URL with a port', 'https://console.apps.site1.example.com:8443/x', true],
+    ['http', 'http://console.apps.site1.example.com/k8s', false],
+    ['javascript', 'javascript:alert(1)', false],
+    ['a user name', 'https://admin@console.apps.site1.example.com/', false],
+    ['a user name and password', 'https://admin:secret@console.apps.site1.example.com/', false],
+    ['no host', 'https://', false],
+    ['a relative path', '/k8s/ns/models', false],
+    ['not a URL', 'console.apps.site1.example.com', false],
+    ['nothing', '', false],
+  ])('renders View for %s only when it is https with a host and no user', (_name, href, renders) => {
+    expect(viewHref(href)).toBe(renders ? new URL(href).href : undefined);
   });
 
   it('words cluster states newer than the pin Unknown', async () => {
