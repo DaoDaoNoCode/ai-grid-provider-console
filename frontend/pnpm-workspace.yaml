@@ -5,8 +5,8 @@ allowBuilds:
 
 # pnpm refuses a version published less than a day ago (minimumReleaseAge, one day by default),
 # even in a frozen install from a lockfile that names it. These Perses plugin prereleases were
-# published on 2026-11-05 at 11:37 UTC; the list names exactly them, so every other package keeps
-# the delay. Drop it after 2026-11-06 11:37 UTC, when they're a day old.
+# published on 2026-11-05 between 11:36 and 11:56 UTC; the list names exactly them, so every other
+# package keeps the delay. Drop it after 2026-11-06 11:57 UTC, when they're all a day old.
 minimumReleaseAgeExclude:
   - '@perses-dev/gauge-chart-plugin@0.15.0-beta.1'
   - '@perses-dev/loki-plugin@0.8.0-beta.1'
@@ -14,6 +14,7 @@ minimumReleaseAgeExclude:
   - '@perses-dev/pie-chart-plugin@0.16.0-beta.1'
   - '@perses-dev/prometheus-plugin@0.60.0-beta.1'
   - '@perses-dev/stat-chart-plugin@0.16.0-beta.1'
+  - '@perses-dev/static-list-variable-plugin@0.11.0-beta.1'
   - '@perses-dev/table-plugin@0.15.0-beta.1'
   - '@perses-dev/timeseries-chart-plugin@0.15.0-beta.1'
 

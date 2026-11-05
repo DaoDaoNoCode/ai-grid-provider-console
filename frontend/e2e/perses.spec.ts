@@ -482,3 +482,79 @@ test('a panel whose plugin is not bundled shows the load error, and the tabs sti
   await expect(page.getByRole('region', { name: 'Distribution' })).toHaveCount(0);
   expect(errors).toEqual([]);
 });
+
+// A variable whose values the dashboard lists itself (StaticListVariable), as cluster 1's Usage
+// dashboard's view_by. Without its plugin in persesPlugins.ts the select shows no values. The
+// options show each value's label; the queries use the value.
+test('a static list variable offers its values and queries with the selected one', async ({ page }) => {
+  const errors: string[] = [];
+  const queries: string[] = [];
+  page.on('pageerror', (error) => errors.push('Uncaught: ' + error.message));
+  const usage = dashboard('dashboard-2-usage', 'Usage');
+  const viewBy = {
+    kind: 'ListVariable',
+    spec: {
+      name: 'view_by',
+      display: { name: 'View by' },
+      allowMultiple: false,
+      allowAllValue: false,
+      defaultValue: 'model',
+      plugin: {
+        kind: 'StaticListVariable',
+        spec: {
+          values: [
+            { value: 'model', label: 'Model' },
+            { value: 'organization', label: 'Organization' },
+          ],
+        },
+      },
+    },
+  };
+  const byQuery = {
+    kind: 'TimeSeriesQuery',
+    spec: { plugin: { kind: 'PrometheusTimeSeriesQuery', spec: { query: 'sum by ($view_by) (compat_metric)' } } },
+  };
+  const { requests } = usage.spec.panels;
+  const withViewBy = {
+    ...usage,
+    spec: {
+      ...usage.spec,
+      variables: [...usage.spec.variables, viewBy],
+      panels: { ...usage.spec.panels, requests: { ...requests, spec: { ...requests.spec, queries: [byQuery] } } },
+    },
+  };
+  const config = structuredClone(configExample.body);
+  config.data.monitoring = { enabled: true, persesProject: 'ai-grid' };
+  config.data.fakeBackend = true;
+  await page.route('**/api/v1/user', (route) => route.fulfill({ json: userExample.body }));
+  await page.route('**/api/v1/config', (route) => route.fulfill({ json: config }));
+  await page.route('**/perses/api/**', (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.pathname.endsWith('/dashboards')) return route.fulfill({ json: [withViewBy] });
+    if (url.pathname.includes('/api/v1/projects/ai-grid/datasources')) return route.fulfill({ json: [datasource] });
+    if (url.pathname.includes('/api/v1/globaldatasources')) return route.fulfill({ json: [] });
+    if (url.pathname.includes('/label/cluster/values'))
+      return route.fulfill({ json: { status: 'success', data: ['site-a', 'site-b'] } });
+    if (url.pathname.endsWith('/api/v1/query_range') || url.pathname.endsWith('/api/v1/query')) {
+      const params = request.method() === 'POST' ? new URLSearchParams(request.postData() || '') : url.searchParams;
+      queries.push(params.get('query') ?? '');
+      const now = Math.floor(Date.now() / 1000);
+      const result = { metric: { __name__: 'compat_metric' }, values: [[now, '42']] };
+      return route.fulfill({ json: { status: 'success', data: { resultType: 'matrix', result: [result] } } });
+    }
+    errors.push(`Unhandled fixture: ${request.method()} ${url.pathname}`);
+    return route.fulfill({ status: 404, json: { message: 'No fixture' } });
+  });
+
+  await page.goto('/monitoring');
+  const select = page.getByRole('combobox', { name: 'View by', exact: true });
+  await expect(select).toHaveValue('Model');
+  await expect.poll(() => queries).toContain('sum by (model) (compat_metric)');
+  await select.click();
+  await expect(page.getByRole('option')).toHaveText(['Model', 'Organization']);
+  await page.getByRole('option', { name: 'Organization', exact: true }).click();
+  await expect(select).toHaveValue('Organization');
+  await expect.poll(() => queries).toContain('sum by (organization) (compat_metric)');
+  expect(errors).toEqual([]);
+});

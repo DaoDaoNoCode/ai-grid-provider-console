@@ -97,6 +97,9 @@ importers:
       '@perses-dev/stat-chart-plugin':
         specifier: 0.16.0-beta.1
         version: 0.16.0-beta.1(b33f1405675777da7673e3f46500b8d3)
+      '@perses-dev/static-list-variable-plugin':
+        specifier: 0.11.0-beta.1
+        version: 0.11.0-beta.1(52a85eccc1a5d1fd05be36c357429ec5)
       '@perses-dev/table-plugin':
         specifier: 0.15.0-beta.1
         version: 0.15.0-beta.1(05413bfb3420d21789845a390634c716)
@@ -1310,6 +1313,22 @@ packages:
       date-fns-tz: ^3.2.0
       echarts: 6.1.0
       immer: ^11.2.9
+      lodash: ^4.17.21
+      react: ^18.3.0 || ^19.0.0
+      react-dom: ^18.3.0 || ^19.0.0
+      use-resize-observer: ^10.0.0
+
+  '@perses-dev/static-list-variable-plugin@0.11.0-beta.1':
+    resolution: {integrity: sha512-7BNsqZgmn5YEzQLJ59vwAwpQjhU8uxBaHbO+Ocb4DEzoJALDfH6djlrRUBIdOaBf6JjwgCYikDLFD05qKt0aFA==}
+    peerDependencies:
+      '@emotion/react': ^11.7.1
+      '@emotion/styled': ^11.6.0
+      '@hookform/resolvers': ^5.9.1
+      '@perses-dev/components': ^0.56.0-beta.1
+      '@perses-dev/plugin-system': ^0.56.0-beta.1
+      date-fns: ^4.1.0
+      date-fns-tz: ^3.2.0
+      echarts: 6.1.0
       lodash: ^4.17.21
       react: ^18.3.0 || ^19.0.0
       react-dom: ^18.3.0 || ^19.0.0
@@ -4534,6 +4553,23 @@ snapshots:
       date-fns-tz: 3.2.0(date-fns@4.4.0)
       echarts: 6.1.0
       immer: 11.2.9
+      lodash: 4.18.1
+      react: 19.3.1
+      react-compiler-runtime: 1.0.0(react@19.3.1)
+      react-dom: 19.3.1(react@19.3.1)
+      use-resize-observer: 10.0.0(react@19.3.1)
+
+  '@perses-dev/static-list-variable-plugin@0.11.0-beta.1(52a85eccc1a5d1fd05be36c357429ec5)':
+    dependencies:
+      '@emotion/react': 11.14.0(@types/react@19.3.0)(react@19.3.1)
+      '@emotion/styled': 11.14.1(@emotion/react@11.14.0(@types/react@19.3.0)(react@19.3.1))(@types/react@19.3.0)(react@19.3.1)
+      '@hookform/resolvers': 5.9.2(ajv-formats@2.1.1(ajv@8.20.0))(ajv@8.20.0)(react-hook-form@7.91.0(@types/react@19.3.0)(react@19.3.1))(zod@4.6.7)
+      '@perses-dev/components': 0.56.0-beta.1(patch_hash=089332f4006c231f705083adfcff50d03505c82633b40654fd222e0f9d47bbff)(@babel/runtime@7.29.10)(@codemirror/autocomplete@6.20.4)(@codemirror/language@6.13.1)(@codemirror/search@6.7.2)(@codemirror/state@6.7.6)(@codemirror/theme-one-dark@6.1.3)(@codemirror/view@6.43.15)(@emotion/react@11.14.0(@types/react@19.3.0)(react@19.3.1))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.3.0)(react@19.3.1))(@types/react@19.3.0)(react@19.3.1))(@mui/material@6.5.0(@emotion/react@11.14.0(@types/react@19.3.0)(react@19.3.1))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.3.0)(react@19.3.1))(@types/react@19.3.0)(react@19.3.1))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(@mui/system@6.5.0(@emotion/react@11.14.0(@types/react@19.3.0)(react@19.3.1))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.3.0)(react@19.3.1))(@types/react@19.3.0)(react@19.3.1))(@types/react@19.3.0)(react@19.3.1))(@types/react@19.3.0)(codemirror@6.0.2)(lodash@4.18.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@perses-dev/plugin-system': 0.56.0-beta.1(9ae40ba6b9113faa47f9459860f4b9dd)
+      color-hash: 2.0.2
+      date-fns: 4.4.0
+      date-fns-tz: 3.2.0(date-fns@4.4.0)
+      echarts: 6.1.0
       lodash: 4.18.1
       react: 19.3.1
       react-compiler-runtime: 1.0.0(react@19.3.1)

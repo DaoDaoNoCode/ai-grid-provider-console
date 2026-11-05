@@ -11,7 +11,8 @@
 // markdown panel sanitizes its HTML with DOMPurify. Loki's datasource, queries and variables are bundled ahead of the monitoring
 // team's Loki dashboards and not yet tried against a Loki: the hub's Perses has none. Its queries
 // draw in the time series, stat and table panels. Not the logs table (@perses-dev/logs-table-plugin
-// 0.3): it imports an ansiColors.css its package doesn't ship.
+// 0.3): it imports an ansiColors.css its package doesn't ship. The static list variable offers the
+// values its dashboard lists, as text in Perses's variable select.
 import { dynamicImportPluginLoader, getPluginModuleCompoundKey } from '@perses-dev/plugin-system';
 import type { PluginModuleResource } from '@perses-dev/plugin-system';
 import * as bar from '@perses-dev/bar-chart-plugin';
@@ -21,6 +22,7 @@ import * as markdown from '@perses-dev/markdown-plugin';
 import * as pie from '@perses-dev/pie-chart-plugin';
 import * as prometheus from '@perses-dev/prometheus-plugin';
 import * as stat from '@perses-dev/stat-chart-plugin';
+import * as staticList from '@perses-dev/static-list-variable-plugin';
 import * as table from '@perses-dev/table-plugin';
 import * as timeseries from '@perses-dev/timeseries-chart-plugin';
 
@@ -54,6 +56,7 @@ const bundled = (pkg: unknown) => {
 export const pluginLoader = dynamicImportPluginLoader([
   bundled(prometheus),
   bundled(loki),
+  bundled(staticList),
   bundled(timeseries),
   bundled(stat),
   bundled(bar),
