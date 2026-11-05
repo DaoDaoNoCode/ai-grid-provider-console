@@ -1,6 +1,6 @@
 // Package celfilter evaluates the `filter` of a List request the way the
-// draft proto says the backend does (ListTenantsRequest.filter,
-// ListModelsRequest.filter): a CEL expression over `this`, the object as its
+// draft proto says the backend does
+// (ListModelsRequest.filter): a CEL expression over `this`, the object as its
 // proto message, and `now`, the server's current time, as OSAC's
 // fulfillment-service declares them (mock/research/backend-conventions.md
 // section 4, "Request/response shapes"), evaluated in memory over the whole
@@ -10,7 +10,7 @@
 // extension are available next to the built-in `contains`, `startsWith`,
 // `endsWith`, `matches`, `in`, `has()`, `exists` and `all`.
 //
-// Fields carry their proto names (`this.metadata.labels`, `this.domains`),
+// Fields carry their proto names (`this.metadata.labels`, `this.finalizers`),
 // because `this` is bound to the message type with cel.Types. CEL is strict:
 // indexing a map with a missing key is a `no such key` error, not false, so
 // a label term needs the `in` guard

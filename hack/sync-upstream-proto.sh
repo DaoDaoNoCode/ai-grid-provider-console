@@ -9,9 +9,9 @@
 #                       the OpenAPI options) by `buf build`, so the drift test can compare
 #                       descriptors without fetching anything
 #   COMMIT              the repository, commit and path they came from
-# Then run `make -C bff test`: bff/internal/protodrift fails when the BFF's copy of the
-# backend's messages (mock/proto/ai_grid/backend/v1) no longer matches. The nightly
-# .github/workflows/drift.yaml runs both against the backend's main.
+# Then run `make -C bff test`: bff/internal/protodrift fails when an RPC the BFF calls over
+# gRPC (AiGrid/Ping, for /readyz) no longer takes or returns what the BFF sends and reads. The
+# nightly .github/workflows/drift.yaml runs both against the backend's main.
 #
 # Everything lands in a temporary directory first; the vendored files are replaced only once
 # the fetch and the build succeeded, so an error leaves the previous copy in place.

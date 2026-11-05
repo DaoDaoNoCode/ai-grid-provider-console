@@ -6,28 +6,24 @@ import { Button, ToolbarItem } from '@patternfly/react-core';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { ThProps } from '@patternfly/react-table';
 import { Link, useNavigate } from 'react-router-dom';
-import type { OrganizationsService } from '../../api/organizations';
-import type { Organization } from '../../api/types';
 import { RefreshButton } from '../../components/RefreshButton';
 import { EmptyListState } from '../../components/states/EmptyListState';
 import { PageStateSection } from '../../components/states/PageStateSection';
 import { PaginatedTable } from '../../components/PaginatedTable';
 import { SimpleMenuActions } from '../../components/SimpleMenuActions';
-import { StatusLabel } from '../../components/StatusLabel';
 import { ToolbarSearch } from '../../components/ToolbarSearch';
 import { TableEmptyRow } from '../../components/TableEmptyRow';
 import { useConsoleSession } from '../../context/useConsoleSession';
-import { useServiceData } from '../../hooks/useServiceData';
 import { EMPTY_VALUE } from '../../utilities/format';
+import type { OrganizationView } from './organizationView';
 import { useDeleteOrganization } from './useDeleteOrganization';
+import { useOrganizationList } from './useOrganizations';
 
-type Props = { service: OrganizationsService };
+type Column = { label: string; sort: (a: OrganizationView, b: OrganizationView) => number };
 
-type Column = { label: string; sort: (a: Organization, b: Organization) => number };
-
+// No Status column: the backend's Tenant reports no state (TenantStatus is empty).
 const columns: Column[] = [
   { label: 'Organization', sort: (a, b) => a.name.localeCompare(b.name) },
-  { label: 'Status', sort: (a, b) => a.status.localeCompare(b.status) },
   { label: 'Primary domain', sort: (a, b) => (a.domains[0] ?? '').localeCompare(b.domains[0] ?? '') },
   {
     label: 'Identity provider',
@@ -35,14 +31,14 @@ const columns: Column[] = [
   },
 ];
 
-export const OrganizationListPage: React.FC<Props> = ({ service }) => {
+export const OrganizationListPage: React.FC = () => {
   const navigate = useNavigate();
-  const [organizations, loaded, error, refresh] = useServiceData<Organization[]>(() => service.listOrganizations(), []);
+  const { data: organizations, loaded, error, refresh } = useOrganizationList();
   const { user } = useConsoleSession();
   const canWrite = !!user?.isProviderAdmin;
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<{ index: number; direction: 'asc' | 'desc' }>({ index: 0, direction: 'asc' });
-  const [confirmDelete, deleteModal] = useDeleteOrganization(service, {
+  const [confirmDelete, deleteModal] = useDeleteOrganization({
     refresh: () => void refresh(),
     onDeleted: () => {
       // Replace, so the notice doesn't add a second Organizations entry to the browser's history.
@@ -120,9 +116,6 @@ export const OrganizationListPage: React.FC<Props> = ({ service }) => {
                     <Tr key={o.id}>
                       <Td dataLabel="Organization" modifier="nowrap">
                         <Link to={`/organizations/${encodeURIComponent(o.id)}`}>{o.name}</Link>
-                      </Td>
-                      <Td dataLabel="Status">
-                        <StatusLabel isCompact status={o.status} />
                       </Td>
                       <Td dataLabel="Primary domain" modifier="nowrap">
                         {o.domains[0] ?? EMPTY_VALUE}

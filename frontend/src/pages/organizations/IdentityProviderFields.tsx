@@ -11,7 +11,7 @@ import {
   TextArea,
   TextInput,
 } from '@patternfly/react-core';
-import type { IdentityProvider, OidcConfig } from '../../api/types';
+import type { IdentityProvider, OidcConfig } from './organizationView';
 import { fieldErrorsOf, identityProviderSchema } from '../../validation';
 
 type TextKey = Exclude<keyof OidcConfig, 'clientSecretSecret' | 'validateSignature'>;

@@ -43,7 +43,6 @@ func run() error {
 		Insecure:     cfg.BackendInsecure,
 		Timeout:      cfg.BackendTimeout,
 		WriteTimeout: cfg.BackendWriteTimeout,
-		DraftAPI:     cfg.FakeBackend,
 	}
 	client, err := backend.Dial(backendCfg)
 	if err != nil {

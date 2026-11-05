@@ -3,20 +3,18 @@
 // Source commit: 8cb0a227e45cc9b17421b6e79ce493ed370ebd5d. Break-glass flow is omitted.
 import { useEffect, useRef } from 'react';
 import { Alert, Content, Form, Wizard, WizardStep, useWizardContext } from '@patternfly/react-core';
-import type { OrganizationsService } from '../../api/organizations';
-import type { Organization, OrganizationInput } from '../../api/types';
 import { ConsoleWizardFooter } from '../../components/ConsoleWizardFooter';
 import { useConfirmDiscard } from '../../hooks/useConfirmDiscard';
 import { IdentityProviderFields } from './IdentityProviderFields';
 import type { OrganizationSection } from './OrganizationConfigurationDetails';
 import { OrganizationConfigurationDetails } from './OrganizationConfigurationDetails';
 import { OrganizationDetailsFields } from './OrganizationDetailsFields';
+import type { OrganizationInput, OrganizationView } from './organizationView';
 import { useOrganizationForm } from './useOrganizationForm';
 
 type Props = {
-  service: OrganizationsService;
   /** The organization to edit; without it the wizard creates one. */
-  organization?: Organization;
+  organization?: OrganizationView;
 };
 
 const stepOf: Record<OrganizationSection, string> = {
@@ -60,9 +58,9 @@ const GoToRefusedField: React.FC<{ refused?: object; errorStep?: string }> = ({ 
  * the name and the identity provider are read-only, and Save changes on the Review step
  * stays disabled until something changed.
  */
-export const OrganizationFormWizard: React.FC<Props> = ({ service, organization }) => {
+export const OrganizationFormWizard: React.FC<Props> = ({ organization }) => {
   const editing = !!organization;
-  const form = useOrganizationForm(service, organization);
+  const form = useOrganizationForm(organization);
   const { values, setValues, saving } = form;
   const [requestLeave, discardModal] = useConfirmDiscard(form.isDirty && !saving, form.leave);
 

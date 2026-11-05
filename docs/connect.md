@@ -8,10 +8,12 @@ when the API has to change. The backend's side of the same rules is its
 `docs/API_CONTRACT.md`.
 
 The Clusters area (the list, a cluster's page, Add, Edit and Remove), the Models area (the list, a
-model's page, the Deploy model wizard, its edit and delete), the Subscriptions area and the AI
-Grid map are on it; Organizations moves next; each move deletes that area's draft RPCs, fake data,
-BFF handlers and hand-written frontend types. When the last one moves, `mock/proto`, `bff/gen`, the
-console's fake backend and `frontend/src/api`'s hand-written layer go.
+model's page, the Deploy model wizard, its edit and delete), the Subscriptions area, the
+Organizations area and the AI Grid map are on it; each move deleted that area's draft RPCs, fake
+data, BFF handlers and hand-written frontend types. What still reads the BFF's JSON API is the
+shell (`/api/v1/user`, `/api/v1/config`) and the Monitoring fallback's grid overview; when it
+moves, `mock/proto`, `bff/gen`, the console's fake backend and `frontend/src/api`'s hand-written
+layer go.
 
 ## How a call travels
 
@@ -355,6 +357,50 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   center say it is active.
 - The BFF has no `/api/v1/subscriptions` or `/api/v1/models` routes and no `--models-namespace`.
 
+### The Organizations area
+
+- **Reads.** `useOrganizationList` and `useOrganization`
+  (`frontend/src/pages/organizations/useOrganizations.ts`) call `Tenants/List` and `Tenants/Get`.
+  The list polls every 30 s, as the other lists do; an organization's page and its edit page load
+  `Get` once, and the edit page keeps the first answer it read after it opened, so a save is checked
+  against the version the form started from (a refetch on window focus never replaces it). The
+  Monitoring fallback's usage by organization reads the same list. `toOrganizationView`
+  (`organizationView.ts`) reads the generated `Tenant`: the name (`metadata.name`, else the id),
+  `spec.domains`, `spec.identity_provider` with its OIDC config (`validate_signature` unset reads
+  as on, as the field documents), `metadata.version` and `metadata.creation_timestamp`. The list
+  searches, sorts and pages in the browser, as before: the backend pages `Tenants/List` but
+  doesn't evaluate a filter.
+- **What isn't there.** The backend's `Tenant` has no enabled flag, description, attributes or
+  per-domain details, and its `TenantStatus` is empty, so the pages show no status label or
+  column, no description or attributes, and no Verified label on a domain. Backend asks if a page
+  needs them.
+- **Writes.** Create sends `metadata.name`, `spec.domains` and, when the form has one,
+  `spec.identity_provider` (`enabled: true`, the config's `client_secret_secret_name` and the
+  rest as typed). The backend sets an identity provider on create only: it reads the client
+  secret from the named Secret in `AI_GRID_IDP_SECRET_NAMESPACE`, and a missing one is
+  `NotFound`, which the form shows in the backend's words (`identity provider secret "<name>" not
+  found`). An edit sends `Tenants/Update` with `spec.domains` alone in the mask, the domains the
+  form holds, `metadata.version` with `lock: true`: never the name, which can't change, and never
+  the identity provider, which the backend refuses to add, change or remove, so the edit shows it
+  read-only (or says the organization has none). Delete sends `id` and `version`, the version the
+  dialog read; after a failed delete the dialog loads the organization again (`Get`) before it
+  allows a retry. Aborted, on Update or Delete, is the conflict the form and the dialog already
+  show; every other refusal shows in the backend's words (`describeError`), and AlreadyExists (a
+  name or domain another organization has) is no longer worded as a conflict. A write drops the
+  Tenants answers no page shows, and an update keeps its answer as the organization's `Get`, so
+  the page the form returns to shows the write.
+- **Field errors.** The backend sends plain messages, without `google.rpc.BadRequest` violations,
+  so its refusals show above the form. A violation, should one come, lands on its field:
+  `formPathOf` maps the proto path (`metadata.name`, `spec.domains[0]`,
+  `spec.identity_provider.config.issuer`) to the form's.
+- **Testing.** Page tests answer from `frontend/src/__tests__/connectTenants.ts`, an in-memory
+  Tenants service over the generated messages with the backend's rules and messages (versions
+  from 1, Aborted on a stale one, AlreadyExists, NotFound, the identity provider set on create
+  only) and the PoC's three organizations; `tenantsOf(service).before` makes a call wait or fail.
+  The browser test (`e2e/organizations.spec.ts`) runs on the backend's fakes, whose fake hub has
+  no Secrets, so it sees an identity provider refused and creates the organization without one.
+- The BFF has no `/api/v1/tenants` routes, and so no JSON writes at all.
+
 ### Writes that take long
 
 The backend commits Models and Subscriptions to a Git repository: a write takes seconds, and on
@@ -566,11 +612,14 @@ const { clients } = fakeClients({
   (`frontend/src/__tests__/backend-root.test.tsx`).
 - Page tests render through `renderAt` or `TestApp` (`frontend/src/__tests__`), which give `App`
   a transport whose Clusters service answers from the test's `MockConsoleService`
-  (`connectClusters.ts`, through `fakeClients`). A test that needs another backend passes its own
+  (`connectClusters.ts`, through `fakeClients`), and whose Models, Subscriptions and Tenants
+  services are the in-memory fakes keyed by that service (`connectModels.ts`,
+  `connectSubscriptions.ts`, `connectTenants.ts`). A test that needs another backend passes its own
   transport (`fakeClients({}).transport` for one without the RPCs).
-- The browser tests of the Clusters pages and the map (`e2e/cluster-membership.spec.ts`,
-  `e2e/clusters.spec.ts`, `e2e/grid.spec.ts`) run against the backend's own fakes on its PoC
-  fixtures, which `frontend/playwright.config.ts` starts through `hack/backend-fakes.sh`, on ports
+- The browser tests of the Clusters, Models, Subscriptions and Organizations pages and the map
+  (`e2e/cluster-membership.spec.ts`, `e2e/cluster-edit.spec.ts`, `e2e/clusters.spec.ts`,
+  `e2e/grid.spec.ts`, `e2e/models.spec.ts`, `e2e/subscriptions.spec.ts`,
+  `e2e/organizations.spec.ts`) run against the backend's own fakes on its PoC fixtures, which `frontend/playwright.config.ts` starts through `hack/backend-fakes.sh`, on ports
   offset from the console's own fake, which the other specs use.
 - The fake's answers are type-checked against the generated messages and go through the same
   serialization as the wire, so a fake can't drift from the API the way the hand-written
@@ -616,9 +665,3 @@ still sent a served name would fail every model create on that backend (the back
 - A nightly job that proposes moving the pin to the backend's newest `main` and runs typecheck and
   tests (the pattern OSAC uses for its UI).
 - Connect GET: no backend method is marked free of side effects yet, so every call is a POST.
-- An organization's identity provider. The pinned backend's `Tenants/Create` takes
-  `spec.identity_provider` (OIDC, immutable afterwards), and reads its client secret by name from
-  the namespace in `AI_GRID_IDP_SECRET_NAMESPACE` (default `ai-grid-idp-secrets`), which the
-  chart doesn't create or grant yet. The console still creates organizations through `/api/v1`,
-  whose stopgap refuses `identityProvider` with 501 (`bff/internal/backend/v1.go`), so it sends
-  none.

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { IdentityProvider } from '../../api/types';
+import type { IdentityProvider } from './organizationView';
 import { IdentityProviderFields } from './IdentityProviderFields';
 
 const blank: IdentityProvider = {

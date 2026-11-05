@@ -2,8 +2,8 @@
 
 > **Most of this page is scheduled for deletion.** It documents a hand-written REST API that
 > [ADR-0002](../adr/0002-connect-end-to-end-with-vanguard-for-rest.md) replaces with Connect:
-> the `{"data"}`/`{"meta"}` envelope, the `ETag`/`If-Match`/428 protocol, the error-status
-> table and the endpoint table all go. What survives is the deployment topology and the
+> the `{"data"}` envelope, the error-status table and the endpoint table go (the `ETag`/`If-Match`/428
+> protocol and the JSON writes already went with the last JSON write route, the organizations). What survives is the deployment topology and the
 > identity flow. See also [ADR-0001](../adr/0001-the-contract-lives-in-the-backend.md)
 > (the contract moves to the backend) and
 > [ADR-0004](../adr/0004-the-bff-is-a-thin-relay.md) (what the BFF keeps doing).
@@ -41,12 +41,10 @@ backend service for cluster access and this BFF for the browser.
   copy in `mock/proto/upstream` with its commit in `mock/proto/upstream/COMMIT`
   (`hack/sync-upstream-proto.sh <ref>` refreshes both).
 - What the BFF compiles against: the console's draft proto in `mock/proto/ai_grid/v1`,
-  generated into `bff/gen/ai_grid/v1` (`make -C bff generate`), which the fake backend serves;
-  and, for the real backend's Tenants RPCs, a copy of their messages in
-  `mock/proto/ai_grid/backend/v1` (see "Against a real backend" below).
-  `bff/internal/protodrift` fails when that copy stops matching the vendored backend proto.
-  When the console generates its types from the backend's proto, the copy, the draft and the
-  drift test go. See `mock/proto/README.md`.
+  generated into `bff/gen/ai_grid/v1` (`make -C bff generate`), which the fake backend serves.
+  Against the real backend the BFF calls only `AiGrid/Ping` (for `/readyz`) with it;
+  `bff/internal/protodrift` fails when that call stops matching the vendored backend proto. The
+  pages call everything else over Connect, through the relay. See `mock/proto/README.md`.
 - Runs with its own ServiceAccount (`get/list/watch` on `ManagedCluster`) and Keycloak admin
   credentials. It is aligned with OSAC's fulfillment-service and is the "OSAC-like API
   layer" from the 2026-10-14 thread.
@@ -54,37 +52,14 @@ backend service for cluster access and this BFF for the browser.
   hubAcceptsClient), `Tenants/ListTenants` (Keycloak Organizations in the `ai-grid` realm).
 
 
-### Against a real backend (stopgap)
+### Against a real backend
 
-Until the console moves to Connect and the backend's generated contract (issues 20–27 and the
-ADRs in `docs/adr/`), the BFF calls a real backend's `ai_grid.v1.Clusters` `List`, `Get` and
-`Update`, and `Tenants` `List`, `Get`, `Create`, `Update` and `Delete` for the clusters and
-tenants routes, and maps them onto the draft types, so the handlers and the JSON above are
-unchanged (`bff/internal/backend/v1.go`, messages in
-`mock/proto/ai_grid/backend/v1`). The fake backend still serves the draft, so `--fake-backend`
-keeps the draft clients. `If-Match` maps to `metadata.version` with `lock: true`, and the
-`labels` and `annotations` mask paths to `metadata.labels` and `metadata.annotations`. The
-cluster state is derived from `spec.hub_accepts_client`, `status.joined` and
-`status.available_condition` only. The cluster list forwards `offset` and `limit`, which the
-backend pages by; it doesn't evaluate `filter` yet and counts every cluster in `total`, so a
-filtered cluster list answers 501 without calling it. The tenant list forwards `offset`, `limit` and `filter`; the
-backend pages but doesn't evaluate `filter` yet, so a filtered list answers 501. A tenant write
-sends `name` as `metadata.name` and `domains` as `spec.domains` (mask paths likewise), and the
-`If-Match` version as `metadata.version` with `lock: true`. The backend requires a version
-(`internal/servers/tenants_server.go`):
-every tenant reads as version 1 or more, and an update or delete at version 0 is `InvalidArgument`
-(422, with the backend's message). A write that sets a field the backend's `Tenant` lacks
-(`description`, `enabled: false`, `attributes`, `identityProvider`) answers 501 before any call,
-and so does an `alias`: on create, one other than the name; on PATCH, any alias. A
-PATCH that leaves only no-op fields sends the mask `id`, which the backend answers with the
-stored tenant after checking the version, writing nothing. DELETE sends the `If-Match` version as
-`TenantsDeleteRequest.version`. The backend refuses a change to a label or annotation
-outside `ai-grid/*` and the `location` label, and a bad coordinate, with `InvalidArgument` (422),
-after it checks the version: a stale one is `Aborted` (409) whatever the labels.
+The BFF's gRPC client calls the real backend's `AiGrid/Ping` only. `Grid/GetOverview`, which the
+Monitoring fallback reads, isn't the backend's, so `/api/v1/grid/overview` answers 501 there.
 
-The Models and Subscriptions pages call the backend's own RPCs over Connect, through the relay
-(`docs/connect.md`, "The Models area" and "The Subscriptions area"); the BFF has no
-`/api/v1/models` or `/api/v1/subscriptions` routes.
+The Clusters, Models, Subscriptions and Organizations pages call the backend's own RPCs over
+Connect, through the relay (`docs/connect.md`); the BFF has no `/api/v1/clusters`,
+`/api/v1/models`, `/api/v1/subscriptions` or `/api/v1/tenants` routes, and so no JSON writes.
 
 ## Decisions
 
@@ -96,7 +71,7 @@ The Models and Subscriptions pages call the backend's own RPCs over Connect, thr
 | Login in development | The Vite dev server and `hack/api.sh` set the same headers from `oc whoami` and `oc whoami -t`. `make dev-cluster` forwards the backend of the console deployed on the hub (`hack/forward-backend.sh`); `make dev` uses one run from the backend repository with `--kubeconfig`. | Any developer who has run `oc login` works against a real hub. |
 | Deployment | One pod: kube-auth-proxy (:8443), bff on `127.0.0.1:8080`, ai-grid-backend on `127.0.0.1:9090`. The BFF dials the backend in plaintext over loopback; plaintext to any other address is refused unless `BACKEND_INSECURE=true`. The kubelet probes `/readyz` through the proxy (`--skip-auth-route=^/readyz$`); neither the BFF nor the backend has a probe of its own. The rollout strategy is `Recreate`: the backend serializes each organization's writes with in-process locks (ai-grid-cloud/ai-grid-provider-backend#16), which hold only with one backend, so an upgrade stops the pod before the new one starts and the console is unavailable until it's ready. That covers rollouts only, not a pod deleted by hand or evicted. Client-side `kubectl apply` and `helm upgrade` switch an existing Deployment to `Recreate`; server-side apply refuses it while the defaulted `rollingUpdate` is there. | Nothing on the pod network can reach the BFF with forged identity headers or the backend at all. When the backend gets its own Deployment, set `BACKEND_ADDRESS` to its Service and `BACKEND_CA_FILE` to its serving CA. |
 | Cluster labels | `ai-grid/enabled`, `ai-grid/role` (`combined`, `ingress` or `inference`: what the hub installs on a member; the Clusters pages show it as Ingress, Inference or Combined, Ingress being the clusters organizations' users send requests to), `ai-grid/provisioned`, `location`, `ai-grid/site`, `ai-grid/region`, and ACM's `openshiftVersion`. | The POC's conventions (site and region were added to the POC on 2026-10-14) so that Placements written by either tool select the same clusters. The BFF derives fields from the labels the backend returns. |
-| Response envelope | Success: `{"data": ...}`; a paged list adds `"meta": {"size", "total", "offset", "limit"}` next to `data` (`limit` omitted when the caller asked for everything, `total` omitted when it is unknown; see "Writes, versions and lists"). Error: `{"error": {"code": "<http status>", "message": "..."}}`. `DELETE` answers 204 with no body. | Same as the odh-dashboard BFFs; `meta` is only on list endpoints that page, so the shape of `data` never changes. |
+| Response envelope | Success: `{"data": ...}`. Error: `{"error": {"code": "<http status>", "message": "..."}}`. | Same as the odh-dashboard BFFs. |
 | Tests | `httptest` against an in-memory backend (`internal/backend/backendtest`, gRPC over `bufconn`). | No cluster, no binaries; the fake records incoming metadata so identity forwarding is tested. `hack/smoke.sh` checks a live backend. |
 
 ## Modules
@@ -116,10 +91,9 @@ given on the command line wins. A variable whose value does not parse (`PORT=8o8
 BFF at startup with an error naming it, unless its flag was given (`PORT=8o80 bff --port=9000`
 listens on 9000).
 
-Adding an endpoint: draft the RPC in `mock/proto/ai_grid/v1` (and propose it to the backend),
-`make -C bff generate`, implement or stub it in the fake, map it in a handler under `internal/api`, add it to the table below and to
-`frontend/src/api/ConsoleService.ts`.
-The handler does transport only; validation, defaults, versions, filtering and derived fields
+Adding an endpoint: don't. A new page calls the backend's own RPC over Connect, through the
+relay, after the RPC is reviewed for the relay's allowlist (the root `AGENTS.md`, "Adding a
+feature", and `docs/connect.md`). Validation, defaults, versions, filtering and derived fields
 belong to the backend (the root `AGENTS.md`, which also lists the exceptions the BFF still has).
 
 ## Endpoints
@@ -136,11 +110,6 @@ under `/perses/api`, and the Connect relay to the backend's own RPCs under `/ai_
 | GET | `/readyz` | `{status, version, backend}` | `AiGrid/Ping`; readiness, 503 when the backend does not answer. The pod is then unready, and with the one replica the chart runs, the Service has no endpoint left: the OpenShift router answers every request with its own 503 page (HTML, not this API's JSON error), until the backend answers again |
 | GET | `/api/v1/user` | `{username, email?, groups, isProviderAdmin}` (`email` omitted when the proxy sends none) | none; the identity from the proxy headers, `isProviderAdmin` from a hub `SelfSubjectAccessReview` |
 | GET | `/api/v1/config` | `{gridEndpoint, mapTileUrl, mapTileAttribution, billingUrl, version, fakeBackend, monitoring: {enabled, persesProject}, models: {hardware}}`: `fakeBackend` makes the UI show its fake-backend banner, `monitoring.enabled` says the BFF relays `/perses/api` (it has a `PERSES_URL`) and `monitoring.persesProject` names the one Perses project the relay reads, whose `dashboard-*` objects are the Monitoring tabs (always set when `monitoring.enabled`); `models.hardware` is the Deploy model wizard's Hardware list, never empty, each `{id, label, description?, accelerator?, image?, env?, defaults?: {accelerators?, cpu?, memory?}}` (see "Model hardware" below) | none; env `GRID_CONSUMER_URL`, `MAP_TILE_URL`, `MAP_TILE_ATTRIBUTION` (the attribution shown with `MAP_TILE_URL`'s tiles; with no `MAP_TILE_URL` the map draws a bundled land outline), `BILLING_URL`, `FAKE_BACKEND`, `PERSES_URL`, `PERSES_PROJECT`, `MODEL_HARDWARE` |
-| GET | `/api/v1/tenants?offset=&limit=&filter=` | `Tenant[]` in Keycloak's order (by name, the realm database's collation) plus `meta`; `filter` is a CEL expression the client writes, over `this` (a Tenant), see "Writes, versions and lists"; `limit` omitted returns everything; the removed `search` is 422 | `Tenants/ListTenants` with `offset`, `limit` and `filter` exactly as sent |
-| GET | `/api/v1/tenants/{id}` | `Tenant`, `ETag: "<resourceVersion>"` | `Tenants/GetTenant`; 404 with the backend's message when absent |
-| POST | `/api/v1/tenants` | 201, `Tenant` as created, `Location: /api/v1/tenants/{id}`, `ETag` | `Tenants/CreateTenant`; 422 with Keycloak's message on a bad name, alias or domain, 409 on a taken name or alias |
-| PATCH | `/api/v1/tenants/{id}` | `Tenant` after the write, with its `ETag` | `Tenants/UpdateTenant` with the present body fields as the mask (`alias` included) and the `If-Match` version as `object.resource_version`; an empty body is 422; 422 "Cannot change the alias", 409 on a taken or blank name (Keycloak's own answer to a blank one) or a stale `If-Match`, 428 without `If-Match` |
-| DELETE | `/api/v1/tenants/{id}` | 204 | `Tenants/DeleteTenant` with the `If-Match` version as `resource_version`; 404 when absent, 409 on a stale `If-Match`, 428 without `If-Match` |
 | GET, POST | `/perses/api/<Perses API path>` | Perses's own answer, status and body unchanged, with only its `Content-Type`, `Content-Encoding`, `Content-Length`, `Vary`, `Cache-Control`, `Date`, `Age` and `Expires` headers; a redirect from Perses is 502 | none; the Monitoring page's relay to the hub's Perses (`PERSES_URL`), see "The Perses relay" |
 | GET | `/api/v1/grid/overview?range=1h\|6h\|24h&site=&metrics=false` | (Only the Monitoring fallback, without a Perses relay; the map reads `Clusters/List`.) `GridOverview`: `{updatedAt, inventorySource?, demo, metricsSource?, clusters, metrics}`; `inventorySource` (`acm\|git`) and `metricsSource` (`thanos\|demo`) are omitted when the backend does not say, and each metric's `status` (`ok\|no-data\|unavailable\|not-configured`) likewise | `Grid/GetOverview`; `range` is forwarded as sent (the backend defaults it to `1h` and refuses anything but `1h`, `6h` and `24h` with 422), an empty `site` selects every site and only `metrics=false` leaves the metrics out |
 
@@ -211,177 +180,20 @@ so a client also works against a backend that only returns `name`, `labels`, `hu
   ACM Search's index of the spoke's nodes and their NVIDIA GPU Feature Discovery labels
   (`ManagedClusterInfo` carries none); the BFF derives nothing. Omitted when the backend has no
   inventory for the cluster (no GPU nodes, or Search unavailable or not yet indexed);
-  `gpuCapacity` still counts the schedulable GPUs then. A real backend sends it from ai-grid-provider-backend's `feat/cluster-gpus` on (`status.gpus`, field 10), and `bff/internal/backend/v1.go` copies it onto the draft field for field (`fromV1GPUs`); an older one sends none.
+  `gpuCapacity` still counts the schedulable GPUs then.
 - `siteName`, `latitude`, `longitude` come from the `ai-grid/site-name`, `ai-grid/latitude`,
   `ai-grid/longitude` annotations; coordinates are omitted when absent or not a finite number
   in range (`NaN` and `Inf` parse but cannot be encoded, so they count as absent).
 - `conditions[].lastTransitionTime` is omitted when the hub recorded none; it is never the
   Unix epoch.
 
-`Tenant` (a Keycloak Organization in the `ai-grid` realm, `mock/research/keycloak.md` section 4;
-the collections are always present even though Keycloak omits an empty `domains`):
+### Field errors
 
-```json
-{
-  "id": "3f1c9a72-5b6e-4d2a-8c01-2d3e4f5a6b7c",
-  "name": "acme-robotics",
-  "alias": "acme-robotics",
-  "enabled": true,
-  "description": "Acme Robotics, EU region",
-  "domains": ["acme-robotics.example.com", "acme.example.org"],
-  "domainDetails": [
-    {"name": "acme-robotics.example.com", "verified": true, "autoRedirect": true},
-    {"name": "acme.example.org", "verified": false, "autoRedirect": false}
-  ],
-  "attributes": {"ai-grid/region": "europe-west", "billing-account": "ACME-0042"},
-  "identityProvider": {"...": "..."},
-  "resourceVersion": "1",
-  "createTime": "2026-10-10T08:00:00Z"
-}
-```
-
-- `alias` is the URL-safe handle: it defaults to `name` on create and cannot change
-  afterwards. Against today's backend (fields `id`, `name`, `domains` only) the BFF leaves it
-  empty (after a rename it no longer equals `name`), derives `domainDetails` from `domains` and
-  reads the absent `enabled` as true (Keycloak's default), so a client does not see every tenant
-  as disabled.
-- `domains` are the names of `domainDetails`, lower-case, unique across tenants; Keycloak
-  accepts the domain part of an e-mail address or one wildcard `*.base.tld`.
-  `identityProviderAlias` is present only for a domain routed to one of the organization's
-  identity providers; the fake realm has none, so the fake never returns it.
-- `identityProvider` is the organization's OIDC identity provider as the console's organization
-  wizard configures it (proposal P1, `Tenant.identity_provider = 11`); omitted for an
-  organization without one. A write that sets it is validated by the backend, whose field
-  violations come back as `fieldErrors` under `identityProvider.*`.
-- `createTime` is when the backend created the organization (proposal P3,
-  `Tenant.create_time = 12`, output only); omitted for an organization created some other way,
-  which the console shows as "—".
-- `resourceVersion` is the version the backend keeps for the tenant (Keycloak has none), also
-  sent as the `ETag`; omitted from a backend that keeps none (today's).
-
-`POST /api/v1/tenants` body: `{"name": "acme-robotics", "alias": "acme", "description": "...",
-"enabled": true, "domains": ["acme.example.com"], "attributes": {"k": "v"}}`; only `name` is
-required, `alias` defaults to the name, an omitted `enabled` is passed through as unset and
-the backend applies Keycloak's default (true). Unknown fields, trailing content after the JSON
-value and malformed JSON are rejected (422), a body over 1 MiB with 413; everything else is
-validated by the backend, whose Keycloak message comes back as the 422 or 409 message.
-
-`PATCH /api/v1/tenants/{id}` body, every field optional: `{"name": "...", "description": "...",
-"enabled": false, "domains": ["..."], "attributes": {"k": "v"}, "alias": "<unchanged>"}`. An
-absent field is left alone; a present field replaces the stored one as a whole (`domains: []`
-removes every domain, `attributes: {}` every attribute; a domain that stays keeps its `verified`
-and identity-provider metadata); `null` is the same as absent. The present fields become the
-field mask of one `UpdateTenant` call, `alias` included: the backend keeps the stored alias and
-answers a different one with Keycloak's 422 "Cannot change the alias", so a form can send back
-the alias it loaded. Today's backend has no `alias`, so against it any `alias` is 501. A body that names no field is 422, before any call. The backend skips a PUT
-that would change nothing (console proposal, so Keycloak writes no admin event) and answers the
-tenant with its stored `resourceVersion`. Keycloak Organizations carry no version; the backend
-keeps one for them (see "Writes, versions and lists").
-
-The list response:
-
-```json
-{"data": [...], "meta": {"size": 10, "total": 42, "offset": 0, "limit": 10}}
-```
-
-### Writes, versions and lists
-
-Rules every handler shares; the BFF only moves them between HTTP and the RPCs, the backend
-decides.
-
-- **Request bodies must be JSON.** Every POST, PATCH and PUT whose `Content-Type` is not
-  `application/json` (case-insensitive, parameters such as `charset` allowed) is 415
-  `request body must be JSON: send Content-Type: application/json`, before the body is read
-  and before the hub or the backend is called. A browser sends an HTML form or a `text/plain`
-  `fetch` cross-site without a CORS preflight; this is what keeps another app under the
-  cluster's `apps` domain from writing with an admin's session.
-- **`ETag` and `If-Match`.** `GET` of one cluster or tenant, and the answer to its POST
-  or PATCH, carry `ETag: "<resourceVersion>"` (the same value as `resourceVersion` in the
-  JSON; no header when the backend reports no version, as today's backend does for tenants).
-  The draft's backend must return a non-empty `resource_version` on every object it serves:
-  with If-Match required, an object without one could never be updated or deleted.
-  Every PATCH and DELETE must send it back as `If-Match`; the BFF passes it to the backend as
-  the request's expected version and the backend refuses a stale one with `Aborted`, 409, so a
-  tab opened before a colleague's change cannot overwrite or delete it:
-
-  | Request | `If-Match` becomes |
-  |---|---|
-  | PATCH `/clusters/{name}` | `object.resource_version` with `lock: true` |
-  | PATCH `/tenants/{id}` | `object.resource_version` (the draft's precondition: set means checked) |
-  | DELETE `/tenants/{id}` | `DeleteTenantRequest.resource_version` |
-
-  A PATCH, PUT or DELETE without `If-Match` is 428 Precondition Required (RFC 6585) before the body
-  is read and before any call: `this write needs an If-Match header: send the ETag that GET
-  answered (the object's resourceVersion), for example If-Match: "42"`; `If-Match: *`, which
-  names no version, is 428 too (`If-Match: * names no version: ...`). So every write carries the
-  version its client read. After the provider-admin check (403 for a non-admin), the checks run in this order: 415 for a
-  body that is not JSON, then 428, then the body (422, 413). `If-Match` must be one strong entity tag exactly as `ETag` sent
-  it (`"42"`); a bare value, a weak tag (`W/"42"`) or a list is 422 `If-Match must be one entity
-  tag as the ETag header sent it, for example "42"` before any call. The tenant version is the
-  backend's (`Tenant.resource_version`, kept in an organization attribute;
-  `mock/areas/tenants.md`, "Version"), so it changes only on writes through the backend.
-- **Every PATCH is one update; the backend decides what changes.** The BFF reads nothing before
-  a PATCH: each field present in the body goes into the update's object and its mask, whatever
-  the stored value, and the backend applies the mask under optimistic locking. A body that names
-  no field is 422 `the request body names no field to change` before any call (a non-admin gets
-  403 from the provider-admin check first) (there is nothing
-  to send; answering it like the GET would skip the version check). Whether an update changes
-  anything is the backend's answer: a cluster or model update that leaves the object as stored
-  is not written and comes back with the stored `resourceVersion` (the Kubernetes API server
-  does the same with an unchanged update), and a tenant update that changes nothing is not PUT
-  to Keycloak (console proposal). The version is still checked first, so a stale `If-Match` is
-  409 even when nothing would change, and a viewer's update is 403.
-- **`filter` is the client's CEL.** `GET /tenants` and `GET /models` take `filter`, a CEL
-  expression over `this` (the proto message, `ai_grid.v1.Tenant` or `ai_grid.v1.Model` with its
-  status, fields by their proto names) and `now` (the backend's time), in cel-go's standard
-  library plus its strings extension (`ext.Strings()`). The BFF puts the decoded query value in
-  the request's `filter` with surrounding whitespace trimmed (an empty or whitespace-only
-  `filter=` is no filter; a repeated `filter` is 422 `query parameter "filter" must be sent
-  once; join the conditions with && in one expression`) and never builds, rewrites or checks it;
-  the backend evaluates it over the whole list before paging, so `meta.total` counts the
-  matches. The client writes it, for example:
-
-  | The page wants | `filter` |
-  |---|---|
-  | tenants whose name or a domain contains `acme`, ignoring ASCII case (the client lowers the term: `lowerAscii()` folds A-Z only) | `this.name.lowerAscii().contains("acme") \|\| this.domains.exists(d, d.lowerAscii().contains("acme"))` |
-  | disabled tenants | `!this.enabled` |
-  | models in one namespace | `this.metadata.namespace == "ai-grid-models"` |
-  | models with a label, guarded | `"ai-grid/family" in this.metadata.labels && this.metadata.labels["ai-grid/family"] == "granite"` |
-  | failed models | `this.status.phase == ai_grid.v1.ModelPhase.MODEL_PHASE_FAILED` |
-
-  Values are CEL string literals (escape `"` and `\`), and the whole expression is URL-encoded
-  in the query. The field names are the proto's (`this.metadata.labels`, `this.domains`), so
-  they are part of this HTTP contract: renaming a proto field breaks the filters clients have
-  written. No backend evaluates a cluster `filter` yet. CEL is strict: `contains` is a literal
-  substring (`%` and `_` match themselves), and indexing a missing map key is a `no such key`
-  error, not false, so a label term without the `in` guard fails on the first model that lacks
-  the label. A filter that does not compile, is not a bool or fails on an object is the
-  backend's `InvalidArgument`, 422 with its message: `filter <f> is not a valid CEL expression:
-  <cel-go's error>`, `filter <f> must evaluate to a bool, not <type>`, `filter <f> failed on
-  '<id>': no such key: <key>`. The parameters earlier versions of the BFF turned into CEL
-  themselves, `search` on tenants and `namespace` and `label` on models, are 422 `query
-  parameter "<name>" is not supported; send a CEL filter in "filter"`, so a client written for
-  them gets an error, not the unfiltered list.
-- **`meta.total` and backends that do not page.** `total` is the backend's count over the whole
-  filtered list. The list responses carry it as an optional field: the draft's backends always
-  set it, and a backend without it (today's: its `ListTenantsRequest` is empty, so `offset`,
-  `limit` and `filter` are dropped on the wire) returns every item unfiltered. When the caller
-  sent a `filter`, a `limit` or an `offset` above 0 and the answer has no `total`, the BFF
-  answers 501 `the AI Grid backend does not support filtering or paging tenants yet; list them
-  without filter, offset or limit` (`models` for the models list) instead of showing unfiltered
-  rows as the result. Without those parameters the list is the whole list and `total` falls
-  back to `offset + size`; in general the BFF omits `total` (unknown) when a page without a
-  count is full (`size == limit`), because more may follow. This is compatibility with the
-  shipped backend, not a check of the filter: the BFF only notices the missing count.
-
-- **Field errors.** An `InvalidArgument` answer (422) that carries `BadRequest` field violations
-  also carries `error.fieldErrors`, a map from the JSON path of the request body (for example
-  `domains` or `modelRefs.0.tokenRateLimits.0.window`) to the backend's message, so the form
-  can show each next to its field; when a path has several violations the first wins. No other
-  code carries `fieldErrors`, whatever details the backend attached.
-- **Lists.** The console's pages send none of the list parameters (`offset`, `limit`,
-  `filter`): Clusters, Organizations and Models fetch the whole list and filter, sort and page
-  in the browser. A repeated `offset` or `limit` is 422, like a repeated `filter`.
+An `InvalidArgument` answer (422) that carries `BadRequest` field violations also carries
+`error.fieldErrors`, a map from the field the backend names to its message; when a field has
+several violations the first wins. No other code carries `fieldErrors`, whatever details the
+backend attached. No `/api/v1` route takes a body or a list parameter: the pages that write, and
+filter, sort and page lists, call the backend over Connect.
 
 ### Headers, caching and compression
 
@@ -418,9 +230,9 @@ decides.
 
 One `request` line per request (method, path, status, duration) with `id`, the `X-Request-Id`
 the client also gets, and `user`, the forwarded user name, once the proxy headers have been
-read (never the token). The lines a handler writes about a change (`cluster updated`,
-`tenant created`, `tenant updated`, ...) and `request failed` carry the
-same `id` and `user`, so the log says which admin changed what. A successful `/readyz` or
+read (never the token). `request failed` carries the same `id` and `user`, so the log says
+which admin asked what. The writes go through the Connect relay, whose log lines name the
+procedure. A successful `/readyz` or
 `/healthcheck` logs at Debug; a failed one stays at Info (and `backend not ready` at Warn).
 `request failed` (Error) is for a 5xx other than 501. A 501, which a backend without the RPC
 or option answers and the frontend shows as not available yet, logs its detail at Debug, as a
@@ -430,10 +242,9 @@ or option answers and the frontend shows as not available yet, logs its detail a
 
 The BFF does transport only (the root `AGENTS.md`), and the port's handlers follow it.
 **`ai-grid-backend` must therefore validate every write RPC before that RPC goes live behind
-the console.** The BFF forwards what it decodes. A write RPC that does not validate stores
+the console.** The relay forwards the bytes it gets. A write RPC that does not validate stores
 whatever a client sends, and the page's inline messages, which only repeat the PoC's rules
-before submit, are no protection. The fake's `BadRequest` field violations are the reference
-for what to check and which message to send.
+before submit, are no protection.
 
 ### Model hardware
 
@@ -561,8 +372,8 @@ paths under `/ai_grid.v1.`, to the backend at `BACKEND_ADDRESS`, which serves Co
 gRPC-Web on its gRPC port over HTTP/1.1 and h2c. It is transport and nothing else: it compiles
 against no contract and never reads a body. A new RPC needs no transport implementation;
 until backend authorization lands it requires review for the procedure allowlist. The Clusters
-pages and the AI Grid map use it (`Clusters/List`, `Get`, `Update`); every `/api/v1` route stays
-as it is.
+pages, the AI Grid map and the Models, Subscriptions and Organizations pages use it; the
+`/api/v1` routes that remain only read (`/user`, `/config`, `/grid/overview`).
 
 What the relay owns is the boundary:
 
@@ -658,10 +469,8 @@ exists; the frontend uses the mock service meanwhile.
 | Method | Path | Needs in the proto | Feature plan |
 |---|---|---|---|
 | GET | `/api/v1/user` (`isProviderAdmin`) | Optional: `AiGrid/GetCurrentUser` returning roles, once the backend acts as the caller; today the BFF asks the hub directly | Step 1 |
-| GET/POST/PATCH/DELETE | `/api/v1/tenants[/{id}]` (on the backend's `Tenants` RPCs) | the draft `Tenant`'s `alias`, `enabled`, `description`, `attributes`, `domain_details` and `identity_provider`, if the console keeps them; `filter` evaluated on `List`; mutations gated on the provider-admin check | Step 6 |
 | GET/POST/PUT/DELETE | `/api/v1/catalog[/{name}]` | `Catalog/*` on ConfigMaps | Step 9 |
 | GET | `/api/v1/grid/overview` (implemented against the draft) | The backend has to ship the draft's `Grid/GetOverview` (`grid_service.proto`) with the POC's metric contract (requests, errors, latency, gpu from Thanos with a `cluster` label) | Steps 8, 10 |
-| GET/POST/DELETE | `/api/v1/tenants/{id}/members[/{userId}]` | Member RPCs on `Tenants` (not drafted yet; `mock/research/keycloak.md` open question 3) | Step 6 |
 | GET | `/api/v1/grid` | `Grid/GetNetwork` from `grid.praxis.fast/v1alpha1` once the RHOAI AI Gateway component installs the CRDs | Step 10a |
 
 ## Errors
@@ -676,12 +485,7 @@ exists; the frontend uses the mock service meanwhile.
 | The access review says the caller is not a provider admin (may not patch ManagedClusters): every `/api/v1` request but `GET` (or `HEAD`) `/user` and `/config` (the provider-admin check, until the backend authorizes the caller) | 403, `this console is only for provider admins, users who may patch ManagedClusters on the hub, and the hub says you are not one` |
 | Backend `Unauthenticated` | 401 |
 | Backend `PermissionDenied` (the hub's RBAC denies the caller) | 403, backend message kept |
-| Backend `NotFound` | 404, backend message kept (`object with identifier '<name>' not found`) |
-| Invalid POST, PATCH or PUT body (unknown field, wrong type, trailing content), bad or repeated `offset`/`limit` query (`query parameter "offset" must be sent once`), a removed list parameter (`search`, `namespace`, `label`), malformed `If-Match` | 422, BFF message |
-| POST, PATCH or PUT body not declared `application/json` | 415, BFF message |
-| PATCH, PUT or DELETE without `If-Match`, or with `If-Match: *` | 428, BFF message |
-| `filter`, `limit` or `offset` against a backend whose list answer has no `total` | 501, BFF message |
-| Request body over 1 MiB | 413 |
+| Backend `NotFound` | 404, backend message kept |
 | `/perses/api` without `PERSES_URL`, or a Perses path the relay does not pass | 404, BFF message |
 | `/perses/api` with a method other than `GET` (or `POST` on a query path) | 405, `the console reads Perses only` |
 | `/perses/api` query `POST` not declared `application/x-www-form-urlencoded` | 415, BFF message |
@@ -693,13 +497,13 @@ exists; the frontend uses the mock service meanwhile.
 | `/ai_grid.v1.*` POST that is not the Connect protocol (gRPC, gRPC-Web, any other `Content-Type`) | 415, Connect error `unimplemented` |
 | `/ai_grid.v1.*` backend unreachable or untrusted; a unary call slower than `BACKEND_TIMEOUT` (`BACKEND_WRITE_TIMEOUT` for a write procedure), or any call whose headers take longer | 502 `unavailable`; 504 `deadline_exceeded` |
 | Any answer from the backend on `/ai_grid.v1.*` (its Connect errors included) | the backend's status and body unchanged, with only the headers a Connect client needs |
-| Backend `InvalidArgument`, `OutOfRange`: Keycloak's validation messages ("Name can not be null", "Invalid domain format: x", "Cannot change the alias", "Domain x is already linked to organization y in realm ai-grid"), the API server's and the CRD's for a model (the DNS-1123 name message, the schema's "spec.replicas: Invalid value: -1: spec.replicas in body should be greater than or equal to 0" and "spec.scaling.maxReplicas: Required value", "replicas and scaling are mutually exclusive; ...", "at least one trigger is required when using direct KEDA scaling", "minReplicas cannot exceed maxReplicas"), and the backend's own checks with the console's proposed wording (URI scheme, Placement operators, rollout fields, `spec.rollout requires spec.placement`, the reserved tenant version attribute, an `ai-grid/latitude` or `ai-grid/longitude` annotation that is not a number in range, a list `filter` that does not compile, is not a bool or fails on an object) | 422, backend message kept; with `fieldErrors` for `InvalidArgument` only |
-| Backend `AlreadyExists` (Keycloak: "A organization with the same name already exists.", also for a blank name on update), `Aborted` (the object is not at the `If-Match` version) | 409, backend message kept |
-| Backend `FailedPrecondition` (hub feature gate missing, e.g. "ManifestWorkReplicaSet feature gate disabled on hub"; a model still referenced by a catalog entry or subscription; Keycloak realm missing or organizations disabled) | 412, backend message kept |
+| Backend `InvalidArgument`, `OutOfRange` (on `/grid/overview`, a `range` other than `1h`, `6h` and `24h`) | 422, backend message kept; with `fieldErrors` for `InvalidArgument` only |
+| Backend `AlreadyExists`, `Aborted` | 409, backend message kept |
+| Backend `FailedPrecondition` | 412, backend message kept |
 | Backend `ResourceExhausted` | 429 |
 | Backend `Unimplemented` | 501 |
-| Backend `Unavailable` (hub or Keycloak unreachable), `Canceled` | 503 |
-| Backend `DeadlineExceeded` or BFF timeout (`BACKEND_TIMEOUT`, 10s; `BACKEND_WRITE_TIMEOUT`, 30s, for a POST, PATCH, PUT or DELETE) | 504 |
+| Backend `Unavailable` (the hub unreachable), `Canceled` | 503 |
+| Backend `DeadlineExceeded` or BFF timeout (`BACKEND_TIMEOUT`, 10s) | 504 |
 | Any other backend code | 502, generic message, detail in the BFF log |
 
 ## Out of scope for the BFF

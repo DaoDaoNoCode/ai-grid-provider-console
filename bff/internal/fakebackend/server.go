@@ -14,6 +14,8 @@ package fakebackend
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"net"
@@ -42,7 +44,6 @@ import (
 type Server struct {
 	aigridv1.UnimplementedAiGridServer
 	aigridv1.UnimplementedManagedClustersServer
-	aigridv1.UnimplementedTenantsServer
 	// Services whose shape is drafted but not agreed answer Unimplemented, as
 	// the real server does for a stub; see mock/proto/ai_grid/v1/*_service.proto.
 	aigridv1.UnimplementedGridServer
@@ -51,7 +52,6 @@ type Server struct {
 
 	mu       sync.RWMutex
 	clusters map[string]*aigridv1.ManagedCluster
-	tenants  map[string]*aigridv1.Tenant
 	models   map[string]*model
 	access   Access
 
@@ -76,20 +76,11 @@ type Server struct {
 	// clock is the time source for scenarios, condition transition times
 	// and taint stamps; time.Now unless SetClock replaced it.
 	clock func() time.Time
-	// newID assigns Keycloak organization ids; random UUID v4 unless
-	// SetIDGenerator replaced it.
+	// newID assigns a created object's metadata.uid, as the API server
+	// does; random UUID v4 unless SetIDGenerator replaced it.
 	newID func() string
-	// realmMissing makes every Tenants RPC answer FailedPrecondition, the
-	// state of the dev hub today (Keycloak without an ai-grid realm);
-	// orgsDisabled does the same for a realm with organizationsEnabled=false.
-	realmMissing bool
-	orgsDisabled bool
 	// Latency is added to every RPC to resemble a hub round trip.
 	Latency time.Duration
-	// TenantsErr, when set, makes every Tenants RPC fail with it. It models a
-	// backend whose Keycloak is unreachable, so the UI's error path is
-	// exercised with a real code.
-	TenantsErr error
 	// stopTimeout bounds GracefulStop in Serve; zero means defaultStopTimeout.
 	stopTimeout time.Duration
 	logger      *slog.Logger
@@ -110,7 +101,6 @@ func New(fx *Fixtures, logger *slog.Logger) (*Server, error) {
 	}
 	s := &Server{
 		clusters:     map[string]*aigridv1.ManagedCluster{},
-		tenants:      map[string]*aigridv1.Tenant{},
 		models:       map[string]*model{},
 		access:       fx.Access,
 		presets:      fx.Presets,
@@ -179,19 +169,6 @@ func New(fx *Fixtures, logger *slog.Logger) (*Server, error) {
 	}
 	s.scenarios = scenarios
 	s.start = s.clock()
-	for _, t := range fx.Tenants {
-		if err := s.seedTenant(t); err != nil {
-			return nil, err
-		}
-	}
-	if fx.Tenants == nil && fx.TenantsUnavailable != "" {
-		// backend-conventions.md 5.7: Keycloak unreachable is Unavailable with
-		// a message that names Keycloak. The shipped backend still returns
-		// Unknown here (keycloak.md 7); the fake implements the convention.
-		s.TenantsErr = status.Error(codes.Unavailable, MsgKeycloakDownPref+fx.TenantsUnavailable)
-	}
-	s.realmMissing = fx.TenantsRealmMissing
-	s.orgsDisabled = fx.TenantsOrgsDisabled
 	for _, m := range fx.Models {
 		if err := s.seedModel(m); err != nil {
 			return nil, err
@@ -205,8 +182,8 @@ func New(fx *Fixtures, logger *slog.Logger) (*Server, error) {
 // gate and installation facts").
 const defaultACMVersion = "2.17.3"
 
-// SetIDGenerator replaces the source of organization ids, so tests can
-// predict the id of a created tenant.
+// SetIDGenerator replaces the source of uids, so tests can predict the uid of
+// a created model.
 func (s *Server) SetIDGenerator(next func() string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -237,7 +214,6 @@ func (s *Server) SetClock(clock func() time.Time) {
 func (s *Server) Register(srv *grpc.Server) {
 	aigridv1.RegisterAiGridServer(srv, s)
 	aigridv1.RegisterManagedClustersServer(srv, s)
-	aigridv1.RegisterTenantsServer(srv, s)
 	aigridv1.RegisterGridServer(srv, s)
 	aigridv1.RegisterModelsServer(srv, s)
 	aigridv1.RegisterCatalogItemsServer(srv, s)
@@ -398,8 +374,8 @@ func (s *Server) rejected(token string) error {
 // The conventions fix only the code; the message text is the console's
 // proposal (keycloak.md 8.2), nothing on the hub or in Keycloak produces it.
 //
-// The message names what the caller tried to change (`what`: "tenants",
-// "models") and then the rule, so a viewer who creates a tenant is not told
+// The message names what the caller tried to change (`what`: "models")
+// and then the rule, so a viewer who creates a model is not told
 // about a resource they never touched.
 func (s *Server) authorizeProviderAdmin(ctx context.Context, token, what string) error {
 	user, allowed, err := s.isProviderAdmin(ctx, token)
@@ -448,11 +424,19 @@ func (s *Server) Ping(ctx context.Context, req *aigridv1.PingRequest) (*aigridv1
 	return &aigridv1.PingResponse{Message: fmt.Sprintf("Hello, %s!", req.GetName())}, nil
 }
 
+// newUUID returns a random version 4 UUID, the form of a Kubernetes uid.
+func newUUID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		panic(fmt.Sprintf("crypto/rand: %v", err))
+	}
+	b[6] = (b[6] & 0x0f) | 0x40 // version 4
+	b[8] = (b[8] & 0x3f) | 0x80 // RFC 4122 variant
+	h := hex.EncodeToString(b[:])
+	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32]
+}
+
 // Responses are deep copies so a caller cannot mutate the fixture state.
 func cloneCluster(c *aigridv1.ManagedCluster) *aigridv1.ManagedCluster {
 	return proto.Clone(c).(*aigridv1.ManagedCluster)
-}
-
-func cloneTenant(t *aigridv1.Tenant) *aigridv1.Tenant {
-	return proto.Clone(t).(*aigridv1.Tenant)
 }

@@ -295,33 +295,12 @@ func TestLoadRejectsBadFixtures(t *testing.T) {
 		t.Error("duplicate cluster names should fail")
 	}
 	write("managedclusters.json", `{"clusters": []}`)
-	write("tenants.json", `{"tenants": [], "unavailable": "x"}`)
-	if _, err := Load(dir); err == nil {
-		t.Error("tenants and unavailable together should fail")
-	}
-	write("tenants.json", `{"realmMissing": true, "unavailable": "x"}`)
-	if _, err := Load(dir); err == nil {
-		t.Error("realmMissing and unavailable together should fail")
-	}
-	write("tenants.json", `{"realmMissing": true}`)
-	if fx, err := Load(dir); err != nil || !fx.TenantsRealmMissing || fx.Tenants != nil {
-		t.Errorf("realmMissing fixture = %+v, %v", fx, err)
-	}
-	write("tenants.json", `{"organizationsDisabled": true, "realmMissing": true}`)
-	if _, err := Load(dir); err == nil {
-		t.Error("two realm modes together should fail")
-	}
-	write("tenants.json", `{"organizationsDisabled": true}`)
-	if fx, err := Load(dir); err != nil || !fx.TenantsOrgsDisabled {
-		t.Errorf("organizationsDisabled fixture = %+v, %v", fx, err)
-	}
-	write("tenants.json", `{"unavailable": "request Keycloak token: dial tcp: lookup keycloak.ai-grid.svc: no such host"}`)
 	write("settings.json", `{"latency": "15ms"}`)
 	fx, err = Load(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fx.Latency.Duration() != 15*time.Millisecond || fx.TenantsUnavailable == "" || fx.Speed != 0 {
+	if fx.Latency.Duration() != 15*time.Millisecond || fx.Speed != 0 {
 		t.Errorf("fixtures = %+v", fx)
 	}
 	write("settings.json", `{"speed": 0}`)
@@ -354,7 +333,7 @@ func TestLoadRequiresTheDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("an empty directory is a valid empty backend, got %v", err)
 	}
-	if len(fx.Clusters) != 0 || fx.Tenants != nil || fx.TenantsUnavailable != "" || !fx.Access.DefaultAllowed || fx.Latency.Duration() != 0 {
+	if len(fx.Clusters) != 0 || !fx.Access.DefaultAllowed || fx.Latency.Duration() != 0 {
 		t.Errorf("empty directory should load defaults, got %+v", fx)
 	}
 }
@@ -371,7 +350,6 @@ func TestNewCopiesTheFixtures(t *testing.T) {
 	t.Parallel()
 	fx := &Fixtures{
 		Clusters: []*aigridv1.ManagedCluster{{Name: "a", Labels: map[string]string{"name": "a"}}},
-		Tenants:  []*aigridv1.Tenant{{Id: "4c1d2e3f-5a6b-4c7d-8e9f-0a1b2c3d4e5f", Name: "t-corp", Domains: []string{"t.example.com"}}},
 	}
 	s, err := New(fx, slog.New(slog.DiscardHandler))
 	if err != nil {
@@ -379,8 +357,6 @@ func TestNewCopiesTheFixtures(t *testing.T) {
 	}
 	fx.Clusters[0].Labels["name"] = "changed"
 	fx.Clusters[0].HubAcceptsClient = true
-	fx.Tenants[0].Name = "changed"
-	fx.Tenants[0].Domains[0] = "changed.example.com"
 
 	ctx := authed(t.Context())
 	clusters, err := s.ListManagedClusters(ctx, &aigridv1.ListManagedClustersRequest{})
@@ -389,13 +365,6 @@ func TestNewCopiesTheFixtures(t *testing.T) {
 	}
 	if c := clusters.GetClusters()[0]; c.GetLabels()["name"] != "a" || c.GetHubAcceptsClient() {
 		t.Errorf("cluster state followed a fixture change made after New: %v", c)
-	}
-	tenants, err := s.ListTenants(ctx, &aigridv1.ListTenantsRequest{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if tn := tenants.GetTenants()[0]; tn.GetName() != "t-corp" || tn.GetDomains()[0] != "t.example.com" {
-		t.Errorf("tenant state followed a fixture change made after New: %v", tn)
 	}
 }
 
@@ -427,7 +396,6 @@ func TestServerBehavesLikeTheBackend(t *testing.T) {
 			{Name: "zeta", Labels: map[string]string{"name": "zeta"}, HubAcceptsClient: true},
 			{Name: "alpha", Labels: map[string]string{"name": "alpha"}, HubAcceptsClient: true},
 		},
-		Tenants: []*aigridv1.Tenant{{Id: "6b1f0b4e-2f6a-4a2a-8c1e-0f3a2b4c5d6e", Name: "b-corp"}, {Id: "9d0c7e21-4b3a-4f1e-a2b3-c4d5e6f7a8b9", Name: "a-corp", Domains: []string{"a.example.com"}}},
 	}
 	s, err := New(fx, slog.New(slog.DiscardHandler))
 	if err != nil {
@@ -458,15 +426,6 @@ func TestServerBehavesLikeTheBackend(t *testing.T) {
 	}
 	if c := again.GetClusters()[0]; c.GetName() != "alpha" || c.GetLabels()["mutated"] != "" {
 		t.Errorf("responses must be copies of the server state, got %v", c)
-	}
-	tenants, err := aigridv1.NewTenantsClient(conn).ListTenants(ctx, &aigridv1.ListTenantsRequest{})
-	if err != nil || len(tenants.GetTenants()) != 2 || tenants.GetTenants()[0].GetName() != "a-corp" {
-		t.Fatalf("tenants should be sorted by name: %v, %v", tenants, err)
-	}
-
-	s.TenantsErr = status.Error(codes.Unavailable, "Keycloak is unavailable: request Keycloak token: connection refused")
-	if _, err := aigridv1.NewTenantsClient(conn).ListTenants(ctx, &aigridv1.ListTenantsRequest{}); status.Code(err) != codes.Unavailable {
-		t.Errorf("tenants error should pass through with its code, got %v", err)
 	}
 }
 
@@ -657,11 +616,6 @@ var standIns = map[string]string{
 	"/ai_grid.v1.Clusters/List":        "/ai_grid.v1.ManagedClusters/ListManagedClusters",
 	"/ai_grid.v1.Clusters/Get":         "/ai_grid.v1.ManagedClusters/GetManagedCluster",
 	"/ai_grid.v1.Clusters/Update":      "/ai_grid.v1.ManagedClusters/UpdateManagedCluster",
-	"/ai_grid.v1.Tenants/List":         "/ai_grid.v1.Tenants/ListTenants",
-	"/ai_grid.v1.Tenants/Get":          "/ai_grid.v1.Tenants/GetTenant",
-	"/ai_grid.v1.Tenants/Create":       "/ai_grid.v1.Tenants/CreateTenant",
-	"/ai_grid.v1.Tenants/Update":       "/ai_grid.v1.Tenants/UpdateTenant",
-	"/ai_grid.v1.Tenants/Delete":       "/ai_grid.v1.Tenants/DeleteTenant",
 	"/ai_grid.v1.Models/List":          "/ai_grid.v1.Models/ListModels",
 	"/ai_grid.v1.Models/Get":           "/ai_grid.v1.Models/GetModel",
 	"/ai_grid.v1.Models/Create":        "/ai_grid.v1.Models/CreateModel",
@@ -678,6 +632,12 @@ var upstreamWithoutStandIn = map[string]string{
 	"/ai_grid.v1.Clusters/Create":     "the console doesn't create clusters (not in the relay's allowlist, AGENTS.md)",
 	"/ai_grid.v1.Clusters/Delete":     "the console doesn't delete clusters (not in the relay's allowlist, AGENTS.md)",
 	"/ai_grid.v1.Tenants/ListMembers": "the console never lists an organization's members (AGENTS.md, decided 2026-10-23)",
+	// The Organizations pages call the backend's own API over Connect (make dev-fake-infra).
+	"/ai_grid.v1.Tenants/List":   "the console reads organizations from the backend over Connect",
+	"/ai_grid.v1.Tenants/Get":    "the console reads organizations from the backend over Connect",
+	"/ai_grid.v1.Tenants/Create": "the console writes organizations to the backend over Connect",
+	"/ai_grid.v1.Tenants/Update": "the console writes organizations to the backend over Connect",
+	"/ai_grid.v1.Tenants/Delete": "the console writes organizations to the backend over Connect",
 	// The Subscriptions pages call the backend's own API over Connect (make dev-fake-infra).
 	"/ai_grid.v1.Subscriptions/List":   "the console reads subscriptions from the backend over Connect",
 	"/ai_grid.v1.Subscriptions/Get":    "the console reads subscriptions from the backend over Connect",
@@ -814,7 +774,6 @@ func TestUnimplementedMethodsCatchesStubs(t *testing.T) {
 	srv := grpc.NewServer()
 	aigridv1.RegisterAiGridServer(srv, aigridv1.UnimplementedAiGridServer{})
 	aigridv1.RegisterManagedClustersServer(srv, aigridv1.UnimplementedManagedClustersServer{})
-	aigridv1.RegisterTenantsServer(srv, aigridv1.UnimplementedTenantsServer{})
 	aigridv1.RegisterGridServer(srv, aigridv1.UnimplementedGridServer{})
 	aigridv1.RegisterModelsServer(srv, aigridv1.UnimplementedModelsServer{})
 	aigridv1.RegisterCatalogItemsServer(srv, aigridv1.UnimplementedCatalogItemsServer{})

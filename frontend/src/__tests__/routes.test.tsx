@@ -9,6 +9,7 @@ import { Code, ConnectError } from '@connectrpc/connect';
 import { modelsOf } from './connectModels';
 import { fakeClients } from '../api/connect/testing';
 import { clustersBackend } from './connectClusters';
+import { tenantsOf } from './connectTenants';
 // The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
 import '../pages/grid/GridPage';
 import '../pages/models/ModelDetailsPage';
@@ -98,9 +99,9 @@ describe('routes', () => {
     await user.click(screen.getByRole('button', { name: 'Next' }));
   };
   it.each<[path: string, methods: string, text: string, open?: typeof toClustersStep]>([
-    ['/organizations', 'listOrganizations', orgs],
-    ['/organizations/org-1', 'getOrganization', orgs],
-    ['/organizations/org-1/edit', 'getOrganization', orgs],
+    ['/organizations', 'tenants.list', orgs],
+    ['/organizations/org-1', 'tenants.get', orgs],
+    ['/organizations/org-1/edit', 'tenants.get', orgs],
     ['/models', 'models.list', 'Models are not available on this AI Grid backend'],
     [
       '/models/deploy',
@@ -121,7 +122,14 @@ describe('routes', () => {
         });
         continue;
       }
-      vi.spyOn(service, name as 'listOrganizations').mockRejectedValue(
+      // tenants.<rpc>: the backend's Tenants API over Connect (connectTenants.ts) has no such RPC.
+      if (name.startsWith('tenants.')) {
+        tenantsOf(service).before[name.slice('tenants.'.length) as 'list'] = () => {
+          throw new ConnectError('no such method', Code.Unimplemented);
+        };
+        continue;
+      }
+      vi.spyOn(service, name as 'listClusters').mockRejectedValue(
         new ServiceError(501, 'The AI Grid backend does not support this operation.'),
       );
     }

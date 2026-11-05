@@ -13,51 +13,6 @@ describe('HttpConsoleService', () => {
     expect(fetchFn).toHaveBeenCalledWith('/api/v1/user', expect.objectContaining({ method: 'GET' }));
   });
 
-  it('lists organizations from /tenants', async () => {
-    const fetchFn = vi
-      .fn()
-      .mockResolvedValue(jsonResponse(200, { data: [{ id: '1', name: 't', enabled: true, domains: [] }] }));
-    const service = new HttpConsoleService(fetchFn);
-    await expect(service.listOrganizations()).resolves.toEqual([
-      { id: '1', name: 't', domains: [], status: 'Enabled', resourceVersion: '', creationTimestamp: '' },
-    ]);
-    expect(fetchFn).toHaveBeenCalledWith('/api/v1/tenants', expect.objectContaining({ method: 'GET' }));
-  });
-
-  it('writes organizations by id, with the version in If-Match', async () => {
-    const fetchFn = vi.fn().mockImplementation(async () => jsonResponse(200, { data: { id: 'a b', domains: [] } }));
-    const service = new HttpConsoleService(fetchFn);
-    const input = { name: 'acme', domains: [], identityProvider: { title: 'SSO' } } as never;
-    await service.getOrganization('a b');
-    expect(fetchFn).toHaveBeenLastCalledWith('/api/v1/tenants/a%20b', expect.objectContaining({ method: 'GET' }));
-    await service.createOrganization(input);
-    expect(fetchFn).toHaveBeenLastCalledWith(
-      '/api/v1/tenants',
-      expect.objectContaining({
-        method: 'POST',
-        body: '{"name":"acme","domains":[],"identityProvider":{"title":"SSO"}}',
-        // The BFF answers 415 without it, which keeps cross-site form posts out.
-        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
-      }),
-    );
-    await service.updateOrganization('a b', input, '7');
-    expect(fetchFn).toHaveBeenLastCalledWith(
-      '/api/v1/tenants/a%20b',
-      expect.objectContaining({
-        method: 'PATCH',
-        // The name can't change, so it isn't sent.
-        body: '{"domains":[],"identityProvider":{"title":"SSO"}}',
-        headers: expect.objectContaining({ 'If-Match': '"7"' }),
-      }),
-    );
-    fetchFn.mockImplementation(async () => new Response(null, { status: 204 }));
-    await expect(service.deleteOrganization('a b', '8')).resolves.toBeUndefined();
-    expect(fetchFn).toHaveBeenLastCalledWith(
-      '/api/v1/tenants/a%20b',
-      expect.objectContaining({ method: 'DELETE', headers: expect.objectContaining({ 'If-Match': '"8"' }) }),
-    );
-  });
-
   it('maps the clusters the grid overview embeds', async () => {
     const fetchFn = vi.fn().mockResolvedValue(
       jsonResponse(200, {
@@ -79,27 +34,6 @@ describe('HttpConsoleService', () => {
   it('maps network failures to status 0', async () => {
     const service = new HttpConsoleService(vi.fn().mockRejectedValue(new TypeError('offline')));
     await expect(service.getUser()).rejects.toMatchObject({ status: 0 });
-  });
-
-  it('sends the version as a quoted If-Match and returns undefined for 204', async () => {
-    const fetchFn = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
-    const service = new HttpConsoleService(fetchFn);
-    await expect(service.request('DELETE', '/subscriptions/research', { ifMatch: '3' })).resolves.toBeUndefined();
-    expect(fetchFn).toHaveBeenCalledWith(
-      '/api/v1/subscriptions/research',
-      expect.objectContaining({
-        method: 'DELETE',
-        headers: expect.objectContaining({ 'If-Match': '"3"' }),
-      }),
-    );
-  });
-
-  it('sends no If-Match for an object the backend gave no version', async () => {
-    const fetchFn = vi.fn().mockImplementation(async () => new Response(null, { status: 204 }));
-    const service = new HttpConsoleService(fetchFn);
-    await service.deleteOrganization('t-9', '');
-    const [, init] = fetchFn.mock.calls[0] as [string, RequestInit];
-    expect(init.headers).not.toHaveProperty('If-Match');
   });
 
   it('reads the grid overview with the range, site and metrics query', async () => {
@@ -126,12 +60,12 @@ describe('HttpConsoleService', () => {
     const body = {
       error: {
         code: '422',
-        message: 'The organization is invalid.',
+        message: 'The request is invalid.',
         fieldErrors: { name: 'Use lowercase letters, numbers, and hyphens.' },
       },
     };
     const fetchFn = vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status: 422 }));
-    await expect(new HttpConsoleService(fetchFn).request('POST', '/tenants', { body: {} })).rejects.toMatchObject({
+    await expect(new HttpConsoleService(fetchFn).request('GET', '/grid/overview?range=1h')).rejects.toMatchObject({
       status: 422,
       fieldErrors: { name: 'Use lowercase letters, numbers, and hyphens.' },
       isConflict: false,
@@ -139,8 +73,8 @@ describe('HttpConsoleService', () => {
     const conflict = vi
       .fn()
       .mockResolvedValue(new Response(JSON.stringify({ error: { code: '409', message: 'changed' } }), { status: 409 }));
-    await expect(
-      new HttpConsoleService(conflict).request('PUT', '/tenants/x', { body: {}, ifMatch: '1' }),
-    ).rejects.toMatchObject({ isConflict: true });
+    await expect(new HttpConsoleService(conflict).request('GET', '/grid/overview?range=1h')).rejects.toMatchObject({
+      isConflict: true,
+    });
   });
 });

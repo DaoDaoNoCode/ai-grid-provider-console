@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
@@ -28,15 +28,14 @@ func newRepoServer(t *testing.T) *Server {
 	return s
 }
 
-// fieldViolations are the BadRequest field violations of err, by field.
-func fieldViolations(err error) map[string]string {
-	out := map[string]string{}
-	for _, d := range status.Convert(err).Details() {
-		if br, ok := d.(*errdetails.BadRequest); ok {
-			for _, v := range br.GetFieldViolations() {
-				out[v.GetField()] = v.GetDescription()
-			}
-		}
+// mustCode fails the test unless err has the code want and, when wantMsg is
+// set, that message.
+func mustCode(t *testing.T, err error, want codes.Code, wantMsg string) {
+	t.Helper()
+	if status.Code(err) != want {
+		t.Fatalf("code = %v (%v), want %v", status.Code(err), err, want)
 	}
-	return out
+	if wantMsg != "" && status.Convert(err).Message() != wantMsg {
+		t.Fatalf("message = %q, want %q", status.Convert(err).Message(), wantMsg)
+	}
 }

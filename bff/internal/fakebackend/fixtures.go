@@ -19,13 +19,6 @@ import (
 //	gpunodes.json         {"nodes": [SearchNode...]}: the spokes' GPU nodes as ACM
 //	                      Search returns them, from which each cluster's
 //	                      status.gpus is derived (see gpus.go)
-//	tenants.json          {"tenants": [Tenant...]} in protojson, or
-//	                      {"unavailable": "<error text>"} to simulate a backend
-//	                      whose Keycloak cannot be reached, or
-//	                      {"realmMissing": true} for a Keycloak without the
-//	                      ai-grid realm (the dev hub today), or
-//	                      {"organizationsDisabled": true} for a realm whose
-//	                      organizations feature is off
 //	models.json           {"models": [Model...]} in protojson, plus
 //	                      {"bindings": {"<namespace>": ["global"]}} naming the
 //	                      ManagedClusterSets bound into a model namespace (a
@@ -42,13 +35,9 @@ import (
 type Fixtures struct {
 	Clusters []*aigridv1.ManagedCluster
 	// GPUNodes are the spokes' Node objects as ACM Search returns them.
-	GPUNodes            []SearchNode
-	Tenants             []*aigridv1.Tenant
-	TenantsUnavailable  string
-	TenantsRealmMissing bool
-	TenantsOrgsDisabled bool
-	Access              Access
-	Latency             Duration
+	GPUNodes []SearchNode
+	Access   Access
+	Latency  Duration
 	// Speed multiplies the scenario clock; 2 fires a "20s" event after 10s.
 	// Zero (not set) means 1.
 	Speed     float64
@@ -136,42 +125,6 @@ func Load(dir string) (*Fixtures, error) {
 			return nil, fmt.Errorf("gpunodes.json: %w", err)
 		}
 		fx.GPUNodes = doc.Nodes
-	}
-
-	if raw, ok, err := readFile(filepath.Join(dir, "tenants.json")); err != nil {
-		return nil, err
-	} else if ok {
-		var doc struct {
-			Tenants               []json.RawMessage `json:"tenants"`
-			Unavailable           string            `json:"unavailable"`
-			RealmMissing          bool              `json:"realmMissing"`
-			OrganizationsDisabled bool              `json:"organizationsDisabled"`
-		}
-		if err := json.Unmarshal(raw, &doc); err != nil {
-			return nil, fmt.Errorf("tenants.json: %w", err)
-		}
-		modes := 0
-		for _, set := range []bool{doc.Unavailable != "", doc.RealmMissing, doc.OrganizationsDisabled, doc.Tenants != nil} {
-			if set {
-				modes++
-			}
-		}
-		if modes > 1 {
-			return nil, errors.New("tenants.json: use one of tenants, unavailable, realmMissing or organizationsDisabled")
-		}
-		fx.TenantsUnavailable = doc.Unavailable
-		fx.TenantsRealmMissing = doc.RealmMissing
-		fx.TenantsOrgsDisabled = doc.OrganizationsDisabled
-		if doc.Tenants != nil {
-			fx.Tenants = []*aigridv1.Tenant{}
-		}
-		for i, m := range doc.Tenants {
-			t := &aigridv1.Tenant{}
-			if err := protojson.Unmarshal(m, t); err != nil {
-				return nil, fmt.Errorf("tenants.json tenant %d: %w", i, err)
-			}
-			fx.Tenants = append(fx.Tenants, t)
-		}
 	}
 
 	if raw, ok, err := readFile(filepath.Join(dir, "access.json")); err != nil {

@@ -30,9 +30,9 @@ documentation, from the POC, or from the backend's own conventions. The sources 
 1. **The proto is the contract.** The BFF and the fake compile against one generated
    `ai_grid.v1` package (`bff/gen`), built from the console's draft proto in `proto/`. The
    draft began as a superset of the first backend's services. Against the real backend the
-   BFF uses a copy of its Clusters and Tenants messages (`proto/ai_grid/backend/v1`), and
+   BFF calls only `AiGrid/Ping` over gRPC (the pages call the rest over Connect), and
    `bff/internal/protodrift` fails if the backend's proto, vendored in `proto/upstream`,
-   no longer matches that copy. `TestFakeImplementsEveryProtoMethod` calls every method of the
+   no longer matches that call. `TestFakeImplementsEveryProtoMethod` calls every method of the
    draft over an in-memory connection and fails on any that answers `Unimplemented`, except
    the deliberate stubs listed with a reason in `intentionallyUnimplemented` (today
    `GetCurrentUser` and the `Grid` and `CatalogItems` services), so the fake
@@ -42,7 +42,7 @@ documentation, from the POC, or from the backend's own conventions. The sources 
    `ManifestWorkReplicaSet`, Keycloak Organizations, KServe `LLMInferenceService`, MaaS
    `MaaSModelRef`, `MaaSSubscription`, `MaaSAuthPolicy`, Kuadrant policies and the Praxis
    grid CRDs are the objects the console's pages stand for. Wherever the fake models one of
-   them (today clusters, tenants and models), it carries their fields, phases, condition
+   them (today clusters and models), it carries their fields, phases, condition
    types and reason strings verbatim. Fields the POC invented (`revision`, `status: Saved`,
    `hasDeployment`) do not exist here.
 3. **"Not implemented yet" is a normal state.** RPCs that are not agreed yet answer
@@ -53,9 +53,7 @@ documentation, from the POC, or from the backend's own conventions. The sources 
    hub lacks a feature gate or Keycloak lacks the realm, `Unavailable` when Keycloak is down,
    `Aborted` for a stale version, `PermissionDenied`, `Unauthenticated`, and `Unimplemented`
    for stubs. The BFF maps all of them to HTTP, so the UI's error paths are exercised against
-   the fake, not discovered in production. The shipped backend still answers every Keycloak
-   failure `Unknown` (`502`); the fake's `tenants.json` modes answer what the backend should,
-   `Unavailable` (`503`) or `FailedPrecondition` (`412`).
+   the fake, not discovered in production.
 5. **Time passes.** Objects do not appear Ready. They go through the same transitions the
    controllers drive, on a clock the fixtures control (`settings.json` `speed`): a cluster
    joins, imports and gains its add-ons in stages, a lost lease recovers, a cluster detaches
@@ -120,14 +118,13 @@ Both grow together as RPCs are added.
 | File | Shape | What it seeds |
 |---|---|---|
 | `managedclusters.json` | `{"clusters": [ai_grid.v1.ManagedCluster...]}` in protojson | Full hub objects: the labels ACM writes, the console's `ai-grid/*` and `location` labels and `ai-grid/*` annotations, and a `status` with every condition. The hub's own `local-cluster` and at least one cluster in each state the ACM console distinguishes (ready, unknown, offline, importing, pending import, import failed, not accepted, detaching). |
-| `tenants.json` | `{"tenants": [ai_grid.v1.Tenant...]}` in protojson, or one error mode | Six fictional Keycloak organizations. In place of `tenants`, `{"unavailable": "<text>"}` makes every tenant RPC that passes the token and permission checks `Unavailable` (Keycloak cannot be reached), `{"realmMissing": true}` makes it `FailedPrecondition` as on the dev hub, where the `ai-grid` realm does not exist, and `{"organizationsDisabled": true}` does the same for a realm without Organizations. |
 | `models.json` | `{"models": [ai_grid.v1.Model...]}` in protojson, plus `bindings` | `LLMInferenceService` models, some placed on clusters, and the cluster sets bound into each model namespace. |
 | `presets.json` | plain JSON | The installed `LLMInferenceServiceConfig` presets that a model's `baseRefs` resolve against. |
 | `scenarios.json` | `{"events": [...]}` | Timed cluster transitions: an import in stages, a lease recovery, a detach. |
 | `access.json` | plain JSON | Who the fake hub treats as a provider admin; `viewer-token` is denied and `expired-token` rejected. |
 | `settings.json` | plain JSON | The per-RPC latency, the scenario clock's `speed`, and the hub capabilities `GetHubCapabilities` reports (the ManifestWorkReplicaSet gate, observability, ACM version). |
 
-The cluster, tenant and model entries are protojson, so they use the field names grpcurl
+The cluster and model entries are protojson, so they use the field names grpcurl
 shows and fail to load on any unknown field; a fixture that fails to load stops the fake with
 an error. The file envelopes and the other files are plain JSON and ignore unknown keys, so
 check their spelling: while `defaultAllowed` is true, a misspelled `deniedTokens` makes that
@@ -223,22 +220,10 @@ Backend ask: `GetManagedCluster`, `UpdateManagedCluster` and the richer message 
 `proto/ai_grid/v1/managed_cluster*.proto`, with the state derived server-side as in
 `research/acm.md`.
 
-### 2. Tenants (Keycloak Organizations), implemented
+### 2. Tenants (Keycloak Organizations), moved to the backend
 
-Fake: an in-memory organization store with UUID ids that answers like the backend's mapping of
-Keycloak 26.8: Keycloak's checks in Keycloak's order with its messages (unique name, alias and
-domains, alias defaulting to the name and immutable, domain format); without a field mask an
-update replaces `name`, `enabled` (true when omitted) and `description` and keeps everything
-else; case-insensitive search on name and domains, offset paging, delete; a version kept in an
-organization attribute, checked on update and delete; and the `tenants.json` error modes for
-an unreachable Keycloak (`Unavailable`) and a missing realm or Organizations feature
-(`FailedPrecondition`). Members are not drafted yet. See `areas/tenants.md`.
-Frontend: tenant list with search and paging, create and edit forms whose validation errors
-are the ones Keycloak would send, delete with confirmation, and a members view once the member
-RPCs exist.
-Backend ask: the `Tenants` CRUD proto as drafted in `proto/ai_grid/v1/tenant*.proto`, keyed by
-`id`; the gRPC code table in `research/keycloak.md` section 8.2 (today every failure is
-`Unknown`); a scoped service-account client instead of the master admin.
+The Organizations pages call the backend's own `Tenants` over Connect; the fake's tenants, its
+Keycloak rules and `tenants.json` are gone. See `areas/tenants.md`.
 
 ### 3. Models (LLMInferenceService, Placement, ManifestWorkReplicaSet), implemented
 
