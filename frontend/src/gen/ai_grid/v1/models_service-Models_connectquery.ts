@@ -36,9 +36,8 @@ export const delete$ = Models.method.delete;
 /**
  * Deprecated: use ListPlacementClusters, which answers the same list as
  * `clusters`. Despite its name, this RPC answers cluster names, not values
- * of the cluster's `location` label (those are in a model's
- * status.placement.locations). It is removed once its clients have moved
- * (docs/API_CONTRACT.md, "Expand, migrate, contract").
+ * of the cluster's `location` label. It is removed once its clients have
+ * moved (docs/API_CONTRACT.md, "Expand, migrate, contract").
  *
  * @generated from rpc ai_grid.v1.Models.ListLocations
  * @deprecated
