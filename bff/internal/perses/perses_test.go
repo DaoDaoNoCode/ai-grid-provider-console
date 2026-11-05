@@ -168,15 +168,23 @@ func serve(relay *Relay, req *http.Request, token string) *httptest.ResponseReco
 	return rec
 }
 
+// errorMessage is the relay's own error message. The body must be Perses's own error shape, one
+// string field "message", for the Perses components to show it (@perses-dev/client's fetch reads
+// a string "error" first, then "message").
 func errorMessage(t *testing.T, rec *httptest.ResponseRecorder) string {
 	t.Helper()
-	var body struct {
-		Error struct{ Code, Message string } `json:"error"`
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("error Content-Type %q, want application/json", ct)
 	}
+	var body map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatalf("error body %q is not the console's envelope: %v", rec.Body, err)
+		t.Fatalf("error body %q is not JSON: %v", rec.Body, err)
 	}
-	return body.Error.Code + " " + body.Error.Message
+	msg, ok := body["message"].(string)
+	if len(body) != 1 || !ok || msg == "" {
+		t.Fatalf(`error body %q is not Perses's {"message": "..."}`, rec.Body)
+	}
+	return msg
 }
 
 func TestRelayForwardsTheCallersTokenAndNothingElseOfTheirs(t *testing.T) {
@@ -529,8 +537,9 @@ func TestRelayWhenPersesFails(t *testing.T) {
 			}
 		}, nil, 50*time.Millisecond)
 		t.Cleanup(func() { close(release) })
-		if rec := serve(slow, httptest.NewRequest(http.MethodGet, dashboards, nil), "t"); rec.Code != http.StatusGatewayTimeout {
-			t.Errorf("got %d %q, want 504", rec.Code, rec.Body)
+		rec := serve(slow, httptest.NewRequest(http.MethodGet, dashboards, nil), "t")
+		if msg := errorMessage(t, rec); rec.Code != http.StatusGatewayTimeout || msg != "the hub's Perses did not answer in time" {
+			t.Errorf("got %d %q, want 504 the hub's Perses did not answer in time", rec.Code, msg)
 		}
 	})
 

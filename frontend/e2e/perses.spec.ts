@@ -62,6 +62,9 @@ const dashboard = (name: string, title: string) => ({
   },
 });
 const injectedFailure = 'Compatibility test injected failure';
+// The relay's own answer when Perses is slower than PERSES_TIMEOUT, in the shape the BFF sends
+// (bff/internal/perses, writeError): Perses's own {"message": "..."}.
+const relayTimeout = "the hub's Perses did not answer in time";
 const dashboards = [dashboard('dashboard-1-fleet', 'Fleet health'), dashboard('dashboard-2-usage', 'Token usage')];
 // Each cluster's series counts up from its base to the base plus 9 over the queried range, so the
 // stat panel's last value is the base plus 9. One sample per step from the first step boundary, as
@@ -78,11 +81,11 @@ test('real Perses panels remain compatible with the shared Query runtime', async
   page.on('pageerror', (error) => errors.push('Uncaught: ' + error.message));
   page.on('console', (msg) => {
     if (msg.type() !== 'error') return;
-    // The browser logs each 500 and 401 this test injects into a Perses query, and the query
+    // The browser logs each 500, 504 and 401 this test injects into a Perses query, and the query
     // layer logs the injected failure. Any other failed request still counts.
-    const injected = /^Failed to load resource:.*(?:401|500)/.test(msg.text());
+    const injected = /^Failed to load resource:.*(?:401|500|504)/.test(msg.text());
     if (injected && msg.location().url.includes('/perses/api/proxy/')) return;
-    if (msg.text().includes(injectedFailure)) return;
+    if (msg.text().includes(injectedFailure) || msg.text().includes(relayTimeout)) return;
     errors.push(msg.text());
   });
   const config = structuredClone(configExample.body);
@@ -109,6 +112,7 @@ test('real Perses panels remain compatible with the shared Query runtime', async
         start: params.get('start') ?? '',
         end: params.get('end') ?? '',
       });
+      if (responseStatus === 504) return route.fulfill({ status: 504, json: { message: relayTimeout } });
       if (responseStatus !== 200)
         return route.fulfill({
           status: responseStatus,
@@ -204,6 +208,19 @@ test('real Perses panels remain compatible with the shared Query runtime', async
     await refresh.click();
     await expect(page.getByText(lastValue('site-a'), { exact: true })).toBeVisible();
     await expect(page.getByText(injectedFailure)).toHaveCount(0);
+  });
+
+  await test.step("the relay's timeout shows its message, not [object Object]", async () => {
+    responseStatus = 504;
+    const before = queries.length;
+    await refresh.click();
+    await expect.poll(() => queries.length).toBeGreaterThan(before);
+    await expect(page.getByText(relayTimeout).first()).toBeVisible();
+    await expect(page.getByText('[object Object]')).toHaveCount(0);
+    responseStatus = 200;
+    await refresh.click();
+    await expect(page.getByText(lastValue('site-a'), { exact: true })).toBeVisible();
+    await expect(page.getByText(relayTimeout)).toHaveCount(0);
   });
 
   await test.step('a 401 checks the session and recovers', async () => {

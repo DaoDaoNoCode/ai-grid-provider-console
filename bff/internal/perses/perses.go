@@ -357,11 +357,13 @@ func isLoopbackHost(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// writeError answers in the console's error envelope.
+// writeError answers as Perses's own server does, {"message": "..."}, not in the console's
+// envelope: the Perses components show a failed query's message from a string "error" or
+// "message" field (@perses-dev/client's fetch), so the envelope's "error" object reached a panel
+// as "[object Object]".
 func writeError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(status)
-	body := map[string]map[string]string{"error": {"code": fmt.Sprint(status), "message": message}}
-	_ = json.NewEncoder(w).Encode(body)
+	_ = json.NewEncoder(w).Encode(map[string]string{"message": message})
 }
