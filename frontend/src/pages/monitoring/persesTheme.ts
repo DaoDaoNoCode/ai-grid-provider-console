@@ -139,6 +139,8 @@ const mapPatterflyThemeToMUI = (theme: PatternFlyTheme, currentYear: number): Th
   const isDark = theme === 'dark';
   const primaryTextColor = isDark ? t_color_white.value : t_color_gray_95.value;
   const primaryBackgroundColor = 'var(--pf-t--global--background--color--primary--default)';
+  // PatternFly's menus and popovers: white in the light theme, a raised grey in the dark one.
+  const floatingBackgroundColor = 'var(--pf-t--global--background--color--floating--default)';
   // MUI needs literal colours here (it computes shades from them). @patternfly/react-tokens has only
   // the light values; the dark theme's brand colours are blue 30 and 20 (tokens-dark.scss,
   // --pf-t--global--dark--color--brand--100 and --200).
@@ -185,6 +187,12 @@ const mapPatterflyThemeToMUI = (theme: PatternFlyTheme, currentYear: number): Th
       background: {
         default: primaryBackgroundColor,
         paper: primaryBackgroundColor,
+        // Not in odh-dashboard: Perses's info and panel description tooltips (InfoTooltip,
+        // PanelDescriptionTooltip) take their background from this key and their text from
+        // text.primary, so they follow the theme. This palette replaces Perses's own, which has the
+        // key; without it they fell through to an inverse background under text.primary: dark on
+        // dark in the light theme, white on light grey in the dark one.
+        tooltip: floatingBackgroundColor,
       },
       text: {
         primary: primaryTextColor,
@@ -416,16 +424,17 @@ const mapPatterflyThemeToMUI = (theme: PatternFlyTheme, currentYear: number): Th
       },
       MuiTooltip: {
         styleOverrides: {
+          // Not in odh-dashboard (PatternFly's inverse colours): every MUI tooltip on the page looks
+          // like Perses's own (palette.background.tooltip above), the theme's floating surface with
+          // its regular text. Perses sets text.primary on its tooltips' text, which the inverse
+          // background didn't fit.
           tooltip: {
-            // Use PatternFly inverse colors for tooltip
-            backgroundColor: 'var(--pf-t--global--background--color--inverse--default)',
-            // Override Typography color inside tooltip
-            '& .MuiTypography-root': {
-              color: 'var(--pf-t--global--text--color--inverse)',
-            },
+            backgroundColor: floatingBackgroundColor,
+            color: 'var(--pf-t--global--text--color--regular)',
+            boxShadow: 'var(--pf-t--global--box-shadow--md)',
           },
           arrow: {
-            color: 'var(--pf-t--global--background--color--inverse--default)',
+            color: floatingBackgroundColor,
           },
         },
       },
