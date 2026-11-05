@@ -53,8 +53,8 @@ const dashboard = (name: string, title: string) => ({
         kind: 'Grid',
         spec: {
           items: [
-            { x: 0, y: 0, width: 8, height: 4, content: { $ref: '#/spec/panels/requests' } },
-            { x: 8, y: 0, width: 16, height: 4, content: { $ref: '#/spec/panels/latency' } },
+            { x: 0, y: 0, width: 8, height: 8, content: { $ref: '#/spec/panels/requests' } },
+            { x: 8, y: 0, width: 16, height: 8, content: { $ref: '#/spec/panels/latency' } },
           ],
         },
       },
@@ -63,8 +63,9 @@ const dashboard = (name: string, title: string) => ({
 });
 const injectedFailure = 'Compatibility test injected failure';
 const dashboards = [dashboard('dashboard-1-fleet', 'Fleet health'), dashboard('dashboard-2-usage', 'Token usage')];
-// Each cluster's series counts up from its base over ten points, so the stat panel's last value
-// is the base plus 9.
+// Each cluster's series counts up from its base to the base plus 9 over the queried range, so the
+// stat panel's last value is the base plus 9. One sample per step from the first step boundary, as
+// Prometheus answers: Perses places samples on the query's steps, and a step without one is a gap.
 const seriesBase = { 'site-a': 42, 'site-b': 72 };
 const points = 10;
 const lastValue = (cluster: keyof typeof seriesBase) => String(seriesBase[cluster] + points - 1);
@@ -115,12 +116,15 @@ test('real Perses panels remain compatible with the shared Query runtime', async
         });
       const start = Number(params.get('start')) || Date.now() / 1000 - 3600;
       const end = Number(params.get('end')) || Date.now() / 1000;
+      const step = Number(params.get('step')) || 60;
+      const first = Math.ceil(start / step) * step;
+      const samples = Math.max(1, Math.floor((end - first) / step) + 1);
       const selected = (params.get('query') || '').includes('site-b') ? 'site-b' : 'site-a';
       const result = {
         metric: { __name__: 'compat_metric', cluster: selected },
-        values: Array.from({ length: points }, (_, i) => [
-          start + ((end - start) * i) / (points - 1),
-          String(seriesBase[selected] + i),
+        values: Array.from({ length: samples }, (_, i) => [
+          first + i * step,
+          String(seriesBase[selected] + Math.round(((points - 1) * i) / Math.max(1, samples - 1))),
         ]),
       };
       return route.fulfill({ json: { status: 'success', data: { resultType: 'matrix', result: [result] } } });
@@ -138,6 +142,13 @@ test('real Perses panels remain compatible with the shared Query runtime', async
     await expect(page.getByText('Latency', { exact: true })).toBeVisible();
     await expect(page.locator('canvas').first()).toBeVisible();
     await expect(page.getByText(lastValue('site-a'), { exact: true })).toBeVisible();
+  });
+
+  await test.step('hovering the time series shows its tooltip', async () => {
+    // Perses finds the series near the cursor from ECharts' y axis scale (TimeSeriesTooltip's
+    // nearby-series), which reads that scale's internals: a new ECharts can leave the tooltip empty.
+    await page.getByRole('region', { name: 'Latency' }).locator('canvas').hover();
+    await expect(page.getByLabel(/series showing (as bold )?in tooltip/).first()).toContainText('compat_metric');
   });
 
   await test.step('a variable change queries again', async () => {
@@ -398,5 +409,152 @@ test('draws a bar chart, and shows a bar name in its tooltip as written', async 
     .toBe(true);
   // The name's own <b> is text, not an element of the tooltip.
   await expect(page.locator('b').getByText('p99', { exact: true })).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+// A panel whose plugin the console doesn't bundle (persesPlugins.ts), as cluster 1's Models dashboard
+// had with a BarChart. Perses's panel loads its plugin with throwOnError, so the panel shows the
+// load error. When that option doesn't reach TanStack Query (Perses 0.56.0-beta.0 passes v4's
+// useErrorBoundary, which v5 ignores), PanelContent mounts PanelPluginLoader, whose observer refetches
+// the failed plugin on mount, which shows PanelContent's skeleton and unmounts it, and so on: the
+// panel never leaves its skeleton, and the loop keeps the page's main thread busy.
+test('a panel whose plugin is not bundled shows the load error, and the tabs still switch', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push('Uncaught: ' + error.message));
+  const models = dashboard('dashboard-2-models', 'Models');
+  const [grid] = models.spec.layouts;
+  const unbundled = {
+    ...models,
+    spec: {
+      ...models.spec,
+      panels: {
+        ...models.spec.panels,
+        distribution: {
+          kind: 'Panel',
+          spec: { display: { name: 'Distribution' }, plugin: { kind: 'NotBundledChart', spec: {} }, queries: [query] },
+        },
+      },
+      layouts: [
+        {
+          ...grid,
+          spec: {
+            items: [
+              ...grid.spec.items,
+              { x: 0, y: 8, width: 24, height: 8, content: { $ref: '#/spec/panels/distribution' } },
+            ],
+          },
+        },
+      ],
+    },
+  };
+  const config = structuredClone(configExample.body);
+  config.data.monitoring = { enabled: true, persesProject: 'ai-grid' };
+  config.data.fakeBackend = true;
+  await page.route('**/api/v1/user', (route) => route.fulfill({ json: userExample.body }));
+  await page.route('**/api/v1/config', (route) => route.fulfill({ json: config }));
+  await page.route('**/perses/api/**', (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith('/dashboards'))
+      return route.fulfill({ json: [dashboard('dashboard-1-fleet', 'Fleet health'), unbundled] });
+    if (url.pathname.includes('/api/v1/projects/ai-grid/datasources')) return route.fulfill({ json: [datasource] });
+    if (url.pathname.includes('/api/v1/globaldatasources')) return route.fulfill({ json: [] });
+    if (url.pathname.includes('/label/cluster/values'))
+      return route.fulfill({ json: { status: 'success', data: ['site-a', 'site-b'] } });
+    if (url.pathname.endsWith('/api/v1/query_range') || url.pathname.endsWith('/api/v1/query')) {
+      const now = Math.floor(Date.now() / 1000);
+      const result = { metric: { __name__: 'compat_metric', cluster: 'site-a' }, values: [[now, '42']] };
+      return route.fulfill({ json: { status: 'success', data: { resultType: 'matrix', result: [result] } } });
+    }
+    errors.push(`Unhandled fixture: ${route.request().method()} ${url.pathname}`);
+    return route.fulfill({ status: 404, json: { message: 'No fixture' } });
+  });
+
+  await page.goto('/monitoring');
+  await page.getByRole('tab', { name: 'Models', exact: true }).click();
+  const distribution = page.getByRole('region', { name: 'Distribution' });
+  await expect(distribution.getByText("A NotBundledChart plugin for kind 'Panel' is not installed")).toBeVisible();
+  await expect(distribution.getByLabel('Loading...')).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Requests' }).getByText('42', { exact: true })).toBeVisible();
+
+  await page.getByRole('tab', { name: 'Fleet health', exact: true }).click();
+  await expect(page.getByRole('tab', { name: 'Fleet health', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('region', { name: 'Requests' }).getByText('42', { exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Distribution' })).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+// A variable whose values the dashboard lists itself (StaticListVariable), as cluster 1's Usage
+// dashboard's view_by. Without its plugin in persesPlugins.ts the select shows no values. The
+// options show each value's label; the queries use the value.
+test('a static list variable offers its values and queries with the selected one', async ({ page }) => {
+  const errors: string[] = [];
+  const queries: string[] = [];
+  page.on('pageerror', (error) => errors.push('Uncaught: ' + error.message));
+  const usage = dashboard('dashboard-2-usage', 'Usage');
+  const viewBy = {
+    kind: 'ListVariable',
+    spec: {
+      name: 'view_by',
+      display: { name: 'View by' },
+      allowMultiple: false,
+      allowAllValue: false,
+      defaultValue: 'model',
+      plugin: {
+        kind: 'StaticListVariable',
+        spec: {
+          values: [
+            { value: 'model', label: 'Model' },
+            { value: 'organization', label: 'Organization' },
+          ],
+        },
+      },
+    },
+  };
+  const byQuery = {
+    kind: 'TimeSeriesQuery',
+    spec: { plugin: { kind: 'PrometheusTimeSeriesQuery', spec: { query: 'sum by ($view_by) (compat_metric)' } } },
+  };
+  const { requests } = usage.spec.panels;
+  const withViewBy = {
+    ...usage,
+    spec: {
+      ...usage.spec,
+      variables: [...usage.spec.variables, viewBy],
+      panels: { ...usage.spec.panels, requests: { ...requests, spec: { ...requests.spec, queries: [byQuery] } } },
+    },
+  };
+  const config = structuredClone(configExample.body);
+  config.data.monitoring = { enabled: true, persesProject: 'ai-grid' };
+  config.data.fakeBackend = true;
+  await page.route('**/api/v1/user', (route) => route.fulfill({ json: userExample.body }));
+  await page.route('**/api/v1/config', (route) => route.fulfill({ json: config }));
+  await page.route('**/perses/api/**', (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.pathname.endsWith('/dashboards')) return route.fulfill({ json: [withViewBy] });
+    if (url.pathname.includes('/api/v1/projects/ai-grid/datasources')) return route.fulfill({ json: [datasource] });
+    if (url.pathname.includes('/api/v1/globaldatasources')) return route.fulfill({ json: [] });
+    if (url.pathname.includes('/label/cluster/values'))
+      return route.fulfill({ json: { status: 'success', data: ['site-a', 'site-b'] } });
+    if (url.pathname.endsWith('/api/v1/query_range') || url.pathname.endsWith('/api/v1/query')) {
+      const params = request.method() === 'POST' ? new URLSearchParams(request.postData() || '') : url.searchParams;
+      queries.push(params.get('query') ?? '');
+      const now = Math.floor(Date.now() / 1000);
+      const result = { metric: { __name__: 'compat_metric' }, values: [[now, '42']] };
+      return route.fulfill({ json: { status: 'success', data: { resultType: 'matrix', result: [result] } } });
+    }
+    errors.push(`Unhandled fixture: ${request.method()} ${url.pathname}`);
+    return route.fulfill({ status: 404, json: { message: 'No fixture' } });
+  });
+
+  await page.goto('/monitoring');
+  const select = page.getByRole('combobox', { name: 'View by', exact: true });
+  await expect(select).toHaveValue('Model');
+  await expect.poll(() => queries).toContain('sum by (model) (compat_metric)');
+  await select.click();
+  await expect(page.getByRole('option')).toHaveText(['Model', 'Organization']);
+  await page.getByRole('option', { name: 'Organization', exact: true }).click();
+  await expect(select).toHaveValue('Organization');
+  await expect.poll(() => queries).toContain('sum by (organization) (compat_metric)');
   expect(errors).toEqual([]);
 });

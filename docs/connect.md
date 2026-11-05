@@ -114,9 +114,24 @@ gives plain typed clients.
 
 ### Query v5 and the Monitoring page
 
-Query v5 is pinned for the console and Perses plugins in `pnpm-workspace.yaml`. Perses 0.56
-still declares v4 support; `e2e/perses.spec.ts` verifies the actual renderer on v5. Keep that
-regression passing when updating these dependencies.
+The console and the Perses packages share one Query v5 runtime: the `@perses-dev` packages that
+use Query declare `@tanstack/react-query` `^5.105.0` as their peer, which the console's own
+dependency satisfies, so `pnpm why @tanstack/react-query` finds one copy. Bump every
+`@perses-dev` package together, with the `echarts` and `immer` versions their peers name.
+`e2e/perses.spec.ts` renders real Perses panels; keep it passing when updating Perses, its
+plugins or Query. `frontend/patches/` holds two pnpm patches: one to `@perses-dev/components`,
+whose time series tooltip reads ECharts scale internals that ECharts 6.1 moved, and showed no
+tooltip without it; and one to `@perses-dev/bar-chart-plugin`, which escapes the names in its
+tooltip. A patch is keyed by the exact version it applies to, so moving a patched package means
+renaming its patch, and checking that it still applies; `pnpm-workspace.yaml` says when to drop
+each.
+
+Navigations render as React transitions, React Router's default. On React 18 the console turned
+them off (f24e1aa, `routerProps` in the `frontend/src/router.ts` this move deletes): React 18 can drop a class component's update that lands mid-render, which left
+Perses's time-range menu's invisible popover blocking the page. React 19 fixed that
+(facebook/react#24663), so the setting went with the move to React 19 and the Perses 0.56
+prereleases, the first with React 19 support (perses/shared#390, perses/plugins#889).
+`e2e/perses.spec.ts` picks a time range and clicks the page right after, on the real renderer.
 
 The page's one Connect call is `Clusters/List`, for a dashboard's cluster details
 (`docs/plan/bff-api.md`, "The Perses relay"). `PersesDashboardView` makes it above Perses's own
@@ -610,44 +625,6 @@ the center says it on both paths (`writeText.ts`).
 Every toast goes through the notification center (`NotificationToasts`), a page's own success
 notice (`NoticeToast`) included, and every toast is also in the drawer the masthead's bell opens (on a
 phone, the user menu's Notifications item, as it offers the theme there).
-
-### Perses on Query v5
-
-The `@perses-dev` packages that use Query (dashboards, explore, plugin-system, and the Prometheus
-and Loki plugins) declare `@tanstack/react-query` `^4.39.1` as their peer, up to 0.56.0-beta.0;
-the `overrides` entry in `frontend/pnpm-workspace.yaml` gives them the console's v5 instead, so
-there is one Query runtime in the app. Perses's built code uses the object syntax v5 requires,
-but three v4 names it still uses mean something else, or nothing, in v5 ([TanStack's migration
-guide](https://tanstack.com/query/v5/docs/framework/react/guides/migrating-to-v5)):
-
-- **The query summary table counts no active queries.**
-  `node_modules/@perses-dev/dashboards/dist/components/QuerySummaryTable/QuerySummaryTable.js`
-  counts queries whose `state.status` is `'loading'`; v5 renamed that status `'pending'`, so the
-  count is always 0.
-- **A panel plugin that fails to load shows a different error.**
-  `node_modules/@perses-dev/dashboards/dist/components/Panel/PanelPluginLoader.js` and
-  `PanelContent.js` pass `useErrorBoundary: true` to `usePlugin`, which hands it to `useQuery`;
-  v5 renamed the option `throwOnError` and ignores the old name. The plugin's own load error is
-  no longer thrown: the plugin is just missing, and the panel's error boundary shows "Missing
-  PanelComponent from panel plugin for kind '...'" instead. A query's error is unaffected:
-  `PanelContent.js` throws it itself. (`@perses-dev/plugin-system`'s `MultiQueryEditor.js` passes
-  the same option, in the panel editor, which the console doesn't open.)
-- **A disabled query without data is not loading.** v4's `isLoading` was `status === 'loading'`,
-  true for a query that was disabled before it had data; v5's is `isPending && isFetching`, false
-  for it (v4's `isInitialLoading`). Perses code that shows a skeleton on `isLoading`, such as
-  `PanelContent.js` while `usePlugin` waits for a plugin kind, renders on instead.
-
-Each one only changes what a dashboard shows in those cases. The exit: drop the override when the
-`@perses-dev` packages declare Query v5 (Perses has already moved its code to the v5-compatible
-syntax, perses/perses#2139). If the integration regresses before then, the fallback is a second
-Query runtime for Perses alone.
-
-Navigations render as React transitions, React Router's default. On React 18 the console turned
-them off (f24e1aa, `routerProps` in the `frontend/src/router.ts` this move deletes): React 18 can drop a class component's update that lands mid-render, which left
-Perses's time-range menu's invisible popover blocking the page. React 19 fixed that
-(facebook/react#24663), so the setting went with the move to React 19 and the Perses 0.56
-prereleases, the first with React 19 support (perses/shared#390, perses/plugins#889).
-`e2e/perses.spec.ts` picks a time range and clicks the page right after, on the real renderer.
 
 ## Testing
 

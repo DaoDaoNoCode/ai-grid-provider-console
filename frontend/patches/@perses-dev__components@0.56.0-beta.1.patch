@@ -1,0 +1,20 @@
+diff --git a/dist/TimeSeriesTooltip/nearby-series.js b/dist/TimeSeriesTooltip/nearby-series.js
+index a86d74055a27607ca58e2b604d0dc35324992d32..968c02f40aad13ee61d55cc237e2cf1e5599590f 100644
+--- a/dist/TimeSeriesTooltip/nearby-series.js
++++ b/dist/TimeSeriesTooltip/nearby-series.js
+@@ -384,11 +384,13 @@ cursorPixelY, cursorXPixel) {
+         const chartModel = chart['_model'];
+         const yAxisScale = chartModel.getComponent('yAxis').axis.scale;
+         const isLogScale = yAxisScale.type === 'log';
+-        let yInterval = yAxisScale._interval;
++        // ECharts 6.1 keeps an interval scale's interval in its config (no _interval), and a log
++        // scale's log-space extent on its intervalStub (no _extent).
++        let yInterval = yAxisScale.getConfig ? yAxisScale.getConfig().interval : yAxisScale._interval;
+         // For log scales, convert from log-space extent to actual data range and use 1% as the interval.
+         if (isLogScale && yAxisScale.base) {
+             const logBase = yAxisScale.base;
+-            const extent = yAxisScale._extent;
++            const extent = yAxisScale.intervalStub ? yAxisScale.intervalStub.getExtent() : yAxisScale._extent;
+             // e.g. extent [0, 2] → 10^0..10^2
+             const actualMin = logBase ** extent[0];
+             const actualMax = logBase ** extent[1];
