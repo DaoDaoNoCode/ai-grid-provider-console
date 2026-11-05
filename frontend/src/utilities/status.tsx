@@ -47,9 +47,6 @@ const tones: Record<string, StatusTone> = {
   // ACM add-ons (feature.open-cluster-management.io/addon-* labels).
   Available: 'success',
   Unreachable: 'danger',
-  // Organizations.
-  Enabled: 'success',
-  Disabled: 'neutral',
 };
 
 export const statusTone = (status: string | undefined): StatusTone =>
@@ -73,7 +70,7 @@ export const statusLabelProps = (status: string | undefined): Pick<LabelProps, '
   if (status === 'Saved to Git') {
     return { ...props, icon: <InfoCircleIcon /> };
   }
-  if (status === 'Disabled' || status === 'Not provisioned' || status === 'Not added') {
+  if (status === 'Not provisioned' || status === 'Not added') {
     return { ...props, icon: <BanIcon /> };
   }
   return props;

@@ -1,35 +1,40 @@
 import { useState } from 'react';
-import { ServiceError } from '../../api/ConsoleService';
-import type { OrganizationsService } from '../../api/organizations';
-import type { Organization } from '../../api/types';
+import { describeError } from '../../api/connect/errors';
 import { DeleteModal } from '../../components/DeleteModal';
+import type { OrganizationView } from './organizationView';
+import { useOrganizationWrites } from './useOrganizations';
 
-const deleteError = (err: unknown) =>
-  err instanceof ServiceError && err.isNotImplemented
-    ? new Error('Deleting organizations is not available on this AI Grid backend.')
-    : err instanceof ServiceError && err.isConflict
-      ? new Error(
-          'This organization was changed after this dialog opened. The latest version is now shown. Review it and try again.',
-        )
-      : err instanceof Error
-        ? err
-        : new Error('Unable to delete the organization.');
+/** What a refused delete says; a stale version (Aborted) is the conflict the dialog reloads for. */
+const deleteError = (err: unknown) => {
+  const { kind, message } = describeError(err);
+  return new Error(
+    kind === 'notAvailable'
+      ? 'Deleting organizations is not available on this AI Grid backend.'
+      : kind === 'conflict'
+        ? 'This organization was changed after this dialog opened. The latest version is now shown. Review it and try again.'
+        : message,
+  );
+};
 
 /**
  * Deleting an organization, the same from its list row and its page: returns `confirmDelete`,
  * which opens the typed-name confirmation for an organization, and the modal to render.
  * `refresh` reloads the page after a failed delete.
  */
-export const useDeleteOrganization = (
-  service: OrganizationsService,
-  { refresh, onDeleted }: { refresh: () => void; onDeleted: () => void },
-): [(organization: Organization) => void, React.ReactNode] => {
-  const [selected, setSelected] = useState<Organization>();
+export const useDeleteOrganization = ({
+  refresh,
+  onDeleted,
+}: {
+  refresh: () => void;
+  onDeleted: () => void;
+}): [(organization: OrganizationView) => void, React.ReactNode] => {
+  const writes = useOrganizationWrites();
+  const [selected, setSelected] = useState<OrganizationView>();
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<Error>();
   const [reloadError, setReloadError] = useState<Error>();
 
-  const confirmDelete = (organization: Organization) => {
+  const confirmDelete = (organization: OrganizationView) => {
     setSelected(organization);
     setError(undefined);
     setReloadError(undefined);
@@ -44,16 +49,16 @@ export const useDeleteOrganization = (
     // loads the organization again and stays busy until it has, so a retry sends the version the
     // backend has now; the typed name stays.
     try {
-      await service.deleteOrganization(selected.id, selected.resourceVersion);
+      await writes.deleteOrganization(selected);
       setSelected(undefined);
       onDeleted();
     } catch (err) {
       setError(deleteError(err));
       refresh();
       try {
-        setSelected(await service.getOrganization(selected.id));
+        setSelected(await writes.loadOrganization(selected.id));
       } catch (reloadErr) {
-        setReloadError(reloadErr instanceof Error ? reloadErr : new Error(String(reloadErr)));
+        setReloadError(new Error(describeError(reloadErr).message));
       }
     } finally {
       setDeleting(false);

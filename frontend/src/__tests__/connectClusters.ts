@@ -13,6 +13,7 @@ import type { GridMembership } from '../api/clusters';
 import { fakeClients, type FakeBackend } from '../api/connect/testing';
 import type { GridCluster } from '../api/types';
 import { fleetOf, subscriptionsBackend, type SubscriptionsSource } from './connectSubscriptions';
+import { tenantsOf } from './connectTenants';
 import {
   ManagedClusterLocationSource,
   ManagedClusterSchema,
@@ -254,8 +255,9 @@ export const clustersBackend = (service: ClusterSource & Writes) =>
 
 /**
  * A Connect transport whose Clusters service is the service's clusters, whose Models service is its
- * FakeModels (connectSubscriptions.ts, fleetOf), and whose Subscriptions and Tenants/List are
- * connectSubscriptions.ts's over the service, built with the console's interceptors, so an
+ * FakeModels (connectSubscriptions.ts, fleetOf), whose Subscriptions are connectSubscriptions.ts's
+ * over the service and whose Tenants are its FakeTenants (connectTenants.ts, tenantsOf), built
+ * with the console's interceptors, so an
  * Unauthenticated answer checks the session as the browser's transport does.
  */
 export const transportFor =
@@ -265,7 +267,8 @@ export const transportFor =
       {
         clusters: clustersBackend(service),
         models: fleetOf(service).backend(),
-        ...subscriptionsBackend(service, call),
+        ...subscriptionsBackend(service),
+        tenants: tenantsOf(service).backend(),
       },
       { interceptors },
     ).transport;

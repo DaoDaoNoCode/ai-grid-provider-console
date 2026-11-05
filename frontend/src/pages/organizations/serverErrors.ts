@@ -1,6 +1,6 @@
-import type { OrganizationInput } from '../../api/types';
+import type { OrganizationInput } from './organizationView';
 
-/** The PoC's message for a 409: the organization changed since the page read it. */
+/** The PoC's message for a stale version (Aborted): the organization changed since the page read it. */
 export const ORGANIZATION_CHANGED = 'This organization was changed by another user. Reload the page, then try again.';
 
 /** The value at a JSON path such as `identityProvider.config.issuer` or `domains.0`. */

@@ -10,9 +10,9 @@ import { Link } from 'react-router-dom';
 import type { ConsoleService } from '../../api/ConsoleService';
 import { ServiceError } from '../../api/ConsoleService';
 import type { GridService } from '../../api/grid';
-import type { OrganizationsService } from '../../api/organizations';
-import type { GridOverview, GridRange, Organization } from '../../api/types';
+import type { GridOverview, GridRange } from '../../api/types';
 import { useModelList } from '../models/useModels';
+import { useOrganizationList } from '../organizations/useOrganizations';
 import type { FleetCluster } from './GridFleetView';
 import { RefreshButton } from '../../components/RefreshButton';
 import { RelativeTime } from '../../components/RelativeTime';
@@ -25,7 +25,7 @@ import { ObservabilityPanel } from './ObservabilityPanel';
 import { tileLayerConfig } from './tiles';
 
 type Props = {
-  service: GridService & Pick<OrganizationsService, 'listOrganizations'> & Pick<ConsoleService, 'getConfig'>;
+  service: GridService & Pick<ConsoleService, 'getConfig'>;
   monitoring?: boolean;
   /** The map's AI Grid members, loaded by AiGridPage; unused with `monitoring`. */
   map?: MapInventory;
@@ -60,10 +60,12 @@ const rangeLabels: Record<GridRange, string> = { '1h': 'Last hour', '6h': 'Last 
 export const GridPage: React.FC<Props> = ({ service, monitoring = false, map = noMap }) => {
   const { data: models, error: modelsLoadError, refresh: refreshModels } = useModelList();
   const { config, configError } = useConsoleSession();
-  const [organizations, , organizationsLoadError, refreshOrganizations] = useServiceData<Organization[]>(
-    () => (monitoring ? service.listOrganizations() : Promise.resolve([])),
-    [],
-  );
+  // The organizations of the usage charts, from Tenants/List; the map reads none.
+  const {
+    data: organizations,
+    error: organizationsLoadError,
+    refresh: refreshOrganizations,
+  } = useOrganizationList(monitoring);
   const [range, setRange] = useState<GridRange>('1h');
   // Each metrics response carries the range it was asked for, so a slow answer for an earlier
   // range is never shown as the current one. The range last asked for decides whether a new one

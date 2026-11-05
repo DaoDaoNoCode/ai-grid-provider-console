@@ -1,16 +1,16 @@
 // Ported from krisv/ai-grid-cloud-provider-poc src/app/pages/tenants/TenantConfigurationDetails.tsx at 62319b8.
 // Adapted from OSAC IdentityProvider/CreateWizard/steps/IdpReviewStep.tsx.
-import { ExpandableSection, Flex, Label, Stack, StackItem } from '@patternfly/react-core';
-import type { Organization, OrganizationInput } from '../../api/types';
+import { ExpandableSection, Flex, Stack, StackItem } from '@patternfly/react-core';
 import type { DetailsItem } from '../../components/DetailsList';
 import { DetailsList } from '../../components/DetailsList';
 import { DetailsSection } from '../../components/DetailsSection';
 import { RelativeTime } from '../../components/RelativeTime';
+import type { OrganizationInput, OrganizationView } from './organizationView';
 
 export type OrganizationSection = 'details' | 'identityProvider';
 
 type Props = {
-  organization: OrganizationInput | Organization;
+  organization: OrganizationInput | OrganizationView;
   /**
    * "review": the wizard's last step; empty optional fields are left out and each section has an
    * Edit link. "details": the organization page; everything is shown, endpoints folded away.
@@ -20,30 +20,17 @@ type Props = {
   onEditSection?: (section: OrganizationSection) => void;
 };
 
-const isSaved = (organization: OrganizationInput | Organization): organization is Organization => 'id' in organization;
+const isSaved = (organization: OrganizationInput | OrganizationView): organization is OrganizationView =>
+  'id' in organization;
 
-const domainsValue = (organization: OrganizationInput | Organization) => {
-  if (!organization.domains.length) {
-    return undefined;
-  }
-  const verified = new Set(
-    (isSaved(organization) ? (organization.domainDetails ?? []) : []).filter((d) => d.verified).map((d) => d.name),
-  );
-  return (
+const domainsValue = (organization: OrganizationInput | OrganizationView) =>
+  organization.domains.length ? (
     <Stack>
       {organization.domains.map((domain) => (
-        <StackItem key={domain}>
-          {domain}{' '}
-          {verified.has(domain) && (
-            <Label isCompact color="green">
-              Verified
-            </Label>
-          )}
-        </StackItem>
+        <StackItem key={domain}>{domain}</StackItem>
       ))}
     </Stack>
-  );
-};
+  ) : undefined;
 
 /** The read-only configuration, on the wizard's Review step and the organization page. */
 export const OrganizationConfigurationDetails: React.FC<Props> = ({ organization, variant, onEditSection }) => {
@@ -51,26 +38,13 @@ export const OrganizationConfigurationDetails: React.FC<Props> = ({ organization
   const saved = isSaved(organization) ? organization : undefined;
   const idp = organization.identityProvider;
 
+  // The backend's Tenant has a name, domains, an identity provider and a creation time: no
+  // description, attributes or domain verification to show.
   const detailItems: DetailsItem[] = [
     { term: 'Name', value: organization.name },
-    ...(saved ? [{ term: 'Description', value: saved.description }] : []),
     { term: 'Domains', value: domainsValue(organization) },
     ...(saved
-      ? [
-          {
-            term: 'Attributes',
-            value: saved.attributes && (
-              <Stack>
-                {Object.entries(saved.attributes).map(([key, value]) => (
-                  <StackItem key={key}>
-                    {key}: {value}
-                  </StackItem>
-                ))}
-              </Stack>
-            ),
-          },
-          { term: 'Created', value: saved.creationTimestamp && <RelativeTime time={saved.creationTimestamp} /> },
-        ]
+      ? [{ term: 'Created', value: saved.creationTimestamp && <RelativeTime time={saved.creationTimestamp} /> }]
       : []),
   ];
   const connectionItems: DetailsItem[] = idp

@@ -4,7 +4,7 @@
 // from the overview's gateway request rate. Only measurements are simulated: models and
 // organizations are always the configured ones. The PoC's unused `allModels` parameter of
 // modelMetrics is dropped.
-import type { GridMetric, Organization } from '../api/types';
+import type { GridMetric } from '../api/types';
 import type { ModelView } from '../pages/models/modelView';
 
 const seed = (name: string) => [...name].reduce((n, c) => Math.imul(n, 31) + c.charCodeAt(0), 7) >>> 0;
@@ -79,10 +79,7 @@ export type OrganizationUsage = { id: string; name: string; input: number; outpu
  * Simulated uncached input, output, and cached tokens per organization over the window.
  * Organization identities always come from the organizations service; only measurements are simulated.
  */
-export function tenantUsage(
-  metrics: GridMetric[],
-  organizations: Pick<Organization, 'name' | 'id'>[],
-): OrganizationUsage[] {
+export function tenantUsage(metrics: GridMetric[], organizations: { id: string; name: string }[]): OrganizationUsage[] {
   const requests = metrics.find((m) => m.key === 'requests');
   const samples = requests?.status === 'ok' ? requests.points : [];
   const rates = organizations.map((organization, index) =>

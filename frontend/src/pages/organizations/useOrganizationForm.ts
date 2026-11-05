@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ServiceError } from '../../api/ConsoleService';
-import type { OrganizationsService } from '../../api/organizations';
-import type { Organization, OrganizationInput } from '../../api/types';
+import { describeError } from '../../api/connect/errors';
 import {
   fieldErrorsOf,
   identityProviderSchema,
@@ -10,22 +8,35 @@ import {
   organizationInputSchema,
   tenantDetailsSchema,
 } from '../../validation';
+import { formPathOf, type OrganizationInput, type OrganizationView } from './organizationView';
 import { ORGANIZATION_CHANGED, currentServerErrors, emptyOrganizationInput, errorsUnder } from './serverErrors';
+import { useOrganizationWrites } from './useOrganizations';
 
+/**
+ * What a refused save says: the backend's message, the console's words where describeError gives
+ * them, and on an edit, for a stale version (Aborted), that someone else changed the organization.
+ */
 const saveErrorMessage = (err: unknown, editing: boolean) => {
-  if (err instanceof ServiceError && err.isNotImplemented) {
+  const { kind, message } = describeError(err);
+  if (kind === 'notAvailable') {
     return 'Saving organizations is not available on this AI Grid backend.';
   }
-  if (editing && err instanceof ServiceError && err.status === 409) {
+  if (editing && kind === 'conflict') {
     return ORGANIZATION_CHANGED;
   }
-  return err instanceof Error ? err.message : 'Unable to save the organization.';
+  return message;
+};
+
+/** The backend's field violations, keyed by the form's paths. */
+const serverFieldErrors = (err: unknown): Record<string, string> | undefined => {
+  const { fieldErrors } = describeError(err);
+  return fieldErrors && Object.fromEntries(Object.entries(fieldErrors).map(([field, msg]) => [formPathOf(field), msg]));
 };
 
 /** The form always holds an identity provider; a blank one is left out on save. */
 type FormValues = Required<OrganizationInput>;
 
-const initialValues = (initial?: Organization): FormValues =>
+const initialValues = (initial?: OrganizationView): FormValues =>
   initial
     ? {
         name: initial.name,
@@ -40,8 +51,9 @@ const initialValues = (initial?: Organization): FormValues =>
  * form: the values, the client-side errors by JSON path, the server's field errors that still
  * apply, and whether anything changed since the form opened.
  */
-export const useOrganizationForm = (service: OrganizationsService, initial?: Organization) => {
+export const useOrganizationForm = (initial?: OrganizationView) => {
   const navigate = useNavigate();
+  const writes = useOrganizationWrites();
   const [start] = useState(() => initialValues(initial));
   const [values, setValues] = useState<FormValues>(start);
   const [saving, setSaving] = useState(false);
@@ -75,9 +87,10 @@ export const useOrganizationForm = (service: OrganizationsService, initial?: Org
     setServer(undefined);
     try {
       if (initial) {
-        await service.updateOrganization(initial.id, input.data, initial.resourceVersion);
+        // An edit sends the domains only, at the version the form read.
+        await writes.updateOrganization(initial, input.data.domains);
       } else {
-        await service.createOrganization(input.data);
+        await writes.createOrganization(input.data);
       }
       // A created organization replaces its create form in history, so Back doesn't land on it, empty.
       navigate(initial ? `/organizations/${encodeURIComponent(initial.id)}` : '/organizations', {
@@ -88,8 +101,9 @@ export const useOrganizationForm = (service: OrganizationsService, initial?: Org
       });
     } catch (err) {
       setError(saveErrorMessage(err, !!initial));
-      if (err instanceof ServiceError && err.fieldErrors) {
-        setServer({ errors: err.fieldErrors, sent: values });
+      const fieldErrors = serverFieldErrors(err);
+      if (fieldErrors) {
+        setServer({ errors: fieldErrors, sent: values });
       }
       setSaving(false);
     }
