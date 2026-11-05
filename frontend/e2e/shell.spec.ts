@@ -39,6 +39,21 @@ test.describe('on a laptop', () => {
     expect(section.height).toBeGreaterThan(400);
   });
 
+  test('Monitoring without a Perses says it is not set up, and asks nothing of the relay', async ({ page }) => {
+    const relayed: string[] = [];
+    page.on('request', (request) => {
+      if (new URL(request.url()).pathname.startsWith('/perses/')) relayed.push(request.url());
+    });
+    // The stack's BFF runs without PERSES_URL.
+    await page.goto('/monitoring');
+    await expect(page.getByRole('heading', { level: 1, name: 'Monitoring' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Monitoring is not set up for this console' })).toBeVisible();
+    await expect(
+      page.getByText(/console\.perses\.url and console\.perses\.project in the console's Helm values/),
+    ).toBeVisible();
+    expect(relayed).toEqual([]);
+  });
+
   test('the masthead shows the console name on one line, level with the signed-in user', async ({ page }) => {
     await page.goto('/clusters');
     const heading = page.getByText('Cloud Provider Admin Console', { exact: true });

@@ -33,7 +33,7 @@ _Avoid_: location, geo, zone
 
 **Site**:
 The name a hub administrator gives a cluster's place (annotation `ai-grid/site-name`), shown as Site on
-the Clusters pages, the AI Grid overview and Monitoring; empty when the annotation isn't set,
+the Clusters pages and the AI Grid map; empty when the annotation isn't set,
 never the region. The cluster's `ai-grid/site` label is its Site ID. The console doesn't edit it:
 a hub administrator sets it, and the map position, with `oc annotate`.
 _Avoid_: data center, location

@@ -1,9 +1,9 @@
 // Package backend holds the gRPC connection to ai-grid-backend.
 //
 // The backend owns every interaction with the hub, Keycloak and metrics. The
-// BFF calls it over gRPC for the readiness probe (AiGrid/Ping) and the
-// Monitoring fallback's Grid/GetOverview, forwarding the caller's identity in
-// request metadata; the pages call it over Connect through the relay
+// BFF calls it over gRPC for the readiness probe only (AiGrid/Ping), and a
+// call made for a caller carries the caller's identity in request metadata
+// (forwardIdentity); the pages call it over Connect through the relay
 // (internal/relay).
 package backend
 
@@ -59,7 +59,6 @@ type Client struct {
 	timeout      time.Duration
 	writeTimeout time.Duration
 	Health       aigridv1.AiGridClient
-	Grid         aigridv1.GridClient
 }
 
 // Dial creates the connection. It does not connect until the first RPC, so a
@@ -87,7 +86,6 @@ func Dial(cfg Config, extra ...grpc.DialOption) (*Client, error) {
 		timeout:      timeout,
 		writeTimeout: writeTimeout,
 		Health:       aigridv1.NewAiGridClient(conn),
-		Grid:         aigridv1.NewGridClient(conn),
 	}, nil
 }
 

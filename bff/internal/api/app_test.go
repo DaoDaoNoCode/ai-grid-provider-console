@@ -23,10 +23,7 @@ import (
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
-	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/backend/backendtest"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/config"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/hub"
@@ -150,6 +147,17 @@ func serve(app *App, req *http.Request) *httptest.ResponseRecorder {
 	return rec
 }
 
+// failWith answers req as a handler whose backend call failed with err, behind the App's request
+// log and identity check. No /api/v1 route calls the backend over gRPC (routes.go), so the tests
+// of how respondError maps and logs a backend error call it through this.
+func failWith(app *App, req *http.Request, err error) *httptest.ResponseRecorder {
+	rec := httptest.NewRecorder()
+	app.logRequests(app.requireIdentity(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		app.respondError(w, r, err)
+	}))).ServeHTTP(rec, req)
+	return rec
+}
+
 func TestHealthcheckNeedsNoToken(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t, testConfig(t), nil)
@@ -186,7 +194,7 @@ func TestReadyzReflectsBackend(t *testing.T) {
 func TestAPIRequiresToken(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t, testConfig(t), nil)
-	rec := serve(app, httptest.NewRequest(http.MethodGet, "/api/v1/grid/overview?range=1h", nil))
+	rec := serve(app, httptest.NewRequest(http.MethodGet, "/api/v1/user", nil))
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", rec.Code)
 	}
@@ -212,8 +220,8 @@ func TestWrongMethodIsJSON405(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t, testConfig(t), nil)
 	cases := map[string]string{
-		"POST /api/v1/grid/overview": "GET, HEAD",
-		"PUT /api/v1/user":           "GET, HEAD",
+		"POST /api/v1/config": "GET, HEAD",
+		"PUT /api/v1/user":    "GET, HEAD",
 	}
 	for req, allow := range cases {
 		t.Run(req, func(t *testing.T) {
@@ -243,8 +251,8 @@ func TestHeadUserAndConfigAreOpenLikeGet(t *testing.T) {
 	if rec := serve(denied, asUser(http.MethodHead, "/api/v1/user")); rec.Code != http.StatusOK {
 		t.Errorf("HEAD /user by a non-admin: %d", rec.Code)
 	}
-	if rec := serve(denied, asUser(http.MethodHead, "/api/v1/grid/overview")); rec.Code != http.StatusForbidden {
-		t.Errorf("HEAD /grid/overview by a non-admin: %d, want 403", rec.Code)
+	if rec := serve(denied, asUser(http.MethodHead, "/api/v1/nope")); rec.Code != http.StatusForbidden {
+		t.Errorf("HEAD /nope by a non-admin: %d, want 403", rec.Code)
 	}
 }
 
@@ -279,36 +287,15 @@ func TestUserFromProxyHeaders(t *testing.T) {
 	}
 }
 
-// A proxy header with a name outside ASCII (an OpenShift group `équipe-ops`)
-// used to make every backend call 502: grpc-go refuses such metadata values.
-func TestNonASCIIIdentityReachesTheBackend(t *testing.T) {
-	t.Parallel()
-	fake := &backendtest.Fake{}
-	app := newTestApp(t, testConfig(t), fake)
-	req := asUser(http.MethodGet, "/api/v1/grid/overview?range=1h")
-	req.Header.Set(config.DefaultAuthUserHeader, "rené")
-	req.Header.Set(config.DefaultAuthGroupsHeader, "équipe-ops,cluster-admins")
-	rec := serve(app, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("GET /grid/overview as rené in équipe-ops: %d %s", rec.Code, rec.Body.String())
-	}
-	if got := fake.Metadata.Get("x-forwarded-user"); len(got) != 1 || got[0] != "ren%C3%A9" {
-		t.Fatalf("x-forwarded-user = %q, want it percent-encoded", got)
-	}
-	if got := fake.Metadata.Get("x-forwarded-groups"); len(got) != 1 || got[0] != "%C3%A9quipe-ops,cluster-admins" {
-		t.Fatalf("x-forwarded-groups = %q", got)
-	}
-}
-
 func TestOnlyProviderAdminsReachTheAPI(t *testing.T) {
 	t.Parallel()
 	cfg := testConfig(t)
-	overview := func() *http.Request { return asUser(http.MethodGet, "/api/v1/grid/overview?range=1h") }
+	// Every /api/v1 path but GET and HEAD /user and /config, a path no route takes too; the
+	// Connect relay gets the same check (relay_test.go).
+	other := func() *http.Request { return asUser(http.MethodGet, "/api/v1/nope") }
 	fake := &backendtest.Fake{}
 	denied := newTestAppWithHub(t, cfg, fake, &fakeHub{allowed: false})
-	// Every /api/v1 route but /user and /config reads; the Connect relay's writes get the same
-	// check (relay_test.go).
-	for _, req := range []*http.Request{overview(), asUser(http.MethodHead, "/api/v1/grid/overview?range=1h")} {
+	for _, req := range []*http.Request{other(), asUser(http.MethodHead, "/api/v1/nope")} {
 		rec := serve(denied, req)
 		if rec.Code != http.StatusForbidden {
 			t.Fatalf("%s %s by a non-admin: got %d %s, want 403", req.Method, req.URL.Path, rec.Code, rec.Body.String())
@@ -330,10 +317,11 @@ func TestOnlyProviderAdminsReachTheAPI(t *testing.T) {
 			t.Fatalf("GET %s by a non-admin: got %d %s", path, rec.Code, rec.Body.String())
 		}
 	}
-	if rec := serve(newTestApp(t, cfg, fake), overview()); rec.Code != http.StatusOK {
+	// A provider admin passes the check, to the API's own 404.
+	if rec := serve(newTestApp(t, cfg, fake), other()); rec.Code != http.StatusNotFound {
 		t.Fatalf("GET by a provider admin: got %d %s", rec.Code, rec.Body.String())
 	}
-	if rec := serve(newTestAppWithHub(t, cfg, fake, &fakeHub{status: http.StatusUnauthorized}), overview()); rec.Code != http.StatusUnauthorized {
+	if rec := serve(newTestAppWithHub(t, cfg, fake, &fakeHub{status: http.StatusUnauthorized}), other()); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expired token: got %d, want 401", rec.Code)
 	}
 }
@@ -381,53 +369,6 @@ func TestConfigServesModelHardware(t *testing.T) {
 	}
 }
 
-// overview reads the clusters of GET /api/v1/grid/overview: the Monitoring
-// fallback, the one route that still maps ManagedClusters (toGridCluster).
-func overview(t *testing.T, app *App) (*httptest.ResponseRecorder, []GridCluster) {
-	t.Helper()
-	rec := serve(app, asUser(http.MethodGet, "/api/v1/grid/overview?metrics=false"))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("overview: %d %s", rec.Code, rec.Body.String())
-	}
-	var body struct {
-		Clusters []GridCluster `json:"clusters"`
-	}
-	decodeData(t, rec, &body)
-	return rec, body.Clusters
-}
-
-func TestClusterGPUsPassThrough(t *testing.T) {
-	t.Parallel()
-	sharing := &aigridv1.GPUSharing{Strategy: "time-slicing", Replicas: 4}
-	member := map[string]string{LabelEnabled: "true"}
-	fake := &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{
-		{Name: "gpu", ResourceVersion: "1", Labels: member, Status: &aigridv1.ManagedClusterStatus{
-			Capacity: map[string]string{"nvidia.com/gpu": "8"},
-			Gpus: &aigridv1.ClusterGPUs{
-				Total: 2, NodeCount: 2,
-				Configurations: []*aigridv1.GPUConfiguration{{Vendor: "NVIDIA", Product: "NVIDIA-L4-SHARED", MemoryMib: 23034, GpusPerNode: 1, NodeCount: 2, Sharing: sharing}},
-				Nodes: []*aigridv1.GPUNode{{Name: "n1", Vendor: "NVIDIA", Product: "NVIDIA-L4-SHARED", Count: 1, MemoryMib: 23034,
-					Family: "ada-lovelace", ComputeCapability: "8.9", DriverVersion: "580.105.08", CudaRuntimeVersion: "13.0",
-					Sharing: sharing, InstanceType: "g6.xlarge", Ready: true}},
-			},
-		}},
-		{Name: "cpu", ResourceVersion: "1", Labels: member},
-	}}
-	rec, clusters := overview(t, newTestApp(t, testConfig(t), fake))
-	for _, want := range []string{
-		`"gpuCapacity":8`,
-		`"gpus":{"total":2,"nodeCount":2,"configurations":[{"vendor":"NVIDIA","product":"NVIDIA-L4-SHARED","memoryMib":23034,"gpusPerNode":1,"nodeCount":2,"sharing":{"strategy":"time-slicing","replicas":4,"migCapable":false}}]`,
-		`"nodes":[{"name":"n1","vendor":"NVIDIA","product":"NVIDIA-L4-SHARED","count":1,"memoryMib":23034,"family":"ada-lovelace","computeCapability":"8.9","driverVersion":"580.105.08","cudaRuntimeVersion":"13.0","sharing":{"strategy":"time-slicing","replicas":4,"migCapable":false},"instanceType":"g6.xlarge","ready":true}]`,
-	} {
-		if !strings.Contains(rec.Body.String(), want) {
-			t.Errorf("missing %s in %s", want, rec.Body.String())
-		}
-	}
-	if len(clusters) != 2 || clusters[1].Name != "cpu" || clusters[1].GPUs != nil {
-		t.Errorf("a cluster without an inventory has gpus: %+v", clusters)
-	}
-}
-
 // A hub slower than the access review's timeout is the hub's failure (502
 // with the hub message), not the backend's 504; a slow backend stays 504.
 func TestSlowHubIs502AndSlowBackendIs504(t *testing.T) {
@@ -446,7 +387,7 @@ func TestSlowHubIs502AndSlowBackendIs504(t *testing.T) {
 		t.Fatal(err)
 	}
 	app := NewApp(testConfig(t), slog.New(slog.DiscardHandler), backendtest.Start(t, &backendtest.Fake{}), hubClient)
-	for _, path := range []string{"/api/v1/user", "/api/v1/grid/overview?range=1h"} {
+	for _, path := range []string{"/api/v1/user", "/api/v1/nope"} {
 		rec := serve(app, asUser(http.MethodGet, path))
 		if rec.Code != http.StatusBadGateway {
 			t.Fatalf("GET %s with a slow hub: %d %s, want 502", path, rec.Code, rec.Body.String())
@@ -456,8 +397,7 @@ func TestSlowHubIs502AndSlowBackendIs504(t *testing.T) {
 		}
 	}
 
-	fake := &backendtest.Fake{Err: backendtest.Status(codes.DeadlineExceeded, "slow")}
-	rec := serve(newTestApp(t, testConfig(t), fake), asUser(http.MethodGet, "/api/v1/grid/overview?range=1h"))
+	rec := failWith(newTestApp(t, testConfig(t), nil), asUser(http.MethodGet, "/api/v1/nope"), backendtest.Status(codes.DeadlineExceeded, "slow"))
 	if rec.Code != http.StatusGatewayTimeout {
 		t.Fatalf("slow backend: %d %s, want 504", rec.Code, rec.Body.String())
 	}
@@ -469,10 +409,9 @@ func TestSlowHubIs502AndSlowBackendIs504(t *testing.T) {
 func TestLogsNameTheRequestAndTheUser(t *testing.T) {
 	t.Parallel()
 	var logs bytes.Buffer
-	fake := &backendtest.Fake{Err: backendtest.Status(codes.Internal, "boom")}
-	app := NewApp(testConfig(t), slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo})), backendtest.Start(t, fake), startHub(t, &fakeHub{allowed: true}))
+	app := NewApp(testConfig(t), slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo})), backendtest.Start(t, &backendtest.Fake{}), startHub(t, &fakeHub{status: http.StatusBadGateway}))
 
-	rec := serve(app, asUser(http.MethodGet, "/api/v1/grid/overview?range=1h"))
+	rec := serve(app, asUser(http.MethodGet, "/api/v1/user"))
 	if rec.Code != http.StatusBadGateway {
 		t.Fatalf("GET: %d %s", rec.Code, rec.Body.String())
 	}
@@ -497,7 +436,7 @@ func TestLogsNameTheRequestAndTheUser(t *testing.T) {
 
 	// A request refused before the identity is known has no user.
 	logs.Reset()
-	serve(app, httptest.NewRequest(http.MethodGet, "/api/v1/grid/overview?range=1h", nil))
+	serve(app, httptest.NewRequest(http.MethodGet, "/api/v1/user", nil))
 	if !strings.Contains(logs.String(), "msg=request ") || strings.Contains(logs.String(), "user=") {
 		t.Errorf("anonymous request: %q", logs.String())
 	}
@@ -525,11 +464,10 @@ func TestSuccessfulProbesLogAtDebug(t *testing.T) {
 	}
 }
 
-// A 501 is an expected answer from a backend that lacks the RPC (the shipped
-// one has no Grid service): the frontend shows "not available on this backend
-// yet", so the detail logs at Debug, as a 4xx does, not at Error on every page
-// load. A backend failure still logs at Error. Either way the request line
-// stays at Info.
+// A 501 is an expected answer from a backend that lacks the RPC: the frontend
+// shows "not available on this backend yet", so the detail logs at Debug, as a
+// 4xx does, not at Error on every page load. A backend failure still logs at
+// Error. Either way the request line stays at Info.
 func TestNotImplementedLogsAtDebugAndFailuresAtError(t *testing.T) {
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
@@ -543,9 +481,9 @@ func TestNotImplementedLogsAtDebugAndFailuresAtError(t *testing.T) {
 		return out
 	}
 
-	shipped := NewApp(testConfig(t), logger, backendtest.StartV1(t, &backendtest.V1{}), startHub(t, &fakeHub{allowed: true}))
-	if rec := serve(shipped, asUser(http.MethodGet, "/api/v1/grid/overview")); rec.Code != http.StatusNotImplemented {
-		t.Fatalf("overview on the shipped backend: %d %s, want 501", rec.Code, rec.Body.String())
+	app := NewApp(testConfig(t), logger, backendtest.StartV1(t, &backendtest.V1{}), startHub(t, &fakeHub{allowed: true}))
+	if rec := failWith(app, asUser(http.MethodGet, "/api/v1/nope"), backendtest.Status(codes.Unimplemented, "unknown method")); rec.Code != http.StatusNotImplemented {
+		t.Fatalf("a backend without the RPC: %d %s, want 501", rec.Code, rec.Body.String())
 	}
 	if got := lines("ERROR"); len(got) != 0 {
 		t.Errorf("a 501 logged at Error:\n%s", strings.Join(got, "\n"))
@@ -558,10 +496,8 @@ func TestNotImplementedLogsAtDebugAndFailuresAtError(t *testing.T) {
 	}
 
 	logs.Reset()
-	fake := &backendtest.Fake{Err: backendtest.Status(codes.Internal, "boom")}
-	failing := NewApp(testConfig(t), logger, backendtest.Start(t, fake), startHub(t, &fakeHub{allowed: true}))
-	if rec := serve(failing, asUser(http.MethodGet, "/api/v1/grid/overview")); rec.Code != http.StatusBadGateway {
-		t.Fatalf("overview on a failing backend: %d %s, want 502", rec.Code, rec.Body.String())
+	if rec := failWith(app, asUser(http.MethodGet, "/api/v1/nope"), backendtest.Status(codes.Internal, "boom")); rec.Code != http.StatusBadGateway {
+		t.Fatalf("a failing backend: %d %s, want 502", rec.Code, rec.Body.String())
 	}
 	if got := lines("ERROR"); len(got) != 1 || !strings.Contains(got[0], `msg="request failed"`) || !strings.Contains(got[0], "status=502") {
 		t.Errorf("Error lines = %q, want one request failed with status=502", got)
@@ -701,132 +637,6 @@ func TestSPAHandler(t *testing.T) {
 	}
 }
 
-func richCluster() *aigridv1.ManagedCluster {
-	ltt := timestamppb.New(time.Date(2026, 10, 1, 9, 0, 8, 0, time.UTC))
-	return &aigridv1.ManagedCluster{
-		Name: "site-paris-1", HubAcceptsClient: true, ResourceVersion: "41",
-		Labels: map[string]string{
-			LabelEnabled: "true", LabelProvisioned: "true", LabelLocation: "paris", LabelSite: "paris-dc1", LabelRegion: "europe-west",
-			LabelOpenShiftVersion: "4.22.15", LabelAddonPrefix + "work-manager": "available", LabelAddonPrefix + "cluster-proxy": "unreachable",
-		},
-		Annotations: map[string]string{AnnotationSiteName: "Paris DC1", AnnotationLatitude: "48.8566", AnnotationLongitude: "2.3522"},
-		Status: &aigridv1.ManagedClusterStatus{
-			State: aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_AVAILABLE, StateMessage: "Managed cluster is available",
-			KubernetesVersion: "v1.35.6",
-			Capacity:          map[string]string{"cpu": "192", CapacityGPU: "16"},
-			ClusterClaims: []*aigridv1.ClusterClaim{
-				{Name: ClaimConsoleURL, Value: "https://console-openshift-console.apps.site-paris-1.example.com"},
-				{Name: ClaimPlatform, Value: "BareMetal"}, {Name: ClaimProduct, Value: "OpenShift"},
-			},
-			Conditions: []*aigridv1.Condition{
-				{Type: "ManagedClusterConditionAvailable", Status: aigridv1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: proto.String("ManagedClusterAvailable"), Message: proto.String("Managed cluster is available"), LastTransitionTime: ltt},
-				{Type: "ManagedClusterConditionClockSynced", Status: aigridv1.ConditionStatus_CONDITION_STATUS_UNSPECIFIED, LastTransitionTime: ltt},
-			},
-		},
-	}
-}
-
-func TestGridClusterCarriesTheDerivedFields(t *testing.T) {
-	t.Parallel()
-	fake := &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{richCluster()}}
-	rec, clusters := overview(t, newTestApp(t, testConfig(t), fake))
-	if len(clusters) != 1 {
-		t.Fatalf("clusters = %+v", clusters)
-	}
-	c := clusters[0]
-	if c.Status != StatusReady || c.StatusMessage != "Managed cluster is available" {
-		t.Errorf("status = %q %q", c.Status, c.StatusMessage)
-	}
-	if c.ConsoleURL != "https://console-openshift-console.apps.site-paris-1.example.com" || c.Platform != "BareMetal" || c.Product != "OpenShift" || c.KubernetesVersion != "v1.35.6" {
-		t.Errorf("claims = %+v", c)
-	}
-	if c.GPUCapacity != 16 {
-		t.Errorf("gpuCapacity = %d", c.GPUCapacity)
-	}
-	if c.SiteName != "Paris DC1" || c.Latitude == nil || *c.Latitude != 48.8566 || c.Longitude == nil || *c.Longitude != 2.3522 {
-		t.Errorf("site = %q %v %v", c.SiteName, c.Latitude, c.Longitude)
-	}
-	if len(c.Addons) != 2 || c.Addons["work-manager"] != "available" || c.Addons["cluster-proxy"] != "unreachable" {
-		t.Errorf("addons = %v", c.Addons)
-	}
-	byType := map[string]ClusterCondition{}
-	for _, cond := range c.Conditions {
-		byType[cond.Type] = cond
-	}
-	avail, clock := byType["ManagedClusterConditionAvailable"], byType["ManagedClusterConditionClockSynced"]
-	if len(c.Conditions) != 2 || avail.Status != "True" || avail.Reason != "ManagedClusterAvailable" || avail.LastTransitionTime == nil || avail.LastTransitionTime.IsZero() || clock.Status != "Unknown" {
-		t.Errorf("conditions = %+v", c.Conditions)
-	}
-	if c.ResourceVersion != "41" {
-		t.Errorf("resourceVersion = %q", c.ResourceVersion)
-	}
-	// Raw JSON: the state names are the ACM console's.
-	if !strings.Contains(rec.Body.String(), `"status":"ready"`) || !strings.Contains(rec.Body.String(), `"gpuCapacity":16`) {
-		t.Errorf("body = %s", rec.Body.String())
-	}
-}
-
-// TestConditionWithoutTransitionTimeIsOmitted: an unset proto timestamp is
-// the Unix epoch through AsTime; the JSON must not present 1970 as observed.
-func TestConditionWithoutTransitionTimeIsOmitted(t *testing.T) {
-	t.Parallel()
-	mc := richCluster()
-	mc.Status.Conditions = append(mc.Status.Conditions, &aigridv1.Condition{Type: "Deleting", Status: aigridv1.ConditionStatus_CONDITION_STATUS_FALSE, Reason: proto.String("ResourceRemaining")})
-	rec, _ := overview(t, newTestApp(t, testConfig(t), &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{mc}}))
-	if strings.Contains(rec.Body.String(), "1970-01-01") {
-		t.Errorf("an absent transition time is rendered as the epoch: %s", rec.Body.String())
-	}
-	var raw struct {
-		Data struct {
-			Clusters []struct {
-				Conditions []map[string]json.RawMessage `json:"conditions"`
-			} `json:"clusters"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
-		t.Fatal(err)
-	}
-	if len(raw.Data.Clusters) != 1 || len(raw.Data.Clusters[0].Conditions) != 3 {
-		t.Fatalf("clusters = %+v", raw.Data.Clusters)
-	}
-	conditions := raw.Data.Clusters[0].Conditions
-	if _, has := conditions[0]["lastTransitionTime"]; !has {
-		t.Error("a recorded transition time must be present")
-	}
-	if ts, has := conditions[2]["lastTransitionTime"]; has {
-		t.Errorf("an unset transition time must be omitted, got %s", ts)
-	}
-}
-
-// TestCoordinatesMustBeFinite: ParseFloat accepts NaN and Inf, which JSON
-// cannot encode; one such annotation must not break the overview.
-func TestCoordinatesMustBeFinite(t *testing.T) {
-	t.Parallel()
-	for _, tc := range []struct {
-		in   string
-		want *float64
-	}{
-		{"NaN", nil}, {"nan", nil}, {"Inf", nil}, {"+Inf", nil}, {"-Infinity", nil}, {"1e400", nil}, {"91", nil}, {"", nil}, {"x", nil},
-		{" 48.8566 ", ptr(48.8566)}, {"-90", ptr(-90)},
-	} {
-		got := parseCoordinate(tc.in, 90)
-		switch {
-		case got == nil && tc.want == nil:
-		case got == nil || tc.want == nil || *got != *tc.want:
-			t.Errorf("parseCoordinate(%q) = %v, want %v", tc.in, got, tc.want)
-		}
-	}
-	bad := richCluster()
-	bad.Name = "site-bad-1"
-	bad.Annotations = map[string]string{AnnotationLatitude: "NaN", AnnotationLongitude: "+Inf"}
-	_, clusters := overview(t, newTestApp(t, testConfig(t), &backendtest.Fake{Clusters: []*aigridv1.ManagedCluster{richCluster(), bad}}))
-	if len(clusters) != 2 || clusters[0].Latitude == nil || clusters[1].Latitude != nil || clusters[1].Longitude != nil || clusters[1].Annotations[AnnotationLatitude] != "NaN" {
-		t.Errorf("clusters = %+v", clusters)
-	}
-}
-
-func ptr(f float64) *float64 { return &f }
-
 // TestWriteJSONFailureIs500: encoding happens before the status is committed,
 // so a value JSON cannot carry is an error response, not a 200 with no body.
 func TestWriteJSONFailureIs500(t *testing.T) {
@@ -843,55 +653,13 @@ func TestWriteJSONFailureIs500(t *testing.T) {
 	}
 }
 
-func TestStateStrings(t *testing.T) {
-	t.Parallel()
-	cases := map[aigridv1.ManagedClusterState]string{
-		aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_UNSPECIFIED:    "",
-		aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_AVAILABLE:      "ready",
-		aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_UNAVAILABLE:    "offline",
-		aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_UNKNOWN:        "unknown",
-		aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_PENDING_IMPORT: "pendingimport",
-		aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_IMPORTING:      "importing",
-		aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_IMPORT_FAILED:  "importfailed",
-		aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_DETACHING:      "detaching",
-		aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_NOT_ACCEPTED:   "notaccepted",
-	}
-	for state, want := range cases {
-		t.Run(state.String(), func(t *testing.T) {
-			mc := &aigridv1.ManagedCluster{Name: "x", Status: &aigridv1.ManagedClusterStatus{State: state}}
-			if got := toGridCluster(mc).Status; got != want {
-				t.Errorf("status %q, want %q", got, want)
-			}
-		})
-	}
-	// A cluster from today's backend (fields 1-3 only) has no status and no annotations but valid JSON maps.
-	c := toGridCluster(&aigridv1.ManagedCluster{Name: "bare"})
-	if c.Status != "" || c.Addons == nil || c.Conditions == nil || c.Labels == nil || c.Annotations == nil || c.Latitude != nil {
-		t.Errorf("bare = %+v", c)
-	}
-	if lat := toGridCluster(&aigridv1.ManagedCluster{Annotations: map[string]string{AnnotationLatitude: "north"}}).Latitude; lat != nil {
-		t.Errorf("invalid latitude must be omitted, got %v", *lat)
-	}
-	// A backend that reports provisioning decides it over the ai-grid/provisioned
-	// label. NonCompliant isn't failed: the cluster may still be installing.
-	stale := map[string]string{LabelEnabled: "true", LabelProvisioned: "true"}
-	for value, want := range map[string]bool{"Compliant": true, "NonCompliant": false, "Pending": false, "": false} {
-		c := toGridCluster(&aigridv1.ManagedCluster{Labels: stale, Status: &aigridv1.ManagedClusterStatus{Provisioning: &value}})
-		if c.Provisioned != want {
-			t.Errorf("provisioning %q -> provisioned %v, want %v", value, c.Provisioned, want)
-		}
-	}
-}
-
 func TestFieldErrorsReachTheBody(t *testing.T) {
 	t.Parallel()
 	st := status.New(codes.InvalidArgument, "Choose a time range of 1h, 6h, or 24h.")
 	st, _ = st.WithDetails(&errdetails.BadRequest{FieldViolations: []*errdetails.BadRequest_FieldViolation{
 		{Field: "range", Description: "Choose a time range of 1h, 6h, or 24h."},
 	}})
-	fake := &backendtest.Fake{Err: st.Err()}
-	app := newTestApp(t, testConfig(t), fake)
-	rec := serve(app, asUser(http.MethodGet, "/api/v1/grid/overview?range=2h"))
+	rec := failWith(newTestApp(t, testConfig(t), nil), asUser(http.MethodGet, "/api/v1/nope"), st.Err())
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status %d", rec.Code)
 	}
@@ -920,8 +688,7 @@ func TestFieldErrorsOnlyForInvalidArgument(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			app := newTestApp(t, testConfig(t), &backendtest.Fake{Err: st.Err()})
-			rec := serve(app, asUser(http.MethodGet, "/api/v1/grid/overview?range=1h"))
+			rec := failWith(newTestApp(t, testConfig(t), nil), asUser(http.MethodGet, "/api/v1/nope"), st.Err())
 			if rec.Code != tc.want {
 				t.Fatalf("status %d, want %d", rec.Code, tc.want)
 			}
@@ -944,133 +711,5 @@ func TestConfigReportsFakeBackend(t *testing.T) {
 	decodeData(t, serve(app, asUser(http.MethodGet, "/api/v1/config")), &got)
 	if !got.FakeBackend {
 		t.Fatal("fakeBackend not reported")
-	}
-}
-
-// member is an AI Grid member cluster at site, Available, with the state the
-// backend derives from that.
-func member(name, site string) *aigridv1.ManagedCluster {
-	return &aigridv1.ManagedCluster{Name: name, Labels: map[string]string{LabelEnabled: "true", LabelSite: site},
-		Status: &aigridv1.ManagedClusterStatus{
-			State:      aigridv1.ManagedClusterState_MANAGED_CLUSTER_STATE_AVAILABLE,
-			Conditions: []*aigridv1.Condition{{Type: "ManagedClusterConditionAvailable", Status: aigridv1.ConditionStatus_CONDITION_STATUS_TRUE}},
-		}}
-}
-
-func TestGridOverview(t *testing.T) {
-	t.Parallel()
-	msg := "No enrolled clusters match this selection."
-	fake := &backendtest.Fake{
-		Clusters: []*aigridv1.ManagedCluster{member("site3", "brussels"), member("site1", "san-francisco"),
-			{Name: "site4", Labels: map[string]string{LabelSite: "sydney"}}},
-		Metrics: []*aigridv1.Metric{
-			{Key: "requests", Label: "Gateway request rate", Unit: "req/s", Status: aigridv1.MetricStatus_METRIC_STATUS_OK,
-				Points: []*aigridv1.MetricPoint{{Timestamp: 1790000000, Value: 355.669}}},
-			{Key: "errors", Label: "Gateway error rate", Unit: "req/s", Status: aigridv1.MetricStatus_METRIC_STATUS_UNAVAILABLE},
-			{Key: "latency", Label: "Gateway p95 latency", Unit: "ms", Status: aigridv1.MetricStatus_METRIC_STATUS_NOT_CONFIGURED},
-			{Key: "gpu", Label: "GPU utilization", Unit: "%", Status: aigridv1.MetricStatus_METRIC_STATUS_NO_DATA, Message: &msg},
-		},
-		OverviewTime: timestamppb.New(time.Date(2026, 10, 16, 9, 0, 0, 0, time.UTC)),
-	}
-	app := newTestApp(t, testConfig(t), fake)
-	get := func(query string) *httptest.ResponseRecorder {
-		return serve(app, asUser(http.MethodGet, "/api/v1/grid/overview"+query))
-	}
-
-	// The PoC's GridOverview: members only, lowercase sources, demo false.
-	rec := get("?range=6h")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("overview: %d %s", rec.Code, rec.Body)
-	}
-	var raw map[string]any
-	decodeData(t, rec, &raw)
-	clusters, _ := raw["clusters"].([]any)
-	delete(raw, "clusters")
-	want := map[string]any{
-		"updatedAt": "2026-10-16T09:00:00.000Z", "inventorySource": "acm", "demo": false, "metricsSource": "demo",
-		"metrics": []any{
-			map[string]any{"key": "requests", "label": "Gateway request rate", "unit": "req/s", "status": "ok",
-				"points": []any{map[string]any{"timestamp": float64(1790000000), "value": 355.669}}},
-			map[string]any{"key": "errors", "label": "Gateway error rate", "unit": "req/s", "status": "unavailable", "points": []any{}},
-			map[string]any{"key": "latency", "label": "Gateway p95 latency", "unit": "ms", "status": "not-configured", "points": []any{}},
-			map[string]any{"key": "gpu", "label": "GPU utilization", "unit": "%", "status": "no-data", "message": msg, "points": []any{}},
-		},
-	}
-	if !reflect.DeepEqual(raw, want) {
-		t.Fatalf("overview\n got %v\nwant %v", raw, want)
-	}
-	var overview struct{ Clusters []GridCluster }
-	decodeData(t, rec, &overview)
-	// The clusters keep the backend's order.
-	if len(clusters) != 2 || overview.Clusters[0].Name != "site3" || overview.Clusters[1].Name != "site1" ||
-		overview.Clusters[0].Status != StatusReady || overview.Clusters[0].Site != "brussels" || !overview.Clusters[0].AIGridEnabled {
-		t.Fatalf("clusters %+v", overview.Clusters)
-	}
-	if r := fake.LastOverview; r.GetRange() != "6h" || r.Site != nil || !r.GetIncludeMetrics() {
-		t.Fatalf("request %v", r)
-	}
-
-	// No range is forwarded as none (the backend defaults it); site filters;
-	// metrics=false leaves them out.
-	rec = get("?site=brussels&metrics=false")
-	decodeData(t, rec, &overview)
-	if rec.Code != http.StatusOK || len(overview.Clusters) != 1 || overview.Clusters[0].Name != "site3" ||
-		!strings.Contains(rec.Body.String(), `"metrics":[]`) {
-		t.Fatalf("brussels without metrics: %d %s", rec.Code, rec.Body)
-	}
-	if r := fake.LastOverview; r.GetRange() != "" || r.GetSite() != "brussels" || r.GetIncludeMetrics() {
-		t.Fatalf("request %v", r)
-	}
-
-	// The range is the backend's to check: it's forwarded as given, and the
-	// backend's InvalidArgument is 422 with its message.
-	fake.Errs = map[string]error{"GetOverview": status.Error(codes.InvalidArgument, "Choose a time range of 1h, 6h, or 24h.")}
-	rec = get("?range=2h")
-	if rec.Code != http.StatusUnprocessableEntity || decodeError(t, rec).Error.Message != "Choose a time range of 1h, 6h, or 24h." || fake.LastOverview.GetRange() != "2h" {
-		t.Fatalf("2h: %d %s %v", rec.Code, rec.Body, fake.LastOverview)
-	}
-	fake.Errs = nil
-
-	// An unspecified enum leaves its key out instead of being guessed.
-	if got := toGridOverview(&aigridv1.GetOverviewResponse{Metrics: []*aigridv1.Metric{{Key: "requests"}}}); got.InventorySource != "" || got.MetricsSource != "" || got.Metrics[0].Status != "" {
-		t.Fatalf("unspecified enums %+v", got)
-	}
-	raw2, err := json.Marshal(toGridOverview(&aigridv1.GetOverviewResponse{Metrics: []*aigridv1.Metric{{Key: "requests"}}}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(raw2), "inventorySource") || strings.Contains(string(raw2), "metricsSource") || strings.Contains(string(raw2), "status") {
-		t.Fatalf("unspecified enums: %s", raw2)
-	}
-}
-
-// TestGridOverviewDropsNonFinitePoints: JSON can't carry NaN or Inf, so the
-// BFF leaves those points out and keeps the rest; the series' status stays
-// the backend's (thin-BFF rule).
-func TestGridOverviewDropsNonFinitePoints(t *testing.T) {
-	t.Parallel()
-	got := toGridOverview(&aigridv1.GetOverviewResponse{Metrics: []*aigridv1.Metric{{Key: "requests", Status: aigridv1.MetricStatus_METRIC_STATUS_OK,
-		Points: []*aigridv1.MetricPoint{{Timestamp: 1, Value: math.NaN()}, {Timestamp: 2, Value: 3}, {Timestamp: 3, Value: math.Inf(1)}, {Timestamp: 4, Value: math.Inf(-1)}}}}})
-	if m := got.Metrics[0]; !reflect.DeepEqual(m.Points, []MetricPoint{{Timestamp: 2, Value: 3}}) || m.Status != "ok" {
-		t.Fatalf("metric %+v", m)
-	}
-	if _, err := json.Marshal(got); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// TestGridOverviewOmitsUpdatedAtTheBackendDidNotSend: the BFF doesn't invent
-// an updated time (thin-BFF rule); the key is left out.
-func TestGridOverviewOmitsUpdatedAtTheBackendDidNotSend(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t, testConfig(t), &backendtest.Fake{OverviewTime: nil})
-	rec := serve(app, asUser(http.MethodGet, "/api/v1/grid/overview"))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("overview: %d %s", rec.Code, rec.Body)
-	}
-	var raw map[string]any
-	decodeData(t, rec, &raw)
-	if _, ok := raw["updatedAt"]; ok {
-		t.Fatalf("updatedAt invented: %s", rec.Body)
 	}
 }

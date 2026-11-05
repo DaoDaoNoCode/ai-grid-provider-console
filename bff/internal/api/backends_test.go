@@ -57,24 +57,11 @@ func TestReadyzOnEveryBackend(t *testing.T) {
 	}
 }
 
-// The caller's identity reaches the backend, and the backend's codes map to HTTP statuses,
-// keeping the backend's message only for a client-caused failure.
-func TestIdentityAndErrorsReachTheBackend(t *testing.T) {
+// The backend's codes map to HTTP statuses, keeping the backend's message only for a
+// client-caused failure. The identity a call carries is checked in package backend
+// (TestForwardsIdentity).
+func TestBackendErrorsMapToStatuses(t *testing.T) {
 	t.Parallel()
-	fake := &backendtest.Fake{}
-	app := newTestApp(t, testConfig(t), fake)
-	wantStatus(t, "overview", serve(app, asUser(http.MethodGet, "/api/v1/grid/overview?range=1h")), http.StatusOK)
-	for key, want := range map[string]string{
-		backend.MetaAuthorization: "Bearer sha256~token",
-		backend.MetaUser:          "alice",
-		backend.MetaEmail:         "alice@example.com",
-		backend.MetaGroups:        "system:authenticated,cluster-admins",
-	} {
-		if v := strings.Join(fake.Metadata.Get(key), "|"); v != want {
-			t.Errorf("metadata %s = %q, want %q", key, v, want)
-		}
-	}
-
 	// keep: the answer carries the backend's message (a client-caused failure).
 	for _, tc := range []struct {
 		code codes.Code
@@ -93,30 +80,9 @@ func TestIdentityAndErrorsReachTheBackend(t *testing.T) {
 	} {
 		t.Run(tc.code.String(), func(t *testing.T) {
 			t.Parallel()
-			app := newTestApp(t, testConfig(t), &backendtest.Fake{Err: backendtest.Status(tc.code, "backend said no")})
-			rec := serve(app, asUser(http.MethodGet, "/api/v1/grid/overview?range=1h"))
+			rec := failWith(newTestApp(t, testConfig(t), nil), asUser(http.MethodGet, "/api/v1/nope"), backendtest.Status(tc.code, "backend said no"))
 			if msg := decodeError(t, rec).Error.Message; rec.Code != tc.want || (msg == "backend said no") != tc.keep {
 				t.Errorf("%d %q, want %d (backend's message kept: %v)", rec.Code, msg, tc.want, tc.keep)
-			}
-		})
-	}
-}
-
-// The backend has no Grid service: a method it doesn't serve answers Unimplemented without
-// reaching a handler, which the BFF answers 501.
-func TestV1BackendAnswers501ForWhatItLacks(t *testing.T) {
-	t.Parallel()
-	for _, path := range []string{
-		"/api/v1/grid/overview?range=1h",
-		"/api/v1/grid/overview?range=24h&site=brussels&metrics=false",
-	} {
-		t.Run(path, func(t *testing.T) {
-			t.Parallel()
-			v1 := &backendtest.V1{}
-			app := NewApp(testConfig(t), slog.New(slog.DiscardHandler), backendtest.StartV1(t, v1), startHub(t, &fakeHub{allowed: true}))
-			wantStatus(t, path, serve(app, asUser(http.MethodGet, path)), http.StatusNotImplemented)
-			if calls := v1.Calls(); len(calls) != 0 {
-				t.Errorf("reached the backend's %v", calls)
 			}
 		})
 	}

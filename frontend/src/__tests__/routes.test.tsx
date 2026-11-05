@@ -110,7 +110,6 @@ describe('routes', () => {
       toClustersStep,
     ],
     ['/ai-grid', 'listClusters', 'The AI Grid map is not available on this AI Grid backend'],
-    ['/monitoring', 'getGridOverview', 'Monitoring is not available on this AI Grid backend'],
   ])('renders not-available pages: %s without %s', async (path, methods, text, open) => {
     const service = new MockConsoleService();
     // `methods` lists the service calls that answer 501, joined with +.

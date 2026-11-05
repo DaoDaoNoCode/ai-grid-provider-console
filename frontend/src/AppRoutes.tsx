@@ -62,8 +62,7 @@ export const AppRoutes: React.FC<Props> = ({ service }) => (
 const Pages: React.FC<Props> = ({ service }) => (
   <Routes>
     <Route path="/" element={<Navigate to="/ai-grid" replace />} />
-    {/* Keyed, so moving between the map and monitoring mounts a fresh page with its own loads. */}
-    <Route path="/ai-grid" element={<AiGridPage key="ai-grid" service={service} />} />
+    <Route path="/ai-grid" element={<AiGridPage />} />
     <Route path="/monitoring" element={<MonitoringPage service={service} />} />
     <Route path="/clusters" element={<ClustersPage />} />
     <Route

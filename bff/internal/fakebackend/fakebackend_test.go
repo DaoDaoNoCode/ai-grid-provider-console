@@ -555,8 +555,6 @@ func TestHubAccessReview(t *testing.T) {
 var intentionallyUnimplemented = map[string]string{
 	"/ai_grid.v1.AiGrid/GetCurrentUser": "GetCurrentUser not implemented yet; the BFF derives isProviderAdmin itself",
 
-	"/ai_grid.v1.Grid/GetNetwork": "placeholder until agreed with the backend team, see mock/proto/README.md",
-
 	"/ai_grid.v1.CatalogItems/ListCatalogItems":  "placeholder until agreed with the backend team, see mock/proto/README.md",
 	"/ai_grid.v1.CatalogItems/GetCatalogItem":    "placeholder until agreed with the backend team, see mock/proto/README.md",
 	"/ai_grid.v1.CatalogItems/CreateCatalogItem": "placeholder until agreed with the backend team, see mock/proto/README.md",
@@ -774,7 +772,6 @@ func TestUnimplementedMethodsCatchesStubs(t *testing.T) {
 	srv := grpc.NewServer()
 	aigridv1.RegisterAiGridServer(srv, aigridv1.UnimplementedAiGridServer{})
 	aigridv1.RegisterManagedClustersServer(srv, aigridv1.UnimplementedManagedClustersServer{})
-	aigridv1.RegisterGridServer(srv, aigridv1.UnimplementedGridServer{})
 	aigridv1.RegisterModelsServer(srv, aigridv1.UnimplementedModelsServer{})
 	aigridv1.RegisterCatalogItemsServer(srv, aigridv1.UnimplementedCatalogItemsServer{})
 	missing, called := unimplementedMethods(t, srv)

@@ -17,12 +17,11 @@
 > the draft proto, generated draft code and `bff/internal/fakebackend` from here. Clusters,
 > Models, Subscriptions and Organizations have already moved to real backend services. Their
 > pages call the backend's API over Connect, so they run on `make dev-fake-infra`, not on this
-> fake, which serves no subscriptions or tenants and whose clusters and models only the
-> Monitoring fallback reads. The vendored upstream proto and drift guard remain during
-> migration.
+> fake, which serves no subscriptions or tenants and whose clusters and models no console page
+> reads. The vendored upstream proto and drift guard remain during migration.
 
-Monitoring uses the hub's Perses dashboards when configured. Its fallback page uses the
-draft grid overview described below.
+Monitoring shows the hub's Perses dashboards through the BFF's Perses relay when the console
+is configured with a Perses, and says it is not set up otherwise; it uses nothing of this fake.
 
 The entry point for a coding agent (or a person) building console pages against the fake
 `ai-grid-backend`. It says what runs, what the BFF answers and what the fixtures seed, and
@@ -62,7 +61,7 @@ Without the frontend, call the BFF directly:
 
 ```sh
 curl -s -H 'x-forwarded-access-token: dev-token' -H 'x-forwarded-user: dev-user' \
-  'http://127.0.0.1:8080/api/v1/grid/overview?range=1h'
+  http://127.0.0.1:8080/api/v1/user
 ```
 
 The browser tests (`make e2e`) start the same fake on `fixtures-poc/` instead (the PoC's four
@@ -103,7 +102,6 @@ optional. Every route reads: the writes go to the backend over Connect.
 |---|---|---|---|
 | GET | `/api/v1/user` | | `{username, email?, groups, isProviderAdmin}` |
 | GET | `/api/v1/config` | | `{gridEndpoint, mapTileUrl, mapTileAttribution, billingUrl, version, fakeBackend, monitoring: {enabled, persesProject}, models: {hardware}}`; `hardware` is the BFF's built-in NVIDIA GPU and CPU only unless `MODEL_HARDWARE` sets a list |
-| GET | `/api/v1/grid/overview?range=&site=&metrics=false` | | `{clusters, metrics, metricsSource?, inventorySource?, demo, updatedAt?}` |
 
 ## Golden responses (`examples/`)
 
@@ -116,11 +114,10 @@ BFF set it.
 |---|---|
 | `get-user.json` | `GET /api/v1/user` as `dev-user` |
 | `get-config.json` | `GET /api/v1/config` (every setting at its default) |
-| `get-grid-overview.json` | `GET /api/v1/grid/overview?range=1h`, the members with the demo metrics |
 | `error-401-expired-token.json` | `GET /api/v1/user` with `expired-token` |
-| `error-403-viewer.json` | `GET /api/v1/grid/overview?range=1h` with `viewer-token` |
+| `error-403-viewer.json` | `GET /perses/api/api/v1/projects/ai-grid/dashboards`, the Monitoring page's list of dashboards, with `viewer-token` |
 | `error-404-unknown-path.json` | `GET /api/v1/tenants`, a path the BFF no longer has (the organizations are the backend's, over Connect) |
-| `error-405-wrong-method.json` | `POST /api/v1/grid/overview`: 405 with `Allow: GET, HEAD` |
+| `error-405-wrong-method.json` | `POST /api/v1/config`: 405 with `Allow: GET, HEAD` |
 
 They are produced by `bff/internal/examples/golden_test.go`, each on a BFF and fake of its
 own: the fake backend loaded from `fixtures/` over an in-memory gRPC connection with its clock
@@ -235,9 +232,7 @@ is in the gRPC status only).
 | 401 | `AUTH_TOKEN=expired-token` on any `/api/v1` endpoint but `GET /config`: the hub rejects the token in the BFF's provider-admin check (the access review, for `GET /user`). `GET /config` asks neither and answers 200. A request without the token header is 401 on every `/api/v1` path, `/config` included | `the hub rejected the credentials; log in again`, `missing x-forwarded-access-token header` |
 | 403 | `viewer-token` on any `/api/v1` request but `GET /user` and `GET /config`: the BFF's provider-admin check refuses it before the backend. The backend's own 403 texts are behind that check until the backend authorizes the caller | `this console is only for provider admins, users who may patch ManagedClusters on the hub, and the hub says you are not one` |
 | 404 | a path the BFF has no route for, such as the removed `/api/v1/tenants` | `the requested resource could not be found` |
-| 405 | a known `/api/v1` path with a method it has no route for, such as `POST /api/v1/grid/overview` | `POST is not allowed on /api/v1/grid/overview; use GET, HEAD`, with an `Allow` header |
-| 422 | `GET /api/v1/grid/overview` with a `range` other than `1h`, `6h` and `24h` | `Choose a time range of 1h, 6h, or 24h.` |
-| 501 | not reachable on the fake. The shipped backend has no `Grid/GetOverview`, so `GET /api/v1/grid/overview` answers it there | `The AI Grid backend does not support this operation.`: show "not available on this AI Grid backend", not an error page |
+| 405 | a known `/api/v1` path with a method it has no route for, such as `POST /api/v1/config` | `POST is not allowed on /api/v1/config; use GET, HEAD`, with an `Allow` header |
 
 The full table, including 502 and 504, is in `bff-api.md`, "Errors".
 
@@ -246,12 +241,11 @@ The full table, including 502 and 504, is in `bff-api.md`, "Errors".
 The fake answers `Unimplemented` for exactly the methods in `intentionallyUnimplemented`
 (`bff/internal/fakebackend/fakebackend_test.go`); the test fails when the list and the fake
 disagree ([proto/README.md](proto/README.md) explains the allowlist). Today:
-`AiGrid/GetCurrentUser` (the BFF derives `isProviderAdmin` from a hub access review instead),
-`Grid/GetNetwork`, and every method of `CatalogItems`. They are placeholders until the shapes
-are agreed with the backend team; the BFF has no endpoint for them yet. `Grid/GetOverview` is
-implemented (`/api/v1/grid/overview`); its proto is a proposal for the backend owners
-(`proto/README.md`, "Proposals from the port"). The draft has no `Subscriptions` service any more:
-the console reads the backend's own.
+`AiGrid/GetCurrentUser` (the BFF derives `isProviderAdmin` from a hub access review instead)
+and every method of `CatalogItems`. They are placeholders until the shapes are agreed with the
+backend team; the BFF has no endpoint for them yet. The draft has no `Subscriptions` or `Grid`
+service any more: the console reads the backend's Subscriptions, and Monitoring is the hub's
+Perses.
 
 ## Rules
 

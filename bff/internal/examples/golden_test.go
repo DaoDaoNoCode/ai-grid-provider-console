@@ -62,12 +62,12 @@ type example struct {
 var examples = []example{
 	{file: "get-user.json", method: http.MethodGet, path: "/api/v1/user", as: admin},
 	{file: "get-config.json", method: http.MethodGet, path: "/api/v1/config", as: admin},
-	{file: "get-grid-overview.json", method: http.MethodGet, path: "/api/v1/grid/overview?range=1h", as: admin},
 	{file: "error-401-expired-token.json", method: http.MethodGet, path: "/api/v1/user", as: expired},
-	{file: "error-403-viewer.json", method: http.MethodGet, path: "/api/v1/grid/overview?range=1h", as: viewer},
+	// The Monitoring page's list of dashboards: the Perses relay has the API's caller checks.
+	{file: "error-403-viewer.json", method: http.MethodGet, path: "/perses/api/api/v1/projects/ai-grid/dashboards", as: viewer},
 	// The organizations moved to the backend's Tenants over Connect; the JSON path is gone.
 	{file: "error-404-unknown-path.json", method: http.MethodGet, path: "/api/v1/tenants", as: admin},
-	{file: "error-405-wrong-method.json", method: http.MethodPost, path: "/api/v1/grid/overview", body: `{}`, as: admin},
+	{file: "error-405-wrong-method.json", method: http.MethodPost, path: "/api/v1/config", body: `{}`, as: admin},
 }
 
 // recordedHeaders are the response headers a golden file keeps.

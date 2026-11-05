@@ -22,7 +22,6 @@ import { ErrorState } from '../components/states/ErrorState';
 import { LoadFailedAlert } from '../components/states/LoadFailedAlert';
 import { PageStateSection } from '../components/states/PageStateSection';
 import { SectionEmptyState } from '../components/states/SectionEmptyState';
-import { tickLabel } from '../pages/grid/chartScale';
 import { getSubtextProps } from '../utilities/phaseLabelUtils';
 import { statusLabelProps } from '../utilities/status';
 
@@ -107,13 +106,6 @@ it("centres a page's loading spinner in a filled section", () => {
   // wrapper, so the spinner sits in the page's middle rather than its top left corner.
   expect(bullseye).toHaveClass('pf-v6-l-bullseye', 'pf-v6-u-flex-grow-1');
   expect(bullseye.parentElement).toHaveClass('pf-v6-c-page__main-section', 'pf-m-fill');
-});
-
-it('shows billions as B on chart ticks', () => {
-  expect(tickLabel(1_500_000_000)).toBe('1.5B');
-  expect(tickLabel(6_000_000_000)).toBe('6B');
-  expect(tickLabel(2_419_400_000)).toBe('2.4B');
-  expect(tickLabel(150_000_000)).toBe('150M');
 });
 
 it('gives a phase the same colour in its label and its subtext', () => {

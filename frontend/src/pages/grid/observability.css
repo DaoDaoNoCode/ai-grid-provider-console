@@ -1,8 +1,0 @@
-/* The Monitoring page. Layout comes from PatternFly (Stack, Grid, Card, Toolbar); the charts are
-   hand-drawn SVG sized by their viewBox. */
-
-/* The usage bars stay readable instead of stretching across a wide screen. */
-.observability-usage-chart {
-  display: block;
-  max-width: 45rem;
-}

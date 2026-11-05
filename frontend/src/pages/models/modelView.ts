@@ -1,4 +1,4 @@
-// What the Models pages, the AI Grid map and Monitoring show of a Model from the backend's Models
+// What the Models pages and the AI Grid map show of a Model from the backend's Models
 // API (ai_grid.v1, read over Connect): a thin selector layer over the generated message (ADR-0002),
 // as clusterView.ts is for clusters. Each field reads one documented field or key and words it; the
 // backend decides the phase, the clusters the placement chose, and each placed cluster's status

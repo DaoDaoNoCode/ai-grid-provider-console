@@ -1,9 +1,8 @@
 import type { DashboardResource } from '@perses-dev/client';
-import { toGridCluster } from './adapters';
 import type { ConsoleService } from './ConsoleService';
 import { RelayedError, ServiceError } from './ConsoleService';
 import { PERSES_API } from './monitoring';
-import type { ApiCluster, ConsoleConfig, GridOverview, GridRange, User } from './types';
+import type { ConsoleConfig, User } from './types';
 
 const API_PREFIX = '/api/v1';
 
@@ -47,24 +46,6 @@ export class HttpConsoleService implements ConsoleService {
       throw new RelayedError(response.status, message);
     }
     return (await response.json()) as DashboardResource[];
-  }
-
-  async getGridOverview(
-    range: GridRange,
-    opts: { site?: string; includeMetrics?: boolean } = {},
-  ): Promise<GridOverview> {
-    const query = new URLSearchParams({ range });
-    if (opts.site) {
-      query.set('site', opts.site);
-    }
-    if (opts.includeMetrics === false) {
-      query.set('metrics', 'false');
-    }
-    const overview = await this.request<Omit<GridOverview, 'clusters'> & { clusters: ApiCluster[] }>(
-      'GET',
-      `/grid/overview?${query}`,
-    );
-    return { ...overview, clusters: overview.clusters.map(toGridCluster) };
   }
 
   /**

@@ -13,7 +13,6 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	aigridv1 "github.com/ai-grid-cloud/ai-grid-provider-console/bff/gen/ai_grid/v1"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/backend"
@@ -26,11 +25,7 @@ import (
 // ("UpdateManagedCluster"), so a read can succeed and the write that follows
 // it fail. Calls lists the methods reached, in order, and Metadata records the
 // incoming metadata of the last call so tests can assert on identity
-// forwarding. Clusters are served as given: the derived `status.state` is
-// whatever the test put there, so handler tests control it directly. The
-// cluster list is by name, paged by offset and limit with the whole count as
-// `total`, and a filter is InvalidArgument, as in the fake backend;
-// LastListClusters keeps the request.
+// forwarding.
 // Capabilities is what GetHubCapabilities answers, Unimplemented when nil
 // like the backend.
 //
@@ -38,22 +33,15 @@ import (
 // recorded fields after its call returned: the answer orders them.
 type Fake struct {
 	aigridv1.UnimplementedAiGridServer
-	aigridv1.UnimplementedGridServer
 	aigridv1.UnimplementedModelsServer
 	aigridv1.UnimplementedCatalogItemsServer
 
-	Clusters []*aigridv1.ManagedCluster
 	Err      error
 	Errs     map[string]error
 	Calls    []string
 	Metadata metadata.MD
 
 	Capabilities *aigridv1.HubCapabilities
-
-	// Metrics and OverviewTime are GetOverview's metrics and updated_at.
-	Metrics      []*aigridv1.Metric
-	OverviewTime *timestamppb.Timestamp
-	LastOverview *aigridv1.GetOverviewRequest
 
 	mu sync.Mutex
 }
@@ -99,32 +87,6 @@ func (f *Fake) GetHubCapabilities(ctx context.Context, _ *aigridv1.GetHubCapabil
 	return &aigridv1.GetHubCapabilitiesResponse{Capabilities: f.Capabilities}, nil
 }
 
-// GetOverview implements Grid: it records the request and answers with the
-// clusters labelled ai-grid/enabled=true (and ai-grid/site=site when set), and
-// Metrics when include_metrics is set.
-func (f *Fake) GetOverview(ctx context.Context, req *aigridv1.GetOverviewRequest) (*aigridv1.GetOverviewResponse, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.LastOverview = req
-	if err := f.begin(ctx, "GetOverview"); err != nil {
-		return nil, err
-	}
-	resp := &aigridv1.GetOverviewResponse{
-		UpdatedAt:       f.OverviewTime,
-		InventorySource: aigridv1.InventorySource_INVENTORY_SOURCE_ACM,
-		MetricsSource:   aigridv1.MetricsSource_METRICS_SOURCE_DEMO,
-	}
-	for _, c := range f.Clusters {
-		if c.GetLabels()["ai-grid/enabled"] == "true" && (req.Site == nil || c.GetLabels()["ai-grid/site"] == req.GetSite()) {
-			resp.Clusters = append(resp.Clusters, c)
-		}
-	}
-	if req.GetIncludeMetrics() {
-		resp.Metrics = f.Metrics
-	}
-	return resp, nil
-}
-
 // Status is a shorthand for a gRPC error.
 func Status(code codes.Code, msg string) error { return status.Error(code, msg) }
 
@@ -136,7 +98,6 @@ func Start(t *testing.T, fake *Fake) *backend.Client {
 	t.Helper()
 	srv := grpc.NewServer()
 	aigridv1.RegisterAiGridServer(srv, fake)
-	aigridv1.RegisterGridServer(srv, fake)
 	aigridv1.RegisterModelsServer(srv, fake)
 	aigridv1.RegisterCatalogItemsServer(srv, fake)
 	return serve(t, srv, backend.Config{})

@@ -208,3 +208,195 @@ test('real Perses panels remain compatible with the shared Query runtime', async
 
   expect(errors).toEqual([]);
 });
+
+// The AI Grid cluster dashboard's shape (ai-grid-cluster-gitops
+// apps/ai-grid-o11y/manifests/perses-dashboard-cluster.yaml): a multi-select cluster variable with
+// All, and hidden CLUSTER_DETAILS_* text variables that its Markdown panel prints.
+const detailNames = ['INFRASTRUCTURE_PROVIDER', 'OPENSHIFT_VERSION', 'CHANNEL', 'API_SERVER'];
+const clusterDashboard = {
+  kind: 'Dashboard',
+  metadata: { name: 'dashboard-0-cluster', project: 'ai-grid' },
+  spec: {
+    display: { name: 'Cluster' },
+    duration: '1h',
+    refreshInterval: '0s',
+    variables: [
+      {
+        kind: 'ListVariable',
+        spec: {
+          name: 'cluster_name',
+          display: { name: 'Cluster' },
+          allowMultiple: true,
+          allowAllValue: true,
+          customAllValue: '.*',
+          defaultValue: '$__all',
+          plugin: { kind: 'PrometheusLabelValuesVariable', spec: { labelName: 'cluster' } },
+        },
+      },
+      ...detailNames.map((name) => ({
+        kind: 'TextVariable',
+        spec: { name: `CLUSTER_DETAILS_${name}`, value: 'N/A', display: { name, hidden: true } },
+      })),
+    ],
+    panels: {
+      details: {
+        kind: 'Panel',
+        spec: {
+          display: { name: 'Cluster details' },
+          plugin: {
+            kind: 'Markdown',
+            spec: { text: detailNames.map((name) => `${name}=\${CLUSTER_DETAILS_${name}}`).join('\n\n') },
+          },
+        },
+      },
+    },
+    layouts: [
+      {
+        kind: 'Grid',
+        spec: { items: [{ x: 0, y: 0, width: 24, height: 6, content: { $ref: '#/spec/panels/details' } }] },
+      },
+    ],
+  },
+};
+
+test("fills in the cluster details panel from the selected cluster's claims", async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push('Uncaught: ' + error.message));
+  const config = structuredClone(configExample.body);
+  config.data.monitoring = { enabled: true, persesProject: 'ai-grid' };
+  await page.route('**/api/v1/user', (route) => route.fulfill({ json: userExample.body }));
+  await page.route('**/api/v1/config', (route) => route.fulfill({ json: config }));
+  // Clusters/List over Connect, as the backend answers it: site-a with the claims ACM writes.
+  const claim = (name: string, value: string) => ({ name, value });
+  await page.route('**/ai_grid.v1.Clusters/List**', (route) =>
+    route.fulfill({
+      json: {
+        items: [
+          {
+            id: 'site-a',
+            status: {
+              clusterClaims: [
+                claim('platform.open-cluster-management.io', 'AWS'),
+                claim('version.openshift.io', '4.21.36'),
+                claim('apiserverurl.openshift.io', 'https://api.site-a.example.com:6443'),
+              ],
+            },
+          },
+        ],
+        size: 1,
+        total: 1,
+      },
+    }),
+  );
+  await page.route('**/perses/api/**', async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith('/dashboards')) return route.fulfill({ json: [clusterDashboard] });
+    if (url.pathname.includes('/api/v1/projects/ai-grid/datasources')) return route.fulfill({ json: [datasource] });
+    if (url.pathname.includes('/api/v1/globaldatasources')) return route.fulfill({ json: [] });
+    if (url.pathname.includes('/label/cluster/values'))
+      return route.fulfill({ json: { status: 'success', data: ['site-a', 'site-b'] } });
+    errors.push(`Unhandled fixture: ${route.request().method()} ${url.pathname}`);
+    return route.fulfill({ status: 404, json: { message: 'No fixture' } });
+  });
+
+  await page.goto('/monitoring');
+  for (const name of detailNames) {
+    await expect(page.getByText(`${name}=Select one cluster`, { exact: true })).toBeVisible();
+  }
+  await page.goto('/monitoring?var-cluster_name=site-a');
+  await expect(page.getByText('INFRASTRUCTURE_PROVIDER=AWS', { exact: true })).toBeVisible();
+  await expect(page.getByText('OPENSHIFT_VERSION=4.21.36', { exact: true })).toBeVisible();
+  await expect(page.getByText('CHANNEL=Not available', { exact: true })).toBeVisible();
+  await expect(page.getByText('API_SERVER=https://api.site-a.example.com:6443', { exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+// A bar chart as the AI Grid model dashboard's "Response time distribution" draws one: a bar per
+// series, named from a label value, which here holds characters HTML gives a meaning to.
+const bucketName = '<b>p99</b> & Fast <1s';
+const barDashboard = {
+  kind: 'Dashboard',
+  metadata: { name: 'dashboard-1-model', project: 'ai-grid' },
+  spec: {
+    display: { name: 'Model' },
+    duration: '1h',
+    refreshInterval: '0s',
+    variables: [],
+    panels: {
+      latency: {
+        kind: 'Panel',
+        spec: {
+          display: { name: 'Response time distribution' },
+          plugin: { kind: 'BarChart', spec: { calculation: 'last', sort: 'asc' } },
+          queries: [
+            {
+              kind: 'TimeSeriesQuery',
+              spec: {
+                plugin: {
+                  kind: 'PrometheusTimeSeriesQuery',
+                  spec: { query: 'latency_requests', seriesNameFormat: '{{bucket}}' },
+                },
+              },
+            },
+          ],
+        },
+      },
+    },
+    layouts: [
+      {
+        kind: 'Grid',
+        spec: { items: [{ x: 0, y: 0, width: 24, height: 8, content: { $ref: '#/spec/panels/latency' } }] },
+      },
+    ],
+  },
+};
+
+test('draws a bar chart, and shows a bar name in its tooltip as written', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push('Uncaught: ' + error.message));
+  const config = structuredClone(configExample.body);
+  config.data.monitoring = { enabled: true, persesProject: 'ai-grid' };
+  await page.route('**/api/v1/user', (route) => route.fulfill({ json: userExample.body }));
+  await page.route('**/api/v1/config', (route) => route.fulfill({ json: config }));
+  await page.route('**/perses/api/**', async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.pathname.endsWith('/dashboards')) return route.fulfill({ json: [barDashboard] });
+    if (url.pathname.includes('/api/v1/projects/ai-grid/datasources')) return route.fulfill({ json: [datasource] });
+    if (url.pathname.includes('/api/v1/globaldatasources')) return route.fulfill({ json: [] });
+    if (url.pathname.endsWith('/api/v1/query_range')) {
+      const params = request.method() === 'POST' ? new URLSearchParams(request.postData() || '') : url.searchParams;
+      const end = Number(params.get('end')) || Date.now() / 1000;
+      const result = {
+        metric: { __name__: 'latency_requests', bucket: bucketName },
+        values: [
+          [end - 60, '40'],
+          [end, '42'],
+        ],
+      };
+      return route.fulfill({ json: { status: 'success', data: { resultType: 'matrix', result: [result] } } });
+    }
+    errors.push(`Unhandled fixture: ${request.method()} ${url.pathname}`);
+    return route.fulfill({ status: 404, json: { message: 'No fixture' } });
+  });
+
+  await page.goto('/monitoring');
+  await expect(page.getByText('Response time distribution', { exact: true })).toBeVisible();
+  const chart = page.locator('canvas').first();
+  await expect(chart).toBeVisible();
+  // The one bar ends up across the middle of the chart, but ECharts grows it from zero: move over the
+  // middle until the bar is under the pointer and its tooltip shows.
+  const box = (await chart.boundingBox())!;
+  const tooltip = page.getByText(bucketName, { exact: true });
+  let nudge = 0;
+  await expect
+    .poll(async () => {
+      nudge = 1 - nudge;
+      await page.mouse.move(box.x + box.width / 2 + nudge, box.y + box.height / 2);
+      return tooltip.isVisible();
+    })
+    .toBe(true);
+  // The name's own <b> is text, not an element of the tooltip.
+  await expect(page.locator('b').getByText('p99', { exact: true })).toHaveCount(0);
+  expect(errors).toEqual([]);
+});

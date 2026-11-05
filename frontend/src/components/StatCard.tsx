@@ -12,10 +12,7 @@ type Props = {
   warning?: string;
 };
 
-/**
- * One headline number on a compact card. The AI Grid summary and the Monitoring overview lay a
- * row of these out in a Gallery.
- */
+/** One headline number on a compact card. The AI Grid summary lays a row of these out in a Gallery. */
 export const StatCard: React.FC<Props> = ({ label, value, unit, detail, warning }) => (
   <Card isCompact isFullHeight>
     <CardTitle>{label}</CardTitle>

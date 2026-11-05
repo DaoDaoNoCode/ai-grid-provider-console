@@ -26,6 +26,9 @@ import {
 } from '@perses-dev/dashboards';
 import { QueryParamProvider } from 'use-query-params';
 import { ReactRouter6Adapter } from 'use-query-params/adapters/react-router-6';
+import { ClusterDetailsVariables } from './ClusterDetailsVariables';
+import { useClusterLookup } from './useClusterLookup';
+import { clusterDetailsVariables, type ClusterLookup } from './clusterDetails';
 import { type PageTheme, usePageTheme } from './pageTheme';
 import { RelayDatasourceApi } from './persesDatasourceApi';
 import { pluginLoader } from './persesPlugins';
@@ -81,7 +84,11 @@ const useBuiltinVariables = (dashboard: DashboardResource): BuiltinVariableDefin
  * (start, end, refresh, var-<name>) as Perses's own view and odh-dashboard keep them, so a reload or
  * a link with var-<name> opens it as it was.
  */
-const DashboardBody: React.FC<Props> = ({ dashboard }) => {
+const DashboardBody: React.FC<Props & { clusterDetails: string[]; clusterLookup: ClusterLookup }> = ({
+  dashboard,
+  clusterDetails,
+  clusterLookup,
+}) => {
   const [timeZone, setTimeZone] = useState('local');
   const initialTimeRange = useInitialTimeRange(dashboard.spec.duration || '1h');
   const initialRefreshInterval = useInitialRefreshInterval(dashboard.spec.refreshInterval || '0s');
@@ -95,6 +102,7 @@ const DashboardBody: React.FC<Props> = ({ dashboard }) => {
         initialVariableDefinitions={dashboard.spec.variables}
         builtinVariableDefinitions={builtinVariables}
       >
+        {clusterDetails.length > 0 && <ClusterDetailsVariables names={clusterDetails} lookup={clusterLookup} />}
         <DatasourceStoreProvider dashboardResource={dashboard} datasourceApi={datasourceApi}>
           <DataQueriesProvider definitions={[]}>
             <DashboardProvider initialState={{ isEditMode: false, dashboardResource: dashboard }}>
@@ -140,6 +148,9 @@ const PersesDashboardView: React.FC<Props> = ({ dashboard }) => {
   const { muiTheme, chartsTheme } = themeFor(usePageTheme());
   // A 401 from the relay may be Perses's or a datasource's, not the session's: the console checks.
   useRelaySessionCheck(queryClient);
+  // Here, outside Perses's query client: Clusters/List is the console's own query.
+  const clusterDetails = useMemo(() => clusterDetailsVariables(dashboard), [dashboard]);
+  const clusterLookup = useClusterLookup(clusterDetails.length > 0);
   return (
     <QueryClientProvider client={queryClient}>
       <QueryParamProvider adapter={ReactRouter6Adapter}>
@@ -148,7 +159,7 @@ const PersesDashboardView: React.FC<Props> = ({ dashboard }) => {
             <SnackbarProvider anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} variant="default">
               <PluginRegistry pluginLoader={pluginLoader}>
                 <PanelFocusProvider>
-                  <DashboardBody dashboard={dashboard} />
+                  <DashboardBody dashboard={dashboard} clusterDetails={clusterDetails} clusterLookup={clusterLookup} />
                 </PanelFocusProvider>
               </PluginRegistry>
             </SnackbarProvider>

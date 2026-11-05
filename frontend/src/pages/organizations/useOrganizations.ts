@@ -31,12 +31,9 @@ const organizationViews = (answer: TenantsListResponse | undefined) => answer?.i
 const organizationView = (answer: TenantsGetResponse | undefined) =>
   answer?.object && toOrganizationView(answer.object);
 
-/**
- * Every organization from Tenants/List, polling as the other lists do. Off (`enabled` false), it
- * calls nothing and lists none.
- */
-export const useOrganizationList = (enabled = true): Loaded<OrganizationView[]> =>
-  useLoaded(useQuery(list, enabled ? {} : skipToken, useLoadOptions()), organizationViews);
+/** Every organization from Tenants/List, polling as the other lists do. */
+export const useOrganizationList = (): Loaded<OrganizationView[]> =>
+  useLoaded(useQuery(list, {}, useLoadOptions()), organizationViews);
 
 /** One organization from Tenants/Get, loaded once, not polled; none without an id. */
 export const useOrganization = (id: string | undefined): Loaded<OrganizationView | undefined> =>

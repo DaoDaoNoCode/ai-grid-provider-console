@@ -13,10 +13,11 @@ The first backend's proto had three RPCs. The console needs more than that, so i
 **draft** of the next proto in `mock/proto/ai_grid/v1/`, split by type as the style guide in
 `mock/research/backend-conventions.md` section 5 says (`ai_grid.proto`, `condition_type.proto`,
 `metadata_type.proto`, `managed_cluster_type.proto`, `managed_clusters_service.proto`,
-`model_type.proto`, `models_service.proto`, and `grid_service.proto`, whose `Grid/GetNetwork`
-and the whole of `catalog_items_service.proto` are still placeholders; the draft's subscriptions
-and tenants are gone, because the Subscriptions and Organizations pages call the backend's own
-`ai_grid.v1.Subscriptions` and `ai_grid.v1.Tenants` over Connect). It is the
+`model_type.proto` and `models_service.proto`; the whole of `catalog_items_service.proto` is
+still a placeholder. The draft's subscriptions and tenants are gone, because the Subscriptions and
+Organizations pages call the backend's own `ai_grid.v1.Subscriptions` and `ai_grid.v1.Tenants`
+over Connect, and so is its `grid_service.proto`, because Monitoring shows the hub's Perses
+dashboards). It is the
 console's **proposal** to the backend team, nothing more: the shapes are the ones drafted in
 section 6 of that report, every file says so in its header, and the `go_package` is the
 console's own (`bff/gen/ai_grid/v1`), not the backend's.

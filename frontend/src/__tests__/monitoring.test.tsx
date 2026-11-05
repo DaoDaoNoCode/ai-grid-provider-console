@@ -118,18 +118,30 @@ it("says when the console's configuration can't be read, instead of falling back
   service.getConfig = () => Promise.reject(new ServiceError(0, 'Unable to reach the console server.'));
   renderAt('/monitoring', service);
   expect(await screen.findByRole('heading', { name: 'Unable to load console settings' })).toBeVisible();
-  expect(screen.queryByText(/Cluster availability, gateway performance/)).not.toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Monitoring is not set up for this console' })).not.toBeInTheDocument();
   service.getConfig = getConfig;
   await user.click(screen.getByRole('button', { name: 'Retry' }));
   expect(await screen.findByTestId('perses-dashboard')).toHaveTextContent('ai-grid/dashboard-1-fleet');
 });
 
-it("keeps the AI Grid overview's metrics when the console relays to no Perses", async () => {
-  renderAt('/monitoring', new MockConsoleService());
+it('says Monitoring is not set up, and which Helm values set it up, when the console relays to no Perses', async () => {
+  const service = new MockConsoleService();
+  const list = vi.spyOn(service, 'listMonitoringDashboards');
+  renderAt('/monitoring', service);
+  expect(await screen.findByRole('heading', { name: 'Monitoring is not set up for this console' })).toBeVisible();
+  expect(screen.getByRole('heading', { level: 1, name: 'Monitoring' })).toBeVisible();
   expect(
-    await screen.findByText('Cluster availability, gateway performance, and resource use across AI Grid.'),
+    screen.getByText(
+      (_, element) =>
+        element?.tagName === 'DIV' &&
+        element.textContent ===
+          "To view the hub's Perses dashboards here, ask your hub administrator to set console.perses.url and console.perses.project in the console's Helm values.",
+    ),
   ).toBeVisible();
+  // Nothing to retry and no dashboards to ask for: the relay isn't there.
+  expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
   expect(screen.queryByTestId('monitoring-tabs')).not.toBeInTheDocument();
+  expect(list).not.toHaveBeenCalled();
 });
 
 it("opens a dashboard's link to another tab here, and says when a link goes elsewhere", async () => {
