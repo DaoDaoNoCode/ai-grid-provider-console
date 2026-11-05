@@ -88,7 +88,7 @@ export const ModelDetailsPage: React.FC = () => {
         <DetailsSection title="Availability">
           {model.ingress.length > 0 ? (
             <Stack hasGutter data-testid="model-maas-endpoint">
-              {availability && <ModelAvailability model={model} availability={availability} />}
+              {availability && <ModelAvailability model={model} availability={availability} onModelPage />}
               <ModelMaaSTable model={model} clusters={clusters} />
             </Stack>
           ) : (

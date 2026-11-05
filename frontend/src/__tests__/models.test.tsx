@@ -2799,6 +2799,23 @@ describe('the deployment and MaaS statuses', () => {
     expect(within(modal).getByRole('link', { name: 'Go to Subscriptions' })).toHaveAttribute('href', '/subscriptions');
   });
 
+  it('links to the model from the Availability dialog on the list, and not on its own page', async () => {
+    const user = userEvent.setup();
+    const service = running();
+    modelsOf(service).find('smollm2').status!.maas = ModelMaasState.AWAITING_SUBSCRIPTION_AND_BACKEND;
+    renderAt('/models', service);
+    await user.click(await screen.findByRole('button', { name: 'Pending availability of smollm2' }));
+    const dialog = await screen.findByRole('dialog', { name: 'smollm2 availability' });
+    await user.click(within(dialog).getByRole('link', { name: 'Go to the model' }));
+    expect(await screen.findByRole('heading', { level: 1, name: 'smollm2' })).toBeVisible();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    // On the model's page, the same dialog has nowhere else to go but Subscriptions.
+    await user.click(screen.getByRole('button', { name: 'Pending availability of smollm2' }));
+    const again = await screen.findByRole('dialog', { name: 'smollm2 availability' });
+    expect(within(again).getByRole('link', { name: 'Go to Subscriptions' })).toBeVisible();
+    expect(within(again).queryByRole('link', { name: 'Go to the model' })).not.toBeInTheDocument();
+  });
+
   it('words every MaaS state as the design does', async () => {
     const service = running();
     const smollm2 = modelsOf(service).find('smollm2');
