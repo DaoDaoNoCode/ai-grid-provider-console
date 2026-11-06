@@ -2,6 +2,12 @@
 // odh-dashboard's Observability page does (packages/observability). Loaded lazily: Perses, its
 // MUI theme and its chart library add about 1 MB (gzipped) that no other page needs.
 import { useMemo, useState } from 'react';
+// The hub's dashboards write PatternFly markup in their Markdown panels: the cluster dashboard's
+// "Cluster details" is a horizontal description list (ai-grid-cluster-gitops
+// apps/ai-grid-o11y/manifests/perses-dashboard-cluster.yaml). PatternFly's component styles load
+// with the components that use them, and nothing on this page uses a description list, so opened
+// directly the panel had no layout.
+import '@patternfly/patternfly/components/DescriptionList/description-list.css';
 import { Flex, FlexItem } from '@patternfly/react-core';
 import { ThemeProvider } from '@mui/material';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
