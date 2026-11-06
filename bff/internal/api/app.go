@@ -99,7 +99,7 @@ func (a *App) Handler() http.Handler {
 // which calls are allowed). Without a Perses server configured, Monitoring is off.
 func (a *App) relayPerses(w http.ResponseWriter, r *http.Request) {
 	if a.perses == nil {
-		writeError(w, http.StatusNotFound, "monitoring is not configured on this console")
+		perses.WriteError(w, http.StatusNotFound, "monitoring is not configured on this console")
 		return
 	}
 	id, _ := identity.FromContext(r.Context())

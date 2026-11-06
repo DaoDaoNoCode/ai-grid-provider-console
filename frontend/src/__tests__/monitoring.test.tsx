@@ -220,7 +220,7 @@ describe('HttpConsoleService.listMonitoringDashboards', () => {
     ).rejects.toMatchObject({ status: 403, message: 'not allowed to read project' });
     await expect(
       new HttpConsoleService(
-        answer(404, { error: { message: 'monitoring is not configured on this console' } }),
+        answer(404, { message: 'monitoring is not configured on this console' }),
       ).listMonitoringDashboards('ai-grid'),
     ).rejects.toMatchObject({ status: 404, message: 'monitoring is not configured on this console' });
   });

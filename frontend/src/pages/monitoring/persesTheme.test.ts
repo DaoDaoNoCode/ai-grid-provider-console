@@ -39,6 +39,21 @@ describe('patternFlyTheme', () => {
     });
   });
 
+  it.each(['light', 'dark'] as const)(
+    "gives Perses's info and description tooltips the theme's floating surface under its text (%s)",
+    (mode) => {
+      const { muiTheme } = patternFlyTheme(mode, 2026);
+      // InfoTooltip and PanelDescriptionTooltip: background.tooltip behind text.primary.
+      expect(muiTheme.palette.background.tooltip).toBe('var(--pf-t--global--background--color--floating--default)');
+      expect(muiTheme.palette.text.primary).toBe(mode === 'dark' ? '#ffffff' : '#151515');
+      // Any other MUI tooltip on the page looks the same.
+      expect(muiTheme.components?.MuiTooltip?.styleOverrides?.tooltip).toMatchObject({
+        backgroundColor: 'var(--pf-t--global--background--color--floating--default)',
+        color: 'var(--pf-t--global--text--color--regular)',
+      });
+    },
+  );
+
   it("has a dark variant for PatternFly's dark theme, with light text on the canvas", () => {
     const { muiTheme, chartsTheme } = patternFlyTheme('dark', 2026);
     expect(muiTheme.palette.mode).toBe('dark');

@@ -62,6 +62,9 @@ const dashboard = (name: string, title: string) => ({
   },
 });
 const injectedFailure = 'Compatibility test injected failure';
+// The relay's own answer when Perses is slower than PERSES_TIMEOUT, in the shape the BFF sends
+// (bff/internal/perses, writeError): Perses's own {"message": "..."}.
+const relayTimeout = "the hub's Perses did not answer in time";
 const dashboards = [dashboard('dashboard-1-fleet', 'Fleet health'), dashboard('dashboard-2-usage', 'Token usage')];
 // Each cluster's series counts up from its base to the base plus 9 over the queried range, so the
 // stat panel's last value is the base plus 9. One sample per step from the first step boundary, as
@@ -78,11 +81,11 @@ test('real Perses panels remain compatible with the shared Query runtime', async
   page.on('pageerror', (error) => errors.push('Uncaught: ' + error.message));
   page.on('console', (msg) => {
     if (msg.type() !== 'error') return;
-    // The browser logs each 500 and 401 this test injects into a Perses query, and the query
+    // The browser logs each 500, 504 and 401 this test injects into a Perses query, and the query
     // layer logs the injected failure. Any other failed request still counts.
-    const injected = /^Failed to load resource:.*(?:401|500)/.test(msg.text());
+    const injected = /^Failed to load resource:.*(?:401|500|504)/.test(msg.text());
     if (injected && msg.location().url.includes('/perses/api/proxy/')) return;
-    if (msg.text().includes(injectedFailure)) return;
+    if (msg.text().includes(injectedFailure) || msg.text().includes(relayTimeout)) return;
     errors.push(msg.text());
   });
   const config = structuredClone(configExample.body);
@@ -109,6 +112,7 @@ test('real Perses panels remain compatible with the shared Query runtime', async
         start: params.get('start') ?? '',
         end: params.get('end') ?? '',
       });
+      if (responseStatus === 504) return route.fulfill({ status: 504, json: { message: relayTimeout } });
       if (responseStatus !== 200)
         return route.fulfill({
           status: responseStatus,
@@ -206,6 +210,19 @@ test('real Perses panels remain compatible with the shared Query runtime', async
     await expect(page.getByText(injectedFailure)).toHaveCount(0);
   });
 
+  await test.step("the relay's timeout shows its message, not [object Object]", async () => {
+    responseStatus = 504;
+    const before = queries.length;
+    await refresh.click();
+    await expect.poll(() => queries.length).toBeGreaterThan(before);
+    await expect(page.getByText(relayTimeout).first()).toBeVisible();
+    await expect(page.getByText('[object Object]')).toHaveCount(0);
+    responseStatus = 200;
+    await refresh.click();
+    await expect(page.getByText(lastValue('site-a'), { exact: true })).toBeVisible();
+    await expect(page.getByText(relayTimeout)).toHaveCount(0);
+  });
+
   await test.step('a 401 checks the session and recovers', async () => {
     responseStatus = 401;
     const userBefore = userReads;
@@ -222,8 +239,17 @@ test('real Perses panels remain compatible with the shared Query runtime', async
 
 // The AI Grid cluster dashboard's shape (ai-grid-cluster-gitops
 // apps/ai-grid-o11y/manifests/perses-dashboard-cluster.yaml): a multi-select cluster variable with
-// All, and hidden CLUSTER_DETAILS_* text variables that its Markdown panel prints.
+// All, and hidden CLUSTER_DETAILS_* text variables that its Markdown panel prints in a PatternFly
+// horizontal description list, written as HTML with PatternFly's classes.
 const detailNames = ['INFRASTRUCTURE_PROVIDER', 'OPENSHIFT_VERSION', 'CHANNEL', 'API_SERVER'];
+const detailsMarkup = [
+  '<dl class="pf-v6-c-description-list pf-m-auto-column-widths pf-m-horizontal">',
+  ...detailNames.map(
+    (name) =>
+      `<div class="pf-v6-c-description-list__group"><dt class="pf-v6-c-description-list__term"><span class="pf-v6-c-description-list__text">${name}</span></dt><dd class="pf-v6-c-description-list__description"><div class="pf-v6-c-description-list__text">\${CLUSTER_DETAILS_${name}}</div></dd></div>`,
+  ),
+  '</dl>',
+].join('\n');
 const clusterDashboard = {
   kind: 'Dashboard',
   metadata: { name: 'dashboard-0-cluster', project: 'ai-grid' },
@@ -256,7 +282,7 @@ const clusterDashboard = {
           display: { name: 'Cluster details' },
           plugin: {
             kind: 'Markdown',
-            spec: { text: detailNames.map((name) => `${name}=\${CLUSTER_DETAILS_${name}}`).join('\n\n') },
+            spec: { text: detailsMarkup },
           },
         },
       },
@@ -310,15 +336,31 @@ test("fills in the cluster details panel from the selected cluster's claims", as
     return route.fulfill({ status: 404, json: { message: 'No fixture' } });
   });
 
+  // The details list's term and value of a detail.
+  const detail = (name: string) => {
+    const group = page.locator('.pf-v6-c-description-list__group').filter({ hasText: name });
+    return { term: group.locator('dt'), value: group.locator('dd') };
+  };
+
+  // Opened directly: no other page has loaded PatternFly's description list styles first.
   await page.goto('/monitoring');
   for (const name of detailNames) {
-    await expect(page.getByText(`${name}=Select one cluster`, { exact: true })).toBeVisible();
+    await expect(detail(name).value).toHaveText('Select one cluster');
   }
+  await test.step('the details are laid out as a horizontal description list', async () => {
+    await expect(page.locator('dl.pf-v6-c-description-list')).toHaveCSS('display', 'grid');
+    for (const name of detailNames) {
+      const term = await detail(name).term.boundingBox();
+      const value = await detail(name).value.boundingBox();
+      expect(term && value && value.x > term.x + term.width && Math.abs(value.y - term.y) < 4).toBe(true);
+    }
+  });
+
   await page.goto('/monitoring?var-cluster_name=site-a');
-  await expect(page.getByText('INFRASTRUCTURE_PROVIDER=AWS', { exact: true })).toBeVisible();
-  await expect(page.getByText('OPENSHIFT_VERSION=4.21.36', { exact: true })).toBeVisible();
-  await expect(page.getByText('CHANNEL=Not available', { exact: true })).toBeVisible();
-  await expect(page.getByText('API_SERVER=https://api.site-a.example.com:6443', { exact: true })).toBeVisible();
+  await expect(detail('INFRASTRUCTURE_PROVIDER').value).toHaveText('AWS');
+  await expect(detail('OPENSHIFT_VERSION').value).toHaveText('4.21.36');
+  await expect(detail('CHANNEL').value).toHaveText('Not available');
+  await expect(detail('API_SERVER').value).toHaveText('https://api.site-a.example.com:6443');
   expect(errors).toEqual([]);
 });
 
