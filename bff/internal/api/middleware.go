@@ -13,6 +13,7 @@ import (
 
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/hub"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/identity"
+	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/perses"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/relay"
 )
 
@@ -24,6 +25,10 @@ func (a *App) requireIdentity(next http.Handler) http.Handler {
 		if err != nil {
 			if relay.Handles(r.URL.Path) {
 				relay.WriteError(w, http.StatusUnauthorized, err.Error())
+				return
+			}
+			if perses.Handles(r.URL.Path) {
+				perses.WriteError(w, http.StatusUnauthorized, err.Error())
 				return
 			}
 			writeError(w, http.StatusUnauthorized, err.Error())

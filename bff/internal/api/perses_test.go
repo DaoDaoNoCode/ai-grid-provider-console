@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -54,28 +55,54 @@ func TestPersesRelayCarriesTheCallersToken(t *testing.T) {
 	}
 }
 
+// persesError decodes an error answered on a Perses path. The Perses components show a string
+// "message" (@perses-dev/client's fetch), so it must be exactly {"message": "..."}: the console's
+// envelope reached a panel as "[object Object]".
+func persesError(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type %q, want application/json", ct)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("body %q: %v", rec.Body, err)
+	}
+	msg, ok := body["message"].(string)
+	if len(body) != 1 || !ok || msg == "" {
+		t.Fatalf("body %q, want {\"message\": \"...\"}", rec.Body)
+	}
+	return msg
+}
+
 // The relay sits behind the same checks as /api/v1: a caller without a token, and one the hub
-// doesn't call a provider admin, never reach Perses.
+// doesn't call a provider admin, never reach Perses. The checks answer in Perses's error shape,
+// so a panel shows their message.
 func TestPersesRelayIsForProviderAdminsOnly(t *testing.T) {
 	t.Parallel()
 	relay, auth := persesUpstream(t)
-
-	app := newTestApp(t, testConfig(t), nil).WithPerses(relay)
-	if rec := serve(app, httptest.NewRequest(http.MethodGet, persesDashboards, nil)); rec.Code != http.StatusUnauthorized {
-		t.Errorf("no token: got %d, want 401", rec.Code)
+	for _, tc := range []struct {
+		name    string
+		hub     *fakeHub
+		req     *http.Request
+		status  int
+		message string
+	}{
+		{"no token", &fakeHub{allowed: true}, httptest.NewRequest(http.MethodGet, persesDashboards, nil), http.StatusUnauthorized, "missing x-forwarded-access-token header"},
+		{"token the hub rejects", &fakeHub{status: http.StatusUnauthorized}, asUser(http.MethodGet, persesDashboards), http.StatusUnauthorized, "the hub rejected the credentials; log in again"},
+		{"not a provider admin", &fakeHub{allowed: false}, asUser(http.MethodGet, persesDashboards), http.StatusForbidden, "this console is only for provider admins"},
+		{"hub failing", &fakeHub{status: http.StatusInternalServerError}, asUser(http.MethodPost, "/perses/api/proxy/projects/"+persesProject+"/datasources/thanos/api/v1/query_range"), http.StatusBadGateway, "the hub could not confirm the caller's permissions; try again"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app := newTestAppWithHub(t, testConfig(t), nil, tc.hub).WithPerses(relay)
+			rec := serve(app, tc.req)
+			if rec.Code != tc.status {
+				t.Fatalf("got %d %q, want %d", rec.Code, rec.Body, tc.status)
+			}
+			if msg := persesError(t, rec); !strings.HasPrefix(msg, tc.message) {
+				t.Errorf("message %q, want %q", msg, tc.message)
+			}
+		})
 	}
-
-	viewer := newTestAppWithHub(t, testConfig(t), nil, &fakeHub{allowed: false}).WithPerses(relay)
-	rec := serve(viewer, asUser(http.MethodGet, persesDashboards))
-	if rec.Code != http.StatusForbidden {
-		t.Errorf("not a provider admin: got %d, want 403", rec.Code)
-	}
-
-	expired := newTestAppWithHub(t, testConfig(t), nil, &fakeHub{status: http.StatusUnauthorized}).WithPerses(relay)
-	if rec := serve(expired, asUser(http.MethodGet, persesDashboards)); rec.Code != http.StatusUnauthorized {
-		t.Errorf("token the hub rejects: got %d, want 401", rec.Code)
-	}
-
 	if len(auth.values()) != 0 {
 		t.Fatalf("a refused caller reached Perses %d time(s)", len(auth.values()))
 	}
@@ -101,7 +128,7 @@ func TestMonitoringOffWithoutPerses(t *testing.T) {
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("got %d, want 404", rec.Code)
 	}
-	if msg := decodeError(t, rec).Error.Message; msg != "monitoring is not configured on this console" {
+	if msg := persesError(t, rec); msg != "monitoring is not configured on this console" {
 		t.Errorf("message %q", msg)
 	}
 	var cfg ConsoleConfig

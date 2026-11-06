@@ -38,8 +38,9 @@ export class HttpConsoleService implements ConsoleService {
     if (!response.ok) {
       let message = `Request failed with status ${response.status}.`;
       try {
-        const payload = (await response.json()) as ErrorBody & { message?: string };
-        message = payload.error?.message || payload.message || message;
+        // Perses's error shape, which the BFF's relay and its caller checks answer in too.
+        const payload = (await response.json()) as { message?: string };
+        message = payload.message || message;
       } catch {
         // keep the generic message
       }

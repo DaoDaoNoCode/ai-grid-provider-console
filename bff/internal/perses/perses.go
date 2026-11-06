@@ -41,6 +41,10 @@ import (
 // Prefix is where the relay is mounted; the rest of the path is the Perses API path.
 const Prefix = "/perses/api"
 
+// Handles reports whether a request path is the relay's, so the caller checks in front of it
+// answer in its error shape (WriteError).
+func Handles(path string) bool { return strings.HasPrefix(path, Prefix+"/") }
+
 // MaxBodyBytes bounds a query form. PromQL in a form is a few kilobytes.
 const MaxBodyBytes = 1 << 20
 
@@ -143,23 +147,23 @@ func WithToken(ctx context.Context, token string) context.Context {
 func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	apiPath, ok := strings.CutPrefix(req.URL.Path, Prefix)
 	if !ok {
-		writeError(w, http.StatusNotFound, "the requested resource could not be found")
+		WriteError(w, http.StatusNotFound, "the requested resource could not be found")
 		return
 	}
 	if status, msg := r.Allowed(req.Method, apiPath, req.URL.RawPath); status != 0 {
-		writeError(w, status, msg)
+		WriteError(w, status, msg)
 		return
 	}
 	if req.Method == http.MethodPost {
 		if mt := strings.TrimSpace(strings.SplitN(req.Header.Get("Content-Type"), ";", 2)[0]); !strings.EqualFold(mt, "application/x-www-form-urlencoded") {
-			writeError(w, http.StatusUnsupportedMediaType, "a Perses query must be sent as application/x-www-form-urlencoded")
+			WriteError(w, http.StatusUnsupportedMediaType, "a Perses query must be sent as application/x-www-form-urlencoded")
 			return
 		}
 		req.Body = http.MaxBytesReader(w, req.Body, MaxBodyBytes)
 	}
 	token, _ := req.Context().Value(tokenKey{}).(string)
 	if token == "" {
-		writeError(w, http.StatusUnauthorized, "missing caller token")
+		WriteError(w, http.StatusUnauthorized, "missing caller token")
 		return
 	}
 	ctx, cancel := context.WithTimeout(req.Context(), r.timeout)
@@ -285,16 +289,16 @@ func errorHandler(w http.ResponseWriter, req *http.Request, err error) {
 	var netErr net.Error
 	switch {
 	case errors.Is(err, errRedirect):
-		writeError(w, http.StatusBadGateway, "the hub's Perses answered with a redirect, which the console doesn't follow")
+		WriteError(w, http.StatusBadGateway, "the hub's Perses answered with a redirect, which the console doesn't follow")
 	case errors.As(err, &maxBytes):
-		writeError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("a Perses query must be at most %d bytes", MaxBodyBytes))
+		WriteError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("a Perses query must be at most %d bytes", MaxBodyBytes))
 	case errors.Is(err, context.Canceled):
 		// The browser went away; nobody reads the answer.
 		w.WriteHeader(499)
 	case errors.Is(err, context.DeadlineExceeded), errors.As(err, &netErr) && netErr.Timeout():
-		writeError(w, http.StatusGatewayTimeout, "the hub's Perses did not answer in time")
+		WriteError(w, http.StatusGatewayTimeout, "the hub's Perses did not answer in time")
 	default:
-		writeError(w, http.StatusBadGateway, "the hub's Perses could not be reached; try again")
+		WriteError(w, http.StatusBadGateway, "the hub's Perses could not be reached; try again")
 	}
 }
 
@@ -357,11 +361,11 @@ func isLoopbackHost(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// writeError answers as Perses's own server does, {"message": "..."}, not in the console's
+// WriteError answers as Perses's own server does, {"message": "..."}, not in the console's
 // envelope: the Perses components show a failed query's message from a string "error" or
 // "message" field (@perses-dev/client's fetch), so the envelope's "error" object reached a panel
-// as "[object Object]".
-func writeError(w http.ResponseWriter, status int, message string) {
+// as "[object Object]". The console's caller checks in front of the relay answer with it too.
+func WriteError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(status)

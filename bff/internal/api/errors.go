@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/perses"
 	"github.com/ai-grid-cloud/ai-grid-provider-console/bff/internal/relay"
 )
 
@@ -35,6 +36,11 @@ func (a *App) respondError(w http.ResponseWriter, r *http.Request, err error) {
 		// The provider-admin check in front of the Connect relay: the browser's
 		// Connect client reads a Connect error, not the JSON API's envelope.
 		relay.WriteError(w, code, message)
+		return
+	}
+	if perses.Handles(r.URL.Path) {
+		// The same in front of the Perses relay: the Perses components read a string "message".
+		perses.WriteError(w, code, message)
 		return
 	}
 	writeError(w, code, message)
