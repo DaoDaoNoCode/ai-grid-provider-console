@@ -43,7 +43,11 @@ PORT="${LOCAL_PORT:-18443}"
 BACKEND_PIN="$(cat "${ROOT}/.backend-api-version")"
 BACKEND_IMAGE="${BACKEND_IMAGE:-ghcr.io/ai-grid-cloud/ai-grid-provider-backend:sha-6ce678741f6d8f55a6335ae916524e8118b9ed71@sha256:64600866d1635b9d42e0cc9a16ba29513091e86463135bf94b2097e9729398f3}"
 PROXY_IMAGE="${PROXY_IMAGE:-quay.io/opendatahub/odh-kube-auth-proxy@sha256:5dc37f1a1e30927abe2dffbbfcb5a31ed8692cf498fb2684cca1b747b98b00a0}"
-BUSYBOX_IMAGE=docker.io/library/busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
+# The linux/amd64 manifest of busybox:1.36, not the multi-platform index (73aaf090...). With Docker's
+# containerd image store (the default on Docker 29, ubuntu-26.04 runners) an index pulled for one
+# platform is still exported whole, and kind's `ctr import --all-platforms` then fails on the
+# platforms that were never pulled ("content digest sha256:71b0cbca...: not found", busybox's arm/v5).
+BUSYBOX_IMAGE=docker.io/library/busybox@sha256:b7f3d86d6e84fc17718c48bcde1450807faa2d56704205c697b4bd5df7b9e29f
 ROUTE_CRD=https://raw.githubusercontent.com/openshift/api/a9b3f04dd8db4c20aacca607afeff8ddbc25d863/route/v1/zz_generated.crd-manifests/routes.crd.yaml
 CLUSTER_CRD=https://raw.githubusercontent.com/open-cluster-management-io/api/7b34437afbd76433695b6eb2d17735cd1de25df9/cluster/v1/0000_00_clusters.open-cluster-management.io_managedclusters.crd.yaml
 
@@ -119,8 +123,7 @@ step "images: the console from this checkout, ${BACKEND_IMAGE}, ${PROXY_IMAGE}"
 docker build -q -t localhost/ai-grid-provider-console:kind --build-arg CONSOLE_VERSION=kind "${ROOT}" >/dev/null
 retry docker pull -q --platform linux/amd64 "${BACKEND_IMAGE}" >/dev/null
 retry docker pull -q --platform linux/amd64 "${PROXY_IMAGE}" >/dev/null
-# The node's own platform: the debug container runs natively.
-retry docker pull -q "${BUSYBOX_IMAGE}" >/dev/null
+retry docker pull -q --platform linux/amd64 "${BUSYBOX_IMAGE}" >/dev/null
 docker tag "${BACKEND_IMAGE}" localhost/ai-grid-backend:kind
 docker tag "${PROXY_IMAGE}" localhost/kube-auth-proxy:kind
 docker tag "${BUSYBOX_IMAGE}" localhost/busybox:kind
