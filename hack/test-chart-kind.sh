@@ -8,12 +8,15 @@
 #      hack/deploy.sh does it (hack/chart-takeover.sh);
 #   2. helm install: the pod is ready, the proxy refuses a caller without a token, accepts a
 #      ServiceAccount token (TokenReview) and drops the identity headers a caller forges, the BFF answers isProviderAdmin from the cluster's access
-#      review, and Clusters/List over the relay lists ManagedClusters through the backend; no
+#      review (patch on ManagedClusters and a cluster reader's get on every non-resource URL are
+#      not enough, ClusterRole ai-grid-provider-admin is),
+#      and Clusters/List over the relay lists ManagedClusters through the backend; no
 #      response, the proxy's own included, carries the caller's token; the
 #      backend may get and list the catalog's Argo CD Applications in openshift-gitops and no
 #      more; only the proxy listens off loopback;
-#   3. helm upgrade with backend.clusterWrites: the backend may label ManagedClusters ai-grid/*, and
-#      the admission policy refuses its other changes;
+#   3. helm upgrade with backend.clusterWrites and providerAdmins.users: the chart's binding makes
+#      the tester a provider admin, the backend may label ManagedClusters ai-grid/*, and the
+#      admission policy refuses its other changes;
 #   4. helm uninstall removes the cluster-scoped objects and the Role in openshift-gitops, and
 #      keeps the IdP secret namespace and the Secrets in it.
 # Not covered: OpenShift's OAuth login in a browser, the service CA and the Route's router.
@@ -114,7 +117,8 @@ if [[ -z "${created}" ]]; then
   helm --kube-context "${CTX}" uninstall console -n "${NS}" --ignore-not-found --wait >/dev/null
   k delete namespace "${NS}" ai-grid-idp-secrets --ignore-not-found --wait >/dev/null
   k delete managedcluster site-a --ignore-not-found >/dev/null
-  k delete clusterrolebinding,clusterrole tester-managedclusters --ignore-not-found >/dev/null
+  k delete clusterrolebinding,clusterrole tester-managedclusters tester-cluster-reader --ignore-not-found >/dev/null
+  k delete clusterrolebinding tester-provider-admin --ignore-not-found >/dev/null
   k -n default delete serviceaccount tester --ignore-not-found >/dev/null
 fi
 
@@ -300,6 +304,17 @@ expect 302 "a token the cluster rejects goes to sign-in" -H "Authorization: Bear
 connect=(-X POST -H "Content-Type: application/json" -H "Connect-Protocol-Version: 1" -d '{"name":"kind"}')
 expect 401 "a Connect call without a login is 401, not a redirect" "${connect[@]}" "${u}/ai_grid.v1.AiGrid/Ping"
 k -n default create serviceaccount tester --dry-run=client -o yaml | k apply -f - >/dev/null
+TESTER=system:serviceaccount:default:tester
+# tester_can <yes|no> <verb> <non-resource URL>: waits up to 10s for RBAC to answer the tester's
+# can-i so, as a binding that just changed takes a moment to reach the authorizer.
+tester_can() {
+  local want=$1 verb=$2 url=$3
+  for _ in $(seq 1 10); do
+    [[ "$(k auth can-i "${verb}" "${url}" --as="${TESTER}" 2>/dev/null || true)" == "${want}" ]] && return 0
+    sleep 1
+  done
+  return 1
+}
 TOKEN="$(k -n default create token tester)"
 auth=(-H "Authorization: Bearer ${TOKEN}")
 expect 200 "a ServiceAccount token signs in" "${auth[@]}" "${u}/api/v1/user"
@@ -314,17 +329,40 @@ expect 200 "identity headers a caller sends are dropped" "${auth[@]}" \
 expect 403 "a non-admin may not list clusters" "${auth[@]}" "${u}/api/v1/clusters"
 expect 403 "a non-admin's Connect call stops at the BFF" "${auth[@]}" "${connect[@]}" "${u}/ai_grid.v1.AiGrid/Ping"
 grep -q '"code":"permission_denied"' "${TMP}/body" || fail "the relay's 403 is no Connect error: $(cat "${TMP}/body")"
+# ACM's open-cluster-management:hypershift-addon:agent ClusterRoleBinding lets every authenticated
+# user of a hub patch ManagedClusters, so that right must not make anyone a provider admin.
 k create clusterrole tester-managedclusters --verb=patch \
   --resource=managedclusters.cluster.open-cluster-management.io --dry-run=client -o yaml | k apply -f - >/dev/null
 k create clusterrolebinding tester-managedclusters --clusterrole=tester-managedclusters \
   --serviceaccount=default:tester --dry-run=client -o yaml | k apply -f - >/dev/null
+expect 200 "with patch on ManagedClusters only, the caller signs in" "${auth[@]}" "${u}/api/v1/user"
+grep -q '"isProviderAdmin":false' "${TMP}/body" || fail "patch on ManagedClusters made a provider admin: $(cat "${TMP}/body")"
+expect 403 "with patch on ManagedClusters only, Connect calls stop at the BFF" "${auth[@]}" "${connect[@]}" "${u}/ai_grid.v1.AiGrid/Ping"
+# OpenShift's cluster-reader may get every non-resource URL (its
+# system:openshift:aggregate-to-cluster-reader rule), so the check asks for post. kind has no
+# cluster-reader; tester-cluster-reader stands in with that rule.
+k create clusterrole tester-cluster-reader --verb=get --non-resource-url='*' \
+  --dry-run=client -o yaml | k apply -f - >/dev/null
+k create clusterrolebinding tester-cluster-reader --clusterrole=tester-cluster-reader \
+  --serviceaccount=default:tester --dry-run=client -o yaml | k apply -f - >/dev/null
+tester_can yes get /ai-grid/provider-console || fail "bound to tester-cluster-reader, the tester may not get /ai-grid/provider-console"
+[[ "$(k auth can-i post /ai-grid/provider-console --as="${TESTER}" 2>/dev/null || true)" == no ]] ||
+  fail "a cluster reader may post to /ai-grid/provider-console"
+expect 200 "as a cluster reader, the caller signs in" "${auth[@]}" "${u}/api/v1/user"
+grep -q '"isProviderAdmin":false' "${TMP}/body" || fail "a cluster reader is a provider admin: $(cat "${TMP}/body")"
+expect 403 "a cluster reader may not list clusters" "${auth[@]}" "${u}/api/v1/clusters"
+expect 403 "a cluster reader's Connect calls stop at the BFF" "${auth[@]}" "${connect[@]}" "${u}/ai_grid.v1.AiGrid/Ping"
+# The chart's ClusterRole, bound the way README.md says (oc adm policy add-cluster-role-to-user).
+k create clusterrolebinding tester-provider-admin --clusterrole=ai-grid-provider-admin \
+  --serviceaccount=default:tester --dry-run=client -o yaml | k apply -f - >/dev/null
+tester_can yes post /ai-grid/provider-console || fail "bound to ai-grid-provider-admin, the tester may not post to /ai-grid/provider-console"
 k apply -f - >/dev/null <<'YAML'
 apiVersion: cluster.open-cluster-management.io/v1
 kind: ManagedCluster
 metadata: { name: site-a, labels: { location: us-east } }
 spec: { hubAcceptsClient: true }
 YAML
-expect 200 "with patch on ManagedClusters the caller is a provider admin" "${auth[@]}" "${u}/api/v1/user"
+expect 200 "bound to ClusterRole ai-grid-provider-admin, the caller is a provider admin" "${auth[@]}" "${u}/api/v1/user"
 grep -q '"isProviderAdmin":true' "${TMP}/body" || fail "isProviderAdmin should be true: $(cat "${TMP}/body")"
 # What the Clusters pages call: Clusters/List over the relay.
 list=(-X POST -H "Content-Type: application/json" -H "Connect-Protocol-Version: 1" -d '{}')
@@ -395,10 +433,16 @@ open="$(grep -v -e '^127\.0\.0\.1:' -e '^::1:' <<<"${listeners}" || true)"
 [[ "$(sed -E 's/.*:([0-9]+)$/\1/' <<<"${open}" | sort -u)" == 8443 ]] || fail "only :8443 may listen off loopback, got: ${open}"
 pass "only the proxy's :8443 listens off loopback"
 
-step "3. helm upgrade with backend.clusterWrites"
+step "3. helm upgrade with backend.clusterWrites and providerAdmins"
+# The question the BFF asks the hub (ProviderAdminCheck, bff/internal/hub/hub.go), now answered by
+# the chart's own ClusterRoleBinding instead of the one made by hand above.
+k delete clusterrolebinding tester-provider-admin >/dev/null
+tester_can no post /ai-grid/provider-console || fail "without a binding the tester is still a provider admin"
 helm --kube-context "${CTX}" upgrade console "${CHART}" -n "${NS}" "${VALUES[@]}" \
-  --set backend.clusterWrites=true >/dev/null
+  --set backend.clusterWrites=true --set-json "providerAdmins.users=[\"${TESTER}\"]" >/dev/null
 rollout
+tester_can yes post /ai-grid/provider-console || fail "providerAdmins.users does not make the tester a provider admin"
+pass "providerAdmins.users binds ClusterRole ai-grid-provider-admin"
 loaded=
 for _ in $(seq 1 30); do # the policy takes a moment to load
   if ! k label managedcluster site-a policy-probe=1 --as="${SA}" --dry-run=server >/dev/null 2>&1; then
