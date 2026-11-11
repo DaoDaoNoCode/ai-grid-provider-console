@@ -155,11 +155,15 @@ const gpuConfigurations = (c: ClusterView) =>
 /** The GPUs to sort by: the inventory's, else the capacity's, -1 when the hub reports neither. */
 const gpuTotal = (c: ClusterView) => c.gpus?.total ?? gpuCount(c) ?? -1;
 
-/** "4 nodes, 32 GPUs" from the inventory; without one, the capacity's count; nothing without GPUs. */
+/**
+ * "4 nodes, 32 GPUs" from the inventory; without one, the capacity's count; "No GPUs" when the
+ * capacity has none, and "Not reported" without a capacity, as the details page words the two.
+ */
 const gpuCapacity = (c: ClusterView) => {
   if (c.gpus) return capacityText(c.gpus);
   const n = gpuCount(c);
-  return n ? gpuCountText(n) : EMPTY_VALUE;
+  if (n === undefined) return 'Not reported';
+  return n ? gpuCountText(n) : 'No GPUs';
 };
 
 /** A member's provisioning, or nothing for a cluster outside AI Grid (sorts first). */

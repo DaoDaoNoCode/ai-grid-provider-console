@@ -743,17 +743,29 @@ it("lists each cluster's GPU configuration and capacity, as provider admins aske
   expect(screen.getByTestId('cluster-gpu-capacity-site4')).toHaveTextContent('8 GPUs');
 });
 
-it('shows no GPUs for a cluster whose capacity has none, and sorts by GPU count', async () => {
+it('tells a cluster without GPUs from one whose capacity is not reported, as its details page does', async () => {
   const user = userEvent.setup();
-  renderAt('/clusters', new MockConsoleService());
+  const clusters = seedClusters();
+  // site3 without its GPU inventory and without a capacity: the hub reports nothing yet.
+  clusters[2] = {
+    ...clusters[2],
+    gpus: undefined,
+    capacity: undefined,
+    allocatable: undefined,
+    gpuCapacity: undefined,
+  };
+  renderAt('/clusters', new MockConsoleService(undefined, clusters));
   await screen.findByRole('row', { name: /^site1 / });
-  expect(screen.getByTestId('cluster-gpu-capacity-site4')).toHaveTextContent('—');
+  expect(screen.getByTestId('cluster-gpu-capacity-site4')).toHaveTextContent(/^No GPUs$/);
+  expect(screen.getByTestId('cluster-gpu-capacity-site3')).toHaveTextContent(/^Not reported$/);
+  // Not reported sorts before none.
   await user.click(screen.getByRole('button', { name: 'Capacity' }));
   const names = screen
     .getAllByRole('row')
     .slice(2)
     .map((r) => r.textContent?.split(' ')[0]);
-  expect(names[0]).toMatch(/^site4/);
+  expect(names[0]).toMatch(/^site3/);
+  expect(names[1]).toMatch(/^site4/);
 });
 
 it('groups the columns as the details page does, wraps them, and has Site and Region but no Hub column', async () => {
