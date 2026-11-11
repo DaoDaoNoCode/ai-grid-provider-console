@@ -9,7 +9,7 @@ import type { NavigateFunction } from 'react-router-dom';
 import { Code, ConnectError } from '@connectrpc/connect';
 import { focusManager } from '@tanstack/react-query';
 import { ServiceError } from '../api/ConsoleService';
-import { MockConsoleService } from '../api/MockConsoleService';
+import { MockConsoleService, seedClusters } from '../api/MockConsoleService';
 import configExample from '../../../mock/examples/get-config.json';
 import { create } from '@bufbuild/protobuf';
 import {
@@ -370,16 +370,22 @@ it('keeps chosen clusters visible when the reload offers none', async () => {
   expect(await screen.findByText('No clusters available')).toBeVisible();
 });
 
-it('counts the AI Grid members the Clusters step leaves out', async () => {
-  const hint = /AI Grid clusters? (is|are) not listed/;
-  const service = new MockConsoleService();
+it('names the AI Grid members the Clusters step leaves out, and why', async () => {
+  const hint = /Not listed:/;
+  const clusters = seedClusters();
+  // site2 offline and still provisioning; site3 ingress only.
+  clusters[1] = { ...clusters[1], status: 'Offline', provisioned: false, provisioningStatus: 'Provisioning' };
+  clusters[2] = { ...clusters[2], labels: { ...clusters[2].labels, 'ai-grid/role': 'ingress' } };
+  const service = new MockConsoleService(undefined, clusters);
   const models = modelsOf(service);
-  models.placementClusters = async () => ['site1', 'site2'];
   const user = userEvent.setup();
   renderAt('/models/deploy', service);
   await fillModel(user);
   await screen.findByRole('combobox', { name: 'Clusters' });
-  expect(await screen.findByText(hint)).toHaveTextContent('1 AI Grid cluster is not listed');
+  expect(await screen.findByText(hint)).toHaveTextContent(
+    'The model runs on each selected AI Grid cluster. Only Ready and Provisioned clusters with the Inference or Combined role are listed. Not listed: site2 (not Ready, not Provisioned) and site3 (Ingress role).',
+  );
+  // Once the backend offers every member, there is nothing to explain.
   models.placementClusters = async () => ['site1', 'site2', 'site3'];
   await user.click(screen.getByRole('button', { name: 'Back' }));
   await user.click(screen.getByRole('button', { name: 'Next' }));
