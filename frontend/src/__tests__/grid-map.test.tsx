@@ -18,6 +18,7 @@ import { modelsOf } from './connectModels';
 import { renderAt } from './render';
 // The routes load these pages lazily; loaded here, their import does not run inside a test's findBy.
 import '../pages/grid/AiGridPage';
+import '../pages/clusters/ClusterDetailsPage';
 import '../pages/monitoring/MonitoringPage';
 import { TestApp } from './TestApp';
 
@@ -332,6 +333,17 @@ it('keeps the URL in step with the drawer, and clears it when the drawer closes'
   expect(search).toBe('?cluster=site3');
   await user.click(screen.getByRole('button', { name: 'Clusters' }));
   expect(search).toBe('');
+});
+
+it("links to the selected cluster's details page, as the Clusters list does", async () => {
+  const user = userEvent.setup();
+  renderAt('/ai-grid', new MockConsoleService());
+  await user.click(await screen.findByRole('button', { name: 'View site3 details' }));
+  expect(screen.getByRole('link', { name: 'View cluster details' })).toHaveAttribute('href', '/clusters/site3');
+  await user.click(screen.getByRole('button', { name: 'Clusters' }));
+  await user.click(screen.getByRole('button', { name: 'View site2 details' }));
+  await user.click(screen.getByRole('link', { name: 'View cluster details' }));
+  expect(await screen.findByRole('heading', { level: 1, name: 'site2' })).toBeVisible();
 });
 
 it('closes the drawer when the AI Grid nav link drops the cluster from the URL', async () => {

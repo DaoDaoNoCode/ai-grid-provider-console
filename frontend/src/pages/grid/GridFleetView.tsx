@@ -326,7 +326,7 @@ export const GridFleetView: React.FC<Props> = ({ clusters, models, modelsError, 
       >
         {modelLinks(cluster)}
       </DetailsSection>
-      <Link to="/clusters">View cluster details</Link>
+      <Link to={`/clusters/${encodeURIComponent(cluster.name)}`}>View cluster details</Link>
     </Stack>
   );
 
