@@ -15,6 +15,7 @@ import { ToolbarSearch } from '../../components/ToolbarSearch';
 import { TableEmptyRow } from '../../components/TableEmptyRow';
 import { useConsoleSession } from '../../context/useConsoleSession';
 import { EMPTY_VALUE } from '../../utilities/format';
+import { MissingLabel } from '../../components/MissingLabel';
 import type { OrganizationView } from './organizationView';
 import { useDeleteOrganization } from './useDeleteOrganization';
 import { useOrganizationList } from './useOrganizations';
@@ -117,7 +118,17 @@ export const OrganizationListPage: React.FC = () => {
                         {o.domains[0] ?? EMPTY_VALUE}
                       </Td>
                       <Td dataLabel="Identity provider" modifier="breakWord">
-                        {o.identityProvider ? o.identityProvider.title || 'OIDC (no title)' : EMPTY_VALUE}
+                        {o.identityProvider ? (
+                          o.identityProvider.title || 'OIDC (no title)'
+                        ) : (
+                          // As a cluster without a role: a missing setting the organization can't work without.
+                          <MissingLabel
+                            testId={`missing-idp-${o.name}`}
+                            reason="This organization has no identity provider, so its users cannot log in."
+                          >
+                            No identity provider
+                          </MissingLabel>
+                        )}
                       </Td>
                       {canWrite && (
                         <Td isActionCell>

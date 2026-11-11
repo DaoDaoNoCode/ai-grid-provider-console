@@ -99,14 +99,19 @@ const identityProviderOf = ({
   },
 });
 
-/** What Tenants/Create sends: the name, the domains and the identity provider, when the form has one. */
-export const tenantOf = ({
-  name,
+/** A Tenant's spec: the domains and the identity provider, each when there is one to send. */
+export const tenantSpecOf = ({
   domains,
   identityProvider,
-}: OrganizationInput): MessageInitShape<typeof TenantSchema> => ({
-  metadata: { name },
-  spec: { domains, ...(identityProvider ? { identityProvider: identityProviderOf(identityProvider) } : {}) },
+}: Partial<Omit<OrganizationInput, 'name'>>): NonNullable<MessageInitShape<typeof TenantSchema>['spec']> => ({
+  ...(domains ? { domains } : {}),
+  ...(identityProvider ? { identityProvider: identityProviderOf(identityProvider) } : {}),
+});
+
+/** What Tenants/Create sends: the name, the domains and the identity provider, when the form has one. */
+export const tenantOf = (input: OrganizationInput): MessageInitShape<typeof TenantSchema> => ({
+  metadata: { name: input.name },
+  spec: tenantSpecOf(input),
 });
 
 /**

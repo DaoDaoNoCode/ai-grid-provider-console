@@ -3,6 +3,10 @@ import type { OrganizationInput } from './organizationView';
 /** The PoC's message for a stale version (Aborted): the organization changed since the page read it. */
 export const ORGANIZATION_CHANGED = 'This organization was changed by another user. Reload the page, then try again.';
 
+/** An edit whose outcome the backend couldn't confirm (Unavailable, DeadlineExceeded): it may have been saved. */
+export const ORGANIZATION_MAYBE_SAVED =
+  'The AI Grid backend could not confirm the save, so the changes may have been saved. Reload the page to check, then try again if they are missing.';
+
 /** The value at a JSON path such as `identityProvider.config.issuer` or `domains.0`. */
 const valueAt = (value: unknown, path: string): unknown =>
   path
