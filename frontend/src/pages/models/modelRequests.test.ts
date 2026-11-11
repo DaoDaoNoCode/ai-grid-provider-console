@@ -3,7 +3,8 @@ import { ModelSchema, type ModelSpec } from '../../gen/ai_grid/v1/model_type_pb'
 import configExample from '../../../../mock/examples/get-config.json';
 import type { ModelHardware } from '../../api/types';
 import { envWithHardware, knownAccelerators, matchingHardware, wholeCount } from './modelHardware';
-import { updateRequestOf, type ModelInput } from './modelRequests';
+import { MODEL_CAPABILITIES } from './modelCapabilities';
+import { createRequestOf, updateRequestOf, type ModelInput } from './modelRequests';
 import { toModelView, type ModelView } from './modelView';
 
 const hardwareList: ModelHardware[] = configExample.body.data.models.hardware;
@@ -11,12 +12,18 @@ const cpuOnly = hardwareList.find((h) => h.id === 'cpu')!;
 const nvidia = hardwareList.find((h) => h.id === 'nvidia-gpu')!;
 const gaudi: ModelHardware = { id: 'gaudi', label: 'Intel Gaudi', accelerator: 'habana.ai/gaudi' };
 
-/** A stored model, as Models/Get answers it, on one NVIDIA GPU unless the spec says otherwise. */
-const stored = (spec: Partial<Omit<ModelSpec, '$typeName'>> = {}): ModelView =>
+/**
+ * A stored model, as Models/Get answers it, on one NVIDIA GPU unless the spec says otherwise, with
+ * these annotations.
+ */
+const stored = (
+  spec: Partial<Omit<ModelSpec, '$typeName'>> = {},
+  annotations: Record<string, string> = {},
+): ModelView =>
   toModelView(
     create(ModelSchema, {
       id: 'widget',
-      metadata: { name: 'widget', version: 3, annotations: {} },
+      metadata: { name: 'widget', version: 3, annotations },
       spec: {
         model: { uri: 'hf://org/widget', name: 'widget' },
         replicas: 1,
@@ -32,6 +39,7 @@ const unchanged = (model: ModelView): ModelInput => ({
   displayName: model.id,
   description: '',
   modelUri: model.modelUri ?? '',
+  capabilities: model.capabilities,
   runtimeImage: model.runtimeImage ?? '',
   replicas: model.replicas ?? 1,
   cpu: model.cpu ?? '',
@@ -224,6 +232,100 @@ describe('updateRequestOf', () => {
       'spec.main.env',
       'metadata.annotations',
     ]);
+  });
+});
+
+describe('the capabilities annotation', () => {
+  const deploy = (capabilities: string[]): ModelInput => ({
+    ...unchanged(stored()),
+    displayName: 'Widget',
+    description: 'A small model',
+    capabilities,
+    clusters: ['site1'],
+  });
+
+  it('is left off a new model without capabilities', () => {
+    expect(createRequestOf(deploy([])).object?.metadata?.annotations).toEqual({
+      'openshift.io/display-name': 'Widget',
+      'openshift.io/description': 'A small model',
+    });
+  });
+
+  it('lists the capabilities of a new model as selected, in their order', () => {
+    expect(createRequestOf(deploy(['Text completion', 'Vision'])).object?.metadata?.annotations).toEqual({
+      'openshift.io/display-name': 'Widget',
+      'openshift.io/description': 'A small model',
+      [MODEL_CAPABILITIES]: '["Text completion","Vision"]',
+    });
+  });
+
+  it('is not added to a model without one by an edit that selects none', () => {
+    const model = stored({}, { team: 'research' });
+    expect(updateRequestOf(model, unchanged(model))).toBeUndefined();
+    // An unrelated annotation edit sends the annotations without one either.
+    const request = updateRequestOf(model, { ...unchanged(model), description: 'Edited' });
+    expect(request?.object?.metadata?.annotations).toEqual({ team: 'research', 'openshift.io/description': 'Edited' });
+  });
+
+  it('is sent whole with every other annotation once a capability is added', () => {
+    const model = stored({}, { 'openshift.io/display-name': 'Widget', team: 'research' });
+    const request = updateRequestOf(model, { ...unchanged(model), displayName: 'Widget', capabilities: ['Chat'] });
+    expect(request?.updateMask).toEqual({ paths: ['metadata.annotations'] });
+    expect(request?.object?.metadata).toEqual({
+      name: 'widget',
+      version: 3,
+      annotations: { 'openshift.io/display-name': 'Widget', team: 'research', [MODEL_CAPABILITIES]: '["Chat"]' },
+    });
+  });
+
+  it('writes the selection as it is once a capability is removed, values the wizard does not offer included', () => {
+    const model = stored({}, { [MODEL_CAPABILITIES]: '["my-tag","Chat","Text completion"]' });
+    expect(model.capabilities).toEqual(['my-tag', 'Chat', 'Text completion']);
+    const request = updateRequestOf(model, { ...unchanged(model), capabilities: ['my-tag', 'Text completion'] });
+    expect(request?.updateMask).toEqual({ paths: ['metadata.annotations'] });
+    expect(request?.object?.metadata?.annotations).toEqual({ [MODEL_CAPABILITIES]: '["my-tag","Text completion"]' });
+  });
+
+  it('is removed once every capability is', () => {
+    const model = stored({}, { team: 'research', [MODEL_CAPABILITIES]: '["Text completion"]' });
+    const request = updateRequestOf(model, { ...unchanged(model), capabilities: [] });
+    expect(request?.updateMask).toEqual({ paths: ['metadata.annotations'] });
+    expect(request?.object?.metadata?.annotations).toEqual({ team: 'research' });
+  });
+
+  it('is left as read while the selection holds the same values, in any order, case or spacing', () => {
+    const model = stored({}, { [MODEL_CAPABILITIES]: '[" chat ","Vision","CHAT"]' });
+    expect(model.capabilities).toEqual([' chat ', 'Vision']);
+    expect(updateRequestOf(model, unchanged(model))).toBeUndefined();
+    expect(updateRequestOf(model, { ...unchanged(model), capabilities: ['Vision', 'Chat'] })).toBeUndefined();
+    const description = updateRequestOf(model, { ...unchanged(model), description: 'Edited' });
+    expect(description?.object?.metadata?.annotations?.[MODEL_CAPABILITIES]).toBe('[" chat ","Vision","CHAT"]');
+  });
+
+  it('goes with a display name edit in one annotations write', () => {
+    const model = stored({}, { [MODEL_CAPABILITIES]: '["Chat"]' });
+    const request = updateRequestOf(model, {
+      ...unchanged(model),
+      displayName: 'Widget 2',
+      capabilities: ['Chat', 'Vision'],
+    });
+    expect(request?.updateMask).toEqual({ paths: ['metadata.annotations'] });
+    expect(request?.object?.metadata?.annotations).toEqual({
+      'openshift.io/display-name': 'Widget 2',
+      [MODEL_CAPABILITIES]: '["Chat","Vision"]',
+    });
+  });
+
+  it('drops a malformed annotation from any annotations write, and replaces it when a capability is added', () => {
+    const model = stored({}, { [MODEL_CAPABILITIES]: 'Text completion, Vision' });
+    expect(model.capabilities).toEqual([]);
+    expect(updateRequestOf(model, unchanged(model))).toBeUndefined();
+    // The backend refuses the stored value on every annotations write, so it isn't sent back.
+    const description = updateRequestOf(model, { ...unchanged(model), description: 'Edited' });
+    expect(description?.updateMask).toEqual({ paths: ['metadata.annotations'] });
+    expect(description?.object?.metadata?.annotations).toEqual({ 'openshift.io/description': 'Edited' });
+    const added = updateRequestOf(model, { ...unchanged(model), capabilities: ['Text completion'] });
+    expect(added?.object?.metadata?.annotations).toEqual({ [MODEL_CAPABILITIES]: '["Text completion"]' });
   });
 });
 

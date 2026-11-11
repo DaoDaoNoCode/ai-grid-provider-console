@@ -15,6 +15,7 @@ import {
   type ModelEnvVar,
   type ModelSpec,
 } from '../../gen/ai_grid/v1/model_type_pb';
+import { capabilitiesOf } from './modelCapabilities';
 
 /** The annotations the backend documents for a model's display name and description. */
 export const DISPLAY_NAME = 'openshift.io/display-name';
@@ -151,6 +152,8 @@ export type ModelView = {
   env: ModelEnvVar[];
   /** The annotations as read, sent back whole by an edit. */
   annotations: Record<string, string>;
+  /** The capabilities annotation's values (capabilitiesOf), none when it is missing or malformed. */
+  capabilities: string[];
   phase: ModelPhaseWord;
   reason?: string;
   statusMessage?: string;
@@ -294,6 +297,7 @@ export const toModelView = (model: Model): ModelView => {
     requests: { ...requests },
     env: [...(spec?.main?.env ?? [])],
     annotations: { ...annotations },
+    capabilities: capabilitiesOf(annotations),
     phase: phaseWordOf(status?.phase, status?.reason),
     reason: nonEmpty(status?.reason),
     statusMessage: nonEmpty(status?.message),

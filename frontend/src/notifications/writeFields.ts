@@ -6,6 +6,7 @@ import { create, type MessageInitShape } from '@bufbuild/protobuf';
 import { ModelSchema, type Model } from '../gen/ai_grid/v1/model_type_pb';
 import { SubscriptionSchema, type Subscription } from '../gen/ai_grid/v1/subscription_type_pb';
 import { RUNTIME_ARGS_ENV, runtimeArgsOf } from '../pages/models/fields/runtimeArgs';
+import { MODEL_CAPABILITIES } from '../pages/models/modelCapabilities';
 import { DESCRIPTION, DISPLAY_NAME, placementClustersOf } from '../pages/models/modelView';
 
 export type WriteFields = Record<string, string>;
@@ -17,8 +18,8 @@ const pick = (all: WriteFields, keys: string[]): WriteFields =>
   Object.fromEntries(keys.filter((k) => k in all).map((k) => [k, all[k]]));
 
 /**
- * A model's fields the console writes: its display name and description, source, presets, image,
- * runtime arguments and the rest of its environment, resources, clusters and replicas.
+ * A model's fields the console writes: its display name, description and capabilities, source,
+ * presets, image, runtime arguments and the rest of its environment, resources, clusters and replicas.
  */
 export const modelFields = (model: Model): WriteFields => {
   const annotations = model.metadata?.annotations ?? {};
@@ -26,6 +27,8 @@ export const modelFields = (model: Model): WriteFields => {
   return {
     displayName: annotations[DISPLAY_NAME] ?? '',
     description: annotations[DESCRIPTION] ?? '',
+    // As written: the backend stores an annotation's value as sent.
+    capabilities: annotations[MODEL_CAPABILITIES] ?? '',
     uri: spec?.model?.uri ?? '',
     // The backend keeps the presets and the environment in the order sent (modelSpecToMap,
     // model_mapper.go).
@@ -44,7 +47,7 @@ export const modelFields = (model: Model): WriteFields => {
 
 /** The fields each path of Models/Update's mask writes (modelRequests.ts, updateRequestOf). */
 const modelPathFields: Record<string, string[]> = {
-  'metadata.annotations': ['displayName', 'description'],
+  'metadata.annotations': ['displayName', 'description', 'capabilities'],
   'spec.model': ['uri'],
   'spec.replicas': ['replicas'],
   'spec.base_refs': ['baseRefs'],

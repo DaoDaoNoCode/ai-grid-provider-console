@@ -54,16 +54,17 @@ const namedClusters = (model: Model) =>
 
 /**
  * The seed models (the PoC's catalog models): granite-3-8b placed on site1 and ready there,
- * llama-3-70b without a placement, granite-research still starting.
+ * llama-3-70b without a placement, granite-research still starting, a base model that takes text
+ * completions only.
  */
 export const seedModelObjects = (): Model[] =>
   (
     [
-      ['granite-3-8b', 'Granite 3.3 8B Instruct', 'Enterprise language model', ModelPhase.READY, ['site1']],
-      ['llama-3-70b', 'Llama 3.3 70B Instruct', 'General purpose language model', ModelPhase.READY, []],
-      ['granite-research', 'Granite research endpoint', undefined, ModelPhase.PENDING, []],
-    ] as [string, string, string | undefined, ModelPhase, string[]][]
-  ).map(([id, displayName, description, phase, clusters]) =>
+      ['granite-3-8b', 'Granite 3.3 8B Instruct', 'Enterprise language model', ModelPhase.READY, ['site1'], undefined],
+      ['llama-3-70b', 'Llama 3.3 70B Instruct', 'General purpose language model', ModelPhase.READY, [], undefined],
+      ['granite-research', 'Granite research endpoint', undefined, ModelPhase.PENDING, [], 'Text completion'],
+    ] as [string, string, string | undefined, ModelPhase, string[], string | undefined][]
+  ).map(([id, displayName, description, phase, clusters, capability]) =>
     modelObject({
       id,
       metadata: {
@@ -72,6 +73,7 @@ export const seedModelObjects = (): Model[] =>
         annotations: {
           'openshift.io/display-name': displayName,
           ...(description ? { 'openshift.io/description': description } : {}),
+          ...(capability ? { 'opendatahub.io/model-capabilities': JSON.stringify([capability]) } : {}),
         },
       },
       spec: {

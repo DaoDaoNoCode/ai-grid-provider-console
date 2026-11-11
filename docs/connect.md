@@ -229,9 +229,10 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   edit page loads its model once, and keeps the first answer, so an edit is checked against the
   version it started from. `toModelView` (`modelView.ts`) words the generated `Model`: the display name and
   description from the `openshift.io/display-name` and `openshift.io/description` annotations
-  the backend documents; the phase from `status.phase` (`MODEL_PHASE_PARTIALLY_AVAILABLE` is
-  Partially ready; `UNSPECIFIED` with reason `SavedToGit` is Saved to Git, any other
-  unspecified phase Unknown); `status.message` as the status's tooltip; the page's alert
+  the backend documents; the model capabilities from `opendatahub.io/model-capabilities`
+  (`modelCapabilities.ts`, "Model capabilities" below); the phase from `status.phase`
+  (`MODEL_PHASE_PARTIALLY_AVAILABLE` is Partially ready; `UNSPECIFIED` with reason `SavedToGit` is
+  Saved to Git, any other unspecified phase Unknown); `status.message` as the status's tooltip; the page's alert
   explains `status.state` from the placed clusters' reports, each cluster that isn't Ready with its
   word and its message, and for Failed the failure KServe names in `status.reason`
   (`rolloutExplanation`), never MaaS's, which the Availability section shows;
@@ -342,6 +343,28 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   `Models/Delete` with `resource_version`, the
   version the dialog read; Aborted is the conflict the dialog already handles, and
   FailedPrecondition the backend's refusal while a subscription uses the model.
+- **Model capabilities.** The Deployment step's Advanced settings has OpenShift AI's Model
+  capabilities field (`ModelCapabilitiesField`, from odh-dashboard's deployment wizard, which has it
+  in its Advanced settings before the runtime arguments): the selected values as removable labels,
+  and Add capability, a menu of `Vision`, `Transcription`, `Chat` and `Text completion` without
+  those already selected. OpenShift AI's free-text capability is left out; a value a model already
+  has that isn't one of these still shows, and can be removed. The selection is the
+  `opendatahub.io/model-capabilities` annotation, a JSON array of strings, as OpenShift AI writes
+  it. The backend copies a model's annotations to its MaaSModelRef and LLMInferenceService
+  (`maasModelRefFromModel` and `llmInferenceServiceFromModel` in `model_mapper.go`), where the MaaS
+  portal reads it: a completion-only model, a base model without a chat template, gets a text
+  completions usage example. A model is completion-only when `Text completion` is the only
+  well-known capability it has, none of `Chat`, `Vision` and `Transcription`; other values don't
+  count. Values are matched trimmed and in any case
+  (`modelCapabilities.ts`), for the labels' colors, for what the menu offers, and to keep each
+  value once. Deploy writes the selection in its order, and no annotation when nothing is
+  selected. An edit starts from the model's values and writes only a changed selection (other
+  values, not the same ones in another order or case): the selection as it is, or no annotation
+  once it is empty; unchanged, the annotation stays as read. An annotation that isn't a JSON array
+  of strings reads as none and stays as stored until the user adds a capability, which replaces
+  it. Review and the model page show the capabilities as labels in OpenShift AI's colors; the
+  model page shows "—" for none, and Review, as for its other optional fields, leaves the row out.
+  A lost answer is confirmed by the annotation read back, a removed one included (`writeFields.ts`).
 - **References.** The delete dialog lists the subscriptions that use the model with
   `Subscriptions/List` and the filter `this.spec.model_refs.exists(r, r.model_id == "<id>")`: the
   backend joins a model ref to its model (`SubscriptionModelRef.model_id`) and evaluates the

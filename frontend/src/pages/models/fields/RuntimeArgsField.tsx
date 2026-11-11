@@ -18,11 +18,13 @@ import type { RuntimeArgsFieldData } from './runtimeArgs';
 type RuntimeArgsFieldProps = {
   data?: RuntimeArgsFieldData;
   onChange?: (data: RuntimeArgsFieldData) => void;
+  isDisabled?: boolean;
 };
 
 export const RuntimeArgsField: React.FC<RuntimeArgsFieldProps> = ({
   data = { enabled: false, args: [] },
   onChange,
+  isDisabled = false,
 }) => {
   const [hasTyped, setHasTyped] = React.useState(false);
   const joined = data.args.join('\n');
@@ -49,6 +51,7 @@ export const RuntimeArgsField: React.FC<RuntimeArgsFieldProps> = ({
         placeholder={`--arg\n--arg2=value2\n--arg3 value3`}
         value={displayValue}
         onChange={handleTextAreaChange}
+        isDisabled={isDisabled}
         autoResize
       />
       <FormHelperText>

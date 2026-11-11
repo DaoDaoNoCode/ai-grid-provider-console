@@ -13,6 +13,7 @@ import { ClusterLoadNote } from './ClusterLoadNote';
 import { ModelClustersTable } from './ModelClustersTable';
 import { ModelMaaSTable } from './ModelMaaSTable';
 import { ModelAvailability } from './ModelAvailability';
+import { ModelCapabilityLabels } from './ModelCapabilityLabels';
 import { ModelStatusDetails, ModelStatusLabel } from './ModelStatus';
 import { availabilityOf, rolloutExplanation } from './modelStatusInfo';
 import { titleOf } from './modelView';
@@ -73,6 +74,11 @@ export const ModelDetailsPage: React.FC = () => {
               { term: 'Description', value: model.description },
               { term: 'Model', value: model.modelName },
               { term: 'Model URI', value: model.modelUri },
+              {
+                term: 'Model capabilities',
+                value:
+                  model.capabilities.length > 0 ? <ModelCapabilityLabels values={model.capabilities} /> : undefined,
+              },
               // What the model has, not a match against today's hardware list, which may have changed.
               ...(model.baseRefs.length > 0 ? [{ term: 'Presets', value: model.baseRefs.join(', ') }] : []),
               { term: 'CPU', value: model.cpu },

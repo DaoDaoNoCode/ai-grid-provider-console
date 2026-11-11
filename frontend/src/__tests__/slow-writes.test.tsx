@@ -3,7 +3,7 @@
 // ended by hand, and a slow backend is a promise the test settles: nothing here waits on a clock.
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useNavigate, type NavigateFunction } from 'react-router-dom';
 import { Code, ConnectError } from '@connectrpc/connect';
 import { MockConsoleService } from '../api/MockConsoleService';
 import { create as create_ } from '@bufbuild/protobuf';
@@ -14,7 +14,7 @@ import {
   ModelState,
 } from '../gen/ai_grid/v1/model_type_pb';
 import type { Subscription } from '../gen/ai_grid/v1/subscription_type_pb';
-import { watchesKey } from '../notifications/storageKeys';
+import { draftsKey, watchesKey } from '../notifications/storageKeys';
 
 /** The tab's storage key of the signed-in user's watches, MockConsoleService's dev-user. */
 const WATCHES = watchesKey('dev-user');
@@ -179,6 +179,82 @@ describe('deploying a model', () => {
     expect(screen.getByTestId('model-name-desc-name')).toHaveValue('Widget');
     await user.click(screen.getByRole('button', { name: 'Edit resource name' }));
     expect(screen.getByRole('textbox', { name: /^Resource name/ })).toHaveValue('widget');
+  });
+
+  it('reopens a refused deploy with the capabilities it was submitted with, and deploys them again', async () => {
+    const service = new MockConsoleService();
+    const models = modelsOf(service);
+    const answer = deferred<void>();
+    const create = vi.spyOn(models, 'create').mockImplementation(async () => {
+      await answer.promise;
+      throw new ConnectError('Model "widget" already exists', Code.AlreadyExists);
+    });
+    const { formWait, endWait } = formWaits();
+    const user = userEvent.setup();
+    renderConsole('/models/deploy', service, formWait);
+    await fillWizard(user);
+    const steps = () => within(screen.getByRole('navigation', { name: 'Wizard steps' }));
+    await user.click(steps().getByRole('button', { name: 'Deployment' }));
+    await user.click(await screen.findByRole('button', { name: 'Advanced settings' }));
+    await user.click(screen.getByRole('button', { name: 'Add capability' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Text completion' }));
+    await user.click(steps().getByRole('button', { name: 'Review' }));
+    await user.click(await screen.findByRole('button', { name: 'Deploy' }));
+    await endWait();
+    await act(async () => answer.resolve());
+    const alert = (await toast('Unable to save model Widget')).closest('.pf-v6-c-alert') as HTMLElement;
+    await user.click(within(alert).getByRole('button', { name: 'Deploy model' }));
+    expect(await screen.findByTestId('model-review')).toHaveTextContent('Model capabilitiesText completion');
+    await user.click(screen.getByRole('button', { name: 'Deploy' }));
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
+    expect(create.mock.calls[1][0].object?.metadata?.annotations).toEqual({
+      'openshift.io/display-name': 'Widget',
+      'opendatahub.io/model-capabilities': '["Text completion"]',
+    });
+  });
+
+  it('reopens a draft kept before the wizard had capabilities, which deploys with none', async () => {
+    const service = new MockConsoleService();
+    const create = vi.spyOn(modelsOf(service), 'create');
+    const draft = {
+      key: 'older',
+      subject: 'model',
+      error: 'Model "widget" already exists',
+      values: {
+        displayName: 'Widget',
+        name: 'widget',
+        description: '',
+        modelUri: 'hf://org/widget',
+        replicas: '1',
+        hardwareId: 'cpu',
+        image: 'registry.example/runtime:test',
+        runtimeArgsEnabled: false,
+        runtimeArgs: [],
+        clusters: ['site1'],
+      },
+    };
+    const storage = memoryStorage({ [draftsKey('dev-user')]: JSON.stringify([draft]) });
+    let navigate: NavigateFunction = () => undefined;
+    const CaptureNavigate = () => {
+      navigate = useNavigate();
+      return null;
+    };
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/models']}>
+        <CaptureNavigate />
+        <TestApp service={service} formWait={waitOver} storage={storage.get} />
+      </MemoryRouter>,
+    );
+    // The tab's drafts are read once the user is known; the toast's link opens the wizard after that.
+    await screen.findByTestId('model-deployments-table');
+    await act(async () => navigate('/models/deploy?draft=older'));
+    const review = await screen.findByTestId('model-review');
+    expect(review).toHaveTextContent('hf://org/widget');
+    expect(review).not.toHaveTextContent('Model capabilities');
+    await user.click(screen.getByRole('button', { name: 'Deploy' }));
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0][0].object?.metadata?.annotations).toEqual({ 'openshift.io/display-name': 'Widget' });
   });
 
   it('keeps a refusal that comes back within the wait on the form, as before', async () => {

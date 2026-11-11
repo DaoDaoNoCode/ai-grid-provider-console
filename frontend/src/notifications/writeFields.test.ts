@@ -20,6 +20,7 @@ type Stored = {
   baseRefs: string[];
   requests: Record<string, string>;
   env: EnvVar[];
+  annotations: Record<string, string>;
 };
 
 /** A deployed model: one NVIDIA GPU, a preset, a variable of its own and runtime arguments. */
@@ -32,14 +33,15 @@ const deployed: Stored = {
     { name: 'TEAM', value: 'research' },
     { name: RUNTIME_ARGS_ENV, value: '--enforce-eager' },
   ],
+  annotations: {},
 };
 
 /** The deployed model as Models/Get answers it at a version, with some of its fields changed. */
 const stored = (version: number, changed: Partial<Stored> = {}) => {
-  const { uri, replicas, baseRefs, requests, env } = { ...deployed, ...changed };
+  const { uri, replicas, baseRefs, requests, env, annotations } = { ...deployed, ...changed };
   return create(ModelSchema, {
     id: 'widget',
-    metadata: { name: 'widget', version, annotations: {} },
+    metadata: { name: 'widget', version, annotations },
     spec: {
       model: { uri, name: 'widget' },
       replicas,
@@ -49,14 +51,15 @@ const stored = (version: number, changed: Partial<Stored> = {}) => {
   });
 };
 
-/** The edit wizard's fields for the deployed model, nothing changed. */
-const unchanged = (): ModelInput => {
-  const model = toModelView(stored(3));
+/** The edit wizard's fields for the deployed model, with some of its fields changed, nothing edited. */
+const unchanged = (changed?: Partial<Stored>): ModelInput => {
+  const model = toModelView(stored(3, changed));
   return {
     name: model.id,
     displayName: model.id,
     description: '',
     modelUri: model.modelUri ?? '',
+    capabilities: model.capabilities,
     runtimeImage: model.runtimeImage ?? '',
     replicas: model.replicas ?? 1,
     cpu: model.cpu ?? '',
@@ -71,10 +74,17 @@ const unchanged = (): ModelInput => {
   };
 };
 
-type EditCase = { field: string; edit: Partial<ModelInput>; path: string; landed: Partial<Stored> };
+type EditCase = {
+  field: string;
+  from?: Partial<Stored>;
+  edit: Partial<ModelInput>;
+  path: string;
+  landed: Partial<Stored>;
+};
 
-// Each edit changes one field, so its mask has one path. `landed` is the model as the backend
-// stores the edit (mergeModelUpdate, internal/servers/models_server.go).
+// Each edit changes one field of the deployed model, or of the model `from` says, so its mask has
+// one path. `landed` is the model as the backend stores the edit (mergeModelUpdate,
+// internal/servers/models_server.go).
 const edits: EditCase[] = [
   {
     field: 'the model URI',
@@ -123,18 +133,41 @@ const edits: EditCase[] = [
     path: 'spec.base_refs',
     landed: { baseRefs: [] },
   },
+  {
+    field: 'the capabilities, one added',
+    edit: { capabilities: ['Text completion'] },
+    path: 'metadata.annotations',
+    landed: { annotations: { 'opendatahub.io/model-capabilities': '["Text completion"]' } },
+  },
+  {
+    field: 'the capabilities, one removed',
+    from: { annotations: { 'opendatahub.io/model-capabilities': '["Chat","Vision"]' } },
+    edit: { capabilities: ['Vision'] },
+    path: 'metadata.annotations',
+    landed: { annotations: { 'opendatahub.io/model-capabilities': '["Vision"]' } },
+  },
+  {
+    field: 'the capabilities, all removed, which removes the annotation',
+    from: { annotations: { 'opendatahub.io/model-capabilities': '["Text completion"]' } },
+    edit: { capabilities: [] },
+    path: 'metadata.annotations',
+    landed: { annotations: {} },
+  },
 ];
 
 describe('a model edit whose answer was lost', () => {
   // `other` is someone else's write that moved the version on and left the edited field as it was.
-  it.each(edits)('is confirmed by $field read back, not by a version moved on without it', ({ edit, path, landed }) => {
-    const request = updateRequestOf(toModelView(stored(3)), { ...unchanged(), ...edit });
-    expect(request?.updateMask?.paths).toEqual([path]);
-    const sent = sentModelFields(request?.object, request?.updateMask?.paths);
-    expect(holdsSent(sent, modelFields(stored(4, landed)))).toBe(true);
-    const other = modelFields(stored(4, { replicas: 2 }));
-    expect(holdsSent(sent, other)).toBe(false);
-  });
+  it.each(edits)(
+    'is confirmed by $field read back, not by a version moved on without it',
+    ({ from, edit, path, landed }) => {
+      const request = updateRequestOf(toModelView(stored(3, from)), { ...unchanged(from), ...edit });
+      expect(request?.updateMask?.paths).toEqual([path]);
+      const sent = sentModelFields(request?.object, request?.updateMask?.paths);
+      expect(holdsSent(sent, modelFields(stored(4, { ...from, ...landed })))).toBe(true);
+      const other = modelFields(stored(4, { ...from, replicas: 2 }));
+      expect(holdsSent(sent, other)).toBe(false);
+    },
+  );
 });
 
 describe('a model deploy whose answer was lost', () => {

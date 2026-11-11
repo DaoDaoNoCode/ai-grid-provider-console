@@ -7,6 +7,8 @@ export type ModelDraft = {
   name: string;
   description: string;
   modelUri: string;
+  /** Undefined in a draft kept before the wizard had the field, which deploys with none. */
+  capabilities?: string[];
   replicas: string;
   hardwareId?: string;
   image?: string;
@@ -29,6 +31,7 @@ export const isModelDraft = (value: unknown): value is ModelDraft => {
   return (
     ['displayName', 'name', 'description', 'modelUri', 'replicas'].every((k) => isString(d[k])) &&
     ['hardwareId', 'image', 'cpu', 'memory', 'accelerators'].every((k) => isOptionalString(d[k])) &&
+    (d.capabilities === undefined || isStrings(d.capabilities)) &&
     typeof d.runtimeArgsEnabled === 'boolean' &&
     isStrings(d.runtimeArgs) &&
     isStrings(d.clusters)

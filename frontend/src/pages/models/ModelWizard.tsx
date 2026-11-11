@@ -21,6 +21,7 @@ import {
   PageSection,
   Radio,
   Spinner,
+  Stack,
   TextInput,
   Wizard,
   WizardStep,
@@ -39,6 +40,7 @@ import { ReadOnlyField } from '../../components/ReadOnlyField';
 import { useConsoleSession } from '../../context/useConsoleSession';
 import { useConfirmDiscard } from '../../hooks/useConfirmDiscard';
 import { fieldMessage, modelFieldsSchema, requireImageWithoutNvidia } from '../../validation';
+import { ModelCapabilitiesField } from './fields/ModelCapabilitiesField';
 import { RuntimeArgsField } from './fields/RuntimeArgsField';
 import { filterRuntimeArgsForContainer, runtimeArgsOf, type RuntimeArgsFieldData } from './fields/runtimeArgs';
 import {
@@ -57,6 +59,7 @@ import {
 } from './modelHardware';
 import { DEFAULT_REPLICAS, sameSet, updateRequestOf, type ModelInput } from './modelRequests';
 import { titleOf, type ModelView } from './modelView';
+import { ModelCapabilityLabels } from './ModelCapabilityLabels';
 import { OlderServedNameAlert } from './OlderServedNameAlert';
 import { isModelDraft } from './modelDraft';
 import { useBackgroundWrites } from '../../notifications/useBackgroundWrites';
@@ -100,6 +103,7 @@ const SERVED_NAME_FIXED = 'Users send this name as the model in their requests. 
 /** The wizard's starting values: the defaults when deploying, the model's own when editing. */
 const initialValues = (model?: ModelView) => ({
   modelUri: model?.modelUri ?? '',
+  capabilities: model?.capabilities ?? [],
   replicas: model?.replicas !== undefined ? String(model.replicas) : defaults.replicas,
   runtimeArgs: runtimeArgsOf(model?.env),
   // Only a `name In [...]` placement can be edited as a list of clusters (placementClustersOf).
@@ -124,7 +128,7 @@ const goneClustersError = (names: string[]) =>
     ? undefined
     : `${names.join(', ')} ${names.length === 1 ? 'is' : 'are'} no longer available. Remove ${names.length === 1 ? 'it' : 'them'} to continue.`;
 
-type ReviewItem = { term: string; value?: string };
+type ReviewItem = { term: string; value?: React.ReactNode };
 
 /**
  * The Review step: an alert about the choices or the model first, if there is one, spaced as the
@@ -178,6 +182,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
     draft
       ? {
           modelUri: draft.values.modelUri,
+          capabilities: draft.values.capabilities ?? [],
           replicas: draft.values.replicas,
           runtimeArgs: draft.values.runtimeArgs,
           clusterNames: draft.values.clusters,
@@ -231,6 +236,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
     editableK8sName: !model && !!draft,
   });
   const [modelUri, setModelUri] = useState(start.modelUri);
+  const [capabilities, setCapabilities] = useState(start.capabilities);
   const [replicas, setReplicas] = useState(start.replicas);
   // Presets an edit removes (spec.base_refs); none can be added.
   const [removePresets, setRemovePresets] = useState(false);
@@ -296,6 +302,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
     displayName: nameDescData.name,
     description: nameDescData.description,
     modelUri: modelUri.trim(),
+    capabilities,
     runtimeImage,
     replicas: Number(replicas),
     cpu,
@@ -316,6 +323,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
   const isDirty = model
     ? updateRequestOf(model, edited) !== undefined
     : [modelUri, nameDescData.name, nameDescData.description].some((v) => v !== '') ||
+      capabilities.length > 0 ||
       [imageInput, cpuInput, memoryInput, acceleratorsInput].some((v) => v !== undefined) ||
       (hardwareId !== undefined && hardwareId !== hardwareList[0]?.id) ||
       replicas !== defaults.replicas ||
@@ -438,6 +446,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
           name: nameDescData.k8sName.value,
           description: nameDescData.description,
           modelUri,
+          capabilities,
           replicas,
           hardwareId: hardware?.id,
           image: imageInput,
@@ -650,6 +659,10 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
         { term: 'CPU', value: cpu },
         { term: 'Memory', value: memory },
         ...acceleratorItems,
+        {
+          term: 'Model capabilities',
+          value: capabilities.length > 0 ? <ModelCapabilityLabels values={capabilities} /> : undefined,
+        },
         { term: 'Additional runtime arguments', value: input.runtimeArgs.join(' ') },
       ],
     },
@@ -895,7 +908,11 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
                 )
               )}
               <ExpandableSection toggleText="Advanced settings" isIndented>
-                <RuntimeArgsField data={runtimeArgs} onChange={setRuntimeArgs} />
+                {/* As OpenShift AI's Advanced settings: the capabilities, then the runtime arguments. */}
+                <Stack hasGutter>
+                  <ModelCapabilitiesField value={capabilities} onChange={setCapabilities} isDisabled={saving} />
+                  <RuntimeArgsField data={runtimeArgs} onChange={setRuntimeArgs} isDisabled={saving} />
+                </Stack>
               </ExpandableSection>
             </Form>
           </WizardStep>

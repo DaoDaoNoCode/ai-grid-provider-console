@@ -148,6 +148,7 @@ it('walks the deployment wizard, selects clusters and creates the model', async 
   expect(review).toHaveTextContent('Model nameWidget');
   expect(review).toHaveTextContent('Model name in requestswidget');
   expect(within(review).getAllByText('Model name in requests')).toHaveLength(1);
+  expect(review).not.toHaveTextContent('Model capabilities');
   await user.click(screen.getByRole('button', { name: 'Deploy' }));
 
   expect(await screen.findByText('Model Widget saved to Git')).toBeVisible();
@@ -178,6 +179,8 @@ it('walks the deployment wizard, selects clusters and creates the model', async 
   });
   expect(request.object?.spec?.router).toMatchObject({ scheduler: true, managedRoute: true, gatewayRefs: [] });
   expect(request.object?.spec?.rollout).toBeUndefined();
+  // No capabilities selected: no capabilities annotation.
+  expect(request.object?.metadata?.annotations).toEqual({ 'openshift.io/display-name': 'Widget' });
 });
 
 it('removes a model after its name is typed', async () => {
@@ -1588,6 +1591,156 @@ describe('the hardware', () => {
       expect(request.object?.spec?.main?.image).toBe('');
       expect(request.object?.spec?.baseRefs).toEqual([]);
     });
+  });
+});
+
+describe('Model capabilities', () => {
+  const CAPABILITIES = 'opendatahub.io/model-capabilities';
+  const openStep = async (user: User, name: 'Deployment' | 'Review') =>
+    user.click(within(await screen.findByRole('navigation', { name: 'Wizard steps' })).getByRole('button', { name }));
+  const field = () => screen.getByRole('group', { name: 'Model capabilities' });
+  /** The values the Add capability menu offers, opened and closed again. */
+  const offered = async (user: User) => {
+    await user.click(within(field()).getByRole('button', { name: 'Add capability' }));
+    const items = screen.getAllByRole('menuitem').map((item) => item.textContent);
+    await user.keyboard('{Escape}');
+    return items;
+  };
+  const addCapability = async (user: User, name: string) => {
+    await user.click(within(field()).getByRole('button', { name: 'Add capability' }));
+    await user.click(screen.getByRole('menuitem', { name }));
+  };
+
+  it('tags a new model with the capabilities added under Advanced settings, in their colors', async () => {
+    const service = new MockConsoleService();
+    const create = vi.spyOn(modelsOf(service), 'create');
+    const user = userEvent.setup();
+    renderAt('/models/deploy', service);
+    await user.click(await screen.findByRole('textbox', { name: /Model URI/ }));
+    await user.paste('hf://facebook/opt-125m');
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    await nameDeployment(user, 'OPT 125M');
+    await selectHardware(user, 'CPU only');
+    await user.click(screen.getByRole('button', { name: 'Advanced settings' }));
+    expect(field()).toHaveAccessibleDescription(
+      'Tag this model with its capabilities so users can easily identify what it supports.',
+    );
+    expect(await offered(user)).toEqual(['Vision', 'Transcription', 'Chat', 'Text completion']);
+    await addCapability(user, 'Text completion');
+    await addCapability(user, 'Vision');
+    // An added value is a removable label, and the menu no longer offers it.
+    expect(within(field()).getByText('Text completion').closest('.pf-v6-c-label')).toHaveClass('pf-m-teal');
+    expect(await offered(user)).toEqual(['Transcription', 'Chat']);
+    await user.click(within(field()).getByRole('button', { name: 'Remove Vision' }));
+    expect(within(field()).queryByText('Vision')).not.toBeInTheDocument();
+    expect(await offered(user)).toEqual(['Vision', 'Transcription', 'Chat']);
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    const review = await pickAndDeploy(user, [cluster1], { submit: false });
+    expect(review).toHaveTextContent('Model capabilitiesText completionClusters');
+    await user.click(screen.getByRole('button', { name: 'Deploy' }));
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0][0].object?.metadata?.annotations).toEqual({
+      'openshift.io/display-name': 'OPT 125M',
+      [CAPABILITIES]: '["Text completion"]',
+    });
+  });
+
+  it('hides Add capability once every value it offers is selected', async () => {
+    const user = userEvent.setup();
+    renderAt('/models/deploy', new MockConsoleService());
+    await user.click(await screen.findByRole('textbox', { name: /Model URI/ }));
+    await user.paste('hf://org/widget');
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    await user.click(await screen.findByRole('button', { name: 'Advanced settings' }));
+    for (const name of ['Vision', 'Transcription', 'Chat', 'Text completion']) await addCapability(user, name);
+    expect(within(field()).queryByRole('button', { name: 'Add capability' })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    [undefined, '—'],
+    ['["Text completion","Vision"]', 'Text completionVision'],
+    ['["chat"," Chat ","my-tag"]', 'chatmy-tag'],
+    ['[]', '—'],
+    ['not json', '—'],
+  ])('shows the annotation %s on the model page as %s', async (annotation, shown) => {
+    const service = new MockConsoleService();
+    if (annotation) modelsOf(service).find('granite-3-8b').metadata!.annotations[CAPABILITIES] = annotation;
+    renderAt('/models/granite-3-8b', service);
+    // granite-3-8b has presets, the next item.
+    expect(await screen.findByLabelText('Deployment')).toHaveTextContent(`Model capabilities${shown}Presets`);
+  });
+
+  it('shows each capability on the model page as a label in its color', async () => {
+    renderAt('/models/granite-research', new MockConsoleService());
+    const details = await screen.findByLabelText('Deployment');
+    expect(within(details).getByText('Text completion').closest('.pf-v6-c-label')).toHaveClass('pf-m-teal');
+  });
+
+  it('starts an edit from the model’s values, unknown ones included, and writes the selection once changed', async () => {
+    const service = new MockConsoleService();
+    const models = modelsOf(service);
+    models.find('granite-research').metadata!.annotations[CAPABILITIES] = '["my-tag"," TEXT COMPLETION "]';
+    const update = vi.spyOn(models, 'update');
+    const user = userEvent.setup();
+    renderAt('/models/granite-research/edit', service);
+    await openStep(user, 'Deployment');
+    await user.click(await screen.findByRole('button', { name: 'Advanced settings' }));
+    expect(within(field()).getByText('my-tag')).toBeVisible();
+    expect(within(field()).getByText('TEXT COMPLETION')).toBeVisible();
+    // Matched trimmed and in any case: Text completion is already selected.
+    expect(await offered(user)).toEqual(['Vision', 'Transcription', 'Chat']);
+    // Removed and added back is no change: Save changes stays off.
+    await user.click(within(field()).getByRole('button', { name: 'Remove TEXT COMPLETION' }));
+    await addCapability(user, 'Text completion');
+    await openStep(user, 'Review');
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
+    await openStep(user, 'Deployment');
+    await user.click(await screen.findByRole('button', { name: 'Advanced settings' }));
+    expect(within(field()).getByText('Text completion')).toBeVisible();
+    await user.click(within(field()).getByRole('button', { name: 'Remove my-tag' }));
+    await addCapability(user, 'Chat');
+    await openStep(user, 'Review');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(update).toHaveBeenCalled());
+    const [request] = update.mock.calls[0];
+    expect(request.updateMask?.paths).toEqual(['metadata.annotations']);
+    expect(request.object?.metadata?.annotations).toEqual({
+      'openshift.io/display-name': 'Granite research endpoint',
+      [CAPABILITIES]: '["Text completion","Chat"]',
+    });
+  });
+
+  it('removes the annotation once every capability is removed', async () => {
+    const service = new MockConsoleService();
+    const models = modelsOf(service);
+    const update = vi.spyOn(models, 'update');
+    const user = userEvent.setup();
+    renderAt('/models/granite-research/edit', service);
+    await openStep(user, 'Deployment');
+    await user.click(await screen.findByRole('button', { name: 'Advanced settings' }));
+    await user.click(within(field()).getByRole('button', { name: 'Remove Text completion' }));
+    await openStep(user, 'Review');
+    expect(screen.getByTestId('model-review')).not.toHaveTextContent('Model capabilities');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(update).toHaveBeenCalled());
+    expect(update.mock.calls[0][0].object?.metadata?.annotations).toEqual({
+      'openshift.io/display-name': 'Granite research endpoint',
+    });
+  });
+
+  it('leaves a malformed annotation as it is, shown as none', async () => {
+    const service = new MockConsoleService();
+    const models = modelsOf(service);
+    models.find('granite-3-8b').metadata!.annotations[CAPABILITIES] = 'chat';
+    const update = vi.spyOn(models, 'update');
+    const user = userEvent.setup();
+    renderAt('/models/granite-3-8b/edit', service);
+    await openStep(user, 'Deployment');
+    await user.click(await screen.findByRole('button', { name: 'Advanced settings' }));
+    expect(await offered(user)).toEqual(['Vision', 'Transcription', 'Chat', 'Text completion']);
+    await openStep(user, 'Review');
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
+    expect(update).not.toHaveBeenCalled();
   });
 });
 

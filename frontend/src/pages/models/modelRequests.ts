@@ -10,6 +10,7 @@ import type { MessageInitShape } from '@bufbuild/protobuf';
 import type { ModelsCreateRequestSchema, ModelsUpdateRequestSchema } from '../../gen/ai_grid/v1/models_service_pb';
 import type { ModelEnvVarSchema, ModelPlacementSchema } from '../../gen/ai_grid/v1/model_type_pb';
 import { RUNTIME_ARGS_ENV, runtimeArgsOf, withRuntimeArgs, type EnvVar } from './fields/runtimeArgs';
+import { MODEL_CAPABILITIES, isWellFormedCapabilities, sameCapabilities } from './modelCapabilities';
 import { DESCRIPTION, DISPLAY_NAME, type ModelView } from './modelView';
 
 type PlacementInit = MessageInitShape<typeof ModelPlacementSchema>;
@@ -22,6 +23,8 @@ export type ModelInput = {
   displayName: string;
   description?: string;
   modelUri: string;
+  /** The selected capabilities, written as the capabilities annotation (modelCapabilities.ts). */
+  capabilities: string[];
   /** Empty for the cluster's default vLLM image, which is for NVIDIA GPUs. */
   runtimeImage: string;
   replicas: number;
@@ -80,6 +83,7 @@ export const createRequestOf = (input: ModelInput): MessageInitShape<typeof Mode
         annotations: {
           ...(displayName ? { [DISPLAY_NAME]: displayName } : {}),
           ...(input.description ? { [DESCRIPTION]: input.description } : {}),
+          ...(input.capabilities.length > 0 ? { [MODEL_CAPABILITIES]: JSON.stringify(input.capabilities) } : {}),
         },
       },
       spec: {
@@ -202,8 +206,21 @@ export const updateRequestOf = (
     else delete annotations[DISPLAY_NAME];
     if (input.description) annotations[DESCRIPTION] = input.description;
     else delete annotations[DESCRIPTION];
-    paths.push('metadata.annotations');
   }
+  // Only a selection the user changed is written, as selected: an unchanged one leaves the
+  // annotation as read.
+  if (!sameCapabilities(input.capabilities, model.capabilities)) {
+    annotations = { ...(annotations ?? model.annotations) };
+    if (input.capabilities.length > 0) annotations[MODEL_CAPABILITIES] = JSON.stringify(input.capabilities);
+    else delete annotations[MODEL_CAPABILITIES];
+  }
+  // A malformed value (hand-edited in Git) is dropped from any annotations write: the backend
+  // refuses it, so sending it back would block every save of the model. Readers treat it as absent.
+  const storedCapabilities = annotations?.[MODEL_CAPABILITIES];
+  if (annotations && storedCapabilities !== undefined && !isWellFormedCapabilities(storedCapabilities)) {
+    delete annotations[MODEL_CAPABILITIES];
+  }
+  if (annotations) paths.push('metadata.annotations');
   if (model.placementClusters && !sameSet(input.clusters, model.placementClusters)) {
     spec.placement = namedPlacement(input.clusters);
     paths.push('spec.placement');
