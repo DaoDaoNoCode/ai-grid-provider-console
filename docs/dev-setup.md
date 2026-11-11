@@ -57,7 +57,7 @@ and a free local port. The forward listens on one loopback address only, reconne
 replaces the pod, and creates nothing on the cluster. Pages whose RPCs the backend doesn't serve
 yet say "not available on this AI Grid backend".
 
-For the Monitoring page, set `PERSES_PROJECT` to the Perses project whose `dashboard-*` objects are
+For the Monitoring page, set `PERSES_PROJECT` to the Perses project whose `dashboard-*-admin` objects are
 the tabs (the relay reads only that project; without it Monitoring stays off). `make dev-cluster` then
 also forwards the hub's Perses
 (`openshift-cluster-observability-operator/perses`, `PERSES_NAMESPACE`, `PERSES_SERVICE`) to

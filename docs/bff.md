@@ -61,7 +61,7 @@ console:** the relay forwards the bytes it gets, and a page's inline messages ar
 | GET | `/healthcheck` | `{status, version}` | none; no identity and no backend call: a check, by a person or a script on the pod, that the BFF process serves HTTP and which build it is (`version`). No probe uses it: the kubelet probes only `/readyz` (below), and there is deliberately no liveness probe, which would restart the BFF whenever the proxy in front of it is down. Through the route it is behind the login like any page (the proxy skips auth for `/readyz` only) |
 | GET | `/readyz` | `{status, version, backend}` | `grpc.health.v1.Health/Check` with no service name, the standard gRPC health service the backend registers for every service it serves; readiness, 503 when the backend does not answer or answers anything but `SERVING`. The pod is then unready, and with the one replica the chart runs, the Service has no endpoint left: the OpenShift router answers every request with its own 503 page (HTML, not this API's JSON error), until the backend answers again |
 | GET | `/api/v1/user` | `{username, email?, groups, isProviderAdmin}` (`email` omitted when the proxy sends none) | none; the identity from the proxy headers, `isProviderAdmin` from a hub `SelfSubjectAccessReview` |
-| GET | `/api/v1/config` | `{gridEndpoint, mapTileUrl, mapTileAttribution, billingUrl, version, fakeBackend, monitoring: {enabled, persesProject}, models: {hardware}}`: `fakeBackend` says the backend runs on fake infrastructure (`make dev-fake`, the browser tests), so the UI shows its fake-backend banner and, with no login proxy, keeps an ended session on the page instead of sending it to sign in; `monitoring.enabled` says the BFF relays `/perses/api` (it has a `PERSES_URL`) and `monitoring.persesProject` names the one Perses project the relay reads, whose `dashboard-*` objects are the Monitoring tabs (always set when `monitoring.enabled`); `models.hardware` is the Deploy model wizard's Hardware list, never empty, each `{id, label, description?, accelerator?, image?, env?, defaults?: {accelerators?, cpu?, memory?}}` (see "Model hardware" below) | none; env `GRID_CONSUMER_URL`, `MAP_TILE_URL`, `MAP_TILE_ATTRIBUTION` (the attribution shown with `MAP_TILE_URL`'s tiles; with no `MAP_TILE_URL` the map draws a bundled land outline), `BILLING_URL`, `FAKE_BACKEND`, `PERSES_URL`, `PERSES_PROJECT`, `MODEL_HARDWARE` |
+| GET | `/api/v1/config` | `{gridEndpoint, mapTileUrl, mapTileAttribution, billingUrl, version, fakeBackend, monitoring: {enabled, persesProject}, models: {hardware}}`: `fakeBackend` says the backend runs on fake infrastructure (`make dev-fake`, the browser tests), so the UI shows its fake-backend banner and, with no login proxy, keeps an ended session on the page instead of sending it to sign in; `monitoring.enabled` says the BFF relays `/perses/api` (it has a `PERSES_URL`) and `monitoring.persesProject` names the one Perses project the relay reads, whose `dashboard-*-admin` objects are the Monitoring tabs (always set when `monitoring.enabled`); `models.hardware` is the Deploy model wizard's Hardware list, never empty, each `{id, label, description?, accelerator?, image?, env?, defaults?: {accelerators?, cpu?, memory?}}` (see "Model hardware" below) | none; env `GRID_CONSUMER_URL`, `MAP_TILE_URL`, `MAP_TILE_ATTRIBUTION` (the attribution shown with `MAP_TILE_URL`'s tiles; with no `MAP_TILE_URL` the map draws a bundled land outline), `BILLING_URL`, `FAKE_BACKEND`, `PERSES_URL`, `PERSES_PROJECT`, `MODEL_HARDWARE` |
 | GET, POST | `/perses/api/<Perses API path>` | Perses's own answer, status and body unchanged, with only its `Content-Type`, `Content-Encoding`, `Content-Length`, `Vary`, `Cache-Control`, `Date`, `Age` and `Expires` headers; a redirect from Perses is 502 | none; the Monitoring page's relay to the hub's Perses (`PERSES_URL`), see "The Perses relay" |
 | GET, POST | `/ai_grid.v1.<Service>/<Method>` | The backend's own answer, with only the headers a Connect client needs | the procedure itself, if the relay's allowlist has it; see "The Connect relay" |
 | GET | every other path | the built frontend (`STATIC_ASSETS_DIR`), `index.html` for a client route | none |
@@ -214,9 +214,14 @@ you set yourself without `PERSES_PROJECT` stops the BFF at startup.
 What a dashboard needs to appear on the page, for the team that writes them:
 
 - It is a `PersesDashboard` in `PERSES_PROJECT` (the chart's `console.perses.project`) whose name
-  starts with `dashboard-`, such as `dashboard-usage`. The prefix is how the console tells the
-  dashboards meant as tabs from anything else kept in the project; the tab shows the dashboard's
-  display name, or its name, and tabs are ordered by name.
+  starts with `dashboard-` and ends with `-admin`, such as `dashboard-1-model-admin`. The prefix and
+  the suffix are odh-dashboard's (`filterDashboards`): the prefix tells the dashboards meant as tabs
+  from anything else kept in the project, and the suffix marks the variant for users with cluster-wide
+  metrics access, which every provider admin has. A dashboard without the suffix is written for users
+  scoped to their own projects or identity (OpenShift AI's `dashboard-1-model`, MaaS's
+  `dashboard-5-maas-usage-logs`, My Usage, which needs a MaaS user) and is not a tab, whether or not it
+  has an admin variant (`monitoringTabs`, `frontend/src/api/monitoring.ts`). The tab shows the
+  dashboard's display name, or its name, and tabs are ordered by name.
 - Its queries name a `PersesDatasource` in the same project or a `PersesGlobalDatasource` (by kind,
   or kind and name; one marked `default: true` is used when a query names only the kind), which
   reaches Prometheus or Loki through its `proxy`, not `directUrl`: the browser can't reach the
@@ -238,7 +243,7 @@ What a dashboard needs to appear on the page, for the team that writes them:
   datasource it queries, so whoever can point a datasource somewhere can collect that token.
 
 The page (`frontend/src/pages/monitoring`): with `monitoring.enabled`, `/monitoring` lists the
-dashboards of `monitoring.persesProject` through the relay and shows each `dashboard-*` one as a
+dashboards of `monitoring.persesProject` through the relay and shows each `dashboard-*-admin` one as a
 tab, ordered by name and selected with `?dashboard=<name>`. A panel whose datasource the dashboard
 defines itself shows an error in the panel instead of querying it. It renders the selected one with
 Perses's own React components and the plugins bundled in `persesPlugins.ts` (Prometheus and

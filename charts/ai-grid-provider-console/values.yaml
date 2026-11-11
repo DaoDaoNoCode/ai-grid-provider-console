@@ -70,15 +70,17 @@ console:
   mapTileAttribution: ""
   billingUrl: ""
   logLevel: info
-  # The Monitoring page's Perses (docs/bff.md, "The Perses relay"): its dashboard-*
+  # The Monitoring page's Perses (docs/bff.md, "The Perses relay"): its dashboard-*-admin
   # dashboards are the page's tabs. Empty url: Monitoring says it is not set up and names these.
   perses:
     # The hub's Perses server, such as the Cluster Observability Operator's:
     # https://perses.openshift-cluster-observability-operator.svc:8080
     url: ""
     # The one Perses project Monitoring reads (with the global datasources). Its PersesDashboards
-    # whose names start with dashboard- (such as dashboard-usage) are the tabs; any other dashboard
-    # in it is ignored. Required with url: the rendering fails without it. Perses sends the
+    # whose names start with dashboard- and end with -admin (such as dashboard-1-model-admin) are
+    # the tabs, as odh-dashboard shows them to an admin; any other dashboard in it is ignored,
+    # including the user variants (dashboard-1-model) and MaaS's per-user My Usage
+    # (dashboard-5-maas-usage-logs). Required with url: the rendering fails without it. Perses sends the
     # signed-in admin's hub token on to the datasources it queries, so only provider admins may
     # create or edit this project's PersesDashboards and PersesDatasources and the
     # PersesGlobalDatasources, and the global datasources must point only at the hub's own Thanos

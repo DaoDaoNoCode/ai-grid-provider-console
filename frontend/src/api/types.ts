@@ -46,7 +46,7 @@ export type ModelHardware = {
 export type MonitoringConfig = {
   /** The BFF relays /perses/api to the hub's Perses; off when it has no PERSES_URL. */
   enabled: boolean;
-  /** The one Perses project the relay reads, whose `dashboard-*` objects are the Monitoring tabs; set whenever Monitoring is on. */
+  /** The one Perses project the relay reads, whose `dashboard-*-admin` objects are the Monitoring tabs; set whenever Monitoring is on. */
   persesProject: string;
 };
 
