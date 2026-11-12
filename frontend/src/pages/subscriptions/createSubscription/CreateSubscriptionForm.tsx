@@ -98,7 +98,7 @@ const MAX_ID_LENGTH = 56;
 
 const subscriptionFormSchema = z.object({
   priority: z
-    .number({ error: 'Required.' })
+    .number({ error: 'Required' })
     .int('Enter a whole number.')
     .min(MIN_PRIORITY, PRIORITY_RANGE)
     .max(MAX_PRIORITY, PRIORITY_RANGE),
@@ -520,8 +520,7 @@ export const CreateSubscriptionForm: React.FC<Props> = ({
             <FormHelperText>
               <HelperText>
                 <HelperTextItem>
-                  Enter a group name, then select Add group. Users in these groups can use the subscription&apos;s
-                  models.
+                  Enter the names of user groups to grant them access to models in the subscription.
                 </HelperTextItem>
               </HelperText>
             </FormHelperText>
