@@ -136,13 +136,22 @@ const notListedReasons = (c: ClusterView) => {
   ].filter((r): r is string => !!r);
 };
 
-/** "Only ... are listed. Not listed: site2 (not Ready) and site3 (Ingress role).", for each left-out member. */
+/** Which AI Grid clusters the Clusters step lists, as ListPlacementClusters offers them (notListedReasons). */
+const listedClustersRule = (
+  <>
+    This list includes only clusters that have the <strong>Ready</strong> cluster status, the{' '}
+    <strong>Provisioned</strong> AI Grid status, and the <strong>Inference</strong> or{' '}
+    <strong>Ingress and inference</strong> role.
+  </>
+);
+
+/** "Not listed: site2 (not Ready) and site3 (Ingress role).", for each left-out member. */
 const notListedText = (members: ClusterView[]) => {
   const named = members.map((c) => {
     const reasons = notListedReasons(c);
     return reasons.length ? `${c.name} (${reasons.join(', ')})` : c.name;
   });
-  return `Only Ready and Provisioned clusters with the Inference or Combined role are listed. Not listed: ${listOf(named)}.`;
+  return `Not listed: ${listOf(named)}.`;
 };
 
 /** Says which chosen clusters are no longer offered; undefined when none are. */
@@ -358,7 +367,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
       ? undefined
       : value.trim()
         ? fieldMessage(modelFieldsSchema.shape[field], value, parse)
-        : 'Required.';
+        : 'Required';
   // The deploy wizard's limits apply to a value an edit sets, not to one the model already has,
   // which the backend took.
   const kept = (value: string, stored: string | undefined) => editing && value.trim() === (stored ?? '');
@@ -383,7 +392,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
   const runtimeImageError = !touched.has('runtimeImage')
     ? undefined
     : imageMissing
-      ? 'Required.'
+      ? 'Required'
       : fieldMessage(modelFieldsSchema.shape.runtimeImage, runtimeImage);
   const replicasError = shownError('replicas', replicas, Number);
   // A model deployed without a CPU or memory request keeps none until one is entered.
@@ -406,7 +415,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
     !touched.has('accelerators') || acceleratorsKept
       ? undefined
       : accelerators === ''
-        ? 'Required.'
+        ? 'Required'
         : acceleratorsValid
           ? undefined
           : `Enter a number from 1 to ${MAX_ACCELERATORS}.`;
@@ -533,9 +542,13 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
     if (placementClusters.length === 0 && goneClusters.length === 0) {
       return (
         <Alert isInline variant="warning" title="No clusters available">
-          {unlistedMembers.length > 0
-            ? notListedText(unlistedMembers)
-            : 'A cluster appears here when it is an AI Grid cluster that serves models, and is Ready and Provisioned.'}
+          {unlistedMembers.length > 0 ? (
+            <>
+              {listedClustersRule} {notListedText(unlistedMembers)}
+            </>
+          ) : (
+            'A cluster appears here when it is an AI Grid cluster that serves models, and is Ready and Provisioned.'
+          )}
         </Alert>
       );
     }
@@ -570,7 +583,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
           isDisabled={saving}
         />
         <Help>
-          The model runs on each selected AI Grid cluster.
+          Select the AI Grid clusters where the model will run. {listedClustersRule}
           {unlistedMembers.length > 0 && ` ${notListedText(unlistedMembers)}`}
         </Help>
       </FormGroup>

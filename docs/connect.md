@@ -145,7 +145,7 @@ called inside that provider would get Perses's query client instead.
   `Clusters/List` and `Clusters/Get` with Connect Query, polling every 30 s as the other pages do,
   with no retries (the page offers Retry). `toClusterView` (`clusterView.ts`) is the thin selector
   layer ADR-0002 allows: the backend decides what a cluster is, and the page words it:
-  `status.ai_grid_member` (membership), `status.state` and `state_message` (Ready, Offline, or
+  `status.ai_grid_member` (membership), `status.state` and `state_message` (Ready, Unavailable for the backend's `OFFLINE`, or
   Unknown with the ACM state behind it), `status.location` (site name, coordinates, where they
   come from, what is wrong with them, the cloud region), `provisioning` `Compliant` as
   Provisioned, the `location`, `ai-grid/site`, `ai-grid/role` and `openshiftVersion` labels, the
@@ -163,7 +163,7 @@ called inside that provider would get Perses's query client instead.
   waits for the answer and keeps every refusal; once the backend answers, the notification
   center says so and follows what the hub does next ("Writes that take long"), in place of a page
   toast of its own. The BFF has
-  no `/api/v1/clusters` routes any more. Remove's dialog for an Ingress or Combined cluster says
+  no `/api/v1/clusters` routes any more. Remove's dialog for an Ingress or Ingress and inference cluster says
   what happens to organizations' users (`removeText`, `clusterInfo.ts`): their requests go
   through the other ingress clusters and their API keys keep working, because the backend refuses
   a Remove that would revoke them (below). Deleting a cluster's copy of a subscription runs MaaS's
@@ -194,7 +194,8 @@ called inside that provider would get Perses's query client instead.
   value that isn't one of the three). A role a cluster has is shown read-only: changing it isn't
   supported, because the hub doesn't fully remove what the old role installed (leaving
   inference uninstalls the GPU operators, leaving ingress leaves objects behind, its database
-  credentials among them, and adding ingress needs per-cluster config in Git). Selecting a role
+  credentials among them, and adding ingress needs per-cluster config in Git). Add to AI Grid
+  shows a role the cluster kept after Remove read-only in the same way. Selecting a role
   shows, before Save, what Save sets, what the hub then installs, and that the cluster shows
   Provisioning until it finishes, in an info alert that is a live region, so a screen reader
   announces it; it only adds, so no name is typed. Save sends one `Clusters/Update` of the labels map as read with
@@ -582,7 +583,7 @@ subscription) are sent from the app root, never from the form (`frontend/src/not
     Grid operator and never MaaS, so the body claims no more: for an Inference cluster "You can
     select it when you deploy a model" (`Models/ListPlacementClusters` offers a provisioned one),
     for an Ingress cluster "Whether users can reach models through it depends on MaaS, which the
-    hub's check doesn't cover", for a Combined cluster both. After 60 minutes, "Cluster <name>
+    hub's check doesn't cover", for an Ingress and inference cluster both. After 60 minutes, "Cluster <name>
     isn't provisioned yet", or "Unable to confirm cluster <name> is provisioned" when the last
     read failed or no read found a status, with a link to the cluster. An empty `provisioning`
     (the Policy doesn't list the cluster, or can't be read) follows the subscriptions' rule: three

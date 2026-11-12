@@ -1145,7 +1145,9 @@ it.each(['view', 'edit'])('loads the other subscription when the name in /subscr
 it('hints that a new model needs a token limit, and labels the limit fields', async () => {
   const user = userEvent.setup();
   renderAt('/subscriptions/create', seeded());
-  expect(await screen.findByText(/^Give groups of an organization's users access to models/)).toBeVisible();
+  expect(
+    await screen.findByText(/^Configure models available with this subscription, token limits for each one/),
+  ).toBeVisible();
   await user.click(await screen.findByTestId('add-models-button'));
   await user.click(screen.getByTestId('toggle-model-granite-3-8b'));
   await user.click(screen.getByTestId('confirm-add-models'));

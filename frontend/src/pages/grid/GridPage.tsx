@@ -81,7 +81,7 @@ export const GridPage: React.FC<Props> = ({ map }) => {
   return (
     <PageStateSection
       title="AI Grid"
-      description="View AI Grid clusters on a map and the models they serve."
+      description="The AI Grid connects your OpenShift clusters into a unified network to serve models and route traffic across locations."
       headerAction={toolbar}
       loaded={map.loaded}
       error={map.error}

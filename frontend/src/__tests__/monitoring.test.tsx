@@ -94,9 +94,13 @@ it("says when the caller can't read the dashboards", async () => {
   const service = withMonitoring('ai-grid', []);
   service.listMonitoringDashboards = () => Promise.reject(new ServiceError(403, 'forbidden: project ai-grid'));
   renderAt('/monitoring', service);
-  expect(await screen.findByRole('heading', { name: 'Access permissions needed' })).toBeVisible();
+  expect(await screen.findByRole('heading', { name: 'No access' })).toBeVisible();
   expect(screen.getByText('forbidden: project ai-grid')).toBeVisible();
-  expect(screen.getByText('To view dashboards, ask your hub administrator for access.')).toBeVisible();
+  expect(
+    screen.getByText(
+      "You don't have permission to view dashboards. To request permission, contact your hub administrator.",
+    ),
+  ).toBeVisible();
 });
 
 it("says when the dashboards can't be loaded, and retries", async () => {
@@ -257,7 +261,7 @@ describe('a 401 from the relay', () => {
     await user.click(screen.getByRole('button', { name: 'panels answered 401' }));
     await waitFor(() => expect(getUser).toHaveBeenCalledTimes(1));
     expect(screen.getByTestId('perses-dashboard')).toBeVisible();
-    expect(screen.queryByText(/Your session has ended|Logging you in/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Session expired|Logging you in/)).not.toBeInTheDocument();
   });
 
   it('checks the session, and keeps it, when Perses answers the dashboards list with 401', async () => {
@@ -268,7 +272,7 @@ describe('a 401 from the relay', () => {
     expect(await screen.findByText('Perses refused the token')).toBeVisible();
     // Once on load, once for the check.
     await waitFor(() => expect(getUser).toHaveBeenCalledTimes(2));
-    expect(screen.queryByText(/Your session has ended|Logging you in/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Session expired|Logging you in/)).not.toBeInTheDocument();
   });
 
   it('ends the session when the user answers 401 too', async () => {

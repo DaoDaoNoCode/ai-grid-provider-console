@@ -30,7 +30,7 @@ const Form = () => {
 it('requires the JWKS URL only while Validate signature is on', async () => {
   const user = userEvent.setup();
   render(<Form />);
-  const jwks = screen.getByRole('textbox', { name: /JWKS URL/ });
+  const jwks = screen.getByRole('textbox', { name: /JSON Web Key Set \(JWKS\) URL/ });
   expect(jwks).toBeRequired();
 
   await user.click(jwks);
@@ -45,7 +45,7 @@ it('requires the JWKS URL only while Validate signature is on', async () => {
 it('requires the JWKS URL again when Validate signature is turned back on', async () => {
   const user = userEvent.setup();
   render(<Form />);
-  const jwks = screen.getByRole('textbox', { name: /JWKS URL/ });
+  const jwks = screen.getByRole('textbox', { name: /JSON Web Key Set \(JWKS\) URL/ });
   const validate = screen.getByRole('checkbox', { name: 'Validate signature' });
   await user.click(jwks);
   await user.tab();
