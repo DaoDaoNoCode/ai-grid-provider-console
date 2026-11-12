@@ -203,6 +203,21 @@ export const notConfirmedText = (t: WriteTarget): Text => {
   return { title: unable(t), message, actions: [t.op === 'create' ? listAction(t) : viewAction(t)] };
 };
 
+/**
+ * A subscription create whose answer never came, and which the read-back didn't confirm: the backend
+ * may have added a suffix to the requested name (backend PR 89), which only the lost answer carried,
+ * so neither a read of the requested name nor its absence says whether it was created. Creating it
+ * again could make a second one, so the list is the place to check first.
+ */
+export const unknownCreatedNameText = (t: WriteTarget): Text => {
+  const s = subjects[t.subject];
+  return {
+    title: `Unable to confirm ${s.object} ${t.name}`,
+    message: `The AI Grid backend's answer was lost, and the backend may have added a suffix to the ${s.object}'s name, so it's unknown whether the ${s.object} was saved to Git. Check the ${s.list} list before you create it again.`,
+    actions: [listAction(t)],
+  };
+};
+
 /** The checks themselves failed until the end: nobody can say whether the write landed. */
 export const unconfirmedText = (t: WriteTarget): Text => {
   const s = subjects[t.subject];

@@ -140,6 +140,31 @@ describe('readBack', () => {
     });
   });
 
+  describe('a subscription create, which the backend may name with a suffix only its answer carries', () => {
+    const sent = { displayName: 'Team A' };
+    const created = { ...subscription('create'), expected: sent };
+    const unknown = {
+      status: NotificationResponseStatus.WARNING,
+      title: 'Unable to confirm subscription Team A',
+      message:
+        "The AI Grid backend's answer was lost, and the backend may have added a suffix to the subscription's name, so it's unknown whether the subscription was saved to Git. Check the Subscriptions list before you create it again.",
+      actions: [{ title: 'Go to Subscriptions', to: '/subscriptions' }],
+    };
+
+    it('is unknown, not "not done", when the requested id never shows', async () => {
+      expect(await readBack(created, SENT, reads(undefined), before)).toEqual({
+        status: NotificationResponseStatus.REPOLL,
+      });
+      expect(await readBack(created, SENT, reads(undefined), after)).toEqual(unknown);
+      expect(await readBack(created, SENT, reads(new Error('unavailable')), after)).toEqual(unknown);
+    });
+
+    it("is unknown, not someone else's, when the requested id holds something else", async () => {
+      const answer = { version: 1, fields: { displayName: 'Other team' } };
+      expect(await readBack(created, SENT, reads(answer), before)).toEqual(unknown);
+    });
+  });
+
   it('says an update failed when its object is gone', async () => {
     expect(await readBack(model('update', 3), SENT, reads(undefined), before)).toMatchObject({
       status: NotificationResponseStatus.ERROR,
