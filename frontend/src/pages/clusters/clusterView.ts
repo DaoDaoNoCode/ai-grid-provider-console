@@ -69,7 +69,8 @@ const CAPACITY_GPU = 'nvidia.com/gpu';
 
 /**
  * The backend's lifecycle state as the pages word it: the ACM console's words, except Unavailable
- * for the state ACM calls Offline. The cluster may still be serving: the hub only can't reach it.
+ * for the state ACM calls Offline, which the cluster's agent reports (for example, its API server is
+ * down): the cluster may still be serving. A cluster the hub can't reach is UNKNOWN, so Unknown.
  */
 const states: Record<ManagedClusterState, { status: ClusterStatus; state?: ClusterState }> = {
   [ManagedClusterState.UNSPECIFIED]: { status: 'Unknown' },

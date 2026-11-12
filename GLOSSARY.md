@@ -49,8 +49,9 @@ _Avoid_: location (alone)
 **Cluster**:
 An OpenShift cluster managed by the hub. Not every cluster is part of the grid. Models are
 deployed to clusters, chosen by name. Its status is Ready, Unavailable or Unknown: Unavailable when
-the hub can't reach it (the backend's `OFFLINE`, which ACM's console calls Offline), though it may
-still be serving.
+the cluster's agent reports it unavailable (the backend's `OFFLINE`, which ACM's console calls
+Offline; for example, its API server is down), though it may still be serving. A cluster the hub
+can't reach (no current report from its agent, the backend's `UNKNOWN`) is Unknown.
 _Avoid_: ManagedCluster, GridCluster, managed cluster, node, location; Offline (for the status)
 
 **Grid member**:

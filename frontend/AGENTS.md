@@ -87,8 +87,9 @@ a failed load.
   control), and its panel has `ModelStatusLabel`.
 - On the Clusters list, a status with a non-empty hub message is filled and opens that cluster's
   message as text in a dialog, including Ready. Without a message it stays outline and
-  noninteractive. A cluster the hub can't reach (the backend's `OFFLINE`, which ACM calls Offline)
-  is _Unavailable_, in the warning tone: it may still serve. Its tooltip, and its dialog above the
+  noninteractive. A cluster whose agent reports it unavailable (the backend's `OFFLINE`, which ACM
+  calls Offline; for example, its API server is down) is _Unavailable_, in the warning tone: it may
+  still serve. A cluster the hub can't reach (the backend's `UNKNOWN`) is _Unknown_. Its tooltip, and its dialog above the
   hub's message, say what that means (`unavailableText`, `clusterInfo.ts`). AI Grid status stays outline. Refresh keeps the selected cluster's identity.
 - In Create subscription and its Add models picker, every model shows its status as the Models list
   does (`ModelStatusLabel`, from the latest poll; a model the subscription has saved shows its
