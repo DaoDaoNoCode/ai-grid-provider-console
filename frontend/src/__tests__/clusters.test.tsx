@@ -377,6 +377,29 @@ it('refresh reflects external membership changes on the Hub', async () => {
   await waitFor(() => expect(within(row()).getByText('Not added')).toBeInTheDocument());
 });
 
+it('shows the role a removed cluster kept read-only when it is added again, and sends it', async () => {
+  const user = userEvent.setup();
+  const service = serviceWith([cluster('former', 'Ready', { 'ai-grid/role': 'ingress', location: 'paris' })]);
+  const enroll = vi.spyOn(service, 'enrollCluster');
+  renderAt('/clusters', service);
+  await pick(user, 'former', 'Add to AI Grid');
+  const modal = await screen.findByTestId('cluster-membership-modal');
+  // Remove kept its role, which Add shows as Edit does: read-only, with why under it.
+  const role = within(modal).getByRole('textbox', { name: 'Role' });
+  expect(role).toHaveValue('Ingress');
+  expect(role).toHaveAttribute('readonly');
+  expect(role).toHaveAccessibleDescription("A cluster's role cannot be changed once it has been added to the AI Grid.");
+  expect(within(modal).queryByRole('combobox', { name: 'Role' })).not.toBeInTheDocument();
+  expect(within(modal).getByRole('button', { name: 'More info for the role field' })).toBeVisible();
+  // The sentence is said once, under the role, not again as the alert a role still to select gets.
+  expect(
+    within(modal).getAllByText("A cluster's role cannot be changed once it has been added to the AI Grid."),
+  ).toHaveLength(1);
+  await user.click(within(modal).getByRole('button', { name: 'Add' }));
+  expect(await screen.findByText('Cluster former added to AI Grid')).toBeVisible();
+  expect(enroll.mock.calls[0][1]).toEqual({ location: 'paris', role: 'ingress' });
+});
+
 it('shows the role and location Add wrote while the list reloads', async () => {
   const service = serviceWith([cluster('cluster-b', 'Ready')]);
   const list = service.listClusters;
@@ -910,7 +933,9 @@ it('shows the location and role someone else set meanwhile instead of sending th
     ),
   ).toBeVisible();
   expect(within(modal).getByRole('textbox', { name: 'Location label' })).toHaveValue('eu-west');
-  expect(within(modal).getByRole('combobox', { name: 'Role' })).toHaveValue('Ingress');
+  // The role they set is now the cluster's, so it shows read-only, as a kept role does.
+  expect(within(modal).getByRole('textbox', { name: 'Role' })).toHaveValue('Ingress');
+  expect(within(modal).queryByRole('combobox', { name: 'Role' })).not.toBeInTheDocument();
 
   await user.click(within(modal).getByRole('button', { name: 'Add' }));
   expect(await screen.findByText('Cluster site4 added to AI Grid')).toBeVisible();

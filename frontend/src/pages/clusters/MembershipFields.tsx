@@ -69,13 +69,23 @@ const roleHelp = (
   </Popover>
 );
 
-/** A role the dialog shows but doesn't change, with why under it. */
-export const ReadOnlyRoleField: React.FC<{ role: ClusterRole; reason: string }> = ({ role, reason }) => (
+/**
+ * Why neither dialog changes a role a cluster has: the hub doesn't fully remove what the old role
+ * installed (GLOSSARY.md, "Role"; editClusterText.ts). Under a read-only role, and in Add above an
+ * editable one.
+ */
+export const roleFixedText = "A cluster's role cannot be changed once it has been added to the AI Grid.";
+
+/**
+ * A role the dialog shows but doesn't change, with why under it: Edit's for an AI Grid cluster, and
+ * Add's for a cluster that kept its role when it was removed.
+ */
+export const ReadOnlyRoleField: React.FC<{ role: ClusterRole }> = ({ role }) => (
   <ReadOnlyField
     label="Role"
     fieldId="cluster-role"
     value={clusterRoles.find((r) => r.value === role)?.label ?? role}
-    reason={reason}
+    reason={roleFixedText}
     labelHelp={roleHelp}
   />
 );

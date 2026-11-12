@@ -109,7 +109,7 @@ export const EditClusterModal: React.FC<Props> = ({ cluster, onConfirm, onClose 
         <Stack hasGutter>
           <Form id="cluster-edit-form" onSubmit={(e) => e.preventDefault()}>
             {fixedRole ? (
-              <ReadOnlyRoleField role={fixedRole} reason={editText.roleFixed} />
+              <ReadOnlyRoleField role={fixedRole} />
             ) : (
               <RoleField
                 value={values.role}

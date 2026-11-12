@@ -485,7 +485,8 @@ it('shows the location and role someone else set meanwhile instead of sending th
     ),
   ).toBeVisible();
   expect(within(modal).getByRole('textbox', { name: 'Location label' })).toHaveValue('eu-west');
-  expect(within(modal).getByRole('combobox', { name: 'Role' })).toHaveValue('Ingress');
+  // Their role is now the cluster's, so it shows read-only.
+  expect(within(modal).getByRole('textbox', { name: 'Role' })).toHaveValue('Ingress');
 });
 
 it('offers Retry when the cluster could not be loaded', async () => {

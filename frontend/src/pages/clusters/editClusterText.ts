@@ -41,8 +41,6 @@ export const editText = {
   /** The row and page action, for AI Grid clusters only. */
   action: 'Edit',
   title: 'Edit AI Grid cluster',
-  /** Under the role of a cluster that has one, shown read-only. */
-  roleFixed: "A cluster's role cannot be changed once it has been added to the AI Grid.",
   errorTitle: 'Unable to update cluster',
   notAvailable: 'Editing a cluster is not available on this AI Grid backend.',
   changedByOther:

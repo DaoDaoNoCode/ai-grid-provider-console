@@ -194,7 +194,8 @@ called inside that provider would get Perses's query client instead.
   value that isn't one of the three). A role a cluster has is shown read-only: changing it isn't
   supported, because the hub doesn't fully remove what the old role installed (leaving
   inference uninstalls the GPU operators, leaving ingress leaves objects behind, its database
-  credentials among them, and adding ingress needs per-cluster config in Git). Selecting a role
+  credentials among them, and adding ingress needs per-cluster config in Git). Add to AI Grid
+  shows a role the cluster kept after Remove read-only in the same way. Selecting a role
   shows, before Save, what Save sets, what the hub then installs, and that the cluster shows
   Provisioning until it finishes, in an info alert that is a live region, so a screen reader
   announces it; it only adds, so no name is typed. Save sends one `Clusters/Update` of the labels map as read with

@@ -69,9 +69,9 @@ KServe are the tools the roles use; they are not the roles' names.
 - **Ingress and inference** (`combined`): the cluster receives requests via Models-as-a-Service and
   serves models via KServe. The label was Combined; the value stays `combined`.
 
-A provider admin sets a cluster's role with Add to AI Grid, or with Edit while the cluster has
-none. The console doesn't change a role a cluster has: the hub doesn't yet fully remove what the
-old role installed.
+A provider admin sets a cluster's role with Add to AI Grid or Edit, while the cluster has none.
+The console doesn't change a role a cluster has: the hub doesn't yet fully remove what the old role
+installed. Remove keeps the role, so Add shows it read-only, as Edit does.
 
 _Avoid_: MaaS cluster, MaaS (ingress), gateway cluster, serving cluster
 
