@@ -21,8 +21,8 @@ export type StatusTone = 'success' | 'warning' | 'danger' | 'info' | 'neutral';
 /** Every status word the console shows, by tone. A word missing here reads as neutral. */
 const tones: Record<string, StatusTone> = {
   // Clusters (GridCluster.status) and AI Grid provisioning.
+  // A cluster the hub can't reach is Unavailable, in the warning tone below: it may still serve.
   Ready: 'success',
-  Offline: 'danger',
   Unknown: 'neutral',
   // A cluster's GPU node (its Ready condition, through ACM Search).
   'Not ready': 'danger',
@@ -55,6 +55,7 @@ const tones: Record<string, StatusTone> = {
   'Out of sync': 'info',
   'Sync failed': 'danger',
   // The Availability column (ModelMaasState): MaaS publishes the model but no cluster serves it.
+  // Also a cluster the hub can't reach (ClusterStatus).
   Unavailable: 'warning',
   // A subscription's model that the hub doesn't have.
   'Not found': 'danger',

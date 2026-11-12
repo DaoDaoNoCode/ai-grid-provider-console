@@ -95,11 +95,14 @@ export const RoleField: React.FC<RoleFieldProps> = ({ value, onChange, onBlur, e
       onChange={(v) => onChange(v as ClusterRole)}
       onBlur={onBlur}
     />
+    {/* The helper stays when the field shows an error, and the error follows it. */}
     <FormHelperText>
       <HelperText id="cluster-role-help">
-        <HelperTextItem variant={error ? 'error' : 'default'}>
-          {error ?? 'Determines which AI Grid components the hub installs on the cluster.'}
+        <HelperTextItem>
+          Select the role this cluster will perform in the AI Grid. Components needed to perform the assigned role will
+          be installed on the cluster.
         </HelperTextItem>
+        {error && <HelperTextItem variant="error">{error}</HelperTextItem>}
       </HelperText>
     </FormHelperText>
   </FormGroup>
