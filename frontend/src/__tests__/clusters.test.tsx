@@ -38,7 +38,7 @@ const cluster = (name: string, status: GridCluster['status'], labels: Record<str
 const hubClusters = () => [
   cluster('cluster-a', 'Ready', { 'ai-grid/enabled': 'true', 'ai-grid/provisioned': 'true', location: 'site1' }),
   cluster('cluster-b', 'Ready', { location: 'site2' }),
-  cluster('cluster-c', 'Offline'),
+  cluster('cluster-c', 'Unavailable'),
 ];
 
 const serviceWith = (clusters: GridCluster[]) => new MockConsoleService(undefined, clusters);
@@ -57,7 +57,7 @@ const add = async (user: User, cluster: string) => {
   const modal = await screen.findByTestId('cluster-membership-modal');
   await user.click(within(modal).getByRole('combobox', { name: 'Role' }));
   await user.click(await screen.findByRole('option', { name: /Inference/ }));
-  await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
+  await user.click(within(modal).getByRole('button', { name: 'Add' }));
   return modal;
 };
 
@@ -78,7 +78,7 @@ it('lists live Hub states, includes AI Grid navigation and enrolls with a label-
   expect(within(member).getByText('Provisioned')).toBeInTheDocument();
   const offline = within(table).getByRole('link', { name: 'cluster-c' }).closest('tr')!;
   expect(within(table).getByRole('link', { name: 'cluster-c' })).toHaveAttribute('href', '/clusters/cluster-c');
-  expect(offline).toHaveTextContent('Offline');
+  expect(offline).toHaveTextContent('Unavailable');
   expect(within(offline).getAllByText('—').length).toBeGreaterThan(0);
   await add(user, 'cluster-b');
   expect(await screen.findByText('Cluster cluster-b added to AI Grid')).toBeVisible();
@@ -140,7 +140,7 @@ const REMOVE_WARNING_DETAIL =
 
 it.each<[string, string | undefined, boolean]>([
   ['an Ingress', 'ingress', true],
-  ['a Combined', 'combined', true],
+  ['an Ingress and inference', 'combined', true],
   ['an Inference', 'inference', false],
   ['a no-role', undefined, false],
 ])('says what happens to users when removing %s cluster only where it receives requests', async (_, role, warns) => {
@@ -282,15 +282,24 @@ it('asks for a location label and role before adding', async () => {
   expect(screen.queryByTestId('missing-location-no-location-member')).not.toBeInTheDocument();
   await pick(user, 'no-location', 'Add to AI Grid');
   const modal = await screen.findByTestId('cluster-membership-modal');
-  await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
+  // A form, titled as one, that names the cluster in its description and says a role stays.
+  expect(screen.getByRole('dialog', { name: 'Add cluster to AI Grid' })).toBe(modal);
+  expect(within(modal).getByText('no-location', { selector: 'strong' })).toBeVisible();
+  expect(
+    within(modal).getByText("A cluster's role cannot be changed once it has been added to the AI Grid."),
+  ).toBeVisible();
+  await user.click(within(modal).getByRole('button', { name: 'Add' }));
   // Nothing is written until both are given; each field says why and describes its error.
   const location = within(modal).getByRole('textbox', { name: 'Location label' });
   const role = within(modal).getByRole('combobox', { name: 'Role' });
   expect(location).toBeRequired();
   expect(location).toHaveAttribute('aria-invalid', 'true');
   expect(role).toHaveAttribute('aria-invalid', 'true');
-  expect(location).toHaveAccessibleDescription(/^Required\./);
-  expect(role).toHaveAccessibleDescription(/^Required\./);
+  expect(location).toHaveAccessibleDescription(/^Required : error status;$/);
+  // The role keeps its helper, and the error follows it.
+  expect(role).toHaveAccessibleDescription(
+    /^Select the role this cluster will perform in the AI Grid\. .* Required : error status;$/,
+  );
   await user.click(location);
   await user.paste('us east');
   expect(location).toHaveAccessibleDescription(/Must start and end with a letter or number/);
@@ -308,16 +317,16 @@ it('asks for a location label and role before adding', async () => {
     within(help)
       .getAllByRole('term')
       .map((t) => t.textContent),
-  ).toEqual(['Ingress', 'Inference', 'Combined']);
+  ).toEqual(['Ingress', 'Inference', 'Ingress and inference']);
   expect(help).toHaveTextContent(
-    "Receives requests from organizations' users through MaaS and routes them to inference clusters.",
+    'The cluster receives requests via Models-as-a-Service and routes those requests to inference clusters.',
   );
   await user.click(within(modal).getByRole('button', { name: 'Cancel' }));
   // The hub itself defaults to the combined role.
   await pick(user, 'local-cluster', 'Add to AI Grid');
   expect(
     within(await screen.findByTestId('cluster-membership-modal')).getByRole('combobox', { name: 'Role' }),
-  ).toHaveValue('Combined');
+  ).toHaveValue('Ingress and inference');
 });
 
 it('keeps an unenrolled cluster on patch failure and allows a retry', async () => {
@@ -335,7 +344,7 @@ it('keeps an unenrolled cluster on patch failure and allows a retry', async () =
   ).toBeVisible();
   expect(service.clusters[1].labels['ai-grid/enabled']).toBeUndefined();
   service.enrollCluster = enroll;
-  await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
+  await user.click(within(modal).getByRole('button', { name: 'Add' }));
   expect(await screen.findByText('Cluster cluster-b added to AI Grid')).toBeVisible();
 });
 
@@ -368,6 +377,29 @@ it('refresh reflects external membership changes on the Hub', async () => {
   await waitFor(() => expect(within(row()).getByText('Not added')).toBeInTheDocument());
 });
 
+it('shows the role a removed cluster kept read-only when it is added again, and sends it', async () => {
+  const user = userEvent.setup();
+  const service = serviceWith([cluster('former', 'Ready', { 'ai-grid/role': 'ingress', location: 'paris' })]);
+  const enroll = vi.spyOn(service, 'enrollCluster');
+  renderAt('/clusters', service);
+  await pick(user, 'former', 'Add to AI Grid');
+  const modal = await screen.findByTestId('cluster-membership-modal');
+  // Remove kept its role, which Add shows as Edit does: read-only, with why under it.
+  const role = within(modal).getByRole('textbox', { name: 'Role' });
+  expect(role).toHaveValue('Ingress');
+  expect(role).toHaveAttribute('readonly');
+  expect(role).toHaveAccessibleDescription("A cluster's role cannot be changed once it has been added to the AI Grid.");
+  expect(within(modal).queryByRole('combobox', { name: 'Role' })).not.toBeInTheDocument();
+  expect(within(modal).getByRole('button', { name: 'More info for the role field' })).toBeVisible();
+  // The sentence is said once, under the role, not again as the alert a role still to select gets.
+  expect(
+    within(modal).getAllByText("A cluster's role cannot be changed once it has been added to the AI Grid."),
+  ).toHaveLength(1);
+  await user.click(within(modal).getByRole('button', { name: 'Add' }));
+  expect(await screen.findByText('Cluster former added to AI Grid')).toBeVisible();
+  expect(enroll.mock.calls[0][1]).toEqual({ location: 'paris', role: 'ingress' });
+});
+
 it('shows the role and location Add wrote while the list reloads', async () => {
   const service = serviceWith([cluster('cluster-b', 'Ready')]);
   const list = service.listClusters;
@@ -384,7 +416,7 @@ it('shows the role and location Add wrote while the list reloads', async () => {
   await user.paste('paris');
   await user.click(within(modal).getByRole('combobox', { name: 'Role' }));
   await user.click(await screen.findByRole('option', { name: /Inference/ }));
-  await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
+  await user.click(within(modal).getByRole('button', { name: 'Add' }));
   expect(await screen.findByText('Cluster cluster-b added to AI Grid')).toBeVisible();
   const row = within(screen.getByTestId('clusters-table')).getByRole('row', { name: /^cluster-b / });
   expect(row).toHaveTextContent('Inference');
@@ -464,7 +496,7 @@ it('rejects a response that does not confirm membership', async () => {
 it('says when the hub has no clusters', async () => {
   renderAt('/clusters', serviceWith([]));
   expect(await screen.findByRole('heading', { name: 'No clusters' })).toBeVisible();
-  expect(screen.getByText(/first import it into the hub/)).toBeVisible();
+  expect(screen.getByText(/first import them using Red Hat Advanced Cluster Management for Kubernetes/)).toBeVisible();
 });
 
 it('keeps the list under a warning when a reload fails, and clears it on the next', async () => {
@@ -497,9 +529,9 @@ it('shows the seeded clusters with region, location label, status and provisioni
   // Not a member: says so, with no provisioning and no role.
   expect(sydney).not.toHaveTextContent('provisioned');
   expect(within(sydney).getByText('Not added')).toBeVisible();
-  expect(sydney).not.toHaveTextContent('Combined');
+  expect(sydney).not.toHaveTextContent('Ingress and inference');
   expect(within(table).getAllByText('Provisioned')).toHaveLength(3);
-  expect(within(table).getAllByText('Combined')).toHaveLength(3);
+  expect(within(table).getAllByText('Ingress and inference')).toHaveLength(3);
 });
 
 it('shows the role of each member, and warns about a member without one', async () => {
@@ -521,7 +553,7 @@ it('shows the role of each member, and warns about a member without one', async 
   expect(within(table).getByRole('row', { name: /^gpu-1 / })).toHaveTextContent('Inference');
   const former = within(table).getByRole('row', { name: /^former / });
   expect(former).toHaveTextContent('Not added');
-  expect(former).not.toHaveTextContent('Combined');
+  expect(former).not.toHaveTextContent('Ingress and inference');
   const missing = screen.getByTestId('missing-role-no-role');
   expect(missing).toHaveTextContent('No role');
   await user.hover(missing);
@@ -541,7 +573,7 @@ it('shows the role of each member, and warns about a member without one', async 
   const before = names();
   await user.click(within(table).getByRole('button', { name: 'About cluster roles' }));
   expect(
-    await screen.findByText('Serves models with KServe. Requests reach it through an ingress cluster.'),
+    await screen.findByText('The cluster serves models via KServe and receives requests through an ingress cluster.'),
   ).toBeVisible();
   expect(names()).toEqual(before);
 });
@@ -568,9 +600,9 @@ it('sorts by role: clusters outside AI Grid, then members without a role, then b
     name: 'Role',
   });
   await user.click(sortButton);
-  expect(names()).toEqual(['b-outside', 'a-no-role', 'd-combined', 'c-inference', 'e-ingress']);
+  expect(names()).toEqual(['b-outside', 'a-no-role', 'c-inference', 'e-ingress', 'd-combined']);
   await user.click(sortButton);
-  expect(names()).toEqual(['e-ingress', 'c-inference', 'd-combined', 'a-no-role', 'b-outside']);
+  expect(names()).toEqual(['d-combined', 'e-ingress', 'c-inference', 'a-no-role', 'b-outside']);
 });
 
 /** A user the console couldn't load: the pages show, but without write actions. A viewer
@@ -664,7 +696,7 @@ it('offers Edit, then Remove from AI Grid, for a member and neither for another 
   expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Add to AI Grid']);
 });
 
-it('offers Add to AI Grid only for ready, offline or unknown clusters', async () => {
+it('offers Add to AI Grid only for ready, unavailable or unknown clusters', async () => {
   const withState = (name: string, state: NonNullable<GridCluster['state']>): GridCluster => ({
     ...cluster(name, 'Unknown'),
     state,
@@ -673,7 +705,7 @@ it('offers Add to AI Grid only for ready, offline or unknown clusters', async ()
     '/clusters',
     serviceWith([
       cluster('is-ready', 'Ready'),
-      cluster('is-offline', 'Offline'),
+      cluster('is-offline', 'Unavailable'),
       cluster('is-unknown', 'Unknown'),
       withState('is-detaching', 'Detaching'),
       withState('is-importfailed', 'Import failed'),
@@ -743,17 +775,38 @@ it("lists each cluster's GPU configuration and capacity, as provider admins aske
   expect(screen.getByTestId('cluster-gpu-capacity-site4')).toHaveTextContent('8 GPUs');
 });
 
-it('shows no GPUs for a cluster whose capacity has none, and sorts by GPU count', async () => {
+it('tells a cluster without GPUs from one whose capacity is not reported, as its details page does', async () => {
   const user = userEvent.setup();
-  renderAt('/clusters', new MockConsoleService());
+  const clusters = seedClusters();
+  // site3 without its GPU inventory and without a capacity: the hub reports nothing yet.
+  clusters[2] = {
+    ...clusters[2],
+    gpus: undefined,
+    capacity: undefined,
+    allocatable: undefined,
+    gpuCapacity: undefined,
+  };
+  renderAt('/clusters', new MockConsoleService(undefined, clusters));
   await screen.findByRole('row', { name: /^site1 / });
-  expect(screen.getByTestId('cluster-gpu-capacity-site4')).toHaveTextContent('—');
+  expect(screen.getByTestId('cluster-gpu-capacity-site4')).toHaveTextContent(/^No GPUs$/);
+  expect(screen.getByTestId('cluster-gpu-capacity-site3')).toHaveTextContent(/^Not reported$/);
+  // Not reported sorts before none.
   await user.click(screen.getByRole('button', { name: 'Capacity' }));
   const names = screen
     .getAllByRole('row')
     .slice(2)
     .map((r) => r.textContent?.split(' ')[0]);
-  expect(names[0]).toMatch(/^site4/);
+  expect(names[0]).toMatch(/^site3/);
+  expect(names[1]).toMatch(/^site4/);
+});
+
+it('explains the AI Grid column group in a popover, as it does the GPUs group', async () => {
+  const user = userEvent.setup();
+  renderAt('/clusters', new MockConsoleService());
+  await user.click(await screen.findByRole('button', { name: 'About AI Grid' }));
+  expect(
+    await screen.findByText('AI Grid coordinates model deployment and request routing across multiple clusters.'),
+  ).toBeVisible();
 });
 
 it('groups the columns as the details page does, wraps them, and has Site and Region but no Hub column', async () => {
@@ -829,7 +882,7 @@ it('reloads the cluster in the open dialog after a conflict, keeping the choices
   };
   const enroll = vi.spyOn(service, 'enrollCluster');
 
-  await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
+  await user.click(within(modal).getByRole('button', { name: 'Add' }));
   expect(
     await within(modal).findByText(
       'This cluster was changed after this dialog opened. The latest version is now shown. Review it and try again.',
@@ -839,7 +892,7 @@ it('reloads the cluster in the open dialog after a conflict, keeping the choices
   expect(within(modal).getByRole('textbox', { name: 'Location label' })).toHaveValue('us-east');
   expect(within(modal).getByRole('combobox', { name: 'Role' })).toHaveValue('Inference');
 
-  await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
+  await user.click(within(modal).getByRole('button', { name: 'Add' }));
   expect(await screen.findByText('Cluster site4 added to AI Grid')).toBeVisible();
   expect(enroll).toHaveBeenCalledTimes(2);
   // The second try carried the version and the labels the backend had then, so team stays.
@@ -873,16 +926,18 @@ it('shows the location and role someone else set meanwhile instead of sending th
   };
   const enroll = vi.spyOn(service, 'enrollCluster');
 
-  await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
+  await user.click(within(modal).getByRole('button', { name: 'Add' }));
   expect(
     await within(modal).findByText(
       "Another user changed this cluster's location label or role after this dialog opened. Their values are now shown. Review them and try again.",
     ),
   ).toBeVisible();
   expect(within(modal).getByRole('textbox', { name: 'Location label' })).toHaveValue('eu-west');
-  expect(within(modal).getByRole('combobox', { name: 'Role' })).toHaveValue('Ingress');
+  // The role they set is now the cluster's, so it shows read-only, as a kept role does.
+  expect(within(modal).getByRole('textbox', { name: 'Role' })).toHaveValue('Ingress');
+  expect(within(modal).queryByRole('combobox', { name: 'Role' })).not.toBeInTheDocument();
 
-  await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
+  await user.click(within(modal).getByRole('button', { name: 'Add' }));
   expect(await screen.findByText('Cluster site4 added to AI Grid')).toBeVisible();
   expect(enroll).toHaveBeenCalledTimes(2);
   expect(enroll.mock.calls[1][1]).toEqual({ location: 'eu-west', role: 'ingress' });
@@ -904,7 +959,7 @@ it('says so when the cluster changed and could not be loaded again', async () =>
   service.clusters[index] = { ...before, resourceVersion: String(Number(before.resourceVersion) + 1) };
   vi.spyOn(service, 'getCluster').mockRejectedValueOnce(new Error('network down'));
 
-  await user.click(within(modal).getByRole('button', { name: 'Add to AI Grid' }));
+  await user.click(within(modal).getByRole('button', { name: 'Add' }));
   expect(
     await within(modal).findByText(
       'This cluster was changed after this dialog opened, and the latest version could not be loaded. Cancel, refresh the page, and try again.',
@@ -936,7 +991,7 @@ it('shows a FailedPrecondition from Remove as the backend refusing it, not as a 
 /** Opens Edit for a row and returns the dialog. */
 const openEdit = async (user: User, name: string) => {
   await pick(user, name, 'Edit');
-  return screen.findByRole('dialog', { name: `Edit ${name}` });
+  return screen.findByRole('dialog', { name: 'Edit AI Grid cluster' });
 };
 
 /** Replaces a text field's value in the dialog, then leaves it. */
@@ -1111,13 +1166,15 @@ it("shows each cluster's site and region apart, or what to fix", async () => {
 it('opens the hub message from a compact cluster status and returns focus after dismissal', async () => {
   const user = userEvent.setup();
   const message = '<strong>Hub has not received a heartbeat.</strong>';
-  renderAt('/clusters', serviceWith([{ ...cluster('edge-a', 'Offline'), statusMessage: message }]));
-  const trigger = await screen.findByRole('button', { name: 'Offline for edge-a' });
+  renderAt('/clusters', serviceWith([{ ...cluster('edge-a', 'Unavailable'), statusMessage: message }]));
+  const trigger = await screen.findByRole('button', { name: 'Unavailable for edge-a' });
   expect(trigger.closest('.pf-v6-c-label')).toHaveClass('pf-m-compact');
   expect(trigger.closest('.pf-v6-c-label')).not.toHaveClass('pf-m-outline');
   await user.click(trigger);
   const dialog = await screen.findByRole('dialog', { name: 'edge-a status' });
-  expect(within(dialog).getByText('Offline')).toBeVisible();
+  expect(within(dialog).getByText('Unavailable')).toBeVisible();
+  // What Unavailable means comes before the hub's own message.
+  expect(within(dialog).getByText(/^The cluster's API server cannot be reached\./)).toBeVisible();
   expect(within(dialog).getByText(message)).toBeVisible();
   expect(dialog.querySelector('strong')).toBeNull();
   await user.keyboard('{Escape}');
@@ -1138,7 +1195,7 @@ it('opens Ready only with a hub message and keeps message-free and AI Grid statu
         statusMessage: 'All checks passed.',
       },
       cluster('ready-quiet', 'Ready'),
-      cluster('offline-quiet', 'Offline'),
+      cluster('offline-quiet', 'Unavailable'),
       { ...cluster('whitespace', 'Unknown'), statusMessage: '   ' },
     ]),
   );
@@ -1149,10 +1206,10 @@ it('opens Ready only with a hub message and keeps message-free and AI Grid statu
   await user.keyboard('{Escape}');
   for (const name of ['ready-quiet', 'offline-quiet', 'whitespace']) {
     const row = screen.getByRole('row', { name: new RegExp(`^${name} `) });
-    expect(within(row).queryByRole('button', { name: /Ready|Offline|Unknown/ })).not.toBeInTheDocument();
+    expect(within(row).queryByRole('button', { name: /Ready|Unavailable|Unknown/ })).not.toBeInTheDocument();
     expect(
       within(row)
-        .getByText(name === 'ready-quiet' ? 'Ready' : name === 'offline-quiet' ? 'Offline' : 'Unknown')
+        .getByText(name === 'ready-quiet' ? 'Ready' : name === 'offline-quiet' ? 'Unavailable' : 'Unknown')
         .closest('.pf-v6-c-label'),
     ).toHaveClass('pf-m-outline');
   }
@@ -1167,7 +1224,7 @@ it('keeps the cluster list filter, sort, and page while reading a status message
     '/clusters',
     serviceWith(
       Array.from({ length: 24 }, (_, i) => ({
-        ...cluster(`edge-${String(i).padStart(2, '0')}`, 'Offline'),
+        ...cluster(`edge-${String(i).padStart(2, '0')}`, 'Unavailable'),
         statusMessage: `Heartbeat ${i} is missing.`,
       })),
     ),
@@ -1182,7 +1239,7 @@ it('keeps the cluster list filter, sort, and page while reading a status message
       .map((link) => link.textContent);
   const before = names();
   expect(before[0]).toBe('edge-13');
-  await user.click(screen.getByRole('button', { name: 'Offline for edge-13' }));
+  await user.click(screen.getByRole('button', { name: 'Unavailable for edge-13' }));
   await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Close' }));
   expect(search).toHaveValue('edge');
   expect(names()).toEqual(before);
@@ -1193,11 +1250,11 @@ it('refreshes the selected cluster by identity and forgets a dialog when its clu
   vi.useFakeTimers({ shouldAdvanceTime: true });
   try {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    const a = { ...cluster('edge-a', 'Offline'), statusMessage: 'Waiting for a heartbeat.' };
-    const b = { ...cluster('edge-b', 'Offline'), statusMessage: 'Other cluster report.' };
+    const a = { ...cluster('edge-a', 'Unavailable'), statusMessage: 'Waiting for a heartbeat.' };
+    const b = { ...cluster('edge-b', 'Unavailable'), statusMessage: 'Other cluster report.' };
     const service = serviceWith([a, b]);
     renderAt('/clusters', service);
-    await user.click(await screen.findByRole('button', { name: 'Offline for edge-a' }));
+    await user.click(await screen.findByRole('button', { name: 'Unavailable for edge-a' }));
     service.clusters = [b, { ...a, status: 'Ready', statusMessage: 'Heartbeat received.' }];
     await act(() => vi.advanceTimersByTimeAsync(30000));
     const dialog = await screen.findByRole('dialog', { name: 'edge-a status' });
@@ -1209,7 +1266,7 @@ it('refreshes the selected cluster by identity and forgets a dialog when its clu
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     service.clusters = [a, b];
     await act(() => vi.advanceTimersByTimeAsync(30000));
-    await screen.findByRole('button', { name: 'Offline for edge-a' });
+    await screen.findByRole('button', { name: 'Unavailable for edge-a' });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   } finally {
     vi.useRealTimers();

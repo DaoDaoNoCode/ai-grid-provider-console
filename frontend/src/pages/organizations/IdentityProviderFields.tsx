@@ -17,7 +17,7 @@ import { fieldErrorsOf, identityProviderSchema } from '../../validation';
 
 type TextKey = Exclude<keyof OidcConfig, 'clientSecretSecret' | 'validateSignature'>;
 
-type Field = { key: TextKey; label: string; required?: boolean; help?: string };
+type Field = { key: TextKey; label: string; required?: boolean; help?: React.ReactNode };
 
 const connectionFields: Field[] = [
   { key: 'clientId', label: 'Client ID', required: true },
@@ -28,7 +28,15 @@ const endpointFields: Field[] = [
   { key: 'authorizationUrl', label: 'Authorization URL', required: true },
   { key: 'tokenUrl', label: 'Token URL', required: true },
   { key: 'userInfoUrl', label: 'User info URL' },
-  { key: 'jwksUrl', label: 'JWKS URL', help: 'Required while Validate signature is on.' },
+  {
+    key: 'jwksUrl',
+    label: 'JSON Web Key Set (JWKS) URL',
+    help: (
+      <>
+        This field is required when <strong>Validate signature</strong> is on.
+      </>
+    ),
+  },
   { key: 'logoutUrl', label: 'Logout URL' },
 ];
 
@@ -111,7 +119,7 @@ export const IdentityProviderFields: React.FC<Props> = ({
 
   return (
     <>
-      <FormGroup label="Title" fieldId="idp-title">
+      <FormGroup label="Identity provider name" fieldId="idp-title">
         <TextInput
           id="idp-title"
           value={value.title}
@@ -140,7 +148,9 @@ export const IdentityProviderFields: React.FC<Props> = ({
             onBlur={() => touch(SECRET_PATH)}
             onChange={(_event, name) => setConfig({ clientSecretSecret: { name } })}
           />
-          <Help error={error(SECRET_PATH)}>The name of the Secret that holds the OIDC client secret.</Help>
+          <Help error={error(SECRET_PATH)}>
+            The name of the Secret that holds the OpenID Connect (OIDC) client secret.
+          </Help>
         </FormGroup>
         {textField(connectionFields[1])}
         {savedIssuer !== undefined && value.config.issuer.trim() !== savedIssuer && (
@@ -160,12 +170,12 @@ export const IdentityProviderFields: React.FC<Props> = ({
             onBlur={() => touch('config.defaultScopes')}
             onChange={(_event, defaultScopes) => setConfig({ defaultScopes })}
           />
-          <Help error={error('config.defaultScopes')}>Space-separated, for example openid profile email.</Help>
+          <Help error={error('config.defaultScopes')}>Separate scopes using spaces.</Help>
         </FormGroup>
         <Checkbox
           id="idp-validate-signature"
           label="Validate signature"
-          description="Verify token signatures with the provider's JWKS keys."
+          description="Verify token signatures with the provider's JSON Web Key Set (JWKS) keys."
           isChecked={value.config.validateSignature}
           isDisabled={isDisabled}
           onChange={(_event, validateSignature) => setConfig({ validateSignature })}
