@@ -1390,6 +1390,44 @@ describe('the hardware', () => {
       }
     });
 
+    it('starts on CPU only once a poll succeeds after the first cluster load failed', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+        const service = cpuOnlyService();
+        const list = service.listClusters;
+        service.listClusters = unavailable;
+        await openDeployment(user, service);
+        expect(await screen.findByRole('radio', { name: 'NVIDIA GPU' })).toBeChecked();
+        service.listClusters = list;
+        await act(() => vi.advanceTimersByTimeAsync(30000));
+        await waitFor(() => expect(screen.getByRole('radio', { name: 'CPU only' })).toBeChecked());
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('keeps a selection made while the cluster load was failing', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+        const service = cpuOnlyService();
+        const list = service.listClusters;
+        service.listClusters = unavailable;
+        await openDeployment(user, service);
+        await selectHardware(user, 'CPU only');
+        await selectHardware(user, 'NVIDIA GPU');
+        const answered = vi.fn(list);
+        service.listClusters = answered;
+        await act(() => vi.advanceTimersByTimeAsync(30000));
+        await waitFor(() => expect(answered).toHaveBeenCalled());
+        await act(() => vi.advanceTimersByTimeAsync(0));
+        expect(screen.getByRole('radio', { name: 'NVIDIA GPU' })).toBeChecked();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('keeps NVIDIA GPU and an edit made before the clusters loaded', async () => {
       const user = userEvent.setup();
       const service = cpuOnlyService();

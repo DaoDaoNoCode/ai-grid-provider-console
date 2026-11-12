@@ -234,7 +234,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
     error: placementClustersError,
     refresh: reloadPlacementClusters,
   } = usePlacementClusters();
-  const { data: clusters, loaded: clustersLoaded, refresh: reloadClusters } = useClusterList();
+  const { data: clusters, loaded: clustersLoaded, error: clustersError, refresh: reloadClusters } = useClusterList();
   // Each offered cluster's site and region, the description under its name.
   const clusterDescriptions = useMemo(
     () =>
@@ -285,10 +285,12 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
     : undefined;
   // A new model's default (defaultHardware) is worked out once, when the clusters have loaded, and
   // kept, so a later reload never moves a selection the user is working with; until then it is the
-  // first entry.
+  // first entry. A failed load is not a load: `loaded` is also true after an error, and working the
+  // default out from no clusters would keep the first entry for good, so the next successful poll
+  // works it out instead.
   const [latchedDefault, setLatchedDefault] = useState<ModelHardware>();
   const computedDefault =
-    !model && clustersLoaded && !latchedDefault ? defaultHardware(hardwareList, clusters) : undefined;
+    !model && clustersLoaded && !clustersError && !latchedDefault ? defaultHardware(hardwareList, clusters) : undefined;
   if (computedDefault) setLatchedDefault(computedDefault);
   const defaultHw = latchedDefault ?? computedDefault ?? hardwareList[0];
   const hardware = selectedHardware ?? (model ? matchedHardware : defaultHw);
