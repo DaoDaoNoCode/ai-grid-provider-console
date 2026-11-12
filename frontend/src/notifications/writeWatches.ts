@@ -33,6 +33,7 @@ import {
   subscriptionUnconfirmedText,
   succeededText,
   unconfirmedText,
+  unknownCreatedNameText,
   type WriteSubject,
   type WriteTarget,
 } from './writeText';
@@ -206,6 +207,15 @@ const error = (text: Text) => ({ status: NotificationResponseStatus.ERROR, ...te
 const warning = (text: Text) => ({ status: NotificationResponseStatus.WARNING, ...text }) as const;
 
 /**
+ * A subscription create, which the backend may name with a suffix that only its answer carries
+ * (backend PR 89): a read of the requested id confirms it only when it finds what was sent there
+ * (a backend that keeps the id); anything else, another subscription by that name or none, says
+ * nothing about whether this one was created, so it ends as unknown (unknownCreatedNameText),
+ * never "not done" or someone else's.
+ */
+const namesMayChange = (target: WriteTarget) => target.subject === 'subscription' && target.op === 'create';
+
+/**
  * Whether a write whose answer never came landed. A create is confirmed when the object exists and
  * holds what it sent; an update when its version moved on from the one sent and the object holds
  * what it sent; a delete when the object is gone. An object that exists, or moved on, with other
@@ -225,9 +235,8 @@ export const readBack = async (
     switch (target.op) {
       case 'create':
         if (answer) {
-          return holdsSent(target.expected, answer.fields)
-            ? success(succeededText(target))
-            : warning(mismatchText(target));
+          if (holdsSent(target.expected, answer.fields)) return success(succeededText(target));
+          return warning(namesMayChange(target) ? unknownCreatedNameText(target) : mismatchText(target));
         }
         break;
       case 'update':
@@ -246,6 +255,7 @@ export const readBack = async (
     readFailed = true;
   }
   if (now() < sentAt + READBACK_MS) return repoll;
+  if (namesMayChange(target)) return warning(unknownCreatedNameText(target));
   return readFailed ? warning(unconfirmedText(target)) : error(notConfirmedText(target));
 };
 
