@@ -243,7 +243,9 @@ it('names the subscriptions that use the model and disables Delete, joined by mo
   );
   // The backend evaluates the join (SubscriptionModelRef.model_id) and the filter.
   expect(listSubscriptions.mock.calls[0][0].filter).toBe('this.spec.model_refs.exists(r, r.model_id == "widget")');
-  await user.type(screen.getByTestId('delete-modal-input'), 'Widget{Enter}');
+  // Nothing to type while subscriptions use the model: Delete can't go ahead.
+  expect(screen.queryByTestId('delete-modal-input')).not.toBeInTheDocument();
+  expect(screen.queryByText(/to confirm deletion:/)).not.toBeInTheDocument();
   const button = within(screen.getByTestId('delete-deployment-modal')).getByRole('button', { name: 'Delete' });
   expect(button).toHaveAttribute('aria-disabled', 'true');
   await user.click(button);
@@ -374,7 +376,7 @@ it('names the AI Grid members the Clusters step leaves out, and why', async () =
   const hint = /Not listed:/;
   const clusters = seedClusters();
   // site2 offline and still provisioning; site3 ingress only.
-  clusters[1] = { ...clusters[1], status: 'Offline', provisioned: false, provisioningStatus: 'Provisioning' };
+  clusters[1] = { ...clusters[1], status: 'Unavailable', provisioned: false, provisioningStatus: 'Provisioning' };
   clusters[2] = { ...clusters[2], labels: { ...clusters[2].labels, 'ai-grid/role': 'ingress' } };
   const service = new MockConsoleService(undefined, clusters);
   const models = modelsOf(service);
@@ -383,7 +385,7 @@ it('names the AI Grid members the Clusters step leaves out, and why', async () =
   await fillModel(user);
   await screen.findByRole('combobox', { name: 'Clusters' });
   expect(await screen.findByText(hint)).toHaveTextContent(
-    'The model runs on each selected AI Grid cluster. Only Ready and Provisioned clusters with the Inference or Combined role are listed. Not listed: site2 (not Ready, not Provisioned) and site3 (Ingress role).',
+    'Select the AI Grid clusters where the model will run. This list includes only clusters that have the Ready cluster status, the Provisioned AI Grid status, and the Inference or Ingress and inference role. Not listed: site2 (not Ready, not Provisioned) and site3 (Ingress role).',
   );
   // Once the backend offers every member, there is nothing to explain.
   models.placementClusters = async () => ['site1', 'site2', 'site3'];
@@ -629,7 +631,7 @@ it('says a required field is required once the user leaves it empty, and asks fo
   await user.clear(uri);
   await user.tab();
   expect(uri).toHaveAttribute('aria-invalid', 'true');
-  expect(screen.getAllByText('Required.')).toHaveLength(1);
+  expect(screen.getAllByText('Required')).toHaveLength(1);
 });
 
 it('says why the deployment step cannot continue when the CPU is invalid', async () => {
@@ -1173,7 +1175,7 @@ it('keeps an emptied Replicas or GPUs field empty and says it is required', asyn
     await user.clear(field);
     await user.tab();
     expect(field).toHaveValue(null);
-    expect(field).toHaveAccessibleDescription(/^Required\./);
+    expect(field).toHaveAccessibleDescription(/^Required : error status;$/);
   }
   expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
 });
@@ -1315,7 +1317,7 @@ describe('the hardware', () => {
     expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
     await user.click(field(/Runtime image/));
     await user.tab();
-    expect(field(/Runtime image/)).toHaveAccessibleDescription(/Required\./);
+    expect(field(/Runtime image/)).toHaveAccessibleDescription(/Required : error status;$/);
     await selectHardware(user, 'Intel Gaudi');
     expect(screen.getByRole('spinbutton', { name: 'Accelerators' })).toHaveValue(1);
     expect(field(/^Memory/)).toHaveValue('4Gi');
@@ -1361,7 +1363,7 @@ describe('the hardware', () => {
     expect(field(/Runtime image/)).toBeRequired();
     await setImage(user, '');
     await user.tab();
-    expect(field(/Runtime image/)).toHaveAccessibleDescription(/Required\./);
+    expect(field(/Runtime image/)).toHaveAccessibleDescription(/Required : error status;$/);
     expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
   });
 
@@ -1521,7 +1523,9 @@ describe('the hardware', () => {
       expect(image).toHaveAccessibleDescription("Enter a vLLM image for the model's hardware.");
       await setImage(user, '');
       await user.tab();
-      expect(screen.getByRole('textbox', { name: /Runtime image/ })).toHaveAccessibleDescription(/Required\./);
+      expect(screen.getByRole('textbox', { name: /Runtime image/ })).toHaveAccessibleDescription(
+        /Required : error status;$/,
+      );
       expect(
         within(screen.getByRole('navigation', { name: 'Wizard steps' })).getByRole('button', { name: 'Review' }),
       ).toBeDisabled();
@@ -2045,7 +2049,7 @@ describe('editing what a deployed model runs', () => {
     expect(uri).toHaveAccessibleDescription(/^Enter a model URI using hf, oci, s3 or pvc\./);
     expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
     await replace(user, /^Model URI/, '');
-    expect(uri).toHaveAccessibleDescription(/^Required\./);
+    expect(uri).toHaveAccessibleDescription(/^Required : error status;$/);
   });
 
   it('edits CPU and memory, sending the requests whole with every other resource kept', async () => {
@@ -2134,7 +2138,7 @@ describe('editing what a deployed model runs', () => {
     expect(reviewNav()).toBeDisabled();
     await replace(user, /^CPU/, '');
     await user.tab();
-    expect(field(/^CPU/)).toHaveAccessibleDescription(/^Required\./);
+    expect(field(/^CPU/)).toHaveAccessibleDescription(/^Required : error status;$/);
     await replace(user, /^CPU/, '2');
     expect(reviewNav()).toBeEnabled();
     await replace(user, /^Memory/, '16GB');
@@ -2878,7 +2882,7 @@ describe('the deployment and MaaS statuses', () => {
     await user.click(await screen.findByRole('button', { name: 'Pending availability of smollm2' }));
     const dialog = await screen.findByRole('dialog', { name: 'smollm2 availability' });
     expect(dialog).toHaveTextContent(
-      'Consumers can’t access this model yet. To enable access, set up a subscription. The model must also be ready on its clusters; its status shows where it isn’t.',
+      'No users can access this model. To grant users access, add this model to a subscription, and make sure it has the Ready status.',
     );
     await user.click(within(dialog).getByRole('link', { name: 'Go to the model' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'smollm2' })).toBeVisible();
