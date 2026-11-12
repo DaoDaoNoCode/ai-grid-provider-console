@@ -2916,6 +2916,59 @@ describe('the deployment and MaaS statuses', () => {
     }
   });
 
+  describe.each([
+    ['the Models list', '/models'],
+    ['the model page', '/models/smollm2'],
+  ])('the Unavailable reason on %s', (_, path) => {
+    const served =
+      'Serves "facebook/opt-125m" while MaaS lists it as "smollm2"; update the model to serve it as its id';
+    const generic =
+      'The inference service is not serving requests. The model server might be starting, crashing, or lacking resources.';
+    // As the backend reports a model whose deployment still serves an older name (servesItsID in its
+    // models_git.go): MaaS on the ingress cluster reads Available, the model Unavailable, and the
+    // message says why.
+    const serviceWith = (maas: ModelMaasState, message: string) => {
+      const service = running();
+      const smollm2 = modelsOf(service).find('smollm2');
+      smollm2.status!.maas = maas;
+      smollm2.status!.message = message;
+      smollm2.status!.ingress[0].state = ModelMaasState.AVAILABLE;
+      smollm2.status!.ingress[0].message = 'Model is available';
+      return service;
+    };
+    const openDialog = async (user: ReturnType<typeof userEvent.setup>) => {
+      await user.click(await screen.findByRole('button', { name: 'Unavailable availability of smollm2' }));
+      return screen.findByRole('dialog', { name: 'smollm2 availability' });
+    };
+
+    it("shows the backend's message as the reason", async () => {
+      const user = userEvent.setup();
+      renderAt(path, serviceWith(ModelMaasState.UNAVAILABLE, served));
+      const dialog = await openDialog(user);
+      expect(within(dialog).getByRole('heading', { name: 'Warning alert: Model unavailable' })).toBeVisible();
+      expect(dialog).toHaveTextContent(`${served}.`);
+      expect(dialog).not.toHaveTextContent(generic);
+      // MaaS's own words stay, per ingress cluster.
+      expect(within(dialog).getByLabelText('What MaaS reported')).toHaveTextContent(
+        'MaaS on hub-ingressAvailable: Model is available',
+      );
+    });
+
+    it('keeps the generic text without a message', async () => {
+      const user = userEvent.setup();
+      renderAt(path, serviceWith(ModelMaasState.UNAVAILABLE, '  '));
+      const dialog = await openDialog(user);
+      expect(dialog).toHaveTextContent(generic);
+    });
+
+    it('shows no message for Available, whose label opens nothing', async () => {
+      renderAt(path, serviceWith(ModelMaasState.AVAILABLE, served));
+      expect(await screen.findByText('availability of smollm2', { exact: false })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /availability of smollm2/ })).not.toBeInTheDocument();
+      expect(screen.queryByText(served, { exact: false })).not.toBeInTheDocument();
+    });
+  });
+
   it("shows each cluster's status with KServe's message in its dialog", async () => {
     const user = userEvent.setup();
     renderAt('/models/smollm2', running());

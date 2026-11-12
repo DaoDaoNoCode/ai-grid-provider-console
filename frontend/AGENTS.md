@@ -82,7 +82,11 @@ a failed load.
   `ModelStatusModal`, and an Availability label with more to say is filled and opens its dialog; the
   other words stay outline. A model's page keeps an outline Status label; its alert explains the
   status. A model's Status tooltip explains its word from the clusters that aren't Ready
-  (`stateTooltipOf`), never the phase's message, which can disagree; Ready has none. The AI Grid
+  (`stateTooltipOf`), never the phase's message, which can disagree; Ready has none. The
+  Availability dialog for Unavailable, on the list and the model page alike, does show it: its
+  alert's body is that message when the backend sent one, since the backend writes it to say why
+  (no cluster serves the model, or it serves a name other than its id), and the design's copy
+  otherwise (`availabilityOf`). The other Availability words keep the design's copy. The AI Grid
   page shows the same word: a model's card has the label without a tooltip (a card is one
   control), and its panel has `ModelStatusLabel`.
 - On the Clusters list, a status with a non-empty hub message is filled and opens that cluster's

@@ -263,9 +263,11 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   for the Git states (its Sync now button waits until after the 11-06 freeze), or each cluster's
   status for Partially ready. **Availability** is `status.maas` (`availabilityOf`): Available;
   Pending with Awaiting subscription, Configuring routing or Awaiting subscription and backend;
-  Unavailable (no cluster serves it, while MaaS publishes or routes it); Failed. The label and its reason open a
-  dialog with the design's copy, MaaS's own message for each ingress cluster (`status.ingress`), and a link
-  to Subscriptions where a subscription is missing.
+  Unavailable (no cluster serves it, or its deployment serves a name other than its id, while MaaS
+  publishes or routes it); Failed. The label and its reason open a dialog with the design's copy, MaaS's own
+  message for each ingress cluster (`status.ingress`), and a link to Subscriptions where a subscription is
+  missing. For Unavailable, the dialog's body is the backend's `status.message` when it sent one, because
+  each ingress cluster's MaaS message may still say Available. The other words never show it.
 - **Each cluster.** The expanded row, the Partially ready dialog and the model's page list
   `status.clusters` with Cluster (a link to the cluster), Site and Region (the cluster's
   `status.location.site_name` and `status.location.region` from `Clusters/List`, as the deploy
