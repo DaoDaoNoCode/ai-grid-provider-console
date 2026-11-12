@@ -1437,17 +1437,21 @@ describe('the hardware', () => {
         await slow.promise;
         return list();
       };
-      await openDeployment(user, service);
+      const create = await openDeployment(user, service);
       await user.click(field(/^CPU/));
       await user.clear(field(/^CPU/));
       await user.paste('6');
       expect(screen.getByRole('radio', { name: 'NVIDIA GPU' })).toBeChecked();
       slow.resolve();
-      await act(async () => {
-        await Promise.resolve();
-      });
-      await waitFor(() => expect(screen.getByRole('radio', { name: 'NVIDIA GPU' })).toBeChecked());
-      expect(field(/^CPU/)).toHaveValue('6');
+      await toReview(user, false);
+      // Only the loaded clusters say site1 has no GPUs, and only NVIDIA GPU makes that a mismatch:
+      // the hint shows the clusters have loaded and the hardware held.
+      expect(await screen.findByTestId('model-hardware-mismatch')).toHaveTextContent(
+        "site1 reports no NVIDIA GPUs, so the model can't run there",
+      );
+      await user.click(screen.getByRole('button', { name: 'Deploy' }));
+      await waitFor(() => expect(create).toHaveBeenCalled());
+      expect(create.mock.calls[0][0].object?.spec?.main?.requests?.cpu).toBe('6');
     });
   });
 
