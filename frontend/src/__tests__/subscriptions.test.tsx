@@ -1416,13 +1416,22 @@ it('names the priority buttons and the groups menu for what they change', async 
   expect(screen.queryByRole('button', { name: 'Menu toggle' })).not.toBeInTheDocument();
 });
 
-it('caps a new subscription id at the backend maximum, leaving room for -policy', async () => {
+it("caps a new subscription id at the backend maximum, leaving room for the backend's suffix and -policy", async () => {
   const user = userEvent.setup();
   renderAt('/subscriptions/create', seeded());
   await user.click(await screen.findByTestId('subscription-name-desc-name'));
   await user.paste('a'.repeat(70));
+  expect(
+    screen.getByText('The AI Grid backend may add a short suffix to the resource name to make it unique.'),
+  ).toBeVisible();
   await user.click(screen.getByTestId('subscription-name-desc-editResourceLink'));
-  expect(screen.getByTestId('subscription-name-desc-resourceName')).toHaveValue('a'.repeat(56));
+  expect(screen.getByTestId('subscription-name-desc-resourceName')).toHaveValue('a'.repeat(49));
+});
+
+it('says nothing of a suffix when editing: an existing subscription keeps its id', async () => {
+  renderAt('/subscriptions/edit/engineering', seeded());
+  await screen.findByTestId('subscription-name-desc-name');
+  expect(screen.queryByText(/may add a short suffix/)).not.toBeInTheDocument();
 });
 
 describe('subscription creation model status', () => {
