@@ -1183,6 +1183,7 @@ it('keeps an emptied Replicas or GPUs field empty and says it is required', asyn
 describe('the hardware', () => {
   const cpuImage =
     'registry.redhat.io/rhaii/vllm-cpu-rhel9@sha256:0ec0f5ff9a5ff263f58db0cfb19e3d7eef24b94c2d8629fe5145f5a8747e28c9';
+  const cpuImageName = 'vLLM CPU 0.18.0 (OpenShift AI 3.6)';
   const defaultImageHelp = "Leave empty to use the cluster's default vLLM image for NVIDIA GPUs.";
 
   /** Fills the source step, opens Deployment, and returns the Models/Create spy. */
@@ -1238,7 +1239,7 @@ describe('the hardware', () => {
     expect(screen.queryByRole('spinbutton', { name: 'GPUs' })).not.toBeInTheDocument();
     expect(field(/Runtime image/)).toHaveValue(cpuImage);
     expect(field(/Runtime image/)).toHaveAccessibleDescription(
-      'Set by the selected hardware. Replace it to use another vLLM image.',
+      `Set by CPU only: ${cpuImageName}. Replace it to use another vLLM image.`,
     );
     expect(field(/^CPU/)).toHaveValue('4');
     expect(field(/^Memory/)).toHaveValue('8Gi');
@@ -1247,7 +1248,7 @@ describe('the hardware', () => {
     await user.paste('--max-model-len 4096');
     const review = await toReview(user, false);
     expect(review).toHaveTextContent('HardwareCPU only');
-    expect(review).toHaveTextContent(`Runtime image${cpuImage}`);
+    expect(review).toHaveTextContent(`Runtime image${cpuImageName}${cpuImage}`);
     expect(within(review).queryByText('GPUs')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Deploy' }));
     await waitFor(() => expect(create).toHaveBeenCalled());
@@ -1280,7 +1281,7 @@ describe('the hardware', () => {
     await selectHardware(user, 'CPU only');
     expect(field(/Runtime image/)).toHaveValue(cpuImage);
     expect(field(/Runtime image/)).toHaveAccessibleDescription(
-      'Set by the selected hardware. Replace it to use another vLLM image.',
+      `Set by CPU only: ${cpuImageName}. Replace it to use another vLLM image.`,
     );
     expect(field(/^CPU/)).toHaveValue('3');
     expect(field(/^Memory/)).toHaveValue('12Gi');
@@ -1290,6 +1291,43 @@ describe('the hardware', () => {
     expect(field(/^CPU/)).toHaveValue('3');
     expect(field(/^Memory/)).toHaveValue('12Gi');
     expect(screen.getByRole('spinbutton', { name: 'GPUs' })).toHaveValue(2);
+  });
+
+  it('shows the image name on Review with the digest as secondary text, and the raw image once it is edited', async () => {
+    const user = userEvent.setup();
+    await openDeployment(user);
+    await selectHardware(user, 'CPU only');
+    let review = await toReview(user, false);
+    const runtime = within(review).getByText('Runtime image').closest('div') as HTMLElement;
+    expect(within(runtime).getByText(cpuImageName)).toBeVisible();
+    expect(within(runtime).getByText(cpuImage)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    await setImage(user, 'registry.example/vllm-cpu:mine');
+    // The name belongs to the hardware's image, not to one typed over it.
+    expect(field(/Runtime image/)).toHaveAccessibleDescription(
+      'Set by the selected hardware. Replace it to use another vLLM image.',
+    );
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    review = await screen.findByTestId('model-review');
+    expect(review).toHaveTextContent('Runtime imageregistry.example/vllm-cpu:mine');
+    expect(review).not.toHaveTextContent(cpuImageName);
+  });
+
+  it('shows the raw image for hardware without an image name', async () => {
+    const user = userEvent.setup();
+    const service = new MockConsoleService();
+    service.config = {
+      ...service.config,
+      models: { hardware: [{ id: 'gaudi', label: 'Intel Gaudi', accelerator: 'habana.ai/gaudi', image: 'r/gaudi:1' }] },
+    };
+    await openDeployment(user, service);
+    expect(field(/Runtime image/)).toHaveAccessibleDescription(
+      'Set by the selected hardware. Replace it to use another vLLM image.',
+    );
+    const review = await toReview(user, false);
+    expect(review).toHaveTextContent('Runtime imager/gaudi:1');
   });
 
   it('names the accelerator field after the accelerator, and requests it by its resource', async () => {
