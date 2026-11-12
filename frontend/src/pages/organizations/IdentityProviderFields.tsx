@@ -38,10 +38,12 @@ const SECRET_PATH = 'config.clientSecretSecret.name';
  * The issuer's help once the organization has an identity provider. Keycloak links a user who
  * logged in to the provider by the user ID it sends, not by its issuer, so the backend refuses a
  * new issuer once any user has logged in (FailedPrecondition); a wrong issuer lets nobody log in,
- * so it can still be corrected.
+ * so it can still be corrected. After that, the ways out are those the backend's refusal names:
+ * remove the users' links to the provider in Keycloak, which keeps the organization, or create a
+ * new one.
  */
 const SAVED_ISSUER_HELP =
-  'The issuer can be edited only until a user logs in through this identity provider. After that, to use a different issuer, create a new organization.';
+  "The issuer can be edited only until a user logs in through this identity provider. After that, to use a different issuer, remove the users' links to this identity provider in Keycloak, or create a new organization.";
 
 type Props = {
   value: IdentityProvider;

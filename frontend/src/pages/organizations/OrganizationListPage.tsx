@@ -16,7 +16,7 @@ import { TableEmptyRow } from '../../components/TableEmptyRow';
 import { useConsoleSession } from '../../context/useConsoleSession';
 import { EMPTY_VALUE } from '../../utilities/format';
 import { MissingLabel } from '../../components/MissingLabel';
-import type { OrganizationView } from './organizationView';
+import { NO_IDENTITY_PROVIDER, NO_IDENTITY_PROVIDER_REASON, type OrganizationView } from './organizationView';
 import { useDeleteOrganization } from './useDeleteOrganization';
 import { useOrganizationList } from './useOrganizations';
 
@@ -121,12 +121,9 @@ export const OrganizationListPage: React.FC = () => {
                         {o.identityProvider ? (
                           o.identityProvider.title || 'OIDC (no title)'
                         ) : (
-                          // As a cluster without a role: a missing setting the organization can't work without.
-                          <MissingLabel
-                            testId={`missing-idp-${o.name}`}
-                            reason="This organization has no identity provider, so its users cannot log in."
-                          >
-                            No identity provider
+                          // As a cluster without a role: a setting the organization may not work without.
+                          <MissingLabel testId={`missing-idp-${o.name}`} reason={NO_IDENTITY_PROVIDER_REASON}>
+                            {NO_IDENTITY_PROVIDER}
                           </MissingLabel>
                         )}
                       </Td>

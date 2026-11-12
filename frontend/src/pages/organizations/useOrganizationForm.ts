@@ -14,6 +14,7 @@ import {
 import { formPathOf, type OrganizationInput, type OrganizationView } from './organizationView';
 import {
   ORGANIZATION_CHANGED,
+  ORGANIZATION_ISSUER_MAYBE_SAVED,
   ORGANIZATION_MAYBE_SAVED,
   currentServerErrors,
   emptyOrganizationInput,
@@ -26,9 +27,10 @@ import { useOrganizationWrites } from './useOrganizations';
  * them, and on an edit, for a stale version (Aborted), that someone else changed the organization.
  * An edit answered Unavailable or DeadlineExceeded may have been saved (the backend's Update answers
  * Unavailable when it can't read the organization back after an error), so it says to check before
- * trying again: a retry after a save that landed is refused as stale.
+ * trying again: a retry after a save that landed is refused as stale. When the edit sent a new
+ * issuer, it also says that logins may already use it.
  */
-const saveErrorMessage = (err: unknown, editing: boolean) => {
+const saveErrorMessage = (err: unknown, editing: boolean, issuerChanged: boolean) => {
   const { kind, code, message } = describeError(err);
   if (kind === 'notAvailable') {
     return 'Saving organizations is not available on this AI Grid backend.';
@@ -37,7 +39,7 @@ const saveErrorMessage = (err: unknown, editing: boolean) => {
     return ORGANIZATION_CHANGED;
   }
   if (editing && (code === Code.Unavailable || code === Code.DeadlineExceeded)) {
-    return ORGANIZATION_MAYBE_SAVED;
+    return issuerChanged ? `${ORGANIZATION_MAYBE_SAVED} ${ORGANIZATION_ISSUER_MAYBE_SAVED}` : ORGANIZATION_MAYBE_SAVED;
   }
   return message;
 };
@@ -123,7 +125,9 @@ export const useOrganizationForm = (initial?: OrganizationView) => {
         replace: !initial,
       });
     } catch (err) {
-      setError(saveErrorMessage(err, !!initial));
+      // Only an edit that sent another issuer than the stored one: adding a provider changes none.
+      const issuerChanged = !!storedIdp && !!idpToSend && idpToSend.config.issuer !== storedIdp.config.issuer;
+      setError(saveErrorMessage(err, !!initial, issuerChanged));
       const fieldErrors = serverFieldErrors(err);
       if (fieldErrors) {
         setServer({ errors: fieldErrors, sent: values });

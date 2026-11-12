@@ -446,9 +446,10 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   (InvalidArgument), so every field stays editable and nothing removes one. Keycloak links a user
   who logged in by the provider's alias and the user ID it sends, not by the issuer, so the
   backend changes the issuer only while nobody has logged in through the provider; after that, a
-  new issuer is FailedPrecondition, in the backend's words, which say to create a new
-  organization. The form says the same before the save: on an organization with a provider, the
-  issuer's help says it can be edited only until a user logs in, and a plain inline warning stays
+  new issuer is FailedPrecondition, in the backend's words, which say to remove the users' links
+  to the provider in Keycloak or create a new organization. The form says the same before the
+  save: on an organization with a provider, the issuer's help says it can be edited only until a
+  user logs in, and names those two ways out after that, and a plain inline warning stays
   under the field while it holds an issuer other than the stored one ("A new issuer is saved only
   if no user has logged in through this identity provider"), whatever its validation. An
   organization without one gets the create form's example instead. Adding a provider to an
@@ -456,18 +457,25 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   alias, is FailedPrecondition too, in words that name the alias. An edit
   answered Unavailable (the backend couldn't read the organization back after an error) or
   DeadlineExceeded may have been saved, so the form says so and to reload before trying again
-  (`ORGANIZATION_MAYBE_SAVED`): a retry after a save that landed is Aborted. Delete sends `id`
+  (`ORGANIZATION_MAYBE_SAVED`): a retry after a save that landed is Aborted. When the edit sent
+  another issuer than the stored one, it adds that users may already log in through the new one
+  (`ORGANIZATION_ISSUER_MAYBE_SAVED`), as the backend's Unavailable message does, which the form
+  never shows because it embeds raw errors. Delete sends `id`
   and `version`, the version the dialog read; after a failed delete the dialog loads the
   organization again (`Get`) before it allows a retry. Aborted, on Update or Delete, is the
   conflict the form and the dialog already show; every other refusal shows in the backend's
   words (`describeError`), and AlreadyExists (a name or domain another organization has) is no
   longer worded as a conflict. A write drops the Tenants answers no page shows, and an update
   keeps its answer as the organization's `Get`, so the page the form returns to shows the write.
-- **No identity provider.** An organization without `spec.identity_provider` can't let its users
-  log in. The list's Identity provider cell says "No identity provider" with a warning icon and
-  the consequence in its tooltip, as the Clusters list shows a cluster without a role
-  (`MissingLabel`); the organization page and the wizard's Review show the section's empty state
-  (`SectionEmptyState`, "No identity provider").
+- **No identity provider.** The backend reports `spec.identity_provider` only for a provider it
+  created (its own organization attribute), so an organization without one has none in AI Grid,
+  but may have one set up in Keycloak directly, as the realm export's example organizations do.
+  The pages say only what the API knows: the list's Identity provider cell says "No identity
+  provider configured in AI Grid" with a warning icon and, in its tooltip, that unless one was
+  set up directly in Keycloak its users cannot log in, as the Clusters list shows a cluster
+  without a role (`MissingLabel`); the organization page and the wizard's Review show the same
+  words as the section's empty state (`SectionEmptyState`; `NO_IDENTITY_PROVIDER` and
+  `NO_IDENTITY_PROVIDER_REASON` in `organizationView.ts`).
 - **Field errors.** The backend sends plain messages, without `google.rpc.BadRequest` violations,
   so its refusals show above the form. A violation, should one come, lands on its field:
   `formPathOf` maps the proto path (`metadata.name`, `spec.domains[0]`,

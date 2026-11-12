@@ -7,6 +7,15 @@ export const ORGANIZATION_CHANGED = 'This organization was changed by another us
 export const ORGANIZATION_MAYBE_SAVED =
   'The AI Grid backend could not confirm the save, so the changes may have been saved. Reload the page to check, then try again if they are missing.';
 
+/**
+ * Added to ORGANIZATION_MAYBE_SAVED when the edit sent a new issuer: if it landed, Keycloak already
+ * uses it, so a login test before the reload would test the new issuer while the page shows the old
+ * one. The backend's Unavailable message says so too, but embeds raw errors, so the form never
+ * shows it (describeError).
+ */
+export const ORGANIZATION_ISSUER_MAYBE_SAVED =
+  'If the new issuer was saved, users already log in through it, so test logging in only after the reloaded page shows the new issuer.';
+
 /** The value at a JSON path such as `identityProvider.config.issuer` or `domains.0`. */
 const valueAt = (value: unknown, path: string): unknown =>
   path

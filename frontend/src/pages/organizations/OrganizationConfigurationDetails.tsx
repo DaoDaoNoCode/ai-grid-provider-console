@@ -6,7 +6,12 @@ import { DetailsList } from '../../components/DetailsList';
 import { DetailsSection } from '../../components/DetailsSection';
 import { RelativeTime } from '../../components/RelativeTime';
 import { SectionEmptyState } from '../../components/states/SectionEmptyState';
-import type { OrganizationInput, OrganizationView } from './organizationView';
+import {
+  NO_IDENTITY_PROVIDER,
+  NO_IDENTITY_PROVIDER_REASON,
+  type OrganizationInput,
+  type OrganizationView,
+} from './organizationView';
 
 export type OrganizationSection = 'details' | 'identityProvider';
 
@@ -87,11 +92,8 @@ export const OrganizationConfigurationDetails: React.FC<Props> = ({ organization
             aria-label="Identity provider"
           />
         ) : (
-          // Without one, the organization's users can't log in (the backend's Tenant has no
-          // spec.identity_provider).
-          <SectionEmptyState title="No identity provider">
-            Its users cannot log in until an identity provider is added.
-          </SectionEmptyState>
+          // The backend's Tenant has no spec.identity_provider; the list's cell says the same.
+          <SectionEmptyState title={NO_IDENTITY_PROVIDER}>{NO_IDENTITY_PROVIDER_REASON}</SectionEmptyState>
         )}
         {idp && !review && (
           <ExpandableSection toggleText="OIDC endpoints">

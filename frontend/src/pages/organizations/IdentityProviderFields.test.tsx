@@ -61,7 +61,7 @@ it('requires the JWKS URL again when Validate signature is turned back on', asyn
 });
 
 const SAVED_ISSUER_HELP =
-  'The issuer can be edited only until a user logs in through this identity provider. After that, to use a different issuer, create a new organization.';
+  "The issuer can be edited only until a user logs in through this identity provider. After that, to use a different issuer, remove the users' links to this identity provider in Keycloak, or create a new organization.";
 const NEW_ISSUER_WARNING = 'A new issuer is saved only if no user has logged in through this identity provider';
 
 const STORED_ISSUER = 'https://sso.example.com/realms/acme';

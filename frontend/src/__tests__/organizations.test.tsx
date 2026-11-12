@@ -72,6 +72,15 @@ const unavailable = () => new ConnectError('keycloak is unreachable', Code.Unava
 /** The console's words for Unavailable (describeError): the backend's own message isn't shown. */
 const UNAVAILABLE = 'The AI Grid backend is unavailable. Try again.';
 
+const NO_IDP = 'No identity provider configured in AI Grid';
+const NO_IDP_REASON =
+  "Unless an identity provider was set up directly in Keycloak, this organization's users cannot log in.";
+
+const MAYBE_SAVED =
+  'The AI Grid backend could not confirm the save, so the changes may have been saved. Reload the page to check, then try again if they are missing.';
+const ISSUER_MAYBE_SAVED =
+  'If the new issuer was saved, users already log in through it, so test logging in only after the reloaded page shows the new issuer.';
+
 type User = ReturnType<typeof userEvent.setup>;
 
 /** Opens an edit wizard step from its navigation: every step is open from the start when editing. */
@@ -196,7 +205,7 @@ it('opens an organization from the list and edits its domains, with until when t
   expect(screen.getByRole('textbox', { name: 'Issuer' })).not.toHaveAttribute('readonly');
   expect(
     screen.getByText(
-      'The issuer can be edited only until a user logs in through this identity provider. After that, to use a different issuer, create a new organization.',
+      "The issuer can be edited only until a user logs in through this identity provider. After that, to use a different issuer, remove the users' links to this identity provider in Keycloak, or create a new organization.",
     ),
   ).toBeVisible();
   await openStep(user, 'Organization details');
@@ -655,11 +664,8 @@ it("edit: shows an identity provider refused in the backend's words, and a save 
   expect(screen.getByText(refusal.rawMessage)).toBeVisible();
 
   await user.click(screen.getByRole('button', { name: 'Save changes' }));
-  expect(
-    await screen.findByText(
-      'The AI Grid backend could not confirm the save, so the changes may have been saved. Reload the page to check, then try again if they are missing.',
-    ),
-  ).toBeVisible();
+  // The issuer didn't change, so the message says nothing about it.
+  expect(await screen.findByText(MAYBE_SAVED)).toBeVisible();
   expect(screen.queryByText(UNAVAILABLE)).not.toBeInTheDocument();
   // The form keeps the input.
   await openStep(user, 'Identity provider');
@@ -671,7 +677,7 @@ it.each([
     // A save the relay stopped waiting for may have landed, as one answered Unavailable.
     'DeadlineExceeded as possibly saved',
     new ConnectError('the backend did not answer in time', Code.DeadlineExceeded),
-    'The AI Grid backend could not confirm the save, so the changes may have been saved. Reload the page to check, then try again if they are missing.',
+    MAYBE_SAVED,
   ],
   [
     // The stored provider's Secret, which the backend reads to restore it if the change fails.
@@ -713,6 +719,27 @@ it.each([
   expect(await screen.findByText('Unable to save organization')).toBeVisible();
   expect(screen.getByText(shown)).toBeVisible();
   expect(tenantsOf(service).find(ACME_ID)?.metadata?.version).toBe(1);
+});
+
+it.each([
+  ['Unavailable', unavailable()],
+  ['DeadlineExceeded', new ConnectError('the backend did not answer in time', Code.DeadlineExceeded)],
+])('edit: a new issuer answered %s may already be in use for logging in', async (_code, answer) => {
+  const service = new MockConsoleService();
+  tenantsOf(service).before.update = () => {
+    throw answer;
+  };
+  const user = userEvent.setup();
+  renderAt(`/organizations/${ACME_ID}/edit`, service);
+  await openStep(user, 'Identity provider');
+  const issuer = screen.getByRole('textbox', { name: 'Issuer' });
+  await waitFor(() => expect(issuer).toHaveValue('https://sso.example.com/realms/acme-robotics'));
+  await user.clear(issuer);
+  await user.paste('https://sso.example.com/realms/acme-corp');
+  await saveEdit(user);
+  // If it landed, Keycloak already uses the new issuer, which the backend's own message (never
+  // shown: it embeds raw errors) says too.
+  expect(await screen.findByText(`${MAYBE_SAVED} ${ISSUER_MAYBE_SAVED}`)).toBeVisible();
 });
 
 it('edit: warns on leaving only when a save would send something', async () => {
@@ -773,8 +800,8 @@ it('create without an identity provider sends none, and Review says so', async (
   await user.click(screen.getByRole('button', { name: 'Next' }));
   await user.click(screen.getByRole('button', { name: 'Next' }));
   const review = screen.getByTestId('organization-configuration-details');
-  expect(within(review).getByRole('heading', { name: 'No identity provider' })).toBeVisible();
-  expect(review).toHaveTextContent('Its users cannot log in until an identity provider is added.');
+  expect(within(review).getByRole('heading', { name: NO_IDP })).toBeVisible();
+  expect(review).toHaveTextContent(NO_IDP_REASON);
   await user.click(screen.getByRole('button', { name: 'Create organization' }));
   expect(await screen.findByText('Organization tenant1 created')).toBeVisible();
   const [sent] = tenantsOf(service).sent('create');
@@ -791,14 +818,13 @@ it('lists the identity provider by title, warns without one, and shows no status
   expect(acme).toHaveTextContent('Acme Robotics SSO');
   expect(acme).not.toHaveTextContent('https://sso.example.com/realms/acme-robotics');
   const umbrella = screen.getByRole('row', { name: /^umbrella-biotech / });
-  // Its users can't log in, so the cell says so, as a cluster without a role does, with why.
+  // AI Grid has none, so the cell says so, as a cluster without a role does, with what that means
+  // unless one was set up in Keycloak directly, which the backend doesn't report.
   const missing = within(umbrella).getByTestId('missing-idp-umbrella-biotech');
-  expect(missing).toHaveTextContent('No identity provider');
+  expect(missing).toHaveTextContent(NO_IDP);
   expect(within(umbrella).queryByText('—')).not.toBeInTheDocument();
   await userEvent.setup().hover(missing);
-  expect(await screen.findByRole('tooltip')).toHaveTextContent(
-    'This organization has no identity provider, so its users cannot log in.',
-  );
+  expect(await screen.findByRole('tooltip')).toHaveTextContent(NO_IDP_REASON);
   // The backend's Tenant reports no state (TenantStatus is empty), so the list has no Status column.
   expect(screen.queryByRole('columnheader', { name: /Status/ })).not.toBeInTheDocument();
 });
@@ -899,7 +925,7 @@ it('edit: an organization without an identity provider keeps none while the step
   // Turning off Validate signature alone leaves the provider blank: nothing to send, nothing to save.
   await user.click(screen.getByRole('checkbox', { name: 'Validate signature' }));
   await openStep(user, 'Review');
-  expect(screen.getByRole('heading', { name: 'No identity provider' })).toBeVisible();
+  expect(screen.getByRole('heading', { name: NO_IDP })).toBeVisible();
   expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
   await openStep(user, 'Organization details');
   await user.click(screen.getByRole('textbox', { name: 'Domain 1' }));
@@ -969,8 +995,10 @@ it('the organization page says when an organization has no identity provider', a
   const organization = addOrganization(service, { name: input.name, domains: input.domains });
   renderAt(`/organizations/${encodeURIComponent(organization.id)}`, service);
   const details = await screen.findByTestId('organization-configuration-details');
-  expect(within(details).getByRole('heading', { name: 'No identity provider' })).toBeVisible();
-  expect(details).toHaveTextContent('Its users cannot log in until an identity provider is added.');
+  // The backend reports only a provider it created, so the page can't say its users cannot log in:
+  // one set up in Keycloak directly is not reported.
+  expect(within(details).getByRole('heading', { name: NO_IDP })).toBeVisible();
+  expect(details).toHaveTextContent(NO_IDP_REASON);
   expect(within(details).queryByRole('button', { name: 'OIDC endpoints' })).not.toBeInTheDocument();
 });
 
