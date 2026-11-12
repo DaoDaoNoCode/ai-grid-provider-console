@@ -21,7 +21,8 @@ import { ConditionStatus } from '../gen/ai_grid/v1/condition_type_pb';
 import { SubscriptionSchema, type Subscription } from '../gen/ai_grid/v1/subscription_type_pb';
 import { ModelClusterStatusSchema, ModelPhase, ModelState, ModelViewTarget } from '../gen/ai_grid/v1/model_type_pb';
 import { DISPLAY_NAME } from '../pages/models/modelView';
-import { watchesKey } from '../notifications/storageKeys';
+import { notificationsKey, watchesKey } from '../notifications/storageKeys';
+import { getSubscriptionViewUrl } from '../utilities/maasGovernanceNavigation';
 import {
   ACME_ID,
   fleetOf,
@@ -626,6 +627,30 @@ it('names an organization without a name by its id, as the select shows it, for 
   // The watch that says it is active names its organization as the select did.
   expect(JSON.parse(window.sessionStorage.getItem(watchesKey('dev-user')) ?? '[]')).toContainEqual(
     expect.objectContaining({ subject: 'subscription', id: 'test-team', stage: 'ready', organization: 'nameless-org' }),
+  );
+});
+
+it('follows and links a created subscription by the id the backend answered, when it added a suffix', async () => {
+  const service = seeded();
+  // A backend that makes subscription names unique (backend PR 89) answers test-team-k3x9q2.
+  subscriptionsOf(service).idSuffix = '-k3x9q2';
+  const user = userEvent.setup();
+  renderAt('/subscriptions/create', service);
+  await fillNewSubscription(user);
+  await pickOrganization(user, 'globex-research');
+  await user.click(screen.getByTestId('create-subscription-button'));
+  expect(await screen.findByText('Subscription Test team saved to Git')).toBeVisible();
+  expect(subscriptionsOf(service).sent('create').at(-1)?.object?.id).toBe('test-team');
+  expect(stored(service, 'test-team-k3x9q2')).toBeDefined();
+  // The watch that says it is active follows the answered id, not the requested one.
+  const watches = JSON.parse(window.sessionStorage.getItem(watchesKey('dev-user')) ?? '[]') as { id: string }[];
+  expect(watches).toContainEqual(
+    expect.objectContaining({ subject: 'subscription', id: 'test-team-k3x9q2', stage: 'ready' }),
+  );
+  expect(watches.some((w) => w.id === 'test-team')).toBe(false);
+  // The notification's link opens the subscription the backend created.
+  expect(window.sessionStorage.getItem(notificationsKey('dev-user'))).toContain(
+    getSubscriptionViewUrl('test-team-k3x9q2'),
   );
 });
 
