@@ -55,7 +55,7 @@ const GoToRefusedField: React.FC<{ refused?: object; errorStep?: string }> = ({ 
 /**
  * Creates an organization in three steps: its details, its identity provider, then a review. With
  * `organization` it edits that one through the same steps: every step can be opened from the start,
- * the name and the identity provider are read-only, and Save changes on the Review step
+ * the name and the identity provider are read-only, and Save on the Review step
  * stays disabled until something changed.
  */
 export const OrganizationFormWizard: React.FC<Props> = ({ organization }) => {
@@ -83,7 +83,7 @@ export const OrganizationFormWizard: React.FC<Props> = ({ organization }) => {
             />
             <ConsoleWizardFooter
               submitStepId="organization-review"
-              submitLabel={editing ? 'Save changes' : 'Create organization'}
+              submitLabel={editing ? 'Save' : 'Create organization'}
               errorTitle="Unable to save organization"
               isStepValid={(step) =>
                 form.detailsValid &&

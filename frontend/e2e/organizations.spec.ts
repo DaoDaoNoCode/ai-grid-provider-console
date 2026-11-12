@@ -39,7 +39,7 @@ test('creates, views, edits and deletes an organization', async ({ page }) => {
       [/^Authorization URL/, `${issuer}/auth`],
       [/^Token URL/, `${issuer}/token`],
       // Required while Validate signature is on, as it is by default.
-      [/^JWKS URL/, `${issuer}/certs`],
+      [/^JSON Web Key Set \(JWKS\) URL/, `${issuer}/certs`],
     ];
     for (const [name, value] of idpFields) await page.getByRole('textbox', { name }).fill(value);
     await page.getByRole('button', { name: 'Next' }).click();
@@ -74,7 +74,7 @@ test('creates, views, edits and deletes an organization', async ({ page }) => {
     await page.reload();
     await page.getByRole('textbox', { name: /^Domain 1/ }).fill(editedDomain);
     await page.getByRole('button', { name: 'Review', exact: true }).click();
-    await page.getByRole('button', { name: 'Save changes' }).click();
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(page.getByText(`Changes to organization ${unique} saved`)).toBeVisible();
     await expect(page.getByTestId('organization-configuration-details')).toContainText(editedDomain);
 

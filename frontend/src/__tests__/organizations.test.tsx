@@ -81,7 +81,7 @@ const openStep = async (user: User, name: 'Organization details' | 'Identity pro
 /** Opens Review and saves the edit. */
 const saveEdit = async (user: User) => {
   await openStep(user, 'Review');
-  await user.click(screen.getByRole('button', { name: 'Save changes' }));
+  await user.click(screen.getByRole('button', { name: 'Save' }));
 };
 /** A user the console couldn't load: the pages show, but without write actions. A viewer
  * (isProviderAdmin false) sees no pages at all (App.test.tsx). */
@@ -105,7 +105,7 @@ const requiredIdp: [string, string][] = [
   ['Authorization URL', 'https://idp.example.com/auth'],
   ['Token URL', 'https://idp.example.com/token'],
   // Required while Validate signature is on, as it is by default.
-  ['JWKS URL', 'https://idp.example.com/certs'],
+  ['JSON Web Key Set (JWKS) URL', 'https://idp.example.com/certs'],
 ];
 
 it('onboards organization details then IdP, saves only after review and orders navigation', async () => {
@@ -132,7 +132,7 @@ it('onboards organization details then IdP, saves only after review and orders n
   await user.click(screen.getByRole('button', { name: 'Next' }));
   // A blank identity provider is optional; a partly filled one isn't.
   expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
-  await user.click(screen.getByRole('textbox', { name: 'Title' }));
+  await user.click(screen.getByRole('textbox', { name: 'Identity provider name' }));
   await user.paste('Tenant 1 SSO');
   expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
   expect(tenantsOf(service).sent('create')).toEqual([]);
@@ -142,7 +142,7 @@ it('onboards organization details then IdP, saves only after review and orders n
     ['Issuer', 'https://sso.example.com/tenant1'],
     ['Authorization URL', 'https://sso.example.com/auth'],
     ['Token URL', 'https://sso.example.com/token'],
-    ['JWKS URL', 'https://sso.example.com/certs'],
+    ['JSON Web Key Set (JWKS) URL', 'https://sso.example.com/certs'],
   ]);
   await user.click(screen.getByRole('button', { name: 'Next' }));
   const review = screen.getByTestId('organization-configuration-details');
@@ -153,7 +153,7 @@ it('onboards organization details then IdP, saves only after review and orders n
   expect(screen.queryByText(/break.glass/i)).not.toBeInTheDocument();
   // Each section's Edit link goes back to its step.
   await user.click(screen.getByRole('button', { name: 'Edit identity provider' }));
-  expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('Tenant 1 SSO');
+  expect(screen.getByRole('textbox', { name: 'Identity provider name' })).toHaveValue('Tenant 1 SSO');
   await user.click(screen.getByRole('button', { name: 'Next' }));
   await user.click(screen.getByRole('button', { name: 'Create organization' }));
   const table = await screen.findByTestId('organizations-table');
@@ -180,15 +180,16 @@ it('opens an organization from the list and edits its domains, its identity prov
   await user.click(screen.getByTestId('organization-actions'));
   await user.click(screen.getByRole('menuitem', { name: 'Edit' }));
   // Edit is the create wizard with every step open; the name can't change, so it's read-only.
-  expect(await screen.findByRole('heading', { name: 'Edit tenant1' })).toBeVisible();
+  expect(await screen.findByRole('heading', { name: 'Edit organization' })).toBeVisible();
+  expect(screen.getByText('tenant1', { selector: 'strong' })).toBeVisible();
   expect(screen.getByRole('textbox', { name: 'Name' })).toHaveAttribute('readonly');
   expect(screen.getByText('The name cannot be edited after the organization is created.')).toBeVisible();
   // Nothing changed yet, so Review can't save.
   await openStep(user, 'Review');
-  expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
   // The backend keeps an identity provider immutable, so the edit shows it but can't change it.
   await openStep(user, 'Identity provider');
-  expect(screen.getByRole('textbox', { name: 'Title' })).toBeDisabled();
+  expect(screen.getByRole('textbox', { name: 'Identity provider name' })).toBeDisabled();
   expect(screen.getByRole('textbox', { name: 'Client ID' })).toBeDisabled();
   expect(screen.getByText('Identity provider cannot be edited')).toBeVisible();
   await openStep(user, 'Organization details');
@@ -351,7 +352,7 @@ it('create: Back keeps input, and Cancel asks before discarding it', async () =>
   await user.paste('unsaved-tenant');
   expect(screen.getByRole('button', { name: 'Back' })).toBeDisabled();
   await user.click(screen.getByRole('button', { name: 'Next' }));
-  await user.click(screen.getByRole('textbox', { name: 'Title' }));
+  await user.click(screen.getByRole('textbox', { name: 'Identity provider name' }));
   await user.paste('Unsaved IdP');
   await user.click(screen.getByRole('button', { name: 'Back' }));
   expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('unsaved-tenant');
@@ -402,7 +403,7 @@ it('keeps input on conflict', async () => {
     await screen.findByText('This organization was changed by another user. Reload the page, then try again.'),
   ).toBeVisible();
   expect(screen.getByText('Unable to save organization')).toBeVisible();
-  expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
   await openStep(user, 'Organization details');
   expect(screen.getByRole('textbox', { name: 'Domain 1' })).toHaveValue('unsaved.example.com');
   expect(tenantsOf(service).tenants[0].spec?.domains).toEqual(['tenant1.example.com']);
@@ -482,7 +483,13 @@ it.each(['', '/edit'])('offers Retry when an organization fails to load: %s', as
   expect(await screen.findByRole('heading', { name: 'Unable to load organization' })).toBeVisible();
   await user.click(screen.getByRole('button', { name: 'Retry' }));
   await waitFor(() => expect(screen.queryByTestId('error-state')).not.toBeInTheDocument());
-  expect(screen.getByRole('heading', { level: 1, name: new RegExp(first.name) })).toBeVisible();
+  if (suffix) {
+    // Edit names the organization in its description, under the page title.
+    expect(screen.getByRole('heading', { level: 1, name: 'Edit organization' })).toBeVisible();
+    expect(screen.getByText(first.name, { selector: 'strong' })).toBeVisible();
+  } else {
+    expect(screen.getByRole('heading', { level: 1, name: new RegExp(first.name) })).toBeVisible();
+  }
 });
 
 it('keeps the list under a warning when a reload fails', async () => {
@@ -561,7 +568,7 @@ it('edit: an existing identity provider is shown read-only', async () => {
   expect(screen.getByRole('checkbox', { name: 'Validate signature' })).toBeDisabled();
   // Nothing can change here, so Review stays open and has nothing to save.
   await openStep(user, 'Review');
-  expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
 });
 
 it('leaves the create form out of history once the organization is created, so Back skips it', async () => {
@@ -701,7 +708,7 @@ it('moves an edit refused for a field to that field, once, and lets the user ret
   expect(screen.getByText('The domain is already taken.')).toBeVisible();
   // Going back to Review stays there: the move happens once per refused save.
   await openStep(user, 'Review');
-  expect(screen.getByRole('button', { name: 'Save changes' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Save' })).toBeVisible();
   expect(screen.queryByRole('textbox', { name: 'Domain 1' })).not.toBeInTheDocument();
 });
 
@@ -822,7 +829,7 @@ it('heads the wizard sections at h2, moves focus to an added domain, and names t
   await user.click(await screen.findByTestId('organization-actions'));
   await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
   const modal = await screen.findByTestId('delete-organization-modal');
-  expect(within(modal).getByRole('textbox', { name: `Type ${organization.name} to confirm:` })).toBeVisible();
+  expect(within(modal).getByRole('textbox', { name: `Type ${organization.name} to confirm deletion:` })).toBeVisible();
 });
 
 it('edit: an identity provider saved without a JWKS URL is kept, and the domains still save', async () => {

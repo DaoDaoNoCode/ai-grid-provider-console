@@ -49,7 +49,7 @@ export const OrganizationConfigurationDetails: React.FC<Props> = ({ organization
   ];
   const connectionItems: DetailsItem[] = idp
     ? [
-        { term: 'Title', value: idp.title },
+        { term: 'Identity provider name', value: idp.title },
         { term: 'Description', value: idp.description },
         { term: 'Client ID', value: idp.config.clientId },
         { term: 'Client secret reference', value: idp.config.clientSecretSecret.name },
@@ -63,7 +63,7 @@ export const OrganizationConfigurationDetails: React.FC<Props> = ({ organization
         { term: 'Authorization URL', value: idp.config.authorizationUrl },
         { term: 'Token URL', value: idp.config.tokenUrl },
         { term: 'User info URL', value: idp.config.userInfoUrl },
-        { term: 'JWKS URL', value: idp.config.jwksUrl },
+        { term: 'JSON Web Key Set (JWKS) URL', value: idp.config.jwksUrl },
         { term: 'Logout URL', value: idp.config.logoutUrl },
       ]
     : [];
