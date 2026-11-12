@@ -45,7 +45,7 @@ import { MembershipModal } from './MembershipModal';
 import { changeMembership, editCluster, editTarget, membershipTarget } from './changeMembership';
 import { EditClusterModal } from './EditClusterModal';
 import { editText } from './editClusterText';
-import { MissingLabel } from './MissingLabel';
+import { MissingLabel } from '../../components/MissingLabel';
 import { ClusterRoleName } from './ClusterRolesHelp';
 import { roleOf } from './roles';
 import type { ClusterView } from './clusterView';

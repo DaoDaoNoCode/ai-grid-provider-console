@@ -33,7 +33,7 @@ import { changeMembership, editCluster, editTarget, membershipTarget } from './c
 import { MembershipModal } from './MembershipModal';
 import { EditClusterModal } from './EditClusterModal';
 import { editText } from './editClusterText';
-import { MissingLabel } from './MissingLabel';
+import { MissingLabel } from '../../components/MissingLabel';
 import { ClusterSite } from './ClusterSite';
 import { gpuCount, hubMessage, membershipActions, statusReason, unavailableText } from './clusterInfo';
 import { capacityText, configurationText, gpuCountText, gpuSharing } from './gpuText';

@@ -428,29 +428,68 @@ instead of the Policy's compliance string, and typed `openshift_version`, `conso
   needs them.
 - **Writes.** Create sends `metadata.name`, `spec.domains` and, when the form has one,
   `spec.identity_provider` (`enabled: true`, the config's `client_secret_secret_name` and the
-  rest as typed). The backend sets an identity provider on create only: it reads the client
-  secret from the named Secret in `AI_GRID_IDP_SECRET_NAMESPACE`, and a missing one is
-  `NotFound`, which the form shows in the backend's words (`identity provider secret "<name>" not
-  found`). An edit sends `Tenants/Update` with `spec.domains` alone in the mask, the domains the
-  form holds, `metadata.version` with `lock: true`: never the name, which can't change, and never
-  the identity provider, which the backend refuses to add, change or remove, so the edit shows it
-  read-only (or says the organization has none). Delete sends `id` and `version`, the version the
-  dialog read; after a failed delete the dialog loads the organization again (`Get`) before it
-  allows a retry. Aborted, on Update or Delete, is the conflict the form and the dialog already
-  show; every other refusal shows in the backend's words (`describeError`), and AlreadyExists (a
-  name or domain another organization has) is no longer worded as a conflict. A write drops the
-  Tenants answers no page shows, and an update keeps its answer as the organization's `Get`, so
-  the page the form returns to shows the write.
+  rest as typed). On every write of an identity provider the backend reads the client secret
+  from the named Secret in `AI_GRID_IDP_SECRET_NAMESPACE`, and a missing one is `NotFound`, which
+  the form shows in the backend's words (`identity provider secret "<name>" not found`). A change
+  also reads the stored provider's Secret, to restore that client secret if the change fails; when
+  it's missing the change is FailedPrecondition, also in the backend's words, which name that
+  Secret (`read Secret "<old name>", the current identity provider's client secret, ...`). Keycloak
+  also reads the issuer's discovery document and the JWKS, and refuses the write when it can't
+  (FailedPrecondition) or when the document names another issuer (InvalidArgument), in words
+  that name the URL. An edit sends `Tenants/Update` with `metadata.version` and `lock: true`,
+  never the name, which can't change, and only what changed, each in the mask and the object:
+  `spec.domains` when the domains differ from those the form loaded, and
+  `spec.identity_provider` when the form adds an identity provider (to an organization without
+  one, validated as on create; a blank step adds none) or changes the stored one. What isn't sent
+  stays as stored, so an identity provider saved before a rule the form checks still lets the
+  domains save. Save changes stays disabled, and leaving asks nothing, until there is something to
+  send (`isDirty`). The backend changes an identity provider in place and refuses a removal
+  (InvalidArgument), so every field stays editable and nothing removes one. Keycloak links a user
+  who logged in by the provider's alias and the user ID it sends, not by the issuer, so the
+  backend changes the issuer only while nobody has logged in through the provider; after that, a
+  new issuer is FailedPrecondition, in the backend's words, which say to remove the users' links
+  to the provider in Keycloak or create a new organization. The form says the same before the
+  save: on an organization with a provider, the issuer's help says it can be edited only until a
+  user logs in, and names those two ways out after that, and a plain inline warning stays
+  under the field while it holds an issuer other than the stored one ("A new issuer is saved only
+  if no user has logged in through this identity provider"), whatever its validation. An
+  organization without one gets the create form's example instead. Adding a provider to an
+  organization made in Keycloak directly, with a provider of its own under the organization's
+  alias, is FailedPrecondition too, in words that name the alias. An edit
+  answered Unavailable (the backend couldn't read the organization back after an error) or
+  DeadlineExceeded may have been saved, so the form says so and to reload before trying again
+  (`ORGANIZATION_MAYBE_SAVED`): a retry after a save that landed is Aborted. When the edit sent
+  another issuer than the stored one, it adds that users may already log in through the new one
+  (`ORGANIZATION_ISSUER_MAYBE_SAVED`), as the backend's Unavailable message does, which the form
+  never shows because it embeds raw errors. Delete sends `id`
+  and `version`, the version the dialog read; after a failed delete the dialog loads the
+  organization again (`Get`) before it allows a retry. Aborted, on Update or Delete, is the
+  conflict the form and the dialog already show; every other refusal shows in the backend's
+  words (`describeError`), and AlreadyExists (a name or domain another organization has) is no
+  longer worded as a conflict. A write drops the Tenants answers no page shows, and an update
+  keeps its answer as the organization's `Get`, so the page the form returns to shows the write.
+- **No identity provider.** The backend reports `spec.identity_provider` only for a provider it
+  created (its own organization attribute), so an organization without one has none in AI Grid,
+  but may have one set up in Keycloak directly, as the realm export's example organizations do.
+  The pages say only what the API knows: the list's Identity provider cell says "No identity
+  provider configured in AI Grid" with a warning icon and, in its tooltip, that unless one was
+  set up directly in Keycloak its users cannot log in, as the Clusters list shows a cluster
+  without a role (`MissingLabel`); the organization page and the wizard's Review show the same
+  words as the section's empty state (`SectionEmptyState`; `NO_IDENTITY_PROVIDER` and
+  `NO_IDENTITY_PROVIDER_REASON` in `organizationView.ts`).
 - **Field errors.** The backend sends plain messages, without `google.rpc.BadRequest` violations,
   so its refusals show above the form. A violation, should one come, lands on its field:
   `formPathOf` maps the proto path (`metadata.name`, `spec.domains[0]`,
   `spec.identity_provider.config.issuer`) to the form's.
 - **Testing.** Page tests answer from `frontend/src/__tests__/connectTenants.ts`, an in-memory
   Tenants service over the generated messages with the backend's rules and messages (versions
-  from 1, Aborted on a stale one, AlreadyExists, NotFound, the identity provider set on create
-  only) and the PoC's three organizations; `tenantsOf(service).before` makes a call wait or fail.
-  The browser test (`e2e/organizations.spec.ts`) runs on the backend's fakes, whose fake hub has
-  no Secrets, so it sees an identity provider refused and creates the organization without one.
+  from 1, Aborted on a stale one, AlreadyExists, NotFound, the identity provider added or changed
+  in place but never removed) and the PoC's three organizations; `tenantsOf(service).before`
+  makes a call wait or fail, and throws the refusals that depend on Keycloak's state (a new issuer
+  after users logged in, a provider this API didn't create, a missing Secret).
+  The browser test (`e2e/organizations.spec.ts`) runs on the backend's fakes, whose Keycloak
+  can't read its issuer's discovery document, so it sees an identity provider refused (in words
+  that name the document) and creates the organization without one.
 - The BFF has no `/api/v1/tenants` routes, and so no JSON writes at all.
 
 ### Writes that take long
