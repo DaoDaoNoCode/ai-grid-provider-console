@@ -97,7 +97,7 @@ const ORGANIZATION_REQUIRED = 'Select an organization.';
  */
 const MAX_ID_LENGTH = 49;
 /** On create: the name sent may not be the subscription's name (backend PR 89). */
-const NAME_SUFFIX_HELP = 'The AI Grid backend may add a short suffix to the resource name to make it unique.';
+const NAME_SUFFIX_HELP = 'The AI grid backend may add a short suffix to the resource name to make it unique.';
 
 const subscriptionFormSchema = z.object({
   priority: z
@@ -356,7 +356,7 @@ export const CreateSubscriptionForm: React.FC<Props> = ({
       const error = describeError(e);
       setSubmitError(
         error.kind === 'notAvailable'
-          ? `${isEditing ? 'Saving' : 'Creating'} subscriptions is not available on this AI Grid backend.`
+          ? `${isEditing ? 'Saving' : 'Creating'} subscriptions is not available on this AI grid backend.`
           : error.message,
       );
       setIsSubmitting(false);

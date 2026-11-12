@@ -504,7 +504,7 @@ describe('administrator subscription flows', () => {
     };
     await user.click(screen.getByRole('button', { name: 'Refresh' }));
     expect(await screen.findByTestId('stale-data-alert')).toHaveTextContent(
-      'Showing the last loaded subscriptionsThe AI Grid backend is unavailable. Try again.',
+      'Showing the last loaded subscriptionsThe AI grid backend is unavailable. Try again.',
     );
     expect(screen.getByRole('link', { name: 'Engineering' })).toBeVisible();
   });
@@ -516,7 +516,7 @@ describe('administrator subscription flows', () => {
     renderAt('/subscriptions', service);
     expect(await screen.findByRole('heading', { name: 'Unable to load subscriptions' })).toBeVisible();
     // A server-side failure shows the console's words, not the backend's (describeError).
-    expect(screen.getByTestId('error-state')).toHaveTextContent('The AI Grid backend failed to process the request.');
+    expect(screen.getByTestId('error-state')).toHaveTextContent('The AI grid backend failed to process the request.');
     await user.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByTestId('subscriptions-table')).toBeVisible();
   });
@@ -812,11 +812,20 @@ it('hides write actions until it knows the user is a provider admin', async () =
   expect(screen.queryByTestId('subscription-actions-toggle')).not.toBeInTheDocument();
 });
 
+it('says what a subscription is for when there are none, with the create action', async () => {
+  renderAt('/subscriptions', new MockConsoleService());
+  expect(await screen.findByRole('heading', { name: 'No subscriptions' })).toBeVisible();
+  expect(
+    screen.getByText('To grant organizations access to models in the AI grid, create a subscription.'),
+  ).toBeVisible();
+  expect(screen.getByRole('link', { name: 'Create subscription' })).toBeVisible();
+});
+
 it('shows the not-available state when the backend has no subscriptions yet', async () => {
   const service = seeded();
   failNext(service, 'list', new ConnectError('unimplemented', Code.Unimplemented));
   renderAt('/subscriptions', service);
-  expect(await screen.findByText('Subscriptions are not available on this AI Grid backend')).toBeVisible();
+  expect(await screen.findByText('Subscriptions are not available on this AI grid backend')).toBeVisible();
   expect(screen.queryByTestId('subscriptions-table')).not.toBeInTheDocument();
 });
 
@@ -828,7 +837,7 @@ it('says creating is not available on a backend without subscriptions', async ()
   await fillNewSubscription(user);
   await pickOrganization(user, 'acme-robotics');
   await user.click(screen.getByTestId('create-subscription-button'));
-  expect(await screen.findByText('Creating subscriptions is not available on this AI Grid backend.')).toBeVisible();
+  expect(await screen.findByText('Creating subscriptions is not available on this AI grid backend.')).toBeVisible();
   expect(screen.getByText('Unable to create subscription')).toBeVisible();
 });
 
@@ -1291,7 +1300,7 @@ it('keeps the delete dialog busy until the reloaded version is in, and says when
   await user.click(within(modal).getByRole('button', { name: 'Delete' }));
   expect(
     await within(modal).findByText(
-      /Unable to reload the latest version: The AI Grid backend is unavailable. Try again./,
+      /Unable to reload the latest version: The AI grid backend is unavailable. Try again./,
     ),
   ).toBeVisible();
   expect(within(modal).getByRole('button', { name: 'Delete' })).toBeEnabled();
@@ -1422,7 +1431,7 @@ it("caps a new subscription id at the backend maximum, leaving room for the back
   await user.click(await screen.findByTestId('subscription-name-desc-name'));
   await user.paste('a'.repeat(70));
   expect(
-    screen.getByText('The AI Grid backend may add a short suffix to the resource name to make it unique.'),
+    screen.getByText('The AI grid backend may add a short suffix to the resource name to make it unique.'),
   ).toBeVisible();
   await user.click(screen.getByTestId('subscription-name-desc-editResourceLink'));
   expect(screen.getByTestId('subscription-name-desc-resourceName')).toHaveValue('a'.repeat(49));
@@ -1495,6 +1504,7 @@ describe('subscription creation model status', () => {
     await pickOrganization(user, 'acme-robotics');
     await user.click(screen.getByRole('button', { name: 'Add models' }));
     const picker = await screen.findByRole('dialog', { name: 'Add models' });
+    expect(within(picker).getByText('Select models to make available to members of this subscription.')).toBeVisible();
     await user.click(within(picker).getByRole('checkbox', { name: 'Select Granite 3.3 8B Instruct' }));
     await user.type(within(picker).getByRole('textbox', { name: 'Search input' }), 'Granite');
     await user.click(within(picker).getByRole('button', { name: 'Model name' }));
@@ -1532,7 +1542,7 @@ describe('subscription creation model status', () => {
         within(returned).getByRole('button', { name: 'Partially ready for Granite 3.3 8B Instruct' }),
       ).toHaveFocus(),
     );
-    await user.click(within(returned).getByRole('button', { name: 'Add models' }));
+    await user.click(within(returned).getByRole('button', { name: 'Add' }));
     expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('Status team');
     expect(screen.getByRole('combobox', { name: 'Organization' })).toHaveValue('acme-robotics');
     const selected = screen.getByRole('grid', { name: 'subscription models' });
@@ -1593,7 +1603,7 @@ describe('subscription creation model status', () => {
     const picker = await screen.findByRole('dialog', { name: 'Add models' });
     expect(within(picker).queryByRole('button', { name: /^Partially ready/ })).not.toBeInTheDocument();
     await user.click(within(picker).getByRole('checkbox', { name: 'Select Granite 3.3 8B Instruct' }));
-    await user.click(within(picker).getByRole('button', { name: 'Add models' }));
+    await user.click(within(picker).getByRole('button', { name: 'Add' }));
     expect(
       within(screen.getByRole('grid', { name: 'subscription models' })).queryByRole('button', {
         name: /^Partially ready/,

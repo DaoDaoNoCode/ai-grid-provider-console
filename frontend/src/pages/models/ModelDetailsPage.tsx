@@ -103,12 +103,12 @@ export const ModelDetailsPage: React.FC = () => {
             // one reports, the clusters the placement chose until then.
             <Stack hasGutter data-testid="model-clusters">
               <ModelClustersTable model={model} clusters={clusters} />
-              <Link to={`/ai-grid?model=${encodeURIComponent(model.id)}`}>View on the AI Grid map</Link>
+              <Link to={`/ai-grid?model=${encodeURIComponent(model.id)}`}>View on the AI grid map</Link>
             </Stack>
           ) : (
             <SectionEmptyState title="No clusters selected">
               {model.placed
-                ? 'No AI Grid cluster matches this model’s placement.'
+                ? 'No AI grid cluster matches this model’s placement.'
                 : 'To serve this model, select one or more clusters.'}
             </SectionEmptyState>
           )}

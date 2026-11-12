@@ -64,7 +64,7 @@ test('creates, views, edits and deletes a subscription', async ({ page }) => {
     await expect(addModels).toBeVisible();
     await expect(statusTrigger).toBeFocused();
     await expect(addModels.getByRole('checkbox', { name: `Select ${MODEL}` })).toBeChecked();
-    await addModels.getByRole('button', { name: 'Add models' }).click();
+    await addModels.getByRole('button', { name: 'Add', exact: true }).click();
     await page.getByRole('button', { name: `Partially ready for ${MODEL}`, exact: true }).click();
     await expect(statusDialog).toBeVisible();
     await statusDialog.getByRole('button', { name: 'Close' }).click();
@@ -144,7 +144,7 @@ test('says a created subscription is active once the ingress clusters report it'
     await page.getByRole('button', { name: 'Add models' }).click();
     const addModels = page.getByRole('dialog');
     await addModels.getByRole('checkbox', { name: `Select ${MODEL}` }).check();
-    await addModels.getByRole('button', { name: 'Add models' }).click();
+    await addModels.getByRole('button', { name: 'Add', exact: true }).click();
     await page.getByRole('button', { name: 'Add token limit' }).click();
     await page.getByRole('dialog', { name: 'Edit token limits' }).getByRole('button', { name: 'Save' }).click();
     const created = createdSubscriptionId(page);

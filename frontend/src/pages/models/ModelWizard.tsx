@@ -119,10 +119,10 @@ const Help: React.FC<{ children: React.ReactNode; error?: string; id?: string }>
 );
 
 const notAvailable = (err: unknown, what: string) =>
-  err instanceof ServiceError && err.isNotImplemented ? `${what} not available on this AI Grid backend.` : undefined;
+  err instanceof ServiceError && err.isNotImplemented ? `${what} not available on this AI grid backend.` : undefined;
 
 /**
- * Why ListPlacementClusters leaves out an AI Grid cluster, from what Clusters/List says of it: the RPC
+ * Why ListPlacementClusters leaves out an AI grid cluster, from what Clusters/List says of it: the RPC
  * offers the members that are Available (Ready), Compliant with the ready Policy (Provisioned) and
  * whose role is inference or combined (ai_grid.v1 Models.ListPlacementClusters). None for a member
  * that Clusters/List shows meeting all three, which the two reads disagree on only for a moment.
@@ -136,11 +136,11 @@ const notListedReasons = (c: ClusterView) => {
   ].filter((r): r is string => !!r);
 };
 
-/** Which AI Grid clusters the Clusters step lists, as ListPlacementClusters offers them (notListedReasons). */
+/** Which AI grid clusters the Clusters step lists, as ListPlacementClusters offers them (notListedReasons). */
 const listedClustersRule = (
   <>
     This list includes only clusters that have the <strong>Ready</strong> cluster status, the{' '}
-    <strong>Provisioned</strong> AI Grid status, and the <strong>Inference</strong> or{' '}
+    <strong>Provisioned</strong> AI grid status, and the <strong>Inference</strong> or{' '}
     <strong>Ingress and inference</strong> role.
   </>
 );
@@ -244,7 +244,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
       ),
     [clusters],
   );
-  // AI Grid members ListPlacementClusters doesn't offer: not Available, not Compliant, or not a cluster
+  // AI grid members ListPlacementClusters doesn't offer: not Available, not Compliant, or not a cluster
   // that serves models (role inference or combined).
   const unlistedMembers = clusters.filter((c) => c.aiGridEnabled && !placementClusters.includes(c.name));
   const [clusterNames, setClusterNames] = useState<string[]>(start.clusterNames);
@@ -518,7 +518,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
           reason={
             model?.placed
               ? "This model's placement selects clusters by more than their names, so its clusters cannot be edited here."
-              : 'This model is not deployed to any AI Grid cluster.'
+              : 'This model is not deployed to any AI grid cluster.'
           }
         />
       );
@@ -547,7 +547,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
               {listedClustersRule} {notListedText(unlistedMembers)}
             </>
           ) : (
-            'A cluster appears here when it is an AI Grid cluster that serves models, and is Ready and Provisioned.'
+            'A cluster appears here when it is an AI grid cluster that serves models, and is Ready and Provisioned.'
           )}
         </Alert>
       );
@@ -583,7 +583,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
           isDisabled={saving}
         />
         <Help>
-          Select the AI Grid clusters where the model will run. {listedClustersRule}
+          Select the AI grid clusters where the model will run. {listedClustersRule}
           {unlistedMembers.length > 0 && ` ${notListedText(unlistedMembers)}`}
         </Help>
       </FormGroup>
@@ -709,8 +709,16 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
   return (
     <>
       <PageHeader
-        title={model ? `Edit ${titleOf(model)}` : 'Deploy model'}
-        description={model ? "Edit the model's settings and clusters." : 'Deploy a model to AI Grid clusters.'}
+        title={model ? 'Edit model' : 'Deploy model'}
+        description={
+          model ? (
+            <>
+              Make changes to the configuration of the <strong>{titleOf(model)}</strong> model.
+            </>
+          ) : (
+            'Deploy a model to AI grid clusters.'
+          )
+        }
         breadcrumb={
           <Breadcrumb>
             <BreadcrumbItem>
