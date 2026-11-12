@@ -125,8 +125,9 @@ test('deploys a model to a cluster, edits it in the same wizard, and deletes it'
   await expect(
     remove.getByRole('heading', { name: 'Danger alert: Unable to remove cluster from AI grid' }),
   ).toBeVisible();
+  // The backend's own message, which still writes "AI Grid".
   await expect(remove).toContainText(
-    `Cluster "${CLUSTER}" has 1 model placed on it (${unique}). Move it to another cluster before removing it from AI grid.`,
+    `Cluster "${CLUSTER}" has 1 model placed on it (${unique}). Move it to another cluster before removing it from AI Grid.`,
   );
   await expect(typed).toHaveValue(CLUSTER);
   await remove.getByRole('button', { name: 'Cancel' }).click();
