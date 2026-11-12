@@ -109,7 +109,11 @@ a failed load.
 
 - Field errors show after the field is touched; the server's field errors map to their fields.
 - A failed save is an inline danger alert, "Unable to &lt;verb&gt; &lt;object&gt;".
-- Buttons: primary (or danger), then Cancel as a link.
+- Buttons: primary (or danger), then Cancel as a link. A button blocked by something its own
+  form doesn't say as a field error is aria-disabled with the reason in its tooltip (Create
+  subscription with a model that has no token limit). In a form's `ActionGroup`, give the `Tooltip`
+  the button by `triggerRef`: a tooltip wrapped around it adds an element that breaks the group's
+  layout.
 - A big create is a `Wizard` with `ConsoleWizardFooter`; a small one a `Form` with an `ActionGroup`.
 - Every delete, and Remove from AI Grid, asks for the object's name typed in (`DeleteModal`).
 - After an action succeeds, a success toast: navigate with `state: { notice }` (`NoticeToast`). An
