@@ -12,6 +12,8 @@
 // (matchingHardware), to preselect the entry it runs on; selecting another entry there
 // applies that entry as the Deploy wizard does.
 import type { ModelHardware } from '../../api/types';
+import type { ClusterView } from '../clusters/clusterView';
+import { roleOf } from '../clusters/roles';
 import { RUNTIME_ARGS_ENV, type EnvVar } from './fields/runtimeArgs';
 import type { AcceleratorRequest, ModelView } from './modelView';
 
@@ -143,4 +145,24 @@ export const envWithHardware = (
       .map(({ name, value }) => ({ name, value })),
     ...hardwareEnv(hardware),
   ];
+};
+
+/**
+ * The hardware a new model starts on: the first entry of the list, except that a grid whose
+ * model-serving members (AI Grid enabled, Inference or Ingress and inference role) all report no
+ * GPUs starts on the first entry without an accelerator, so a CPU-only grid is not offered an
+ * NVIDIA GPU that never becomes ready. A member whose GPU count is unknown (undefined) counts as
+ * having GPUs. Known limit: gpuCapacity counts nvidia.com/gpu only, so an AMD-only grid reads as
+ * GPU-less and starts on CPU.
+ */
+export const defaultHardware = (
+  list: readonly ModelHardware[],
+  clusters: readonly ClusterView[] | undefined,
+): ModelHardware | undefined => {
+  const serving = (clusters ?? []).filter((c) => {
+    const role = roleOf(c.labels)?.value;
+    return c.aiGridEnabled && (role === 'inference' || role === 'combined');
+  });
+  const cpuOnly = serving.length > 0 && serving.every((c) => c.gpuCapacity === 0);
+  return (cpuOnly && list.find((h) => !h.accelerator)) || list[0];
 };

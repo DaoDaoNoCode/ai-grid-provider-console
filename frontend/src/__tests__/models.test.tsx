@@ -1356,6 +1356,63 @@ describe('the hardware', () => {
     expect(field(/Runtime image/)).not.toBeRequired();
   });
 
+  describe('on a grid whose serving clusters have no GPUs', () => {
+    const cpuOnlyService = () => {
+      const clusters = seedClusters().map((c) => ({ ...c, gpuCapacity: 0 }));
+      return new MockConsoleService(undefined, clusters);
+    };
+
+    it('starts on CPU only and deploys it with no accelerator and the CPU image', async () => {
+      const user = userEvent.setup();
+      const create = await openDeployment(user, cpuOnlyService());
+      expect(await screen.findByRole('radio', { name: 'CPU only' })).toBeChecked();
+      expect(screen.getByRole('radio', { name: 'NVIDIA GPU' })).not.toBeChecked();
+      expect(field(/Runtime image/)).toHaveValue(cpuImage);
+      await toReview(user);
+      await waitFor(() => expect(create).toHaveBeenCalled());
+      const spec = create.mock.calls[0][0].object?.spec;
+      expect(spec?.main?.image).toBe(cpuImage);
+      expect(spec?.main?.requests).toEqual({ cpu: '4', memory: '8Gi' });
+    });
+
+    it('keeps CPU only, not moving to NVIDIA GPU, when a later poll finds a GPU cluster', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+        const service = cpuOnlyService();
+        await openDeployment(user, service);
+        expect(await screen.findByRole('radio', { name: 'CPU only' })).toBeChecked();
+        service.clusters = seedClusters();
+        await act(() => vi.advanceTimersByTimeAsync(30000));
+        expect(screen.getByRole('radio', { name: 'CPU only' })).toBeChecked();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('keeps NVIDIA GPU and an edit made before the clusters loaded', async () => {
+      const user = userEvent.setup();
+      const service = cpuOnlyService();
+      const slow = deferred<void>();
+      const list = service.listClusters;
+      service.listClusters = async () => {
+        await slow.promise;
+        return list();
+      };
+      await openDeployment(user, service);
+      await user.click(field(/^CPU/));
+      await user.clear(field(/^CPU/));
+      await user.paste('6');
+      expect(screen.getByRole('radio', { name: 'NVIDIA GPU' })).toBeChecked();
+      slow.resolve();
+      await act(async () => {
+        await Promise.resolve();
+      });
+      await waitFor(() => expect(screen.getByRole('radio', { name: 'NVIDIA GPU' })).toBeChecked());
+      expect(field(/^CPU/)).toHaveValue('6');
+    });
+  });
+
   it('requires an image for CPU only: the cluster’s default is for NVIDIA GPUs', async () => {
     const user = userEvent.setup();
     await openDeployment(user);
