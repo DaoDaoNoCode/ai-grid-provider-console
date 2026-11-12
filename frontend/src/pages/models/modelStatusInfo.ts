@@ -83,9 +83,7 @@ const sentence = (line: string) => (/[.!?]$/.test(line) ? line : `${line}.`);
  * Git state's sentence (gitStatusMessage). Never the phase's message (status.message), which the
  * backend derives apart from the state and can contradict it: a model reads Ready while the
  * message says it failed on one cluster. Ready says all there is, so it has none; undefined when
- * there is nothing to add. Besides a failure's folded Details (rolloutExplanation), the message
- * shows only in the Availability dialog for Unavailable (availabilityOf), where the backend
- * writes it to explain that word.
+ * there is nothing to add.
  */
 export const stateTooltipOf = (
   model: Pick<ModelView, 'state' | 'reason' | 'statusMessage' | 'clusters'>,
@@ -119,7 +117,7 @@ export const stateRank = (state: StateWord): number => stateOrder.indexOf(state)
 /**
  * The Availability column for one ModelMaasState: a label, the short reason under it, and the
  * dialog's heading, body and links. The copy is the design's examples, except Unavailable's body,
- * which is the backend's message when it sent one (availabilityOf); the dialog also shows MaaS's
+ * which is the backend's reason when it sent one (availabilityOf); the dialog also shows MaaS's
  * own message for each ingress cluster, because MaaS has more pending reasons than this copy names.
  */
 export type AvailabilityView = {
@@ -176,16 +174,14 @@ const availabilityViews: Record<MaaSWord, AvailabilityView> = {
 
 /**
  * The Availability column for the model's MaaS state; undefined while no ingress cluster reports.
- * Unavailable is the one word whose dialog shows the phase's message (status.message) as its body:
- * the backend reads MaaS's Available as Unavailable when no placed cluster serves the model or its
- * deployment serves a name other than its id, and says which in that message (ModelStatus.maas),
- * while each ingress cluster's MaaS message may still say Available. The generic body stays for an
- * Unavailable without a message. The other words keep the module's rule (stateTooltipOf): their
- * copy and MaaS's own messages explain them, and the phase's message could contradict them.
+ * The backend reads MaaS's Available as Unavailable when no placed cluster runs the model or its
+ * deployment serves a name other than its id, while each ingress cluster's MaaS message may still
+ * say Available; it says why in status.maas_message, which is Unavailable's body when set. The
+ * design's body stays without one. Never the phase's message (status.message), the cluster summary,
+ * which can open with "Ready on" for a model no one can call (stateTooltipOf).
  */
-export const availabilityOf = (model: Pick<ModelView, 'maas' | 'statusMessage'>): AvailabilityView | undefined => {
+export const availabilityOf = (model: Pick<ModelView, 'maas' | 'maasMessage'>): AvailabilityView | undefined => {
   if (!model.maas) return undefined;
   const view = availabilityViews[model.maas];
-  const reason = model.statusMessage?.trim();
-  return model.maas === 'Unavailable' && reason ? { ...view, body: sentence(reason) } : view;
+  return model.maas === 'Unavailable' && model.maasMessage ? { ...view, body: model.maasMessage } : view;
 };
