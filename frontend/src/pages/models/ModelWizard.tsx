@@ -48,6 +48,7 @@ import {
   acceleratorLabel,
   acceleratorsText,
   envWithHardware,
+  defaultHardware,
   hardwareEnv,
   knownAccelerators,
   matchingHardware,
@@ -63,6 +64,7 @@ import { useBackgroundWrites } from '../../notifications/useBackgroundWrites';
 import { useModelWrites, usePlacementClusters } from './useModels';
 import { deploymentNameFromUri, modelPath } from './modelUtils';
 import { useClusterList } from '../clusters/useClusters';
+import type { ModelHardware } from '../../api/types';
 import { roleOf } from '../clusters/roles';
 import type { ClusterView } from '../clusters/clusterView';
 import { listOf } from '../../notifications/writeText';
@@ -232,7 +234,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
     error: placementClustersError,
     refresh: reloadPlacementClusters,
   } = usePlacementClusters();
-  const { data: clusters, refresh: reloadClusters } = useClusterList();
+  const { data: clusters, loaded: clustersLoaded, error: clustersError, refresh: reloadClusters } = useClusterList();
   // Each offered cluster's site and region, the description under its name.
   const clusterDescriptions = useMemo(
     () =>
@@ -272,7 +274,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
   const [removePresets, setRemovePresets] = useState(false);
   const presets = model?.baseRefs.join(', ');
   const presetsKept = !!presets && !removePresets;
-  // The hardware a new model runs on: the first in the console's list until the user selects
+  // The hardware a new model runs on: defaultHardware until the user selects
   // another. An edit starts on the entry the model runs on (matchingHardware), or on none, and
   // looks again once its presets are removed; the user can select another. A reopened draft starts
   // on the hardware it was submitted with.
@@ -281,7 +283,17 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
   const matchedHardware = model
     ? matchingHardware({ ...model, baseRefs: removePresets ? [] : model.baseRefs }, hardwareList)
     : undefined;
-  const hardware = selectedHardware ?? (model ? matchedHardware : hardwareList[0]);
+  // A new model's default (defaultHardware) is worked out once, when the clusters have loaded, and
+  // kept, so a later reload never moves a selection the user is working with; until then it is the
+  // first entry. A failed load is not a load: `loaded` is also true after an error, and working the
+  // default out from no clusters would keep the first entry for good, so the next successful poll
+  // works it out instead.
+  const [latchedDefault, setLatchedDefault] = useState<ModelHardware>();
+  const computedDefault =
+    !model && clustersLoaded && !clustersError && !latchedDefault ? defaultHardware(hardwareList, clusters) : undefined;
+  if (computedDefault) setLatchedDefault(computedDefault);
+  const defaultHw = latchedDefault ?? computedDefault ?? hardwareList[0];
+  const hardware = selectedHardware ?? (model ? matchedHardware : defaultHw);
   const accelerator = hardware?.accelerator;
   // The model whose own image, environment and resources an edit shows: a matched entry is only
   // preselected and changes none of them. Selecting another entry applies that one; selecting the
@@ -297,6 +309,11 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
   // replaces an edited one with its own (or none, for the cluster's default). Keeping the presets
   // again selects no hardware, so it changes none of them: a typed image stays.
   const [imageInput, setRuntimeImage] = useState<string | undefined>(draft?.values.image);
+  // An edit to a hardware-derived value pins the hardware shown, so a default that arrives later
+  // (the clusters were still loading) cannot change it under the edit.
+  const pinHardware = () => {
+    if (!model) setHardwareId((id) => id ?? hardware?.id);
+  };
   const selectHardware = (id: string) => {
     setHardwareId(id);
     setRuntimeImage(undefined);
@@ -353,7 +370,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
     ? updateRequestOf(model, edited) !== undefined
     : [modelUri, nameDescData.name, nameDescData.description].some((v) => v !== '') ||
       [imageInput, cpuInput, memoryInput, acceleratorsInput].some((v) => v !== undefined) ||
-      (hardwareId !== undefined && hardwareId !== hardwareList[0]?.id) ||
+      (hardwareId !== undefined && hardwareId !== defaultHw?.id) ||
       replicas !== defaults.replicas ||
       runtimeArgs.enabled ||
       clusterNames.length > 0;
@@ -836,7 +853,10 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
                   id="runtime-image"
                   aria-describedby="runtime-image-help"
                   value={runtimeImage}
-                  onChange={(_event, value) => setRuntimeImage(value)}
+                  onChange={(_event, value) => {
+                    pinHardware();
+                    setRuntimeImage(value);
+                  }}
                   onBlur={() => touch('runtimeImage')}
                   validated={runtimeImageError ? 'error' : 'default'}
                   isRequired={imageRequired}
@@ -881,7 +901,10 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
                   id="deployment-cpu"
                   aria-describedby="deployment-cpu-help"
                   value={cpu}
-                  onChange={(_event, value) => setCpu(value)}
+                  onChange={(_event, value) => {
+                    pinHardware();
+                    setCpu(value);
+                  }}
                   onBlur={() => touch('cpu')}
                   validated={cpuError ? 'error' : 'default'}
                   isRequired={cpuRequired}
@@ -895,7 +918,10 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
                   id="deployment-memory"
                   aria-describedby="deployment-memory-help"
                   value={memory}
-                  onChange={(_event, value) => setMemory(value)}
+                  onChange={(_event, value) => {
+                    pinHardware();
+                    setMemory(value);
+                  }}
                   onBlur={() => touch('memory')}
                   validated={memoryError ? 'error' : 'default'}
                   isRequired={memoryRequired}
@@ -914,7 +940,10 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
                     min={1}
                     max={MAX_ACCELERATORS}
                     value={accelerators}
-                    onChange={setAccelerators}
+                    onChange={(value) => {
+                      pinHardware();
+                      setAccelerators(value);
+                    }}
                     onBlur={() => touch('accelerators')}
                     describedBy="deployment-accelerators-help"
                     validated={acceleratorsError ? 'error' : 'default'}

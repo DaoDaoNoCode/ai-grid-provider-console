@@ -23,7 +23,7 @@ export type ConsoleConfig = {
 };
 
 export type ModelsConfig = {
-  /** The wizard's Hardware choices, the first one selected; never empty (the BFF's MODEL_HARDWARE, or its built-in list). */
+  /** The wizard's Hardware choices, the first one selected, or the first without an accelerator on a grid whose serving clusters have no GPUs; never empty (the BFF's MODEL_HARDWARE, or its built-in list). */
   hardware: ModelHardware[];
 };
 
