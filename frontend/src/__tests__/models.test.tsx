@@ -1325,6 +1325,32 @@ describe('the hardware', () => {
     expect(review).not.toHaveTextContent(cpuImageName);
   });
 
+  describe('on the model details page', () => {
+    /** A model "widget" whose runtime image is this one, opened at its page. */
+    const openWidget = (image: string) => {
+      const service = new MockConsoleService();
+      const models = widget(service);
+      models.models[models.models.length - 1].spec!.main!.image = image;
+      renderAt('/models/widget', service);
+    };
+
+    it('names the image the hardware list names, with its digest to copy', async () => {
+      openWidget(` ${cpuImage} `);
+      const term = await screen.findByText('Runtime image');
+      const row = term.closest('div') as HTMLElement;
+      expect(row).toHaveTextContent(`Runtime image${cpuImageName} ${cpuImage}`);
+      expect(within(row).getByRole('button', { name: 'Copy the runtime image' })).toBeVisible();
+    });
+
+    it('shows an image the list does not have as it is', async () => {
+      openWidget('registry.example/runtime:test');
+      const row = (await screen.findByText('Runtime image')).closest('div') as HTMLElement;
+      expect(row).toHaveTextContent('Runtime imageregistry.example/runtime:test');
+      expect(row).not.toHaveTextContent(cpuImageName);
+      expect(within(row).queryByRole('button', { name: 'Copy the runtime image' })).not.toBeInTheDocument();
+    });
+  });
+
   it('shows the raw image for hardware without an image name', async () => {
     const user = userEvent.setup();
     const service = new MockConsoleService();

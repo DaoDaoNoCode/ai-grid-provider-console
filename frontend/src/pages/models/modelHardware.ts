@@ -7,9 +7,10 @@
 // pkg/controller/v1alpha2/llmisvc/config_merge.go). That image never becomes ready without NVIDIA
 // GPUs, so only NVIDIA hardware may leave the image empty.
 //
-// A deployed model's pages show it as it is, never matched against today's list: the list can
-// change (a new image digest, an entry removed) or fail to load. Only the edit wizard matches it
-// (matchingHardware), to preselect the entry it runs on; selecting another entry there
+// A deployed model's pages show it as the model has it; the list can change (a new image digest,
+// an entry removed) or fail to load, which only costs the details page its image name. Only the details page's image name (imageNameFor) and the edit wizard
+// (matchingHardware, to preselect the entry it runs on) match against the list, and an image the
+// list doesn't have shows as the model has it. Selecting another entry in the edit wizard
 // applies that entry as the Deploy wizard does.
 import type { ModelHardware } from '../../api/types';
 import type { ClusterView } from '../clusters/clusterView';
@@ -54,6 +55,10 @@ export const DEFAULT_IMAGE_HELP = "Leave empty to use the cluster's default vLLM
  */
 export const imageNameOf = (hardware: ModelHardware | undefined, image: string): string | undefined =>
   hardware?.imageName && hardware.image === image.trim() ? hardware.imageName : undefined;
+
+/** The name the hardware list gives this image, compared trimmed; undefined for any other image. */
+export const imageNameFor = (list: readonly ModelHardware[], image: string | undefined): string | undefined =>
+  image === undefined ? undefined : list.map((h) => imageNameOf(h, image)).find(Boolean);
 
 /** The Runtime image field's help for a new model on this hardware, whose current value is `image`. */
 export const runtimeImageHelp = (hardware: ModelHardware | undefined, image: string) =>
