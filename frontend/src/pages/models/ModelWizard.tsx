@@ -11,7 +11,6 @@ import {
   Breadcrumb,
   BreadcrumbItem,
   Checkbox,
-  ClipboardCopy,
   ExpandableSection,
   Flex,
   Form,
@@ -58,6 +57,7 @@ import {
   imageNameOf,
   runtimeImageHelp,
 } from './modelHardware';
+import { RuntimeImageValue } from './RuntimeImageValue';
 import { DEFAULT_REPLICAS, sameSet, updateRequestOf, type ModelInput } from './modelRequests';
 import { titleOf, type ModelView } from './modelView';
 import { OlderServedNameAlert } from './OlderServedNameAlert';
@@ -710,13 +710,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
         {
           term: 'Runtime image',
           value: imageName ? (
-            <>
-              {imageName}
-              <br />
-              <ClipboardCopy variant="inline-compact" copyAriaLabel="Copy the runtime image">
-                {runtimeImage}
-              </ClipboardCopy>
-            </>
+            <RuntimeImageValue name={imageName} image={runtimeImage} />
           ) : (
             runtimeImage.trim() || (presetsKept ? undefined : DEFAULT_IMAGE)
           ),
