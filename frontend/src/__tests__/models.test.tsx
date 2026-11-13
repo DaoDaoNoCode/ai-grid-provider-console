@@ -372,7 +372,7 @@ it('keeps chosen clusters visible when the reload offers none', async () => {
   expect(await screen.findByText('No clusters available')).toBeVisible();
 });
 
-it('names the AI Grid members the Clusters step leaves out, and why', async () => {
+it('names the AI grid members the Clusters step leaves out, and why', async () => {
   const hint = /Not listed:/;
   const clusters = seedClusters();
   // site2 offline and still provisioning; site3 ingress only.
@@ -385,7 +385,7 @@ it('names the AI Grid members the Clusters step leaves out, and why', async () =
   await fillModel(user);
   await screen.findByRole('combobox', { name: 'Clusters' });
   expect(await screen.findByText(hint)).toHaveTextContent(
-    'Select the AI Grid clusters where the model will run. This list includes only clusters that have the Ready cluster status, the Provisioned AI Grid status, and the Inference or Ingress and inference role. Not listed: site2 (not Ready, not Provisioned) and site3 (Ingress role).',
+    'Select the AI grid clusters where the model will run. This list includes only clusters that have the Ready cluster status, the Provisioned AI grid status, and the Inference or Ingress and inference role. Not listed: site2 (not Ready, not Provisioned) and site3 (Ingress role).',
   );
   // Once the backend offers every member, there is nothing to explain.
   models.placementClusters = async () => ['site1', 'site2', 'site3'];
@@ -424,7 +424,7 @@ it('shows the not-available state when the backend has no Models/List', async ()
     throw new ConnectError('no such method', Code.Unimplemented);
   });
   renderAt('/models', service);
-  expect(await screen.findByText('Models are not available on this AI Grid backend')).toBeVisible();
+  expect(await screen.findByText('Models are not available on this AI grid backend')).toBeVisible();
   expect(screen.queryByTestId('model-deployments-table')).not.toBeInTheDocument();
 });
 
@@ -680,21 +680,21 @@ it('sends the URI trimmed and refuses other schemes', async () => {
   expect(create.mock.calls[0][0].object?.spec?.model?.uri).toBe('hf://org/widget');
 });
 
-it.each(['/models/granite-research', '/models/granite-research/edit'])(
-  'offers Retry when a model fails to load: %s',
-  async (path) => {
-    const service = new MockConsoleService();
-    const models = modelsOf(service);
-    const get = vi.spyOn(models, 'get').mockImplementationOnce(unavailable);
-    const user = userEvent.setup();
-    renderAt(path, service);
-    expect(await screen.findByRole('heading', { name: 'Unable to load model' })).toBeVisible();
-    get.mockRestore();
-    await user.click(screen.getByRole('button', { name: 'Retry' }));
-    expect(await screen.findByRole('heading', { level: 1, name: /Granite research endpoint/ })).toBeVisible();
-    expect(screen.queryByTestId('error-state')).not.toBeInTheDocument();
-  },
-);
+it.each([
+  ['/models/granite-research', /Granite research endpoint/],
+  ['/models/granite-research/edit', 'Edit model'],
+])('offers Retry when a model fails to load: %s', async (path, heading) => {
+  const service = new MockConsoleService();
+  const models = modelsOf(service);
+  const get = vi.spyOn(models, 'get').mockImplementationOnce(unavailable);
+  const user = userEvent.setup();
+  renderAt(path, service);
+  expect(await screen.findByRole('heading', { name: 'Unable to load model' })).toBeVisible();
+  get.mockRestore();
+  await user.click(screen.getByRole('button', { name: 'Retry' }));
+  expect(await screen.findByRole('heading', { level: 1, name: heading })).toBeVisible();
+  expect(screen.queryByTestId('error-state')).not.toBeInTheDocument();
+});
 
 describe('a background poll', () => {
   beforeEach(() => vi.useFakeTimers({ shouldAdvanceTime: true }));
@@ -1084,7 +1084,7 @@ it("opens a model page with its configuration, its endpoint and each cluster's s
   expect(screen.getByText('v3-6-0-kserve-config-llm-template-cpu')).toBeVisible();
   const section = screen.getByTestId('model-clusters');
   expect(within(section).getByRole('grid', { name: 'Clusters of Granite 3.3 8B Instruct' })).toBeVisible();
-  expect(within(section).getByRole('link', { name: 'View on the AI Grid map' })).toHaveAttribute(
+  expect(within(section).getByRole('link', { name: 'View on the AI grid map' })).toHaveAttribute(
     'href',
     '/ai-grid?model=granite-3-8b',
   );
@@ -1786,7 +1786,20 @@ describe('editing a model deployment', () => {
     renderAt('/models/granite-3-8b', service);
     await user.click(await screen.findByRole('button', { name: 'Actions for Granite 3.3 8B Instruct' }));
     await user.click(screen.getByRole('menuitem', { name: 'Edit' }));
-    expect(await screen.findByRole('heading', { name: 'Edit Granite 3.3 8B Instruct' })).toBeVisible();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Edit model' })).toBeVisible();
+    // The title is the action; the description names the model, and the breadcrumb keeps its name.
+    expect(
+      screen.getByText((_, el) =>
+        el?.tagName === 'P'
+          ? el.textContent === 'Make changes to the configuration of the Granite 3.3 8B Instruct model.'
+          : false,
+      ),
+    ).toBeVisible();
+    expect(screen.getByText('Granite 3.3 8B Instruct', { selector: 'strong' })).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Granite 3.3 8B Instruct' })).toHaveAttribute(
+      'href',
+      '/models/granite-3-8b',
+    );
     expect(screen.getByRole('textbox', { name: /^Model URI/ })).not.toHaveAttribute('readonly');
     expect(screen.getByRole('textbox', { name: /^Model URI/ })).toHaveValue('hf://example-org/granite-3-8b');
     expect(screen.getByRole('textbox', { name: 'Model name in requests' })).toHaveAttribute('readonly');
@@ -2128,7 +2141,7 @@ describe('editing a model deployment', () => {
     await user.click(await screen.findByRole('button', { name: 'Actions for Granite 3.3 8B Instruct' }));
     expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['View details', 'Edit', 'Delete']);
     await user.click(screen.getByRole('menuitem', { name: 'Edit' }));
-    expect(await screen.findByRole('heading', { name: 'Edit Granite 3.3 8B Instruct' })).toBeVisible();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Edit model' })).toBeVisible();
   });
 });
 
@@ -2859,7 +2872,7 @@ describe('each cluster of a placed model (status.clusters, proposal P13)', () =>
       const title = await screen.findByRole('heading', { name: 'Warning alert: Unable to load clusters' });
       const alert = title.closest('.pf-v6-c-alert') as HTMLElement;
       expect(alert).toHaveTextContent('Site and Region show a dash until the clusters load.');
-      expect(alert).toHaveTextContent('The AI Grid backend is unavailable. Try again.');
+      expect(alert).toHaveTextContent('The AI grid backend is unavailable. Try again.');
       // The page's own content stays.
       expect(screen.getAllByText('Mistral 7B Instruct')[0]).toBeVisible();
       clusters.mockRestore();
@@ -3047,24 +3060,25 @@ describe('the deployment and MaaS statuses', () => {
     }
   });
 
-  it('links to the model from the Availability dialog on the list, and not on its own page', async () => {
+  it('links to the model details from the status dialog on the list, and not on its own page', async () => {
     const user = userEvent.setup();
     const service = running();
     modelsOf(service).find('smollm2').status!.maas = ModelMaasState.AWAITING_SUBSCRIPTION_AND_BACKEND;
     renderAt('/models', service);
     await user.click(await screen.findByRole('button', { name: 'Pending availability of smollm2' }));
     const dialog = await screen.findByRole('dialog', { name: 'smollm2 availability' });
+    expect(within(dialog).getByText('Model status')).toBeVisible();
     expect(dialog).toHaveTextContent(
       'No users can access this model. To grant users access, add this model to a subscription, and make sure it has the Ready status.',
     );
-    await user.click(within(dialog).getByRole('link', { name: 'Go to the model' }));
+    await user.click(within(dialog).getByRole('link', { name: 'View model details' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'smollm2' })).toBeVisible();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     // On the model's page, the same dialog has nowhere else to go but Subscriptions.
     await user.click(screen.getByRole('button', { name: 'Pending availability of smollm2' }));
     const again = await screen.findByRole('dialog', { name: 'smollm2 availability' });
     expect(within(again).getByRole('link', { name: 'Go to Subscriptions' })).toBeVisible();
-    expect(within(again).queryByRole('link', { name: 'Go to the model' })).not.toBeInTheDocument();
+    expect(within(again).queryByRole('link', { name: 'View model details' })).not.toBeInTheDocument();
   });
 
   it('words every MaaS state as the design does', async () => {
@@ -3074,7 +3088,7 @@ describe('the deployment and MaaS statuses', () => {
     const cell = async () => within(await rowOf('smollm2')).getByTestId('model-availability-smollm2');
     for (const [state, text] of [
       [ModelMaasState.AVAILABLE, /^Available availability of smollm2$/],
-      [ModelMaasState.CONFIGURING_ROUTING, /^Pending availability of smollm2Configuring routing: smollm2$/],
+      [ModelMaasState.CONFIGURING_ROUTING, /^Pending availability of smollm2Configuring route: smollm2$/],
       [
         ModelMaasState.AWAITING_SUBSCRIPTION_AND_BACKEND,
         /^Pending availability of smollm2Awaiting subscription and backend: smollm2$/,

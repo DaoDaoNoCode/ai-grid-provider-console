@@ -500,7 +500,7 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
      * - a delete stops the object's watches at once.
      *
      * One watch per cluster too: an add, or an edit that sets the role a cluster lacked, is watched
-     * until the cluster is provisioned, and a remove until it has left AI Grid, each replacing any
+     * until the cluster is provisioned, and a remove until it has left AI grid, each replacing any
      * earlier watch of the cluster. An edit of the location label alone starts none and leaves a
      * running one alone: it changes neither what the hub installs nor the name (clusters can't be
      * renamed).
@@ -531,7 +531,7 @@ export const BackgroundWritesProvider: React.FC<Props> = ({
     }
     /**
      * Every page showing objects of this kind refetches them: the lists and each one's Get (for
-     * clusters, the Clusters list, a cluster's page and the AI Grid map).
+     * clusters, the Clusters list, a cluster's page and the AI grid map).
      */
     function refreshFn(subject: WriteTarget['subject']) {
       const schema = { model: Models, subscription: Subscriptions, cluster: Clusters }[subject];
