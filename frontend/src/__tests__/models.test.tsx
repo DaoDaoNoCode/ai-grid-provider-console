@@ -1232,6 +1232,16 @@ describe('the hardware', () => {
     expect(spec?.main?.env).toEqual([]);
   });
 
+  it('keeps naming CPU only’s image when the field only gains surrounding spaces', async () => {
+    const user = userEvent.setup();
+    await openDeployment(user);
+    await selectHardware(user, 'CPU only');
+    await user.type(field(/Runtime image/), ' ');
+    expect(field(/Runtime image/)).toHaveAccessibleDescription(
+      `Set by CPU only: ${cpuImageName}. Replace it to use another vLLM image.`,
+    );
+  });
+
   it('fills in CPU only’s image and resources, and sends its environment with the runtime arguments', async () => {
     const user = userEvent.setup();
     const create = await openDeployment(user);

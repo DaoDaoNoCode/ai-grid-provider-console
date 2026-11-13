@@ -48,10 +48,10 @@ export const DEFAULT_IMAGE_HELP = "Leave empty to use the cluster's default vLLM
 
 /**
  * The name the hardware gives its image, while `image` is still that image: once the user edits
- * the field the name no longer applies.
+ * the field the name no longer applies. Compared trimmed, as the requests send it.
  */
 export const imageNameOf = (hardware: ModelHardware | undefined, image: string): string | undefined =>
-  hardware?.imageName && hardware.image === image ? hardware.imageName : undefined;
+  hardware?.imageName && hardware.image === image.trim() ? hardware.imageName : undefined;
 
 /** The Runtime image field's help for a new model on this hardware, whose current value is `image`. */
 export const runtimeImageHelp = (hardware: ModelHardware | undefined, image: string) =>
