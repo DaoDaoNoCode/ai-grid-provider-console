@@ -37,6 +37,8 @@ export type ModelHardware = {
   accelerator?: string;
   /** The runtime image a new model gets; none for the cluster's default vLLM image, which is for NVIDIA GPUs. */
   image?: string;
+  /** What the wizard shows for `image`, such as "vLLM CPU 0.18.0 (OpenShift AI 3.6)"; only with an image. */
+  imageName?: string;
   /** Environment variables for the model's main container. */
   env?: Record<string, string>;
   /** The resources the wizard starts from. */

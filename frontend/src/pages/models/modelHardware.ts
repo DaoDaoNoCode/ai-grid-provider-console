@@ -48,10 +48,19 @@ export const runtimeImageText = (model: Pick<ModelView, 'runtimeImage' | 'baseRe
 /** The Runtime image field's help where the image may be empty. */
 export const DEFAULT_IMAGE_HELP = "Leave empty to use the cluster's default vLLM image for NVIDIA GPUs.";
 
-/** The Runtime image field's help for a new model on this hardware. */
-export const runtimeImageHelp = (hardware: ModelHardware | undefined) =>
+/**
+ * The name the hardware gives its image, while `image` is still that image: once the user edits
+ * the field the name no longer applies. Compared trimmed, as the requests send it.
+ */
+export const imageNameOf = (hardware: ModelHardware | undefined, image: string): string | undefined =>
+  hardware?.imageName && hardware.image === image.trim() ? hardware.imageName : undefined;
+
+/** The Runtime image field's help for a new model on this hardware, whose current value is `image`. */
+export const runtimeImageHelp = (hardware: ModelHardware | undefined, image: string) =>
   hardware?.image
-    ? 'Set by the selected hardware. Replace it to use another vLLM image.'
+    ? imageNameOf(hardware, image)
+      ? `Set by ${hardware.label}: ${hardware.imageName}. Replace it to use another vLLM image.`
+      : 'Set by the selected hardware. Replace it to use another vLLM image.'
     : mayUseDefaultImage(hardware?.accelerator)
       ? DEFAULT_IMAGE_HELP
       : 'Enter a vLLM image for this hardware.';

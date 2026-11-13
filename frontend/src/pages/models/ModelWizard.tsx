@@ -11,6 +11,7 @@ import {
   Breadcrumb,
   BreadcrumbItem,
   Checkbox,
+  ClipboardCopy,
   ExpandableSection,
   Flex,
   Form,
@@ -54,6 +55,7 @@ import {
   matchingHardware,
   wholeCount,
   mayUseDefaultImage,
+  imageNameOf,
   runtimeImageHelp,
 } from './modelHardware';
 import { DEFAULT_REPLICAS, sameSet, updateRequestOf, type ModelInput } from './modelRequests';
@@ -162,7 +164,7 @@ const goneClustersError = (names: string[]) =>
     ? undefined
     : `${names.join(', ')} ${names.length === 1 ? 'is' : 'are'} no longer available. Remove ${names.length === 1 ? 'it' : 'them'} to continue.`;
 
-type ReviewItem = { term: string; value?: string };
+type ReviewItem = { term: string; value?: React.ReactNode };
 
 /**
  * The Review step: an alert about the choices or the model first, if there is one, spaced as the
@@ -684,6 +686,8 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
       : [];
   // A new URI changes what users of the model are served, under the same name.
   const uriChanged = !!model && input.modelUri !== (model.modelUri ?? '');
+  // The hardware's name for its image, while the image is still the hardware's.
+  const imageName = imageNameOf(hardware, runtimeImage);
   const review = [
     {
       title: 'Source',
@@ -703,7 +707,20 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
         { term: 'Description', value: nameDescData.description },
         ...hardwareItems,
         // An empty image with presets runs theirs; without presets, the cluster's default.
-        { term: 'Runtime image', value: runtimeImage.trim() || (presetsKept ? undefined : DEFAULT_IMAGE) },
+        {
+          term: 'Runtime image',
+          value: imageName ? (
+            <>
+              {imageName}
+              <br />
+              <ClipboardCopy variant="inline-compact" copyAriaLabel="Copy the runtime image">
+                {runtimeImage}
+              </ClipboardCopy>
+            </>
+          ) : (
+            runtimeImage.trim() || (presetsKept ? undefined : DEFAULT_IMAGE)
+          ),
+        },
         { term: 'Replicas', value: replicasEditable ? replicas : 'Autoscaled' },
         { term: 'CPU', value: cpu },
         { term: 'Memory', value: memory },
@@ -865,7 +882,7 @@ export const ModelWizard: React.FC<Props> = ({ model }) => {
                   {presetsKept
                     ? 'Leave empty to use the image the presets set.'
                     : !own
-                      ? runtimeImageHelp(hardware)
+                      ? runtimeImageHelp(hardware, runtimeImage)
                       : mayUseDefaultImage(imageAccelerator)
                         ? DEFAULT_IMAGE_HELP
                         : "Enter a vLLM image for the model's hardware."}
